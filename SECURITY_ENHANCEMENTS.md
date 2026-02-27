@@ -62,10 +62,10 @@ All responses include protective HTTP headers:
 
 ### Staff Accounts
 ```
-Username: admin           | Password: admin123      | Role: Admin
-Username: underwriter     | Password: under123      | Role: Underwriter
-Username: claims_adjuster | Password: claims123     | Role: Claims Adjuster
-Username: accountant      | Password: acct123       | Role: Accountant
+Username: admin           | Password: $PHINS_ADMIN_PASSWORD       | Role: Admin
+Username: underwriter     | Password: $PHINS_UNDERWRITER_PASSWORD | Role: Underwriter
+Username: claims_adjuster | Password: $PHINS_CLAIMS_PASSWORD      | Role: Claims Adjuster
+Username: accountant      | Password: $PHINS_ACCOUNTANT_PASSWORD  | Role: Accountant
 ```
 
 ### Customer Accounts
@@ -77,7 +77,7 @@ Customer accounts are auto-generated on policy creation with email as username.
 ```bash
 curl -X POST http://localhost:8000/api/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin123"}'
+  -d '{"username": "admin", "password": "$PHINS_ADMIN_PASSWORD"}'
 ```
 
 ### Authenticated Request

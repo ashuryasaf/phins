@@ -118,9 +118,9 @@ railway volume create phins-data
 
 **Action Required:**
 ```python
-# BEFORE PRODUCTION - Change all these:
-admin: PDadmin123@ → <strong-unique-password>
-underwriter: PDadmin123@ → <strong-unique-password>
+# BEFORE PRODUCTION - Set all passwords via environment variables:
+admin: $PHINS_ADMIN_PASSWORD
+underwriter: $PHINS_UNDERWRITER_PASSWORD
 # etc.
 ```
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test admin portal authentication"""
+import os
 import requests
 import json
 import sys
@@ -7,12 +8,12 @@ import sys
 # Test URL
 BASE_URL = "http://localhost:8000"
 
-# Demo accounts from server.py
+# Demo accounts - passwords loaded from environment variables
 USERS = {
-    'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Admin User'},
-    'underwriter': {'password': 'under123', 'role': 'underwriter', 'name': 'John Underwriter'},
-    'claims_adjuster': {'password': 'claims123', 'role': 'claims', 'name': 'Jane Claims'},
-    'accountant': {'password': 'acct123', 'role': 'accountant', 'name': 'Bob Accountant'}
+    'admin': {'password': os.environ.get('PHINS_ADMIN_PASSWORD', ''), 'role': 'admin', 'name': 'Admin User'},
+    'underwriter': {'password': os.environ.get('PHINS_UNDERWRITER_PASSWORD', ''), 'role': 'underwriter', 'name': 'John Underwriter'},
+    'claims_adjuster': {'password': os.environ.get('PHINS_CLAIMS_PASSWORD', ''), 'role': 'claims', 'name': 'Jane Claims'},
+    'accountant': {'password': os.environ.get('PHINS_ACCOUNTANT_PASSWORD', ''), 'role': 'accountant', 'name': 'Bob Accountant'}
 }
 
 print("Testing PHINS Admin Portal Authentication")
@@ -57,5 +58,5 @@ except Exception as e:
 print("\n" + "=" * 50)
 print("\n📌 To access the admin portal:")
 print("1. Open: http://localhost:8000/admin-portal.html")
-print("2. Use credentials: admin / admin123")
+print("2. Use credentials configured via environment variables (see SECURITY.md)")
 print("3. Or use any of the demo accounts listed above")

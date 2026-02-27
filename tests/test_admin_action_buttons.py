@@ -32,7 +32,7 @@ TEST_PORT = 8099
 BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
 
 # Test credentials
-ADMIN_CREDS = {"username": "admin", "password": "PDadmin123@"}
+ADMIN_CREDS = {"username": "admin", "password": os.environ.get('PHINS_ADMIN_PASSWORD', '')}
 
 
 class TestServer(threading.Thread):

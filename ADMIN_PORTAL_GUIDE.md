@@ -21,10 +21,10 @@ The PHINS Admin Portal is now a comprehensive insurance policy management system
 
 | Username | Password | Role | Access |
 |----------|----------|------|--------|
-| admin | admin123 | Administrator | Full access to all features |
-| underwriter | under123 | Underwriter | Policy review and approval |
-| claims_adjuster | claims123 | Claims Adjuster | Claims management |
-| accountant | acct123 | Accountant | Financial reporting |
+| admin | `$PHINS_ADMIN_PASSWORD` | Administrator | Full access to all features |
+| underwriter | `$PHINS_UNDERWRITER_PASSWORD` | Underwriter | Policy review and approval |
+| claims_adjuster | `$PHINS_CLAIMS_PASSWORD` | Claims Adjuster | Claims management |
+| accountant | `$PHINS_ACCOUNTANT_PASSWORD` | Accountant | Financial reporting |
 
 ## 🎯 Features Implemented
 
@@ -270,7 +270,7 @@ File Claim → Under Review → Approve/Reject → Payment → Closed
 
 ### Example 1: Creating a New Life Insurance Policy
 
-1. Login as `admin` / `admin123`
+1. Login as `admin` (see SECURITY.md for credentials)
 2. Navigate to "➕ Create Policy"
 3. Fill customer information:
    - Name: John Doe
@@ -284,7 +284,7 @@ File Claim → Under Review → Approve/Reject → Payment → Closed
 
 ### Example 2: Underwriting Review
 
-1. Login as `underwriter` / `under123`
+1. Login as `underwriter` (see SECURITY.md for credentials)
 2. Navigate to "✍️ Underwriting"
 3. View pending applications
 4. Review questionnaire responses
@@ -294,7 +294,7 @@ File Claim → Under Review → Approve/Reject → Payment → Closed
 
 ### Example 3: Claims Processing
 
-1. Login as `claims_adjuster` / `claims123`
+1. Login as `claims_adjuster` (see SECURITY.md for credentials)
 2. Navigate to "💰 Claims"
 3. Click "+ File New Claim"
 4. Enter policy ID and claim details
@@ -306,7 +306,7 @@ File Claim → Under Review → Approve/Reject → Payment → Closed
 
 ### Example 4: Financial Analysis
 
-1. Login as `accountant` / acct123`
+1. Login as `accountant` (see SECURITY.md for credentials)
 2. Navigate to "💹 BI - Accounting"
 3. View key metrics:
    - Revenue, Claims Paid, Net Income, Profit Margin

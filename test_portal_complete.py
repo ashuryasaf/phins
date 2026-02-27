@@ -5,6 +5,7 @@ Spins up the demo server and verifies core endpoints.
 """
 
 import json
+import os
 import threading
 import time
 from http.server import HTTPServer
@@ -27,22 +28,22 @@ class ServerThread(threading.Thread):
 
 ACCOUNTS = {
     "admin": {
-        "password": "admin123",
+        "password": os.environ.get("PHINS_ADMIN_PASSWORD", ""),
         "expected_role": "admin",
         "expected_name": "Admin User",
     },
     "underwriter": {
-        "password": "under123",
+        "password": os.environ.get("PHINS_UNDERWRITER_PASSWORD", ""),
         "expected_role": "underwriter",
         "expected_name": "John Underwriter",
     },
     "claims_adjuster": {
-        "password": "claims123",
+        "password": os.environ.get("PHINS_CLAIMS_PASSWORD", ""),
         "expected_role": "claims",
         "expected_name": "Jane Claims",
     },
     "accountant": {
-        "password": "acct123",
+        "password": os.environ.get("PHINS_ACCOUNTANT_PASSWORD", ""),
         "expected_role": "accountant",
         "expected_name": "Bob Accountant",
     },

@@ -13,6 +13,7 @@ Quick validation tests for:
 import threading
 import time
 import json
+import os
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
@@ -57,7 +58,7 @@ def test_login_works():
     base = f"http://127.0.0.1:{port}"
     
     # Test login
-    data = json.dumps({"username": "admin", "password": "admin123"}).encode('utf-8')
+    data = json.dumps({"username": "admin", "password": os.environ.get('PHINS_ADMIN_PASSWORD', '')}).encode('utf-8')
     req = Request(base + "/api/login", data=data, headers={'Content-Type': 'application/json'})
     
     with urlopen(req) as resp:
@@ -417,10 +418,10 @@ def test_multiple_roles():
     base = f"http://127.0.0.1:{port}"
     
     roles = [
-        ("admin", "admin123", "admin"),
-        ("underwriter", "under123", "underwriter"),
-        ("claims_adjuster", "claims123", "claims"),
-        ("accountant", "acct123", "accountant")
+        ("admin", os.environ.get('PHINS_ADMIN_PASSWORD', ''), "admin"),
+        ("underwriter", os.environ.get('PHINS_UNDERWRITER_PASSWORD', ''), "underwriter"),
+        ("claims_adjuster", os.environ.get('PHINS_CLAIMS_PASSWORD', ''), "claims"),
+        ("accountant", os.environ.get('PHINS_ACCOUNTANT_PASSWORD', ''), "accountant")
     ]
     
     for username, password, expected_role in roles:
