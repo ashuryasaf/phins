@@ -672,6 +672,9 @@
               <th>Email</th>
               <th>Pipeline Stage</th>
               <th>Policies</th>
+              <th>Collected</th>
+              <th>Prepaid Future</th>
+              <th>Auto-Pay</th>
               <th>Wallet Balance</th>
               <th>Created</th>
               <th>Actions</th>
@@ -679,7 +682,7 @@
           </thead>
           <tbody id="customers-table">
             <tr>
-              <td colspan="8" style="text-align: center; color: #666;">Loading customers...</td>
+              <td colspan="11" style="text-align: center; color: #666;">Loading customers...</td>
             </tr>
           </tbody>
         </table>
@@ -941,8 +944,12 @@
         <div class="card">
           <h3>Revenue Overview</h3>
           <div class="revenue-item">
-            <span>Monthly Premium Income:</span>
+            <span>Premium Income (Cumulative):</span>
             <span class="revenue-value" id="revenue-premium">$0</span>
+          </div>
+          <div class="revenue-item">
+            <span>Total Collected (Paid Bills):</span>
+            <span class="revenue-value" id="revenue-collected">$0</span>
           </div>
           <div class="revenue-item">
             <span>Outstanding Receivables:</span>
@@ -1619,7 +1626,7 @@
       } catch (err) {
         console.error('Failed to load customers:', err);
         document.getElementById('customers-table').innerHTML = 
-          '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Failed to load customers</td></tr>';
+          '<tr><td colspan="11" style="text-align:center;color:#dc3545;">Failed to load customers</td></tr>';
       }
     }
     
@@ -1627,7 +1634,7 @@
     function displayCustomers(customers) {
       const tbody = document.getElementById('customers-table');
       if (!customers || customers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#666;">No customers found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#666;">No customers found</td></tr>';
         return;
       }
       
@@ -1648,6 +1655,23 @@
         const stage = (c.pipeline_stage || 'unknown').toLowerCase();
         const stageColor = stageColors[stage] || '#6c757d';
         const walletBalance = c.wallet_balance || 0;
+        const billingSummary = c.billing_summary || {};
+        const totalCollected = Number(
+          billingSummary.total_collected ?? c.total_collected ?? c.premium_income ?? 0
+        );
+        const prepaidFuture = Number(
+          billingSummary.prepaid_future_premiums ?? c.prepaid_future_premiums ?? 0
+        );
+        const projected12m = Number(
+          billingSummary.future_premium_projection_12m ?? c.future_premium_projection_12m ?? 0
+        );
+        const autopayEnabled = Number(
+          billingSummary.autopay_enabled_policies ?? c.autopay_enabled_policies ?? 0
+        );
+        const autopayTotal = Number(
+          billingSummary.autopay_total_policies ?? c.autopay_total_policies ?? c.active_policies ?? 0
+        );
+        const autopayCoverage = autopayTotal > 0 ? `${autopayEnabled}/${autopayTotal}` : '0/0';
         
         // Format date with time for policy activation
         let createdDate = 'N/A';
@@ -1672,6 +1696,9 @@
             <td>${c.email || 'N/A'}</td>
             <td><span class="badge" style="background:${stageColor};color:white;">${(c.pipeline_stage || 'unknown').replace('_', ' ')}</span></td>
             <td>${c.active_policies || 0} / ${c.policies_count || c.total_policies || 0}</td>
+            <td title="Billing collected for this customer"><strong>$${totalCollected.toLocaleString()}</strong></td>
+            <td title="Paid future premiums already prepaid">$${prepaidFuture.toLocaleString()}</td>
+            <td title="Auto-pay enabled policies / active policies (Projected 12m: $${projected12m.toLocaleString()})">${autopayCoverage}</td>
             <td title="${walletTooltip}" style="cursor:help;"><strong>$${walletBalance.toLocaleString()}</strong></td>
             <td title="${dateTitle}">${createdDate}</td>
             <td>
@@ -1750,6 +1777,19 @@
         'lapsed': '#dc3545'
       };
       const stageColor = stageColors[customer.pipeline_stage] || '#6c757d';
+      const billingSummary = customer.billing_summary || {};
+      const totalCollected = Number(billingSummary.total_collected ?? customer.total_collected ?? 0);
+      const totalOutstanding = Number(billingSummary.total_outstanding ?? customer.total_premium_due ?? 0);
+      const prepaidFuture = Number(billingSummary.prepaid_future_premiums ?? customer.prepaid_future_premiums ?? 0);
+      const projected12m = Number(
+        billingSummary.future_premium_projection_12m ?? customer.future_premium_projection_12m ?? 0
+      );
+      const autopayEnabled = Number(
+        billingSummary.autopay_enabled_policies ?? customer.autopay_enabled_policies ?? 0
+      );
+      const autopayTotal = Number(
+        billingSummary.autopay_total_policies ?? customer.autopay_total_policies ?? customer.active_policies ?? 0
+      );
       
       content.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
@@ -1796,6 +1836,33 @@
             <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
               <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.pipeline_cash || 0)).toLocaleString()}</div>
               <div style="font-size:0.75rem;opacity:0.9;">💵 Pipeline</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Billing Summary Section -->
+        <div style="background: linear-gradient(135deg, #0f766e 0%, #115e59 100%); padding: 16px; border-radius: 12px; margin-bottom: 24px; color: white;">
+          <h4 style="margin: 0 0 12px 0;">💳 Billing Summary (AI/BI)</h4>
+          <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;">
+            <div style="background:rgba(255,255,255,0.12);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.1rem;font-weight:700;">$${totalCollected.toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">Collected</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.12);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.1rem;font-weight:700;">$${totalOutstanding.toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">Outstanding</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.12);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.1rem;font-weight:700;">$${prepaidFuture.toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">Prepaid Future</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.12);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.1rem;font-weight:700;">$${projected12m.toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">Projected 12M</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.12);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.1rem;font-weight:700;">${autopayEnabled}/${autopayTotal}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">Auto-Pay</div>
             </div>
           </div>
         </div>
@@ -2818,6 +2885,8 @@
           }
           
           message += `💰 PREMIUM INCOME (Total Collected - Cumulative):\n`;
+          message += `• Premium Income (Cumulative): ${fmt(data.premium_income ?? data.summary_totals?.total_premiums_collected)}\n`;
+          message += `• Total Collected (Paid Bills): ${fmt(data.total_collected ?? data.summary_totals?.premium_income_breakdown?.from_bills)}\n`;
           message += `• From Paid Bills: ${fmt(data.summary_totals?.premium_income_breakdown?.from_bills)}\n`;
           message += `• From Ledger (Unbilled): ${fmt(data.summary_totals?.premium_income_breakdown?.from_ledger)}\n`;
           message += `• Total Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
@@ -2929,7 +2998,8 @@
           message += `• Total Outstanding: $${currentState.total_outstanding_amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
           message += `• Outstanding Bills: ${currentState.total_outstanding_bills}\n`;
           message += `• Paid Bills: ${currentState.total_paid_bills}\n`;
-          message += `• Premium Collected: $${currentState.premium_income_collected.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          message += `• Total Collected (Paid Bills): $${Number(currentState.total_collected || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+          message += `• Premium Income (Cumulative): $${Number(currentState.premium_income || currentState.premium_income_collected || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
           
           if (data.errors && data.errors.length > 0) {
             message += `\n\n⚠️ ERRORS (${data.errors.length}):\n`;
@@ -3719,7 +3789,11 @@
           const data = await response.json();
           
           // Update revenue stats with comma formatting
-          document.getElementById('revenue-premium').textContent = '$' + formatNumber(data.total_revenue || data.monthly_premium_income || 0, 0);
+          document.getElementById('revenue-premium').textContent = '$' + formatNumber(
+            data.premium_income || data.total_collected || data.monthly_premium_income || 0,
+            0
+          );
+          document.getElementById('revenue-collected').textContent = '$' + formatNumber(data.total_collected || 0, 0);
           document.getElementById('revenue-outstanding').textContent = '$' + formatNumber(data.outstanding_balance || data.outstanding_receivables || 0, 0);
           document.getElementById('revenue-claims').textContent = '$' + formatNumber(data.claims_paid || data.claims_paid_this_month || 0, 0);
           document.getElementById('revenue-investment').textContent = '+$' + formatNumber(data.investment_returns || 0, 0);
@@ -3728,6 +3802,7 @@
         console.error('Failed to load billing data:', err);
         // Set to 0 on error
         document.getElementById('revenue-premium').textContent = '$0';
+        document.getElementById('revenue-collected').textContent = '$0';
         document.getElementById('revenue-outstanding').textContent = '$0';
         document.getElementById('revenue-claims').textContent = '$0';
         document.getElementById('revenue-investment').textContent = '$0';

@@ -103,6 +103,288 @@ def safe_int(val, default: int = 0) -> int:
         return default
 
 
+# ==============================================================================
+# BILLING NORMALIZATION HELPERS (data integrity across legacy bill shapes)
+# ==============================================================================
+AUTOPAY_BOOTSTRAP_DATE = datetime(2026, 3, 1)
+AUTOPAY_DEFAULT_CARD_NUMBER = "5555555555554444"
+AUTOPAY_DEFAULT_CARD_LAST4 = "4444"
+AUTOPAY_DEFAULT_CARD_TYPE = "mastercard"
+
+
+def _coerce_dict(value: Any) -> Dict[str, Any]:
+    """Safely coerce JSON/dict-like inputs into a dictionary."""
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return {}
+
+
+def get_bill_amount_due(bill: Dict[str, Any]) -> float:
+    """Return canonical bill amount due across amount/amount_due variants."""
+    amount = safe_float(bill.get('amount', 0))
+    if amount <= 0:
+        amount = safe_float(bill.get('amount_due', 0))
+    return round(max(0.0, amount), 2)
+
+
+def get_bill_amount_paid(bill: Dict[str, Any]) -> float:
+    """
+    Return canonical paid amount with legacy compatibility.
+
+    Some legacy paid bills were persisted with status=paid but amount_paid missing.
+    In that case, treat the full due amount as paid.
+    """
+    amount_paid = safe_float(bill.get('amount_paid', 0))
+    if amount_paid > 0:
+        return round(max(0.0, amount_paid), 2)
+
+    if status_eq(bill, 'paid'):
+        return get_bill_amount_due(bill)
+    return 0.0
+
+
+def get_bill_outstanding_amount(bill: Dict[str, Any]) -> float:
+    """Return non-negative outstanding balance for a bill."""
+    return round(max(0.0, get_bill_amount_due(bill) - get_bill_amount_paid(bill)), 2)
+
+
+def _normalize_billing_day(raw_day: Any) -> int:
+    """Clamp billing day to 1-28 for month-safe scheduling."""
+    billing_day = safe_int(raw_day, 1)
+    if billing_day < 1 or billing_day > 28:
+        return 1
+    return billing_day
+
+
+def _add_months_for_billing(base_date: datetime, months: int, billing_day: int) -> datetime:
+    """Add calendar months with a safe billing day."""
+    month_index = (base_date.month - 1) + months
+    year = base_date.year + (month_index // 12)
+    month = (month_index % 12) + 1
+    return base_date.replace(year=year, month=month, day=billing_day)
+
+
+def _next_billing_date_for_day(
+    now: Optional[datetime] = None,
+    billing_day: int = 1,
+    bootstrap_date: Optional[datetime] = None
+) -> datetime:
+    """Calculate next billing date for schedule day with optional bootstrap floor."""
+    current = now or datetime.now()
+    day = _normalize_billing_day(billing_day)
+    current = current.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if current.day <= day:
+        candidate = current.replace(day=day)
+    else:
+        candidate = _add_months_for_billing(current, 1, day)
+
+    if bootstrap_date:
+        floor_dt = bootstrap_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        if candidate < floor_dt:
+            if floor_dt.day <= day:
+                candidate = floor_dt.replace(day=day)
+            else:
+                candidate = _add_months_for_billing(floor_dt, 1, day)
+    return candidate
+
+
+def _derive_default_autopay_profile(customer_id: str, policy_id: str) -> Dict[str, str]:
+    """Build deterministic placeholder card profile for secure auto-pay defaults."""
+    seed = hashlib.sha256(f"{customer_id}:{policy_id}".encode('utf-8')).hexdigest()
+    expiry_month = (int(seed[0:2], 16) % 12) + 1
+    expiry_year = 2027 + (int(seed[2:4], 16) % 6)  # 2027-2032
+    cvc_last3 = (int(seed[4:8], 16) % 900) + 100
+
+    token_source = (
+        f"{AUTOPAY_DEFAULT_CARD_NUMBER}|{expiry_month:02d}|{expiry_year}|"
+        f"{cvc_last3}|{customer_id}|{policy_id}"
+    )
+    payment_token = hashlib.sha256(token_source.encode('utf-8')).hexdigest()
+
+    return {
+        'card_last4': AUTOPAY_DEFAULT_CARD_LAST4,
+        'card_type': AUTOPAY_DEFAULT_CARD_TYPE,
+        'expiry_month': f"{expiry_month:02d}",
+        'expiry_year': str(expiry_year),
+        'cvc_last3': str(cvc_last3),
+        'payment_token': payment_token,
+    }
+
+
+def _compute_policy_projected_premium_12m(policy: Dict[str, Any]) -> float:
+    """Estimate 12-month scheduled premium amount for BI/customer overviews."""
+    monthly_premium = safe_float(policy.get('monthly_premium', 0))
+    if monthly_premium <= 0:
+        annual = safe_float(policy.get('annual_premium', 0))
+        if annual > 0:
+            monthly_premium = round(annual / 12.0, 2)
+
+    if monthly_premium <= 0:
+        return 0.0
+
+    payment_setup = _coerce_dict(policy.get('payment_setup'))
+    billing = _coerce_dict(policy.get('billing'))
+    freq = str(
+        payment_setup.get('billing_frequency')
+        or billing.get('frequency')
+        or policy.get('billing_frequency')
+        or 'monthly'
+    ).lower()
+
+    if freq == 'quarterly':
+        return round(monthly_premium * 3 * 0.97 * 4, 2)
+    if freq in ('annual', 'yearly'):
+        return round(monthly_premium * 12 * 0.90, 2)
+    return round(monthly_premium * 12, 2)
+
+
+def ensure_policy_autopay_defaults(
+    policy: Dict[str, Any],
+    now: Optional[datetime] = None,
+    force_enable: bool = True
+) -> Tuple[bool, Dict[str, Any]]:
+    """
+    Ensure an active policy has valid auto-pay defaults.
+
+    Default schedule:
+    - monthly billing on day 1
+    - bootstrap floor date: 2026-03-01
+    """
+    if not isinstance(policy, dict) or not status_eq(policy, 'active'):
+        return False, {}
+
+    customer_id = str(policy.get('customer_id') or '').strip()
+    policy_id = str(policy.get('id') or policy.get('policy_id') or '').strip()
+    if not customer_id or not policy_id:
+        return False, {}
+
+    current_time = now or datetime.now()
+    payment_setup = _coerce_dict(policy.get('payment_setup'))
+    billing = _coerce_dict(policy.get('billing'))
+    original_payment_setup = dict(payment_setup)
+    original_billing = dict(billing)
+
+    billing_frequency = str(
+        payment_setup.get('billing_frequency')
+        or billing.get('frequency')
+        or policy.get('billing_frequency')
+        or 'monthly'
+    ).lower()
+    if billing_frequency not in ('monthly', 'quarterly', 'annual', 'yearly'):
+        billing_frequency = 'monthly'
+    if billing_frequency == 'yearly':
+        billing_frequency = 'annual'
+    if force_enable:
+        billing_frequency = 'monthly'
+
+    billing_day = (
+        1
+        if force_enable
+        else _normalize_billing_day(payment_setup.get('billing_day', billing.get('billing_day', 1)))
+    )
+
+    existing_enabled = payment_setup.get('auto_pay')
+    if existing_enabled is None:
+        existing_enabled = billing.get('auto_pay')
+    enabled = bool(existing_enabled) if (existing_enabled is not None and not force_enable) else True
+
+    next_billing_text = str(
+        payment_setup.get('next_billing_date')
+        or billing.get('next_billing_date')
+        or ''
+    ).strip()
+    next_billing_date = None
+    if len(next_billing_text) >= 10 and next_billing_text[:10] >= AUTOPAY_BOOTSTRAP_DATE.strftime('%Y-%m-%d'):
+        try:
+            next_billing_date = datetime.fromisoformat(next_billing_text.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            next_billing_date = None
+    if next_billing_date is None:
+        next_billing_date = _next_billing_date_for_day(
+            now=current_time,
+            billing_day=billing_day,
+            bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+        )
+
+    default_profile = _derive_default_autopay_profile(customer_id, policy_id)
+    payment_setup.setdefault('payment_method', 'credit_card')
+    payment_setup.setdefault('card_last4', default_profile['card_last4'])
+    payment_setup.setdefault('card_type', default_profile['card_type'])
+    payment_setup.setdefault('expiry_month', default_profile['expiry_month'])
+    payment_setup.setdefault('expiry_year', default_profile['expiry_year'])
+    payment_setup.setdefault('cvc_last3', default_profile['cvc_last3'])
+    payment_setup.setdefault('payment_token', default_profile['payment_token'])
+    payment_setup['auto_pay'] = enabled
+    payment_setup['billing_frequency'] = billing_frequency
+    payment_setup['billing_day'] = billing_day
+    payment_setup['next_billing_date'] = next_billing_date.isoformat()
+
+    auto_pay_config = _coerce_dict(billing.get('auto_pay_config'))
+    auto_pay_config.update({
+        'enabled': enabled,
+        'payment_method': payment_setup.get('payment_method', 'credit_card'),
+        'card_last4': payment_setup.get('card_last4'),
+        'card_type': payment_setup.get('card_type'),
+        'billing_frequency': billing_frequency,
+        'billing_day': billing_day,
+        'next_billing_date': next_billing_date.isoformat(),
+        'configured_at': auto_pay_config.get('configured_at') or current_time.isoformat(),
+        'configured_by': auto_pay_config.get('configured_by') or 'system_default',
+        'bootstrap_date': AUTOPAY_BOOTSTRAP_DATE.strftime('%Y-%m-%d'),
+    })
+
+    billing['auto_pay'] = enabled
+    billing['frequency'] = billing_frequency
+    billing['billing_day'] = billing_day
+    billing['next_billing_date'] = next_billing_date.isoformat()
+    billing['auto_pay_config'] = auto_pay_config
+
+    policy['payment_setup'] = payment_setup
+    policy['billing'] = billing
+
+    changed = payment_setup != original_payment_setup or billing != original_billing
+    return changed, {
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'billing_frequency': billing_frequency,
+        'billing_day': billing_day,
+        'next_billing_date': next_billing_date.isoformat(),
+        'auto_pay': enabled,
+    }
+
+
+def enforce_autopay_defaults_for_active_policies(
+    now: Optional[datetime] = None,
+    force_enable: bool = True
+) -> Dict[str, int]:
+    """Backfill/validate auto-pay defaults on all active policies."""
+    checked = 0
+    updated = 0
+    skipped = 0
+
+    for policy_id, policy in POLICIES.items():
+        if not status_eq(policy, 'active'):
+            continue
+        checked += 1
+        changed, _ = ensure_policy_autopay_defaults(policy, now=now, force_enable=force_enable)
+        if changed:
+            policy['updated_date'] = (now or datetime.now()).isoformat()
+            POLICIES[policy_id] = policy
+            updated += 1
+        elif not isinstance(policy.get('payment_setup'), dict) or not isinstance(policy.get('billing'), dict):
+            skipped += 1
+
+    return {'checked': checked, 'updated': updated, 'skipped': skipped}
+
+
 # Premium-related transaction categories used for revenue reconciliation.
 PREMIUM_LEDGER_TX_TYPES = {
     'premium_payment',
@@ -136,7 +418,7 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
         if exclude_suspended and is_suspended_account(customer_id):
             continue
 
-        amount_paid = safe_float(bill.get('amount_paid', 0))
+        amount_paid = get_bill_amount_paid(bill)
         if amount_paid <= 0:
             continue
 
@@ -5622,19 +5904,32 @@ For claims or questions, please contact:
             approved_claims = len([c for c in CLAIMS.values() if status_eq(c, 'approved')])
             
             # Billing stats - fixed naming for clarity
-            # DATA INTEGRITY: Using global safe_float() for all numeric conversions
+            # DATA INTEGRITY: normalize legacy billing records before aggregations.
+            billing_items = [
+                b for b in BILLING.values()
+                if not is_suspended_account(b.get('customer_id', ''))
+            ]
+            cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
             
             # Total annual revenue from active policies (expected revenue)
-            total_annual_revenue = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
-            # Total amount actually collected (paid bills)
-            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
+            total_annual_revenue = sum(
+                safe_float(p.get('annual_premium', 0))
+                for p in POLICIES.values()
+                if status_eq(p, 'active')
+            )
+            # Total amount actually collected (paid bills, with legacy fallback)
+            total_collected = sum(get_bill_amount_paid(b) for b in billing_items)
             # Total amount billed
-            total_billed = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
+            total_billed = sum(get_bill_amount_due(b) for b in billing_items)
             # Outstanding balance (billed but not paid)
-            outstanding_balance = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) for b in BILLING.values() if status_in(b, ['outstanding', 'pending', 'overdue']))
-            # Legacy compatibility
+            outstanding_balance = sum(
+                get_bill_outstanding_amount(b)
+                for b in billing_items
+                if status_in(b, ['outstanding', 'pending', 'overdue', 'partial', 'partially_paid'])
+            )
+            # Legacy compatibility fields
             total_revenue = total_annual_revenue
-            total_premium_collected = total_billed
+            total_premium_collected = total_collected
             
             # ========== UNIFIED WALLET BALANCE CALCULATION ==========
             # Health wallet balance
@@ -5705,6 +6000,8 @@ For claims or questions, please contact:
                 # Financial metrics
                 'total_revenue': total_revenue,
                 'total_premium_collected': total_premium_collected,
+                'total_collected': round(total_collected, 2),
+                'premium_income': round(cumulative_premium_data['total'], 2),
                 'outstanding_balance': outstanding_balance,
                 'total_investment_value': total_investment_value,
                 'total_coverage_amount': total_coverage_amount,
@@ -5769,8 +6066,8 @@ For claims or questions, please contact:
                 # Pipeline health metrics - DATA INTEGRITY: Using safe_float for billing calculations
                 uw_approval_rate = round(len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'approved')]) / len(UNDERWRITING_APPLICATIONS) * 100, 2) if UNDERWRITING_APPLICATIONS else 0
                 claim_approval_rate = round(len(approved_claims) / len(CLAIMS) * 100, 2) if CLAIMS else 0
-                billing_total = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
-                billing_paid = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
+                billing_total = sum(get_bill_amount_due(b) for b in BILLING.values())
+                billing_paid = sum(get_bill_amount_paid(b) for b in BILLING.values())
                 collection_rate = round(billing_paid / billing_total * 100, 2) if billing_total > 0 else 0
                 
                 # Risk distribution
@@ -5911,6 +6208,17 @@ For claims or questions, please contact:
                 return
             
             try:
+                billing_items = [
+                    b for b in BILLING.values()
+                    if not is_suspended_account(b.get('customer_id', ''))
+                ]
+                billing_total_due = sum(get_bill_amount_due(b) for b in billing_items)
+                billing_total_collected = sum(get_bill_amount_paid(b) for b in billing_items)
+                billing_outstanding_amount = sum(
+                    get_bill_outstanding_amount(b) for b in billing_items if not status_eq(b, 'paid')
+                )
+                premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+
                 # Check each pipeline stage
                 stages = {
                     'registration': {
@@ -5934,6 +6242,12 @@ For claims or questions, please contact:
                         'status': 'operational',
                         'outstanding': len([b for b in BILLING.values() if status_eq(b, 'outstanding')]),
                         'overdue': len([b for b in BILLING.values() if status_eq(b, 'overdue')]),
+                        'total_collected': round(billing_total_collected, 2),
+                        'premium_income': round(premium_income_totals['total'], 2),
+                        'outstanding_amount': round(billing_outstanding_amount, 2),
+                        'collection_rate': round(
+                            (billing_total_collected / billing_total_due * 100) if billing_total_due > 0 else 0, 1
+                        ),
                         'health': max(0, 100 - len([b for b in BILLING.values() if status_eq(b, 'overdue')]) * 20)
                     },
                     'claims': {
@@ -5959,6 +6273,11 @@ For claims or questions, please contact:
                     'success': True,
                     'overall_status': overall_status,
                     'overall_health': round(overall_health, 1),
+                    'financials': {
+                        'premium_income': round(premium_income_totals['total'], 2),
+                        'total_collected': round(billing_total_collected, 2),
+                        'outstanding_amount': round(billing_outstanding_amount, 2),
+                    },
                     'stages': stages,
                     'timestamp': datetime.now().isoformat()
                 }).encode('utf-8'))
@@ -6008,8 +6327,8 @@ For claims or questions, please contact:
                 loss_ratio = (claims_paid / total_premium * 100) if total_premium > 0 else 0
                 
                 # Collection metrics
-                billing_total = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
-                billing_paid = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
+                billing_total = sum(get_bill_amount_due(b) for b in BILLING.values())
+                billing_paid = sum(get_bill_amount_paid(b) for b in BILLING.values())
                 collection_rate = (billing_paid / billing_total * 100) if billing_total > 0 else 100
                 
                 # Calculate health scores
@@ -9533,13 +9852,13 @@ For claims or questions, please contact:
         if path == '/api/billing/stats':
             # FILTER: Exclude suspended test accounts from billing stats
             bills = [b for b in BILLING.values() if not is_suspended_account(b.get('customer_id', ''))]
+            cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
             
             # DATA INTEGRITY: Using global safe_float() for all numeric values
             # Calculate comprehensive stats with safe type conversion
-            total_billed = sum(safe_float(b.get('amount', 0)) for b in bills)
-            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in bills)
-            outstanding = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) 
-                             for b in bills if not status_eq(b, 'paid'))
+            total_billed = sum(get_bill_amount_due(b) for b in bills)
+            total_collected = sum(get_bill_amount_paid(b) for b in bills)
+            outstanding = sum(get_bill_outstanding_amount(b) for b in bills if not status_eq(b, 'paid'))
             
             paid_bills = [b for b in bills if status_eq(b, 'paid')]
             pending_bills = [b for b in bills if status_in(b, ['outstanding', 'pending'])]
@@ -9558,6 +9877,7 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'total_revenue': round(total_annual_revenue, 2),
                 'monthly_premium_income': round(monthly_revenue, 2),
+                'premium_income': round(cumulative_premium_data['total'], 2),
                 'total_billed': round(total_billed, 2),
                 'total_collected': round(total_collected, 2),
                 'outstanding_balance': round(outstanding, 2),
@@ -9569,7 +9889,11 @@ For claims or questions, please contact:
                 'paid_count': len(paid_bills),
                 'pending_count': len(pending_bills),
                 'overdue_count': len(overdue_bills),
-                'collection_rate': round((total_collected / total_billed * 100) if total_billed > 0 else 0, 1)
+                'collection_rate': round((total_collected / total_billed * 100) if total_billed > 0 else 0, 1),
+                'premium_income_breakdown': {
+                    'from_bills': round(cumulative_premium_data['from_bills'], 2),
+                    'from_ledger': round(cumulative_premium_data['ledger_unbilled_total'], 2),
+                }
             }).encode('utf-8'))
             return
         
@@ -10405,6 +10729,8 @@ For claims or questions, please contact:
             # Build comprehensive customer list with all related data
             # FILTER: Exclude suspended test accounts from admin displays
             customer_list = []
+            today_iso = datetime.now().strftime('%Y-%m-%d')
+            autopay_defaults_applied = 0
             
             for cust_id, customer in CUSTOMERS.items():
                 # Skip suspended test accounts
@@ -10412,12 +10738,51 @@ For claims or questions, please contact:
                     continue
                 # Find associated policies
                 customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
+                active_customer_policies = [p for p in customer_policies if status_eq(p, 'active')]
                 
                 # Find associated underwriting applications
                 customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
                 
                 # Find associated bills
                 customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
+
+                # Billing integrity summary for AI/BI customer search table.
+                total_billed = sum(get_bill_amount_due(b) for b in customer_bills)
+                total_collected = sum(get_bill_amount_paid(b) for b in customer_bills)
+                total_outstanding = sum(
+                    get_bill_outstanding_amount(b) for b in customer_bills if not status_eq(b, 'paid')
+                )
+                prepaid_future_premiums = 0.0
+                for bill in customer_bills:
+                    due_text = str(
+                        bill.get('due_date')
+                        or bill.get('billing_period_end')
+                        or bill.get('created_date')
+                        or ''
+                    )[:10]
+                    if due_text and due_text > today_iso and status_eq(bill, 'paid'):
+                        prepaid_future_premiums += get_bill_amount_paid(bill)
+
+                projected_premium_12m = sum(
+                    _compute_policy_projected_premium_12m(p) for p in active_customer_policies
+                )
+                autopay_enabled_policies = 0
+                for policy in active_customer_policies:
+                    changed, _ = ensure_policy_autopay_defaults(
+                        policy,
+                        now=datetime.now(),
+                        force_enable=True
+                    )
+                    if changed:
+                        policy_id = policy.get('id') or policy.get('policy_id')
+                        if policy_id:
+                            POLICIES[policy_id] = policy
+                        autopay_defaults_applied += 1
+                    payment_setup = _coerce_dict(policy.get('payment_setup'))
+                    billing_cfg = _coerce_dict(policy.get('billing'))
+                    if payment_setup.get('auto_pay') or billing_cfg.get('auto_pay'):
+                        autopay_enabled_policies += 1
+                collection_rate = round((total_collected / total_billed * 100) if total_billed > 0 else 0.0, 1)
                 
                 # ========== UNIFIED WALLET BALANCE CALCULATION ==========
                 # Sum ALL wallet types: health wallet, investment, algo trading, pipeline cash
@@ -10476,17 +10841,19 @@ For claims or questions, please contact:
                 # Get policy activation date for display
                 policy_activation_date = None
                 if customer_policies:
-                    active_policies = [p for p in customer_policies if status_eq(p, 'active')]
-                    if active_policies:
+                    if active_customer_policies:
                         pipeline_stage = 'active_policy'
                         # Get most recent activation date
-                        for p in active_policies:
+                        for p in active_customer_policies:
                             act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
                             if act_date and (not policy_activation_date or act_date > policy_activation_date):
                                 policy_activation_date = act_date
                 
                 if customer_bills:
-                    outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
+                    outstanding_bills = [
+                        b for b in customer_bills
+                        if status_in(b, ['outstanding', 'pending', 'overdue', 'partial', 'partially_paid'])
+                    ]
                     paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
                     if outstanding_bills:
                         pipeline_stage = 'billing_pending'
@@ -10507,10 +10874,29 @@ For claims or questions, please contact:
                     'policy_activation_date': policy_activation_date,
                     'pipeline_stage': pipeline_stage,
                     'policies_count': len(customer_policies),
-                    'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
+                    'active_policies': len(active_customer_policies),
                     'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
-                    'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
-                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if status_eq(b, 'outstanding')),
+                    'outstanding_bills': len([
+                        b for b in customer_bills
+                        if status_in(b, ['outstanding', 'pending', 'overdue', 'partial', 'partially_paid'])
+                    ]),
+                    'total_premium_due': round(total_outstanding, 2),
+                    'total_collected': round(total_collected, 2),
+                    'premium_income': round(total_collected, 2),
+                    'prepaid_future_premiums': round(prepaid_future_premiums, 2),
+                    'future_premium_projection_12m': round(projected_premium_12m, 2),
+                    'autopay_enabled_policies': autopay_enabled_policies,
+                    'autopay_total_policies': len(active_customer_policies),
+                    'billing_summary': {
+                        'total_billed': round(total_billed, 2),
+                        'total_collected': round(total_collected, 2),
+                        'total_outstanding': round(total_outstanding, 2),
+                        'prepaid_future_premiums': round(prepaid_future_premiums, 2),
+                        'future_premium_projection_12m': round(projected_premium_12m, 2),
+                        'collection_rate': collection_rate,
+                        'autopay_enabled_policies': autopay_enabled_policies,
+                        'autopay_total_policies': len(active_customer_policies),
+                    },
                     # Unified wallet balance (sum of all wallets)
                     'wallet_balance': round(total_wallet_balance, 2),
                     # Individual wallet breakdown for AI BI platform
@@ -10526,6 +10912,9 @@ For claims or questions, please contact:
                     'bills': customer_bills
                 })
             
+            if autopay_defaults_applied > 0:
+                save_ledger_data()
+
             # Sort by created date (newest first)
             customer_list.sort(key=lambda x: x.get('created_date', ''), reverse=True)
             
@@ -14544,6 +14933,7 @@ For claims or questions, please contact:
                     
                     # Cumulative premium (actuals from billing + ledger)
                     'cumulative_premium': cumulative_premium_data['total'],
+                    'total_collected': cumulative_premium_data['from_bills'],
                     'cumulative_premium_breakdown': {
                         'from_bills': cumulative_premium_data['from_bills'],
                         'from_ledger': cumulative_premium_data['ledger_unbilled_total'],
@@ -15322,6 +15712,8 @@ For claims or questions, please contact:
                 
                 # Summary totals for quick reference
                 'summary_totals': {
+                    'premium_income': expected_premium_income,
+                    'total_collected': premium_income_totals['from_bills'],
                     'total_premiums_collected': expected_premium_income,
                     'premium_income_breakdown': {
                         'from_bills': premium_income_totals['from_bills'],
@@ -15337,6 +15729,8 @@ For claims or questions, please contact:
                 
                 # Top-level cumulative premium echo
                 'cumulative_premium': expected_premium_income,
+                'premium_income': expected_premium_income,
+                'total_collected': premium_income_totals['from_bills'],
                 
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))
@@ -15556,9 +15950,15 @@ For claims or questions, please contact:
             
             # 12. Prepare response with reconciliation summary
             total_outstanding_after = sum(
-                float(b.get('amount', b.get('amount_due', 0))) - float(b.get('amount_paid', 0))
+                get_bill_outstanding_amount(b)
                 for b in BILLING.values()
                 if b.get('status') in ['outstanding', 'partial']
+            )
+            premium_snapshot = calculate_cumulative_premium_income(exclude_suspended=True)
+            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = premium_snapshot['total']
+            PHINS_BALANCE_SHEET['total_revenue'] = round(
+                sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()),
+                2
             )
             
             # Generate detailed message based on results
@@ -15640,7 +16040,9 @@ For claims or questions, please contact:
                     'total_outstanding_amount': round(total_outstanding_after, 2),
                     'total_outstanding_bills': len([b for b in BILLING.values() if b.get('status') in ['outstanding', 'partial']]),
                     'total_paid_bills': len([b for b in BILLING.values() if b.get('status') == 'paid']),
-                    'premium_income_collected': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                    'premium_income_collected': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                    'premium_income': round(premium_snapshot['total'], 2),
+                    'total_collected': round(premium_snapshot['from_bills'], 2)
                 },
                 
                 # Errors if any
@@ -15815,8 +16217,8 @@ For claims or questions, please contact:
                 # 5. Run balance sheet reconciliation to correct any discrepancies
                 # Calculate expected values from actual (non-demo) transaction data
                 expected_premium_income = sum(
-                    float(b.get('amount_paid', 0)) for b in BILLING.values()
-                    if float(b.get('amount_paid', 0)) > 0 
+                    get_bill_amount_paid(b) for b in BILLING.values()
+                    if get_bill_amount_paid(b) > 0
                     and not is_suspended_account(b.get('customer_id', ''))
                     and 'demo' not in str(b.get('description', '')).lower()
                 )
@@ -22732,7 +23134,11 @@ For claims or questions, please contact:
                             'card_last4': card_last4,
                             'card_type': card_type
                         } if card_last4 else None,
-                        'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                        'next_billing_date': _next_billing_date_for_day(
+                            now=datetime.now(),
+                            billing_day=1,
+                            bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                        ).isoformat()
                     },
                     # Health wallet with allocation percentage - critical for data integrity
                     'health_wallet': {
@@ -22949,6 +23355,11 @@ For claims or questions, please contact:
                             policy['activation_date'] = datetime.now().isoformat()
                             if not policy.get('start_date'):
                                 policy['start_date'] = datetime.now().isoformat()
+                            ensure_policy_autopay_defaults(
+                                policy,
+                                now=datetime.now(),
+                                force_enable=True
+                            )
                         elif new_status == 'cancelled':
                             policy['cancellation_date'] = datetime.now().isoformat()
                         elif new_status == 'suspended':
@@ -23142,6 +23553,11 @@ For claims or questions, please contact:
                 policy['effective_date'] = now.isoformat()
                 policy['approved_by'] = user.get('username', 'admin')
                 policy['activation_notes'] = data.get('notes', 'Activated via admin API')
+                _, autopay_state = ensure_policy_autopay_defaults(
+                    policy,
+                    now=now,
+                    force_enable=True
+                )
                 
                 # Create/update underwriting application if exists
                 uw_id = policy.get('underwriting_id')
@@ -23168,6 +23584,14 @@ For claims or questions, please contact:
                 if not existing_bill:
                     bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
                     monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
+                    initial_due_date = (
+                        autopay_state.get('next_billing_date')
+                        or _next_billing_date_for_day(
+                            now=now,
+                            billing_day=1,
+                            bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                        ).isoformat()
+                    )
                     BILLING[bill_id] = {
                         'id': bill_id,
                         'policy_id': policy_id,
@@ -23176,7 +23600,9 @@ For claims or questions, please contact:
                         'amount': round(float(monthly_premium), 2),
                         'amount_paid': 0.0,
                         'status': 'outstanding',
-                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'auto_pay': True,
+                        'billing_frequency': policy.get('billing', {}).get('frequency', 'monthly'),
+                        'due_date': initial_due_date,
                         'created_date': now.isoformat()
                     }
                 
@@ -23310,14 +23736,39 @@ For claims or questions, please contact:
                 policy['application_date'] = app.get('submitted_date') or app.get('created_date') or now.isoformat()
                 policy['issuance_date'] = app.get('submitted_date') or app.get('created_date') or now.isoformat()
                 
+                # Carry payment setup from application into policy before defaults.
+                app_payment_setup = _coerce_dict(app.get('payment_setup', {}))
+                if app_payment_setup:
+                    merged_setup = _coerce_dict(policy.get('payment_setup'))
+                    for k, v in app_payment_setup.items():
+                        if v not in (None, ''):
+                            merged_setup[k] = v
+                    policy['payment_setup'] = merged_setup
+
+                # Ensure auto-pay defaults are always present for active policy pipeline.
+                _, autopay_state = ensure_policy_autopay_defaults(
+                    policy,
+                    now=now,
+                    force_enable=True
+                )
+
                 # PIPELINE STEP: Generate billing record
                 bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
                 monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
                 
                 # Get billing configuration from application
-                payment_setup = app.get('payment_setup', {})
-                billing_frequency = payment_setup.get('billing_frequency', 'monthly')
-                auto_pay = payment_setup.get('auto_pay', True)
+                payment_setup = _coerce_dict(policy.get('payment_setup'))
+                billing_config = _coerce_dict(policy.get('billing'))
+                billing_frequency = payment_setup.get('billing_frequency', billing_config.get('frequency', 'monthly'))
+                auto_pay = payment_setup.get('auto_pay', billing_config.get('auto_pay', True))
+                initial_due_date = (
+                    autopay_state.get('next_billing_date')
+                    or _next_billing_date_for_day(
+                        now=now,
+                        billing_day=1,
+                        bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                    ).isoformat()
+                )
                 
                 # Calculate billing amount based on frequency
                 if billing_frequency == 'quarterly':
@@ -23346,7 +23797,7 @@ For claims or questions, please contact:
                         'card_last4': payment_setup.get('card_last4'),
                         'card_type': payment_setup.get('card_type')
                     } if payment_setup.get('card_last4') else None,
-                    'due_date': (now + timedelta(days=due_days)).isoformat(),
+                    'due_date': initial_due_date,
                     'billing_period_start': now.isoformat(),
                     'billing_period_end': (now + timedelta(days=due_days)).isoformat(),
                     'created_date': now.isoformat(),
@@ -24525,6 +24976,11 @@ For claims or questions, please contact:
                 policy['status'] = 'active'
                 policy['activation_date'] = now.isoformat()
                 policy['effective_date'] = policy.get('effective_date') or now.isoformat()
+                _, autopay_state = ensure_policy_autopay_defaults(
+                    policy,
+                    now=now,
+                    force_enable=True
+                )
                 POLICIES[policy_id] = policy
                 
                 # INTEGRITY: Generate billing record if none exists
@@ -24535,6 +24991,14 @@ For claims or questions, please contact:
                 if not existing_bills:
                     bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
                     monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+                    initial_due_date = (
+                        autopay_state.get('next_billing_date')
+                        or _next_billing_date_for_day(
+                            now=now,
+                            billing_day=1,
+                            bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                        ).isoformat()
+                    )
                     
                     bill = {
                         'id': bill_id,
@@ -24544,7 +25008,8 @@ For claims or questions, please contact:
                         'amount_paid': 0.0,
                         'status': 'outstanding',
                         'billing_frequency': 'monthly',
-                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'auto_pay': True,
+                        'due_date': initial_due_date,
                         'billing_period_start': now.isoformat(),
                         'billing_period_end': (now + timedelta(days=30)).isoformat(),
                         'created_date': now.isoformat(),
@@ -24944,7 +25409,7 @@ For claims or questions, please contact:
                     total_transactions = len(bills)
                     successful = len([b for b in bills if status_in(b, ['paid', 'partial'])])
                     failed = len([b for b in bills if status_eq(b, 'failed')])
-                    total_revenue = sum(float(b.get('amount_paid', 0)) for b in bills)
+                    total_revenue = sum(get_bill_amount_paid(b) for b in bills)
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -29946,8 +30411,13 @@ For claims or questions, please contact:
                 # Parse auto-pay configuration
                 enabled = data.get('enabled', True)
                 payment_method = data.get('payment_method', 'credit_card')
-                card_last4 = data.get('card_last4', '4444')  # Default to 4444 if not provided
-                card_type = data.get('card_type', 'visa')
+                default_profile = _derive_default_autopay_profile(customer_id, policy_id)
+                card_last4 = data.get('card_last4', default_profile['card_last4'])
+                card_type = data.get('card_type', default_profile['card_type'])
+                expiry_month = str(data.get('expiry_month') or default_profile['expiry_month'])
+                expiry_year = str(data.get('expiry_year') or default_profile['expiry_year'])
+                cvc_last3 = str(data.get('cvc_last3') or default_profile['cvc_last3'])
+                payment_token = str(data.get('payment_token') or default_profile['payment_token'])
                 billing_frequency = data.get('billing_frequency', 'monthly')
                 billing_day = int(data.get('billing_day', 1))
                 max_amount = data.get('max_amount')
@@ -29960,14 +30430,11 @@ For claims or questions, please contact:
                 
                 # Calculate next billing date
                 now = datetime.now()
-                if now.day <= billing_day:
-                    next_billing = now.replace(day=billing_day)
-                else:
-                    # Next month
-                    if now.month == 12:
-                        next_billing = now.replace(year=now.year + 1, month=1, day=billing_day)
-                    else:
-                        next_billing = now.replace(month=now.month + 1, day=billing_day)
+                next_billing = _next_billing_date_for_day(
+                    now=now,
+                    billing_day=billing_day,
+                    bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                )
                 
                 # Build auto-pay configuration
                 auto_pay_config = {
@@ -29975,12 +30442,17 @@ For claims or questions, please contact:
                     'payment_method': payment_method,
                     'card_last4': card_last4,
                     'card_type': card_type,
+                    'expiry_month': expiry_month,
+                    'expiry_year': expiry_year,
+                    'cvc_last3': cvc_last3,
+                    'payment_token': payment_token,
                     'billing_frequency': billing_frequency,
                     'billing_day': billing_day,
                     'max_amount': max_amount,
                     'notify_before': notify_before,
                     'ai_optimization': ai_optimization,
                     'next_billing_date': next_billing.isoformat(),
+                    'bootstrap_date': AUTOPAY_BOOTSTRAP_DATE.strftime('%Y-%m-%d'),
                     'configured_at': now.isoformat(),
                     'configured_by': data.get('configured_by', 'customer')
                 }
@@ -29994,6 +30466,10 @@ For claims or questions, please contact:
                     'billing_day': billing_day,
                     'card_last4': card_last4,
                     'card_type': card_type,
+                    'expiry_month': expiry_month,
+                    'expiry_year': expiry_year,
+                    'cvc_last3': cvc_last3,
+                    'payment_token': payment_token,
                     'payment_method': payment_method,
                     'next_billing_date': next_billing.isoformat()
                 })
@@ -30111,16 +30587,29 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
                     return
                 
+                if status_eq(policy, 'active'):
+                    changed, _ = ensure_policy_autopay_defaults(
+                        policy,
+                        now=datetime.now(),
+                        force_enable=True
+                    )
+                    if changed:
+                        POLICIES[policy_id] = policy
+
                 # Get auto-pay settings from policy
-                payment_setup = policy.get('payment_setup', {})
-                billing_config = policy.get('billing', {})
-                auto_pay_config = billing_config.get('auto_pay_config', {})
+                payment_setup = _coerce_dict(policy.get('payment_setup'))
+                billing_config = _coerce_dict(policy.get('billing'))
+                auto_pay_config = _coerce_dict(billing_config.get('auto_pay_config'))
                 
                 enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
                 billing_frequency = payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly')
                 billing_day = payment_setup.get('billing_day', 1)
-                card_last4 = payment_setup.get('card_last4', '4444')
-                card_type = payment_setup.get('card_type', 'card')
+                default_profile = _derive_default_autopay_profile(
+                    str(policy.get('customer_id') or 'UNKNOWN'),
+                    str(policy.get('id') or policy_id)
+                )
+                card_last4 = payment_setup.get('card_last4', default_profile['card_last4'])
+                card_type = payment_setup.get('card_type', default_profile['card_type'])
                 payment_method = payment_setup.get('payment_method', 'credit_card')
                 next_billing_date = payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
                 
@@ -30199,6 +30688,10 @@ For claims or questions, please contact:
                 
                 now = datetime.now()
                 today = now.strftime('%Y-%m-%d')
+                autopay_backfill = enforce_autopay_defaults_for_active_policies(
+                    now=now,
+                    force_enable=True
+                )
                 
                 # Find all policies with auto-pay due
                 policies_to_process = []
@@ -30207,9 +30700,11 @@ For claims or questions, please contact:
                         continue
                     if specific_customer and policy.get('customer_id') != specific_customer:
                         continue
+                    if not status_eq(policy, 'active'):
+                        continue
                     
-                    payment_setup = policy.get('payment_setup', {})
-                    billing_config = policy.get('billing', {})
+                    payment_setup = _coerce_dict(policy.get('payment_setup'))
+                    billing_config = _coerce_dict(policy.get('billing'))
                     
                     auto_pay_enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
                     if not auto_pay_enabled:
@@ -30235,7 +30730,8 @@ For claims or questions, please contact:
                         'success': True,
                         'message': 'No auto-pay payments due',
                         'processed': 0,
-                        'dry_run': dry_run
+                        'dry_run': dry_run,
+                        'autopay_backfill': autopay_backfill
                     }).encode('utf-8'))
                     return
                 
@@ -30249,13 +30745,13 @@ For claims or questions, please contact:
                     customer_id = item['customer_id']
                     
                     try:
-                        payment_setup = policy.get('payment_setup', {})
-                        billing_config = policy.get('billing', {})
+                        payment_setup = _coerce_dict(policy.get('payment_setup'))
+                        billing_config = _coerce_dict(policy.get('billing'))
                         
                         # Get payment details
                         payment_method = payment_setup.get('payment_method', 'credit_card')
                         card_last4 = payment_setup.get('card_last4', '4444')
-                        card_type = payment_setup.get('card_type', 'card')
+                        card_type = payment_setup.get('card_type', 'mastercard')
                         billing_frequency = payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly')
                         billing_day = payment_setup.get('billing_day', 1)
                         max_amount = billing_config.get('auto_pay_config', {}).get('max_amount')
@@ -30314,25 +30810,21 @@ For claims or questions, please contact:
                         BILLING[bill_id] = bill
                         
                         # Calculate next billing date
+                        normalized_now = now.replace(hour=0, minute=0, second=0, microsecond=0)
                         if billing_frequency == 'monthly':
-                            if now.month == 12:
-                                next_bill = now.replace(year=now.year + 1, month=1, day=billing_day)
-                            else:
-                                next_bill = now.replace(month=now.month + 1, day=billing_day)
+                            next_bill = _add_months_for_billing(normalized_now, 1, _normalize_billing_day(billing_day))
                         elif billing_frequency == 'quarterly':
-                            next_month = now.month + 3
-                            next_year = now.year
-                            if next_month > 12:
-                                next_month -= 12
-                                next_year += 1
-                            next_bill = now.replace(year=next_year, month=next_month, day=billing_day)
+                            next_bill = _add_months_for_billing(normalized_now, 3, _normalize_billing_day(billing_day))
                         else:  # annual
-                            next_bill = now.replace(year=now.year + 1, day=billing_day)
+                            next_bill = _add_months_for_billing(normalized_now, 12, _normalize_billing_day(billing_day))
                         
                         # Update policy next billing date
+                        if 'payment_setup' not in policy or not isinstance(policy.get('payment_setup'), dict):
+                            policy['payment_setup'] = {}
                         policy['payment_setup']['next_billing_date'] = next_bill.isoformat()
-                        if 'billing' in policy:
-                            policy['billing']['next_billing_date'] = next_bill.isoformat()
+                        if 'billing' not in policy or not isinstance(policy.get('billing'), dict):
+                            policy['billing'] = {}
+                        policy['billing']['next_billing_date'] = next_bill.isoformat()
                         POLICIES[pol_id] = policy
                         
                         # Record premium revenue
@@ -30390,6 +30882,7 @@ For claims or questions, please contact:
                     'total_amount': total_amount,
                     'payments': payments_processed,
                     'failed': payments_failed,
+                    'autopay_backfill': autopay_backfill,
                     'message': f"{'Would process' if dry_run else 'Processed'} {total_processed} auto-pay payments totaling ${total_amount:,.2f}"
                 }
                 
@@ -32261,6 +32754,20 @@ def run_server(port: int = PORT) -> None:
     initialize_balance_sheet()
     print(f"   Claims Reserve: ${PHINS_BALANCE_SHEET['claims_reserve']:,.2f}")
     print(f"   Operating Reserve: ${PHINS_BALANCE_SHEET['operating_reserve']:,.2f}")
+
+    # Enforce global auto-pay defaults for active policies (bootstrap run).
+    autopay_sync = enforce_autopay_defaults_for_active_policies(
+        now=datetime.now(),
+        force_enable=True
+    )
+    if autopay_sync.get('updated', 0) > 0:
+        print(
+            f"🤖 Auto-pay defaults synchronized: {autopay_sync['updated']} updated "
+            f"(checked {autopay_sync['checked']})"
+        )
+        save_ledger_data()
+    else:
+        print(f"🤖 Auto-pay defaults verified: {autopay_sync['checked']} active policies checked")
     
     # Start periodic save thread
     schedule_periodic_save()
@@ -32565,7 +33072,11 @@ def run_server(port: int = PORT) -> None:
                         'card_last4': '4444',
                         'card_type': 'mastercard'
                     },
-                    'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                    'next_billing_date': _next_billing_date_for_day(
+                        now=datetime.now(),
+                        billing_day=1,
+                        bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                    ).isoformat()
                 },
                 'health_wallet': {
                     'enabled': True,
@@ -32666,7 +33177,11 @@ def run_server(port: int = PORT) -> None:
                         'frequency': 'monthly',
                         'auto_pay': True,
                         'payment_method': {'type': 'card', 'card_last4': '4444', 'card_type': 'mastercard'},
-                        'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                        'next_billing_date': _next_billing_date_for_day(
+                            now=datetime.now(),
+                            billing_day=1,
+                            bootstrap_date=AUTOPAY_BOOTSTRAP_DATE
+                        ).isoformat()
                     },
                     'health_wallet': {'enabled': True, 'monthly_deposit': 200},
                     'coverages': {

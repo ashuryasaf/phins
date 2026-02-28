@@ -18,8 +18,12 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 import logging
 import uuid
+import hashlib
 
 logger = logging.getLogger(__name__)
+
+AUTOPAY_BOOTSTRAP_DATE = datetime(2026, 3, 1)
+AUTOPAY_DEFAULT_CARD_NUMBER = "5555555555554444"
 
 
 def _get_status_lower(item: Dict) -> str:
@@ -36,6 +40,66 @@ def _status_eq(item: Dict, *statuses: str) -> bool:
 def _status_in(item: Dict, statuses: list) -> bool:
     """Case-insensitive check if item's status is in a list of statuses."""
     return _status_eq(item, *statuses)
+
+
+def _next_monthly_autopay_date(now: Optional[datetime] = None, billing_day: int = 1) -> datetime:
+    """Return next billing date on a safe monthly day (default 1st)."""
+    current = now or datetime.now()
+    day = 1 if billing_day < 1 or billing_day > 28 else billing_day
+
+    if current.day <= day:
+        candidate = current.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        if current.month == 12:
+            candidate = current.replace(
+                year=current.year + 1,
+                month=1,
+                day=day,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+        else:
+            candidate = current.replace(
+                month=current.month + 1,
+                day=day,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+    if candidate < AUTOPAY_BOOTSTRAP_DATE:
+        candidate = AUTOPAY_BOOTSTRAP_DATE
+    return candidate
+
+
+def _build_default_payment_setup(customer_id: str, policy_id: str) -> Dict[str, Any]:
+    """Create deterministic placeholder card profile for auto-pay defaults."""
+    seed = hashlib.sha256(f"{customer_id}:{policy_id}".encode("utf-8")).hexdigest()
+    expiry_month = (int(seed[0:2], 16) % 12) + 1
+    expiry_year = 2027 + (int(seed[2:4], 16) % 6)
+    cvc_last3 = (int(seed[4:8], 16) % 900) + 100
+    payment_token = hashlib.sha256(
+        (
+            f"{AUTOPAY_DEFAULT_CARD_NUMBER}|{customer_id}|{policy_id}|"
+            f"{expiry_month:02d}|{expiry_year}|{cvc_last3}"
+        ).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        'auto_pay': True,
+        'payment_method': 'credit_card',
+        'card_last4': '4444',
+        'card_type': 'mastercard',
+        'expiry_month': f"{expiry_month:02d}",
+        'expiry_year': str(expiry_year),
+        'cvc_last3': str(cvc_last3),
+        'payment_token': payment_token,
+        'billing_frequency': 'monthly',
+        'billing_day': 1,
+    }
 
 
 class PipelineService:
@@ -337,6 +401,7 @@ class PipelineService:
         """Auto-generate initial bill when policy is activated"""
         now = datetime.now()
         bill_id = self._generate_id('BILL')
+        next_billing_date = _next_monthly_autopay_date(now=now, billing_day=1)
         
         # Get premium - handle both dict and object access
         if isinstance(policy, dict):
@@ -353,13 +418,55 @@ class PipelineService:
             'amount': float(monthly_premium) if monthly_premium else 0.0,
             'amount_paid': 0.0,
             'status': 'outstanding',
-            'due_date': (now + timedelta(days=30)).isoformat(),
+            'due_date': next_billing_date.isoformat(),
+            'auto_pay': True,
+            'billing_frequency': 'monthly',
+            'billing_day': 1,
             'late_fee': 0.0,
             'created_date': now.isoformat(),
             'updated_date': now.isoformat()
         }
         
         self._billing[bill_id] = bill
+
+        if isinstance(policy, dict):
+            payment_setup = policy.get('payment_setup')
+            if not isinstance(payment_setup, dict):
+                payment_setup = {}
+            default_setup = _build_default_payment_setup(customer_id or 'UNKNOWN', policy_id)
+            payment_setup = {**default_setup, **payment_setup}
+            payment_setup['next_billing_date'] = next_billing_date.isoformat()
+            payment_setup['auto_pay'] = True
+            payment_setup['billing_frequency'] = 'monthly'
+            payment_setup['billing_day'] = 1
+
+            billing_cfg = policy.get('billing')
+            if not isinstance(billing_cfg, dict):
+                billing_cfg = {}
+            auto_pay_cfg = billing_cfg.get('auto_pay_config')
+            if not isinstance(auto_pay_cfg, dict):
+                auto_pay_cfg = {}
+            auto_pay_cfg.update({
+                'enabled': True,
+                'payment_method': 'credit_card',
+                'card_last4': payment_setup.get('card_last4'),
+                'card_type': payment_setup.get('card_type'),
+                'billing_frequency': 'monthly',
+                'billing_day': 1,
+                'next_billing_date': next_billing_date.isoformat(),
+                'bootstrap_date': AUTOPAY_BOOTSTRAP_DATE.strftime('%Y-%m-%d'),
+            })
+            billing_cfg.update({
+                'auto_pay': True,
+                'frequency': 'monthly',
+                'billing_day': 1,
+                'next_billing_date': next_billing_date.isoformat(),
+                'auto_pay_config': auto_pay_cfg,
+            })
+
+            policy['payment_setup'] = payment_setup
+            policy['billing'] = billing_cfg
+            self._policies[policy_id] = policy
         
         self._log_event('system', 'generate_bill', 'billing', bill_id, {
             'policy_id': policy_id,
