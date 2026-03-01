@@ -192,5 +192,25 @@
     "customer_id": "CUST-99509",
     "email": "invitation-flow-secondary@example.com",
     "registered_at": "2026-02-28T23:10:50.231275"
+  },
+  {
+    "username": "pipeline_test_221116@example.com",
+    "password_hash": "aaa97162371d6e89c23a9f557fe8560ff2203f6260a2946e87cc975ed6988c9c",
+    "password_salt": "6f1dc91738bc707f778031a72d3a3499",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-97250",
+    "email": "pipeline_test_221116@example.com",
+    "registered_at": "2026-03-01T22:11:16.978318"
+  },
+  {
+    "username": "premium_test_221118@example.com",
+    "password_hash": "77375ef87b76c73e961563cfd2cc52e6b3f82d1806b7712d96166ddc0c316f95",
+    "password_salt": "302b7012dcb662f5ade9af3b7c020be0",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-70605",
+    "email": "premium_test_221118@example.com",
+    "registered_at": "2026-03-01T22:11:18.046816"
   }
 ]
