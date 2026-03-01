@@ -14628,6 +14628,13 @@ For claims or questions, please contact:
                 return
             
             initialize_balance_sheet()
+
+            # Sync premium income from authoritative billing/ledger sources
+            _cumulative = calculate_cumulative_premium_income(exclude_suspended=True)
+            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = _cumulative['total']
+            PHINS_BALANCE_SHEET['total_revenue'] = round(
+                sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2
+            )
             
             # Recent claims paid
             recent_claims = [
@@ -14659,6 +14666,14 @@ For claims or questions, please contact:
                 return
             
             initialize_balance_sheet()
+
+            # Sync premium income from authoritative billing/ledger sources so
+            # financial ratios and discrepancy checks use current actuals.
+            _cumulative_ai = calculate_cumulative_premium_income(exclude_suspended=True)
+            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = _cumulative_ai['total']
+            PHINS_BALANCE_SHEET['total_revenue'] = round(
+                sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2
+            )
             
             # ========== AI/BI FINANCIAL ANALYSIS ==========
             
@@ -30343,8 +30358,11 @@ For claims or questions, please contact:
                                 amount=amount,
                                 description=f"Auto-pay premium for {pol_id}"
                             )
-                        except:
-                            pass
+                        except Exception as exc:
+                            print(
+                                f"[WARN] Auto-pay: could not record premium revenue on balance "
+                                f"sheet for policy {pol_id} (customer {customer_id}): {exc}"
+                            )
                         
                         # Record on transaction ledger
                         payment_tx = record_transaction(
