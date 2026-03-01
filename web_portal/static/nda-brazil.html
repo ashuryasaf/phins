@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS NDA — Brazil</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue-dark:  #0d47a1;
+      --blue-mid:   #1565c0;
+      --blue-light: #1976d2;
+      --accent-1:   #42a5f5;
+      --accent-2:   #64b5f6;
+      --gradient-hdr: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #e8edf5;
+      color: #1a202c;
+      font-size: 10pt;
+      line-height: 1.6;
+    }
+
+    /* ── DOWNLOAD BUTTON ── */
+    .download-btn {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 9999;
+      background: var(--gradient-hdr);
+      color: #fff;
+      border: none;
+      border-radius: 30px;
+      padding: 12px 22px;
+      font-size: 9.5pt;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(13,71,161,0.4);
+      letter-spacing: .03em;
+      transition: opacity .2s, transform .2s;
+    }
+    .download-btn:hover { opacity: .9; transform: translateY(-2px); }
+
+    /* ── A4 PAGE ── */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 20px auto;
+      background: #fff;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      background: var(--gradient-hdr);
+      color: #fff;
+      padding: 18px 28px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .logo-row { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 36px; height: 36px;
+      border-radius: 9px;
+      background: var(--gradient-logo);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    }
+    .logo-text { font-size: 18pt; font-weight: 900; letter-spacing: .06em; }
+    .logo-tagline { font-size: 7.5pt; opacity: .8; letter-spacing: .1em; text-transform: uppercase; margin-top: 1px; }
+    .doc-ref { font-size: 7.5pt; opacity: .75; text-align: right; }
+
+    /* ── PAGE CONTENT ── */
+    .page-content { padding: 28px 36px 80px; flex: 1; }
+
+    /* ── PAGE FOOTER ── */
+    .page-footer {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: var(--gradient-hdr);
+      color: rgba(255,255,255,.75);
+      font-size: 7pt;
+      padding: 8px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── COVER PAGE ── */
+    .cover-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 36px 80px;
+      position: relative;
+    }
+    .watermark {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) rotate(-30deg);
+      font-size: 72pt;
+      font-weight: 900;
+      color: rgba(13,71,161,0.06);
+      letter-spacing: .12em;
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .cover-flag { font-size: 56px; margin-bottom: 20px; }
+    .cover-nda-title {
+      font-size: 20pt;
+      font-weight: 900;
+      color: var(--blue-dark);
+      text-align: center;
+      letter-spacing: .04em;
+      margin-bottom: 10px;
+    }
+    .cover-subtitle {
+      font-size: 11pt;
+      color: var(--blue-mid);
+      text-align: center;
+      margin-bottom: 28px;
+      max-width: 380px;
+      line-height: 1.5;
+    }
+    .cover-divider {
+      width: 80px; height: 3px;
+      background: var(--gradient-hdr);
+      border-radius: 2px;
+      margin: 0 auto 28px;
+    }
+    .cover-meta-table {
+      width: 100%;
+      max-width: 440px;
+      border-collapse: collapse;
+      margin-bottom: 28px;
+    }
+    .cover-meta-table td {
+      padding: 7px 12px;
+      font-size: 9pt;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .cover-meta-table td:first-child {
+      font-weight: 700;
+      color: var(--blue-dark);
+      width: 140px;
+    }
+    .confid-badge {
+      background: #fff3e0;
+      border: 1.5px solid #ff9800;
+      border-radius: 8px;
+      color: #e65100;
+      font-size: 9pt;
+      font-weight: 700;
+      padding: 6px 18px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-top: 10px;
+    }
+    .cover-contact {
+      font-size: 8pt;
+      color: #718096;
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    /* ── SECTION HEADINGS ── */
+    .section-title {
+      font-size: 13pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      border-bottom: 2.5px solid var(--accent-1);
+      padding-bottom: 6px;
+      margin: 22px 0 14px;
+    }
+    .section-title:first-child { margin-top: 0; }
+
+    /* ── CLAUSE ── */
+    .clause { margin-bottom: 14px; }
+    .clause-num {
+      font-weight: 700;
+      color: var(--blue-mid);
+      font-size: 9.5pt;
+      display: inline;
+    }
+    .clause-title {
+      font-weight: 700;
+      font-size: 9.5pt;
+      color: #1a202c;
+      display: inline;
+    }
+    .clause-body {
+      margin-top: 4px;
+      font-size: 9pt;
+      color: #2d3748;
+      line-height: 1.65;
+    }
+    .clause-body ul {
+      margin: 6px 0 0 18px;
+    }
+    .clause-body ul li {
+      margin-bottom: 4px;
+    }
+
+    /* ── SIGNATURE PAGE ── */
+    .sig-intro {
+      font-size: 9.5pt;
+      color: #2d3748;
+      margin-bottom: 28px;
+      line-height: 1.65;
+    }
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-bottom: 32px;
+    }
+    .sig-block {
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 20px 18px;
+    }
+    .sig-block-title {
+      font-size: 9pt;
+      font-weight: 700;
+      color: var(--blue-dark);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--accent-1);
+    }
+    .sig-field {
+      margin-bottom: 14px;
+    }
+    .sig-line {
+      border-bottom: 1.5px solid #4a5568;
+      height: 28px;
+      margin-bottom: 4px;
+    }
+    .sig-label {
+      font-size: 7.5pt;
+      color: #718096;
+      letter-spacing: .04em;
+    }
+    .sig-filled {
+      font-size: 9pt;
+      font-weight: 600;
+      color: #2d3748;
+      padding-top: 4px;
+    }
+
+    /* ── SCHEDULE A ── */
+    .schedule-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .schedule-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 9pt;
+      color: #2d3748;
+    }
+    .schedule-list li:last-child { border-bottom: none; }
+    .sched-num {
+      background: var(--gradient-hdr);
+      color: #fff;
+      border-radius: 50%;
+      width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 7.5pt;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .sched-item-title { font-weight: 700; color: var(--blue-dark); }
+    .sched-item-desc { font-size: 8pt; color: #718096; margin-top: 2px; }
+
+    /* ── PRINT ── */
+    @page {
+      size: A4;
+      margin: 0;
+    }
+    @media print {
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      body { background: #fff; }
+      .page { margin: 0; box-shadow: none; page-break-after: always; }
+      .download-btn { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<button class="download-btn" onclick="window.print()">📥 Download as PDF</button>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 1 — COVER
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="doc-ref">
+      NDA-PHINS-BR-2026-001<br>
+      March 1, 2026
+    </div>
+  </div>
+
+  <div class="cover-body">
+    <div class="watermark">CONFIDENTIAL</div>
+
+    <div class="cover-flag">🇧🇷</div>
+    <div class="cover-nda-title">MUTUAL NON-DISCLOSURE<br>AGREEMENT</div>
+    <div class="cover-subtitle">Between PHINS Insurance Company and<br>Superintendência de Seguros Privados (SUSEP) / Comissão de Valores Mobiliários (CVM)</div>
+    <div class="cover-divider"></div>
+
+    <table class="cover-meta-table">
+      <tr><td>NDA Reference</td><td>NDA-PHINS-BR-2026-001</td></tr>
+      <tr><td>Effective Date</td><td>March 1, 2026</td></tr>
+      <tr><td>Jurisdiction</td><td>Brazil</td></tr>
+      <tr><td>Governing Law</td><td>Laws of Brazil</td></tr>
+      <tr><td>Term</td><td>Five (5) years from Effective Date</td></tr>
+    </table>
+
+    <div class="confid-badge">🔒 CONFIDENTIAL — NOT FOR DISTRIBUTION</div>
+    <div class="cover-contact">
+      PHINS Insurance Company Ltd. &nbsp;|&nbsp; asaf@phins.ai &nbsp;|&nbsp; phins.ai
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>NDA-PHINS-BR-2026-001 &nbsp;|&nbsp; CONFIDENTIAL</span>
+    <span>Page 1 of 5</span>
+    <span>© 2026 PHINS Insurance Company</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 2 — NDA TERMS (Part 1)
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="doc-ref">
+      NDA-PHINS-BR-2026-001<br>
+      Mutual Non-Disclosure Agreement
+    </div>
+  </div>
+
+  <div class="page-content">
+    <div class="section-title">Terms and Conditions</div>
+
+    <div class="clause">
+      <div class="clause-num">1. </div><div class="clause-title">PARTIES</div>
+      <div class="clause-body">
+        This Mutual Non-Disclosure Agreement ("Agreement") is entered into as of March 1, 2026 ("Effective Date") by and between:
+        <ul>
+          <li><strong>PHINS Insurance Company Ltd.</strong> ("Disclosing Party"), a company duly incorporated and operating in the field of digital insurance and financial technology, with registered contact address at asaf@phins.ai, phins.ai; and</li>
+          <li><strong>Superintendência de Seguros Privados (SUSEP) / Comissão de Valores Mobiliários (CVM)</strong> ("Receiving Party"), the regulatory authority with jurisdiction over insurance and financial markets in Brazil.</li>
+        </ul>
+        Each of the Disclosing Party and the Receiving Party may be referred to individually as a "Party" and collectively as the "Parties."
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">2. </div><div class="clause-title">PURPOSE</div>
+      <div class="clause-body">
+        The purpose of this Agreement is to protect proprietary and confidential information shared in connection with PHINS's application for insurance licensing, regulatory review, and/or market entry evaluation in Brazil. The Parties agree to share certain confidential information solely to facilitate regulatory due diligence, compliance assessment, and the evaluation of PHINS's insurance platform.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">3. </div><div class="clause-title">DEFINITION OF CONFIDENTIAL INFORMATION</div>
+      <div class="clause-body">
+        "Confidential Information" means all proprietary, non-public, and sensitive information disclosed by either Party to the other, in any form or medium, including but not limited to:
+        <ul>
+          <li>Actuarial pricing models and premium calculation methodologies</li>
+          <li>AI/ML algorithms for underwriting, claims processing, and fraud detection</li>
+          <li>Customer data architecture and data protection frameworks</li>
+          <li>Financial projections, business plans, and revenue forecasts</li>
+          <li>Technology platform architecture and source code descriptions</li>
+          <li>Investment portfolio strategies and algorithmic trading models</li>
+          <li>Health Wallet ecosystem design and supplier marketplace architecture</li>
+          <li>NFT transaction ledger and blockchain audit trail specifications</li>
+          <li>Executive pitch documents and appendices provided during regulatory review</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">4. </div><div class="clause-title">OBLIGATIONS OF THE RECEIVING PARTY</div>
+      <div class="clause-body">
+        The Receiving Party agrees and undertakes to:
+        <ul>
+          <li>Not disclose Confidential Information to any third party without the prior written consent of the Disclosing Party</li>
+          <li>Use Confidential Information solely for the purposes of regulatory evaluation as described in Section 2</li>
+          <li>Restrict access to Confidential Information to authorized personnel on a strict need-to-know basis</li>
+          <li>Apply at least the same degree of care to protect Confidential Information as it applies to its own confidential information (but in no event less than reasonable care)</li>
+          <li>Promptly notify the Disclosing Party upon becoming aware of any unauthorized disclosure or misappropriation of Confidential Information</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">5. </div><div class="clause-title">EXCLUSIONS FROM CONFIDENTIAL INFORMATION</div>
+      <div class="clause-body">
+        The obligations of confidentiality shall not apply to information that the Receiving Party can demonstrate:
+        <ul>
+          <li>Is or becomes part of the public domain through no fault or breach of this Agreement by the Receiving Party</li>
+          <li>Was known to the Receiving Party prior to its disclosure under this Agreement</li>
+          <li>Was independently developed by the Receiving Party without reference to or use of the Confidential Information</li>
+          <li>Was received from a third party without any restriction on disclosure</li>
+          <li>Is required to be disclosed by applicable law, regulation, or order of a court of competent jurisdiction, provided that the Receiving Party gives the Disclosing Party prompt prior written notice to allow the Disclosing Party to seek a protective order</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">6. </div><div class="clause-title">TERM</div>
+      <div class="clause-body">
+        This Agreement shall remain in full force and effect for a period of five (5) years from the Effective Date, unless earlier terminated by either Party upon thirty (30) days' prior written notice to the other Party. The obligations of confidentiality shall survive any termination or expiration of this Agreement.
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>NDA-PHINS-BR-2026-001 &nbsp;|&nbsp; CONFIDENTIAL</span>
+    <span>Page 2 of 5</span>
+    <span>© 2026 PHINS Insurance Company</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 3 — NDA TERMS (Part 2)
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="doc-ref">
+      NDA-PHINS-BR-2026-001<br>
+      Mutual Non-Disclosure Agreement
+    </div>
+  </div>
+
+  <div class="page-content">
+    <div class="section-title">Terms and Conditions (continued)</div>
+
+    <div class="clause">
+      <div class="clause-num">7. </div><div class="clause-title">RETURN OR DESTRUCTION OF MATERIALS</div>
+      <div class="clause-body">
+        Upon termination of this Agreement or upon written request by the Disclosing Party, the Receiving Party shall promptly return or destroy all tangible materials constituting or containing Confidential Information, including all copies, summaries, and extracts thereof. The Receiving Party shall provide written certification of such destruction within ten (10) business days upon request.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">8. </div><div class="clause-title">GOVERNING LAW AND JURISDICTION</div>
+      <div class="clause-body">
+        This Agreement shall be governed by and construed in accordance with the Laws of Brazil, without regard to its conflict of law principles. Any dispute arising out of or in connection with this Agreement shall be subject to the exclusive jurisdiction of the Courts of São Paulo.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">9. </div><div class="clause-title">REMEDIES</div>
+      <div class="clause-body">
+        Each Party acknowledges that any breach of this Agreement may cause irreparable harm to the other Party for which monetary damages would be an inadequate remedy. Accordingly, the Disclosing Party shall be entitled to seek equitable relief, including without limitation injunction and specific performance, in addition to all other remedies available at law or in equity, without the requirement of posting a bond or other security.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">10. </div><div class="clause-title">ENTIRE AGREEMENT</div>
+      <div class="clause-body">
+        This Agreement constitutes the entire agreement between the Parties with respect to the subject matter hereof and supersedes all prior or contemporaneous agreements, understandings, negotiations, and representations, whether written or oral. No amendment, modification, or waiver of any provision of this Agreement shall be effective unless made in writing and duly signed by authorized representatives of both Parties.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">11. </div><div class="clause-title">SEVERABILITY</div>
+      <div class="clause-body">
+        If any provision of this Agreement is found by a court of competent jurisdiction to be invalid, illegal, or unenforceable, such provision shall be modified to the minimum extent necessary to make it enforceable, or if modification is not possible, severed from this Agreement, and the remaining provisions shall continue in full force and effect.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">12. </div><div class="clause-title">NO LICENSE OR TRANSFER OF RIGHTS</div>
+      <div class="clause-body">
+        Nothing in this Agreement shall be construed to grant the Receiving Party any license, right, title, or interest in or to any intellectual property, patent, trademark, copyright, trade secret, or other proprietary right of the Disclosing Party. The disclosure of Confidential Information shall not create any obligation to license, sell, transfer, or assign any intellectual property to the Receiving Party.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">13. </div><div class="clause-title">NO WAIVER</div>
+      <div class="clause-body">
+        No failure or delay by either Party in exercising any right, power, or remedy under this Agreement shall operate as a waiver thereof. No single or partial exercise of any right, power, or remedy shall preclude any other or further exercise thereof or the exercise of any other right, power, or remedy.
+      </div>
+    </div>
+
+    <div class="clause">
+      <div class="clause-num">14. </div><div class="clause-title">NOTICES</div>
+      <div class="clause-body">
+        All notices under this Agreement shall be in writing and delivered by email with delivery confirmation or by registered mail to the addresses of the respective Parties as set forth in Section 1, or to such other address as a Party may designate by notice.
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>NDA-PHINS-BR-2026-001 &nbsp;|&nbsp; CONFIDENTIAL</span>
+    <span>Page 3 of 5</span>
+    <span>© 2026 PHINS Insurance Company</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 4 — SIGNATURE PAGE
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="doc-ref">
+      NDA-PHINS-BR-2026-001<br>
+      Signature Page
+    </div>
+  </div>
+
+  <div class="page-content">
+    <div class="section-title">Signatures</div>
+
+    <p class="sig-intro">
+      IN WITNESS WHEREOF, the Parties have executed this Mutual Non-Disclosure Agreement as of the Effective Date first written above. By signing below, each Party confirms that it has read, understood, and agreed to be bound by the terms and conditions of this Agreement.
+    </p>
+
+    <div class="sig-grid">
+      <!-- PHINS Block -->
+      <div class="sig-block">
+        <div class="sig-block-title">PHINS Insurance Company Ltd.<br><small style="font-weight:400;color:#718096;">Disclosing Party</small></div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Signature</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-filled">Ashury Asaf</div>
+          <div class="sig-label">Printed Name</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-filled">Chief Executive Officer</div>
+          <div class="sig-label">Title</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Date</div>
+        </div>
+      </div>
+
+      <!-- Authority Block -->
+      <div class="sig-block">
+        <div class="sig-block-title">SUSEP / CVM<br><small style="font-weight:400;color:#718096;">Receiving Party</small></div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Signature</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Printed Name</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Title</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Date</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Witness Section -->
+    <div class="section-title" style="margin-top:28px;">Witness (Optional)</div>
+    <div class="sig-grid">
+      <div class="sig-block">
+        <div class="sig-block-title">Witness — PHINS</div>
+        <div class="sig-field"><div class="sig-line"></div><div class="sig-label">Signature</div></div>
+        <div class="sig-field"><div class="sig-line"></div><div class="sig-label">Printed Name</div></div>
+        <div class="sig-field"><div class="sig-line"></div><div class="sig-label">Date</div></div>
+      </div>
+      <div class="sig-block">
+        <div class="sig-block-title">Witness — SUSEP / CVM</div>
+        <div class="sig-field"><div class="sig-line"></div><div class="sig-label">Signature</div></div>
+        <div class="sig-field"><div class="sig-line"></div><div class="sig-label">Printed Name</div></div>
+        <div class="sig-field"><div class="sig-line"></div><div class="sig-label">Date</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>NDA-PHINS-BR-2026-001 &nbsp;|&nbsp; CONFIDENTIAL</span>
+    <span>Page 4 of 5</span>
+    <span>© 2026 PHINS Insurance Company</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 5 — SCHEDULE A
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="doc-ref">
+      NDA-PHINS-BR-2026-001<br>
+      Schedule A
+    </div>
+  </div>
+
+  <div class="page-content">
+    <div class="section-title">Schedule A — List of Confidential Materials</div>
+
+    <p style="font-size:9pt;color:#4a5568;margin-bottom:18px;">
+      The following documents and materials are designated as Confidential Information under this Agreement. All materials listed herein are disclosed solely for the purpose of regulatory evaluation by Superintendência de Seguros Privados (SUSEP) / Comissão de Valores Mobiliários (CVM) in connection with PHINS's market entry into Brazil.
+    </p>
+
+    <ul class="schedule-list">
+      <li>
+        <span class="sched-num">1</span>
+        <div>
+          <div class="sched-item-title">Executive Platform Summary</div>
+          <div class="sched-item-desc">9-page executive pitch deck covering PHINS's insurance platform, value proposition, and strategic roadmap</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">2</span>
+        <div>
+          <div class="sched-item-title">Actuarial Pricing Model Documentation</div>
+          <div class="sched-item-desc">Detailed actuarial assumptions, premium calculation methodologies, risk pooling strategies, and loss ratio projections</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">3</span>
+        <div>
+          <div class="sched-item-title">AI Architecture &amp; Automation Specifications</div>
+          <div class="sched-item-desc">Machine learning models for underwriting, claims processing, fraud detection, and customer risk profiling</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">4</span>
+        <div>
+          <div class="sched-item-title">Financial Projections (3-year and 25-year forecasts)</div>
+          <div class="sched-item-desc">Revenue forecasts, capital adequacy projections, combined ratio analysis, and profitability timelines</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">5</span>
+        <div>
+          <div class="sched-item-title">Platform Technical Architecture</div>
+          <div class="sched-item-desc">System architecture diagrams, API specifications, infrastructure design, and security architecture</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">6</span>
+        <div>
+          <div class="sched-item-title">Customer Data Protection Framework</div>
+          <div class="sched-item-desc">Data governance policies, privacy-by-design architecture, compliance with Brazil data protection regulations</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">7</span>
+        <div>
+          <div class="sched-item-title">Health Wallet Ecosystem Design</div>
+          <div class="sched-item-desc">Health savings account architecture, benefit administration workflows, and wellness reward mechanisms</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">8</span>
+        <div>
+          <div class="sched-item-title">Supplier Marketplace Specifications</div>
+          <div class="sched-item-desc">Healthcare provider network design, supplier onboarding protocols, and digital marketplace architecture</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">9</span>
+        <div>
+          <div class="sched-item-title">Investment Portfolio Strategy</div>
+          <div class="sched-item-desc">Asset allocation models, algorithmic trading specifications, and insurance reserve investment strategies</div>
+        </div>
+      </li>
+      <li>
+        <span class="sched-num">10</span>
+        <div>
+          <div class="sched-item-title">Regulatory Compliance Assessment</div>
+          <div class="sched-item-desc">Gap analysis and compliance roadmap specific to Brazil insurance regulations and capital requirements</div>
+        </div>
+      </li>
+    </ul>
+
+    <p style="font-size:8pt;color:#718096;margin-top:18px;font-style:italic;">
+      This Schedule A may be amended by mutual written agreement of the Parties to include additional materials as they are disclosed. Any such amendment shall reference this Agreement by its NDA Reference Number.
+    </p>
+  </div>
+
+  <div class="page-footer">
+    <span>NDA-PHINS-BR-2026-001 &nbsp;|&nbsp; CONFIDENTIAL</span>
+    <span>Page 5 of 5</span>
+    <span>© 2026 PHINS Insurance Company</span>
+  </div>
+</div>
+
+</body>
+</html>
