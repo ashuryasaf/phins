@@ -192,5 +192,65 @@
     "customer_id": "CUST-99509",
     "email": "invitation-flow-secondary@example.com",
     "registered_at": "2026-02-28T23:10:50.231275"
+  },
+  {
+    "username": "pipeline_test_221116@example.com",
+    "password_hash": "aaa97162371d6e89c23a9f557fe8560ff2203f6260a2946e87cc975ed6988c9c",
+    "password_salt": "6f1dc91738bc707f778031a72d3a3499",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-97250",
+    "email": "pipeline_test_221116@example.com",
+    "registered_at": "2026-03-01T22:11:16.978318"
+  },
+  {
+    "username": "premium_test_221118@example.com",
+    "password_hash": "77375ef87b76c73e961563cfd2cc52e6b3f82d1806b7712d96166ddc0c316f95",
+    "password_salt": "302b7012dcb662f5ade9af3b7c020be0",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-70605",
+    "email": "premium_test_221118@example.com",
+    "registered_at": "2026-03-01T22:11:18.046816"
+  },
+  {
+    "username": "pipeline_test_221523@example.com",
+    "password_hash": "70d7683d6d9b5867b8a9251b585810120a65db4d0dea76e4815ba0ba404d2ae7",
+    "password_salt": "31125797640cb2e0e613ec9c147f40fc",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-19765",
+    "email": "pipeline_test_221523@example.com",
+    "registered_at": "2026-03-01T22:15:23.703841"
+  },
+  {
+    "username": "premium_test_221524@example.com",
+    "password_hash": "f6271f33ffe8d9ef656832a26087f328b1282e89f5fe7d26b6aaab095c2058d5",
+    "password_salt": "5b2723be411fc7e3cdbfaf6fa38154c9",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-50709",
+    "email": "premium_test_221524@example.com",
+    "registered_at": "2026-03-01T22:15:24.271381"
+  },
+  {
+    "username": "pipeline_test_221618@example.com",
+    "password_hash": "6f36aef7f5364a119b7f184650505ce1f0792ce27f8f894d907ec1850b41b67d",
+    "password_salt": "d8ce441d6901a425b329108ed70797af",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-94694",
+    "email": "pipeline_test_221618@example.com",
+    "registered_at": "2026-03-01T22:16:18.727456"
+  },
+  {
+    "username": "premium_test_221619@example.com",
+    "password_hash": "a5cd2cb493f46430b7cb891723ade15207fb4048c526e32daa268f68a151d5d9",
+    "password_salt": "869944526eaa22c323724b674de79a11",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-22842",
+    "email": "premium_test_221619@example.com",
+    "registered_at": "2026-03-01T22:16:19.795838"
   }
 ]
