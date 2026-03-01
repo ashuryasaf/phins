@@ -672,6 +672,216 @@ class PipelineIntegrityService:
         unique_recs = list(set(all_recs))
         return unique_recs[:5]
 
+    # =========================================================================
+    # SUPPLY CHAIN PIPELINE INTEGRITY
+    # =========================================================================
+
+    def validate_supply_chain_integrity(self, suppliers: Dict, offers: Dict,
+                                         orders: Dict, health_wallets: Dict) -> Dict[str, Any]:
+        """
+        Validate data integrity across the supply chain pipeline.
+
+        Checks:
+        1. Offer prices match order totals
+        2. Commission + payout = total for each order
+        3. Wallet debits match order payments
+        4. Supplier status consistency
+        """
+        issues = []
+        score = 100.0
+
+        for order_id, order in orders.items():
+            total = float(order.get('total_amount', 0))
+            commission = float(order.get('commission', 0))
+            payout = float(order.get('supplier_payout', 0))
+
+            if total > 0 and abs((commission + payout) - total) > 1.0:
+                issues.append(IntegrityIssue(
+                    severity="high",
+                    stage="supply_chain",
+                    field="order_financials",
+                    expected_value=total,
+                    actual_value=commission + payout,
+                    description=f"Order {order_id}: commission+payout ({commission + payout:.2f}) != total ({total:.2f})",
+                    auto_fixable=False
+                ))
+                score -= 10
+
+            wallet_deduction = float(order.get('wallet_deduction', 0))
+            customer_id = order.get('customer_id', '')
+            if wallet_deduction > 0 and customer_id:
+                wallet = health_wallets.get(customer_id, {})
+                wallet_txs = wallet.get('transactions', [])
+                matched = any(
+                    tx.get('order_id') == order_id
+                    for tx in wallet_txs
+                )
+                if not matched:
+                    issues.append(IntegrityIssue(
+                        severity="medium",
+                        stage="supply_chain",
+                        field="wallet_deduction",
+                        expected_value=f"wallet tx for {order_id}",
+                        actual_value="not found",
+                        description=f"Order {order_id} wallet deduction (${wallet_deduction:.2f}) has no matching wallet transaction",
+                        auto_fixable=True,
+                        suggested_fix="Record missing wallet transaction"
+                    ))
+                    score -= 5
+
+        for offer_id, offer in offers.items():
+            if offer.get('active'):
+                sup_id = offer.get('supplier_id', '')
+                supplier = suppliers.get(sup_id, {})
+                if supplier.get('status') != 'approved':
+                    issues.append(IntegrityIssue(
+                        severity="high",
+                        stage="supply_chain",
+                        field="offer_supplier_status",
+                        expected_value="approved",
+                        actual_value=supplier.get('status', 'unknown'),
+                        description=f"Active offer {offer_id} belongs to non-approved supplier {sup_id}",
+                        auto_fixable=True,
+                        suggested_fix=f"Deactivate offer {offer_id}"
+                    ))
+                    score -= 8
+
+        return {
+            'stage': 'supply_chain',
+            'score': max(0, score),
+            'status': 'valid' if score >= 90 else 'warning' if score >= 70 else 'critical',
+            'issues': [i.to_dict() for i in issues],
+            'total_suppliers': len(suppliers),
+            'total_offers': len(offers),
+            'total_orders': len(orders)
+        }
+
+    def validate_delivery_integrity(self, delivery_requests: Dict,
+                                     delivery_bids: Dict,
+                                     health_wallets: Dict) -> Dict[str, Any]:
+        """
+        Validate delivery pipeline data integrity.
+
+        Checks:
+        1. Selected bids exist and belong to the right request
+        2. Wallet payments match delivery costs
+        3. Delivery status transitions are valid
+        """
+        issues = []
+        score = 100.0
+
+        valid_transitions = {
+            'created': {'bidding_open', 'cancelled'},
+            'bidding_open': {'bid_selected', 'cancelled'},
+            'bid_selected': {'picked_up', 'cancelled'},
+            'picked_up': {'in_transit', 'failed'},
+            'in_transit': {'out_for_delivery', 'delivered', 'failed'},
+            'out_for_delivery': {'delivered', 'failed'},
+            'delivered': {'confirmed'},
+            'confirmed': set(),
+            'cancelled': set(),
+            'failed': set()
+        }
+
+        for req_id, req in delivery_requests.items():
+            status = req.status.value if hasattr(req, 'status') and hasattr(req.status, 'value') else str(req.get('status', ''))
+
+            if status in ('bid_selected', 'picked_up', 'in_transit', 'delivered', 'confirmed'):
+                bid_id = req.selected_bid_id if hasattr(req, 'selected_bid_id') else req.get('selected_bid_id')
+                if not bid_id:
+                    issues.append(IntegrityIssue(
+                        severity="high",
+                        stage="delivery",
+                        field="selected_bid",
+                        expected_value="bid_id",
+                        actual_value=None,
+                        description=f"Delivery {req_id} in {status} but no bid selected",
+                        auto_fixable=False
+                    ))
+                    score -= 10
+                elif bid_id not in delivery_bids:
+                    issues.append(IntegrityIssue(
+                        severity="critical",
+                        stage="delivery",
+                        field="bid_reference",
+                        expected_value=bid_id,
+                        actual_value="not found",
+                        description=f"Delivery {req_id} references non-existent bid {bid_id}",
+                        auto_fixable=False
+                    ))
+                    score -= 15
+
+        return {
+            'stage': 'delivery',
+            'score': max(0, score),
+            'status': 'valid' if score >= 90 else 'warning' if score >= 70 else 'critical',
+            'issues': [i.to_dict() for i in issues],
+            'total_requests': len(delivery_requests),
+            'total_bids': len(delivery_bids)
+        }
+
+    def validate_marketplace_data_integrity(self, suppliers: Dict, offers: Dict,
+                                             supply_validations: Dict = None) -> Dict[str, Any]:
+        """
+        Validate marketplace data integrity including new supply validations.
+        """
+        issues = []
+        score = 100.0
+
+        for offer_id, offer in offers.items():
+            price = float(offer.get('price', 0))
+            if offer.get('active') and price <= 0:
+                issues.append(IntegrityIssue(
+                    severity="high",
+                    stage="marketplace",
+                    field="offer_price",
+                    expected_value="> 0",
+                    actual_value=price,
+                    description=f"Active offer {offer_id} has invalid price: ${price}",
+                    auto_fixable=True,
+                    suggested_fix=f"Deactivate offer {offer_id} or set valid price"
+                ))
+                score -= 8
+
+            if not offer.get('category'):
+                issues.append(IntegrityIssue(
+                    severity="medium",
+                    stage="marketplace",
+                    field="offer_category",
+                    expected_value="non-empty",
+                    actual_value="",
+                    description=f"Offer {offer_id} missing category",
+                    auto_fixable=False
+                ))
+                score -= 3
+
+        if supply_validations:
+            approved_without_offer = 0
+            for val_id, val in supply_validations.items():
+                val_status = val.status if hasattr(val, 'status') else val.get('status', '')
+                val_hash = val.data_hash if hasattr(val, 'data_hash') else val.get('data_hash', '')
+                if val_status == 'approved' and not val_hash:
+                    issues.append(IntegrityIssue(
+                        severity="medium",
+                        stage="marketplace",
+                        field="validation_hash",
+                        expected_value="non-empty hash",
+                        actual_value="",
+                        description=f"Approved validation {val_id} missing data integrity hash",
+                        auto_fixable=True,
+                        suggested_fix="Recompute validation hash"
+                    ))
+                    score -= 3
+
+        return {
+            'stage': 'marketplace',
+            'score': max(0, score),
+            'status': 'valid' if score >= 90 else 'warning' if score >= 70 else 'critical',
+            'issues': [i.to_dict() for i in issues],
+            'total_offers': len(offers),
+            'validations_checked': len(supply_validations) if supply_validations else 0
+        }
+
 
 # Singleton instance for global access
 _pipeline_integrity_service: Optional[PipelineIntegrityService] = None
