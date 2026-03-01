@@ -1094,8 +1094,231 @@ def seed_database(include_sample_data: bool = False):
             seed_sample_data()
         except Exception as e:
             logger.error(f"Failed to seed sample data: {e}")
+
+        try:
+            seed_supply_chain_data()
+        except Exception as e:
+            logger.error(f"Failed to seed supply chain data: {e}")
     
     logger.info("Database seeding completed!")
+
+
+def seed_supply_chain_data():
+    """
+    Seed supply chain, marketplace, and delivery data for pipeline integrity.
+    Ensures the supply chain ecosystem has baseline data for validation and testing.
+    """
+    logger.info("Seeding supply chain and marketplace data...")
+
+    try:
+        import web_portal.server as server
+    except Exception:
+        logger.warning("Cannot import server module; skipping supply chain seeding")
+        return
+
+    suppliers = getattr(server, 'SUPPLIERS', None)
+    offers = getattr(server, 'SUPPLIER_OFFERS', None)
+    invitations = getattr(server, 'SUPPLY_CHAIN_INVITATIONS', None)
+    health_wallets = getattr(server, 'HEALTH_WALLETS', None)
+
+    if suppliers is None or offers is None:
+        logger.warning("SUPPLIERS or SUPPLIER_OFFERS stores not available")
+        return
+
+    now = datetime.now(timezone.utc)
+
+    seed_suppliers = [
+        {
+            "id": "SUP-SEED-PHARMA-001",
+            "company_name": "HealthFirst Pharmacy",
+            "contact_email": "contact@healthfirst.com",
+            "contact_name": "Dr. Rachel Green",
+            "supplier_type": "pharmacy",
+            "category": "medical",
+            "status": "approved",
+            "invitation_code": "PHINS-SEED-PHARMA",
+            "commission_rate": 9.0,
+            "license_number": "PH-2024-98765",
+            "average_rating": 4.7,
+            "total_orders": 42,
+            "completed_orders": 40,
+            "total_revenue": 8500.0,
+            "total_commission_paid": 765.0,
+            "on_time_delivery_rate": 97.0,
+            "dispute_count": 0,
+            "portal_active": True,
+            "approval_date": now.isoformat(),
+            "created_date": now.isoformat(),
+            "updated_date": now.isoformat()
+        },
+        {
+            "id": "SUP-SEED-DELIVERY-001",
+            "company_name": "MediExpress Delivery",
+            "contact_email": "ops@mediexpress.com",
+            "contact_name": "David Cohen",
+            "supplier_type": "delivery",
+            "category": "logistics",
+            "status": "approved",
+            "invitation_code": "PHINS-SEED-DELIV",
+            "commission_rate": 15.0,
+            "average_rating": 4.5,
+            "total_orders": 120,
+            "completed_orders": 115,
+            "total_revenue": 18000.0,
+            "total_commission_paid": 2700.0,
+            "on_time_delivery_rate": 94.0,
+            "dispute_count": 1,
+            "portal_active": True,
+            "service_areas": '["Tel Aviv", "Jerusalem", "Haifa", "nationwide"]',
+            "approval_date": now.isoformat(),
+            "created_date": now.isoformat(),
+            "updated_date": now.isoformat()
+        },
+        {
+            "id": "SUP-SEED-DOCTOR-001",
+            "company_name": "Assuta Medical Group",
+            "contact_email": "admin@assuta-med.com",
+            "contact_name": "Dr. Sarah Levi",
+            "supplier_type": "doctor",
+            "category": "medical",
+            "status": "approved",
+            "invitation_code": "PHINS-SEED-DOC",
+            "commission_rate": 8.0,
+            "license_number": "MD-2023-54321",
+            "insurance_certificate": "INS-CERT-ASSUTA-2026",
+            "average_rating": 4.9,
+            "total_orders": 85,
+            "completed_orders": 85,
+            "total_revenue": 42500.0,
+            "total_commission_paid": 3400.0,
+            "on_time_delivery_rate": 100.0,
+            "dispute_count": 0,
+            "portal_active": True,
+            "approval_date": now.isoformat(),
+            "created_date": now.isoformat(),
+            "updated_date": now.isoformat()
+        }
+    ]
+
+    for sup in seed_suppliers:
+        if sup['id'] not in suppliers:
+            suppliers[sup['id']] = sup
+            logger.info(f"  Seeded supplier: {sup['company_name']}")
+
+    seed_offers = [
+        {
+            "id": "OFF-SEED-001",
+            "supplier_id": "SUP-SEED-PHARMA-001",
+            "name": "Prescription Medication Package",
+            "description": "Standard prescription fulfillment with pharmacist consultation",
+            "item_type": "product",
+            "category": "pharmacy",
+            "price": 45.00,
+            "currency": "USD",
+            "active": True,
+            "offer_status": "approved",
+            "wallet_compatible": ["health"],
+            "delivery_config": {"mode": "delivery", "eta_days": 2, "fee": 5.00},
+            "billing_config": {"billing_cycle": "one_time", "invoice_supported": True, "tax_rate_pct": 0.0},
+            "created_date": now.isoformat(),
+            "updated_date": now.isoformat(),
+            "total_orders": 30,
+            "total_revenue": 1350.0,
+            "average_rating": 4.8
+        },
+        {
+            "id": "OFF-SEED-002",
+            "supplier_id": "SUP-SEED-DOCTOR-001",
+            "name": "Telemedicine Consultation",
+            "description": "30-minute video consultation with board-certified physician",
+            "item_type": "service",
+            "category": "medical",
+            "price": 120.00,
+            "currency": "USD",
+            "active": True,
+            "offer_status": "approved",
+            "wallet_compatible": ["health"],
+            "delivery_config": {"mode": "on_site", "eta_days": 0, "fee": 0.0},
+            "billing_config": {"billing_cycle": "one_time", "invoice_supported": True, "tax_rate_pct": 0.0},
+            "created_date": now.isoformat(),
+            "updated_date": now.isoformat(),
+            "total_orders": 50,
+            "total_revenue": 6000.0,
+            "average_rating": 4.9
+        },
+        {
+            "id": "OFF-SEED-003",
+            "supplier_id": "SUP-SEED-PHARMA-001",
+            "name": "Wellness Supplement Kit",
+            "description": "Monthly wellness supplement kit with vitamins and minerals",
+            "item_type": "product",
+            "category": "wellness",
+            "price": 65.00,
+            "currency": "USD",
+            "active": True,
+            "offer_status": "approved",
+            "wallet_compatible": ["health"],
+            "delivery_config": {"mode": "delivery", "eta_days": 3, "fee": 0.0},
+            "billing_config": {"billing_cycle": "monthly", "invoice_supported": True, "tax_rate_pct": 0.0},
+            "created_date": now.isoformat(),
+            "updated_date": now.isoformat(),
+            "total_orders": 15,
+            "total_revenue": 975.0,
+            "average_rating": 4.6
+        }
+    ]
+
+    for offer in seed_offers:
+        if offer['id'] not in offers:
+            offers[offer['id']] = offer
+            logger.info(f"  Seeded offer: {offer['name']}")
+
+    if invitations is not None:
+        seed_invitations = {
+            "PHINS-SEED-PHARMA": {
+                "code": "PHINS-SEED-PHARMA",
+                "created_at": now.isoformat(),
+                "created_by": "admin",
+                "supplier_type": "pharmacy",
+                "expires_at": (now + timedelta(days=365)).isoformat(),
+                "max_uses": 1,
+                "used_count": 1,
+                "used_by": ["SUP-SEED-PHARMA-001"],
+                "status": "used"
+            },
+            "PHINS-SEED-DELIV": {
+                "code": "PHINS-SEED-DELIV",
+                "created_at": now.isoformat(),
+                "created_by": "admin",
+                "supplier_type": "delivery",
+                "expires_at": (now + timedelta(days=365)).isoformat(),
+                "max_uses": 1,
+                "used_count": 1,
+                "used_by": ["SUP-SEED-DELIVERY-001"],
+                "status": "used"
+            },
+            "PHINS-SEED-DOC": {
+                "code": "PHINS-SEED-DOC",
+                "created_at": now.isoformat(),
+                "created_by": "admin",
+                "supplier_type": "doctor",
+                "expires_at": (now + timedelta(days=365)).isoformat(),
+                "max_uses": 1,
+                "used_count": 1,
+                "used_by": ["SUP-SEED-DOCTOR-001"],
+                "status": "used"
+            }
+        }
+        for code, inv in seed_invitations.items():
+            if code not in invitations:
+                invitations[code] = inv
+
+    if health_wallets:
+        for cid, wallet in health_wallets.items():
+            if 'supply_chain_enabled' not in wallet:
+                wallet['supply_chain_enabled'] = True
+
+    logger.info("Supply chain and marketplace data seeded successfully")
 
 
 if __name__ == '__main__':
