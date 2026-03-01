@@ -290,17 +290,6 @@ class ProcessPipelineOrchestrator:
                 score -= 3
 
         for offer_id, offer in self.supplier_offers.items():
-            sup_id = offer.get('supplier_id')
-            supplier = self.suppliers.get(sup_id, {})
-            if offer.get('active') and supplier.get('status') != 'approved':
-                issues.append({
-                    'severity': ValidationSeverity.ERROR.value,
-                    'entity': 'offer',
-                    'id': offer_id,
-                    'message': f'Active offer {offer_id} belongs to non-approved supplier {sup_id}'
-                })
-                score -= 10
-
             price = float(offer.get('price', 0))
             if price <= 0 and offer.get('active'):
                 issues.append({
@@ -311,19 +300,77 @@ class ProcessPipelineOrchestrator:
                 })
                 score -= 5
 
-        for order_id, order in self.supplier_orders.items():
-            total = float(order.get('total_amount', 0))
-            commission = float(order.get('commission', 0))
-            payout = float(order.get('supplier_payout', 0))
+        core_integrity_delegated = False
+        if self.pipeline_integrity and hasattr(self.pipeline_integrity, 'validate_supply_chain_integrity'):
+            try:
+                integrity_result = self.pipeline_integrity.validate_supply_chain_integrity(
+                    self.suppliers,
+                    self.supplier_offers,
+                    self.supplier_orders,
+                    self.health_wallets
+                )
+                for integrity_issue in integrity_result.get('issues', []):
+                    field = integrity_issue.get('field')
+                    description = integrity_issue.get('description', '')
 
-            if total > 0 and abs((commission + payout) - total) > 1.0:
-                issues.append({
-                    'severity': ValidationSeverity.ERROR.value,
-                    'entity': 'order',
-                    'id': order_id,
-                    'message': f'Order {order_id} financial mismatch: commission(${commission:.2f}) + payout(${payout:.2f}) != total(${total:.2f})'
-                })
-                score -= 8
+                    if field == 'offer_supplier_status':
+                        offer_id = ''
+                        if description.startswith('Active offer '):
+                            offer_id = description.split(' ', 3)[2]
+                        issue = {
+                            'severity': ValidationSeverity.ERROR.value,
+                            'entity': 'offer',
+                            'message': description
+                        }
+                        if offer_id:
+                            issue['id'] = offer_id
+                        issues.append(issue)
+                        score -= 10
+
+                    elif field == 'order_financials':
+                        order_id = ''
+                        if description.startswith('Order '):
+                            order_id = description.split(' ', 2)[1].rstrip(':')
+                        issue = {
+                            'severity': ValidationSeverity.ERROR.value,
+                            'entity': 'order',
+                            'message': description
+                        }
+                        if order_id:
+                            issue['id'] = order_id
+                        issues.append(issue)
+                        score -= 8
+
+                core_integrity_delegated = True
+            except Exception:
+                core_integrity_delegated = False
+
+        if not core_integrity_delegated:
+            for offer_id, offer in self.supplier_offers.items():
+                sup_id = offer.get('supplier_id')
+                supplier = self.suppliers.get(sup_id, {})
+                if offer.get('active') and supplier.get('status') != 'approved':
+                    issues.append({
+                        'severity': ValidationSeverity.ERROR.value,
+                        'entity': 'offer',
+                        'id': offer_id,
+                        'message': f'Active offer {offer_id} belongs to non-approved supplier {sup_id}'
+                    })
+                    score -= 10
+
+            for order_id, order in self.supplier_orders.items():
+                total = float(order.get('total_amount', 0))
+                commission = float(order.get('commission', 0))
+                payout = float(order.get('supplier_payout', 0))
+
+                if total > 0 and abs((commission + payout) - total) > 1.0:
+                    issues.append({
+                        'severity': ValidationSeverity.ERROR.value,
+                        'entity': 'order',
+                        'id': order_id,
+                        'message': f'Order {order_id} financial mismatch: commission(${commission:.2f}) + payout(${payout:.2f}) != total(${total:.2f})'
+                    })
+                    score -= 8
 
         if self.supply_chain:
             try:
@@ -442,6 +489,9 @@ class ProcessPipelineOrchestrator:
         claim = self.claims.get(claim_id)
         if not claim:
             return {'success': False, 'error': f'Claim {claim_id} not found'}
+        current_status = str(claim.get('status', 'pending')).lower()
+        if current_status in ('approved', 'paid'):
+            return {'success': False, 'error': f'Claim {claim_id} already processed (status: {current_status})'}
 
         policy_id = claim.get('policy_id', '')
         customer_id = claim.get('customer_id', '')
@@ -465,7 +515,10 @@ class ProcessPipelineOrchestrator:
         elif fraud_score > 0.4:
             decision = 'manual_review'
             reason = f'Moderate fraud probability: {fraud_score:.0%}'
-        elif claim_amount > coverage * 0.5:
+        elif coverage <= 0 and claim_amount > 0:
+            decision = 'manual_review'
+            reason = 'Policy coverage amount missing or zero; requires manual review'
+        elif coverage > 0 and claim_amount > coverage * 0.5:
             decision = 'manual_review'
             reason = f'High-value claim: ${claim_amount:,.2f} ({claim_amount/coverage*100:.0f}% of coverage)'
         elif claim_amount <= 2000 and fraud_score <= 0.2:
@@ -496,7 +549,12 @@ class ProcessPipelineOrchestrator:
         }
 
         if decision == 'auto_approve':
+            claim['status'] = 'approved'
+            claim['approved_date'] = datetime.now(timezone.utc).isoformat()
             payout_result = self._process_claim_payout(claim, policy, customer_id, claim_amount)
+            if payout_result.get('success') and payout_result.get('destination') == 'health_wallet':
+                claim['status'] = 'paid'
+                claim['paid_date'] = datetime.now(timezone.utc).isoformat()
             result['payout'] = payout_result
 
         return result
@@ -674,13 +732,18 @@ class ProcessPipelineOrchestrator:
             return {'success': False, 'error': 'Bill already paid'}
 
         amount_due = float(bill.get('amount_due', 0))
-        if amount < amount_due:
-            bill['amount_paid'] = float(bill.get('amount_paid', 0)) + amount
+        already_paid = float(bill.get('amount_paid', 0))
+        remaining_due = max(0.0, amount_due - already_paid)
+        payment_applied = min(amount, remaining_due)
+
+        if already_paid + payment_applied < amount_due:
+            bill['amount_paid'] = already_paid + payment_applied
             bill['status'] = 'partial'
         else:
             bill['amount_paid'] = amount_due
             bill['status'] = 'paid'
-            bill['paid_date'] = datetime.now(timezone.utc).isoformat()
+            if not bill.get('paid_date'):
+                bill['paid_date'] = datetime.now(timezone.utc).isoformat()
 
         breakdown = bill.get('premium_breakdown', {})
         savings_amount = float(breakdown.get('savings_amount', 0))
@@ -696,7 +759,7 @@ class ProcessPipelineOrchestrator:
 
         self._log_automation('billing_payment', {
             'bill_id': bill_id,
-            'amount_paid': amount,
+            'amount_paid': payment_applied,
             'status': bill['status'],
             'savings_routed': savings_amount if bill['status'] == 'paid' else 0
         })

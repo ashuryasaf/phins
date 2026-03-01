@@ -287,6 +287,30 @@ def test_supplier_performance_tracking(delivery_service_with_suppliers,
     assert supplier['total_revenue'] > 0
 
 
+def test_repeated_delivered_status_does_not_double_pay_supplier(
+        delivery_service_with_suppliers, sample_pickup, sample_delivery, sample_package):
+    svc = delivery_service_with_suppliers
+    req = _create_request(svc, sample_pickup, sample_delivery, sample_package)
+    req_id = req['request_id']
+    bid = _submit_bid(svc, req_id, 'SUP-001', 35.00)
+    svc.select_bid(req_id, bid['bid_id'], 'CUST-001')
+    svc.update_delivery_status(req_id, 'picked_up', 'SUP-001')
+
+    supplier = svc.suppliers['SUP-001']
+    base_orders = supplier['total_orders']
+    base_revenue = supplier.get('total_revenue', 0)
+
+    first_delivery = svc.update_delivery_status(req_id, 'delivered', 'SUP-001')
+    assert first_delivery['success'] is True
+    assert supplier['total_orders'] == base_orders + 1
+    assert supplier['total_revenue'] == base_revenue + 35.00
+
+    second_delivery = svc.update_delivery_status(req_id, 'delivered', 'SUP-001')
+    assert second_delivery['success'] is True
+    assert supplier['total_orders'] == base_orders + 1
+    assert supplier['total_revenue'] == base_revenue + 35.00
+
+
 def test_auto_select_best_bid(delivery_service_with_suppliers, sample_pickup,
                                 sample_delivery, sample_package):
     svc = delivery_service_with_suppliers

@@ -856,7 +856,6 @@ class PipelineIntegrityService:
                 score -= 3
 
         if supply_validations:
-            approved_without_offer = 0
             for val_id, val in supply_validations.items():
                 val_status = val.status if hasattr(val, 'status') else val.get('status', '')
                 val_hash = val.data_hash if hasattr(val, 'data_hash') else val.get('data_hash', '')

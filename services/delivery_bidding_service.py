@@ -654,7 +654,7 @@ class DeliveryBiddingService:
 
         self._add_tracking_event(request_id, status_enum, geo_location, notes, supplier_id)
 
-        if status_enum == DeliveryStatus.DELIVERED:
+        if status_enum == DeliveryStatus.DELIVERED and old_status != DeliveryStatus.DELIVERED:
             self._process_supplier_payment(request)
 
         return {

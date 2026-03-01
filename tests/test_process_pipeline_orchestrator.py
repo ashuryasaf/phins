@@ -296,6 +296,34 @@ class TestSupplyChainPipeline:
         error_issues = [i for i in result.issues if i.get('severity') == 'error']
         assert len(error_issues) > 0
 
+    def test_supply_chain_delegates_core_checks_to_integrity_service(self, orchestrator):
+        class StubPipelineIntegrity:
+            def __init__(self):
+                self.called = False
+
+            def validate_supply_chain_integrity(self, suppliers, offers, orders, health_wallets):
+                self.called = True
+                return {
+                    'issues': [
+                        {
+                            'field': 'offer_supplier_status',
+                            'description': 'Active offer OFF-DELEGATED belongs to non-approved supplier SUP-DELEGATED'
+                        },
+                        {
+                            'field': 'order_financials',
+                            'description': 'Order ORD-DELEGATED: commission+payout (90.00) != total (100.00)'
+                        }
+                    ]
+                }
+
+        stub = StubPipelineIntegrity()
+        orchestrator.pipeline_integrity = stub
+        result = orchestrator.validate_supply_chain_pipeline()
+
+        assert stub.called is True
+        assert any(i.get('id') == 'OFF-DELEGATED' for i in result.issues)
+        assert any(i.get('id') == 'ORD-DELEGATED' for i in result.issues)
+
 
 # =========================================================================
 # DELIVERY PIPELINE TESTS
@@ -358,6 +386,45 @@ class TestClaimsAutomation:
         result = orchestrator.automate_claim_processing('CLM-EARLY')
         assert result['fraud_score'] > 0
 
+    def test_zero_coverage_claim_requires_manual_review_without_crash(self, orchestrator):
+        orchestrator.policies['POL-ZERO-COVERAGE'] = {
+            'id': 'POL-ZERO-COVERAGE',
+            'customer_id': 'CUST-001',
+            'status': 'active',
+            'coverage_amount': 0,
+            'start_date': '2025-01-01T00:00:00+00:00',
+        }
+        orchestrator.claims['CLM-ZERO-COVERAGE'] = {
+            'id': 'CLM-ZERO-COVERAGE',
+            'claim_id': 'CLM-ZERO-COVERAGE',
+            'policy_id': 'POL-ZERO-COVERAGE',
+            'customer_id': 'CUST-001',
+            'amount': 100.0,
+            'status': 'pending',
+            'description': 'Coverage edge case claim',
+            'date': '2026-01-15T00:00:00+00:00',
+        }
+
+        result = orchestrator.automate_claim_processing('CLM-ZERO-COVERAGE')
+        assert result['success'] is True
+        assert result['decision'] == 'manual_review'
+
+    def test_auto_approved_claim_updates_status_and_blocks_duplicate_payout(self, orchestrator):
+        starting_balance = orchestrator.health_wallets['CUST-001']['balance']
+
+        first = orchestrator.automate_claim_processing('CLM-001')
+        assert first['success'] is True
+        assert first['decision'] == 'auto_approve'
+        assert orchestrator.claims['CLM-001']['status'] == 'paid'
+
+        balance_after_first = orchestrator.health_wallets['CUST-001']['balance']
+        second = orchestrator.automate_claim_processing('CLM-001')
+
+        assert second['success'] is False
+        assert 'already processed' in second['error']
+        assert orchestrator.health_wallets['CUST-001']['balance'] == balance_after_first
+        assert balance_after_first > starting_balance
+
 
 # =========================================================================
 # BILLING AUTOMATION TESTS
@@ -391,6 +458,21 @@ class TestBillingAutomation:
         result = orchestrator.process_billing_payment(bill_id, 200.0)
         assert result['success'] is True
         assert result['status'] == 'partial'
+
+    def test_installment_payments_mark_bill_paid(self, orchestrator):
+        gen = orchestrator.automate_billing_cycle('POL-001')
+        bill_id = gen['bill_id']
+
+        first = orchestrator.process_billing_payment(bill_id, 300.0)
+        assert first['success'] is True
+        assert first['status'] == 'partial'
+        assert first['amount_paid'] == 300.0
+
+        second = orchestrator.process_billing_payment(bill_id, 200.0)
+        assert second['success'] is True
+        assert second['status'] == 'paid'
+        assert second['amount_paid'] == 500.0
+        assert second['wallet_credit'] is not None
 
 
 # =========================================================================
