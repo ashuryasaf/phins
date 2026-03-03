@@ -17276,7 +17276,6 @@ For claims or questions, please contact:
                     return
                 
                 # Decode base64 content
-                import base64
                 try:
                     file_content = base64.b64decode(content_b64)
                 except Exception as decode_err:
