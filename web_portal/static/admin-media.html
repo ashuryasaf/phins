@@ -1052,6 +1052,14 @@
                     <h4>📄 Synced Media Briefs</h4>
                     <div id="growth-assets-list">No campaign loaded yet.</div>
                 </div>
+                <div class="growth-list-card">
+                    <h4>🎬 Latest Viral Short-Ad Package</h4>
+                    <div id="growth-social-content-list">No social content package synced yet.</div>
+                </div>
+                <div class="growth-list-card">
+                    <h4>🧠 Social Learning Insights</h4>
+                    <div id="growth-learning-list">No BI learning insights yet.</div>
+                </div>
             </div>
 
             <div id="growth-status" class="growth-status">Ready. Pull latest published campaign from admin dashboard.</div>
@@ -1630,6 +1638,49 @@
             setGrowthStatus(`Loaded campaign ${campaign.campaign_id || ''} and synced media briefs.`);
         }
 
+        function renderGrowthSocialContent(latestSocialContent) {
+            const socialContentEl = document.getElementById('growth-social-content-list');
+            if (!socialContentEl) return;
+            if (!latestSocialContent || !latestSocialContent.social_content) {
+                socialContentEl.innerHTML = '<div style="font-size:0.78rem;opacity:0.8;">No social content package synced yet.</div>';
+                return;
+            }
+
+            const social = latestSocialContent.social_content || {};
+            const job = latestSocialContent.provider_job || {};
+            const assets = latestSocialContent.assets_created || [];
+            const networks = Array.isArray(social.network_packages) ? social.network_packages : [];
+
+            const networkHtml = networks.slice(0, 5).map((item) => `
+                <li><strong>${escapeGrowthHtml(String(item.network || '').toUpperCase())}</strong> — ${escapeGrowthHtml(item.format || '')}</li>
+            `).join('');
+
+            socialContentEl.innerHTML = `
+                <div><strong>Ad ID:</strong> ${escapeGrowthHtml(social.ad_id || '-')}</div>
+                <div><strong>Provider:</strong> ${escapeGrowthHtml(social.provider || '-')} (${escapeGrowthHtml(job.status || 'pending')})</div>
+                <div><strong>Assets:</strong> ${escapeGrowthHtml(assets.length || 0)}</div>
+                <ul>${networkHtml || '<li>No network packaging found.</li>'}</ul>
+            `;
+        }
+
+        function renderGrowthLearning(learningSnapshot) {
+            const learningEl = document.getElementById('growth-learning-list');
+            if (!learningEl) return;
+            if (!learningSnapshot) {
+                learningEl.innerHTML = '<div style="font-size:0.78rem;opacity:0.8;">No BI learning insights yet.</div>';
+                return;
+            }
+            const summary = learningSnapshot.summary || {};
+            const insights = Array.isArray(learningSnapshot.insights) ? learningSnapshot.insights : [];
+            const insightItems = insights.slice(0, 4).map((item) => `<li>${escapeGrowthHtml(item)}</li>`).join('');
+            learningEl.innerHTML = `
+                <div><strong>Events:</strong> ${escapeGrowthHtml(learningSnapshot.total_events || 0)} (verified ${escapeGrowthHtml(learningSnapshot.verified_events || 0)})</div>
+                <div><strong>CTR:</strong> ${escapeGrowthHtml(summary.ctr_pct || 0)}% | <strong>Engagement:</strong> ${escapeGrowthHtml(summary.engagement_rate_pct || 0)}%</div>
+                <div><strong>Conversions:</strong> ${escapeGrowthHtml(summary.conversions || 0)} | <strong>CPL:</strong> ${escapeGrowthHtml(summary.cpl || 0)}</div>
+                <ul>${insightItems || '<li>No insight recommendations yet.</li>'}</ul>
+            `;
+        }
+
         async function loadGrowthBridgeCampaign() {
             const token = getToken();
             if (!token) return;
@@ -1652,6 +1703,8 @@
                 const data = await response.json();
                 if (data?.latest_campaign?.campaign) {
                     renderGrowthBridgeCampaign(data.latest_campaign);
+                    renderGrowthSocialContent(data.latest_social_content || null);
+                    renderGrowthLearning(data.learning_snapshot || null);
                 } else {
                     setGrowthStatus('No campaign payload returned by server.');
                 }

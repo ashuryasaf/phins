@@ -1288,6 +1288,27 @@
           <label for="mkt-networks" style="font-size: 0.78rem; opacity: 0.82;">Social Networks (comma-separated)</label>
           <input id="mkt-networks" type="text" value="linkedin,x,facebook,instagram,youtube,whatsapp" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
         </div>
+        <div>
+          <label for="mkt-audience-mode" style="font-size: 0.78rem; opacity: 0.82;">Audience Mode</label>
+          <select id="mkt-audience-mode" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <option value="hybrid">Hybrid (Customer + Supplier)</option>
+            <option value="customer">Customer</option>
+            <option value="supplier">Supplier</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-supplier-segments" style="font-size: 0.78rem; opacity: 0.82;">Supplier Segments</label>
+          <input id="mkt-supplier-segments" type="text" value="lawyers,doctors,pharmacies,delivery" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+        </div>
+        <div>
+          <label for="mkt-social-provider" style="font-size: 0.78rem; opacity: 0.82;">Short-Video Provider</label>
+          <select id="mkt-social-provider" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <option value="veo">Veo</option>
+            <option value="kling">Kling</option>
+            <option value="runway">Runway</option>
+            <option value="pika">Pika</option>
+          </select>
+        </div>
       </div>
 
       <div id="mkt-agent-status" style="background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.88rem;">
@@ -1334,6 +1355,57 @@
           <h4 style="margin: 0 0 8px 0;">📣 Social Network Plan</h4>
           <div id="mkt-social-plan" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view channel strategy.</div>
         </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">🏥 Supplier Growth Signals</h4>
+          <div id="mkt-supplier-signals" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view supplier intelligence.</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 14px;">
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">🔌 AI Provider Connections</h4>
+          <div id="mkt-provider-status" style="font-size: 0.84rem; line-height: 1.45;">Loading provider status...</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">🔥 Viral Short-Ad Studio (Veo/Kling)</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <input id="mkt-viral-hook" type="text" placeholder="Hook" value="Stop scrolling: protect and grow smarter today." style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <input id="mkt-viral-offer" type="text" placeholder="Offer" value="AI + BI campaign with measurable outcomes." style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <input id="mkt-viral-cta" type="text" placeholder="CTA" value="Book your strategy call now." style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <input id="mkt-viral-target-group" type="text" placeholder="Target Group" value="facebook groups and instagram communities" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <input id="mkt-viral-duration" type="number" value="20" min="6" max="180" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <input id="mkt-viral-aspect" type="text" value="9:16" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <select id="mkt-viral-execution-mode" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+              <option value="dry_run">Dry Run</option>
+              <option value="provider_call">Provider Call</option>
+            </select>
+          </div>
+          <button onclick="createViralSocialContent()" style="background: #ff7043; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 700; margin-bottom: 8px;">🎬 Create Viral Social Content</button>
+          <div id="mkt-social-content-status" style="font-size: 0.82rem; opacity: 0.9; margin-bottom: 6px;">Ready to create short-ad packages.</div>
+          <div id="mkt-social-content-output" style="font-size: 0.82rem; line-height: 1.4;">No short-ad package generated yet.</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+        <h4 style="margin: 0 0 8px 0;">📈 Social Learning Loop (Facebook/Instagram/Communities)</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px;">
+          <input id="mkt-learning-platform" type="text" placeholder="platform" value="facebook" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-group" type="text" placeholder="group/community" value="insurance-growth-group" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-content-id" type="text" placeholder="content id" value="" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-impressions" type="number" placeholder="impressions" value="2000" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-likes" type="number" placeholder="likes" value="120" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-comments" type="number" placeholder="comments" value="30" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-shares" type="number" placeholder="shares" value="22" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-clicks" type="number" placeholder="clicks" value="90" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-leads" type="number" placeholder="leads" value="20" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-conversions" type="number" placeholder="conversions" value="6" min="0" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+          <input id="mkt-learning-spend" type="number" placeholder="spend" value="180" min="0" step="0.01" style="padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+        </div>
+        <button onclick="ingestSocialLearningEvent()" style="background: #66bb6a; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 700;">🧠 Ingest Learning Event</button>
+        <div id="mkt-learning-status" style="font-size: 0.82rem; opacity: 0.9; margin-top: 8px;">Ready to ingest BI feedback.</div>
+        <div id="mkt-learning-insights" style="font-size: 0.82rem; line-height: 1.4; margin-top: 6px;">No learning insights yet.</div>
       </div>
     </section>
     
@@ -1702,6 +1774,8 @@
       loadPolicies();
       loadPlatformAnalytics();
       loadLatestMarketingCampaign();
+      loadMarketingProviderStatus();
+      loadMarketingLearningInsights();
       loadClaims();
       loadBillingData();
       loadTransactions();
@@ -2814,7 +2888,12 @@
 
     function marketingParamsFromInputs() {
       const networksRaw = (document.getElementById('mkt-networks')?.value || '').trim();
+      const supplierSegmentsRaw = (document.getElementById('mkt-supplier-segments')?.value || '').trim();
       const socialNetworks = networksRaw
+        .split(',')
+        .map(item => item.trim().toLowerCase())
+        .filter(Boolean);
+      const supplierSegments = supplierSegmentsRaw
         .split(',')
         .map(item => item.trim().toLowerCase())
         .filter(Boolean);
@@ -2825,6 +2904,9 @@
         persona: (document.getElementById('mkt-persona')?.value || 'families').trim(),
         region: (document.getElementById('mkt-region')?.value || 'global').trim(),
         budget_tier: (document.getElementById('mkt-budget-tier')?.value || 'balanced').trim(),
+        audience_mode: (document.getElementById('mkt-audience-mode')?.value || 'hybrid').trim(),
+        supplier_segments: supplierSegments,
+        social_provider: (document.getElementById('mkt-social-provider')?.value || 'veo').trim(),
         social_networks: socialNetworks
       };
     }
@@ -2915,16 +2997,102 @@
         </div>
       `);
 
+      const supplierSignals = campaign.supplier_signals || {};
+      const bySegment = supplierSignals.by_segment || {};
+      const supplierRows = Object.keys(bySegment).map((segment) => {
+        const row = bySegment[segment] || {};
+        return `
+          <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
+            <div style="font-weight:700;">${escapeMarketingHtml(String(segment).toUpperCase())}</div>
+            <div>Suppliers: ${escapeMarketingHtml(row.total_suppliers)} | Active: ${escapeMarketingHtml(row.active_suppliers)}</div>
+            <div style="font-size:0.8rem;opacity:0.85;">Orders: ${escapeMarketingHtml(row.orders)} | Value: ${escapeMarketingHtml(row.order_value)}</div>
+          </div>
+        `;
+      }).join('');
+      const supplierHtml = supplierRows || '<div style="opacity:0.8;">No supplier signals available</div>';
+
       const playbooksEl = document.getElementById('mkt-sales-playbooks');
       const storiesEl = document.getElementById('mkt-story-outlines');
       const articlesEl = document.getElementById('mkt-article-briefs');
       const videosEl = document.getElementById('mkt-video-briefs');
       const socialEl = document.getElementById('mkt-social-plan');
+      const supplierEl = document.getElementById('mkt-supplier-signals');
       if (playbooksEl) playbooksEl.innerHTML = salesHtml;
       if (storiesEl) storiesEl.innerHTML = storyHtml;
       if (articlesEl) articlesEl.innerHTML = articlesHtml;
       if (videosEl) videosEl.innerHTML = videosHtml;
       if (socialEl) socialEl.innerHTML = socialHtml;
+      if (supplierEl) supplierEl.innerHTML = supplierHtml;
+    }
+
+    function renderProviderStatus(providers) {
+      const el = document.getElementById('mkt-provider-status');
+      if (!el) return;
+      if (!providers || typeof providers !== 'object') {
+        el.innerHTML = '<div style="opacity:0.8;">No provider status available.</div>';
+        return;
+      }
+      const html = Object.keys(providers).map((key) => {
+        const p = providers[key] || {};
+        const badge = p.connected ? '✅ Connected' : '⚠️ Missing credentials';
+        return `
+          <div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.15);">
+            <div style="font-weight:700;">${escapeMarketingHtml(p.display_name || key.toUpperCase())} (${escapeMarketingHtml(key)})</div>
+            <div style="font-size:0.82rem;opacity:0.9;">${escapeMarketingHtml(badge)}</div>
+          </div>
+        `;
+      }).join('');
+      el.innerHTML = html || '<div style="opacity:0.8;">No providers configured.</div>';
+    }
+
+    function renderSocialContentPackage(payload) {
+      const outputEl = document.getElementById('mkt-social-content-output');
+      if (!outputEl) return;
+      if (!payload || !payload.social_content) {
+        outputEl.innerHTML = 'No short-ad package generated yet.';
+        return;
+      }
+      const social = payload.social_content.social_content || {};
+      const integrity = payload.social_content.integrity || {};
+      const job = payload.social_content.provider_job || {};
+      const assets = payload.created_assets || [];
+      const networks = Array.isArray(social.network_packages) ? social.network_packages : [];
+
+      const networkList = networks.map((item) => `
+        <li><strong>${escapeMarketingHtml(String(item.network || '').toUpperCase())}</strong>: ${escapeMarketingHtml(item.caption || '')}</li>
+      `).join('');
+
+      outputEl.innerHTML = `
+        <div><strong>Ad ID:</strong> ${escapeMarketingHtml(social.ad_id || '-')}</div>
+        <div><strong>Provider:</strong> ${escapeMarketingHtml(social.provider || '-')} (${escapeMarketingHtml(job.status || 'pending')})</div>
+        <div><strong>Integrity:</strong> ${integrity.verified ? 'Verified' : 'Unverified'}</div>
+        <div><strong>Media Briefs Created:</strong> ${escapeMarketingHtml(assets.length)}</div>
+        <ul style="padding-left: 18px; margin: 6px 0;">${networkList || '<li>No network package</li>'}</ul>
+      `;
+    }
+
+    function renderLearningInsights(learning) {
+      const statusEl = document.getElementById('mkt-learning-status');
+      const insightsEl = document.getElementById('mkt-learning-insights');
+      if (!insightsEl) return;
+      if (!learning) {
+        insightsEl.innerHTML = 'No learning insights yet.';
+        return;
+      }
+      const summary = learning.summary || {};
+      const insights = Array.isArray(learning.insights) ? learning.insights : [];
+      const insightHtml = insights.length
+        ? `<ul style="padding-left:18px; margin: 6px 0;">${insights.map(item => `<li>${escapeMarketingHtml(item)}</li>`).join('')}</ul>`
+        : '<div style="opacity:0.8;">No insight recommendations yet.</div>';
+      insightsEl.innerHTML = `
+        <div><strong>Events:</strong> ${escapeMarketingHtml(learning.total_events || 0)} (verified ${escapeMarketingHtml(learning.verified_events || 0)})</div>
+        <div><strong>CTR:</strong> ${escapeMarketingHtml(summary.ctr_pct || 0)}% | <strong>Engagement:</strong> ${escapeMarketingHtml(summary.engagement_rate_pct || 0)}%</div>
+        <div><strong>Conversions:</strong> ${escapeMarketingHtml(summary.conversions || 0)} | <strong>CPL:</strong> ${escapeMarketingHtml(summary.cpl || 0)}</div>
+        ${insightHtml}
+      `;
+      if (statusEl) {
+        statusEl.textContent = `Learning updated with ${learning.total_events || 0} event(s).`;
+      }
     }
 
     async function loadLatestMarketingCampaign() {
@@ -2945,6 +3113,13 @@
         const data = await response.json();
         if (data && data.latest_campaign) {
           renderMarketingCampaign(data.latest_campaign);
+          renderProviderStatus(data.providers || {});
+          if (data.latest_social_content) {
+            renderSocialContentPackage({ social_content: data.latest_social_content, created_assets: data.latest_social_content.assets_created || [] });
+          }
+          if (data.learning_snapshot) {
+            renderLearningInsights(data.learning_snapshot);
+          }
           setMarketingStatus(`Latest campaign loaded (${data.latest_campaign.campaign?.campaign_id || 'unknown'}).`, 'success');
         } else {
           setMarketingStatus('No campaign payload returned from server.', 'warning');
@@ -2963,7 +3138,10 @@
           persona: params.persona,
           region: params.region,
           budget_tier: params.budget_tier,
-          networks: params.social_networks.join(',')
+          networks: params.social_networks.join(','),
+          audience_mode: params.audience_mode,
+          supplier_segments: params.supplier_segments.join(','),
+          social_provider: params.social_provider
         });
 
         setMarketingStatus('Generating AI + BI campaign plan...', 'info');
@@ -2978,6 +3156,7 @@
         const data = await response.json();
         if (data?.generated?.campaign) {
           renderMarketingCampaign(data.generated);
+          renderProviderStatus(data.providers || {});
           setMarketingStatus('Campaign generated successfully. Review and publish to media when ready.', 'success');
         } else {
           setMarketingStatus('Generation response did not include campaign details.', 'warning');
@@ -3010,12 +3189,132 @@
         const data = await response.json();
         if (data?.latest_campaign?.campaign) {
           renderMarketingCampaign(data.latest_campaign);
+          renderProviderStatus(data.providers || {});
           setMarketingStatus(`Campaign published. ${data.created_assets?.length || 0} media briefs synced to admin-media dashboard.`, 'success');
         } else {
           setMarketingStatus('Publish completed but no campaign payload returned.', 'warning');
         }
       } catch (err) {
         setMarketingStatus(`Error publishing campaign: ${err.message}`, 'error');
+      }
+    }
+
+    async function loadMarketingProviderStatus() {
+      try {
+        const response = await fetch('/api/admin/marketing-sales-agent/providers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        renderProviderStatus(data.providers || {});
+      } catch (err) {
+        console.error('Failed to load provider status:', err);
+      }
+    }
+
+    async function createViralSocialContent() {
+      try {
+        const params = marketingParamsFromInputs();
+        const payload = {
+          ...params,
+          provider: params.social_provider,
+          hook: (document.getElementById('mkt-viral-hook')?.value || '').trim(),
+          offer: (document.getElementById('mkt-viral-offer')?.value || '').trim(),
+          cta: (document.getElementById('mkt-viral-cta')?.value || '').trim(),
+          target_group: (document.getElementById('mkt-viral-target-group')?.value || '').trim(),
+          duration_seconds: Number(document.getElementById('mkt-viral-duration')?.value || 20),
+          aspect_ratio: (document.getElementById('mkt-viral-aspect')?.value || '9:16').trim(),
+          execution_mode: (document.getElementById('mkt-viral-execution-mode')?.value || 'dry_run').trim(),
+          sync_to_media: true
+        };
+
+        const statusEl = document.getElementById('mkt-social-content-status');
+        if (statusEl) statusEl.textContent = 'Creating short-ad package...';
+
+        const response = await fetch('/api/admin/marketing-sales-agent/social-content', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          if (statusEl) statusEl.textContent = `Failed (${response.status}): ${errData.error || 'unknown error'}`;
+          return;
+        }
+
+        const data = await response.json();
+        renderSocialContentPackage(data);
+        renderProviderStatus(data.providers || {});
+        if (statusEl) statusEl.textContent = `Short-ad package created. ${data.created_assets?.length || 0} media briefs synced.`;
+      } catch (err) {
+        const statusEl = document.getElementById('mkt-social-content-status');
+        if (statusEl) statusEl.textContent = `Error creating social content: ${err.message}`;
+      }
+    }
+
+    async function loadMarketingLearningInsights() {
+      try {
+        const response = await fetch('/api/admin/marketing-sales-agent/social-learning', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        renderLearningInsights(data.learning || null);
+      } catch (err) {
+        console.error('Failed to load learning insights:', err);
+      }
+    }
+
+    async function ingestSocialLearningEvent() {
+      try {
+        const campaignId = (latestMarketingCampaignPayload?.campaign?.campaign_id || '').trim();
+        const payload = {
+          campaign_id: campaignId,
+          platform: (document.getElementById('mkt-learning-platform')?.value || 'facebook').trim().toLowerCase(),
+          group_name: (document.getElementById('mkt-learning-group')?.value || 'community').trim(),
+          content_id: (document.getElementById('mkt-learning-content-id')?.value || '').trim(),
+          metrics: {
+            impressions: Number(document.getElementById('mkt-learning-impressions')?.value || 0),
+            likes: Number(document.getElementById('mkt-learning-likes')?.value || 0),
+            comments: Number(document.getElementById('mkt-learning-comments')?.value || 0),
+            shares: Number(document.getElementById('mkt-learning-shares')?.value || 0),
+            clicks: Number(document.getElementById('mkt-learning-clicks')?.value || 0),
+            leads: Number(document.getElementById('mkt-learning-leads')?.value || 0),
+            conversions: Number(document.getElementById('mkt-learning-conversions')?.value || 0),
+            spend: Number(document.getElementById('mkt-learning-spend')?.value || 0)
+          }
+        };
+
+        const statusEl = document.getElementById('mkt-learning-status');
+        if (statusEl) statusEl.textContent = 'Ingesting social-learning BI signal...';
+
+        const response = await fetch('/api/admin/marketing-sales-agent/social-learning/ingest', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          if (statusEl) statusEl.textContent = `Ingestion failed (${response.status}): ${errData.error || 'unknown error'}`;
+          return;
+        }
+        const data = await response.json();
+        renderLearningInsights(data.learning || null);
+        if (statusEl) statusEl.textContent = 'Learning event ingested and insights refreshed.';
+      } catch (err) {
+        const statusEl = document.getElementById('mkt-learning-status');
+        if (statusEl) statusEl.textContent = `Error ingesting learning event: ${err.message}`;
       }
     }
     

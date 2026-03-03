@@ -5114,8 +5114,12 @@ For claims or questions, please contact:
                 persona = qs.get('persona', ['families'])[0]
                 region = qs.get('region', ['global'])[0]
                 budget_tier = qs.get('budget_tier', ['balanced'])[0]
+                audience_mode = qs.get('audience_mode', ['hybrid'])[0]
+                social_provider = qs.get('social_provider', ['veo'])[0]
                 networks_csv = qs.get('networks', [''])[0]
                 social_networks = [n.strip().lower() for n in str(networks_csv).split(',') if n.strip()]
+                supplier_segments_csv = qs.get('supplier_segments', [''])[0]
+                supplier_segments = [seg.strip().lower() for seg in str(supplier_segments_csv).split(',') if seg.strip()]
 
                 service = get_marketing_sales_agent_service()
                 campaign_data = service.generate_campaign(
@@ -5133,12 +5137,40 @@ For claims or questions, please contact:
                     budget_tier=budget_tier,
                     social_networks=social_networks,
                     generated_by=(session or {}).get('username', 'admin'),
+                    suppliers=SUPPLIERS,
+                    supplier_orders=SUPPLIER_ORDERS,
+                    audience_mode=audience_mode,
+                    supplier_segments=supplier_segments,
+                    social_provider=social_provider,
                 )
+                provider_status = service.get_provider_status()
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'generated': campaign_data,
+                    'providers': provider_status,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/marketing-sales-agent/providers':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+                service = get_marketing_sales_agent_service()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'providers': service.get_provider_status(),
+                    'social_network_adapters': service.get_social_network_adapters(),
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -5165,19 +5197,51 @@ For claims or questions, please contact:
                 service = get_marketing_sales_agent_service()
                 campaign_payload = latest_campaign.get('campaign', {})
                 integrity_payload = latest_campaign.get('integrity', {})
-                signature = integrity_payload.get('signature', '')
-                verified = service.verify_campaign_payload(campaign_payload, signature)
+                verified = service.verify_payload_integrity(campaign_payload, integrity_payload)
 
                 latest_copy = dict(latest_campaign)
                 latest_copy['integrity'] = dict(integrity_payload)
                 latest_copy['integrity']['verified'] = bool(verified)
+                learning_events = marketing_state.get('learning_events', [])
+                if not isinstance(learning_events, list):
+                    learning_events = []
+                learning_snapshot = service.aggregate_social_learning(learning_events)
+                latest_social_content = marketing_state.get('latest_social_content', {})
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'latest_campaign': latest_copy,
+                    'latest_social_content': latest_social_content,
                     'published_count': len(marketing_state.get('published_campaigns', [])),
                     'social_connections': marketing_state.get('social_connections', {}),
+                    'learning_snapshot': learning_snapshot,
+                    'providers': service.get_provider_status(),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/marketing-sales-agent/social-learning':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+                service = get_marketing_sales_agent_service()
+                marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
+                learning_events = marketing_state.get('learning_events', []) if isinstance(marketing_state, dict) else []
+                if not isinstance(learning_events, list):
+                    learning_events = []
+                learning_snapshot = service.aggregate_social_learning(learning_events)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'learning': learning_snapshot,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -16271,6 +16335,13 @@ For claims or questions, please contact:
                 social_networks = data.get('social_networks', [])
                 if not isinstance(social_networks, list):
                     social_networks = []
+                supplier_segments = data.get('supplier_segments', [])
+                if isinstance(supplier_segments, str):
+                    supplier_segments = [seg.strip().lower() for seg in supplier_segments.split(',') if seg.strip()]
+                if not isinstance(supplier_segments, list):
+                    supplier_segments = []
+                audience_mode = data.get('audience_mode', 'hybrid')
+                social_provider = data.get('social_provider', 'veo')
 
                 service = get_marketing_sales_agent_service()
                 generated = service.generate_campaign(
@@ -16288,10 +16359,22 @@ For claims or questions, please contact:
                     budget_tier=data.get('budget_tier', 'balanced'),
                     social_networks=social_networks,
                     generated_by=(session or {}).get('username', 'admin'),
+                    suppliers=SUPPLIERS,
+                    supplier_orders=SUPPLIER_ORDERS,
+                    audience_mode=audience_mode,
+                    supplier_segments=supplier_segments,
+                    social_provider=social_provider,
                 )
 
                 campaign_payload = generated.get('campaign', {})
                 integrity_payload = generated.get('integrity', {})
+                if not service.verify_payload_integrity(campaign_payload, integrity_payload):
+                    self._set_json_headers(422)
+                    self.wfile.write(json.dumps({
+                        'error': 'Campaign integrity verification failed',
+                        'code': 'CAMPAIGN_INTEGRITY_FAILED'
+                    }).encode('utf-8'))
+                    return
                 campaign_id = str(campaign_payload.get('campaign_id') or f"MKT-{uuid.uuid4().hex[:10]}")
                 published_at = datetime.now().isoformat()
                 publisher = (session or {}).get('username', 'admin')
@@ -16352,6 +16435,9 @@ For claims or questions, please contact:
                     'published_by': publisher,
                     'vertical': campaign_payload.get('scope', {}).get('vertical'),
                     'objective': campaign_payload.get('scope', {}).get('objective'),
+                    'audience_mode': campaign_payload.get('scope', {}).get('audience_mode'),
+                    'supplier_segments': campaign_payload.get('scope', {}).get('supplier_segments', []),
+                    'social_provider': campaign_payload.get('scope', {}).get('social_provider'),
                     'assets_created': len(created_assets),
                     'integrity_signature': integrity_payload.get('signature', ''),
                 }
@@ -16382,6 +16468,243 @@ For claims or questions, please contact:
                     'latest_campaign': marketing_state.get('latest_campaign', {}),
                     'published_count': len(published_campaigns),
                     'created_assets': created_assets,
+                    'providers': service.get_provider_status(),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== AI + BI MARKETING SALES AGENT - SOCIAL CONTENT ==========
+        if path == '/api/admin/marketing-sales-agent/social-content':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+                service = get_marketing_sales_agent_service()
+                marketing_state = DESIGN_SETTINGS.setdefault('marketing_sales_agent', {})
+                if not isinstance(marketing_state, dict):
+                    marketing_state = {}
+
+                campaign_payload = {}
+                campaign_integrity = {}
+                if isinstance(data.get('campaign'), dict):
+                    campaign_payload = data.get('campaign', {})
+                    campaign_integrity = data.get('campaign_integrity', {})
+                else:
+                    latest_campaign = marketing_state.get('latest_campaign', {})
+                    if isinstance(latest_campaign, dict):
+                        campaign_payload = latest_campaign.get('campaign', {})
+                        campaign_integrity = latest_campaign.get('integrity', {})
+
+                if not campaign_payload:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No campaign available. Generate/publish a campaign first.',
+                        'code': 'CAMPAIGN_REQUIRED'
+                    }).encode('utf-8'))
+                    return
+
+                if campaign_integrity and not service.verify_payload_integrity(campaign_payload, campaign_integrity):
+                    self._set_json_headers(422)
+                    self.wfile.write(json.dumps({
+                        'error': 'Campaign integrity verification failed',
+                        'code': 'CAMPAIGN_INTEGRITY_FAILED'
+                    }).encode('utf-8'))
+                    return
+
+                networks = data.get('social_networks', [])
+                if isinstance(networks, str):
+                    networks = [n.strip().lower() for n in networks.split(',') if n.strip()]
+                if not isinstance(networks, list):
+                    networks = []
+
+                package = service.build_social_content_package(
+                    campaign_payload=campaign_payload,
+                    provider=data.get('provider', 'veo'),
+                    social_networks=networks,
+                    hook=data.get('hook', 'Stop scrolling. Your smarter coverage strategy starts now.'),
+                    offer=data.get('offer', 'AI-driven protection and growth packages tailored in minutes.'),
+                    cta=data.get('cta', 'Book your strategy call today.'),
+                    target_group=data.get('target_group', 'high-intent audience'),
+                    duration_seconds=safe_int(data.get('duration_seconds', 20), 20),
+                    aspect_ratio=data.get('aspect_ratio', '9:16'),
+                    execution_mode=data.get('execution_mode', 'dry_run'),
+                    created_by=(session or {}).get('username', 'admin'),
+                )
+
+                created_assets = []
+                sync_to_media = bool(data.get('sync_to_media', True))
+                if sync_to_media:
+                    briefs = service.build_social_content_media_briefs(package.get('social_content', {}))
+                    for brief in briefs:
+                        asset_id = f"media-{uuid.uuid4().hex[:12]}"
+                        content = str(brief.get('content', ''))
+                        encoded_text = base64.b64encode(content.encode('utf-8')).decode('ascii')
+                        data_url = f"data:text/plain;base64,{encoded_text}"
+                        asset = {
+                            'id': asset_id,
+                            'name': brief.get('name', 'Social Brief.txt'),
+                            'type': 'document',
+                            'format': 'text/plain',
+                            'size': len(content.encode('utf-8')),
+                            'url': '',
+                            'data': data_url,
+                            'thumbnail': '',
+                            'duration': None,
+                            'source': 'ai_social_content',
+                            'uploaded_at': datetime.now().isoformat(),
+                            'uploaded_by': (session or {}).get('username', 'admin'),
+                            'metadata': {
+                                'campaign_id': package.get('social_content', {}).get('campaign_id', ''),
+                                'ad_id': package.get('social_content', {}).get('ad_id', ''),
+                                'brief_type': brief.get('brief_type', 'social'),
+                            }
+                        }
+                        MEDIA_ASSETS[asset_id] = asset
+                        created_assets.append({
+                            'id': asset_id,
+                            'name': asset['name'],
+                            'type': asset['type'],
+                            'brief_type': brief.get('brief_type', 'social'),
+                        })
+
+                social_jobs = marketing_state.get('social_content_jobs', [])
+                if not isinstance(social_jobs, list):
+                    social_jobs = []
+                social_jobs.append({
+                    'ad_id': package.get('social_content', {}).get('ad_id', ''),
+                    'campaign_id': package.get('social_content', {}).get('campaign_id', ''),
+                    'provider': package.get('social_content', {}).get('provider', ''),
+                    'created_at': package.get('social_content', {}).get('created_at', datetime.now().isoformat()),
+                    'execution_mode': package.get('social_content', {}).get('execution_mode', 'dry_run'),
+                    'integrity_signature': package.get('integrity', {}).get('signature', ''),
+                    'assets_created': len(created_assets),
+                })
+                social_jobs = social_jobs[-100:]
+
+                marketing_state['latest_social_content'] = {
+                    **package,
+                    'assets_created': created_assets,
+                    'published_by': (session or {}).get('username', 'admin'),
+                    'published_at': datetime.now().isoformat(),
+                }
+                marketing_state['social_content_jobs'] = social_jobs
+                marketing_state['updated_at'] = datetime.now().isoformat()
+                marketing_state['updated_by'] = (session or {}).get('username', 'admin')
+                DESIGN_SETTINGS['marketing_sales_agent'] = marketing_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = (session or {}).get('username', 'admin')
+
+                save_ledger_data()
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Social content package generated',
+                    'social_content': package,
+                    'created_assets': created_assets,
+                    'providers': service.get_provider_status(),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== AI + BI MARKETING SALES AGENT - SOCIAL LEARNING ==========
+        if path == '/api/admin/marketing-sales-agent/social-learning/ingest':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+                service = get_marketing_sales_agent_service()
+                marketing_state = DESIGN_SETTINGS.setdefault('marketing_sales_agent', {})
+                if not isinstance(marketing_state, dict):
+                    marketing_state = {}
+
+                latest_campaign = marketing_state.get('latest_campaign', {})
+                latest_campaign_id = ''
+                if isinstance(latest_campaign, dict):
+                    latest_campaign_id = str(latest_campaign.get('campaign', {}).get('campaign_id', '') or '')
+
+                metrics = data.get('metrics', {})
+                if not isinstance(metrics, dict):
+                    metrics = {}
+                # Allow top-level metric fields for simpler API clients.
+                for key in ['impressions', 'views', 'likes', 'comments', 'shares', 'clicks', 'leads', 'conversions', 'spend']:
+                    if key in data and key not in metrics:
+                        metrics[key] = data.get(key)
+
+                event_envelope = service.record_social_learning_event(
+                    campaign_id=str(data.get('campaign_id') or latest_campaign_id or '').strip(),
+                    platform=data.get('platform', 'unknown'),
+                    group_name=data.get('group_name', data.get('group', 'unknown')),
+                    content_id=data.get('content_id', ''),
+                    metrics=metrics,
+                    recorded_by=(session or {}).get('username', 'admin'),
+                    observed_at=data.get('observed_at'),
+                    source_note=data.get('source_note', ''),
+                )
+
+                learning_events = marketing_state.get('learning_events', [])
+                if not isinstance(learning_events, list):
+                    learning_events = []
+                learning_events.append(event_envelope)
+                learning_events = learning_events[-2000:]
+                marketing_state['learning_events'] = learning_events
+
+                learning_snapshot = service.aggregate_social_learning(learning_events)
+                marketing_state['learning_snapshot'] = learning_snapshot
+                marketing_state['updated_at'] = datetime.now().isoformat()
+                marketing_state['updated_by'] = (session or {}).get('username', 'admin')
+                DESIGN_SETTINGS['marketing_sales_agent'] = marketing_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = (session or {}).get('username', 'admin')
+
+                save_ledger_data()
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Social learning event ingested',
+                    'learning_event': event_envelope,
+                    'learning': learning_snapshot,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
