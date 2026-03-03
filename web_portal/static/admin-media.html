@@ -487,6 +487,78 @@
         }
         .assignment-status.active { color: #fff; }
         .assignment-status.inactive { color: rgba(255,255,255,0.6); }
+
+        /* Growth Agent Bridge */
+        .growth-bridge-section {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .growth-bridge-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .growth-bridge-header h2 {
+            margin: 0;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .growth-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .growth-meta-card {
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 9px;
+            padding: 10px;
+        }
+        .growth-meta-label {
+            font-size: 0.72rem;
+            color: rgba(255,255,255,0.70);
+        }
+        .growth-meta-value {
+            font-size: 0.9rem;
+            margin-top: 4px;
+            font-weight: 700;
+            word-break: break-word;
+        }
+        .growth-lists-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 10px;
+        }
+        .growth-list-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 9px;
+            padding: 10px;
+        }
+        .growth-list-card h4 {
+            margin: 0 0 8px 0;
+            font-size: 0.85rem;
+        }
+        .growth-list-card ul {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 0.78rem;
+            line-height: 1.45;
+        }
+        .growth-status {
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.82);
+        }
         
         /* ========== DESIGN SETTINGS PANEL ========== */
         .design-section {
@@ -933,6 +1005,57 @@
                 <a href="/" target="_blank" class="btn btn-secondary">👁️ Preview</a>
             </div>
         </section>
+
+        <!-- Growth Agent Bridge -->
+        <section class="growth-bridge-section">
+            <div class="growth-bridge-header">
+                <h2>🚀 Growth Agent Bridge (Admin + Media)</h2>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-secondary" onclick="loadGrowthBridgeCampaign()">🔄 Refresh</button>
+                    <a href="/admin.html#growth-agent-section" class="btn btn-primary">⚙️ Open Admin Builder</a>
+                </div>
+            </div>
+
+            <div class="growth-meta-grid">
+                <div class="growth-meta-card">
+                    <div class="growth-meta-label">Campaign ID</div>
+                    <div class="growth-meta-value" id="growth-campaign-id">-</div>
+                </div>
+                <div class="growth-meta-card">
+                    <div class="growth-meta-label">Published At</div>
+                    <div class="growth-meta-value" id="growth-published-at">-</div>
+                </div>
+                <div class="growth-meta-card">
+                    <div class="growth-meta-label">Integrity</div>
+                    <div class="growth-meta-value" id="growth-integrity">-</div>
+                </div>
+                <div class="growth-meta-card">
+                    <div class="growth-meta-label">Brief Assets</div>
+                    <div class="growth-meta-value" id="growth-assets-count">0</div>
+                </div>
+            </div>
+
+            <div class="growth-lists-grid">
+                <div class="growth-list-card">
+                    <h4>🎯 Sales Playbooks</h4>
+                    <div id="growth-sales-list">No campaign loaded yet.</div>
+                </div>
+                <div class="growth-list-card">
+                    <h4>🎬 AI Video Blueprints</h4>
+                    <div id="growth-videos-list">No campaign loaded yet.</div>
+                </div>
+                <div class="growth-list-card">
+                    <h4>📣 Social Network Plan</h4>
+                    <div id="growth-social-list">No campaign loaded yet.</div>
+                </div>
+                <div class="growth-list-card">
+                    <h4>📄 Synced Media Briefs</h4>
+                    <div id="growth-assets-list">No campaign loaded yet.</div>
+                </div>
+            </div>
+
+            <div id="growth-status" class="growth-status">Ready. Pull latest published campaign from admin dashboard.</div>
+        </section>
         </div><!-- End Media Tab -->
         
         <!-- Design Tab Content -->
@@ -1240,6 +1363,7 @@
         let mediaAssets = [];
         let currentFilter = 'all';
         let currentMainTab = 'media';
+        let growthBridgeCampaign = null;
         let assignments = {
             hero_video: '',
             hero_background: '',
@@ -1317,6 +1441,7 @@
             loadMediaAssets();
             loadAssignments();
             loadDesignSettings();
+            loadGrowthBridgeCampaign();
             setupDragAndDrop();
             setupRangeListeners();
         });
@@ -1425,6 +1550,113 @@
                 }
             } catch (e) {
                 showToast('Error: ' + e.message, 'error');
+            }
+        }
+
+        function escapeGrowthHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setGrowthStatus(message) {
+            const el = document.getElementById('growth-status');
+            if (el) el.textContent = message;
+        }
+
+        function renderGrowthList(items, renderer) {
+            if (!Array.isArray(items) || items.length === 0) {
+                return '<div style="font-size:0.78rem;opacity:0.8;">No data available</div>';
+            }
+            return `<ul>${items.map(renderer).join('')}</ul>`;
+        }
+
+        function renderGrowthBridgeCampaign(campaignEnvelope) {
+            if (!campaignEnvelope || !campaignEnvelope.campaign) {
+                setGrowthStatus('No campaign payload available.');
+                return;
+            }
+
+            growthBridgeCampaign = campaignEnvelope;
+            const campaign = campaignEnvelope.campaign;
+            const integrity = campaignEnvelope.integrity || {};
+            const assets = campaignEnvelope.assets_created || [];
+
+            const campaignIdEl = document.getElementById('growth-campaign-id');
+            const publishedAtEl = document.getElementById('growth-published-at');
+            const integrityEl = document.getElementById('growth-integrity');
+            const assetsCountEl = document.getElementById('growth-assets-count');
+            if (campaignIdEl) campaignIdEl.textContent = campaign.campaign_id || '-';
+            if (publishedAtEl) {
+                const publishRef = campaignEnvelope.published_at || campaign.generated_at;
+                publishedAtEl.textContent = publishRef ? new Date(publishRef).toLocaleString() : '-';
+            }
+            if (integrityEl) {
+                integrityEl.textContent = integrity.verified
+                    ? `Verified (${String(integrity.algorithm || '').toUpperCase()})`
+                    : `Unverified (${String(integrity.algorithm || 'unknown').toUpperCase()})`;
+            }
+            if (assetsCountEl) assetsCountEl.textContent = String(assets.length || 0);
+
+            const salesListEl = document.getElementById('growth-sales-list');
+            const videosListEl = document.getElementById('growth-videos-list');
+            const socialListEl = document.getElementById('growth-social-list');
+            const assetsListEl = document.getElementById('growth-assets-list');
+
+            if (salesListEl) {
+                salesListEl.innerHTML = renderGrowthList(campaign.sales_playbooks, (item) => `
+                    <li><strong>${escapeGrowthHtml(item.playbook)}</strong><br>${escapeGrowthHtml(item.kpi_target || '')}</li>
+                `);
+            }
+            if (videosListEl) {
+                videosListEl.innerHTML = renderGrowthList(campaign.ai_video_blueprints, (item) => `
+                    <li><strong>${escapeGrowthHtml(item.title)}</strong><br>${escapeGrowthHtml(item.format || '')}</li>
+                `);
+            }
+            if (socialListEl) {
+                socialListEl.innerHTML = renderGrowthList(campaign.social_network_plan, (item) => `
+                    <li><strong>${escapeGrowthHtml(String(item.network || '').toUpperCase())}</strong><br>${escapeGrowthHtml(item.cadence || '')}</li>
+                `);
+            }
+            if (assetsListEl) {
+                assetsListEl.innerHTML = renderGrowthList(assets, (asset) => `
+                    <li>${escapeGrowthHtml(asset.name || asset.id || 'Campaign Brief')}</li>
+                `);
+            }
+
+            setGrowthStatus(`Loaded campaign ${campaign.campaign_id || ''} and synced media briefs.`);
+        }
+
+        async function loadGrowthBridgeCampaign() {
+            const token = getToken();
+            if (!token) return;
+
+            setGrowthStatus('Loading latest campaign from admin...');
+            try {
+                const response = await fetch('/api/admin/marketing-sales-agent/latest', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.status === 404) {
+                    setGrowthStatus('No published campaign found. Generate and publish from admin dashboard first.');
+                    return;
+                }
+                if (!response.ok) {
+                    setGrowthStatus(`Failed to load campaign (${response.status}).`);
+                    return;
+                }
+
+                const data = await response.json();
+                if (data?.latest_campaign?.campaign) {
+                    renderGrowthBridgeCampaign(data.latest_campaign);
+                } else {
+                    setGrowthStatus('No campaign payload returned by server.');
+                }
+            } catch (e) {
+                setGrowthStatus('Error loading campaign bridge: ' + e.message);
             }
         }
         

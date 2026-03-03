@@ -1227,6 +1227,115 @@
         </div>
       </div>
     </section>
+
+    <!-- Marketing + Sales Agent (AI + BI) -->
+    <section id="growth-agent-section" class="section-content" style="background: linear-gradient(135deg, #0b1f4d 0%, #173f8a 50%, #1e5ec8 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(11, 31, 77, 0.28);">
+      <div class="section-header" style="margin-bottom: 18px;">
+        <div>
+          <h2 style="color: white; margin: 0;">🚀 AI + BI Marketing & Sales Agent</h2>
+          <p style="opacity: 0.88; margin: 6px 0 0 0; font-size: 0.92rem;">
+            Advanced growth playbooks for Insurance, Investments, and Health Wallet. Includes stories, article briefs, AI video blueprints, and social-network plans.
+          </p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="generateMarketingSalesCampaign()" style="background: #42a5f5; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">🤖 Generate Agent Plan</button>
+          <button onclick="publishMarketingSalesCampaign()" style="background: #4caf50; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">📁 Publish to Media</button>
+          <a href="/admin-media.html" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🔗 Open Media Dashboard</a>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 16px;">
+        <div>
+          <label for="mkt-vertical" style="font-size: 0.78rem; opacity: 0.82;">Vertical</label>
+          <select id="mkt-vertical" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <option value="insurance">Insurance</option>
+            <option value="investments">Investments</option>
+            <option value="health_wallet">Health Wallet</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-objective" style="font-size: 0.78rem; opacity: 0.82;">Objective</label>
+          <select id="mkt-objective" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <option value="growth">Growth</option>
+            <option value="retention">Retention</option>
+            <option value="cross_sell">Cross Sell</option>
+            <option value="reactivation">Reactivation</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-persona" style="font-size: 0.78rem; opacity: 0.82;">Persona</label>
+          <select id="mkt-persona" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <option value="families">Families</option>
+            <option value="professionals">Professionals</option>
+            <option value="seniors">Seniors</option>
+            <option value="entrepreneurs">Entrepreneurs</option>
+            <option value="employers">Employers</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-region" style="font-size: 0.78rem; opacity: 0.82;">Region</label>
+          <input id="mkt-region" type="text" value="global" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+        </div>
+        <div>
+          <label for="mkt-budget-tier" style="font-size: 0.78rem; opacity: 0.82;">Budget Tier</label>
+          <select id="mkt-budget-tier" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+            <option value="balanced">Balanced</option>
+            <option value="aggressive">Aggressive</option>
+            <option value="efficient">Efficient</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-networks" style="font-size: 0.78rem; opacity: 0.82;">Social Networks (comma-separated)</label>
+          <input id="mkt-networks" type="text" value="linkedin,x,facebook,instagram,youtube,whatsapp" style="width: 100%; margin-top: 4px; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: white;">
+        </div>
+      </div>
+
+      <div id="mkt-agent-status" style="background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.88rem;">
+        Ready to generate campaign intelligence.
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px;">
+        <div style="background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px;">
+          <div style="font-size: 0.72rem; opacity: 0.8;">Campaign ID</div>
+          <div id="mkt-campaign-id" style="font-weight: 700; margin-top: 3px;">-</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px;">
+          <div style="font-size: 0.72rem; opacity: 0.8;">Generated At</div>
+          <div id="mkt-generated-at" style="font-weight: 700; margin-top: 3px;">-</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px;">
+          <div style="font-size: 0.72rem; opacity: 0.8;">Integrity</div>
+          <div id="mkt-integrity" style="font-weight: 700; margin-top: 3px;">-</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px;">
+          <div style="font-size: 0.72rem; opacity: 0.8;">Media Brief Assets</div>
+          <div id="mkt-assets-created" style="font-weight: 700; margin-top: 3px;">0</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">🎯 Sales Playbooks</h4>
+          <div id="mkt-sales-playbooks" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view playbooks.</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">📚 Story Outlines</h4>
+          <div id="mkt-story-outlines" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view story arcs.</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">📰 Targeted Articles</h4>
+          <div id="mkt-article-briefs" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view article briefs.</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">🎬 AI Video Blueprints</h4>
+          <div id="mkt-video-briefs" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view video blueprint scripts.</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h4 style="margin: 0 0 8px 0;">📣 Social Network Plan</h4>
+          <div id="mkt-social-plan" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view channel strategy.</div>
+        </div>
+      </div>
+    </section>
     
     <!-- Platform Ledger Analytics Section -->
     <section id="platform-analytics" class="section-content" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(26, 35, 126, 0.25);">
@@ -1592,6 +1701,7 @@
       loadUnderwritingApplications();
       loadPolicies();
       loadPlatformAnalytics();
+      loadLatestMarketingCampaign();
       loadClaims();
       loadBillingData();
       loadTransactions();
@@ -2688,6 +2798,224 @@
         console.error('Failed to load dashboard stats:', err);
         // Fallback to pipeline-stats endpoint
         await loadPipelineStats();
+      }
+    }
+
+    let latestMarketingCampaignPayload = null;
+
+    function escapeMarketingHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function marketingParamsFromInputs() {
+      const networksRaw = (document.getElementById('mkt-networks')?.value || '').trim();
+      const socialNetworks = networksRaw
+        .split(',')
+        .map(item => item.trim().toLowerCase())
+        .filter(Boolean);
+
+      return {
+        vertical: (document.getElementById('mkt-vertical')?.value || 'insurance').trim(),
+        objective: (document.getElementById('mkt-objective')?.value || 'growth').trim(),
+        persona: (document.getElementById('mkt-persona')?.value || 'families').trim(),
+        region: (document.getElementById('mkt-region')?.value || 'global').trim(),
+        budget_tier: (document.getElementById('mkt-budget-tier')?.value || 'balanced').trim(),
+        social_networks: socialNetworks
+      };
+    }
+
+    function setMarketingStatus(message, tone = 'info') {
+      const el = document.getElementById('mkt-agent-status');
+      if (!el) return;
+      el.textContent = message;
+      const colors = {
+        info: 'rgba(255,255,255,0.12)',
+        success: 'rgba(76,175,80,0.25)',
+        warning: 'rgba(255,193,7,0.25)',
+        error: 'rgba(244,67,54,0.25)'
+      };
+      el.style.background = colors[tone] || colors.info;
+    }
+
+    function renderMarketingList(items, renderer) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return '<div style="opacity:0.8;">No data available</div>';
+      }
+      return items.map(renderer).join('');
+    }
+
+    function renderMarketingCampaign(latestCampaign) {
+      if (!latestCampaign || !latestCampaign.campaign) {
+        return;
+      }
+
+      const campaign = latestCampaign.campaign;
+      const integrity = latestCampaign.integrity || {};
+      const assets = latestCampaign.assets_created || [];
+
+      latestMarketingCampaignPayload = latestCampaign;
+
+      const campaignId = campaign.campaign_id || '-';
+      const generatedAt = campaign.generated_at ? new Date(campaign.generated_at).toLocaleString() : '-';
+      const integrityText = integrity.verified
+        ? `Verified (${String(integrity.algorithm || '').toUpperCase()})`
+        : `Unverified (${String(integrity.algorithm || 'unknown').toUpperCase()})`;
+
+      const campaignIdEl = document.getElementById('mkt-campaign-id');
+      const generatedAtEl = document.getElementById('mkt-generated-at');
+      const integrityEl = document.getElementById('mkt-integrity');
+      const assetsEl = document.getElementById('mkt-assets-created');
+      if (campaignIdEl) campaignIdEl.textContent = campaignId;
+      if (generatedAtEl) generatedAtEl.textContent = generatedAt;
+      if (integrityEl) integrityEl.textContent = integrityText;
+      if (assetsEl) assetsEl.textContent = String(Array.isArray(assets) ? assets.length : 0);
+
+      const salesHtml = renderMarketingList(campaign.sales_playbooks, (item) => `
+        <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
+          <div style="font-weight:700;">${escapeMarketingHtml(item.playbook)}</div>
+          <div style="opacity:0.9;">${escapeMarketingHtml(item.how_it_works)}</div>
+          <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">KPI: ${escapeMarketingHtml(item.kpi_target)}</div>
+        </div>
+      `);
+
+      const storyHtml = renderMarketingList(campaign.story_outlines, (item) => `
+        <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
+          <div style="font-weight:700;">${escapeMarketingHtml(item.title)}</div>
+          <div style="opacity:0.9;">${escapeMarketingHtml(item.outline)}</div>
+          <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">Distribution: ${escapeMarketingHtml(item.distribution)}</div>
+        </div>
+      `);
+
+      const articlesHtml = renderMarketingList(campaign.targeted_articles, (item) => `
+        <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
+          <div style="font-weight:700;">${escapeMarketingHtml(item.title)}</div>
+          <div style="opacity:0.9;">${escapeMarketingHtml(item.angle)}</div>
+          <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">CTA: ${escapeMarketingHtml(item.cta)}</div>
+        </div>
+      `);
+
+      const videosHtml = renderMarketingList(campaign.ai_video_blueprints, (item) => `
+        <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
+          <div style="font-weight:700;">${escapeMarketingHtml(item.title)}</div>
+          <div style="opacity:0.9;">${escapeMarketingHtml(item.format)}</div>
+          <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">Voiceover: ${escapeMarketingHtml(item.voiceover_style)}</div>
+        </div>
+      `);
+
+      const socialHtml = renderMarketingList(campaign.social_network_plan, (item) => `
+        <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.15);">
+          <div style="font-weight:700;">${escapeMarketingHtml(String(item.network || '').toUpperCase())}</div>
+          <div style="opacity:0.9;">${escapeMarketingHtml(item.format)}</div>
+          <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">Cadence: ${escapeMarketingHtml(item.cadence)}</div>
+        </div>
+      `);
+
+      const playbooksEl = document.getElementById('mkt-sales-playbooks');
+      const storiesEl = document.getElementById('mkt-story-outlines');
+      const articlesEl = document.getElementById('mkt-article-briefs');
+      const videosEl = document.getElementById('mkt-video-briefs');
+      const socialEl = document.getElementById('mkt-social-plan');
+      if (playbooksEl) playbooksEl.innerHTML = salesHtml;
+      if (storiesEl) storiesEl.innerHTML = storyHtml;
+      if (articlesEl) articlesEl.innerHTML = articlesHtml;
+      if (videosEl) videosEl.innerHTML = videosHtml;
+      if (socialEl) socialEl.innerHTML = socialHtml;
+    }
+
+    async function loadLatestMarketingCampaign() {
+      try {
+        const response = await fetch('/api/admin/marketing-sales-agent/latest', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.status === 404) {
+          setMarketingStatus('No published campaign yet. Generate a new one to begin.', 'info');
+          return;
+        }
+        if (!response.ok) {
+          setMarketingStatus(`Could not load latest campaign (${response.status})`, 'warning');
+          return;
+        }
+
+        const data = await response.json();
+        if (data && data.latest_campaign) {
+          renderMarketingCampaign(data.latest_campaign);
+          setMarketingStatus(`Latest campaign loaded (${data.latest_campaign.campaign?.campaign_id || 'unknown'}).`, 'success');
+        } else {
+          setMarketingStatus('No campaign payload returned from server.', 'warning');
+        }
+      } catch (err) {
+        setMarketingStatus(`Failed to load latest campaign: ${err.message}`, 'error');
+      }
+    }
+
+    async function generateMarketingSalesCampaign() {
+      try {
+        const params = marketingParamsFromInputs();
+        const query = new URLSearchParams({
+          vertical: params.vertical,
+          objective: params.objective,
+          persona: params.persona,
+          region: params.region,
+          budget_tier: params.budget_tier,
+          networks: params.social_networks.join(',')
+        });
+
+        setMarketingStatus('Generating AI + BI campaign plan...', 'info');
+        const response = await fetch(`/api/admin/marketing-sales-agent?${query.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+          setMarketingStatus(`Generation failed (${response.status}).`, 'error');
+          return;
+        }
+        const data = await response.json();
+        if (data?.generated?.campaign) {
+          renderMarketingCampaign(data.generated);
+          setMarketingStatus('Campaign generated successfully. Review and publish to media when ready.', 'success');
+        } else {
+          setMarketingStatus('Generation response did not include campaign details.', 'warning');
+        }
+      } catch (err) {
+        setMarketingStatus(`Error generating campaign: ${err.message}`, 'error');
+      }
+    }
+
+    async function publishMarketingSalesCampaign() {
+      try {
+        const params = marketingParamsFromInputs();
+        setMarketingStatus('Publishing campaign to media dashboard assets...', 'info');
+
+        const response = await fetch('/api/admin/marketing-sales-agent/publish', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(params)
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          setMarketingStatus(`Publish failed (${response.status}): ${errData.error || 'unknown error'}`, 'error');
+          return;
+        }
+
+        const data = await response.json();
+        if (data?.latest_campaign?.campaign) {
+          renderMarketingCampaign(data.latest_campaign);
+          setMarketingStatus(`Campaign published. ${data.created_assets?.length || 0} media briefs synced to admin-media dashboard.`, 'success');
+        } else {
+          setMarketingStatus('Publish completed but no campaign payload returned.', 'warning');
+        }
+      } catch (err) {
+        setMarketingStatus(`Error publishing campaign: ${err.message}`, 'error');
       }
     }
     
