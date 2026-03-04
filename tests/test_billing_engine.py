@@ -256,7 +256,51 @@ class TestBillingEngine:
         
         assert result['success'] is False
         assert 'not found' in result['error'].lower()
-    
+
+    def test_refund_none_transaction_id(self, engine):
+        """Test refund with None transaction_id (missing ID)"""
+        result = engine.refund_payment(None, 100.00)
+
+        assert result['success'] is False
+        assert 'required' in result['error'].lower()
+
+    def test_refund_empty_transaction_id(self, engine):
+        """Test refund with empty-string transaction_id"""
+        result = engine.refund_payment('', 100.00)
+
+        assert result['success'] is False
+        assert 'required' in result['error'].lower()
+
+    def test_refund_whitespace_transaction_id(self, engine):
+        """Test refund with whitespace-only transaction_id"""
+        result = engine.refund_payment('   ', 100.00)
+
+        assert result['success'] is False
+        assert 'required' in result['error'].lower()
+
+    def test_refund_nonexistent_includes_id_in_error(self, engine):
+        """Test that the error message includes the transaction_id for easy diagnosis"""
+        bad_id = 'TXN-UNKNOWN-99'
+        result = engine.refund_payment(bad_id, 50.00)
+
+        assert result['success'] is False
+        assert bad_id in result['error']
+
+    def test_refund_non_success_transaction(self, engine):
+        """Test refund of a transaction with non-success status (partial ledger/sync state)"""
+        transaction_id = 'TXN-PENDING-001'
+        engine.transactions[transaction_id] = {
+            'transaction_id': transaction_id,
+            'customer_id': 'CUST-001',
+            'amount': 75.00,
+            'status': 'pending'  # Not yet confirmed — simulates an out-of-sync state
+        }
+
+        result = engine.refund_payment(transaction_id, 75.00)
+
+        assert result['success'] is False
+        assert 'non-successful' in result['error'].lower()
+
     def test_refund_exceeds_original(self, engine):
         """Test refund exceeding original amount"""
         transaction_id = 'TXN-TEST-456'

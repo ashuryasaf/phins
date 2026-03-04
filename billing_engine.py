@@ -4,6 +4,7 @@ PHINS Secure Billing Engine
 Handles payment processing, transaction logging, and fraud detection
 """
 import json
+import logging
 import uuid
 import hashlib
 import hmac
@@ -11,6 +12,8 @@ import secrets
 import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityValidator:
@@ -450,17 +453,42 @@ class BillingEngine:
     
     def refund_payment(self, transaction_id: str, amount: float = None, reason: str = None) -> Dict:
         """Process refund for a transaction"""
+        # Distinguish between a missing/empty transaction_id and one that simply is not found
+        if not transaction_id or not transaction_id.strip():
+            logger.debug("[REFUND] Refund rejected: transaction_id is missing or empty (received: %r)", transaction_id)
+            return {'success': False, 'error': 'transaction_id is required'}
+
+        transaction_id = transaction_id.strip()
+        logger.debug("[REFUND] Looking up transaction_id=%r for refund", transaction_id)
+
         transaction = self.transactions.get(transaction_id)
-        
+
         if not transaction:
-            return {'success': False, 'error': 'Transaction not found'}
-        
+            logger.debug(
+                "[REFUND] Refund rejected: transaction_id=%r not found in ledger. "
+                "Ledger contains %d transaction(s). This may indicate a sync issue.",
+                transaction_id,
+                len(self.transactions),
+            )
+            return {'success': False, 'error': f'Transaction not found: {transaction_id}'}
+
         if transaction['status'] != 'success':
+            logger.debug(
+                "[REFUND] Refund rejected: transaction_id=%r has status=%r (must be 'success')",
+                transaction_id,
+                transaction['status'],
+            )
             return {'success': False, 'error': 'Cannot refund non-successful transaction'}
         
         refund_amount = amount or transaction['amount']
         
         if refund_amount > transaction['amount']:
+            logger.debug(
+                "[REFUND] Refund rejected: requested amount %.2f exceeds original transaction amount %.2f for transaction_id=%r",
+                refund_amount,
+                transaction['amount'],
+                transaction_id,
+            )
             return {'success': False, 'error': 'Refund amount exceeds original transaction'}
         
         refund_id = f"RFD-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(8)}"
@@ -478,6 +506,13 @@ class BillingEngine:
         self.transactions[refund_id] = refund
         transaction['refund_id'] = refund_id
         transaction['refund_amount'] = refund_amount
+
+        logger.debug(
+            "[REFUND] Refund successful: refund_id=%r, transaction_id=%r, amount=%.2f",
+            refund_id,
+            transaction_id,
+            refund_amount,
+        )
         
         return {
             'success': True,
