@@ -2455,14 +2455,14 @@
         </div>
       `;
 
-      // Data Integrity Rules
+      // Data integrity summary (rules remain internal and are not disclosed).
       const rules = meta.data_integrity_rules || [];
       if (rules.length) {
         html += `
           <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #a7f3d0;">
-            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">🛡️ Data Integrity Rules</h4>
+            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">🛡️ Data Integrity Status</h4>
             <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-              ${rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
+              <span class="integrity-badge pass">✓ Integrity checks active (${rules.length})</span>
             </div>
           </div>
         `;
@@ -2837,20 +2837,9 @@
         }
         currentAnalysis = lastAnalysis;
 
-        // Combine Swiftness affiliations with uploaded files for output
-        processingMessage.textContent = 'Aligning Swiftness affiliations...';
-        const filesSnapshot = getFileSummaries(uploadedFiles);
-        const analysisTypeLabel = analysisTypeSelect
-          ? (analysisTypeSelect.options[analysisTypeSelect.selectedIndex]?.text || 'Auto-detect')
-          : 'Auto-detect';
-        const affiliationSnapshot = await loadAffiliations();
-        
         // Display results
-        displayResults(currentAnalysis, currentReport, {
-          affiliations: affiliationSnapshot,
-          files: filesSnapshot,
-          analysisTypeLabel: analysisTypeLabel
-        });
+        processingMessage.textContent = 'Finalizing clear savings, personal-data and risk-cover assessment...';
+        displayResults(currentAnalysis, currentReport);
         
         // Hide processing, show results
         processingStatus.classList.remove('active');
@@ -3513,10 +3502,10 @@
           </div>`
         : '';
 
-      // Data integrity rules for report
+      // Data integrity summary for report (without exposing rule text)
       const integrityHtml = (swiftnessReportModel && swiftnessReportModel.metadata && swiftnessReportModel.metadata.data_integrity_rules)
         ? `<div style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem;">
-            ${swiftnessReportModel.metadata.data_integrity_rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
+            <span class="integrity-badge pass">✓ Integrity checks active (${swiftnessReportModel.metadata.data_integrity_rules.length})</span>
           </div>`
         : '';
 
@@ -3612,6 +3601,20 @@
         return;
       }
 
+      const shouldHideAffiliationRuleSection = (sectionTitle) => {
+        const title = String(sectionTitle || '');
+        const lower = title.toLowerCase();
+        return (
+          lower.includes('affiliation') ||
+          lower.includes('swiftness') ||
+          lower.includes('resource') ||
+          lower.includes('integrity rules') ||
+          title.includes('שיוך') ||
+          title.includes('מפת שיוכים') ||
+          title.includes('כללי שלמות')
+        );
+      };
+
       // Check if this is pension/Mislaka data
       const isPensionData = report.metadata?.is_pension_data || 
                            report.metadata?.pension_data ||
@@ -3644,18 +3647,17 @@
         renderInsights(analysis, analysis.key_metrics || {});
       }
       
-      // Charts (merge generated report charts with affiliation coverage charts)
+      // Charts: keep report-native charts for clarity.
       const baseCharts = Array.isArray(report.charts) ? [...report.charts] : [];
-      const affiliationSummary = options.affiliations ? summarizeAffiliations(options.affiliations) : null;
-      const mergedCharts = affiliationSummary ? [...baseCharts, ...buildAffiliationCharts(affiliationSummary)] : baseCharts;
-      renderCharts(mergedCharts);
+      renderCharts(baseCharts);
       
       // Report Title
       document.getElementById('reportTitle').textContent = `📋 ${report.title || 'Analysis Report'}`;
       
       // Report Sections - with enhanced Mislaka/pension-specific rendering
       const reportBody = document.getElementById('reportBody');
-      reportBody.innerHTML = (report.sections || []).map(section => {
+      const visibleSections = (report.sections || []).filter(section => !shouldHideAffiliationRuleSection(section?.title || ''));
+      reportBody.innerHTML = visibleSections.map(section => {
         const title = section.title || '';
         const isMislakaSection = title.includes('מסלקה') || 
                                  title.toLowerCase().includes('mislaka');
@@ -3685,15 +3687,6 @@
         `;
       }).join('');
 
-      if (affiliationSummary) {
-        appendAffiliationCompanionSection(reportBody, {
-          summary: affiliationSummary,
-          affiliations: options.affiliations,
-          files: options.files || [],
-          analysisTypeLabel: options.analysisTypeLabel || 'Auto-detect'
-        });
-      }
-
       const baseRecommendations = (report.recommendations || []).map(rec => {
         const priority = String(rec.priority || 'medium').toLowerCase();
         return {
@@ -3705,18 +3698,7 @@
         };
       });
 
-      if (affiliationSummary) {
-        const safeSnapshot = getSwiftnessStatusSnapshot();
-        renderAffiliationRecommendations(
-          affiliationSummary,
-          options.files || [],
-          options.analysisTypeLabel || 'Auto-detect',
-          safeSnapshot,
-          baseRecommendations
-        );
-      } else {
-        renderRecommendationsList(baseRecommendations);
-      }
+      renderRecommendationsList(baseRecommendations);
     }
 
     function appendAffiliationCompanionSection(reportBody, payload) {
@@ -3747,9 +3729,10 @@
         Charts: (section.charts || []).length
       }));
 
-      const integrityRules = (swiftnessReportModel?.metadata?.data_integrity_rules || [])
-        .map(rule => `<span class="integrity-badge pass">✓ ${escapeHtml(rule)}</span>`)
-        .join('');
+      const integrityRulesCount = (swiftnessReportModel?.metadata?.data_integrity_rules || []).length;
+      const integrityRules = integrityRulesCount
+        ? `<span class="integrity-badge pass">✓ Integrity checks active (${integrityRulesCount})</span>`
+        : '';
 
       reportBody.insertAdjacentHTML('beforeend', `
         <div class="report-section fade-in">

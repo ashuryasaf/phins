@@ -2878,11 +2878,6 @@ Factors Affecting Score:
             order=8
         ))
 
-        # 9. Affiliation Snapshot (Mislaka schema codes)
-        affiliation_section = self._build_affiliation_mapping_section(is_hebrew)
-        if affiliation_section:
-            sections.append(affiliation_section)
-        
         return sections
 
     def _build_affiliation_snapshot_metadata(self) -> Dict[str, Any]:
@@ -3245,6 +3240,7 @@ Factors Affecting Score:
         unique_ids = sorted({v for v in id_values if v})
         records_analyzed = max(len(rows), len(sample_rows), 0)
         id_rows_count = len([entry for entry in sample_rows if entry.get('id')])
+        id_capture_rate = round((id_rows_count / max(records_analyzed, 1)) * 100, 2) if records_analyzed else 0.0
 
         return {
             'records_analyzed': records_analyzed,
@@ -3254,6 +3250,10 @@ Factors Affecting Score:
             'ids_with_values': len(id_values),
             'unique_id_count': len(unique_ids),
             'id_row_coverage': id_rows_count,
+            'id_capture_rate_pct': id_capture_rate,
+            'personal_signal_fields': len(id_columns),
+            'savings_signal_fields': len(savings_columns),
+            'cover_signal_fields': len(cover_columns),
             'total_savings': round(total_savings, 2),
             'average_savings': round(total_savings / records_with_savings, 2) if records_with_savings else 0.0,
             'total_cover': round(total_cover, 2),
@@ -3267,7 +3267,7 @@ Factors Affecting Score:
         summary: Optional[Dict[str, Any]],
         is_hebrew: bool
     ) -> Optional[ReportSection]:
-        """Build a compact affiliated section for savings/cover/ID analysis."""
+        """Build a compact section for savings/personal-data/risk-cover assessment."""
         if not summary:
             return None
 
@@ -3275,19 +3275,55 @@ Factors Affecting Score:
         total_savings = float(summary.get('total_savings', 0) or 0)
         total_cover = float(summary.get('total_cover', 0) or 0)
         unique_id_count = int(summary.get('unique_id_count', 0) or 0)
+        id_capture_rate = float(summary.get('id_capture_rate_pct', 0) or 0.0)
+        personal_signal_fields = int(summary.get('personal_signal_fields', 0) or 0)
+        savings_signal_fields = int(summary.get('savings_signal_fields', 0) or 0)
+        cover_signal_fields = int(summary.get('cover_signal_fields', 0) or 0)
         if records_analyzed <= 0 and total_savings <= 0 and total_cover <= 0 and unique_id_count <= 0:
             return None
 
+        model_checks_passed = 0
+        model_checks_total = 3
+        model_alignment_bonus = 0.0
+        try:
+            from services.swiftness_data_service import get_swiftness_data_service
+
+            model = get_swiftness_data_service().get_report_model()
+            metadata = model.get('metadata', {}) if isinstance(model, dict) else {}
+            rule_count = len(metadata.get('data_integrity_rules', []) or [])
+            if rule_count > 0:
+                if personal_signal_fields > 0:
+                    model_checks_passed += 1
+                if savings_signal_fields > 0:
+                    model_checks_passed += 1
+                if cover_signal_fields > 0:
+                    model_checks_passed += 1
+                model_alignment_bonus = round((model_checks_passed / model_checks_total) * 10.0, 1)
+        except Exception:
+            model_checks_passed = 0
+            model_alignment_bonus = 0.0
+
+        signal_score = 0.0
+        signal_score += 30.0 if total_savings > 0 else 0.0
+        signal_score += 30.0 if total_cover > 0 else 0.0
+        signal_score += min(id_capture_rate, 40.0)
+        signal_score += model_alignment_bonus
+        signal_score = round(min(signal_score, 100.0), 1)
+
         if is_hebrew:
             content = (
-                "סיכום מסונף לחיסכון וביטוח (על בסיס שיוכי מסלקה):\n\n"
+                "הערכת חיסכון, נתונים אישיים וכיסויי סיכון:\n\n"
                 f"• רשומות שנותחו: {records_analyzed}\n"
                 f"• סך חיסכון: ₪{total_savings:,.2f}\n"
                 f"• סך כיסוי: ₪{total_cover:,.2f}\n"
                 f"• מזהים ייחודיים: {unique_id_count}\n"
-                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+                f"• שיעור כיסוי מזהים: {id_capture_rate:.2f}%\n"
+                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
+                f"• ציון בהירות ניתוח: {signal_score}/100\n"
+                f"• שדות שנמצאו — אישי: {personal_signal_fields}, חיסכון: {savings_signal_fields}, כיסוי: {cover_signal_fields}\n"
+                f"• בדיקות יישור מודל: {model_checks_passed}/{model_checks_total}"
             )
-            title = 'סיכום מסונף - חיסכון, כיסוי וזיהוי'
+            title = 'הערכת חיסכון, נתונים אישיים וכיסויי סיכון'
             columns = ['מזהה (מוסתר)', 'חיסכון', 'כיסוי', 'אסמכתא']
             data_rows = [{
                 'מזהה (מוסתר)': row.get('id', ''),
@@ -3297,14 +3333,18 @@ Factors Affecting Score:
             } for row in summary.get('sample_rows', [])[:60]]
         else:
             content = (
-                "Affiliated savings and insurance snapshot (Mislaka-aligned):\n\n"
+                "Savings, personal-data and risk-cover assessment:\n\n"
                 f"• Records analyzed: {records_analyzed}\n"
                 f"• Total savings: ₪{total_savings:,.2f}\n"
                 f"• Total cover: ₪{total_cover:,.2f}\n"
                 f"• Unique IDs: {unique_id_count}\n"
-                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+                f"• ID capture rate: {id_capture_rate:.2f}%\n"
+                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
+                f"• Analysis clarity score: {signal_score}/100\n"
+                f"• Detected fields — personal: {personal_signal_fields}, savings: {savings_signal_fields}, cover: {cover_signal_fields}\n"
+                f"• Model alignment checks: {model_checks_passed}/{model_checks_total}"
             )
-            title = 'Affiliated Summary - Savings, Cover & ID'
+            title = 'Savings, Personal Data & Risk Cover Assessment'
             columns = ['Masked ID', 'Savings', 'Cover', 'Reference']
             data_rows = [{
                 'Masked ID': row.get('id', ''),
@@ -3323,6 +3363,9 @@ Factors Affecting Score:
                 {metric_key: 'Total Cover', value_key: total_cover},
                 {metric_key: 'Unique IDs', value_key: unique_id_count},
                 {metric_key: 'Cover/Savings Ratio', value_key: summary.get('coverage_to_savings_ratio', 'N/A')},
+                {metric_key: 'ID Capture Rate %', value_key: id_capture_rate},
+                {metric_key: 'Analysis Clarity Score', value_key: signal_score},
+                {metric_key: 'Model Alignment Checks', value_key: f'{model_checks_passed}/{model_checks_total}'},
             ]
             return ReportSection(
                 title=title,
@@ -4455,7 +4498,15 @@ Factors Affecting Score:
 
             section_title = section.title or ''
             title_lower = section_title.lower()
-            if 'swiftness' in title_lower or 'resource' in title_lower:
+            if (
+                'swiftness' in title_lower
+                or 'resource' in title_lower
+                or 'affiliation' in title_lower
+                or 'integrity rules' in title_lower
+                or 'שיוך' in section_title
+                or 'מפת שיוכים' in section_title
+                or 'כללי שלמות' in section_title
+            ):
                 continue
 
             data_table = section.data_table if isinstance(section.data_table, dict) else {}
