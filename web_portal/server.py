@@ -10258,6 +10258,40 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # Get refundable (paid) bills for a customer
+        if path == '/api/billing/refundable':
+            customer_id_param = query_params.get('customer_id', [''])[0] if query_params else ''
+            if not customer_id_param:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id query parameter is required'}).encode('utf-8'))
+                return
+            refundable_bills = []
+            for bid, bill in BILLING.items():
+                if bill.get('customer_id') != customer_id_param:
+                    continue
+                bill_status = (bill.get('status') or '').lower()
+                amount_paid = safe_float(bill.get('amount_paid', 0))
+                already_refunded = safe_float(bill.get('refunded_amount', 0))
+                refundable = round(amount_paid - already_refunded, 2)
+                if bill_status in ('paid', 'partial') and refundable > 0:
+                    policy = POLICIES.get(bill.get('policy_id', ''), {})
+                    refundable_bills.append({
+                        'bill_id': bid,
+                        'policy_id': bill.get('policy_id'),
+                        'policy_type': policy.get('type') or policy.get('policy_type', 'N/A'),
+                        'amount_due': safe_float(bill.get('amount', bill.get('amount_due', 0))),
+                        'amount_paid': amount_paid,
+                        'already_refunded': already_refunded,
+                        'refundable_amount': refundable,
+                        'status': bill_status,
+                        'paid_date': bill.get('paid_date') or bill.get('updated_at'),
+                        'due_date': bill.get('due_date')
+                    })
+            refundable_bills.sort(key=lambda b: b.get('paid_date') or '', reverse=True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'refundable_bills': refundable_bills, 'count': len(refundable_bills)}).encode('utf-8'))
+            return
+
         # Customer billing "next due" (portal convenience)
         if path == '/api/billing/next-due':
             if not session:
@@ -25116,6 +25150,163 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
                 return
             
+            # Customer-initiated refund: refund a paid bill and deposit to health wallet
+            if path == '/api/billing/customer-refund':
+                try:
+                    data = json.loads(body)
+                    bill_id = data.get('bill_id')
+                    customer_id = data.get('customer_id')
+                    refund_amount_req = data.get('amount')  # Optional: partial refund
+                    reason = data.get('reason', 'Customer refund request')
+
+                    if not bill_id or not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'bill_id and customer_id are required'}).encode('utf-8'))
+                        return
+
+                    bill = BILLING.get(bill_id)
+                    if not bill:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
+                        return
+
+                    # Verify bill belongs to the requesting customer
+                    if bill.get('customer_id') != customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied: bill does not belong to this customer'}).encode('utf-8'))
+                        return
+
+                    # Only paid bills are eligible for refund
+                    bill_status = (bill.get('status') or '').lower()
+                    amount_paid = safe_float(bill.get('amount_paid', 0))
+                    if bill_status not in ('paid', 'partial') or amount_paid <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Only paid bills are eligible for refund', 'bill_status': bill_status}).encode('utf-8'))
+                        return
+
+                    # Determine refund amount (cannot exceed amount_paid; already-refunded amount is excluded)
+                    already_refunded = safe_float(bill.get('refunded_amount', 0))
+                    refundable = round(amount_paid - already_refunded, 2)
+                    if refundable <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'This bill has already been fully refunded'}).encode('utf-8'))
+                        return
+
+                    if refund_amount_req is not None:
+                        refund_amount = round(float(refund_amount_req), 2)
+                        if refund_amount <= 0 or refund_amount > refundable:
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({'error': f'Refund amount must be between $0.01 and ${refundable:.2f}', 'refundable': refundable}).encode('utf-8'))
+                            return
+                    else:
+                        refund_amount = refundable
+
+                    refund_id = f"RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
+
+                    # Update billing record to reflect the refund
+                    bill['refunded_amount'] = already_refunded + refund_amount
+                    bill['last_refund_id'] = refund_id
+                    bill['last_refund_reason'] = reason
+                    bill['last_refund_date'] = datetime.now().isoformat()
+                    if bill['refunded_amount'] >= amount_paid:
+                        bill['status'] = 'refunded'
+                    BILLING[bill_id] = bill
+
+                    # Deposit refund to customer's health wallet
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0.0,
+                            'monthly_deposit': 0.0,
+                            'transactions': []
+                        }
+                    prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
+                    HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
+                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+
+                    wallet_tx = {
+                        'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                        'type': 'refund_deposit',
+                        'amount': refund_amount,
+                        'refund_id': refund_id,
+                        'bill_id': bill_id,
+                        'policy_id': bill.get('policy_id'),
+                        'description': f'Premium refund deposited for bill {bill_id}',
+                        'reason': reason,
+                        'previous_balance': prev_wallet_balance,
+                        'balance_after': new_wallet_balance,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+
+                    # Record in TRANSACTION_LEDGER and NFT_LEDGER for full audit trail
+                    refund_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='premium_refund',
+                        amount=refund_amount,
+                        description=f'Refund of ${refund_amount:.2f} for bill {bill_id} deposited to health wallet',
+                        metadata={
+                            'refund_id': refund_id,
+                            'bill_id': bill_id,
+                            'policy_id': bill.get('policy_id'),
+                            'reason': reason,
+                            'original_amount_paid': amount_paid,
+                            'refunded_amount': bill['refunded_amount'],
+                            'wallet_balance_before': prev_wallet_balance,
+                            'wallet_balance_after': new_wallet_balance,
+                            'wallet_tx_id': wallet_tx['id']
+                        }
+                    )
+
+                    # Record refund as an expense on the PHINS balance sheet
+                    try:
+                        record_balance_sheet_transaction(
+                            tx_type='expense',
+                            category='refunds',
+                            amount=refund_amount,
+                            description=f'Customer premium refund for bill {bill_id}',
+                            actor='billing_system',
+                            customer_id=customer_id,
+                            metadata={'refund_id': refund_id, 'bill_id': bill_id}
+                        )
+                    except Exception as bs_err:
+                        print(f"[BALANCE_SHEET] Refund expense record error: {bs_err}")
+
+                    # Audit log
+                    if audit:
+                        try:
+                            audit.log(customer_id, 'refund', 'bill', bill_id, {
+                                'refund_id': refund_id,
+                                'amount': refund_amount,
+                                'reason': reason,
+                                'destination': 'health_wallet'
+                            })
+                        except Exception:
+                            pass
+
+                    # Persist changes
+                    save_ledger_data()
+
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'refund_id': refund_id,
+                        'bill_id': bill_id,
+                        'refund_amount': refund_amount,
+                        'destination': 'health_wallet',
+                        'wallet_balance_before': prev_wallet_balance,
+                        'wallet_balance_after': new_wallet_balance,
+                        'wallet_tx_id': wallet_tx['id'],
+                        'ledger_tx_id': refund_tx.get('id'),
+                        'nft_token_id': refund_tx.get('nft_token_id'),
+                        'bill_status': bill['status'],
+                        'message': f'Refund of ${refund_amount:.2f} processed and deposited to your health wallet'
+                    }, default=str).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+                return
+
             # Get fraud alerts (admin only)
             if path == '/api/billing/fraud-alerts':
                 try:
