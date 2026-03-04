@@ -3096,6 +3096,102 @@
         </div>
       `;
     }
+
+    function renderUploadedDataAssessment(analysis, report) {
+      const statsGrid = document.getElementById('statsGrid');
+      const insightsGrid = document.getElementById('insightsGrid');
+      if (!statsGrid || !insightsGrid) return;
+
+      const summary = report?.metadata?.savings_cover_id_summary || {};
+      const totalRecords = Number(summary.records_analyzed || analysis?.key_metrics?.total_records || 0);
+      const totalSavings = Number(summary.total_savings || 0);
+      const totalCover = Number(summary.total_cover || 0);
+      const uniqueIds = Number(summary.unique_id_count || 0);
+      const idCaptureRate = Number(summary.id_capture_rate_pct || 0);
+      const coverSavingsRatio = summary.coverage_to_savings_ratio ?? 'N/A';
+      const personalSignals = Number(summary.personal_signal_fields || 0);
+      const savingsSignals = Number(summary.savings_signal_fields || 0);
+      const coverSignals = Number(summary.cover_signal_fields || 0);
+
+      const clarityScore = Math.min(
+        100,
+        (totalSavings > 0 ? 30 : 0) +
+        (totalCover > 0 ? 30 : 0) +
+        Math.min(idCaptureRate, 40)
+      );
+
+      statsGrid.innerHTML = `
+        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white;">
+          <h5 style="color: white;">📄 Uploaded Records</h5>
+          <div class="value" style="color: white;">${totalRecords}</div>
+          <small style="color: rgba(255,255,255,0.9);">From uploaded file(s)</small>
+        </div>
+        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white;">
+          <h5 style="color: white;">💰 Savings (צבירה)</h5>
+          <div class="value" style="color: white;">₪${totalSavings.toLocaleString('he-IL', { maximumFractionDigits: 2 })}</div>
+          <small style="color: rgba(255,255,255,0.9);">Detected from upload</small>
+        </div>
+        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white;">
+          <h5 style="color: white;">🛡️ Risk Cover</h5>
+          <div class="value" style="color: white;">₪${totalCover.toLocaleString('he-IL', { maximumFractionDigits: 2 })}</div>
+          <small style="color: rgba(255,255,255,0.9);">Coverage amount</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🆔 Unique IDs</h5>
+          <div class="value">${uniqueIds}</div>
+          <small>ID capture ${idCaptureRate.toFixed(2)}%</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🔗 Cover/Savings</h5>
+          <div class="value">${coverSavingsRatio}</div>
+          <small>Coverage to savings ratio</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>✅ Clarity Score</h5>
+          <div class="value">${clarityScore.toFixed(1)}/100</div>
+          <small>Data-first assessment</small>
+        </div>
+      `;
+
+      const sampleRows = Array.isArray(summary.sample_rows) ? summary.sample_rows.slice(0, 12) : [];
+      const sampleTable = sampleRows.length
+        ? renderDataTable({
+            columns: ['Masked ID', 'Savings', 'Cover', 'Reference'],
+            rows: sampleRows.map(row => ({
+              'Masked ID': row.id || '',
+              'Savings': row.savings || 0,
+              'Cover': row.cover || 0,
+              'Reference': row.reference || ''
+            }))
+          })
+        : '<p style="color: var(--text-muted);">No row-level preview available.</p>';
+
+      insightsGrid.innerHTML = `
+        <div class="insight-card fade-in" style="border-left-color: #10b981;">
+          <h5>📑 Uploaded Data Preview</h5>
+          <div class="insight-detail">${sampleTable}</div>
+          <span class="insight-badge">From uploaded values</span>
+        </div>
+        <div class="insight-card fade-in" style="border-left-color: #2563eb;">
+          <h5>🧭 Assessment Signals</h5>
+          <div class="insight-detail">
+            <div class="stat-detail"><span class="label">Personal fields</span><span class="val">${personalSignals}</span></div>
+            <div class="stat-detail"><span class="label">Savings fields</span><span class="val">${savingsSignals}</span></div>
+            <div class="stat-detail"><span class="label">Cover fields</span><span class="val">${coverSignals}</span></div>
+            <div class="stat-detail"><span class="label">Document ID</span><span class="val">${escapeHtml(report?.metadata?.document_id || 'N/A')}</span></div>
+          </div>
+          <span class="insight-badge">Model-calibrated (rules hidden)</span>
+        </div>
+        <div class="insight-card fade-in" style="border-left-color: #7c3aed;">
+          <h5>📊 Clear Assessment Notes</h5>
+          <div class="insight-detail">
+            <p>This report emphasizes uploaded data directly (savings/צבירה, personal data quality, and risk cover).</p>
+            <p>Statistical diagnostics and affiliation rule details are intentionally removed from output.</p>
+          </div>
+          <span class="insight-badge">Output sanitized</span>
+        </div>
+      `;
+    }
     
     // ==========================================================================
     // END PENSION DATA DISPLAY FUNCTIONS
@@ -3611,7 +3707,19 @@
           title.includes('מפת שיוכים') ||
           content.includes('מפת שיוכים') ||
           title.includes('כללי שלמות') ||
-          content.includes('כללי שלמות')
+          content.includes('כללי שלמות') ||
+          lower.includes('statistical') ||
+          lower.includes('correlation') ||
+          lower.includes('pattern') ||
+          lower.includes('anomal') ||
+          lower.includes('risk assessment') ||
+          lower.includes('key metrics') ||
+          title.includes('סטטיסטי') ||
+          title.includes('מתאמים') ||
+          title.includes('דפוסים') ||
+          title.includes('חריגות') ||
+          title.includes('הערכת סיכון') ||
+          title.includes('מדדים מרכזיים')
         );
       };
 
@@ -3636,15 +3744,14 @@
         renderPensionStats(pensionData);
         renderPensionInsights(pensionData);
       } else {
-        // REGULAR MODE: Show standard analysis
+        // REGULAR MODE: Show data-first uploaded assessment (no statistics panels).
         if (insightsHeader) {
           insightsHeader.innerHTML = `
-            <h3>🧠 AI Inductive Analysis</h3>
-            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+            <h3>📊 Uploaded Data Assessment</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Clear assessment from uploaded values: savings (צבירה), personal-data quality, and risk cover.</p>
           `;
         }
-        renderStandardStats(analysis);
-        renderInsights(analysis, analysis.key_metrics || {});
+        renderUploadedDataAssessment(analysis, report);
       }
       
       // Charts: keep report-native charts for clarity.
@@ -3687,6 +3794,15 @@
         `;
       }).join('');
 
+      const nonStatisticalRecommendation = (rec) => {
+        const text = `${rec?.title || ''} ${rec?.description || ''}`.toLowerCase();
+        const blocked = [
+          'risk', 'anomal', 'correlation', 'statistical', 'pattern',
+          'סיכון', 'חריג', 'מתאם', 'סטטיסט', 'דפוס'
+        ];
+        return !blocked.some(token => text.includes(token));
+      };
+
       const baseRecommendations = (report.recommendations || []).map(rec => {
         const priority = String(rec.priority || 'medium').toLowerCase();
         return {
@@ -3696,9 +3812,23 @@
           action_items: rec.action_items || [],
           expected_impact: rec.expected_impact || ''
         };
-      });
+      }).filter(nonStatisticalRecommendation);
 
-      renderRecommendationsList(baseRecommendations);
+      if (baseRecommendations.length > 0) {
+        renderRecommendationsList(baseRecommendations);
+      } else {
+        renderRecommendationsList([{
+          priority: 'medium',
+          title: 'Review uploaded savings/cover mapping',
+          description: 'Validate that uploaded values for צבירה/חיסכון and coverage fields are complete and current.',
+          action_items: [
+            'Confirm key savings and cover columns are populated',
+            'Re-upload corrected file if key fields are missing',
+            'Regenerate report after updates'
+          ],
+          expected_impact: 'Improves clarity and trust in uploaded-data assessment.'
+        }]);
+      }
     }
 
     function appendAffiliationCompanionSection(reportBody, payload) {

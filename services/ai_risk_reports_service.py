@@ -2568,7 +2568,10 @@ class AIRiskReportsService:
         )
         sections = [
             section for section in sections
-            if not self._is_sensitive_affiliation_rule_section(section)
+            if (
+                not self._is_sensitive_affiliation_rule_section(section)
+                and not self._is_statistical_output_section(section)
+            )
         ]
         
         # Generate charts - pass pension_data and affiliated summary for specialized charts
@@ -2576,6 +2579,10 @@ class AIRiskReportsService:
         
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
+        recommendations = [
+            rec for rec in recommendations
+            if not self._is_statistical_recommendation(rec)
+        ]
         
         # Determine report title
         titles = {
@@ -2628,6 +2635,47 @@ class AIRiskReportsService:
         
         return report
 
+    def _is_statistical_recommendation(self, recommendation: Any) -> bool:
+        """Hide statistical/risk-diagnostic recommendations from clear data-first output."""
+        if not recommendation:
+            return False
+        title = str(getattr(recommendation, 'title', '') or '').lower()
+        description = str(getattr(recommendation, 'description', '') or '').lower()
+        text = f"{title} {description}"
+        blocked = [
+            'risk', 'anomal', 'correlation', 'statistical', 'pattern',
+            'סיכון', 'חריג', 'מתאם', 'סטטיסט', 'דפוס',
+        ]
+        return any(token in text for token in blocked)
+
+    def _is_statistical_output_section(self, section: Any) -> bool:
+        """
+        True when a section is primarily statistical/diagnostic and should be
+        hidden from the clear data-first report output.
+        """
+        if not section:
+            return False
+        title = str(getattr(section, 'title', '') or '')
+        title_lower = title.lower()
+
+        keywords = [
+            'data profile',
+            'statistical',
+            'correlation',
+            'pattern',
+            'anomal',
+            'risk assessment',
+            'key metrics',
+            'פרופיל נתונים',
+            'ניתוח סטטיסטי',
+            'ניתוח מתאמים',
+            'דפוסים ומגמות',
+            'חריגות ואזהרות',
+            'הערכת סיכון',
+            'מדדים מרכזיים',
+        ]
+        return any(token in title_lower for token in keywords)
+
     def _is_sensitive_affiliation_rule_section(self, section: Any) -> bool:
         """
         True when a section exposes affiliation/rule internals that should remain hidden
@@ -2663,11 +2711,37 @@ class AIRiskReportsService:
         """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
+        if savings_cover_id_summary is None:
+            savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+
+        records_analyzed = int((savings_cover_id_summary or {}).get('records_analyzed', 0) or 0)
+        total_savings = float((savings_cover_id_summary or {}).get('total_savings', 0) or 0)
+        total_cover = float((savings_cover_id_summary or {}).get('total_cover', 0) or 0)
+        unique_ids = int((savings_cover_id_summary or {}).get('unique_id_count', 0) or 0)
+        id_capture_rate = float((savings_cover_id_summary or {}).get('id_capture_rate_pct', 0) or 0.0)
+        if is_hebrew:
+            executive_summary = (
+                "תקציר הערכה מבוססת נתונים שהועלו:\n\n"
+                f"• רשומות שנותחו: {records_analyzed}\n"
+                f"• סך צבירה/חיסכון: ₪{total_savings:,.2f}\n"
+                f"• סך כיסויי סיכון: ₪{total_cover:,.2f}\n"
+                f"• מזהים ייחודיים: {unique_ids}\n"
+                f"• שיעור כיסוי מזהים: {id_capture_rate:.2f}%"
+            )
+        else:
+            executive_summary = (
+                "Data-first assessment summary from uploaded files:\n\n"
+                f"• Records analyzed: {records_analyzed}\n"
+                f"• Total savings (צבירה): ₪{total_savings:,.2f}\n"
+                f"• Total risk cover: ₪{total_cover:,.2f}\n"
+                f"• Unique IDs: {unique_ids}\n"
+                f"• ID capture rate: {id_capture_rate:.2f}%"
+            )
         
         # 1. Executive Summary
         sections.append(ReportSection(
             title='תקציר מנהלים' if is_hebrew else 'Executive Summary',
-            content=analysis.summary,
+            content=executive_summary,
             order=1
         ))
         
@@ -2692,9 +2766,7 @@ class AIRiskReportsService:
                     order=3
                 ))
 
-        # 3.5 Savings/Cover/ID affiliation section (table-oriented summary)
-        if savings_cover_id_summary is None:
-            savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+        # 3.5 Savings/Cover/ID section (table-oriented summary)
         affiliated_summary_section = self._build_savings_cover_id_section(savings_cover_id_summary, is_hebrew)
         if affiliated_summary_section:
             sections.append(affiliated_summary_section)
@@ -3979,54 +4051,89 @@ Factors Affecting Score:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
             charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
             return charts
-        
-        # Risk Score Gauge (for non-pension data)
-        charts.append(ChartConfig(
-            type=ChartType.GAUGE,
-            title='Risk Score',
-            data={
-                'value': analysis.risk_score,
-                'min': 0,
-                'max': 100,
-                'thresholds': [30, 60, 80]
-            },
-            options={'colors': ['#4caf50', '#ffeb3b', '#ff9800', '#f44336']}
-        ))
-        
-        # Factors Importance Bar Chart - only for meaningful factors
-        meaningful_factors = [f for f in analysis.extracted_factors[:8] 
-                            if f.category in ['domain', 'currency', 'financial']]
-        if meaningful_factors:
-            charts.append(ChartConfig(
-                type=ChartType.BAR,
-                title='Factors Importance',
-                data={
-                    'labels': [f.name for f in meaningful_factors],
-                    'values': [f.importance * 100 for f in meaningful_factors]
-                },
-                options={'horizontal': True}
-            ))
-        
-        # Data Distribution Pie Chart - only meaningful totals
-        if analysis.key_metrics:
-            # Filter to only financial totals, not counts
-            financial_metrics = {k: v for k, v in analysis.key_metrics.items() 
-                               if isinstance(v, (int, float)) and 
-                               (k.endswith('_total') or 'balance' in k.lower() or 
-                                'savings' in k.lower() or 'coverage' in k.lower()) and
-                               v > 0}
-            if financial_metrics:
-                charts.append(ChartConfig(
-                    type=ChartType.PIE,
-                    title='Data Distribution',
-                    data={
-                        'labels': list(financial_metrics.keys())[:6],
-                        'values': list(financial_metrics.values())[:6]
-                    }
-                ))
 
+        # Non-pension mode: only data-first charts based on uploaded values.
+        charts.extend(self._build_uploaded_data_financial_charts(doc_data, analysis.language))
         charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
-        
+
+        return charts
+
+    def _build_uploaded_data_financial_charts(
+        self,
+        doc_data: Optional[Dict[str, Any]],
+        lang_code: str
+    ) -> List[ChartConfig]:
+        """Build charts directly from uploaded file values (e.g., צבירה/savings)."""
+        if not isinstance(doc_data, dict):
+            return []
+
+        rows = doc_data.get('rows', []) or []
+        columns = doc_data.get('columns', []) or []
+        if not rows or not columns:
+            return []
+
+        is_hebrew = lang_code == 'hebrew'
+        financial_tokens = [
+            'saving', 'savings', 'balance', 'accumulated', 'coverage', 'cover',
+            'premium', 'amount', 'severance', 'deposit',
+            'צבירה', 'חיסכון', 'יתרה', 'כיסוי', 'סכום', 'פרמיה', 'פיצויים', 'הפקדה', 'תגמולים'
+        ]
+
+        candidate_columns: List[str] = []
+        for col in columns:
+            col_text = str(col or '')
+            lower = col_text.lower()
+            if any(token in lower for token in financial_tokens):
+                candidate_columns.append(col_text)
+
+        # Fallback: inspect first row keys if columns are generic.
+        if not candidate_columns and rows:
+            for key in rows[0].keys():
+                lower = str(key or '').lower()
+                if any(token in lower for token in financial_tokens):
+                    candidate_columns.append(str(key))
+
+        column_totals: Dict[str, float] = {}
+        for col in candidate_columns[:12]:
+            total = 0.0
+            for row in rows[:2000]:
+                if not isinstance(row, dict):
+                    continue
+                total += max(0.0, self._to_float_amount(row.get(col)))
+            if total > 0:
+                column_totals[col] = round(total, 2)
+
+        if not column_totals:
+            return []
+
+        labels = list(column_totals.keys())[:8]
+        values = [column_totals[label] for label in labels]
+        charts: List[ChartConfig] = []
+
+        charts.append(ChartConfig(
+            type=ChartType.BAR,
+            title='צבירה/כיסוי מתוך נתונים שהועלו' if is_hebrew else 'Uploaded Savings/Cover Totals',
+            data={'labels': labels, 'values': values},
+            options={
+                'horizontal': False,
+                'colors': ['#10b981', '#1a237e', '#3b82f6', '#f59e0b', '#7c3aed', '#06b6d4', '#ef4444', '#14b8a6'],
+                'currency': True,
+                'currency_symbol': '₪'
+            }
+        ))
+
+        if len(labels) > 1:
+            charts.append(ChartConfig(
+                type=ChartType.PIE,
+                title='התפלגות צבירה/כיסוי' if is_hebrew else 'Uploaded Financial Mix',
+                data={'labels': labels, 'values': values},
+                options={
+                    'colors': ['#10b981', '#1a237e', '#3b82f6', '#f59e0b', '#7c3aed', '#06b6d4', '#ef4444', '#14b8a6'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+
         return charts
     
     def _generate_pension_charts(self, pension_data: Dict, lang_code: str) -> List[ChartConfig]:
@@ -4526,6 +4633,8 @@ Factors Affecting Score:
         for section in report.sections:
             if not section.data_table:
                 continue
+            if self._is_sensitive_affiliation_rule_section(section) or self._is_statistical_output_section(section):
+                continue
 
             section_title = section.title or ''
             title_lower = section_title.lower()
@@ -4602,7 +4711,7 @@ Factors Affecting Score:
             'description': rec.description,
             'action_items': rec.action_items,
             'expected_impact': rec.expected_impact,
-        } for rec in report.recommendations]
+        } for rec in report.recommendations if not self._is_statistical_recommendation(rec)]
 
         return {
             'report_id': report.id,
