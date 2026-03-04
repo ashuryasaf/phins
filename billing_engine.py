@@ -7,10 +7,13 @@ import json
 import uuid
 import hashlib
 import hmac
+import logging
 import secrets
 import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityValidator:
@@ -449,22 +452,54 @@ class BillingEngine:
             }
     
     def refund_payment(self, transaction_id: str, amount: float = None, reason: str = None) -> Dict:
-        """Process refund for a transaction"""
+        """Process refund for a transaction.
+
+        Distinguishes between invalid/missing transaction IDs and genuinely
+        absent transactions so callers can surface actionable error messages.
+        """
+        # Guard: None or blank transaction_id is an invalid input, not a lookup miss.
+        if transaction_id is None or not str(transaction_id).strip():
+            logger.debug(
+                "refund_payment called with invalid transaction_id=%r (None or empty)",
+                transaction_id,
+            )
+            return {
+                'success': False,
+                'error': 'Invalid transaction ID: value must not be empty',
+                'error_code': 'INVALID_TRANSACTION_ID',
+            }
+
+        transaction_id = str(transaction_id).strip()
         transaction = self.transactions.get(transaction_id)
-        
+
         if not transaction:
-            return {'success': False, 'error': 'Transaction not found'}
-        
+            logger.debug(
+                "refund_payment: transaction_id=%r not found in ledger "
+                "(total ledger entries: %d)",
+                transaction_id,
+                len(self.transactions),
+            )
+            return {
+                'success': False,
+                'error': 'Transaction not found',
+                'error_code': 'TRANSACTION_NOT_FOUND',
+            }
+
         if transaction['status'] != 'success':
+            logger.debug(
+                "refund_payment: transaction_id=%r has non-refundable status=%r",
+                transaction_id,
+                transaction.get('status'),
+            )
             return {'success': False, 'error': 'Cannot refund non-successful transaction'}
-        
+
         refund_amount = amount or transaction['amount']
-        
+
         if refund_amount > transaction['amount']:
             return {'success': False, 'error': 'Refund amount exceeds original transaction'}
-        
+
         refund_id = f"RFD-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(8)}"
-        
+
         refund = {
             'refund_id': refund_id,
             'original_transaction_id': transaction_id,
@@ -474,11 +509,18 @@ class BillingEngine:
             'status': 'completed',
             'timestamp': datetime.now().isoformat()
         }
-        
+
         self.transactions[refund_id] = refund
         transaction['refund_id'] = refund_id
         transaction['refund_amount'] = refund_amount
-        
+
+        logger.debug(
+            "refund_payment: issued refund_id=%r for transaction_id=%r amount=%s",
+            refund_id,
+            transaction_id,
+            refund_amount,
+        )
+
         return {
             'success': True,
             'refund_id': refund_id,

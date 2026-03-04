@@ -1497,10 +1497,17 @@ async function handleLookup(e) {
 }
 
 async function refundTransaction(transactionId) {
-  if (!confirm(`Refund transaction ${transactionId}?\n\nThis action cannot be undone.`)) {
+  // Sanitize: reject clearly invalid IDs before hitting the network.
+  const cleanId = transactionId != null ? String(transactionId).trim() : '';
+  if (!cleanId) {
+    alert('❌ Refund failed: Transaction ID is missing or invalid. Please refresh and try again.');
     return;
   }
-  
+
+  if (!confirm(`Refund transaction ${cleanId}?\n\nThis action cannot be undone.`)) {
+    return;
+  }
+
   try {
     const response = await fetch('/api/billing/refund', {
       method: 'POST',
@@ -1509,17 +1516,22 @@ async function refundTransaction(transactionId) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        transaction_id: transactionId,
+        transaction_id: cleanId,
         reason: 'Admin requested refund'
       })
     });
-    
+
     const result = await response.json();
-    
+
     if (result.success) {
       alert(`✅ Refund successful!\n\nRefund ID: ${result.refund_id}`);
       loadRecentTransactions();
       loadStats();
+    } else if (result.error_code === 'TRANSACTION_NOT_FOUND') {
+      alert(
+        `❌ Refund failed: Transaction "${cleanId}" was not found.\n\n` +
+        'The transaction may not yet be synchronized. Please wait a moment and try again.'
+      );
     } else {
       alert(`❌ Refund failed: ${result.error}`);
     }
@@ -4229,13 +4241,42 @@ function confirmCustomerRefund(billId, customerId, amount) {
 
 /**
  * Process a customer refund via the API and show the result.
+ * Includes a simple retry mechanism to handle eventual consistency
+ * between the transaction log and ledger updates.
  */
 async function processCustomerRefund(billId, customerId, amount) {
   const resultEl = document.getElementById('refund-result');
   const badgeEl = document.getElementById('refund-status-badge');
   resultEl.style.display = 'none';
 
-  try {
+  // Sanitize inputs before sending to the API.
+  const cleanBillId = billId != null ? String(billId).trim() : '';
+  const cleanCustomerId = customerId != null ? String(customerId).trim() : '';
+  const cleanAmount = Number(amount);
+
+  if (!cleanBillId || !cleanCustomerId) {
+    resultEl.style.background = '#f8d7da';
+    resultEl.style.border = '1px solid #dc3545';
+    resultEl.style.borderRadius = '8px';
+    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;">Bill ID and Customer ID are required.</div>';
+    resultEl.style.display = 'block';
+    return;
+  }
+
+  if (!Number.isFinite(cleanAmount) || cleanAmount <= 0) {
+    resultEl.style.background = '#f8d7da';
+    resultEl.style.border = '1px solid #dc3545';
+    resultEl.style.borderRadius = '8px';
+    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;">Refund amount must be a positive number.</div>';
+    resultEl.style.display = 'block';
+    return;
+  }
+
+  // Retry helper for eventual-consistency errors.
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 1500;
+
+  async function attemptRefund(attempt) {
     const response = await fetch('/api/billing/customer-refund', {
       method: 'POST',
       headers: {
@@ -4243,14 +4284,30 @@ async function processCustomerRefund(billId, customerId, amount) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        bill_id: billId,
-        customer_id: customerId,
-        amount: amount,
+        bill_id: cleanBillId,
+        customer_id: cleanCustomerId,
+        amount: cleanAmount,
         reason: 'Customer refund request'
       })
     });
-
     const result = await response.json();
+
+    // Retry on TRANSACTION_NOT_FOUND to handle eventual-consistency between
+    // transaction log and ledger (up to MAX_RETRIES times).
+    if (
+      !result.success &&
+      attempt < MAX_RETRIES &&
+      result.error_code === 'TRANSACTION_NOT_FOUND'
+    ) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      return attemptRefund(attempt + 1);
+    }
+
+    return result;
+  }
+
+  try {
+    const result = await attemptRefund(0);
 
     if (result.success) {
       // Use DOM API to safely set text values from server response
@@ -4294,11 +4351,14 @@ async function processCustomerRefund(billId, customerId, amount) {
       if (typeof loadStats === 'function') loadStats();
       if (typeof loadRecentTransactions === 'function') loadRecentTransactions();
     } else {
+      const errorMsg = result.error_code === 'TRANSACTION_NOT_FOUND'
+        ? (result.error || 'Unknown error') + ' — the ledger may not yet be synchronized. Please try again in a moment.'
+        : (result.error || 'Unknown error');
       resultEl.style.background = '#f8d7da';
       resultEl.style.border = '1px solid #dc3545';
       resultEl.style.borderRadius = '8px';
       resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr"></div>';
-      resultEl.querySelector('#_rferr').textContent = result.error || 'Unknown error';
+      resultEl.querySelector('#_rferr').textContent = errorMsg;
       resultEl.style.display = 'block';
     }
   } catch (err) {
