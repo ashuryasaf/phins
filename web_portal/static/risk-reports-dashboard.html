@@ -3592,26 +3592,26 @@
     }
 
     function displayResults(analysis, report, options = {}) {
-      if (options.affiliationOverride) {
-        renderAffiliationOutput({
-          affiliations: options.affiliations,
-          files: options.files,
-          analysisTypeLabel: options.analysisTypeLabel
-        });
-        return;
-      }
-
-      const shouldHideAffiliationRuleSection = (sectionTitle) => {
-        const title = String(sectionTitle || '');
+      const shouldHideAffiliationRuleSection = (section) => {
+        const title = String(section?.title || '');
+        const content = String(section?.content || '');
         const lower = title.toLowerCase();
+        const contentLower = content.toLowerCase();
         return (
           lower.includes('affiliation') ||
+          contentLower.includes('affiliation') ||
           lower.includes('swiftness') ||
+          contentLower.includes('swiftness') ||
           lower.includes('resource') ||
+          contentLower.includes('resource') ||
           lower.includes('integrity rules') ||
+          contentLower.includes('integrity rules') ||
           title.includes('שיוך') ||
+          content.includes('שיוך') ||
           title.includes('מפת שיוכים') ||
-          title.includes('כללי שלמות')
+          content.includes('מפת שיוכים') ||
+          title.includes('כללי שלמות') ||
+          content.includes('כללי שלמות')
         );
       };
 
@@ -3656,7 +3656,7 @@
       
       // Report Sections - with enhanced Mislaka/pension-specific rendering
       const reportBody = document.getElementById('reportBody');
-      const visibleSections = (report.sections || []).filter(section => !shouldHideAffiliationRuleSection(section?.title || ''));
+      const visibleSections = (report.sections || []).filter(section => !shouldHideAffiliationRuleSection(section));
       reportBody.innerHTML = visibleSections.map(section => {
         const title = section.title || '';
         const isMislakaSection = title.includes('מסלקה') || 

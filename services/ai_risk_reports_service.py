@@ -2566,6 +2566,10 @@ class AIRiskReportsService:
             pension_report,
             affiliated_summary
         )
+        sections = [
+            section for section in sections
+            if not self._is_sensitive_affiliation_rule_section(section)
+        ]
         
         # Generate charts - pass pension_data and affiliated summary for specialized charts
         charts = self._generate_charts(analysis, pension_data, doc_data, affiliated_summary)
@@ -2612,7 +2616,7 @@ class AIRiskReportsService:
                 # Include raw pension data for frontend display
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
-                'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
+                'swiftness_model_applied': bool(self._build_affiliation_snapshot_metadata()),
                 'savings_cover_id_summary': affiliated_summary,
             }
         )
@@ -2623,6 +2627,33 @@ class AIRiskReportsService:
         self.save_data()
         
         return report
+
+    def _is_sensitive_affiliation_rule_section(self, section: Any) -> bool:
+        """
+        True when a section exposes affiliation/rule internals that should remain hidden
+        from end-user report output.
+        """
+        if not section:
+            return False
+        title = str(getattr(section, 'title', '') or '')
+        content = str(getattr(section, 'content', '') or '')
+        title_lower = title.lower()
+        content_lower = content.lower()
+
+        keywords = [
+            'affiliation',
+            'swiftness',
+            'resource',
+            'integrity rule',
+            'integrity rules',
+            'schema map',
+            'שיוך',
+            'שיוכים',
+            'מפת שיוכים',
+            'כללי שלמות',
+            'משאבי נתונים',
+        ]
+        return any(token in title_lower or token in content_lower for token in keywords)
     
     def _generate_sections(self, analysis: AnalysisResult, lang: str, 
                           doc_data: Dict[str, Any] = None,
