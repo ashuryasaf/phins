@@ -1497,11 +1497,19 @@ async function handleLookup(e) {
 }
 
 async function refundTransaction(transactionId) {
-  if (!confirm(`Refund transaction ${transactionId}?\n\nThis action cannot be undone.`)) {
+  // Sanitize and validate the transaction ID before sending
+  const sanitizedId = String(transactionId || '').trim().replace(/[^\w\-]/g, '');
+  if (!sanitizedId) {
+    alert('❌ Refund failed: Transaction ID is missing or invalid. Please select a valid transaction.');
     return;
   }
-  
-  try {
+
+  if (!confirm(`Refund transaction ${sanitizedId}?\n\nThis action cannot be undone.`)) {
+    return;
+  }
+
+  // Helper: perform the refund request with one retry on network/sync errors
+  async function attemptRefund(attempt) {
     const response = await fetch('/api/billing/refund', {
       method: 'POST',
       headers: {
@@ -1509,22 +1517,40 @@ async function refundTransaction(transactionId) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        transaction_id: transactionId,
+        transaction_id: sanitizedId,
         reason: 'Admin requested refund'
       })
     });
-    
+    return response;
+  }
+
+  try {
+    let response;
+    try {
+      response = await attemptRefund(1);
+    } catch (networkErr) {
+      // Retry once after a short delay to handle transient connectivity/sync issues
+      await new Promise(resolve => setTimeout(resolve, REFUND_RETRY_DELAY_MS));
+      response = await attemptRefund(2);
+    }
+
     const result = await response.json();
-    
+
     if (result.success) {
       alert(`✅ Refund successful!\n\nRefund ID: ${result.refund_id}`);
       loadRecentTransactions();
       loadStats();
     } else {
-      alert(`❌ Refund failed: ${result.error}`);
+      const errMsg = result.error || 'Unknown error';
+      // Provide a user-friendly message when the transaction is not found (possible sync issue)
+      if (errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('sync')) {
+        alert(`❌ Refund failed: ${refundSyncErrorMessage(errMsg)}`);
+      } else {
+        alert(`❌ Refund failed: ${errMsg}`);
+      }
     }
   } catch (err) {
-    alert(`❌ Error: ${err.message}`);
+    alert(`❌ Error processing refund. Please try again or contact support if the issue persists.\n\nDetails: ${err.message}`);
   }
 }
 
@@ -4123,6 +4149,18 @@ window.executeAutoPay = executeAutoPay;
 
 // ==================== CUSTOMER REFUND FUNCTIONS ====================
 
+/** Delay (ms) before retrying a failed refund API call (handles transient ledger sync issues). */
+const REFUND_RETRY_DELAY_MS = 1500;
+
+/**
+ * Return a user-friendly message when a refund fails due to a "not found" / sync error.
+ * @param {string} errMsg - The error string from the API or exception.
+ * @returns {string}
+ */
+function refundSyncErrorMessage(errMsg) {
+  return `${errMsg} — If this transaction was recently created, please wait a moment and try again. Ledger records may take a few seconds to sync.`;
+}
+
 /**
  * Load refundable (paid) bills for a customer and display them.
  */
@@ -4229,26 +4267,51 @@ function confirmCustomerRefund(billId, customerId, amount) {
 
 /**
  * Process a customer refund via the API and show the result.
+ * Includes one automatic retry for transient sync/network errors.
  */
 async function processCustomerRefund(billId, customerId, amount) {
   const resultEl = document.getElementById('refund-result');
   const badgeEl = document.getElementById('refund-status-badge');
   resultEl.style.display = 'none';
 
-  try {
-    const response = await fetch('/api/billing/customer-refund', {
+  // Validate inputs before sending to the API
+  const safeBillId = String(billId || '').trim();
+  const safeCustomerId = String(customerId || '').trim();
+  if (!safeBillId || !safeCustomerId) {
+    resultEl.style.background = '#f8d7da';
+    resultEl.style.border = '1px solid #dc3545';
+    resultEl.style.borderRadius = '8px';
+    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;">Bill ID and Customer ID are required to process a refund.</div>';
+    resultEl.style.display = 'block';
+    return;
+  }
+
+  // Helper: perform the refund API call
+  async function attemptRefund() {
+    return fetch('/api/billing/customer-refund', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        bill_id: billId,
-        customer_id: customerId,
+        bill_id: safeBillId,
+        customer_id: safeCustomerId,
         amount: amount,
         reason: 'Customer refund request'
       })
     });
+  }
+
+  try {
+    let response;
+    try {
+      response = await attemptRefund();
+    } catch (networkErr) {
+      // Retry once after a brief delay to handle transient ledger sync issues
+      await new Promise(resolve => setTimeout(resolve, REFUND_RETRY_DELAY_MS));
+      response = await attemptRefund();
+    }
 
     const result = await response.json();
 
@@ -4294,11 +4357,16 @@ async function processCustomerRefund(billId, customerId, amount) {
       if (typeof loadStats === 'function') loadStats();
       if (typeof loadRecentTransactions === 'function') loadRecentTransactions();
     } else {
+      const errMsg = result.error || 'Unknown error';
+      // Provide a user-friendly hint when the error suggests a sync or not-found issue
+      const displayMsg = (errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('sync'))
+        ? refundSyncErrorMessage(errMsg)
+        : errMsg;
       resultEl.style.background = '#f8d7da';
       resultEl.style.border = '1px solid #dc3545';
       resultEl.style.borderRadius = '8px';
       resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr"></div>';
-      resultEl.querySelector('#_rferr').textContent = result.error || 'Unknown error';
+      resultEl.querySelector('#_rferr').textContent = displayMsg;
       resultEl.style.display = 'block';
     }
   } catch (err) {
@@ -4306,7 +4374,7 @@ async function processCustomerRefund(billId, customerId, amount) {
     resultEl.style.border = '1px solid #dc3545';
     resultEl.style.borderRadius = '8px';
     resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Error</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr2"></div>';
-    resultEl.querySelector('#_rferr2').textContent = err.message;
+    resultEl.querySelector('#_rferr2').textContent = `Request failed. Please check your connection and try again. (${err.message})`;
     resultEl.style.display = 'block';
   }
 }

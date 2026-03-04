@@ -25136,13 +25136,18 @@ For claims or questions, please contact:
                     transaction_id = data.get('transaction_id')
                     amount = data.get('amount')
                     reason = data.get('reason')
-                    
-                    if not transaction_id:
+
+                    if not transaction_id or not str(transaction_id).strip():
+                        print(f"[REFUND_API] Rejected: missing or empty transaction_id in request body")
                         self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'transaction_id required'}).encode('utf-8'))
+                        self.wfile.write(json.dumps({'error': 'transaction_id is required'}).encode('utf-8'))
                         return
-                    
+
+                    transaction_id = str(transaction_id).strip()
+                    print(f"[REFUND_API] Processing refund for transaction_id={transaction_id!r}, amount={amount}, reason={reason!r}")
+
                     result = billing_engine.refund_payment(transaction_id, amount, reason)
+                    print(f"[REFUND_API] Refund result for transaction_id={transaction_id!r}: success={result.get('success')}, error={result.get('error')!r}")
                     self._set_json_headers(200 if result['success'] else 400)
                     self.wfile.write(json.dumps(result).encode('utf-8'))
                 except Exception as e:
