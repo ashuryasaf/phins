@@ -256,7 +256,48 @@ class TestBillingEngine:
         
         assert result['success'] is False
         assert 'not found' in result['error'].lower()
-    
+        assert result.get('error_code') == 'TRANSACTION_NOT_FOUND'
+
+    def test_refund_none_transaction_id(self, engine):
+        """Test that a None transaction_id returns a clear invalid-ID error"""
+        result = engine.refund_payment(None, 100.00)
+        assert result['success'] is False
+        assert 'invalid' in result['error'].lower()
+        assert result.get('error_code') == 'INVALID_TRANSACTION_ID'
+
+    def test_refund_empty_transaction_id(self, engine):
+        """Test that an empty-string transaction_id returns a clear invalid-ID error"""
+        result = engine.refund_payment('', 100.00)
+        assert result['success'] is False
+        assert 'invalid' in result['error'].lower()
+        assert result.get('error_code') == 'INVALID_TRANSACTION_ID'
+
+    def test_refund_whitespace_transaction_id(self, engine):
+        """Test that a whitespace-only transaction_id returns an invalid-ID error"""
+        result = engine.refund_payment('   ', 100.00)
+        assert result['success'] is False
+        assert result.get('error_code') == 'INVALID_TRANSACTION_ID'
+
+    def test_refund_nonexistent_returns_not_found_code(self, engine):
+        """Non-empty but absent transaction_id yields TRANSACTION_NOT_FOUND error code"""
+        result = engine.refund_payment('TXN-DOES-NOT-EXIST-9999', 50.00)
+        assert result['success'] is False
+        assert result.get('error_code') == 'TRANSACTION_NOT_FOUND'
+
+    def test_refund_partial_ledger_out_of_sync(self, engine):
+        """Simulate a partially-written ledger entry (status not 'success')"""
+        transaction_id = 'TXN-PARTIAL-001'
+        # Represents a transaction that was recorded but not fully processed
+        engine.transactions[transaction_id] = {
+            'transaction_id': transaction_id,
+            'customer_id': 'CUST-001',
+            'amount': 300.00,
+            'status': 'pending',  # not 'success' – out-of-sync scenario
+        }
+        result = engine.refund_payment(transaction_id, 300.00)
+        assert result['success'] is False
+        assert 'non-successful' in result['error'].lower()
+
     def test_refund_exceeds_original(self, engine):
         """Test refund exceeding original amount"""
         transaction_id = 'TXN-TEST-456'

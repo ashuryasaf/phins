@@ -11,6 +11,7 @@ This server exposes simple JSON endpoints and serves static files from
 for mobile-friendly web UI or to be used by a simple mobile app prototype.
 """
 import json
+import logging
 import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -26,6 +27,8 @@ import time
 import csv
 import io
 from typing import Dict, Any, Tuple, Optional, List
+
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -25136,13 +25139,36 @@ For claims or questions, please contact:
                     transaction_id = data.get('transaction_id')
                     amount = data.get('amount')
                     reason = data.get('reason')
-                    
-                    if not transaction_id:
+
+                    # Validate: transaction_id must be a non-empty string.
+                    if not transaction_id or not str(transaction_id).strip():
+                        logger.debug(
+                            "POST /api/billing/refund: rejected – missing or empty "
+                            "transaction_id in request body"
+                        )
                         self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'transaction_id required'}).encode('utf-8'))
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': 'transaction_id is required and must not be empty',
+                            'error_code': 'INVALID_TRANSACTION_ID',
+                        }).encode('utf-8'))
                         return
-                    
+
+                    transaction_id = str(transaction_id).strip()
+                    logger.debug(
+                        "POST /api/billing/refund: processing refund for "
+                        "transaction_id=%r amount=%r",
+                        transaction_id, amount,
+                    )
+
                     result = billing_engine.refund_payment(transaction_id, amount, reason)
+
+                    logger.debug(
+                        "POST /api/billing/refund: result success=%s for "
+                        "transaction_id=%r",
+                        result.get('success'), transaction_id,
+                    )
+
                     self._set_json_headers(200 if result['success'] else 400)
                     self.wfile.write(json.dumps(result).encode('utf-8'))
                 except Exception as e:
