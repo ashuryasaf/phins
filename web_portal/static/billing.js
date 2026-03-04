@@ -871,6 +871,8 @@ function getStatusClass(status) {
     return 'status-failed';
   } else if (['pending', 'processing', 'outstanding'].includes(statusLower)) {
     return 'status-pending';
+  } else if (statusLower === 'refunded') {
+    return 'status-refunded';
   }
   return 'status-pending';
 }
@@ -2322,6 +2324,8 @@ function displayLedger(entries) {
     'pipeline_initialized': '🔄',
     'payment_received': '💵',
     'premium_payment': '💳',
+    'premium_refund': '↩️',
+    'refund_deposit': '↩️',
     'default': '📒'
   };
   
@@ -2338,6 +2342,8 @@ function displayLedger(entries) {
     'pipeline_initialized': '#9c27b0',
     'payment_received': '#28a745',
     'premium_payment': '#28a745',
+    'premium_refund': '#e0a800',
+    'refund_deposit': '#e0a800',
     'default': '#6c757d'
   };
   
@@ -4114,3 +4120,198 @@ window.loadAutoPaySettings = loadAutoPaySettings;
 window.loadPolicyAutoPayStatus = loadPolicyAutoPayStatus;
 window.saveAutoPayConfig = saveAutoPayConfig;
 window.executeAutoPay = executeAutoPay;
+
+// ==================== CUSTOMER REFUND FUNCTIONS ====================
+
+/**
+ * Load refundable (paid) bills for a customer and display them.
+ */
+async function loadRefundableBills(event) {
+  if (event) event.preventDefault();
+  const customerId = document.getElementById('refund-customer-id').value.trim();
+  if (!customerId) return;
+
+  const listEl = document.getElementById('refundable-bills-list');
+  const resultEl = document.getElementById('refund-result');
+  resultEl.style.display = 'none';
+  listEl.innerHTML = '<p style="color:#666;">⏳ Loading refundable bills...</p>';
+
+  // Helper: escape text content to prevent XSS in HTML
+  function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = String(str);
+    return d.innerHTML;
+  }
+
+  try {
+    const response = await fetch(`/api/billing/refundable?customer_id=${encodeURIComponent(customerId)}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      listEl.innerHTML = `<p style="color:#dc3545;">❌ ${escHtml(data.error || 'Failed to load bills')}</p>`;
+      return;
+    }
+
+    const bills = data.refundable_bills || [];
+    if (bills.length === 0) {
+      listEl.innerHTML = `
+        <div style="text-align:center;padding:24px;color:#666;">
+          <div style="font-size:2.5rem;margin-bottom:8px;">✅</div>
+          <div style="font-weight:600;">No refundable bills found</div>
+          <div style="font-size:0.85rem;margin-top:4px;">All paid bills have already been refunded or no paid bills exist.</div>
+        </div>`;
+      return;
+    }
+
+    // Build HTML using safe escaping for all server-supplied strings
+    listEl.innerHTML = bills.map((bill, idx) => {
+      const paidDate = bill.paid_date ? new Date(bill.paid_date).toLocaleDateString() : 'N/A';
+      const policyLabel = escHtml(
+        bill.policy_id
+          ? `${bill.policy_id}${bill.policy_type && bill.policy_type !== 'N/A' ? ' · ' + bill.policy_type : ''}`
+          : 'N/A'
+      );
+      const alreadyRefundedHtml = bill.already_refunded > 0
+        ? `<div style="font-size:0.8rem;color:#856404;">Already refunded: $${bill.already_refunded.toFixed(2)}</div>`
+        : '';
+      return `
+        <div style="border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:10px;background:#fff;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div style="flex:1;min-width:180px;">
+              <div style="font-weight:700;color:#333;font-size:0.95rem;">${escHtml(bill.bill_id)}</div>
+              <div style="font-size:0.8rem;color:#666;margin-top:2px;">Policy: ${policyLabel}</div>
+              <div style="font-size:0.8rem;color:#666;">Paid on: ${escHtml(paidDate)}</div>
+              ${alreadyRefundedHtml}
+            </div>
+            <div style="text-align:right;min-width:140px;">
+              <div style="font-size:1.1rem;font-weight:700;color:#28a745;">↩️ $${bill.refundable_amount.toFixed(2)}</div>
+              <div style="font-size:0.75rem;color:#666;">refundable</div>
+              <div style="margin-top:8px;">
+                <button class="btn refund-bill-btn"
+                  data-bill-idx="${idx}"
+                  style="background:linear-gradient(135deg,#ffc107 0%,#e0a800 100%);color:#000;font-weight:600;padding:6px 14px;font-size:0.85rem;">
+                  ↩️ Refund to Wallet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Attach event listeners using stored bill data (no inline script / interpolated IDs)
+    listEl.querySelectorAll('.refund-bill-btn').forEach(btn => {
+      const idx = parseInt(btn.getAttribute('data-bill-idx'), 10);
+      const bill = bills[idx];
+      btn.addEventListener('click', () => {
+        confirmCustomerRefund(bill.bill_id, customerId, bill.refundable_amount);
+      });
+    });
+  } catch (err) {
+    listEl.innerHTML = `<p style="color:#dc3545;">❌ Error: ${escHtml(err.message)}</p>`;
+  }
+}
+
+/**
+ * Show confirmation dialog before processing refund.
+ */
+function confirmCustomerRefund(billId, customerId, amount) {
+  // Sanitize user-visible text (confirm() renders plain text, but we guard against non-string values)
+  const safeBillId = String(billId).replace(/[^\w\-]/g, '');
+  const confirmed = confirm(
+    `↩️ Confirm Refund\n\nBill ID: ${safeBillId}\nRefund Amount: $${Number(amount).toFixed(2)}\nDestination: 💊 Health Wallet\n\nThe refunded amount will be instantly deposited to your Health Wallet and recorded in the ledger.\n\nProceed?`
+  );
+  if (confirmed) {
+    processCustomerRefund(billId, customerId, amount);
+  }
+}
+
+/**
+ * Process a customer refund via the API and show the result.
+ */
+async function processCustomerRefund(billId, customerId, amount) {
+  const resultEl = document.getElementById('refund-result');
+  const badgeEl = document.getElementById('refund-status-badge');
+  resultEl.style.display = 'none';
+
+  try {
+    const response = await fetch('/api/billing/customer-refund', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        bill_id: billId,
+        customer_id: customerId,
+        amount: amount,
+        reason: 'Customer refund request'
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      // Use DOM API to safely set text values from server response
+      const refundId = document.createElement('code');
+      refundId.style.fontSize = '0.8rem';
+      refundId.textContent = result.refund_id || 'N/A';
+
+      const ledgerTx = document.createElement('code');
+      ledgerTx.textContent = result.ledger_tx_id || 'N/A';
+
+      const nftToken = document.createElement('code');
+      nftToken.textContent = result.nft_token_id || 'N/A';
+
+      resultEl.style.background = 'linear-gradient(135deg,#e8f5e9 0%,#f1f8e9 100%)';
+      resultEl.style.border = '1px solid #43a047';
+      resultEl.style.borderRadius = '8px';
+      resultEl.innerHTML = `
+        <div style="font-size:1.1rem;font-weight:700;color:#2e7d32;margin-bottom:8px;">✅ Refund Processed!</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;font-size:0.9rem;">
+          <div><strong>Refund ID:</strong><br><span id="_rfid"></span></div>
+          <div><strong>Amount Refunded:</strong><br><span style="color:#28a745;font-weight:700;">$${Number(result.refund_amount).toFixed(2)}</span></div>
+          <div><strong>Deposited To:</strong><br>💊 Health Wallet</div>
+          <div><strong>New Wallet Balance:</strong><br><span style="color:#1565c0;font-weight:700;">$${Number(result.wallet_balance_after).toFixed(2)}</span></div>
+        </div>
+        <div style="margin-top:10px;padding:8px;background:#fff;border-radius:6px;font-size:0.8rem;color:#555;">
+          🔗 Ledger TX: <span id="_ltx"></span> &nbsp;|&nbsp;
+          🔐 NFT Token: <span id="_nft"></span>
+        </div>`;
+      resultEl.querySelector('#_rfid').appendChild(refundId);
+      resultEl.querySelector('#_ltx').appendChild(ledgerTx);
+      resultEl.querySelector('#_nft').appendChild(nftToken);
+      resultEl.style.display = 'block';
+      if (badgeEl) {
+        badgeEl.textContent = '✅ Refunded';
+        badgeEl.style.background = '#d4edda';
+        badgeEl.style.color = '#155724';
+      }
+      // Reload the refundable bills list to reflect updated state
+      loadRefundableBills(null);
+      // Reload stats and transactions in the page
+      if (typeof loadStats === 'function') loadStats();
+      if (typeof loadRecentTransactions === 'function') loadRecentTransactions();
+    } else {
+      resultEl.style.background = '#f8d7da';
+      resultEl.style.border = '1px solid #dc3545';
+      resultEl.style.borderRadius = '8px';
+      resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Refund Failed</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr"></div>';
+      resultEl.querySelector('#_rferr').textContent = result.error || 'Unknown error';
+      resultEl.style.display = 'block';
+    }
+  } catch (err) {
+    resultEl.style.background = '#f8d7da';
+    resultEl.style.border = '1px solid #dc3545';
+    resultEl.style.borderRadius = '8px';
+    resultEl.innerHTML = '<div style="color:#721c24;font-weight:600;">❌ Error</div><div style="margin-top:6px;font-size:0.9rem;" id="_rferr2"></div>';
+    resultEl.querySelector('#_rferr2').textContent = err.message;
+    resultEl.style.display = 'block';
+  }
+}
+
+// Expose refund functions globally
+window.loadRefundableBills = loadRefundableBills;
+window.confirmCustomerRefund = confirmCustomerRefund;
+window.processCustomerRefund = processCustomerRefund;

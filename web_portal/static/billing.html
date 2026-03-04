@@ -26,6 +26,7 @@
     }
     .status-success, .status-completed, .status-paid { background-color: #d4edda; color: #155724; }
     .status-failed, .status-rejected, .status-declined { background-color: #f8d7da; color: #721c24; }
+    .status-refunded { background-color: #fff3cd; color: #856404; }
     .status-pending, .status-outstanding, .status-processing { background-color: #fff3cd; color: #856404; }
     
     /* Payment Method Display */
@@ -999,7 +1000,43 @@
       </form>
     </section>
     
-    <!-- ==================== SECTION 9: OUTSTANDING BILL NOTIFICATIONS ==================== -->
+    <!-- ==================== SECTION 9: CUSTOMER REFUND ==================== -->
+    <section class="card" style="padding: 16px;" id="refund-section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+          <h2 style="margin: 0; font-size: 1.1rem;">↩️ Request a Refund</h2>
+          <p style="color: #666; margin: 4px 0 0 0; font-size: 0.8rem;">Refund paid premiums or savings — deposited directly to your Health Wallet</p>
+        </div>
+        <span id="refund-status-badge" style="font-size: 0.75rem; padding: 4px 10px; background: #fff3cd; color: #856404; border-radius: 12px;">↩️ Refund</span>
+      </div>
+
+      <!-- Info banner -->
+      <div style="background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border-left: 4px solid #43a047; padding: 12px; border-radius: 4px; margin-bottom: 14px;">
+        <strong>💊 Refunds go straight to your Health Wallet</strong>
+        <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: #444;">
+          When you request a refund for a paid premium, savings deposit, or any paid bill, the refunded amount is instantly credited to your Health Wallet. Every refund is ledger-stamped and NFT-verified for full data integrity.
+        </p>
+      </div>
+
+      <!-- Customer ID lookup form -->
+      <form id="refund-lookup-form" onsubmit="loadRefundableBills(event)" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;">
+        <input type="text" id="refund-customer-id" placeholder="Customer ID (e.g., CUST-12345)"
+               style="flex: 1; min-width: 200px; padding: 8px; border: 1px solid #ddd; border-radius: 6px;" required>
+        <button type="submit" class="btn" style="padding: 8px 18px; background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); color: #000; font-weight: 600;">
+          🔍 Find Refundable Bills
+        </button>
+      </form>
+
+      <!-- Results list -->
+      <div id="refundable-bills-list">
+        <p class="muted" style="color: #999; font-size: 0.9rem;">Enter your Customer ID above to see eligible refunds.</p>
+      </div>
+
+      <!-- Refund result message -->
+      <div id="refund-result" style="display: none; margin-top: 12px; padding: 14px; border-radius: 8px;"></div>
+    </section>
+
+    <!-- ==================== SECTION 10: OUTSTANDING BILL NOTIFICATIONS ==================== -->
     <section class="card" style="padding: 16px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <div>
@@ -1028,7 +1065,7 @@
       <div id="notification-results" style="margin-top: 12px;"></div>
     </section>
 
-    <!-- ==================== SECTION 10: CUSTOMER LOOKUP ==================== -->
+    <!-- ==================== SECTION 11: CUSTOMER LOOKUP ==================== -->
     <section class="card" style="padding: 16px;">
       <h2 style="margin: 0 0 12px 0; font-size: 1.1rem;">🔍 Customer Billing Lookup</h2>
       <form id="lookup-form" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
