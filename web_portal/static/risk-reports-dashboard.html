@@ -2051,7 +2051,57 @@
         </div>
       </div>
     </section>
-    
+
+    <!-- Swiftness Status & Affiliations Section -->
+    <section class="upload-section fade-in" id="swiftnessSection" style="margin-top:0;">
+      <div class="section-header" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%);">
+        <h3 style="color:white;">🧭 Swiftness Safe & Affiliations</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="status-pill pending" id="swiftnessStatusPill">⏳ Checking...</span>
+          <button class="btn btn-white" id="swiftnessConnectBtn" onclick="openSwiftnessSafe()" disabled style="padding:6px 14px;font-size:0.85rem;">🔗 Open Safe</button>
+        </div>
+      </div>
+      <div style="padding:1.5rem 2rem;">
+        <p id="swiftnessStatusMessage" style="color:var(--text-muted);margin-bottom:1rem;">Checking Swiftness Safe status...</p>
+
+        <!-- Affiliations Summary -->
+        <div id="affiliationsSummary" style="margin-bottom:1rem;"></div>
+        <div class="affiliations-grid" id="affiliationsGrid"></div>
+
+        <!-- Interface Tags & Stats -->
+        <div id="interfaceTags" style="margin-top:1rem;"></div>
+        <div id="interfaceStats" style="margin-top:0.5rem;color:var(--text-muted);font-size:0.85rem;"></div>
+      </div>
+    </section>
+
+    <!-- Swiftness Resources Section -->
+    <section class="upload-section fade-in" style="margin-top:0;">
+      <div class="section-header" style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);">
+        <h3 style="color:white;">📥 Swiftness Data Resources</h3>
+        <div style="font-size:0.85rem;color:rgba(255,255,255,0.9);" id="resourceStatTotal">Loading...</div>
+      </div>
+      <div style="padding:1.5rem 2rem;">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+          <span id="resourceStatInterfaces" style="font-size:0.85rem;color:var(--text-muted);"></span>
+          <span id="resourceStatFileTypes" style="font-size:0.85rem;color:var(--text-muted);"></span>
+        </div>
+        <h4 style="margin-bottom:0.75rem;color:var(--primary);">System General</h4>
+        <div class="resource-files-grid" id="systemGeneralGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;margin-bottom:1.5rem;"></div>
+        <h4 style="margin-bottom:0.75rem;color:var(--primary);">Mislaka Work Files</h4>
+        <div class="resource-files-grid" id="mislakaWorkGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;"></div>
+      </div>
+    </section>
+
+    <!-- Report Model Section -->
+    <section class="upload-section fade-in" style="margin-top:0;">
+      <div class="section-header" style="background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);">
+        <h3 style="color:white;">📊 Report Model (Nituach Tik)</h3>
+      </div>
+      <div style="padding:1.5rem 2rem;" id="reportModelContainer">
+        <p style="color:var(--text-muted);text-align:center;padding:2rem;">Loading report model...</p>
+      </div>
+    </section>
+
     <!-- Results Section -->
     <section class="results-section" id="resultsSection">
       <!-- Stats Grid -->
@@ -4522,21 +4572,50 @@
       }
     }
     
-    // Export report to PDF (excludes minimized/closed sections)
     async function exportReport(format) {
-      if (format !== 'pdf') {
-        alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+      const reportId = currentReport?.id || currentReport?.report_id;
+      if (!reportId) {
+        alert('Generate a report first before exporting.');
         return;
       }
-      
-      // Load jsPDF library dynamically if not already loaded
-      if (typeof window.jspdf === 'undefined') {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = () => generatePDF();
-        document.head.appendChild(script);
-      } else {
-        generatePDF();
+
+      const normalized = String(format || '').toLowerCase();
+      const exportFormat = normalized === 'excel' ? 'excel' : 'pdf';
+      const token = localStorage.getItem('phins_token') || '';
+
+      try {
+        const response = await fetch(
+          `/api/reports/download-summary?report_id=${encodeURIComponent(reportId)}&format=${encodeURIComponent(exportFormat)}`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+
+        if (!response.ok) {
+          let message = `Export failed (${response.status})`;
+          try {
+            const errorPayload = await response.json();
+            if (errorPayload?.error) message = errorPayload.error;
+          } catch (_ignore) {}
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        const fallbackExt = exportFormat === 'pdf' ? 'pdf' : 'csv';
+        const fallbackName = `phins_report_summary.${fallbackExt}`;
+        const filename = filenameMatch ? filenameMatch[1] : fallbackName;
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (error) {
+        console.error('Export error:', error);
+        alert(`Unable to export report: ${error.message}`);
       }
     }
     
