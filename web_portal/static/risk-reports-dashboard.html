@@ -2000,6 +2000,12 @@
         </button>
       </div>
       
+      <!-- User Comments -->
+      <div style="margin-top: 12px;">
+        <label for="userComments" style="font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 6px;">💬 Assessment Notes / Comments (optional):</label>
+        <textarea id="userComments" rows="3" placeholder="Add context, risk concerns, or notes for this analysis (e.g. 'fraud concern', 'affiliation risk', 'urgent review')..." style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; font-family: inherit; resize: vertical; background: var(--bg-card); color: var(--text-primary); box-sizing: border-box;"></textarea>
+      </div>
+      
       <div class="processing-status" id="processingStatus">
         <h4>🤖 AI Inductive Analysis in Progress...</h4>
         <div class="progress-bar">
@@ -2742,6 +2748,9 @@
     async function startAnalysis() {
       if (uploadedFiles.length === 0) return;
       
+      // Collect user comments
+      const userComments = (document.getElementById('userComments')?.value || '').trim();
+      
       // Show processing status
       processingStatus.classList.add('active');
       uploadZone.classList.add('processing');
@@ -2772,7 +2781,8 @@
             body: JSON.stringify({
               filename: file.name,
               file_type: fileType,
-              content: content
+              content: content,
+              user_comments: userComments || undefined
             })
           });
           
