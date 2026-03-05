@@ -868,6 +868,282 @@
       background: #fee2e2;
       color: #b91c1c;
     }
+
+    /* Affiliated Assessment Styles */
+    .affiliated-assessment {
+      margin-bottom: 2rem;
+    }
+
+    .affiliated-assessment-header {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #0277bd 100%);
+      color: white;
+      padding: 2rem;
+      border-radius: 16px 16px 0 0;
+      text-align: center;
+    }
+
+    .affiliated-assessment-header h2 {
+      font-size: 1.6rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .affiliated-assessment-header p {
+      opacity: 0.9;
+      font-size: 0.95rem;
+    }
+
+    .affiliated-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-top: 0.75rem;
+    }
+
+    .affiliated-badge.mislaka {
+      background: rgba(255,255,255,0.2);
+      color: white;
+    }
+
+    .customer-profile-panel {
+      background: white;
+      border-radius: 0 0 16px 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .customer-profile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .profile-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .profile-field .field-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .profile-field .field-value {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+    }
+
+    .financial-overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .financial-card {
+      background: white;
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 3px 15px rgba(0,0,0,0.07);
+      text-align: center;
+      border-top: 4px solid var(--primary);
+      transition: transform 0.2s;
+    }
+
+    .financial-card:hover {
+      transform: translateY(-3px);
+    }
+
+    .financial-card.savings { border-top-color: #10b981; }
+    .financial-card.severance { border-top-color: #f59e0b; }
+    .financial-card.coverage { border-top-color: #3b82f6; }
+    .financial-card.policies { border-top-color: #7c3aed; }
+    .financial-card.section14 { border-top-color: #059669; }
+    .financial-card.providers { border-top-color: #0891b2; }
+
+    .financial-card .fin-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.5rem;
+    }
+
+    .financial-card .fin-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      line-height: 1.2;
+    }
+
+    .financial-card .fin-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    .affiliated-table-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    .affiliated-table-header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .affiliated-table-header h3 {
+      font-size: 1.15rem;
+      color: var(--text-dark);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .affiliated-table-header .record-count {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      background: #f1f5f9;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+
+    .affiliated-table-body {
+      padding: 0;
+      overflow-x: auto;
+    }
+
+    .affiliated-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+    }
+
+    .affiliated-table th {
+      padding: 12px 14px;
+      background: #f8fafc;
+      color: var(--text-dark);
+      font-weight: 600;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      border-bottom: 2px solid #e2e8f0;
+      text-align: left;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .affiliated-table td {
+      padding: 11px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.9rem;
+      color: var(--text-dark);
+      vertical-align: top;
+    }
+
+    .affiliated-table tr:hover td {
+      background: #f8fafc;
+    }
+
+    .affiliated-table .currency {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .affiliated-table .status-active {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .affiliated-table .status-frozen {
+      color: #d97706;
+      font-weight: 600;
+    }
+
+    .affiliated-table .status-closed {
+      color: #9ca3af;
+    }
+
+    .provider-overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .provider-card {
+      background: white;
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: 0 3px 15px rgba(0,0,0,0.07);
+      border-left: 4px solid var(--primary);
+    }
+
+    .provider-card h4 {
+      font-size: 1.05rem;
+      color: var(--text-dark);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .provider-detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      font-size: 0.88rem;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+
+    .provider-detail:last-child {
+      border-bottom: none;
+    }
+
+    .provider-detail .pd-label {
+      color: var(--text-muted);
+    }
+
+    .provider-detail .pd-value {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    /* RTL for affiliated assessment */
+    [dir="rtl"] .provider-card {
+      border-left: none;
+      border-right: 4px solid var(--primary);
+    }
+
+    [dir="rtl"] .affiliated-table th,
+    [dir="rtl"] .affiliated-table td {
+      text-align: right;
+    }
     
     /* RTL Support */
     [dir="rtl"] {
@@ -1038,46 +1314,55 @@
     
     <!-- Results Section -->
     <section class="results-section" id="resultsSection">
-      <!-- Stats Grid -->
-      <div class="stats-grid" id="statsGrid">
-        <!-- Populated dynamically -->
+
+      <!-- Affiliated Assessment (customer-focused, shown for mislaka/pension data) -->
+      <div id="affiliatedAssessment" style="display:none;">
+        <div id="affiliatedHeader" class="affiliated-assessment"></div>
+        <div id="customerProfilePanel"></div>
+        <div id="financialOverview" class="financial-overview"></div>
+        <div id="providerOverview"></div>
+        <div id="accountsTablePanel"></div>
+        <div id="contributionsTablePanel"></div>
+        <div id="employerTablePanel"></div>
       </div>
-      
-      <!-- Risk Gauge -->
-      <div class="risk-gauge-container fade-in" id="riskGaugeContainer">
-        <h3 style="margin-bottom: 1.5rem; color: var(--primary);">📊 Overall Risk Score</h3>
-        <div class="risk-gauge">
-          <div class="risk-gauge-circle" id="riskGaugeCircle">
-            <div class="risk-gauge-inner">
-              <div class="risk-gauge-value" id="riskGaugeValue">0</div>
-              <div class="risk-gauge-label">Risk Score</div>
+
+      <!-- Standard stats (shown for non-pension data) -->
+      <div id="standardAssessment">
+        <!-- Stats Grid -->
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <!-- Risk Gauge -->
+        <div class="risk-gauge-container fade-in" id="riskGaugeContainer">
+          <h3 style="margin-bottom: 1.5rem; color: var(--primary);">📊 Overall Risk Score</h3>
+          <div class="risk-gauge">
+            <div class="risk-gauge-circle" id="riskGaugeCircle">
+              <div class="risk-gauge-inner">
+                <div class="risk-gauge-value" id="riskGaugeValue">0</div>
+                <div class="risk-gauge-label">Risk Score</div>
+              </div>
             </div>
           </div>
+          <div class="risk-bar">
+            <div class="risk-indicator" id="riskIndicator"></div>
+          </div>
+          <p id="riskSummary" style="margin-top: 1rem; color: var(--text-muted);"></p>
         </div>
-        <div class="risk-bar">
-          <div class="risk-indicator" id="riskIndicator"></div>
-        </div>
-        <p id="riskSummary" style="margin-top: 1rem; color: var(--text-muted);"></p>
-      </div>
-      
-      <!-- AI Insights Panel -->
-      <div class="insights-panel" id="insightsPanel">
-        <div class="insights-header">
-          <h3>🧠 AI Inductive Analysis</h3>
-          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
-        </div>
-        <div class="insights-body">
-          <div class="insights-grid" id="insightsGrid">
-            <!-- Populated dynamically -->
+
+        <!-- AI Insights Panel -->
+        <div class="insights-panel" id="insightsPanel">
+          <div class="insights-header">
+            <h3>🧠 AI Inductive Analysis</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+          </div>
+          <div class="insights-body">
+            <div class="insights-grid" id="insightsGrid"></div>
           </div>
         </div>
       </div>
-      
+
       <!-- Charts -->
-      <div class="charts-grid" id="chartsGrid">
-        <!-- Populated dynamically -->
-      </div>
-      
+      <div class="charts-grid" id="chartsGrid"></div>
+
       <!-- Report Panel -->
       <div class="report-panel" id="reportPanel">
         <div class="report-header">
@@ -1087,19 +1372,15 @@
             <button class="btn btn-secondary" onclick="exportReport('excel')">📊 Export Excel</button>
           </div>
         </div>
-        <div class="report-body" id="reportBody">
-          <!-- Report sections populated dynamically -->
-        </div>
+        <div class="report-body" id="reportBody"></div>
       </div>
-      
+
       <!-- Recommendations Panel -->
       <div class="recommendations-panel" id="recommendationsPanel">
         <div class="recommendations-header">
           <h3>💡 AI Recommendations</h3>
         </div>
-        <div class="recommendations-list" id="recommendationsList">
-          <!-- Recommendations populated dynamically -->
-        </div>
+        <div class="recommendations-list" id="recommendationsList"></div>
       </div>
     </section>
   </main>
@@ -1385,25 +1666,412 @@
     }
     
     function displayResults(analysis, report) {
-      // Determine risk level
+      const meta = report.metadata || {};
+      const isPensionData = meta.is_pension_data && meta.pension_data;
+
+      if (isPensionData) {
+        document.getElementById('affiliatedAssessment').style.display = 'block';
+        document.getElementById('standardAssessment').style.display = 'none';
+        renderAffiliatedAssessment(analysis, report);
+      } else {
+        document.getElementById('affiliatedAssessment').style.display = 'none';
+        document.getElementById('standardAssessment').style.display = 'block';
+        renderStandardAssessment(analysis, report);
+      }
+
+      renderCharts(report.charts);
+      renderReportSections(report);
+      renderRecommendations(report.recommendations);
+    }
+
+    function renderReportSections(report) {
+      document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
+      const visibleSections = (report.sections || []).filter(section => !shouldHideSection(section.title));
+      document.getElementById('reportBody').innerHTML = visibleSections.map(section => {
+        const isPensionSection = section.title.includes('פנסיה') ||
+                                 section.title.toLowerCase().includes('pension') ||
+                                 section.title.includes('ביטוח');
+        const sectionClass = isPensionSection ? 'report-section pension-section fade-in' : 'report-section fade-in';
+
+        let content = stripSourceLinks(section.content || '');
+        if (content) {
+          content = escapeHtml(content)
+            .replace(/\n/g, '<br>')
+            .replace(/={2,}/g, '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0.5rem 0;">')
+            .replace(/-{2,}/g, '<hr style="border: none; border-top: 1px dashed #e2e8f0; margin: 0.5rem 0;">');
+        }
+
+        return `
+          <div class="${sectionClass}">
+            <h4>${getSectionIcon(section.title || '')} ${escapeHtml(section.title || '')}</h4>
+            <div class="content">${content}</div>
+            ${renderDataTable(section.data_table)}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRecommendations(recommendations) {
+      document.getElementById('recommendationsList').innerHTML = (recommendations || []).map(rec => `
+        <div class="recommendation-item ${rec.priority} fade-in">
+          <h5>
+            <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
+            ${rec.title}
+          </h5>
+          <p>${rec.description}</p>
+          <ul class="action-items">
+            ${rec.action_items.map(item => `<li>${item}</li>`).join('')}
+          </ul>
+          <div class="expected-impact">
+            <strong>Expected Impact:</strong> ${rec.expected_impact}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // AFFILIATED ASSESSMENT (Mislaka / Swiftness - customer-focused)
+    // =========================================================================
+
+    function renderAffiliatedAssessment(analysis, report) {
+      const meta = report.metadata || {};
+      const pensionData = meta.pension_data || {};
+      const isHebrew = report.language === 'hebrew';
+
+      let clientData = pensionData.client || {};
+      if (Array.isArray(clientData)) clientData = clientData[0] || {};
+      const totals = pensionData.totals || pensionData.summary || {};
+      const accounts = pensionData.accounts || [];
+      const contributions = pensionData.contributions || [];
+      const employers = pensionData.employers || [];
+
+      renderAffiliatedHeader(clientData, totals, accounts, isHebrew, analysis);
+      renderCustomerProfile(clientData, isHebrew);
+      renderFinancialOverview(totals, accounts, isHebrew);
+      renderProviderOverview(accounts, isHebrew);
+      renderAccountsTable(accounts, isHebrew);
+      renderContributionsTable(contributions, isHebrew);
+      renderEmployerTable(employers, accounts, isHebrew);
+    }
+
+    function renderAffiliatedHeader(client, totals, accounts, isHebrew, analysis) {
+      const name = client.full_name || client.first_name
+        ? `${client.first_name || ''} ${client.last_name || ''}`.trim()
+        : '';
+      const displayName = name || (isHebrew ? 'לקוח' : 'Customer');
+      const providerCount = totals.provider_count || new Set(accounts.map(a => a.provider).filter(Boolean)).size;
+      const accountCount = totals.account_count || accounts.length;
+
+      document.getElementById('affiliatedHeader').innerHTML = `
+        <div class="affiliated-assessment-header fade-in">
+          <h2>${isHebrew ? '📋 הערכה מסונפת – ניתוח תיק לקוח' : '📋 Affiliated Assessment – Customer Portfolio Analysis'}</h2>
+          <p>${isHebrew
+            ? `${displayName} | ${accountCount} ${accountCount === 1 ? 'מוצר' : 'מוצרים'} | ${providerCount} ${providerCount === 1 ? 'יצרן' : 'יצרנים'}`
+            : `${displayName} | ${accountCount} product${accountCount !== 1 ? 's' : ''} | ${providerCount} provider${providerCount !== 1 ? 's' : ''}`}</p>
+          <div>
+            <span class="affiliated-badge mislaka">Mislaka + Swiftness</span>
+            <span class="affiliated-badge mislaka" style="margin-left:6px;">${capitalizeFirst(analysis.data_classification)} | ${analysis.language_name}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCustomerProfile(client, isHebrew) {
+      const container = document.getElementById('customerProfilePanel');
+      if (!client || (!client.id_number && !client.first_name && !client.full_name)) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const fields = [];
+      const addField = (labelHe, labelEn, value) => {
+        if (value && String(value).trim()) {
+          fields.push({ label: isHebrew ? labelHe : labelEn, value: escapeHtml(String(value).trim()) });
+        }
+      };
+
+      const fullName = client.full_name || `${client.first_name || ''} ${client.last_name || ''}`.trim();
+      addField('שם מלא', 'Full Name', fullName);
+      addField('תעודת זהות', 'ID Number', client.id_number);
+      addField('סוג זיהוי', 'ID Type', client.id_type);
+      addField('תאריך לידה', 'Birth Date', client.birth_date);
+      addField('מין', 'Gender', client.gender);
+      addField('כתובת', 'Address', client.address);
+      addField('יישוב', 'City', client.city);
+      addField('טלפון', 'Phone', client.phone);
+      addField('דוא"ל', 'Email', client.email);
+
+      if (fields.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="customer-profile-panel fade-in">
+          <h3 style="margin-bottom:1.25rem;color:var(--primary);display:flex;align-items:center;gap:10px;">
+            👤 ${isHebrew ? 'פרטי לקוח' : 'Customer Details'}
+          </h3>
+          <div class="customer-profile-grid">
+            ${fields.map(f => `
+              <div class="profile-field">
+                <span class="field-label">${f.label}</span>
+                <span class="field-value">${f.value}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function formatCurrency(val) {
+      const num = parseFloat(val);
+      if (isNaN(num)) return '₪0';
+      return '₪' + num.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
+    function renderFinancialOverview(totals, accounts, isHebrew) {
+      const container = document.getElementById('financialOverview');
+
+      const totalBalance = totals.total_balance || 0;
+      const totalSavings = totals.total_savings || totals.total_savings_balance || 0;
+      const totalSeverance = totals.total_severance || totals.total_severance_balance || 0;
+      const accountCount = totals.account_count || accounts.length;
+      const providerCount = totals.provider_count || new Set(accounts.map(a => a.provider).filter(Boolean)).size;
+      const section14 = totals.section14_coverage;
+      const section14Accounts = totals.section14_accounts || 0;
+      const providers = totals.providers || [...new Set(accounts.map(a => a.provider).filter(Boolean))];
+
+      container.innerHTML = `
+        <div class="financial-card savings fade-in">
+          <div class="fin-label">${isHebrew ? 'סה"כ חסכונות' : 'Total Savings'}</div>
+          <div class="fin-value" style="color:#059669;">${formatCurrency(totalSavings)}</div>
+          <div class="fin-sub">${isHebrew ? 'תגמולים' : 'Accumulated savings'}</div>
+        </div>
+        <div class="financial-card severance fade-in">
+          <div class="fin-label">${isHebrew ? 'סה"כ פיצויים' : 'Total Severance'}</div>
+          <div class="fin-value" style="color:#d97706;">${formatCurrency(totalSeverance)}</div>
+          <div class="fin-sub">${isHebrew ? 'פיצויים צבורים' : 'Accumulated severance'}</div>
+        </div>
+        <div class="financial-card fade-in">
+          <div class="fin-label">${isHebrew ? 'סה"כ יתרה' : 'Total Balance'}</div>
+          <div class="fin-value">${formatCurrency(totalBalance)}</div>
+          <div class="fin-sub">${isHebrew ? 'כל החשבונות' : 'All accounts combined'}</div>
+        </div>
+        <div class="financial-card policies fade-in">
+          <div class="fin-label">${isHebrew ? 'פוליסות / מוצרים' : 'Policies / Products'}</div>
+          <div class="fin-value" style="color:#7c3aed;">${accountCount}</div>
+          <div class="fin-sub">${isHebrew ? 'מוצרים פעילים' : 'Products on file'}</div>
+        </div>
+        <div class="financial-card providers fade-in">
+          <div class="fin-label">${isHebrew ? 'יצרנים' : 'Providers'}</div>
+          <div class="fin-value" style="color:#0891b2;">${providerCount}</div>
+          <div class="fin-sub">${providers.slice(0, 3).join(', ') || '—'}${providers.length > 3 ? '...' : ''}</div>
+        </div>
+        <div class="financial-card section14 fade-in">
+          <div class="fin-label">${isHebrew ? 'סעיף 14' : 'Section 14'}</div>
+          <div class="fin-value" style="color:${section14 ? '#059669' : '#dc2626'};">${section14 ? (isHebrew ? '✅ מכוסה' : '✅ Covered') : (isHebrew ? '⚠️ לא מכוסה' : '⚠️ Not Covered')}</div>
+          <div class="fin-sub">${section14Accounts > 0 ? (isHebrew ? `${section14Accounts} חשבונות` : `${section14Accounts} account${section14Accounts !== 1 ? 's' : ''}`) : ''}</div>
+        </div>
+      `;
+    }
+
+    function renderProviderOverview(accounts, isHebrew) {
+      const container = document.getElementById('providerOverview');
+      if (!accounts || accounts.length === 0) { container.innerHTML = ''; return; }
+
+      const providerMap = {};
+      accounts.forEach(acct => {
+        const prov = acct.provider || (isHebrew ? 'לא ידוע' : 'Unknown');
+        if (!providerMap[prov]) {
+          providerMap[prov] = { count: 0, totalBalance: 0, totalSeverance: 0, products: new Set() };
+        }
+        providerMap[prov].count++;
+        providerMap[prov].totalBalance += parseFloat(acct.total_balance || acct.savings_balance || 0) || 0;
+        providerMap[prov].totalSeverance += parseFloat(acct.severance_balance || 0) || 0;
+        const productType = acct.product_type_name || acct.product_type || '';
+        if (productType) providerMap[prov].products.add(productType);
+      });
+
+      const providerColors = ['#1a237e', '#0d47a1', '#1565c0', '#0277bd', '#00838f', '#00695c', '#2e7d32', '#558b2f'];
+
+      container.innerHTML = `
+        <div class="provider-overview fade-in">
+          ${Object.entries(providerMap).map(([name, info], idx) => `
+            <div class="provider-card" style="border-left-color:${providerColors[idx % providerColors.length]};">
+              <h4>🏦 ${escapeHtml(name)}</h4>
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'מוצרים' : 'Products'}</span>
+                <span class="pd-value">${info.count}</span>
+              </div>
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'יתרה כוללת' : 'Total Balance'}</span>
+                <span class="pd-value">${formatCurrency(info.totalBalance)}</span>
+              </div>
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'פיצויים' : 'Severance'}</span>
+                <span class="pd-value">${formatCurrency(info.totalSeverance)}</span>
+              </div>
+              ${info.products.size > 0 ? `
+              <div class="provider-detail">
+                <span class="pd-label">${isHebrew ? 'סוגי מוצרים' : 'Product Types'}</span>
+                <span class="pd-value" style="font-size:0.82rem;">${[...info.products].join(', ')}</span>
+              </div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderAccountsTable(accounts, isHebrew) {
+      const container = document.getElementById('accountsTablePanel');
+      if (!accounts || accounts.length === 0) { container.innerHTML = ''; return; }
+
+      const headers = isHebrew
+        ? ['מספר פוליסה', 'יצרן', 'סוג מוצר', 'סטטוס', 'יתרה כוללת', 'תגמולים', 'פיצויים', 'דמי ניהול (צבירה)', 'דמי ניהול (הפקדה)', 'מעסיק', 'סעיף 14']
+        : ['Policy #', 'Provider', 'Product Type', 'Status', 'Total Balance', 'Savings', 'Severance', 'Mgmt Fee (Savings)', 'Mgmt Fee (Deposits)', 'Employer', 'Section 14'];
+
+      const rows = accounts.slice(0, 80).map(acct => {
+        const status = acct.status || acct.status_en || '';
+        const statusLower = status.toLowerCase();
+        const statusClass = statusLower.includes('active') || statusLower.includes('פעיל') ? 'status-active'
+          : (statusLower.includes('frozen') || statusLower.includes('מוקפא') ? 'status-frozen'
+          : (statusLower.includes('closed') || statusLower.includes('סגור') ? 'status-closed' : ''));
+        const sec14 = acct.section14 ? (isHebrew ? '✅ כן' : '✅ Yes') : (isHebrew ? '—' : '—');
+
+        return `<tr>
+          <td>${escapeHtml(acct.policy_number || '')}</td>
+          <td>${escapeHtml(acct.provider || '')}</td>
+          <td>${escapeHtml(acct.product_type_name || acct.product_type || '')}</td>
+          <td class="${statusClass}">${escapeHtml(status)}</td>
+          <td class="currency">${formatCurrency(acct.total_balance || 0)}</td>
+          <td class="currency">${formatCurrency(acct.savings_balance || 0)}</td>
+          <td class="currency">${formatCurrency(acct.severance_balance || 0)}</td>
+          <td>${acct.management_fee_savings != null ? acct.management_fee_savings + '%' : '—'}</td>
+          <td>${acct.management_fee_deposits != null ? acct.management_fee_deposits + '%' : '—'}</td>
+          <td>${escapeHtml(acct.employer_name || '')}</td>
+          <td>${sec14}</td>
+        </tr>`;
+      });
+
+      container.innerHTML = `
+        <div class="affiliated-table-panel fade-in">
+          <div class="affiliated-table-header">
+            <h3>📁 ${isHebrew ? 'פירוט מוצרים וחשבונות' : 'Products & Accounts Detail'}</h3>
+            <span class="record-count">${accounts.length} ${isHebrew ? 'רשומות' : 'records'}</span>
+          </div>
+          <div class="affiliated-table-body">
+            <table class="affiliated-table">
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+              <tbody>${rows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderContributionsTable(contributions, isHebrew) {
+      const container = document.getElementById('contributionsTablePanel');
+      if (!contributions || contributions.length === 0) { container.innerHTML = ''; return; }
+
+      const headers = isHebrew
+        ? ['תקופה', 'מעסיק', 'הפקדת עובד', 'הפקדת מעסיק', 'פיצויים', 'סה"כ']
+        : ['Period', 'Employer', 'Employee', 'Employer Contrib.', 'Severance', 'Total'];
+
+      const rows = contributions.slice(0, 120).map(c => `<tr>
+        <td>${escapeHtml(c.period || '')}</td>
+        <td>${escapeHtml(c.employer_name || '')}</td>
+        <td class="currency">${formatCurrency(c.employee_amount || 0)}</td>
+        <td class="currency">${formatCurrency(c.employer_amount || 0)}</td>
+        <td class="currency">${formatCurrency(c.severance_amount || 0)}</td>
+        <td class="currency">${formatCurrency(c.total_amount || 0)}</td>
+      </tr>`);
+
+      container.innerHTML = `
+        <div class="affiliated-table-panel fade-in">
+          <div class="affiliated-table-header">
+            <h3>📈 ${isHebrew ? 'פירוט הפקדות' : 'Contribution Details'}</h3>
+            <span class="record-count">${contributions.length} ${isHebrew ? 'רשומות' : 'records'}</span>
+          </div>
+          <div class="affiliated-table-body">
+            <table class="affiliated-table">
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+              <tbody>${rows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEmployerTable(employers, accounts, isHebrew) {
+      const container = document.getElementById('employerTablePanel');
+      const empData = [];
+      const seen = new Set();
+
+      (accounts || []).forEach(acct => {
+        const name = (acct.employer_name || '').trim();
+        if (name && !seen.has(name)) {
+          seen.add(name);
+          empData.push({
+            name,
+            id: acct.employer_id || '',
+            section14: acct.section14 ? (isHebrew ? '✅ כן' : '✅ Yes') : (isHebrew ? '—' : '—')
+          });
+        }
+      });
+
+      (employers || []).forEach(emp => {
+        const name = (typeof emp === 'object' ? emp.name : String(emp)).trim();
+        if (name && !seen.has(name)) {
+          seen.add(name);
+          empData.push({
+            name,
+            id: typeof emp === 'object' ? (emp.id || '') : '',
+            section14: '—'
+          });
+        }
+      });
+
+      if (empData.length === 0) { container.innerHTML = ''; return; }
+
+      const headers = isHebrew
+        ? ['שם מעסיק', 'מספר מעסיק', 'סעיף 14']
+        : ['Employer Name', 'Employer ID', 'Section 14'];
+
+      container.innerHTML = `
+        <div class="affiliated-table-panel fade-in">
+          <div class="affiliated-table-header">
+            <h3>🏢 ${isHebrew ? 'פרטי מעסיקים' : 'Employer Information'}</h3>
+            <span class="record-count">${empData.length} ${isHebrew ? 'רשומות' : 'records'}</span>
+          </div>
+          <div class="affiliated-table-body">
+            <table class="affiliated-table">
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+              <tbody>${empData.map(e => `<tr>
+                <td>${escapeHtml(e.name)}</td>
+                <td>${escapeHtml(e.id)}</td>
+                <td>${e.section14}</td>
+              </tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STANDARD ASSESSMENT (non-pension / generic data)
+    // =========================================================================
+
+    function renderStandardAssessment(analysis) {
       const riskScore = analysis.risk_score;
       const riskLevel = riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high');
       const riskColor = riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)');
       const riskLabel = riskScore < 30 ? 'Low Risk' : (riskScore < 60 ? 'Medium Risk' : 'High Risk');
-      
-      // Extract advanced metrics
+
       const metrics = analysis.key_metrics || {};
       const numericCols = metrics.numeric_columns || 0;
       const categoricalCols = metrics.categorical_columns || 0;
       const dataCompleteness = metrics.data_completeness || 100;
-      const correlationCount = metrics.correlation_count || 0;
-      const topCorrelation = metrics.top_correlation;
-      
-      // Count patterns and anomalies
-      const patternCount = analysis.patterns_found?.length || 0;
-      const anomalyCount = analysis.anomalies?.length || 0;
-      
-      // Stats Grid - Enhanced with BI metrics
+
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card risk-${riskLevel} fade-in">
           <h5>Risk Assessment</h5>
@@ -1433,195 +2101,25 @@
           <div class="value" style="color: ${dataCompleteness > 90 ? 'var(--success)' : dataCompleteness > 70 ? 'var(--warning)' : 'var(--danger)'}">${dataCompleteness}%</div>
           <small style="color: var(--text-muted);">Completeness</small>
         </div>
-        <div class="stat-card fade-in">
-          <h5>Patterns Found</h5>
-          <div class="value">🔍 ${patternCount}</div>
-          <small style="color: var(--text-muted);">Inductive analysis</small>
-        </div>
-        <div class="stat-card fade-in">
-          <h5>Anomalies</h5>
-          <div class="value" style="color: ${anomalyCount > 3 ? 'var(--danger)' : anomalyCount > 0 ? 'var(--warning)' : 'var(--success)'}">⚠️ ${anomalyCount}</div>
-          <small style="color: var(--text-muted);">Requires attention</small>
-        </div>
-        ${correlationCount > 0 ? `
-        <div class="stat-card fade-in">
-          <h5>Correlations</h5>
-          <div class="value">🔗 ${correlationCount}</div>
-          <small style="color: var(--text-muted);">${topCorrelation ? `Strongest: ${topCorrelation.strength}` : 'Field relationships'}</small>
-        </div>
-        ` : ''}
-        <div class="stat-card fade-in">
-          <h5>Key Factors</h5>
-          <div class="value">📈 ${analysis.extracted_factors?.length || 0}</div>
-          <small style="color: var(--text-muted);">Identified insights</small>
-        </div>
       `;
-      
-      // Risk Gauge
+
       document.getElementById('riskGaugeValue').textContent = riskScore.toFixed(0);
       document.getElementById('riskGaugeValue').style.color = riskColor;
       document.getElementById('riskGaugeCircle').style.background = `conic-gradient(${riskColor} ${riskScore * 3.6}deg, #e2e8f0 0deg)`;
       document.getElementById('riskIndicator').style.left = `${riskScore}%`;
-      
-      // Enhanced summary with key insights
-      const summaryParts = [analysis.summary];
-      if (topCorrelation) {
-        summaryParts.push(`\n\n🔗 Key Correlation: ${topCorrelation.fields} (strength: ${topCorrelation.strength})`);
-      }
-      document.getElementById('riskSummary').innerHTML = summaryParts.join('').replace(/\n/g, '<br>');
-      
-      // AI Insights Panel
+      document.getElementById('riskSummary').innerHTML = (analysis.summary || '').replace(/\n/g, '<br>');
+
       renderInsights(analysis, metrics);
-      
-      // Charts
-      renderCharts(report.charts);
-      
-      // Report - with pension-specific rendering
-      document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
-      const visibleSections = (report.sections || []).filter(section => !shouldHideSection(section.title));
-      document.getElementById('reportBody').innerHTML = visibleSections.map(section => {
-        const isPensionSection = section.title.includes('פנסיה') || 
-                                 section.title.toLowerCase().includes('pension') ||
-                                 section.title.includes('ביטוח');
-        const sectionClass = isPensionSection ? 'report-section pension-section fade-in' : 'report-section fade-in';
-        
-        // Format content with better whitespace handling
-        let content = stripSourceLinks(section.content || '');
-        if (content) {
-          content = escapeHtml(content)
-            .replace(/\n/g, '<br>')
-            .replace(/={2,}/g, '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0.5rem 0;">')
-            .replace(/-{2,}/g, '<hr style="border: none; border-top: 1px dashed #e2e8f0; margin: 0.5rem 0;">');
-        }
-        
-        return `
-          <div class="${sectionClass}">
-            <h4>${getSectionIcon(section.title || '')} ${escapeHtml(section.title || '')}</h4>
-            <div class="content">${content}</div>
-            ${renderDataTable(section.data_table)}
-          </div>
-        `;
-      }).join('');
-      
-      // Recommendations
-      document.getElementById('recommendationsList').innerHTML = report.recommendations.map(rec => `
-        <div class="recommendation-item ${rec.priority} fade-in">
-          <h5>
-            <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
-            ${rec.title}
-          </h5>
-          <p>${rec.description}</p>
-          <ul class="action-items">
-            ${rec.action_items.map(item => `<li>${item}</li>`).join('')}
-          </ul>
-          <div class="expected-impact">
-            <strong>Expected Impact:</strong> ${rec.expected_impact}
-          </div>
-        </div>
-      `).join('');
     }
-    
+
     function renderInsights(analysis, metrics) {
       const container = document.getElementById('insightsGrid');
-      let insightsHTML = '';
-      
-      // Statistical factors
-      const statisticalFactors = analysis.extracted_factors?.filter(f => f.category === 'statistical') || [];
-      statisticalFactors.slice(0, 4).forEach(factor => {
-        const value = factor.value;
-        if (typeof value === 'object') {
-          insightsHTML += `
-            <div class="insight-card statistical fade-in">
-              <h5>📊 ${factor.name}</h5>
-              <div class="insight-detail">
-                <div class="stat-detail">
-                  <span class="label">Mean</span>
-                  <span class="val">${value.mean ?? 'N/A'}</span>
-                </div>
-                <div class="stat-detail">
-                  <span class="label">Median</span>
-                  <span class="val">${value.median ?? 'N/A'}</span>
-                </div>
-                <div class="stat-detail">
-                  <span class="label">Range</span>
-                  <span class="val">${value.range ?? 'N/A'}</span>
-                </div>
-                <div class="stat-detail">
-                  <span class="label">Std Dev</span>
-                  <span class="val">${value.std_dev ?? 'N/A'}</span>
-                </div>
-                <div class="stat-detail">
-                  <span class="label">Distribution</span>
-                  <span class="val">${capitalizeFirst(value.distribution ?? 'unknown')}</span>
-                </div>
-              </div>
-              <span class="insight-badge">Importance: ${(factor.importance * 100).toFixed(0)}%</span>
-            </div>
-          `;
-        }
-      });
-      
-      // Correlation insight
-      const topCorr = metrics.top_correlation;
-      if (topCorr) {
-        insightsHTML += `
-          <div class="insight-card correlation fade-in">
-            <h5>🔗 Key Correlation Discovered</h5>
-            <div class="insight-value">${topCorr.fields}</div>
-            <div class="insight-detail">
-              <p>Correlation Strength: <strong>${topCorr.strength}</strong></p>
-              <p>This indicates a ${Math.abs(topCorr.strength) > 0.7 ? 'strong' : Math.abs(topCorr.strength) > 0.5 ? 'moderate' : 'weak'} 
-                 ${topCorr.strength > 0 ? 'positive' : 'negative'} relationship between these variables.</p>
-            </div>
-            <span class="insight-badge">Statistical Correlation</span>
-          </div>
-        `;
-      }
-      
-      // Pattern insights
-      const patterns = analysis.patterns_found || [];
-      patterns.slice(0, 3).forEach(pattern => {
-        insightsHTML += `
-          <div class="insight-card pattern fade-in">
-            <h5>🔍 ${capitalizeFirst(pattern.type)} Pattern</h5>
-            <div class="insight-detail">
-              <p>${pattern.description}</p>
-            </div>
-            <span class="insight-badge">Significance: ${(pattern.significance * 100).toFixed(0)}%</span>
-          </div>
-        `;
-      });
-      
-      // Anomaly insights
-      const anomalies = analysis.anomalies || [];
-      anomalies.slice(0, 2).forEach(anomaly => {
-        const severityColors = {
-          'critical': '#ef4444',
-          'high': '#f59e0b',
-          'medium': '#3b82f6',
-          'low': '#10b981'
-        };
-        insightsHTML += `
-          <div class="insight-card anomaly fade-in">
-            <h5 style="color: ${severityColors[anomaly.severity] || '#6b7280'}">
-              ⚠️ ${capitalizeFirst(anomaly.severity)} Anomaly
-            </h5>
-            <div class="insight-detail">
-              <p><strong>Issue:</strong> ${anomaly.description}</p>
-              <p><strong>Recommendation:</strong> ${anomaly.recommendation}</p>
-            </div>
-            <span class="insight-badge" style="background: ${severityColors[anomaly.severity]}20; color: ${severityColors[anomaly.severity]}">
-              ${anomaly.type}
-            </span>
-          </div>
-        `;
-      });
-      
-      // Domain insight
+      let html = '';
+
       const domainFactors = analysis.extracted_factors?.filter(f => f.category === 'domain') || [];
       domainFactors.forEach(factor => {
         if (typeof factor.value === 'object') {
-          insightsHTML += `
+          html += `
             <div class="insight-card fade-in">
               <h5>🏷️ ${factor.name}</h5>
               <div class="insight-detail">
@@ -1637,34 +2135,25 @@
           `;
         }
       });
-      
-      // Data quality insight
-      insightsHTML += `
+
+      html += `
         <div class="insight-card fade-in">
           <h5>✅ Data Quality Assessment</h5>
           <div class="insight-detail">
             <div class="stat-detail">
               <span class="label">Completeness</span>
-              <span class="val" style="color: ${metrics.data_completeness > 90 ? 'var(--success)' : metrics.data_completeness > 70 ? 'var(--warning)' : 'var(--danger)'}">${metrics.data_completeness}%</span>
+              <span class="val" style="color: ${metrics.data_completeness > 90 ? 'var(--success)' : metrics.data_completeness > 70 ? 'var(--warning)' : 'var(--danger)'}">${metrics.data_completeness || 100}%</span>
             </div>
             <div class="stat-detail">
               <span class="label">Total Fields</span>
               <span class="val">${metrics.total_columns || 0}</span>
             </div>
-            <div class="stat-detail">
-              <span class="label">Numeric Fields</span>
-              <span class="val">${metrics.numeric_columns || 0}</span>
-            </div>
-            <div class="stat-detail">
-              <span class="label">Categorical Fields</span>
-              <span class="val">${metrics.categorical_columns || 0}</span>
-            </div>
           </div>
           <span class="insight-badge">Quality Score</span>
         </div>
       `;
-      
-      container.innerHTML = insightsHTML || '<p style="color: var(--text-muted);">No advanced insights available for this analysis.</p>';
+
+      container.innerHTML = html || '<p style="color: var(--text-muted);">No advanced insights available for this analysis.</p>';
     }
     
     function renderCharts(chartConfigs) {
