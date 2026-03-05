@@ -16980,9 +16980,6 @@ For claims or questions, please contact:
                 filename = data.get('filename', 'upload.csv')
                 file_type = data.get('file_type', 'csv')
                 content_b64 = data.get('content', '')
-                user_comments = data.get('user_comments', '') or ''
-                # Sanitize user_comments: strip and limit length
-                user_comments = user_comments.strip()[:2000] if user_comments else None
                 
                 if not content_b64:
                     self._set_json_headers(400)
@@ -17009,8 +17006,8 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
                     return
                 
-                # Parse the file with owner tracking and user comments
-                result = service.parse_file(filename, file_content, file_type, owner_id, owner_role, user_comments)
+                # Parse the file with owner tracking
+                result = service.parse_file(filename, file_content, file_type, owner_id, owner_role)
                 
                 if result.get('error'):
                     self._set_json_headers(400)
@@ -17027,12 +17024,7 @@ For claims or questions, please contact:
                     'row_count': result.get('row_count', 0),
                     'column_count': result.get('column_count', 0),
                     'status': result['status'],
-                    'owner_id': owner_id,
-                    'has_user_comments': bool(user_comments),
-                    'affiliation_detected': bool(
-                        result.get('parsed_data', {}) and
-                        result['parsed_data'].get('affiliation_data') is not None
-                    )
+                    'owner_id': owner_id
                 }).encode('utf-8'))
                 return
                 

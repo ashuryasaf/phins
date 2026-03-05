@@ -467,19 +467,13 @@ class DataClassifier:
 class AIRiskReportsService:
     """Main service for AI-powered risk and reports analysis"""
     
-    # Risk adjustment limits — score is on a 0-100 scale
-    _MAX_RISK_ADJUSTMENT = 25.0
-    _MAX_AFFILIATION_RECORDS = 200
-    _MAX_RISK_FLAGS = 50
-    
     def __init__(self):
         self.documents: Dict[str, Dict] = {}
         self.analyses: Dict[str, AnalysisResult] = {}
         self.reports: Dict[str, GeneratedReport] = {}
     
     def parse_file(self, filename: str, file_content: bytes, file_type: str, 
-                   owner_id: str = None, owner_role: str = None,
-                   user_comments: str = None) -> Dict[str, Any]:
+                   owner_id: str = None, owner_role: str = None) -> Dict[str, Any]:
         """
         Parse uploaded file and extract structured data.
         Supports CSV, XLS (as CSV), and ZIP containing CSV files.
@@ -490,7 +484,6 @@ class AIRiskReportsService:
             file_type: Type of file (csv, xls, xlsx, zip)
             owner_id: ID of the user who uploaded the file (for data isolation)
             owner_role: Role of the user (admin, customer, etc.)
-            user_comments: Optional comments/notes provided by the user at upload time
         """
         doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
         
@@ -504,7 +497,6 @@ class AIRiskReportsService:
             'error': None,
             'owner_id': owner_id,
             'owner_role': owner_role,
-            'user_comments': user_comments.strip() if user_comments and isinstance(user_comments, str) else None,
             'created_at': datetime.now().isoformat()
         }
         
@@ -773,11 +765,6 @@ class AIRiskReportsService:
             if rows and columns:
                 pension_data = self._detect_mislaka_excel_data(columns, rows, filename)
             
-            # Detect affiliation-specific columns in Excel data
-            affiliation_data = None
-            if rows and columns:
-                affiliation_data = self._detect_affiliation_excel_data(columns, rows, filename)
-            
         except Exception as e:
             print(f"[AI_REPORTS] Error parsing Excel file {filename}: {e}")
         
@@ -785,7 +772,6 @@ class AIRiskReportsService:
             'columns': columns,
             'rows': rows,
             'pension_data': pension_data,
-            'affiliation_data': affiliation_data,
             'file_type': 'excel',
             'original_filename': filename,
             'sheet_names': sheet_names,
@@ -939,93 +925,6 @@ class AIRiskReportsService:
             }
         }
     
-    def _detect_affiliation_excel_data(self, columns: List[str], rows: List[Dict], filename: str) -> Optional[Dict[str, Any]]:
-        """
-        Detect and extract affiliation-related data from Excel columns/rows.
-        Identifies entity relationships, affiliated parties, and risk associations.
-        """
-        # Affiliation-related column keywords (case-insensitive)
-        affiliation_keywords = [
-            'affiliation', 'affiliated', 'entity', 'entities', 'relationship', 'related',
-            'partner', 'association', 'associate', 'connection', 'linked', 'affiliate',
-            'subsidiary', 'parent', 'holding', 'shareholder', 'ownership', 'stake',
-            'director', 'board', 'officer', 'controller', 'beneficiary',
-            # Hebrew affiliation terms
-            'שיוך', 'קשר', 'ישות', 'שותף', 'בעל מניות', 'נהנה', 'מורשה', 'מנהל',
-        ]
-        
-        # Risk-association column keywords
-        risk_keywords = [
-            'risk', 'flag', 'alert', 'concern', 'issue', 'score', 'rating', 'level',
-            'category', 'type', 'status', 'classification',
-        ]
-        
-        col_lower = [c.lower() for c in columns]
-        
-        # Check if any columns match affiliation keywords
-        affiliation_cols = []
-        risk_cols = []
-        for i, col in enumerate(col_lower):
-            if any(kw in col for kw in affiliation_keywords):
-                affiliation_cols.append(columns[i])
-            if any(kw in col for kw in risk_keywords):
-                risk_cols.append(columns[i])
-        
-        if not affiliation_cols:
-            return None
-        
-        # Extract affiliation records
-        affiliation_records = []
-        risk_flags = []
-        high_risk_count = 0
-        
-        for row in rows:
-            record = {}
-            for col in affiliation_cols:
-                val = row.get(col, '')
-                if val is not None and str(val).strip():
-                    record[col] = str(val).strip()
-            
-            # Collect risk flags from risk columns
-            for col in risk_cols:
-                val = str(row.get(col, '')).lower().strip()
-                if val and val not in ('', 'none', 'nan', '0', 'low', 'normal'):
-                    risk_flags.append({'column': col, 'value': row.get(col), 'row_data': record})
-                    if any(hw in val for hw in ['high', 'critical', 'fraud', 'alert', 'concern', 'urgent']):
-                        high_risk_count += 1
-            
-            if record:
-                affiliation_records.append(record)
-        
-        # Deduplicate risk flags (keep unique by value)
-        seen_flags = set()
-        unique_flags = []
-        for f in risk_flags:
-            key = f"{f['column']}:{f['value']}"
-            if key not in seen_flags:
-                seen_flags.add(key)
-                unique_flags.append(f)
-        
-        print(f"[AI_REPORTS] Affiliation data detected in '{filename}': "
-              f"{len(affiliation_records)} records, {len(affiliation_cols)} affiliation columns, "
-              f"{len(unique_flags)} risk flags, {high_risk_count} high-risk entries")
-        
-        return {
-            'affiliation_columns': affiliation_cols,
-            'risk_columns': risk_cols,
-            'affiliation_records': affiliation_records[:self._MAX_AFFILIATION_RECORDS],
-            'total_records': len(affiliation_records),
-            'risk_flags': unique_flags[:self._MAX_RISK_FLAGS],
-            'high_risk_count': high_risk_count,
-            'data_quality': {
-                'total_rows': len(rows),
-                'populated_rows': len(affiliation_records),
-                'completeness_pct': round(len(affiliation_records) / max(len(rows), 1) * 100, 1),
-                'duplicate_risk_flags': len(risk_flags) - len(unique_flags),
-            },
-            'source_filename': filename,
-        }
-
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
         """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
         combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None}
@@ -1440,40 +1339,6 @@ class AIRiskReportsService:
             factors, patterns, anomalies, correlations, domain_insights
         )
         
-        # =====================================================================
-        # PHASE 7: USER COMMENTS & AFFILIATION DATA PROCESSING
-        # Incorporate user-provided context and affiliation-specific risk signals
-        # =====================================================================
-        
-        user_comments = doc.get('user_comments')
-        affiliation_data = parsed.get('affiliation_data')
-        comments_context = self._process_user_comments(user_comments)
-        affiliation_context = self._process_affiliation_risk(affiliation_data)
-        
-        # Apply comment and affiliation adjustments to risk score
-        if comments_context.get('risk_adjustment'):
-            risk_score = min(risk_score + comments_context['risk_adjustment'], 100.0)
-        if affiliation_context.get('risk_adjustment'):
-            risk_score = min(risk_score + affiliation_context['risk_adjustment'], 100.0)
-        
-        # Add comment-derived risk factors
-        for flag in comments_context.get('risk_flags', []):
-            factors.append(Factor(
-                name=f"User Comment: {flag['keyword']}",
-                value=flag['snippet'],
-                importance=0.8 if flag['impact'] == 'high' else 0.5,
-                category='user_comments'
-            ))
-        
-        # Add affiliation-derived risk factors
-        for flag in affiliation_context.get('risk_flags', []):
-            factors.append(Factor(
-                name=f"Affiliation Risk: {flag.get('column', 'Entity')}",
-                value=str(flag.get('value', '')),
-                importance=0.8 if affiliation_context.get('high_risk_count', 0) > 2 else 0.55,
-                category='affiliation_data'
-            ))
-        
         # Generate language-aware summary with insights
         summary = self._generate_summary_advanced(
             lang_code, data_type, len(rows), factors, risk_score, 
@@ -1484,14 +1349,6 @@ class AIRiskReportsService:
         key_metrics = self._extract_key_metrics_advanced(
             rows, columns, data_type, column_profiles, correlations, domain_insights
         )
-        
-        # Enrich key_metrics with comments and affiliation context
-        if user_comments:
-            key_metrics['user_comments'] = user_comments
-        if comments_context.get('risk_flags') or comments_context.get('summary'):
-            key_metrics['comments_context'] = comments_context
-        if affiliation_data or affiliation_context.get('risk_flags'):
-            key_metrics['affiliation_context'] = affiliation_context
         
         processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
         
@@ -2314,121 +2171,6 @@ class AIRiskReportsService:
         
         return insights
     
-    def _process_user_comments(self, user_comments: Optional[str]) -> Dict[str, Any]:
-        """
-        Parse user-provided comments for risk-relevant keywords and context flags.
-        Returns a dict with risk_flags, risk_adjustment, and a human-readable summary.
-        """
-        if not user_comments or not isinstance(user_comments, str):
-            return {'risk_flags': [], 'risk_adjustment': 0.0, 'summary': ''}
-        
-        text = user_comments.lower()
-        
-        # Keyword definitions: (keyword, impact_label, score_bump)
-        keyword_defs = [
-            ('fraud', 'high', 8),
-            ('fraudulent', 'high', 8),
-            ('suspicious', 'high', 6),
-            ('forgery', 'high', 8),
-            ('money laundering', 'high', 10),
-            ('high risk', 'high', 7),
-            ('very high risk', 'high', 9),
-            ('critical', 'high', 7),
-            ('urgent review', 'medium', 5),
-            ('urgent', 'medium', 4),
-            ('affiliation concern', 'medium', 5),
-            ('affiliation risk', 'medium', 5),
-            ('related party', 'medium', 4),
-            ('conflict of interest', 'high', 6),
-            ('review required', 'medium', 3),
-            ('escalate', 'medium', 4),
-            ('watchlist', 'high', 7),
-            ('sanction', 'high', 9),
-            ('pep', 'high', 7),  # Politically exposed person
-            ('politically exposed', 'high', 7),
-            ('adverse media', 'medium', 5),
-            ('investigate', 'medium', 3),
-        ]
-        
-        risk_flags = []
-        total_adjustment = 0.0
-        
-        for keyword, impact, bump in keyword_defs:
-            if keyword in text:
-                # Extract a short snippet for context
-                idx = text.find(keyword)
-                start = max(0, idx - 30)
-                end = min(len(user_comments), idx + len(keyword) + 30)
-                snippet = user_comments[start:end].strip()
-                risk_flags.append({
-                    'keyword': keyword,
-                    'impact': impact,
-                    'score_bump': bump,
-                    'snippet': f'...{snippet}...' if start > 0 or end < len(user_comments) else snippet
-                })
-                total_adjustment += bump
-        
-        # Cap total adjustment at _MAX_RISK_ADJUSTMENT points
-        total_adjustment = min(total_adjustment, self._MAX_RISK_ADJUSTMENT)
-        
-        summary = ''
-        if risk_flags:
-            flag_names = list({f['keyword'] for f in risk_flags})
-            summary = f"User comments flagged {len(flag_names)} risk indicator(s): {', '.join(flag_names[:5])}."
-        
-        return {
-            'risk_flags': risk_flags,
-            'risk_adjustment': total_adjustment,
-            'summary': summary,
-            'original_comments': user_comments,
-        }
-    
-    def _process_affiliation_risk(self, affiliation_data: Optional[Dict]) -> Dict[str, Any]:
-        """
-        Analyse affiliation data extracted from Excel uploads and compute a risk adjustment.
-        Returns a dict with risk_flags, risk_adjustment, and a summary.
-        """
-        if not affiliation_data:
-            return {'risk_flags': [], 'risk_adjustment': 0.0, 'summary': ''}
-        
-        total_records = affiliation_data.get('total_records', 0)
-        high_risk_count = affiliation_data.get('high_risk_count', 0)
-        risk_flags = affiliation_data.get('risk_flags', [])
-        data_quality = affiliation_data.get('data_quality', {})
-        completeness = data_quality.get('completeness_pct', 100)
-        
-        # Base adjustment from high-risk entries (max 20 points)
-        adjustment = min(high_risk_count * 3, 20)
-        
-        # Additional bump for risk flags
-        adjustment += min(len(risk_flags) * 1.5, 10)
-        
-        # Completeness penalty (poor data quality is itself a risk)
-        if completeness < 50:
-            adjustment += 5
-        
-        # Cap at _MAX_RISK_ADJUSTMENT points
-        adjustment = min(adjustment, self._MAX_RISK_ADJUSTMENT)
-        
-        summary_parts = []
-        if total_records:
-            summary_parts.append(f"{total_records} affiliated entities identified")
-        if high_risk_count:
-            summary_parts.append(f"{high_risk_count} flagged as high-risk")
-        if completeness < 80:
-            summary_parts.append(f"data completeness at {completeness:.0f}%")
-        
-        summary = 'Affiliation analysis: ' + '; '.join(summary_parts) + '.' if summary_parts else ''
-        
-        return {
-            'risk_flags': risk_flags,
-            'risk_adjustment': adjustment,
-            'summary': summary,
-            'high_risk_count': high_risk_count,
-            'total_records': total_records,
-            'affiliation_columns': affiliation_data.get('affiliation_columns', []),
-        }
-    
     def _calculate_risk_score_advanced(self, factors: List[Factor], patterns: List[Pattern],
                                        anomalies: List[Anomaly], correlations: List[Dict],
                                        domain_insights: Dict) -> float:
@@ -2897,49 +2639,6 @@ class AIRiskReportsService:
             content=analysis.summary,
             order=1
         ))
-        
-        # 1a. User Comments & Affiliation Analysis (if present)
-        user_comments = analysis.key_metrics.get('user_comments')
-        comments_context = analysis.key_metrics.get('comments_context', {})
-        affiliation_context = analysis.key_metrics.get('affiliation_context', {})
-        
-        if user_comments or affiliation_context.get('summary'):
-            comments_lines = []
-            if user_comments:
-                if is_hebrew:
-                    comments_lines.append('💬 הערות המשתמש:')
-                    comments_lines.append(user_comments)
-                else:
-                    comments_lines.append('💬 User Comments:')
-                    comments_lines.append(user_comments)
-                
-                if comments_context.get('risk_flags'):
-                    flag_names = [f['keyword'] for f in comments_context['risk_flags']]
-                    if is_hebrew:
-                        comments_lines.append(f'\n⚠️ מילות סיכון שזוהו: {", ".join(flag_names)}')
-                    else:
-                        comments_lines.append(f'\n⚠️ Risk keywords detected: {", ".join(flag_names)}')
-            
-            if affiliation_context.get('summary'):
-                comments_lines.append(f'\n🔗 {affiliation_context["summary"]}')
-                if affiliation_context.get('affiliation_columns'):
-                    col_names = ', '.join(affiliation_context['affiliation_columns'][:5])
-                    if is_hebrew:
-                        comments_lines.append(f'עמודות שיוך: {col_names}')
-                    else:
-                        comments_lines.append(f'Affiliation columns: {col_names}')
-                if affiliation_context.get('high_risk_count', 0) > 0:
-                    count = affiliation_context['high_risk_count']
-                    if is_hebrew:
-                        comments_lines.append(f'⛔ {count} ישויות מסומנות כסיכון גבוה')
-                    else:
-                        comments_lines.append(f'⛔ {count} entities flagged as high-risk')
-            
-            sections.append(ReportSection(
-                title='הערות ושיוכים' if is_hebrew else 'User Comments & Affiliation Analysis',
-                content='\n'.join(comments_lines),
-                order=1
-            ))
         
         # 2. PENSION DATA SECTION - Display pension report from PensionDataAgent
         if pension_data or pension_report:
