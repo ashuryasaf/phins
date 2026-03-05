@@ -2609,11 +2609,11 @@ class AIRiskReportsService:
                 'risk_score': analysis.risk_score,
                 'confidence': analysis.confidence,
                 'processing_time_ms': analysis.processing_time_ms,
-                # Include raw pension data for frontend display
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
                 'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
                 'savings_cover_id_summary': affiliated_summary,
+                'report_model': self._get_report_model_metadata(),
             }
         )
         
@@ -2900,6 +2900,20 @@ Factors Affecting Score:
             }
         except Exception:
             return {}
+
+    def _get_report_model_metadata(self) -> Optional[Dict[str, Any]]:
+        """Include the Swiftness report model section keys for frontend structuring."""
+        try:
+            from services.swiftness_data_service import get_swiftness_data_service
+            svc = get_swiftness_data_service()
+            model = svc.get_report_model()
+            return {
+                'section_keys': [s['key'] for s in model.get('sections', [])],
+                'model_version': model.get('metadata', {}).get('model_version'),
+                'total_sections': model.get('metadata', {}).get('total_sections'),
+            }
+        except Exception:
+            return None
 
     def _build_pension_affiliated_sections(self, pension_data: Dict[str, Any], is_hebrew: bool) -> List[ReportSection]:
         """Build table-oriented sections aligned with the Nituach Tik report model."""
