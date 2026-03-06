@@ -1009,9 +1009,19 @@
             </div>
           </div>
           
-          <button class="btn btn-primary" onclick="runSimulation()" id="run-sim-btn" style="font-size:1.1rem;padding:14px 30px;">
-            🚀 Run Portfolio Simulation
-          </button>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="runSimulation()" id="run-sim-btn" style="font-size:1.1rem;padding:14px 30px;">
+              🚀 Run Portfolio Simulation
+            </button>
+            <div id="sim-report-actions" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-success" onclick="downloadSimReport('pdf')" title="Download full simulation report as PDF">
+                📥 Download PDF Report
+              </button>
+              <button class="btn btn-warning" onclick="downloadSimReport('csv')" title="Download simulation data as CSV spreadsheet">
+                📊 Download CSV Data
+              </button>
+            </div>
+          </div>
           
           <div id="sim-results" class="results-panel" style="display:none;"></div>
         </section>
@@ -1113,6 +1123,8 @@
     let currentUser = null;
     let currentTables = null;
     let currentConfig = null;
+    let lastSimulation = null;
+    let lastSimParams = null;
     
     const ADL_DESCRIPTIONS = {
       1: 'Fully Independent',
@@ -1801,6 +1813,7 @@
           other: parseFloat(document.getElementById('eth-other').value)
         }
       };
+      lastSimParams = params;
       
       try {
         const res = await fetch('/api/actuarial/simulate', {
@@ -1828,6 +1841,8 @@
     }
     
     function renderSimulationResults(sim) {
+      lastSimulation = sim;
+      document.getElementById('sim-report-actions').style.display = 'flex';
       const resultsDiv = document.getElementById('sim-results');
       const fmt = (n) => n?.toLocaleString('en-US', {maximumFractionDigits: 0}) || '0';
       const fmtCurrency = (n) => '$' + fmt(n);
@@ -2104,6 +2119,300 @@
       }
     }
     
+    // =========================================================================
+    // SIMULATION REPORT DOWNLOADS
+    // =========================================================================
+
+    function downloadSimReport(format) {
+      if (!lastSimulation) {
+        alert('Run a simulation first to generate a report.');
+        return;
+      }
+      if (format === 'csv') {
+        downloadSimCSV();
+      } else {
+        downloadSimPDF();
+      }
+    }
+
+    function downloadSimCSV() {
+      const sim = lastSimulation;
+      const params = lastSimParams || {};
+      const lines = [];
+
+      lines.push('PHINS Actuarial Portfolio Simulation Report');
+      lines.push(`Generated,${new Date().toISOString()}`);
+      lines.push(`Simulation ID,${sim.simulation_id}`);
+      lines.push(`Tables Version,${sim.tables_version}`);
+      lines.push(`Duration (seconds),${sim.duration_seconds}`);
+      lines.push('');
+
+      lines.push('SIMULATION PARAMETERS');
+      lines.push(`Customer Count,${params.customer_count || ''}`);
+      lines.push(`Age Range,${params.age_min || ''}-${params.age_max || ''}`);
+      lines.push(`Age Mean,${params.age_mean || ''}`);
+      lines.push(`Age Std Dev,${params.age_std || ''}`);
+      lines.push(`Age Distribution,${params.age_distribution || ''}`);
+      lines.push(`Coverage Min,${params.coverage_min || ''}`);
+      lines.push(`Coverage Max,${params.coverage_max || ''}`);
+      lines.push(`Coverage Median,${params.coverage_median || ''}`);
+      lines.push(`Term Mode,${params.policy_term_mode || ''}`);
+      lines.push(`Term Range,${params.policy_term_min || ''}-${params.policy_term_max || ''}`);
+      lines.push(`Fixed Term,${params.policy_term_fixed || ''}`);
+      lines.push(`Male %,${params.male_pct || ''}`);
+      lines.push(`Female %,${params.female_pct || ''}`);
+      if (params.ethnicity) {
+        Object.entries(params.ethnicity).forEach(([k, v]) => {
+          lines.push(`Ethnicity ${k} %,${v}`);
+        });
+      }
+      lines.push('');
+
+      const ps = sim.portfolio_summary || {};
+      lines.push('PORTFOLIO SUMMARY');
+      lines.push(`Accepted Customers,${ps.accepted_customers || 0}`);
+      lines.push(`Total Coverage,${ps.total_coverage || 0}`);
+      lines.push(`Total Annual Premium,${ps.total_annual_premium || 0}`);
+      lines.push(`Acceptance Rate %,${ps.acceptance_rate || 0}`);
+      lines.push(`Average Coverage,${ps.avg_coverage || 0}`);
+      lines.push(`Average Premium,${ps.avg_premium || 0}`);
+      lines.push('');
+
+      const rm = sim.risk_metrics || {};
+      lines.push('RISK ANALYSIS');
+      lines.push(`PV Mortality Claims,${rm.pv_mortality_claims || 0}`);
+      lines.push(`PV Disability Claims,${rm.pv_disability_claims || 0}`);
+      lines.push(`Total Expected Claims (PV),${rm.total_expected_claims || 0}`);
+      lines.push(`Annual Expected Claims,${rm.annual_expected_claims || 0}`);
+      lines.push(`Loss Ratio %,${rm.loss_ratio || 0}`);
+      lines.push(`Reserve Requirement,${rm.reserve_requirement || 0}`);
+      lines.push(`Mortality % of Claims,${rm.mortality_pct_of_claims || 0}`);
+      lines.push(`Disability % of Claims,${rm.disability_pct_of_claims || 0}`);
+      lines.push(`Avg Term Years,${rm.avg_term_years || 0}`);
+      lines.push('');
+
+      const pr = sim.profitability || {};
+      lines.push('PROFITABILITY ANALYSIS');
+      lines.push(`Risk Premium,${pr.risk_premium || 0}`);
+      lines.push(`Savings Premium,${pr.savings_premium || 0}`);
+      lines.push(`Expense Loading,${pr.expense_loading || 0}`);
+      lines.push(`Profit Margin,${pr.profit_margin || 0}`);
+      lines.push(`Gross Premium,${pr.gross_premium || 0}`);
+      lines.push(`Expected Claims,${pr.expected_claims || 0}`);
+      lines.push(`Net Profit,${pr.net_profit || 0}`);
+      lines.push(`Net Margin %,${pr.net_margin_pct || 0}`);
+      lines.push('');
+
+      const auto = sim.automation || {};
+      lines.push('AUTOMATION METRICS');
+      lines.push(`Overall Automation %,${((auto.overall_automation_pct || 0) * 100).toFixed(1)}`);
+      lines.push(`Scale Factor,${auto.scale_factor || ''}`);
+      if (auto.underwriting) {
+        lines.push(`Underwriting Auto %,${((auto.underwriting.total_automation_pct || 0) * 100).toFixed(1)}`);
+        lines.push(`Underwriting Manual %,${((auto.underwriting.manual_review || 0) * 100).toFixed(1)}`);
+      }
+      if (auto.claims) {
+        lines.push(`Claims Auto %,${((auto.claims.total_automation_pct || 0) * 100).toFixed(1)}`);
+        lines.push(`Claims Manual %,${((auto.claims.manual_review || 0) * 100).toFixed(1)}`);
+      }
+      if (auto.billing) {
+        lines.push(`Billing Auto %,${((auto.billing.total_automation_pct || 0) * 100).toFixed(1)}`);
+        lines.push(`Billing Manual %,${((auto.billing.manual_followup || 0) * 100).toFixed(1)}`);
+      }
+      lines.push('');
+
+      const demo = sim.demographics || {};
+      lines.push('DEMOGRAPHICS');
+      if (demo.age_distribution) {
+        lines.push('Age Bracket,Count');
+        Object.entries(demo.age_distribution).forEach(([k, v]) => lines.push(`${k},${v}`));
+      }
+      lines.push('');
+      if (demo.gender) {
+        lines.push('Gender,Count');
+        Object.entries(demo.gender).forEach(([k, v]) => lines.push(`${k},${v}`));
+      }
+      lines.push('');
+      if (demo.ethnicity) {
+        lines.push('Ethnicity,Count');
+        Object.entries(demo.ethnicity).forEach(([k, v]) => lines.push(`${k},${v}`));
+      }
+      lines.push('');
+
+      const dec = sim.declined || {};
+      lines.push('DECLINED APPLICATIONS');
+      lines.push(`Declined Count,${dec.count || 0}`);
+      lines.push(`Declined Coverage Total,${dec.coverage_total || 0}`);
+      if (dec.reasons) {
+        lines.push('Decline Reason,Count');
+        Object.entries(dec.reasons).forEach(([k, v]) => lines.push(`${k},${v}`));
+      }
+
+      const csvContent = lines.join('\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `phins_simulation_${sim.simulation_id || Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadSimPDF() {
+      const sim = lastSimulation;
+      const params = lastSimParams || {};
+
+      if (typeof window.jspdf === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = () => _generateSimPDF(sim, params);
+        document.head.appendChild(script);
+      } else {
+        _generateSimPDF(sim, params);
+      }
+    }
+
+    function _generateSimPDF(sim, params) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      let y = 18;
+      const lh = 6;
+      const margin = 18;
+      const pageW = doc.internal.pageSize.width;
+      const maxW = pageW - 2 * margin;
+      const pageH = doc.internal.pageSize.height;
+
+      function checkPage() {
+        if (y > pageH - 25) { doc.addPage(); y = 18; }
+      }
+
+      function heading(text) {
+        checkPage();
+        doc.setFontSize(13);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(13, 71, 161);
+        doc.text(text, margin, y);
+        y += lh + 2;
+        doc.setDrawColor(200);
+        doc.line(margin, y - 2, pageW - margin, y - 2);
+        y += 3;
+        doc.setTextColor(0);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+      }
+
+      function row(label, value) {
+        checkPage();
+        doc.setFont(undefined, 'normal');
+        doc.text(label, margin, y);
+        doc.setFont(undefined, 'bold');
+        doc.text(String(value), margin + 90, y);
+        doc.setFont(undefined, 'normal');
+        y += lh;
+      }
+
+      const fmt = (n) => n != null ? Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '0';
+      const fmtC = (n) => '$' + fmt(n);
+      const fmtP = (n) => ((n || 0)).toFixed(1) + '%';
+
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(13, 71, 161);
+      doc.text('PHINS Portfolio Simulation Report', margin, y);
+      y += 8;
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(100);
+      doc.text(`Generated: ${new Date().toLocaleString()}  |  Simulation ID: ${sim.simulation_id || 'N/A'}  |  Tables: ${sim.tables_version || 'N/A'}`, margin, y);
+      y += 10;
+      doc.setTextColor(0);
+
+      heading('Simulation Parameters');
+      row('Customer Count', fmt(params.customer_count));
+      row('Age Range', `${params.age_min} - ${params.age_max} (mean ${params.age_mean}, std ${params.age_std})`);
+      row('Age Distribution', params.age_distribution || '');
+      row('Coverage Range', `${fmtC(params.coverage_min)} - ${fmtC(params.coverage_max)} (median ${fmtC(params.coverage_median)})`);
+      row('Term', params.policy_term_mode === 'fixed' ? `Fixed ${params.policy_term_fixed} years` : `${params.policy_term_min}-${params.policy_term_max} years`);
+      row('Gender Split', `Male ${params.male_pct}% / Female ${params.female_pct}%`);
+      y += 3;
+
+      const ps = sim.portfolio_summary || {};
+      heading('Portfolio Summary');
+      row('Accepted Customers', fmt(ps.accepted_customers));
+      row('Total Coverage', fmtC(ps.total_coverage));
+      row('Total Annual Premium', fmtC(ps.total_annual_premium));
+      row('Acceptance Rate', fmtP(ps.acceptance_rate));
+      row('Average Coverage', fmtC(ps.avg_coverage));
+      row('Average Premium', fmtC(ps.avg_premium));
+      y += 3;
+
+      const rm = sim.risk_metrics || {};
+      heading('Risk Analysis');
+      row('PV Mortality Claims', fmtC(rm.pv_mortality_claims));
+      row('PV Disability Claims', fmtC(rm.pv_disability_claims));
+      row('Total Expected Claims (PV)', fmtC(rm.total_expected_claims));
+      row('Annual Expected Claims', fmtC(rm.annual_expected_claims || sim.profitability?.expected_claims));
+      row('Loss Ratio', fmtP(rm.loss_ratio));
+      row('Reserve Requirement', fmtC(rm.reserve_requirement));
+      row('Average Term', `${(rm.avg_term_years || 0).toFixed(1)} years`);
+      y += 3;
+
+      const pr = sim.profitability || {};
+      heading('Profitability Analysis');
+      row('Risk Premium', fmtC(pr.risk_premium));
+      row('Savings Premium', fmtC(pr.savings_premium));
+      row('Expense Loading', fmtC(pr.expense_loading));
+      row('Profit Margin Component', fmtC(pr.profit_margin));
+      row('Gross Premium', fmtC(pr.gross_premium));
+      row('Expected Claims', fmtC(pr.expected_claims));
+      row('Net Profit', fmtC(pr.net_profit));
+      row('Net Margin', fmtP(pr.net_margin_pct));
+      y += 3;
+
+      const auto = sim.automation || {};
+      heading('Automation Metrics');
+      row('Overall Automation', fmtP((auto.overall_automation_pct || 0) * 100));
+      row('Scale Factor', `${auto.scale_factor || 1}x`);
+      if (auto.underwriting) {
+        row('Underwriting Auto', fmtP((auto.underwriting.total_automation_pct || 0) * 100));
+      }
+      if (auto.claims) {
+        row('Claims Auto', fmtP((auto.claims.total_automation_pct || 0) * 100));
+      }
+      if (auto.billing) {
+        row('Billing Auto', fmtP((auto.billing.total_automation_pct || 0) * 100));
+      }
+      y += 3;
+
+      const demo = sim.demographics || {};
+      heading('Demographics');
+      if (demo.age_distribution) {
+        Object.entries(demo.age_distribution).forEach(([k, v]) => row(`Age ${k}`, fmt(v)));
+      }
+      if (demo.gender) {
+        y += 2;
+        Object.entries(demo.gender).forEach(([k, v]) => row(`Gender: ${k}`, fmt(v)));
+      }
+      y += 3;
+
+      const dec = sim.declined || {};
+      heading('Declined Applications');
+      row('Declined Count', fmt(dec.count));
+      row('Declined Coverage', fmtC(dec.coverage_total));
+      if (dec.reasons) {
+        Object.entries(dec.reasons).forEach(([k, v]) => row(`Reason: ${k}`, v));
+      }
+
+      checkPage();
+      y += 6;
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`PHINS Actuarial Dashboard  |  Data Integrity: All values sourced from simulation ID ${sim.simulation_id}  |  ${new Date().toISOString()}`, margin, y);
+
+      doc.save(`phins_simulation_${sim.simulation_id || Date.now()}.pdf`);
+    }
+
     // Export
     function exportTables() {
       if (!currentTables) {
