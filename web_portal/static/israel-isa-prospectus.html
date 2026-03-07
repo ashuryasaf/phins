@@ -1,0 +1,1992 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — תשקיף | Israel Securities Authority (ISA) / TASE IPO Prospectus</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* ============================
+       BASE & VARIABLES
+    ============================ */
+    :root {
+      --blue-dark:   #0d47a1;
+      --blue-mid:    #1565c0;
+      --blue-light:  #1976d2;
+      --accent-1:    #42a5f5;
+      --accent-2:    #64b5f6;
+      --green-1:     #4caf50;
+      --green-2:     #10b981;
+      --gradient-hdr: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      --text-main:   #1a202c;
+      --text-sub:    #4a5568;
+      --border:      #e2e8f0;
+      --bg-light:    #f8fafc;
+      --bg-table-hd: #ebf4ff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 10pt;
+      color: var(--text-main);
+      background: #fff;
+      line-height: 1.55;
+    }
+
+    /* ============================
+       DOWNLOAD BUTTON (screen only)
+    ============================ */
+    .download-btn {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 9999;
+      background: var(--gradient-hdr);
+      color: #fff;
+      border: none;
+      padding: 14px 22px;
+      border-radius: 50px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 6px 24px rgba(13,71,161,0.35);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .download-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(13,71,161,0.45); }
+
+    /* ============================
+       PAGE WRAPPER
+    ============================ */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto 0;
+      padding: 0;
+      background: #fff;
+      position: relative;
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }
+    .page:last-of-type { page-break-after: avoid; break-after: avoid; }
+
+    /* ============================
+       PAGE HEADER (all pages)
+    ============================ */
+    .page-header {
+      background: var(--gradient-hdr);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 22px;
+      font-size: 8.5pt;
+    }
+    .page-header .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 11pt;
+    }
+    .logo-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: var(--gradient-logo);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    .page-header .doc-title {
+      opacity: .85;
+      font-size: 7.5pt;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    /* ============================
+       PAGE FOOTER (all pages)
+    ============================ */
+    .page-footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--blue-dark);
+      color: rgba(255,255,255,.75);
+      font-size: 7pt;
+      padding: 7px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .page-footer .confidential {
+      color: #fbbf24;
+      font-weight: 600;
+      letter-spacing: .05em;
+    }
+
+    /* ============================
+       CONTENT AREA
+    ============================ */
+    .content {
+      padding: 18px 22px 60px;
+    }
+
+    /* ============================
+       SECTION TITLES
+    ============================ */
+    .section-title {
+      font-size: 17pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      border-left: 5px solid var(--accent-1);
+      padding-left: 12px;
+      margin-bottom: 14px;
+      line-height: 1.2;
+    }
+    .section-subtitle {
+      font-size: 9.5pt;
+      color: var(--text-sub);
+      margin-bottom: 16px;
+    }
+    .subsection-title {
+      font-size: 11pt;
+      font-weight: 700;
+      color: var(--blue-mid);
+      margin: 16px 0 8px;
+      border-bottom: 1.5px solid var(--border);
+      padding-bottom: 4px;
+    }
+
+    /* ============================
+       TABLES
+    ============================ */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.5pt;
+      margin-bottom: 14px;
+    }
+    th {
+      background: var(--bg-table-hd);
+      color: var(--blue-dark);
+      font-weight: 700;
+      padding: 7px 10px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    td {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: var(--bg-light); }
+    tr:hover td { background: #dbeafe; }
+
+    /* ============================
+       PILLAR CARDS
+    ============================ */
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin: 14px 0;
+    }
+    .pillar-card {
+      background: var(--gradient-hdr);
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+    .pillar-icon { font-size: 18px; margin-bottom: 4px; }
+    .pillar-name { font-size: 10pt; font-weight: 800; letter-spacing: .06em; }
+    .pillar-desc { font-size: 7pt; opacity: .85; margin-top: 3px; }
+
+    /* ============================
+       SERVICE CARDS
+    ============================ */
+    .service-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .service-card {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--bg-light);
+    }
+    .service-card .icon { font-size: 20px; margin-bottom: 6px; }
+    .service-card h4 { font-size: 9.5pt; font-weight: 700; color: var(--blue-dark); margin-bottom: 4px; }
+    .service-card p { font-size: 7.5pt; color: var(--text-sub); line-height: 1.5; }
+
+    /* ============================
+       KPI / STAT BOXES
+    ============================ */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .kpi-box {
+      background: var(--gradient-hdr);
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+    .kpi-box .kpi-val { font-size: 18pt; font-weight: 800; }
+    .kpi-box .kpi-lbl { font-size: 7pt; opacity: .85; margin-top: 2px; }
+
+    /* ============================
+       CHECKLIST
+    ============================ */
+    .checklist {
+      list-style: none;
+      padding: 0;
+    }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 8.5pt;
+      border-bottom: 1px solid var(--border);
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .check-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ============================
+       HIGHLIGHT BOX
+    ============================ */
+    .highlight-box {
+      background: linear-gradient(135deg, #ebf8ff 0%, #dbeafe 100%);
+      border: 1.5px solid var(--accent-1);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 9pt;
+    }
+    .highlight-box strong { color: var(--blue-dark); }
+
+    /* ============================
+       COVER PAGE SPECIFIC
+    ============================ */
+    .cover-header {
+      background: var(--gradient-hdr);
+      color: #fff;
+      padding: 36px 30px 28px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-header::before {
+      content: '';
+      position: absolute;
+      top: -40px; right: -60px;
+      width: 220px; height: 220px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.07);
+    }
+    .cover-header::after {
+      content: '';
+      position: absolute;
+      bottom: -50px; left: -40px;
+      width: 180px; height: 180px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.05);
+    }
+    .cover-logo-icon {
+      width: 64px; height: 64px;
+      border-radius: 16px;
+      background: var(--gradient-logo);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      margin: 0 auto 10px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    }
+    .cover-logo-text {
+      font-size: 22pt;
+      font-weight: 900;
+      letter-spacing: .08em;
+      margin-bottom: 3px;
+    }
+    .cover-tagline {
+      font-size: 9.5pt;
+      opacity: .85;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+    .cover-title {
+      font-size: 22pt;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+    .cover-subtitle {
+      font-size: 10pt;
+      opacity: .9;
+      max-width: 420px;
+      margin: 0 auto 6px;
+    }
+    .cover-hebrew {
+      font-size: 12pt;
+      font-weight: 700;
+      direction: rtl;
+      margin-top: 4px;
+      opacity: .95;
+    }
+    .cover-divider {
+      width: 60px;
+      height: 3px;
+      background: var(--accent-2);
+      border-radius: 2px;
+      margin: 16px auto;
+    }
+    .cover-meta {
+      font-size: 8.5pt;
+      opacity: .8;
+    }
+    .cover-body {
+      padding: 24px 30px 70px;
+      position: relative;
+    }
+    .confidential-watermark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-35deg);
+      font-size: 80pt;
+      font-weight: 900;
+      color: rgba(13,71,161,.055);
+      letter-spacing: .15em;
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .cover-info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      position: relative;
+      z-index: 1;
+    }
+    .cover-info-box {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: var(--bg-light);
+    }
+    .cover-info-box h4 {
+      font-size: 8pt;
+      font-weight: 700;
+      color: var(--accent-1);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 8px;
+    }
+    .cover-info-box p {
+      font-size: 8.5pt;
+      color: var(--text-sub);
+      line-height: 1.7;
+    }
+
+    /* ============================
+       BACK COVER
+    ============================ */
+    .back-cover {
+      background: var(--gradient-hdr);
+      color: #fff;
+      min-height: 297mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .back-cover::before {
+      content: '';
+      position: absolute;
+      top: -80px; left: -80px;
+      width: 300px; height: 300px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.05);
+    }
+    .back-cover::after {
+      content: '';
+      position: absolute;
+      bottom: -60px; right: -60px;
+      width: 250px; height: 250px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.04);
+    }
+    .back-cover .bc-logo-icon {
+      width: 80px; height: 80px;
+      border-radius: 20px;
+      background: var(--gradient-logo);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+      margin: 0 auto 14px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.3);
+    }
+    .back-cover .bc-brand { font-size: 26pt; font-weight: 900; letter-spacing: .08em; margin-bottom: 4px; }
+    .back-cover .bc-tag { font-size: 9pt; opacity: .8; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 32px; }
+    .back-cover .bc-divider { width: 50px; height: 2px; background: var(--accent-2); border-radius: 2px; margin: 20px auto; }
+    .back-cover .bc-contact { font-size: 11pt; margin-bottom: 6px; }
+    .back-cover .bc-url { font-size: 13pt; font-weight: 700; margin-bottom: 28px; }
+    .back-cover .bc-confidential {
+      border: 1.5px solid rgba(255,255,255,.35);
+      border-radius: 8px;
+      padding: 12px 24px;
+      font-size: 8pt;
+      opacity: .8;
+      max-width: 380px;
+      line-height: 1.6;
+      margin: 0 auto 24px;
+    }
+    .back-cover .bc-copy { font-size: 8pt; opacity: .6; }
+
+    /* ============================
+       TOC STYLES
+    ============================ */
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 16px 0;
+    }
+    .toc-list li {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 7px 0;
+      border-bottom: 1px dashed var(--border);
+      font-size: 9pt;
+    }
+    .toc-list li:last-child { border-bottom: none; }
+    .toc-num {
+      color: var(--accent-1);
+      font-weight: 700;
+      min-width: 24px;
+    }
+    .toc-title { flex: 1; font-weight: 500; }
+    .toc-page {
+      color: var(--text-sub);
+      font-size: 8pt;
+    }
+    .toc-section-hdr {
+      font-size: 8pt;
+      font-weight: 700;
+      color: var(--blue-dark);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 12px 0 4px;
+      border-bottom: 2px solid var(--accent-1);
+      margin-bottom: 2px;
+    }
+
+    /* ============================
+       TWO-COLUMN LAYOUT
+    ============================ */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 12px 0;
+    }
+    .three-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin: 12px 0;
+    }
+
+    /* ============================
+       RISK BOX
+    ============================ */
+    .risk-box {
+      border: 1.5px solid #fca5a5;
+      background: #fff5f5;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 8px 0;
+      font-size: 8.5pt;
+    }
+    .risk-box h4 {
+      color: #dc2626;
+      font-size: 9pt;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .risk-box p { color: var(--text-sub); line-height: 1.5; }
+
+    /* ============================
+       REGULATORY BOX
+    ============================ */
+    .reg-box {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 1.5px solid #86efac;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 8px 0;
+      font-size: 8.5pt;
+    }
+    .reg-box h4 {
+      color: #15803d;
+      font-size: 9pt;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .reg-box p { color: var(--text-sub); line-height: 1.5; }
+
+    /* ============================
+       FORMULA BOX
+    ============================ */
+    .formula-box {
+      background: var(--blue-dark);
+      color: #fff;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin: 12px 0;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 9pt;
+      line-height: 1.8;
+    }
+    .formula-comment {
+      opacity: .6;
+      font-size: 8pt;
+    }
+
+    /* ============================
+       PRINT / A4 SETUP
+    ============================ */
+    @media print {
+      @page {
+        size: A4;
+        margin: 0;
+      }
+
+      body { margin: 0; background: #fff; }
+
+      .download-btn { display: none !important; }
+
+      .page {
+        width: 100%;
+        min-height: 100vh;
+        margin: 0;
+        page-break-after: always;
+        break-after: page;
+      }
+      .page:last-of-type { page-break-after: avoid; break-after: avoid; }
+
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      .content { padding-bottom: 70px; }
+    }
+
+    @media screen {
+      body { background: #cbd5e1; }
+      .page {
+        margin: 24px auto;
+        box-shadow: 0 4px 24px rgba(0,0,0,.18);
+        border-radius: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================
+     FLOATING DOWNLOAD BUTTON
+============================================================ -->
+<button class="download-btn" onclick="window.print()">📥 Download as PDF</button>
+
+<!-- ============================================================
+     PAGE 1 — COVER PAGE
+============================================================ -->
+<div class="page">
+  <div class="cover-header">
+    <div class="cover-logo-icon">🛡️</div>
+    <div class="cover-logo-text">PHINS</div>
+    <div class="cover-tagline">Personal Health Insurance &amp; Savings</div>
+    <div class="cover-divider"></div>
+    <div class="cover-title">תשקיף</div>
+    <div class="cover-subtitle">Initial Public Offering Prospectus</div>
+    <div class="cover-subtitle">Tel Aviv Stock Exchange (TASE) — Main Board</div>
+    <div class="cover-hebrew">הצעה ראשונה לציבור | בורסה לניירות ערך בתל אביב</div>
+    <div class="cover-divider"></div>
+    <div class="cover-meta">Submitted pursuant to the Israeli Securities Law, 5728-1968 (חוק ניירות ערך, תשכ"ח-1968)</div>
+    <div class="cover-meta" style="margin-top:4px;">Israel Securities Authority (רשות ניירות ערך) | March 2026</div>
+  </div>
+
+  <div class="cover-body">
+    <div class="confidential-watermark">DRAFT</div>
+    <div class="cover-info-grid">
+      <div class="cover-info-box">
+        <h4>Company</h4>
+        <p>
+          <strong>PHINS Insurance Ltd.</strong><br>
+          Personal Health Insurance &amp; Savings<br>
+          CEO: Asaf Ashury<br>
+          asaf@phins.ai | phins.ai
+        </p>
+      </div>
+      <div class="cover-info-box">
+        <h4>Offering Details</h4>
+        <p>
+          Exchange: Tel Aviv Stock Exchange (TASE)<br>
+          Board: Main Board<br>
+          Security Type: Ordinary Shares<br>
+          Prospectus Date: March 2026
+        </p>
+      </div>
+      <div class="cover-info-box">
+        <h4>Regulatory Submission</h4>
+        <p>
+          Authority: Israel Securities Authority (ISA)<br>
+          Legal Basis: Securities Law 5728-1968<br>
+          Regulations: Securities Regulations<br>
+          (Details, Structure and Form of Prospectus)
+        </p>
+      </div>
+      <div class="cover-info-box">
+        <h4>Lead Underwriter</h4>
+        <p>
+          To be appointed<br>
+          Financial Advisor: TBA<br>
+          Legal Counsel: TBA<br>
+          Auditor: TBA
+        </p>
+      </div>
+    </div>
+
+    <div class="highlight-box" style="margin-top:18px;">
+      <strong>⚠️ Important Notice:</strong> This prospectus is a draft submitted for review by the Israel Securities Authority (ISA). It has not yet been approved by the ISA or any other regulatory authority. Investment in securities involves risk. Prospective investors should read this document in its entirety before making any investment decision.
+    </div>
+    <div class="highlight-box" style="margin-top:10px;background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#f59e0b;">
+      <strong style="color:#92400e;">הודעה חשובה:</strong> <span style="color:#78350f;">מסמך זה הוא טיוטת תשקיף המוגשת לרשות ניירות ערך לצורך בחינה. מסמך זה טרם אושר על ידי הרשות. השקעה בניירות ערך כרוכה בסיכון. על המשקיעים לקרוא את כל המסמך לפני קבלת החלטת השקעה.</span>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 1 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 2 — TABLE OF CONTENTS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">ISA Prospectus (תשקיף) — Table of Contents</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">Table of Contents — תוכן עניינים</div>
+    <div class="section-subtitle">Israel Securities Authority (ISA) Prospectus — TASE Main Board Listing | March 2026</div>
+
+    <div class="toc-section-hdr">Part I — Company &amp; Offering</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">1.</span><span class="toc-title">Company Overview</span><span class="toc-page">Page 3</span></li>
+      <li><span class="toc-num">2.</span><span class="toc-title">Securities Being Offered</span><span class="toc-page">Page 4</span></li>
+      <li><span class="toc-num">3.</span><span class="toc-title">Use of Proceeds</span><span class="toc-page">Page 4</span></li>
+    </ul>
+
+    <div class="toc-section-hdr">Part II — Business &amp; Product</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">4.</span><span class="toc-title">Business Description &amp; Product</span><span class="toc-page">Page 5</span></li>
+      <li><span class="toc-num">5.</span><span class="toc-title">Actuarial Pricing Details</span><span class="toc-page">Page 6</span></li>
+    </ul>
+
+    <div class="toc-section-hdr">Part III — Financial Information</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">6.</span><span class="toc-title">Financial Projections (3-Year)</span><span class="toc-page">Page 7</span></li>
+      <li><span class="toc-num">7.</span><span class="toc-title">Claims Reserve Projections</span><span class="toc-page">Page 8</span></li>
+    </ul>
+
+    <div class="toc-section-hdr">Part IV — Technology &amp; Ecosystem</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">8.</span><span class="toc-title">AI Technology &amp; Cost Savings</span><span class="toc-page">Page 9</span></li>
+      <li><span class="toc-num">9.</span><span class="toc-title">Health Wallet Ecosystem</span><span class="toc-page">Page 10</span></li>
+    </ul>
+
+    <div class="toc-section-hdr">Part V — Governance &amp; Risk</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">10.</span><span class="toc-title">Risk Factors</span><span class="toc-page">Page 11</span></li>
+      <li><span class="toc-num">11.</span><span class="toc-title">Regulatory Compliance</span><span class="toc-page">Page 12</span></li>
+      <li><span class="toc-num">12.</span><span class="toc-title">Management &amp; Corporate Governance</span><span class="toc-page">Page 13</span></li>
+    </ul>
+
+    <div class="toc-section-hdr">Part VI — Legal &amp; Closing</div>
+    <ul class="toc-list">
+      <li><span class="toc-num">13.</span><span class="toc-title">Legal Notices &amp; Disclaimers</span><span class="toc-page">Page 14</span></li>
+      <li><span class="toc-num">14.</span><span class="toc-title">Contact Information</span><span class="toc-page">Page 15</span></li>
+    </ul>
+
+    <div class="highlight-box" style="margin-top:20px;">
+      <strong>Legal Basis:</strong> This prospectus has been prepared and submitted pursuant to the <strong>Israeli Securities Law, 5728-1968</strong> (חוק ניירות ערך, תשכ"ח-1968) and the <strong>Securities Regulations (Details, Structure and Form of Prospectus)</strong>. All financial data has been prepared in accordance with International Financial Reporting Standards (IFRS) as adopted in Israel.
+    </div>
+
+    <div class="kpi-row" style="margin-top:18px;">
+      <div class="kpi-box">
+        <div class="kpi-val">₪47B</div>
+        <div class="kpi-lbl">Total Insurance Market (2025)</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val">34%</div>
+        <div class="kpi-lbl">Health Insurance Penetration Gap</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val">2.8M</div>
+        <div class="kpi-lbl">Addressable Customers</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val">₪53/mo</div>
+        <div class="kpi-lbl">Entry Price ($50K Coverage)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 2 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 3 — COMPANY OVERVIEW
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 1 — Company Overview</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">1. Company Overview</div>
+    <div class="section-subtitle">PHINS Insurance Ltd. — Platform Description and Business Model</div>
+
+    <p style="font-size:9pt;color:var(--text-sub);margin-bottom:12px;">
+      PHINS (Personal Health Insurance &amp; Savings) is an Israeli insurtech company operating a comprehensive, AI-powered insurance and savings platform. The company targets the 34% penetration gap in Israel's ₪47 billion health and disability insurance market, serving the 2.8 million addressable individual customers who lack adequate coverage.
+    </p>
+
+    <div class="subsection-title">Platform Pillars</div>
+    <div class="pillars">
+      <div class="pillar-card">
+        <div class="pillar-icon">🛡️</div>
+        <div class="pillar-name">ADL</div>
+        <div class="pillar-desc">Disability Coverage</div>
+      </div>
+      <div class="pillar-card">
+        <div class="pillar-icon">💰</div>
+        <div class="pillar-name">SAVINGS</div>
+        <div class="pillar-desc">Health Savings Wallet</div>
+      </div>
+      <div class="pillar-card">
+        <div class="pillar-icon">🤖</div>
+        <div class="pillar-name">AI</div>
+        <div class="pillar-desc">Automated Underwriting</div>
+      </div>
+      <div class="pillar-card">
+        <div class="pillar-icon">🏪</div>
+        <div class="pillar-name">MARKET</div>
+        <div class="pillar-desc">Supplier Marketplace</div>
+      </div>
+      <div class="pillar-card">
+        <div class="pillar-icon">📊</div>
+        <div class="pillar-name">INVEST</div>
+        <div class="pillar-desc">Investment Management</div>
+      </div>
+    </div>
+
+    <div class="subsection-title">Core Product Offering</div>
+    <div class="service-cards">
+      <div class="service-card">
+        <div class="icon">🛡️</div>
+        <h4>ADL Disability Insurance</h4>
+        <p>Activities of Daily Living (ADL) long-term disability coverage. $50,000 to $2,000,000 coverage, 5–30 year terms, AI-powered underwriting in under 90 seconds.</p>
+      </div>
+      <div class="service-card">
+        <div class="icon">💊</div>
+        <h4>Health Savings Wallet</h4>
+        <p>Integrated health savings account linked to insurance policy. Customers allocate 50% of premium to tax-advantaged savings. AUM-based fee structure generates recurring revenue.</p>
+      </div>
+      <div class="service-card">
+        <div class="icon">🏪</div>
+        <h4>Supplier Marketplace</h4>
+        <p>Curated network of 85–480 health and wellness suppliers. Commission-based revenue from transactions. Avg transaction value ₪290–₪340. Drives ecosystem stickiness.</p>
+      </div>
+    </div>
+
+    <div class="subsection-title">Israeli Market Positioning</div>
+    <table>
+      <tr>
+        <th>Market Metric</th>
+        <th>Value</th>
+        <th>PHINS Opportunity</th>
+      </tr>
+      <tr>
+        <td>Total insurance market size (2025)</td>
+        <td><strong>₪47 Billion</strong></td>
+        <td>Target underserved individual segment</td>
+      </tr>
+      <tr>
+        <td>Health insurance penetration gap</td>
+        <td><strong>34%</strong></td>
+        <td>Directly addressable new customer base</td>
+      </tr>
+      <tr>
+        <td>Addressable individual customers</td>
+        <td><strong>2.8 Million</strong></td>
+        <td>Digital-first acquisition at low CAC</td>
+      </tr>
+      <tr>
+        <td>Entry price point (₪53/mo)</td>
+        <td><strong>₪53/month</strong></td>
+        <td>$50K coverage — accessible mass market</td>
+      </tr>
+      <tr>
+        <td>USD/ILS exchange rate</td>
+        <td><strong>3.68</strong></td>
+        <td>Applied to all premium calculations</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 3 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 4 — SECURITIES OFFERED & USE OF PROCEEDS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 2–3 — Securities Offered &amp; Use of Proceeds</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">2. Securities Being Offered</div>
+    <div class="section-subtitle">Details of Shares Offered for Listing on the Tel Aviv Stock Exchange (TASE)</div>
+
+    <table>
+      <tr>
+        <th>Parameter</th>
+        <th>Details</th>
+      </tr>
+      <tr>
+        <td>Type of Security</td>
+        <td>Ordinary Shares, nominal value NIS 0.01 each</td>
+      </tr>
+      <tr>
+        <td>Exchange</td>
+        <td>Tel Aviv Stock Exchange (TASE) — Main Board (הבורסה לניירות ערך בתל אביב)</td>
+      </tr>
+      <tr>
+        <td>Listing Standard</td>
+        <td>TASE Main Board — Chapter E2 (Insurance Companies)</td>
+      </tr>
+      <tr>
+        <td>Offering Structure</td>
+        <td>Initial Public Offering (IPO) with institutional book-building + public allocation</td>
+      </tr>
+      <tr>
+        <td>Lock-up Period</td>
+        <td>180 days for founders and officers; 90 days for pre-IPO investors</td>
+      </tr>
+      <tr>
+        <td>Rights</td>
+        <td>Full voting rights (1 vote per share), dividend rights, pro-rata liquidation rights</td>
+      </tr>
+      <tr>
+        <td>Regulatory Approval</td>
+        <td>Subject to ISA approval, TASE listing approval, and Commissioner of Insurance licence</td>
+      </tr>
+      <tr>
+        <td>Prospectus Language</td>
+        <td>Hebrew (primary), English (translation provided)</td>
+      </tr>
+    </table>
+
+    <div class="highlight-box">
+      <strong>Regulatory Note:</strong> The offering is governed by the Israeli Securities Law, 5728-1968 and all relevant securities regulations. Prospective investors are encouraged to seek independent legal and financial advice before investing.
+    </div>
+
+    <div class="section-title" style="margin-top:18px;">3. Use of Proceeds</div>
+    <div class="section-subtitle">Allocation of IPO Net Proceeds by Strategic Priority</div>
+
+    <table>
+      <tr>
+        <th>Allocation</th>
+        <th>Purpose</th>
+        <th>Percentage</th>
+      </tr>
+      <tr>
+        <td>Technology &amp; AI Platform</td>
+        <td>Enhance AI underwriting engine, claims automation, fraud detection, and wallet infrastructure</td>
+        <td><strong>35%</strong></td>
+      </tr>
+      <tr>
+        <td>Claims &amp; Capital Reserves</td>
+        <td>Regulatory solvency capital, IBNR reserves, catastrophe reserve per actuarial projections</td>
+        <td><strong>25%</strong></td>
+      </tr>
+      <tr>
+        <td>Customer Acquisition &amp; Marketing</td>
+        <td>Digital marketing, partnerships, agent network expansion across Israel</td>
+        <td><strong>20%</strong></td>
+      </tr>
+      <tr>
+        <td>Regulatory Compliance &amp; Legal</td>
+        <td>ISA reporting infrastructure, ongoing compliance, legal costs, audit fees</td>
+        <td><strong>10%</strong></td>
+      </tr>
+      <tr>
+        <td>General Working Capital</td>
+        <td>Operational expenses, salary, infrastructure, and other corporate purposes</td>
+        <td><strong>10%</strong></td>
+      </tr>
+    </table>
+
+    <div class="highlight-box">
+      <strong>Capital Adequacy:</strong> The Company targets minimum capital adequacy ratios as required by the Commissioner of Insurance under the Israeli Insurance Business (Control) Law, 5741-1981 and Solvency II-equivalent standards adopted by Israeli regulators. Claims reserve coverage ratio is targeted at ≥150% at all times (see Section 7).
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 4 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 5 — BUSINESS DESCRIPTION & PRODUCT
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 4 — Business Description &amp; Product</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">4. Business Description &amp; Product</div>
+    <div class="section-subtitle">ADL Disability Coverage — Product Architecture and Actuarial Model Overview</div>
+
+    <div class="subsection-title">Flagship Product: ADL Disability Coverage</div>
+    <p style="font-size:9pt;color:var(--text-sub);margin-bottom:10px;">
+      The PHINS flagship product is an Activities of Daily Living (ADL) long-term disability insurance policy. ADL coverage pays a lump-sum benefit when the insured is unable to perform a defined number of ADL activities (eating, dressing, bathing, mobility, continence, and transferring), providing financial security for individuals and families.
+    </p>
+
+    <div class="kpi-row">
+      <div class="kpi-box">
+        <div class="kpi-val">$50K</div>
+        <div class="kpi-lbl">Reference Coverage Amount</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val">20yr</div>
+        <div class="kpi-lbl">Reference Policy Term</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val">$14.38</div>
+        <div class="kpi-lbl">Monthly Premium (Age 35, Med Risk)</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val">₪53</div>
+        <div class="kpi-lbl">ILS Equivalent per Month</div>
+      </div>
+    </div>
+
+    <div class="subsection-title">Product Parameters</div>
+    <table>
+      <tr>
+        <th>Parameter</th>
+        <th>Minimum</th>
+        <th>Maximum</th>
+        <th>Reference Case</th>
+      </tr>
+      <tr>
+        <td>Coverage Amount</td>
+        <td>$25,000</td>
+        <td>$2,000,000</td>
+        <td>$50,000</td>
+      </tr>
+      <tr>
+        <td>Policy Term (years)</td>
+        <td>5 years</td>
+        <td>30 years</td>
+        <td>20 years</td>
+      </tr>
+      <tr>
+        <td>Entry Age</td>
+        <td>18 years</td>
+        <td>65 years</td>
+        <td>35 years</td>
+      </tr>
+      <tr>
+        <td>Risk Classification</td>
+        <td>Very Low (0.85×)</td>
+        <td>Very High (1.50×)</td>
+        <td>Medium (1.00×)</td>
+      </tr>
+      <tr>
+        <td>Base Rate</td>
+        <td colspan="2">$0.25 per $1,000 coverage per month</td>
+        <td>Fixed</td>
+      </tr>
+      <tr>
+        <td>USD/ILS Rate</td>
+        <td colspan="2">3.68 (applied at policy issuance)</td>
+        <td>3.68</td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">Premium Allocation Structure</div>
+    <p style="font-size:8.5pt;color:var(--text-sub);margin-bottom:8px;">
+      Each monthly premium is split equally between risk coverage and savings accumulation, creating a dual-purpose financial product that combines insurance protection with long-term wealth building.
+    </p>
+    <table>
+      <tr>
+        <th>Component</th>
+        <th>Monthly (USD)</th>
+        <th>Annual (USD)</th>
+        <th>Allocation</th>
+      </tr>
+      <tr>
+        <td>Risk Premium</td>
+        <td>$7.19/month</td>
+        <td>$86.28/year</td>
+        <td>50%</td>
+      </tr>
+      <tr>
+        <td>Savings Allocation</td>
+        <td>$7.19/month</td>
+        <td>$86.28/year</td>
+        <td>50%</td>
+      </tr>
+      <tr style="font-weight:700;">
+        <td><strong>Total Premium</strong></td>
+        <td><strong>$14.38/month</strong></td>
+        <td><strong>$172.56/year</strong></td>
+        <td><strong>100%</strong></td>
+      </tr>
+    </table>
+
+    <div class="highlight-box">
+      <strong>Reference case:</strong> $50,000 ADL disability coverage, 20-year term, Age 35, Medium risk, at exchange rate USD/ILS = 3.68. Monthly premium = <strong>$14.38 (₪53/mo)</strong>.
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 5 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 6 — ACTUARIAL PRICING DETAILS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 5 — Actuarial Pricing Details</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">5. Actuarial Pricing Details</div>
+    <div class="section-subtitle">Premium Calculation Formula, Age Factors, and Risk Classification Tables</div>
+
+    <div class="subsection-title">Actuarial Premium Formula</div>
+    <div class="formula-box">
+      <div><strong>monthly_premium</strong> = (coverage / 1,000) × base_rate × age_factor × risk_factor</div>
+      <div class="formula-comment">where:</div>
+      <div>  base_rate    = $0.25 per $1,000/month (fixed)</div>
+      <div>  age_factor   = 1.0 + (max(0, age − 25) × 0.015)</div>
+      <div>  risk_factor  = [Very Low: 0.85 … Very High: 1.50]</div>
+      <div class="formula-comment">ILS conversion: monthly_ILS = monthly_USD × 3.68</div>
+    </div>
+
+    <div class="subsection-title">Premium by Age ($50K Coverage, Medium Risk, 20-Year Term)</div>
+    <table>
+      <tr>
+        <th>Age</th>
+        <th>Age Factor</th>
+        <th>Monthly (USD)</th>
+        <th>Monthly (₪)</th>
+      </tr>
+      <tr><td>25</td><td>1.000</td><td>$12.50</td><td>₪46</td></tr>
+      <tr><td>28</td><td>1.045</td><td>$13.06</td><td>₪48</td></tr>
+      <tr><td>30</td><td>1.075</td><td>$13.44</td><td>₪50</td></tr>
+      <tr><td>33</td><td>1.120</td><td>$14.00</td><td>₪52</td></tr>
+      <tr><td>35</td><td>1.150</td><td>$14.38</td><td>₪53</td></tr>
+      <tr><td>38</td><td>1.195</td><td>$14.94</td><td>₪55</td></tr>
+      <tr><td>40</td><td>1.225</td><td>$15.31</td><td>₪56</td></tr>
+      <tr><td>43</td><td>1.270</td><td>$15.88</td><td>₪58</td></tr>
+      <tr><td>45</td><td>1.300</td><td>$16.25</td><td>₪60</td></tr>
+      <tr><td>50</td><td>1.375</td><td>$17.19</td><td>₪63</td></tr>
+      <tr><td>55</td><td>1.450</td><td>$18.13</td><td>₪67</td></tr>
+      <tr><td>60</td><td>1.525</td><td>$19.06</td><td>₪70</td></tr>
+    </table>
+
+    <div class="subsection-title">Premium by Risk Level (Age 35, $50K Coverage)</div>
+    <table>
+      <tr>
+        <th>Risk Level</th>
+        <th>Risk Factor</th>
+        <th>Monthly (USD)</th>
+        <th>Monthly (₪)</th>
+      </tr>
+      <tr><td>Very Low</td><td>0.85</td><td>$12.22</td><td>₪45</td></tr>
+      <tr><td>Low</td><td>0.90</td><td>$12.94</td><td>₪48</td></tr>
+      <tr><td>Medium</td><td>1.00</td><td>$14.38</td><td>₪53</td></tr>
+      <tr><td>Moderate</td><td>1.15</td><td>$16.53</td><td>₪61</td></tr>
+      <tr><td>Elevated</td><td>1.25</td><td>$17.97</td><td>₪66</td></tr>
+      <tr><td>High</td><td>1.35</td><td>$19.41</td><td>₪71</td></tr>
+      <tr><td>Very High</td><td>1.50</td><td>$21.56</td><td>₪79</td></tr>
+    </table>
+
+    <div class="highlight-box">
+      <strong>Actuarial Note:</strong> The pricing model is certified by a qualified actuary in accordance with the Israeli Insurance Business (Control) Law, 5741-1981 and Actuarial Standards of Practice applicable in Israel. Age factors increase at 1.5% per year above age 25, reflecting increased ADL disability incidence rates consistent with published Israeli morbidity tables.
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 6 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 7 — FINANCIAL PROJECTIONS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 6 — Financial Projections (3-Year)</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">6. Financial Projections</div>
+    <div class="section-subtitle">Three-Year Revenue, Cost, and Net Income Forecast (₪ Millions) | Years 1–3 Post-Listing</div>
+
+    <div class="highlight-box" style="margin-bottom:14px;">
+      <strong>Basis of Preparation:</strong> Projections are prepared on a going concern basis, using actuarially certified assumptions, AI cost efficiency targets, and market penetration estimates for Israel's 2.8M addressable customer base. Exchange rate: USD/ILS = 3.68.
+    </div>
+
+    <div class="subsection-title">Revenue Breakdown (₪ Millions)</div>
+    <table>
+      <tr>
+        <th>Revenue Stream</th>
+        <th>Year 1</th>
+        <th>Year 2</th>
+        <th>Year 3</th>
+      </tr>
+      <tr>
+        <td>Premium revenue</td>
+        <td>₪0.62M</td>
+        <td>₪2.48M</td>
+        <td>₪6.20M</td>
+      </tr>
+      <tr>
+        <td>Savings management fees (0.5% AUM)</td>
+        <td>₪0.03M</td>
+        <td>₪0.15M</td>
+        <td>₪0.44M</td>
+      </tr>
+      <tr>
+        <td>Health wallet commissions</td>
+        <td>₪0.04M</td>
+        <td>₪0.16M</td>
+        <td>₪0.42M</td>
+      </tr>
+      <tr>
+        <td>Supplier marketplace commissions</td>
+        <td>₪0.09M</td>
+        <td>₪0.36M</td>
+        <td>₪0.95M</td>
+      </tr>
+      <tr>
+        <td>Investment management fees (1.2% AUM)</td>
+        <td>₪0.01M</td>
+        <td>₪0.06M</td>
+        <td>₪0.21M</td>
+      </tr>
+      <tr style="font-weight:700;background:var(--bg-table-hd);">
+        <td><strong>Total Revenue</strong></td>
+        <td><strong>₪0.79M</strong></td>
+        <td><strong>₪3.21M</strong></td>
+        <td><strong>₪8.22M</strong></td>
+      </tr>
+      <tr>
+        <td>Operating costs</td>
+        <td>₪1.20M</td>
+        <td>₪2.10M</td>
+        <td>₪3.40M</td>
+      </tr>
+      <tr style="font-weight:700;">
+        <td><strong>Net Income / (Loss)</strong></td>
+        <td><strong style="color:#dc2626;">(₪0.41M)</strong></td>
+        <td><strong style="color:#15803d;">₪1.11M</strong></td>
+        <td><strong style="color:#15803d;">₪4.82M</strong></td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">Revenue Composition by Year (%)</div>
+    <table>
+      <tr>
+        <th>Revenue Stream</th>
+        <th>Y1 Share</th>
+        <th>Y2 Share</th>
+        <th>Y3 Share</th>
+      </tr>
+      <tr>
+        <td>Premium revenue</td>
+        <td>78.5%</td>
+        <td>77.3%</td>
+        <td>75.4%</td>
+      </tr>
+      <tr>
+        <td>Savings management fees</td>
+        <td>3.8%</td>
+        <td>4.7%</td>
+        <td>5.4%</td>
+      </tr>
+      <tr>
+        <td>Health wallet commissions</td>
+        <td>5.1%</td>
+        <td>5.0%</td>
+        <td>5.1%</td>
+      </tr>
+      <tr>
+        <td>Supplier marketplace commissions</td>
+        <td>11.4%</td>
+        <td>11.2%</td>
+        <td>11.6%</td>
+      </tr>
+      <tr>
+        <td>Investment management fees</td>
+        <td>1.3%</td>
+        <td>1.9%</td>
+        <td>2.6%</td>
+      </tr>
+    </table>
+
+    <div class="highlight-box">
+      <strong>Profitability Path:</strong> Year 1 operating loss of ₪0.41M reflects intentional investment in technology and customer acquisition infrastructure. Breakeven is projected in Year 2 (₪1.11M net income) with strong EBITDA expansion to ₪4.82M net income by Year 3, driven by AI cost savings, growing AUM, and marketplace scale.
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 7 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 8 — CLAIMS RESERVE PROJECTIONS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 7 — Claims Reserve Projections</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">7. Claims Reserve Projections</div>
+    <div class="section-subtitle">Reserve Adequacy Analysis — IBNR, Catastrophe Reserve, and Coverage Ratios (₪ Millions)</div>
+
+    <div class="highlight-box" style="margin-bottom:14px;">
+      <strong>Reserve Policy:</strong> PHINS maintains actuarially certified claims reserves consistent with the Israeli Commissioner of Insurance's capital adequacy framework. Reserves include: (a) Incurred But Not Reported (IBNR) at 25% of expected annual claims; (b) Catastrophe reserve for tail events; and (c) target reserve coverage ratio ≥150%.
+    </div>
+
+    <div class="subsection-title">Claims Reserve Projection by Year (₪ Millions)</div>
+    <table>
+      <tr>
+        <th>Reserve Component</th>
+        <th>Year 1</th>
+        <th>Year 2</th>
+        <th>Year 3</th>
+      </tr>
+      <tr>
+        <td>Expected annual claims</td>
+        <td>₪0.18M</td>
+        <td>₪0.72M</td>
+        <td>₪1.80M</td>
+      </tr>
+      <tr>
+        <td>IBNR reserve (25% of expected claims)</td>
+        <td>₪0.05M</td>
+        <td>₪0.18M</td>
+        <td>₪0.45M</td>
+      </tr>
+      <tr>
+        <td>Catastrophe reserve</td>
+        <td>₪0.10M</td>
+        <td>₪0.25M</td>
+        <td>₪0.50M</td>
+      </tr>
+      <tr style="font-weight:700;background:var(--bg-table-hd);">
+        <td><strong>Total Reserve</strong></td>
+        <td><strong>₪0.33M</strong></td>
+        <td><strong>₪1.15M</strong></td>
+        <td><strong>₪2.75M</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Reserve Coverage Ratio</strong></td>
+        <td><strong style="color:#15803d;">183%</strong></td>
+        <td><strong style="color:#15803d;">160%</strong></td>
+        <td><strong style="color:#15803d;">153%</strong></td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">Reserve Methodology</div>
+    <div class="three-col">
+      <div class="service-card">
+        <div class="icon">📊</div>
+        <h4>Expected Claims</h4>
+        <p>Calculated using actuarially certified ADL disability incidence tables, policy mix, and in-force exposure. Grows proportional to policy count.</p>
+      </div>
+      <div class="service-card">
+        <div class="icon">🔍</div>
+        <h4>IBNR Reserve</h4>
+        <p>Incurred But Not Reported reserve set at 25% of expected annual claims. Covers claims with reporting lags typical in disability insurance.</p>
+      </div>
+      <div class="service-card">
+        <div class="icon">🌪️</div>
+        <h4>Catastrophe Reserve</h4>
+        <p>Maintained for tail risks including systemic health events, pandemic scenarios, and mass casualty events. Set conservatively at ₪0.10–₪0.50M.</p>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <strong>Reserve Adequacy:</strong> The reserve coverage ratio declines from 183% (Year 1) to 153% (Year 3) as the portfolio scales. All coverage ratios exceed the minimum 150% target and the regulatory minimum. The actuarial reserve is reviewed annually by an independent qualified actuary. Results are included in annual statutory filings with the Commissioner of Insurance and ISA.
+    </div>
+
+    <div class="reg-box">
+      <h4>✅ Regulatory Compliance</h4>
+      <p>All reserve calculations comply with the <strong>Israeli Insurance Business (Control) Law, 5741-1981</strong>, the Commissioner of Insurance Circular on Reserve Adequacy, and IFRS 17 (Insurance Contracts) which is applicable to TASE-listed insurance companies.</p>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 8 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 9 — AI TECHNOLOGY & COST SAVINGS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 8 — AI Technology &amp; Cost Savings</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">8. AI Technology &amp; Cost Savings</div>
+    <div class="section-subtitle">Proprietary AI Platform — Automation KPIs and Operational Cost Reduction (₪K/year)</div>
+
+    <div class="subsection-title">AI Cost Savings by Area (₪K per Year)</div>
+    <table>
+      <tr>
+        <th>Operational Area</th>
+        <th>Year 1 (₪K)</th>
+        <th>Year 2 (₪K)</th>
+        <th>Year 3 (₪K)</th>
+      </tr>
+      <tr>
+        <td>Underwriting staff</td>
+        <td>₪85K</td>
+        <td>₪210K</td>
+        <td>₪420K</td>
+      </tr>
+      <tr>
+        <td>Claims processing</td>
+        <td>₪60K</td>
+        <td>₪180K</td>
+        <td>₪360K</td>
+      </tr>
+      <tr>
+        <td>Billing automation</td>
+        <td>₪40K</td>
+        <td>₪95K</td>
+        <td>₪180K</td>
+      </tr>
+      <tr>
+        <td>Customer support AI</td>
+        <td>₪35K</td>
+        <td>₪110K</td>
+        <td>₪250K</td>
+      </tr>
+      <tr>
+        <td>Fraud prevention</td>
+        <td>₪25K</td>
+        <td>₪90K</td>
+        <td>₪220K</td>
+      </tr>
+      <tr style="font-weight:700;background:var(--bg-table-hd);">
+        <td><strong>Total AI Savings</strong></td>
+        <td><strong>₪245K</strong></td>
+        <td><strong>₪685K</strong></td>
+        <td><strong>₪1,430K</strong></td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">AI Performance KPIs (Years 1–3)</div>
+    <table>
+      <tr>
+        <th>KPI</th>
+        <th>Year 1</th>
+        <th>Year 2</th>
+        <th>Year 3</th>
+      </tr>
+      <tr>
+        <td>Underwriting automation rate</td>
+        <td>72%</td>
+        <td>85%</td>
+        <td>93%</td>
+      </tr>
+      <tr>
+        <td>Avg underwriting decision time</td>
+        <td>90 sec</td>
+        <td>45 sec</td>
+        <td>&lt;20 sec</td>
+      </tr>
+      <tr>
+        <td>Claims automation rate</td>
+        <td>55%</td>
+        <td>70%</td>
+        <td>82%</td>
+      </tr>
+      <tr>
+        <td>Avg claims processing time</td>
+        <td>5 days</td>
+        <td>3 days</td>
+        <td>72 hrs</td>
+      </tr>
+      <tr>
+        <td>Fraud detection accuracy</td>
+        <td>88%</td>
+        <td>92%</td>
+        <td>94%+</td>
+      </tr>
+      <tr>
+        <td>Billing automation rate</td>
+        <td>95%</td>
+        <td>98%</td>
+        <td>99.5%</td>
+      </tr>
+      <tr>
+        <td>Customer support AI resolution</td>
+        <td>58%</td>
+        <td>70%</td>
+        <td>80%</td>
+      </tr>
+      <tr>
+        <td>Op cost reduction vs. traditional insurer</td>
+        <td>42%</td>
+        <td>60%</td>
+        <td>73%</td>
+      </tr>
+    </table>
+
+    <div class="highlight-box">
+      <strong>Competitive Advantage:</strong> PHINS AI achieves 73% operational cost reduction versus a traditional insurer by Year 3. This translates to ₪1,430K in annual savings, materially improving the combined ratio and enabling continued premium pricing competitiveness while maintaining adequate reserving levels.
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 9 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 10 — HEALTH WALLET ECOSYSTEM
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 9 — Health Wallet Ecosystem</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">9. Health Wallet Ecosystem</div>
+    <div class="section-subtitle">Digital Health Savings Wallet — Customer Growth, AUM, and Marketplace Projections</div>
+
+    <p style="font-size:9pt;color:var(--text-sub);margin-bottom:12px;">
+      The PHINS Health Wallet is an integrated digital savings account linked directly to each insurance policy. Customers allocate 50% of their premium to their Health Wallet, which grows over time through contributions and investment returns. The wallet is connected to a curated supplier marketplace for health and wellness spending.
+    </p>
+
+    <div class="subsection-title">Health Wallet Growth Projections</div>
+    <table>
+      <tr>
+        <th>Metric</th>
+        <th>Year 1</th>
+        <th>Year 2</th>
+        <th>Year 3</th>
+      </tr>
+      <tr>
+        <td>Active wallet customers</td>
+        <td>1,200</td>
+        <td>4,800</td>
+        <td>12,000</td>
+      </tr>
+      <tr>
+        <td>Average monthly deposit (₪)</td>
+        <td>₪450</td>
+        <td>₪520</td>
+        <td>₪610</td>
+      </tr>
+      <tr>
+        <td>Total Assets Under Management (AUM) (₪M)</td>
+        <td>₪6.5M</td>
+        <td>₪29.9M</td>
+        <td>₪87.8M</td>
+      </tr>
+      <tr>
+        <td>Health wallet transactions/month</td>
+        <td>3,600</td>
+        <td>14,400</td>
+        <td>36,000</td>
+      </tr>
+      <tr>
+        <td>Supplier network size</td>
+        <td>85</td>
+        <td>210</td>
+        <td>480</td>
+      </tr>
+      <tr>
+        <td>Average transaction value (₪)</td>
+        <td>₪340</td>
+        <td>₪310</td>
+        <td>₪290</td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">Wallet Revenue Drivers</div>
+    <div class="three-col">
+      <div class="service-card">
+        <div class="icon">💰</div>
+        <h4>Savings Mgmt Fee</h4>
+        <p>0.5% annual fee on AUM. Year 3 AUM of ₪87.8M generates ₪0.44M savings management revenue.</p>
+      </div>
+      <div class="service-card">
+        <div class="icon">📈</div>
+        <h4>Investment Mgmt Fee</h4>
+        <p>1.2% annual fee on invested portion of AUM. Year 3 generates ₪0.21M investment management revenue.</p>
+      </div>
+      <div class="service-card">
+        <div class="icon">🏪</div>
+        <h4>Marketplace Commission</h4>
+        <p>Commission on supplier marketplace transactions. 480 suppliers and 36,000 monthly transactions by Year 3 generating ₪0.95M.</p>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <strong>Ecosystem Value:</strong> The Health Wallet creates a high-retention ecosystem where customers use their insurance-linked savings for health and wellness spending. By Year 3, ₪87.8M AUM and 36,000 monthly transactions position PHINS as a significant health fintech platform in the Israeli market, beyond its core insurance business.
+    </div>
+
+    <div class="reg-box">
+      <h4>✅ Regulatory Classification</h4>
+      <p>The Health Wallet operates as an insurance-linked savings vehicle. Investment management activities are subject to oversight by the <strong>Israel Securities Authority (ISA)</strong> and the <strong>Commissioner of Capital Market, Insurance and Savings</strong>. AUM management is conducted in compliance with the <strong>Joint Investment Trust Law, 5754-1994</strong> and applicable ISA guidance.</p>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 10 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 11 — RISK FACTORS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 10 — Risk Factors</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">10. Risk Factors</div>
+    <div class="section-subtitle">Key risks that prospective investors should consider before investing in PHINS shares</div>
+
+    <p style="font-size:8.5pt;color:var(--text-sub);margin-bottom:12px;">
+      Investment in securities involves risk. The following risk factors are not exhaustive. Investors should read this section carefully and consult their own advisers before making any investment decision.
+    </p>
+
+    <div class="two-col">
+      <div>
+        <div class="risk-box">
+          <h4>🏢 Regulatory Risk</h4>
+          <p>PHINS operates in a heavily regulated sector. Changes to the Israeli Securities Law, Insurance Business (Control) Law, or Commissioner of Insurance guidelines may adversely affect operations, capital requirements, or product offerings.</p>
+        </div>
+        <div class="risk-box">
+          <h4>📉 Actuarial Risk</h4>
+          <p>If actual ADL disability claims exceed actuarial projections, reserve adequacy may be impaired. Adverse claims development could reduce profitability and require additional capital injections.</p>
+        </div>
+        <div class="risk-box">
+          <h4>💱 Currency Risk</h4>
+          <p>Premiums are calculated in USD and converted to ILS at 3.68. Significant USD/ILS exchange rate movements may affect revenue recognition, pricing competitiveness, and reserve calculations.</p>
+        </div>
+        <div class="risk-box">
+          <h4>🤖 Technology Risk</h4>
+          <p>The business model is highly dependent on AI underwriting and automation systems. System failures, cybersecurity breaches, or AI model degradation could disrupt operations and damage customer trust.</p>
+        </div>
+      </div>
+      <div>
+        <div class="risk-box">
+          <h4>🏦 Capital &amp; Liquidity Risk</h4>
+          <p>Year 1 projects a net loss of ₪0.41M. If IPO proceeds are insufficient or customer acquisition is slower than projected, additional capital may be required. There is no guarantee of profitability.</p>
+        </div>
+        <div class="risk-box">
+          <h4>🌐 Market Penetration Risk</h4>
+          <p>Achieving the 1,200–12,000 active wallet customer targets requires successful marketing in a competitive Israeli insurance market. Competition from established insurers (Harel, Migdal, Phoenix, Clal) may limit growth.</p>
+        </div>
+        <div class="risk-box">
+          <h4>📋 Compliance &amp; Reporting Risk</h4>
+          <p>TASE-listed companies are subject to ongoing continuous disclosure obligations, quarterly reporting, audit requirements, and corporate governance standards. Failure to comply may result in regulatory sanctions.</p>
+        </div>
+        <div class="risk-box">
+          <h4>🌡️ Catastrophe Risk</h4>
+          <p>A widespread health catastrophe (pandemic, mass casualty event) could trigger simultaneous ADL disability claims across the insured portfolio, exceeding catastrophe reserves. Reinsurance arrangements will be implemented to mitigate this risk.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 11 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 12 — REGULATORY COMPLIANCE
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 11 — Regulatory Compliance</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">11. Regulatory Compliance</div>
+    <div class="section-subtitle">ISA / TASE Regulatory Alignment — Applicable Laws, Standards and Obligations</div>
+
+    <div class="subsection-title">Primary Regulatory Framework</div>
+    <table>
+      <tr>
+        <th>Law / Regulation</th>
+        <th>Authority</th>
+        <th>PHINS Obligation</th>
+      </tr>
+      <tr>
+        <td>Securities Law, 5728-1968 (חוק ניירות ערך)</td>
+        <td>Israel Securities Authority (ISA)</td>
+        <td>Prospectus approval, continuous disclosure, material event reporting</td>
+      </tr>
+      <tr>
+        <td>Insurance Business (Control) Law, 5741-1981</td>
+        <td>Commissioner of Insurance</td>
+        <td>Insurance licence, capital adequacy, product approval, reserve reporting</td>
+      </tr>
+      <tr>
+        <td>TASE Listing Rules — Chapter E2</td>
+        <td>Tel Aviv Stock Exchange</td>
+        <td>Financial reporting standards, minimum float, board composition</td>
+      </tr>
+      <tr>
+        <td>Companies Law, 5759-1999 (חוק החברות)</td>
+        <td>Registrar of Companies</td>
+        <td>Corporate governance, audit committee, independent directors</td>
+      </tr>
+      <tr>
+        <td>Joint Investment Trust Law, 5754-1994</td>
+        <td>Israel Securities Authority (ISA)</td>
+        <td>AUM management, Health Wallet investment activities</td>
+      </tr>
+      <tr>
+        <td>IFRS 17 — Insurance Contracts</td>
+        <td>Israeli Accounting Standards Board</td>
+        <td>Insurance contract measurement, reserve disclosure in financial statements</td>
+      </tr>
+      <tr>
+        <td>Anti-Money Laundering (AML) Law, 5760-2000</td>
+        <td>Israel Money Laundering Authority</td>
+        <td>KYC / AML procedures for insurance policy issuance and wallet transactions</td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">Compliance Commitments</div>
+    <ul class="checklist">
+      <li><span class="check-icon">✅</span><span>Quarterly financial reporting to ISA and TASE within 45 days of quarter-end</span></li>
+      <li><span class="check-icon">✅</span><span>Annual audited financial statements under IFRS prepared by a TASE-approved auditor</span></li>
+      <li><span class="check-icon">✅</span><span>Immediate disclosure of material events per Securities Law Section 36</span></li>
+      <li><span class="check-icon">✅</span><span>Annual actuarial reserve review by a qualified external actuary</span></li>
+      <li><span class="check-icon">✅</span><span>Board comprising at least two independent external directors (דירקטורים חיצוניים) per Companies Law</span></li>
+      <li><span class="check-icon">✅</span><span>Audit committee and financial reporting committee composition per TASE and Companies Law requirements</span></li>
+      <li><span class="check-icon">✅</span><span>Full KYC / AML compliance for all policyholders and wallet customers</span></li>
+      <li><span class="check-icon">✅</span><span>Data protection compliance per the Israeli Privacy Protection Law, 5741-1981 and regulations</span></li>
+    </ul>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 12 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 13 — MANAGEMENT & CORPORATE GOVERNANCE
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 12 — Management &amp; Corporate Governance</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">12. Management &amp; Corporate Governance</div>
+    <div class="section-subtitle">Executive Leadership, Board Structure, and Governance Framework</div>
+
+    <div class="subsection-title">Executive Leadership</div>
+    <table>
+      <tr>
+        <th>Position</th>
+        <th>Name</th>
+        <th>Contact</th>
+        <th>Responsibility</th>
+      </tr>
+      <tr>
+        <td>Chief Executive Officer (CEO)</td>
+        <td><strong>Asaf Ashury</strong></td>
+        <td>asaf@phins.ai</td>
+        <td>Overall strategy, investor relations, regulatory affairs</td>
+      </tr>
+      <tr>
+        <td>Chief Technology Officer (CTO)</td>
+        <td>To be appointed</td>
+        <td>—</td>
+        <td>AI platform, technology infrastructure, cybersecurity</td>
+      </tr>
+      <tr>
+        <td>Chief Actuary</td>
+        <td>To be appointed</td>
+        <td>—</td>
+        <td>Reserve adequacy, pricing model, regulatory actuarial filings</td>
+      </tr>
+      <tr>
+        <td>Chief Financial Officer (CFO)</td>
+        <td>To be appointed</td>
+        <td>—</td>
+        <td>Financial reporting, IFRS compliance, investor reporting</td>
+      </tr>
+      <tr>
+        <td>Chief Compliance Officer (CCO)</td>
+        <td>To be appointed</td>
+        <td>—</td>
+        <td>ISA / TASE / Commissioner of Insurance compliance</td>
+      </tr>
+    </table>
+
+    <div class="subsection-title">Corporate Governance Framework</div>
+    <div class="two-col">
+      <div>
+        <div class="reg-box">
+          <h4>✅ Board Composition</h4>
+          <p>Board of Directors comprising founder directors, independent external directors (דירקטורים חיצוניים) as required by the Israeli Companies Law. Audit Committee and Financial Reporting Committee will be established prior to listing.</p>
+        </div>
+        <div class="reg-box">
+          <h4>✅ Audit &amp; Reporting</h4>
+          <p>Annual financial statements audited by a TASE-accredited audit firm under IFRS. Quarterly unaudited financial statements submitted to ISA and TASE per Securities Law requirements.</p>
+        </div>
+      </div>
+      <div>
+        <div class="reg-box">
+          <h4>✅ Internal Controls</h4>
+          <p>Formal internal control framework over financial reporting (ICFR) compliant with TASE requirements. Management assessment of internal controls included in annual reports.</p>
+        </div>
+        <div class="reg-box">
+          <h4>✅ Insider Trading Policy</h4>
+          <p>Formal insider trading and dealing policy per ISA guidance. Trading windows, blackout periods, and pre-clearance requirements for officers and directors. All as required under Securities Law Section 52.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-box">
+      <strong>Governance Commitment:</strong> PHINS is committed to the highest standards of corporate governance as a TASE-listed company. The Company intends to adopt all applicable TASE governance guidelines and ISA best practice recommendations prior to and following its listing.
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 13 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 14 — LEGAL NOTICES & DISCLAIMERS
+============================================================ -->
+<div class="page">
+  <div class="page-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      PHINS
+    </div>
+    <div class="doc-title">Section 13 — Legal Notices &amp; Disclaimers</div>
+  </div>
+
+  <div class="content">
+    <div class="section-title">13. Legal Notices &amp; Disclaimers</div>
+    <div class="section-subtitle">Important Legal Information — Israeli Securities Law Requirements</div>
+
+    <div class="risk-box" style="border-color:#fca5a5;background:#fff5f5;">
+      <h4>⚠️ Important Regulatory Notice — הודעה רגולטורית חשובה</h4>
+      <p>This document is a draft prospectus (טיוטת תשקיף) submitted to the Israel Securities Authority (ISA) pursuant to the Israeli Securities Law, 5728-1968. <strong>This document has NOT been approved by the ISA or any other regulatory authority.</strong> The final prospectus, as approved by the ISA, will supersede this draft in all respects. Prospective investors should rely only on the final approved prospectus when making investment decisions.</p>
+    </div>
+
+    <div class="subsection-title">Forward-Looking Statements</div>
+    <p style="font-size:8.5pt;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
+      This prospectus contains forward-looking statements, including projections of revenue, net income, claims reserves, AI performance KPIs, and wallet growth. These statements are based on current expectations, estimates, and assumptions that are subject to significant risks and uncertainties. Actual results may differ materially from those projected. Forward-looking statements speak only as of the date of this prospectus. The Company does not undertake any obligation to update forward-looking statements except as required by law.
+    </p>
+
+    <div class="subsection-title">No Offer Outside Israel</div>
+    <p style="font-size:8.5pt;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
+      This prospectus is prepared solely for the purpose of the proposed listing of PHINS shares on the Tel Aviv Stock Exchange (TASE) and is directed only at persons in Israel. This document does not constitute an offer to sell, or a solicitation of an offer to buy, any securities in any jurisdiction other than Israel. Distribution of this document outside Israel may be restricted by law and persons who come into possession of this document should inform themselves of and observe any such restrictions.
+    </p>
+
+    <div class="subsection-title">Tax Considerations</div>
+    <p style="font-size:8.5pt;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
+      This prospectus does not constitute tax advice. Tax treatment of investments in PHINS shares depends on the individual circumstances of each investor. Investors should consult their own tax advisers regarding the Israeli tax implications of investing in PHINS shares, including capital gains tax, dividend withholding tax, and any applicable exemptions.
+    </p>
+
+    <div class="subsection-title">Currency Information</div>
+    <p style="font-size:8.5pt;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
+      Unless otherwise stated, all financial amounts in this prospectus are expressed in New Israeli Shekel (NIS / ₪). USD amounts use the reference exchange rate of USD/ILS = 3.68 as of the prospectus date. Actual exchange rates will vary and may materially affect reported results.
+    </p>
+
+    <div class="highlight-box">
+      <strong>Prospectus Submission:</strong> This draft prospectus has been prepared by PHINS Insurance Ltd. for submission to the Israel Securities Authority (ISA) — רשות ניירות ערך, ירושלים, Israel. All queries regarding this prospectus should be directed to: <strong>asaf@phins.ai</strong> | <strong>phins.ai</strong>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">DRAFT — CONFIDENTIAL</span>
+    <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+    <span>Page 14 of 15</span>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE 15 — BACK COVER
+============================================================ -->
+<div class="page">
+  <div class="back-cover">
+    <div class="bc-logo-icon">🛡️</div>
+    <div class="bc-brand">PHINS</div>
+    <div class="bc-tag">Personal Health Insurance &amp; Savings</div>
+    <div style="font-size:18pt;font-weight:800;margin-bottom:8px;">תשקיף</div>
+    <div style="font-size:10pt;opacity:.85;margin-bottom:4px;">ISA Prospectus — TASE IPO</div>
+    <div style="font-size:9pt;opacity:.75;margin-bottom:28px;">Israel Securities Authority | March 2026</div>
+    <div class="bc-divider"></div>
+    <div class="bc-contact">📧 asaf@phins.ai</div>
+    <div class="bc-url">phins.ai</div>
+    <div class="bc-confidential">
+      This document is a DRAFT PROSPECTUS submitted to the Israel Securities Authority (ISA) pursuant to the Israeli Securities Law, 5728-1968. It has not been approved by the ISA. The final approved prospectus will supersede this document. This document is CONFIDENTIAL and intended solely for regulatory review.
+    </div>
+    <div style="font-size:9pt;opacity:.8;margin-bottom:8px;direction:rtl;">
+      מסמך זה הוא טיוטת תשקיף המוגשת לרשות ניירות ערך לפי חוק ניירות ערך, תשכ"ח-1968. מסמך זה טרם אושר על ידי הרשות. התשקיף הסופי שיאושר יגבר על מסמך זה. מסמך זה חסוי ומיועד לבחינה רגולטורית בלבד.
+    </div>
+    <div class="bc-copy">© 2026 PHINS Insurance Ltd. | All Rights Reserved | Registered in Israel</div>
+
+    <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.25);padding:10px 22px;display:flex;justify-content:space-between;font-size:7pt;opacity:.8;">
+      <span class="confidential" style="color:#fbbf24;font-weight:600;">DRAFT — CONFIDENTIAL</span>
+      <span>PHINS Insurance Ltd. — ISA Prospectus (תשקיף)</span>
+      <span>Page 15 of 15</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
