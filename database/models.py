@@ -85,6 +85,12 @@ class Customer(Base):
     portal_active = Column(Boolean, default=True)  # Can login to customer portal
     last_login = Column(DateTime, nullable=True)
     
+    # Contact verification status
+    email_verified = Column(Boolean, default=False, nullable=False)
+    email_verified_at = Column(DateTime, nullable=True)
+    phone_verified = Column(Boolean, default=False, nullable=False)
+    phone_verified_at = Column(DateTime, nullable=True)
+    
     # Timestamps
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -112,6 +118,10 @@ class Customer(Base):
             'occupation': self.occupation,
             'portal_active': self.portal_active,
             'last_login': self.last_login.isoformat() if self.last_login else None,
+            'email_verified': bool(self.email_verified),
+            'email_verified_at': self.email_verified_at.isoformat() if self.email_verified_at else None,
+            'phone_verified': bool(self.phone_verified),
+            'phone_verified_at': self.phone_verified_at.isoformat() if self.phone_verified_at else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }

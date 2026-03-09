@@ -16201,7 +16201,7 @@ For claims or questions, please contact:
         # =====================================================================
         if api_extensions_enabled and api_ext_post:
             # These endpoints need JSON body parsing
-            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations']
+            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations', '/api/customer/verify-contact', '/api/customer/contact']
             is_extension_path = any(path.startswith(p) for p in security_paths)
             
             if is_extension_path:
@@ -17957,6 +17957,17 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Invalid email format'}).encode('utf-8'))
                     return
                 
+                if phone:
+                    phone_pattern = r'^\+?[\d\s\-\(\)\.]{7,20}$'
+                    import re as _re_phone
+                    if not _re_phone.match(phone_pattern, phone):
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Invalid phone number format',
+                            'code': 'INVALID_PHONE'
+                        }).encode('utf-8'))
+                        return
+
                 if len(password) < 8:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
@@ -17970,8 +17981,36 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                # Registration is invitation-code-only. Legacy OTP fields in the payload
-                # are intentionally ignored to keep API compatibility with older clients.
+                # ========== OTP EMAIL VERIFICATION (optional, backward compatible) ==========
+                # When a valid, pre-verified OTP token is provided the email is
+                # marked verified at creation time.  Unknown/placeholder tokens are
+                # silently ignored for backward compatibility with older clients.
+                # Only hard-fail when the token was found but is consumed/mismatched.
+                verification_id = data.get('verification_id', '').strip()
+                email_verified_via_otp = False
+                if verification_id:
+                    try:
+                        from services.otp_security_service import get_otp_security_service, OTPPurpose
+                        otp_svc = get_otp_security_service()
+                        consume_result = otp_svc.consume_verification(
+                            verification_id=verification_id,
+                            expected_email=email,
+                            expected_purpose=OTPPurpose.REGISTRATION,
+                            ip_address=client_ip
+                        )
+                        if consume_result.success:
+                            email_verified_via_otp = True
+                        elif consume_result.error_code not in ('INVALID_VERIFICATION',):
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': consume_result.message or 'Email verification failed',
+                                'code': consume_result.error_code or 'VERIFICATION_FAILED'
+                            }).encode('utf-8'))
+                            return
+                    except ImportError:
+                        pass
+                    except Exception as otp_err:
+                        print(f"[REGISTER] OTP verification check failed: {otp_err}")
 
                 registration_date = datetime.now().isoformat()
                 pwd_hash = hash_password(password)
@@ -18067,6 +18106,11 @@ For claims or questions, please contact:
                         'email': email,
                         'phone': phone,
                         'dob': dob,
+                        # Contact verification status
+                        'email_verified': email_verified_via_otp,
+                        'email_verified_at': registration_date if email_verified_via_otp else None,
+                        'phone_verified': False,
+                        'phone_verified_at': None,
                         # Registration tracking
                         'invitation_code': invitation_code,
                         'invitation_type': invitation_type,
@@ -18216,12 +18260,19 @@ For claims or questions, please contact:
                     'success': True,
                     'customer_id': customer_id,
                     'email': email,
+                    'email_verified': email_verified_via_otp,
+                    'phone_verified': False,
                     'registered_at': registration_date,
                     'welcome_notification_sent': welcome_notification_sent,
                     'welcome_whatsapp_sent': welcome_whatsapp_sent,
                     'welcome_report_summary': welcome_report_summary,
                     'message': 'Account created successfully. Please login with your credentials.'
                 }
+                if not email_verified_via_otp:
+                    response_data['verification_required'] = True
+                    response_data['verification_channels'] = ['email']
+                    if phone:
+                        response_data['verification_channels'].append('sms')
 
                 if referrer_customer_id:
                     referrer = CUSTOMERS.get(referrer_customer_id) or REGISTERED_CUSTOMERS.get(referrer_customer_id)
