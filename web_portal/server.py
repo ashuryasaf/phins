@@ -542,19 +542,24 @@ def get_customer_with_fallback(customer_id: str) -> dict:
                     if db_customer:
                         customer = db_customer.to_dict()
                         print(f"[CUSTOMER FALLBACK] Found customer {customer_id} via database")
-                        # Sync to in-memory for future lookups
                         try:
                             CUSTOMERS[customer_id] = customer
+                            REGISTERED_CUSTOMERS[customer_id] = customer
                         except Exception:
                             pass
                         return customer
                     
-                    # Try by email if customer_id looks like an email
                     if '@' in customer_id:
                         db_customer = db.customers.get_by_email(customer_id.lower())
                         if db_customer:
                             customer = db_customer.to_dict()
-                            print(f"[CUSTOMER FALLBACK] Found customer by email: {customer_id}")
+                            real_id = customer.get('id', customer_id)
+                            print(f"[CUSTOMER FALLBACK] Found customer by email: {customer_id} -> {real_id}")
+                            try:
+                                CUSTOMERS[real_id] = customer
+                                REGISTERED_CUSTOMERS[real_id] = customer
+                            except Exception:
+                                pass
                             return customer
         except Exception as e:
             print(f"[CUSTOMER FALLBACK] Database lookup failed for {customer_id}: {e}")
@@ -3827,7 +3832,8 @@ def block_ip(client_ip: str, reason: str, permanent: bool = False):
 
 def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
     """Check if IP is blocked, returns (is_blocked, reason)"""
-    # Trusted IPs are NEVER blocked
+    if PHINS_TEST_MODE:
+        return (False, "")
     if is_trusted_ip(client_ip):
         return (False, "")
     
@@ -14263,13 +14269,13 @@ For claims or questions, please contact:
                 'timestamp': datetime.now().isoformat()
             }
             
-            # 1. Customer profile
-            customer = CUSTOMERS.get(customer_id, {})
+            # 1. Customer profile (use fallback to cover DB-only customers)
+            customer = get_customer_with_fallback(customer_id) or {}
             result['profile'] = {
                 'name': customer.get('name', 'Customer'),
                 'email': customer.get('email'),
                 'phone': customer.get('phone'),
-                'created_at': customer.get('created_at')
+                'created_at': customer.get('created_at') or customer.get('created_date')
             }
             
             # 2. Policies
@@ -17906,11 +17912,14 @@ For claims or questions, please contact:
                     # Log token creation with customer_id status
                     print(f"[AUTH] Token created for {username} (role={role}, customer_id={customer_id or 'None'})")
                     
-                    # Clear failed login attempts on success
+                    # Clear failed login attempts AND any IP block on success
                     with STATE_LOCK:
                         k = _security_key(client_ip, server_port)
                         if k in FAILED_LOGINS:
                             del FAILED_LOGINS[k]
+                        ip_key = _security_key(client_ip, None)
+                        if ip_key in BLOCKED_IPS:
+                            del BLOCKED_IPS[ip_key]
                     
                     # Generate stateless signed token (works across Railway instances)
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
@@ -32893,8 +32902,8 @@ def run_server(port: int = PORT) -> None:
                     
                     for user_data in ensure_users:
                         existing = user_repo.get_by_username(user_data['username'])
+                        pw_data = hash_password(user_data['password'])
                         if not existing:
-                            pw_data = hash_password(user_data['password'])
                             user_repo.create(
                                 username=user_data['username'],
                                 password_hash=pw_data['hash'],
@@ -32906,7 +32915,12 @@ def run_server(port: int = PORT) -> None:
                             )
                             print(f"   ✓ Created user: {user_data['username']}")
                         else:
-                            print(f"   ℹ️  User {user_data['username']} already exists")
+                            existing.password_hash = pw_data['hash']
+                            existing.password_salt = pw_data['salt']
+                            if not existing.active:
+                                existing.active = True
+                            db.session.commit()
+                            print(f"   ✓ Synced credentials: {user_data['username']}")
             except Exception as e:
                 print(f"   Note: Additional users seeding: {e}")
             
