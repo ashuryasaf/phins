@@ -4152,6 +4152,19 @@ if USE_DATABASE and database_enabled:
             # FALLBACK: Check in-memory users (always works for admin access)
             fallback_user = _FALLBACK_USERS.get(username)
             if fallback_user:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db_user = db.users.get_by_username(username)
+                        if db_user and not getattr(db_user, 'active', True):
+                            print(f"[AUTH] Fallback blocked in USERS.get() for '{username}': user is deactivated")
+                            return default
+                        db_customer = db.customers.get_by_email(username.lower())
+                        if db_customer and not getattr(db_customer, 'portal_active', True):
+                            print(f"[AUTH] Fallback blocked in USERS.get() for '{username}': portal is deactivated")
+                            return default
+                except Exception:
+                    pass
                 return fallback_user
             
             return default
@@ -17815,25 +17828,56 @@ For claims or questions, please contact:
                 # 3. DIRECT FALLBACK: Check _FALLBACK_USERS if USERS.get() failed
                 # This ensures admin access even if database/wrapper has issues
                 if not user and username in _FALLBACK_USERS:
-                    try:
-                        fallback = _FALLBACK_USERS[username]
-                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
-                        password_ok = verify_password(password, fallback.get('hash', ''), fallback.get('salt', ''))
-                        
-                        if password_ok or legacy_ok:
-                            user = fallback
-                            customer_id = fallback.get('customer_id')
-                            role = fallback.get('role', 'customer')
-                            name = fallback.get('name', username)
-                            print(f"[AUTH] User {username} authenticated via direct fallback")
-                    except Exception as fe:
-                        print(f"Direct fallback auth error: {fe}")
+                    fallback_blocked = False
+                    if USE_DATABASE:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                db_user = db.users.get_by_username(username)
+                                if db_user and not getattr(db_user, 'active', True):
+                                    fallback_blocked = True
+                                    print(f"[AUTH] Fallback blocked for '{username}': user is deactivated")
+                                if not fallback_blocked:
+                                    db_customer = db.customers.get_by_email(username.lower())
+                                    if db_customer and not getattr(db_customer, 'portal_active', True):
+                                        fallback_blocked = True
+                                        print(f"[AUTH] Fallback blocked for '{username}': portal access is deactivated")
+                        except Exception as e:
+                            print(f"[AUTH] DB check unavailable during fallback, allowing access: {e}")
+
+                    if not fallback_blocked:
+                        try:
+                            fallback = _FALLBACK_USERS[username]
+                            legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                            password_ok = verify_password(password, fallback.get('hash', ''), fallback.get('salt', ''))
+                            
+                            if password_ok or legacy_ok:
+                                user = fallback
+                                customer_id = fallback.get('customer_id')
+                                role = fallback.get('role', 'customer')
+                                name = fallback.get('name', username)
+                                print(f"[AUTH] User {username} authenticated via direct fallback")
+                        except Exception as fe:
+                            print(f"Direct fallback auth error: {fe}")
                 
                 # 4. Fallback: Check in-memory CUSTOMERS dictionary
                 # This runs for both DB and non-DB modes to catch passwords set via admin endpoint
                 if not user:
                     for cust_id, cust in CUSTOMERS.items():
                         if cust.get('email', '').lower() == username.lower():
+                            if not cust.get('portal_active', True):
+                                print(f"[AUTH] In-memory customer '{username}' portal access is deactivated")
+                                break
+                            if USE_DATABASE:
+                                try:
+                                    from database.manager import DatabaseManager
+                                    with DatabaseManager() as db:
+                                        db_cust = db.customers.get_by_email(username.lower())
+                                        if db_cust and not getattr(db_cust, 'portal_active', True):
+                                            print(f"[AUTH] Customer '{username}' portal deactivated (verified in fallback)")
+                                            break
+                                except Exception:
+                                    pass
                             if cust.get('password_hash') and cust.get('password_salt'):
                                 if verify_password(password, cust['password_hash'], cust['password_salt']):
                                     user = cust
