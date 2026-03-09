@@ -165,13 +165,10 @@ def seed_default_users(session=None):
             # Check if user already exists
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
-                needs_commit = False
-
                 # Always sync password hash from env var so DB stays current
                 password_data = hash_password(user_data['password'])
                 existing_user.password_hash = password_data['hash']
                 existing_user.password_salt = password_data['salt']
-                needs_commit = True
 
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
@@ -179,9 +176,8 @@ def seed_default_users(session=None):
                 if not existing_user.active:
                     existing_user.active = True
 
-                if needs_commit:
-                    session.commit()
-                    logger.info(f"Synced credentials for user '{user_data['username']}' (role={user_data['role']})")
+                session.commit()
+                logger.info(f"Synced credentials for user '{user_data['username']}' (role={user_data['role']})")
                 continue
             
             # Hash password
