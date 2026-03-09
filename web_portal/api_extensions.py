@@ -823,6 +823,7 @@ def handle_customer_update_contact(
 
     changes = {}
     verification_needed = []
+    customer_found = False
 
     for store in [customers_store, registered_customers_store]:
         if not store:
@@ -830,6 +831,7 @@ def handle_customer_update_contact(
         customer = store.get(customer_id)
         if not isinstance(customer, dict):
             continue
+        customer_found = True
 
         if new_email and new_email != customer.get('email', '').lower():
             customer['email'] = new_email
@@ -846,6 +848,9 @@ def handle_customer_update_contact(
             changes['phone'] = new_phone
             if 'sms' not in verification_needed:
                 verification_needed.append('sms')
+
+    if not customer_found:
+        return 404, {"success": False, "error": "Customer not found"}
 
     try:
         from database.manager import DatabaseManager

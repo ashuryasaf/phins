@@ -550,6 +550,21 @@ class TestHandleCustomerUpdateContact:
         )
         assert status == 400
 
+    def test_missing_customer_returns_not_found(self):
+        from web_portal.api_extensions import handle_customer_update_contact
+        status, data = handle_customer_update_contact(
+            client_ip='127.0.0.1',
+            body_data={
+                'customer_id': 'CUST-MISSING-01',
+                'email': 'new@example.com',
+            },
+            customers_store={},
+            registered_customers_store={},
+        )
+        assert status == 404
+        assert data['success'] is False
+        assert data['error'] == 'Customer not found'
+
 
 # ============================================================================
 # DATA INTEGRITY INVARIANTS
