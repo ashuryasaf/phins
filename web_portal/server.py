@@ -1639,6 +1639,37 @@ def load_dynamic_customers():
     
     seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
     
+    def _is_regulated_production_mode() -> bool:
+        """Return True when running in regulated production mode."""
+        truthy = {'1', 'true', 'yes', 'y', 'on'}
+        test_mode = str(os.environ.get('PHINS_TEST_MODE', '')).strip().lower() in truthy
+        if test_mode:
+            return False
+
+        regulated_flags = [
+            os.environ.get('PHINS_REGULATED_PRODUCTION', ''),
+            os.environ.get('PHINS_REGULATED_MODE', ''),
+        ]
+        if any(str(flag).strip().lower() in truthy for flag in regulated_flags):
+            return True
+
+        env_values = [
+            os.environ.get('ENVIRONMENT', ''),
+            os.environ.get('PHINS_ENV', ''),
+            os.environ.get('APP_ENV', ''),
+        ]
+        return any(str(v).strip().lower() in {'regulated', 'regulated_production'} for v in env_values)
+
+    def _is_test_seed_customer(customer: Dict[str, Any]) -> bool:
+        """
+        Identify clearly test-only seed customers.
+        In regulated production, we exclude these credentials from runtime loading.
+        """
+        if bool(customer.get('test_only')):
+            return True
+        email = str(customer.get('email') or customer.get('username') or '').strip().lower()
+        return email.endswith('@example.com') or email.endswith('@test.local')
+
     try:
         if not os.path.exists(seeds_file):
             print("[DYNAMIC] No dynamic customers file found")
@@ -1653,8 +1684,13 @@ def load_dynamic_customers():
         
         loaded_count = 0
         legacy_count = 0
+        skipped_test_count = 0
+        regulated_mode = _is_regulated_production_mode()
         
         for customer in dynamic_customers:
+            if regulated_mode and _is_test_seed_customer(customer):
+                skipped_test_count += 1
+                continue
             email = customer.get('email') or customer.get('username')
             if not email:
                 continue
@@ -1707,6 +1743,8 @@ def load_dynamic_customers():
         
         if legacy_count > 0:
             print(f"[DYNAMIC] WARNING: {legacy_count} customers have legacy plain-text passwords. Run password migration.")
+        if skipped_test_count > 0:
+            print(f"[DYNAMIC] Regulated mode: skipped {skipped_test_count} test-only seed customer(s)")
         
         print(f"[DYNAMIC] Loaded {loaded_count} dynamic customers from seeds file")
         return loaded_count
@@ -5099,11 +5137,11 @@ For claims or questions, please contact:
             except Exception as e:
                 print(f"API extension error (GET {path}): {e}")
 
-        # ========== AI + BI MARKETING SALES AGENT (Admin/Media) ==========
+        # ========== AI + BI MARKETING SALES AGENT (Admin only) ==========
         if path == '/api/admin/marketing-sales-agent':
-            if not require_role(session, ['admin', 'media']):
+            if not require_role(session, ['admin']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
 
             try:
@@ -5147,9 +5185,9 @@ For claims or questions, please contact:
                 return
 
         if path == '/api/admin/marketing-sales-agent/latest':
-            if not require_role(session, ['admin', 'media']):
+            if not require_role(session, ['admin']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
 
             marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
@@ -10266,27 +10304,29 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id query parameter is required'}).encode('utf-8'))
                 return
             refundable_bills = []
-            for bid, bill in BILLING.items():
-                if bill.get('customer_id') != customer_id_param:
-                    continue
-                bill_status = (bill.get('status') or '').lower()
-                amount_paid = safe_float(bill.get('amount_paid', 0))
-                already_refunded = safe_float(bill.get('refunded_amount', 0))
-                refundable = round(amount_paid - already_refunded, 2)
-                if bill_status in ('paid', 'partial') and refundable > 0:
-                    policy = POLICIES.get(bill.get('policy_id', ''), {})
-                    refundable_bills.append({
-                        'bill_id': bid,
-                        'policy_id': bill.get('policy_id'),
-                        'policy_type': policy.get('type') or policy.get('policy_type', 'N/A'),
-                        'amount_due': safe_float(bill.get('amount', bill.get('amount_due', 0))),
-                        'amount_paid': amount_paid,
-                        'already_refunded': already_refunded,
-                        'refundable_amount': refundable,
-                        'status': bill_status,
-                        'paid_date': bill.get('paid_date') or bill.get('updated_at'),
-                        'due_date': bill.get('due_date')
-                    })
+            # Public endpoint by product policy; snapshot data under lock for consistency.
+            with STATE_LOCK:
+                for bid, bill in BILLING.items():
+                    if bill.get('customer_id') != customer_id_param:
+                        continue
+                    bill_status = (bill.get('status') or '').lower()
+                    amount_paid = safe_float(bill.get('amount_paid', 0))
+                    already_refunded = safe_float(bill.get('refunded_amount', 0))
+                    refundable = round(amount_paid - already_refunded, 2)
+                    if bill_status in ('paid', 'partial') and refundable > 0:
+                        policy = POLICIES.get(bill.get('policy_id', ''), {})
+                        refundable_bills.append({
+                            'bill_id': bid,
+                            'policy_id': bill.get('policy_id'),
+                            'policy_type': policy.get('type') or policy.get('policy_type', 'N/A'),
+                            'amount_due': safe_float(bill.get('amount', bill.get('amount_due', 0))),
+                            'amount_paid': amount_paid,
+                            'already_refunded': already_refunded,
+                            'refundable_amount': refundable,
+                            'status': bill_status,
+                            'paid_date': bill.get('paid_date') or bill.get('updated_at'),
+                            'due_date': bill.get('due_date')
+                        })
             refundable_bills.sort(key=lambda b: b.get('paid_date') or '', reverse=True)
             self._set_json_headers()
             self.wfile.write(json.dumps({'refundable_bills': refundable_bills, 'count': len(refundable_bills)}).encode('utf-8'))
@@ -16278,15 +16318,15 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
                 return
 
-        # ========== AI + BI MARKETING SALES AGENT PUBLISH (Admin/Media) ==========
+        # ========== AI + BI MARKETING SALES AGENT PUBLISH (Admin only) ==========
         if path == '/api/admin/marketing-sales-agent/publish':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
 
-            if not require_role(session, ['admin', 'media']):
+            if not require_role(session, ['admin']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
 
             length = int(self.headers.get('Content-Length', 0))
@@ -25220,128 +25260,135 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'bill_id and customer_id are required'}).encode('utf-8'))
                         return
 
-                    bill = BILLING.get(bill_id)
-                    if not bill:
-                        self._set_json_headers(404)
-                        self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
-                        return
-
-                    # Verify bill belongs to the requesting customer
-                    if bill.get('customer_id') != customer_id:
-                        self._set_json_headers(403)
-                        self.wfile.write(json.dumps({'error': 'Access denied: bill does not belong to this customer'}).encode('utf-8'))
-                        return
-
-                    # Only paid bills are eligible for refund
-                    bill_status = (bill.get('status') or '').lower()
-                    amount_paid = safe_float(bill.get('amount_paid', 0))
-                    if bill_status not in ('paid', 'partial') or amount_paid <= 0:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'Only paid bills are eligible for refund', 'bill_status': bill_status}).encode('utf-8'))
-                        return
-
-                    # Determine refund amount (cannot exceed amount_paid; already-refunded amount is excluded)
-                    already_refunded = safe_float(bill.get('refunded_amount', 0))
-                    refundable = round(amount_paid - already_refunded, 2)
-                    if refundable <= 0:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'This bill has already been fully refunded'}).encode('utf-8'))
-                        return
-
-                    if refund_amount_req is not None:
-                        refund_amount = round(float(refund_amount_req), 2)
-                        if refund_amount <= 0 or refund_amount > refundable:
-                            self._set_json_headers(400)
-                            self.wfile.write(json.dumps({'error': f'Refund amount must be between $0.01 and ${refundable:.2f}', 'refundable': refundable}).encode('utf-8'))
+                    # Public endpoint by product policy; perform all mutating work atomically.
+                    with STATE_LOCK:
+                        bill = BILLING.get(bill_id)
+                        if not bill:
+                            self._set_json_headers(404)
+                            self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
                             return
-                    else:
-                        refund_amount = refundable
 
-                    refund_id = f"RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
+                        # Verify bill belongs to the requesting customer
+                        if bill.get('customer_id') != customer_id:
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Access denied: bill does not belong to this customer'}).encode('utf-8'))
+                            return
 
-                    # Update billing record to reflect the refund
-                    bill['refunded_amount'] = already_refunded + refund_amount
-                    bill['last_refund_id'] = refund_id
-                    bill['last_refund_reason'] = reason
-                    bill['last_refund_date'] = datetime.now().isoformat()
-                    if bill['refunded_amount'] >= amount_paid:
-                        bill['status'] = 'refunded'
-                    BILLING[bill_id] = bill
+                        # Only paid bills are eligible for refund
+                        bill_status = (bill.get('status') or '').lower()
+                        amount_paid = safe_float(bill.get('amount_paid', 0))
+                        if bill_status not in ('paid', 'partial') or amount_paid <= 0:
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({'error': 'Only paid bills are eligible for refund', 'bill_status': bill_status}).encode('utf-8'))
+                            return
 
-                    # Deposit refund to customer's health wallet
-                    if customer_id not in HEALTH_WALLETS:
-                        HEALTH_WALLETS[customer_id] = {
-                            'customer_id': customer_id,
-                            'balance': 0.0,
-                            'monthly_deposit': 0.0,
-                            'transactions': []
-                        }
-                    prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
-                    HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
-                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                        # Determine refund amount (cannot exceed amount_paid; already-refunded amount is excluded)
+                        already_refunded = safe_float(bill.get('refunded_amount', 0))
+                        refundable = round(amount_paid - already_refunded, 2)
+                        if refundable <= 0:
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({'error': 'This bill has already been fully refunded'}).encode('utf-8'))
+                            return
 
-                    wallet_tx = {
-                        'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                        'type': 'refund_deposit',
-                        'amount': refund_amount,
-                        'refund_id': refund_id,
-                        'bill_id': bill_id,
-                        'policy_id': bill.get('policy_id'),
-                        'description': f'Premium refund deposited for bill {bill_id}',
-                        'reason': reason,
-                        'previous_balance': prev_wallet_balance,
-                        'balance_after': new_wallet_balance,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+                        if refund_amount_req is not None:
+                            try:
+                                refund_amount = round(float(refund_amount_req), 2)
+                            except (TypeError, ValueError):
+                                self._set_json_headers(400)
+                                self.wfile.write(json.dumps({'error': 'Refund amount must be numeric'}).encode('utf-8'))
+                                return
+                            if refund_amount <= 0 or refund_amount > refundable:
+                                self._set_json_headers(400)
+                                self.wfile.write(json.dumps({'error': f'Refund amount must be between $0.01 and ${refundable:.2f}', 'refundable': refundable}).encode('utf-8'))
+                                return
+                        else:
+                            refund_amount = refundable
 
-                    # Record in TRANSACTION_LEDGER and NFT_LEDGER for full audit trail
-                    refund_tx = record_transaction(
-                        customer_id=customer_id,
-                        tx_type='premium_refund',
-                        amount=refund_amount,
-                        description=f'Refund of ${refund_amount:.2f} for bill {bill_id} deposited to health wallet',
-                        metadata={
+                        refund_id = f"RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
+
+                        # Update billing record to reflect the refund
+                        bill['refunded_amount'] = already_refunded + refund_amount
+                        bill['last_refund_id'] = refund_id
+                        bill['last_refund_reason'] = reason
+                        bill['last_refund_date'] = datetime.now().isoformat()
+                        if bill['refunded_amount'] >= amount_paid:
+                            bill['status'] = 'refunded'
+                        BILLING[bill_id] = bill
+
+                        # Deposit refund to customer's health wallet
+                        if customer_id not in HEALTH_WALLETS:
+                            HEALTH_WALLETS[customer_id] = {
+                                'customer_id': customer_id,
+                                'balance': 0.0,
+                                'monthly_deposit': 0.0,
+                                'transactions': []
+                            }
+                        prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
+                        HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
+                        new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+
+                        wallet_tx = {
+                            'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                            'type': 'refund_deposit',
+                            'amount': refund_amount,
                             'refund_id': refund_id,
                             'bill_id': bill_id,
                             'policy_id': bill.get('policy_id'),
+                            'description': f'Premium refund deposited for bill {bill_id}',
                             'reason': reason,
-                            'original_amount_paid': amount_paid,
-                            'refunded_amount': bill['refunded_amount'],
-                            'wallet_balance_before': prev_wallet_balance,
-                            'wallet_balance_after': new_wallet_balance,
-                            'wallet_tx_id': wallet_tx['id']
+                            'previous_balance': prev_wallet_balance,
+                            'balance_after': new_wallet_balance,
+                            'timestamp': datetime.now().isoformat()
                         }
-                    )
+                        HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
 
-                    # Record refund as an expense on the PHINS balance sheet
-                    try:
-                        record_balance_sheet_transaction(
-                            tx_type='expense',
-                            category='refunds',
-                            amount=refund_amount,
-                            description=f'Customer premium refund for bill {bill_id}',
-                            actor='billing_system',
+                        # Record in TRANSACTION_LEDGER and NFT_LEDGER for full audit trail
+                        refund_tx = record_transaction(
                             customer_id=customer_id,
-                            metadata={'refund_id': refund_id, 'bill_id': bill_id}
-                        )
-                    except Exception as bs_err:
-                        print(f"[BALANCE_SHEET] Refund expense record error: {bs_err}")
-
-                    # Audit log
-                    if audit:
-                        try:
-                            audit.log(customer_id, 'refund', 'bill', bill_id, {
+                            tx_type='premium_refund',
+                            amount=refund_amount,
+                            description=f'Refund of ${refund_amount:.2f} for bill {bill_id} deposited to health wallet',
+                            metadata={
                                 'refund_id': refund_id,
-                                'amount': refund_amount,
+                                'bill_id': bill_id,
+                                'policy_id': bill.get('policy_id'),
                                 'reason': reason,
-                                'destination': 'health_wallet'
-                            })
-                        except Exception:
-                            pass
+                                'original_amount_paid': amount_paid,
+                                'refunded_amount': bill['refunded_amount'],
+                                'wallet_balance_before': prev_wallet_balance,
+                                'wallet_balance_after': new_wallet_balance,
+                                'wallet_tx_id': wallet_tx['id']
+                            }
+                        )
 
-                    # Persist changes
-                    save_ledger_data()
+                        # Record refund as an expense on the PHINS balance sheet
+                        try:
+                            record_balance_sheet_transaction(
+                                tx_type='expense',
+                                category='refunds',
+                                amount=refund_amount,
+                                description=f'Customer premium refund for bill {bill_id}',
+                                actor='billing_system',
+                                customer_id=customer_id,
+                                metadata={'refund_id': refund_id, 'bill_id': bill_id}
+                            )
+                        except Exception as bs_err:
+                            print(f"[BALANCE_SHEET] Refund expense record error: {bs_err}")
+
+                        # Audit log
+                        if audit:
+                            try:
+                                audit.log(customer_id, 'refund', 'bill', bill_id, {
+                                    'refund_id': refund_id,
+                                    'amount': refund_amount,
+                                    'reason': reason,
+                                    'destination': 'health_wallet'
+                                })
+                            except Exception:
+                                pass
+
+                        # Persist changes while holding lock to keep snapshot coherent.
+                        save_ledger_data()
 
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
