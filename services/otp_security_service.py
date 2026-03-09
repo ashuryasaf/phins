@@ -889,6 +889,7 @@ class OTPSecurityService:
         expected_user_id: Optional[str] = None,
         expected_email: Optional[str] = None,
         expected_purpose: Optional[OTPPurpose] = None,
+        expected_user_id: Optional[str] = None,
         ip_address: Optional[str] = None
     ) -> SecurityResult:
         """
@@ -918,7 +919,7 @@ class OTPSecurityService:
                     message="OTP verification is required before continuing"
                 )
 
-            if expected_user_id and verification.user_id != expected_user_id:
+            if expected_user_id and str(verification.user_id).strip() != str(expected_user_id).strip():
                 return SecurityResult(
                     success=False,
                     error_code="USER_MISMATCH",

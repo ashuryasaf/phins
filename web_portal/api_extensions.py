@@ -715,12 +715,50 @@ def handle_customer_verify_contact(
         return 400, {"success": False, "error": "channel must be 'email' or 'sms'"}
 
     expected_purpose = OTPPurpose.EMAIL_VERIFICATION if channel == 'email' else OTPPurpose.PHONE_VERIFICATION
+    contact_field = 'email' if channel == 'email' else 'phone'
+    expected_identifier = None
+
+    for store in [customers_store, registered_customers_store]:
+        if not store:
+            continue
+        customer = store.get(customer_id)
+        if not isinstance(customer, dict):
+            continue
+        raw_identifier = customer.get(contact_field)
+        if raw_identifier:
+            expected_identifier = str(raw_identifier).strip()
+            if channel == 'email':
+                expected_identifier = expected_identifier.lower()
+            break
+
+    if not expected_identifier:
+        try:
+            from database.manager import DatabaseManager
+            db_manager = DatabaseManager.get_instance()
+            if db_manager and db_manager.enabled:
+                from database.repositories.customer_repository import CustomerRepository
+                session = db_manager.get_session()
+                if session:
+                    try:
+                        repo = CustomerRepository(session)
+                        db_customer = repo.get_by_id(customer_id)
+                        if db_customer:
+                            raw_identifier = getattr(db_customer, contact_field, None)
+                            if raw_identifier:
+                                expected_identifier = str(raw_identifier).strip()
+                                if channel == 'email':
+                                    expected_identifier = expected_identifier.lower()
+                    finally:
+                        session.close()
+        except Exception:
+            expected_identifier = expected_identifier or None
 
     service = get_otp_security_service()
     consume_result = service.consume_verification(
         verification_id=verification_id,
-        expected_user_id=customer_id,
+        expected_email=expected_identifier,
         expected_purpose=expected_purpose,
+        expected_user_id=customer_id,
         ip_address=client_ip
     )
 

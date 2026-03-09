@@ -382,6 +382,41 @@ class TestHandleCustomerVerifyContact:
         assert data['phone_verified'] is True
         assert customers['CUST-VERIFY-02']['phone_verified'] is True
 
+    def test_reject_verification_for_different_customer(self):
+        from web_portal.api_extensions import handle_customer_verify_contact
+        svc = get_otp_security_service()
+        create = svc.create_otp_verification(
+            user_type='customer',
+            user_id='CUST-ATTACKER-01',
+            email='attacker@test.com',
+            purpose=OTPPurpose.EMAIL_VERIFICATION,
+        )
+        svc.verify_otp(
+            verification_id=create.verification_id,
+            otp_code=create.data['otp_code'],
+        )
+        customers = {
+            'CUST-VICTIM-01': {
+                'id': 'CUST-VICTIM-01',
+                'email': 'victim@test.com',
+                'email_verified': False,
+                'email_verified_at': None,
+            }
+        }
+        status, data = handle_customer_verify_contact(
+            client_ip='127.0.0.1',
+            body_data={
+                'verification_id': create.verification_id,
+                'customer_id': 'CUST-VICTIM-01',
+                'channel': 'email',
+            },
+            customers_store=customers,
+        )
+        assert status == 400
+        assert data['success'] is False
+        assert data['error_code'] in ('EMAIL_MISMATCH', 'USER_MISMATCH')
+        assert customers['CUST-VICTIM-01']['email_verified'] is False
+
     def test_reject_invalid_verification_id(self):
         from web_portal.api_extensions import handle_customer_verify_contact
         status, data = handle_customer_verify_contact(
