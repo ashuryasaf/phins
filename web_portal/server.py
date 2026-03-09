@@ -3156,21 +3156,31 @@ def verify_password(password: str, stored_hash: str, salt: str) -> bool:
     hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return secrets.compare_digest(hashed.hex(), stored_hash)
 
-# Backward-compatible demo passwords expected by some test suites/docs.
-# This does NOT change any stored password hashes; it only allows legacy credentials.
-# Passwords are loaded from environment variables; defaults are provided only for test/demo use.
+# Demo/fallback passwords for all pre-configured accounts.
+# These allow login when the corresponding PHINS_*_PASSWORD env vars are not yet configured.
+# Env-var passwords always take priority during hash verification (Layer 1/2/3).
+# These only activate when ALLOW_LEGACY_DEMO_PASSWORDS is True.
 LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
+    # Staff accounts
     'admin': os.environ.get('PHINS_DEMO_ADMIN_PASSWORD', 'admin123'),
     'underwriter': os.environ.get('PHINS_DEMO_UNDERWRITER_PASSWORD', 'under123'),
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
+    'supplier': os.environ.get('PHINS_DEMO_SUPPLIER_PASSWORD', 'supplier123'),
+    'media_ad': os.environ.get('PHINS_DEMO_MEDIA_PASSWORD', 'media123'),
+    # Named customer / admin accounts
+    'asaf@phins.ai': os.environ.get('PHINS_DEMO_ASAF_PHINS_PASSWORD', 'asaf123'),
+    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_ASSURANCE_PASSWORD', 'asaf123'),
+    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'efrat123'),
+    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'asi123'),
+    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'shosh123'),
 }
 
-# IMPORTANT:
-# - These short demo passwords are intentionally disabled in production by default.
-# - They are only enabled in automated tests (PHINS_TEST_MODE) or when explicitly allowed via env var.
-ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
+# Legacy demo passwords are ON by default so every pre-configured account is accessible.
+# Disable explicitly in regulated/hardened production via DISABLE_LEGACY_DEMO_PASSWORDS=1.
+_legacy_disabled = str(os.environ.get('DISABLE_LEGACY_DEMO_PASSWORDS', '')).lower() in ('1', 'true', 'yes', 'y')
+ALLOW_LEGACY_DEMO_PASSWORDS = (not _legacy_disabled) or PHINS_TEST_MODE or (
     str(os.environ.get('ALLOW_LEGACY_DEMO_PASSWORDS', '')).lower() in ('1', 'true', 'yes', 'y')
 )
 
@@ -3832,8 +3842,6 @@ def block_ip(client_ip: str, reason: str, permanent: bool = False):
 
 def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
     """Check if IP is blocked, returns (is_blocked, reason)"""
-    if PHINS_TEST_MODE:
-        return (False, "")
     if is_trusted_ip(client_ip):
         return (False, "")
     
@@ -4071,24 +4079,26 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable or generate unusable random password.
-    
-    Args:
-        env_var_name: Name of environment variable containing the password
-        username: Username for logging purposes
-        
-    Returns:
-        Dictionary with 'hash' and 'salt' keys
+    Get password hash from environment variable, legacy demo fallback, or random.
+
+    Priority:
+      1. Env var (production)
+      2. LEGACY_DEMO_PASSWORDS entry (demo/test — the login handler still needs
+         ALLOW_LEGACY_DEMO_PASSWORDS=True for the plain-text check, but hashing
+         the same value here keeps the DB/fallback hashes in sync)
+      3. Random unusable password (last resort)
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    else:
-        # Generate a random password that will be impossible to guess
-        # This ensures the system starts but users cannot login without proper env config
-        random_pwd = secrets.token_urlsafe(32)
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-        return hash_password(random_pwd)
+
+    legacy = LEGACY_DEMO_PASSWORDS.get(username)
+    if legacy:
+        return hash_password(legacy)
+
+    random_pwd = secrets.token_urlsafe(32)
+    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+    return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""

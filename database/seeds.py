@@ -39,23 +39,29 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
+_SEED_DEMO_PASSWORDS: dict = {
+    'admin': 'admin123', 'underwriter': 'under123',
+    'claims_adjuster': 'claims123', 'accountant': 'acct123',
+    'actuary': 'actuary123', 'supplier': 'supplier123', 'media_ad': 'media123',
+    'asaf@phins.ai': 'asaf123', 'asaf@assurance.co.il': 'asaf123',
+    'efrat@phins.ai': 'efrat123', 'asi@phins.ai': 'asi123', 'shosh@phins.ai': 'shosh123',
+}
+
+
 def _get_env_password(env_var: str, username: str) -> str:
     """
-    Get password from environment variable or generate random unusable password.
-    
-    Args:
-        env_var: Environment variable name
-        username: Username for logging
-        
-    Returns:
-        Password string from env var or random password
+    Get password from environment variable, demo fallback, or random.
+
+    Priority: env var > demo password > random unusable.
     """
     password = os.environ.get(env_var)
     if password:
         return password
-    else:
-        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
-        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
+    demo = _SEED_DEMO_PASSWORDS.get(username)
+    if demo:
+        return demo
+    logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+    return secrets.token_urlsafe(32)
 
 
 def seed_default_users(session=None):
