@@ -25388,6 +25388,7 @@ For claims or questions, please contact:
                                 pass
 
                         # Persist changes while holding lock to keep snapshot coherent.
+                        response_bill_status = bill.get('status')
                         save_ledger_data()
 
                     self._set_json_headers(200)
@@ -25402,7 +25403,7 @@ For claims or questions, please contact:
                         'wallet_tx_id': wallet_tx['id'],
                         'ledger_tx_id': refund_tx.get('id'),
                         'nft_token_id': refund_tx.get('nft_token_id'),
-                        'bill_status': bill['status'],
+                        'bill_status': response_bill_status,
                         'message': f'Refund of ${refund_amount:.2f} processed and deposited to your health wallet'
                     }, default=str).encode('utf-8'))
                 except Exception as e:
