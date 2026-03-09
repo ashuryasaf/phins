@@ -889,7 +889,6 @@ class OTPSecurityService:
         expected_user_id: Optional[str] = None,
         expected_email: Optional[str] = None,
         expected_purpose: Optional[OTPPurpose] = None,
-        expected_user_id: Optional[str] = None,
         ip_address: Optional[str] = None
     ) -> SecurityResult:
         """
