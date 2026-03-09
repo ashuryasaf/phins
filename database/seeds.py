@@ -165,13 +165,23 @@ def seed_default_users(session=None):
             # Check if user already exists
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
-                # Update role if it has changed (important for role changes like media_ad)
+                needs_commit = False
+
+                # Always sync password hash from env var so DB stays current
+                password_data = hash_password(user_data['password'])
+                existing_user.password_hash = password_data['hash']
+                existing_user.password_salt = password_data['salt']
+                needs_commit = True
+
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
+
+                if not existing_user.active:
+                    existing_user.active = True
+
+                if needs_commit:
                     session.commit()
-                    logger.info(f"Updated user '{user_data['username']}' role to: {user_data['role']}")
-                else:
-                    logger.info(f"User '{user_data['username']}' already exists with correct role, skipping...")
+                    logger.info(f"Synced credentials for user '{user_data['username']}' (role={user_data['role']})")
                 continue
             
             # Hash password
@@ -612,7 +622,14 @@ def seed_sample_data(session=None):
                 except Exception as e:
                     logger.warning(f"Could not create underwriting application for primary customer: {e}")
         else:
-            logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
+            # Sync credentials for existing primary customer so login stays current
+            pwd = hash_password(_get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'))
+            primary_customer.password_hash = pwd['hash']
+            primary_customer.password_salt = pwd['salt']
+            if not primary_customer.portal_active:
+                primary_customer.portal_active = True
+            session.commit()
+            logger.info(f"Synced credentials for primary customer {primary_customer.email}")
         
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
@@ -735,7 +752,14 @@ def seed_sample_data(session=None):
         for phins_cust in phins_customers:
             existing = customer_repo.find_one_by(email=phins_cust['email'])
             if existing:
-                logger.info(f"PHINS customer {phins_cust['email']} already exists, syncing to memory...")
+                # Always sync password from env var so returning customers can log in
+                pwd = hash_password(phins_cust['password'])
+                existing.password_hash = pwd['hash']
+                existing.password_salt = pwd['salt']
+                if not existing.portal_active:
+                    existing.portal_active = True
+                session.commit()
+                logger.info(f"Synced credentials for PHINS customer {phins_cust['email']}")
             else:
                 pwd = hash_password(phins_cust['password'])
                 customer = customer_repo.create(

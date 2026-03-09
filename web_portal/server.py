@@ -4119,21 +4119,31 @@ if USE_DATABASE and database_enabled:
                 with DatabaseManager() as db:
                     user = db.users.get_by_username(username)
                     if user:
+                        if not getattr(user, 'active', True):
+                            print(f"[AUTH] User '{username}' exists but is inactive")
+                            return default
+
+                        stored_hash = user.password_hash or ''
+                        stored_salt = user.password_salt or ''
+
                         # Get customer_id - either from user record or by looking up by email
                         customer_id = getattr(user, 'customer_id', None)
                         if not customer_id and user.role == 'customer':
-                            # Try to find customer by email using repository
                             customer = db.customers.get_by_email(username)
                             if customer:
                                 customer_id = customer.id
-                        
-                        return {
-                            'hash': user.password_hash,
-                            'salt': user.password_salt,
-                            'role': user.role,
-                            'name': user.name,
-                            'customer_id': customer_id
-                        }
+
+                        if stored_hash and stored_salt:
+                            return {
+                                'hash': stored_hash,
+                                'salt': stored_salt,
+                                'role': user.role,
+                                'name': user.name,
+                                'customer_id': customer_id
+                            }
+
+                        # DB user has empty credentials — fall through to fallback
+                        print(f"[AUTH] DB user '{username}' has empty credentials, trying fallback")
             except ImportError as e:
                 print(f"Warning: Database module not available: {e}")
             except Exception as e:
@@ -17761,25 +17771,35 @@ For claims or questions, please contact:
                         
                         if db_healthy:
                             with DatabaseManager() as db:
-                                # Use repository method to get customer by email
                                 customer = db.customers.get_by_email(username.lower())
-                                if customer and getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
-                                    if verify_password(password, customer.password_hash, customer.password_salt):
-                                        user = {
-                                            'hash': customer.password_hash,
-                                            'salt': customer.password_salt,
-                                            'role': 'customer',
-                                            'name': customer.name
-                                        }
-                                        customer_id = customer.id
-                                        role = 'customer'
-                                        name = customer.name
-                                        # Update last login
-                                        try:
-                                            db.customers.update_last_login(customer.id)
-                                            db.commit()
-                                        except Exception:
-                                            pass  # Non-critical
+                                if customer:
+                                    if not getattr(customer, 'portal_active', True):
+                                        print(f"[AUTH] Customer '{username}' portal access is deactivated")
+                                    elif getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
+                                        if verify_password(password, customer.password_hash, customer.password_salt):
+                                            user = {
+                                                'hash': customer.password_hash,
+                                                'salt': customer.password_salt,
+                                                'role': 'customer',
+                                                'name': customer.name
+                                            }
+                                            customer_id = customer.id
+                                            role = 'customer'
+                                            name = customer.name
+                                            try:
+                                                db.customers.update_last_login(customer.id)
+                                                db.commit()
+                                            except Exception:
+                                                pass
+                                            # Sync to in-memory CUSTOMERS for pipeline data retrieval
+                                            if customer.id not in CUSTOMERS:
+                                                try:
+                                                    cust_dict = customer.to_dict() if hasattr(customer, 'to_dict') else {}
+                                                    if cust_dict:
+                                                        CUSTOMERS[customer.id] = cust_dict
+                                                        print(f"[AUTH] Synced customer {customer.id} to in-memory store")
+                                                except Exception:
+                                                    pass
                     except (OperationalError, DatabaseError, DisconnectionError) as db_err:
                         print(f"[AUTH] Database connection error during customer auth: {db_err}")
                         # Attempt reconnection for future requests
