@@ -719,6 +719,7 @@ def handle_customer_verify_contact(
     service = get_otp_security_service()
     consume_result = service.consume_verification(
         verification_id=verification_id,
+        expected_user_id=customer_id,
         expected_purpose=expected_purpose,
         ip_address=client_ip
     )

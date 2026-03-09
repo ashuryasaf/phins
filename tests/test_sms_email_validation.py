@@ -195,6 +195,25 @@ class TestOTPEmailVerification:
         assert second.success is False
         assert second.error_code == 'OTP_ALREADY_USED'
 
+    def test_consume_verification_rejects_user_mismatch(self):
+        svc = get_otp_security_service()
+        create = svc.create_otp_verification(
+            user_type='customer',
+            user_id='CUST-006',
+            email='user6@example.com',
+            purpose=OTPPurpose.EMAIL_VERIFICATION,
+        )
+        otp_code = create.data['otp_code']
+        svc.verify_otp(verification_id=create.verification_id, otp_code=otp_code)
+
+        consume = svc.consume_verification(
+            verification_id=create.verification_id,
+            expected_user_id='CUST-999',
+            expected_purpose=OTPPurpose.EMAIL_VERIFICATION,
+        )
+        assert consume.success is False
+        assert consume.error_code == 'USER_MISMATCH'
+
 
 # ============================================================================
 # OTP SERVICE - PHONE / SMS CHANNEL
@@ -287,11 +306,16 @@ class TestHandleOTPRequestMultiChannel:
 class TestHandleCustomerVerifyContact:
     """Test POST /api/customer/verify-contact handler."""
 
-    def _verified_verification_id(self, purpose=OTPPurpose.EMAIL_VERIFICATION, identifier='verify@test.com'):
+    def _verified_verification_id(
+        self,
+        purpose=OTPPurpose.EMAIL_VERIFICATION,
+        identifier='verify@test.com',
+        user_id='CUST-VERIFY-01'
+    ):
         svc = get_otp_security_service()
         create = svc.create_otp_verification(
             user_type='customer',
-            user_id='CUST-VERIFY-01',
+            user_id=user_id,
             email=identifier,
             purpose=purpose,
         )
@@ -332,7 +356,8 @@ class TestHandleCustomerVerifyContact:
         from web_portal.api_extensions import handle_customer_verify_contact
         vid = self._verified_verification_id(
             purpose=OTPPurpose.PHONE_VERIFICATION,
-            identifier='+15559990099'
+            identifier='+15559990099',
+            user_id='CUST-VERIFY-02'
         )
         customers = {
             'CUST-VERIFY-02': {
@@ -369,6 +394,38 @@ class TestHandleCustomerVerifyContact:
         )
         assert status == 400
         assert data['success'] is False
+
+    def test_reject_cross_customer_verification_token(self):
+        from web_portal.api_extensions import handle_customer_verify_contact
+        vid = self._verified_verification_id()
+        customers = {
+            'CUST-VERIFY-01': {
+                'id': 'CUST-VERIFY-01',
+                'email': 'verify@test.com',
+                'email_verified': False,
+                'email_verified_at': None,
+            },
+            'CUST-VERIFY-99': {
+                'id': 'CUST-VERIFY-99',
+                'email': 'victim@test.com',
+                'email_verified': False,
+                'email_verified_at': None,
+            }
+        }
+
+        status, data = handle_customer_verify_contact(
+            client_ip='127.0.0.1',
+            body_data={
+                'verification_id': vid,
+                'customer_id': 'CUST-VERIFY-99',
+                'channel': 'email',
+            },
+            customers_store=customers,
+        )
+        assert status == 400
+        assert data['success'] is False
+        assert data['error_code'] == 'USER_MISMATCH'
+        assert customers['CUST-VERIFY-99']['email_verified'] is False
 
     def test_reject_missing_fields(self):
         from web_portal.api_extensions import handle_customer_verify_contact

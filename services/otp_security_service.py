@@ -886,6 +886,7 @@ class OTPSecurityService:
     def consume_verification(
         self,
         verification_id: str,
+        expected_user_id: Optional[str] = None,
         expected_email: Optional[str] = None,
         expected_purpose: Optional[OTPPurpose] = None,
         ip_address: Optional[str] = None
@@ -915,6 +916,13 @@ class OTPSecurityService:
                     success=False,
                     error_code="OTP_NOT_VERIFIED",
                     message="OTP verification is required before continuing"
+                )
+
+            if expected_user_id and verification.user_id != expected_user_id:
+                return SecurityResult(
+                    success=False,
+                    error_code="USER_MISMATCH",
+                    message="Verified OTP does not belong to this user"
                 )
 
             if expected_email and verification.email.lower() != expected_email.lower():
