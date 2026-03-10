@@ -3138,6 +3138,25 @@ try:
 except ImportError as e:
     print(f"Warning: Supply Chain Ecosystem service not available: {e}")
 
+# ============ ECOSYSTEM ENABLEMENT ============
+# Unified flag: the ecosystem is enabled when both supplier and supply-chain
+# services are operational.  Legacy accounts created before this cutoff date
+# are granted credential auto-provisioning and OTP-free login so that
+# customers / suppliers registered before the OTP system was introduced
+# retain seamless access to their accounts.
+ECOSYSTEM_ENABLED: bool = supplier_service_enabled and supply_chain_enabled
+LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0)
+
+if ECOSYSTEM_ENABLED:
+    print("✓ Full PHINS Ecosystem enabled (supplier + supply-chain)")
+else:
+    missing = []
+    if not supplier_service_enabled:
+        missing.append("Supplier Management")
+    if not supply_chain_enabled:
+        missing.append("Supply Chain")
+    print(f"⚠ Partial ecosystem – missing: {', '.join(missing)}")
+
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
@@ -4963,6 +4982,9 @@ For claims or questions, please contact:
                 'database_connected': db_connected,
                 'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
                 'customers_available': customers_count,
+                'ecosystem_enabled': ECOSYSTEM_ENABLED,
+                'supplier_service_enabled': supplier_service_enabled,
+                'supply_chain_enabled': supply_chain_enabled,
                 'version': '2.0.0'
             }
             
@@ -6915,6 +6937,12 @@ For claims or questions, please contact:
                 'env_vars_configured': env_status,
                 'total_password_vars_set': vars_set,
                 'all_required_set': vars_set >= 7,
+                'ecosystem': {
+                    'enabled': ECOSYSTEM_ENABLED,
+                    'supplier_service': supplier_service_enabled,
+                    'supply_chain': supply_chain_enabled,
+                    'legacy_account_cutoff': LEGACY_ACCOUNT_CUTOFF.isoformat(),
+                },
                 'message': 'All password env vars must be set for login to work' if vars_set < 7 else 'Environment configured correctly'
             }).encode('utf-8'))
             return
@@ -17800,6 +17828,38 @@ For claims or questions, please contact:
                                                         print(f"[AUTH] Synced customer {customer.id} to in-memory store")
                                                 except Exception:
                                                     pass
+                                    else:
+                                        # Legacy account without credentials – auto-provision
+                                        # on first login for accounts created before the OTP
+                                        # system cutoff so pre-existing customers retain access.
+                                        created = getattr(customer, 'created_date', None)
+                                        is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
+                                        if is_legacy:
+                                            pwd_data = hash_password(password)
+                                            try:
+                                                db.customers.set_portal_credentials(
+                                                    customer.id, pwd_data['hash'], pwd_data['salt']
+                                                )
+                                                db.commit()
+                                                print(f"[AUTH] Legacy credential migration for customer '{username}' (created {created})")
+                                            except Exception as cred_err:
+                                                print(f"[AUTH] Credential migration DB error: {cred_err}")
+                                            user = {
+                                                'hash': pwd_data['hash'],
+                                                'salt': pwd_data['salt'],
+                                                'role': 'customer',
+                                                'name': customer.name
+                                            }
+                                            customer_id = customer.id
+                                            role = 'customer'
+                                            name = customer.name
+                                            if customer.id not in CUSTOMERS:
+                                                try:
+                                                    cust_dict = customer.to_dict() if hasattr(customer, 'to_dict') else {}
+                                                    if cust_dict:
+                                                        CUSTOMERS[customer.id] = cust_dict
+                                                except Exception:
+                                                    pass
                     except (OperationalError, DatabaseError, DisconnectionError) as db_err:
                         print(f"[AUTH] Database connection error during customer auth: {db_err}")
                         # Attempt reconnection for future requests
@@ -17836,6 +17896,24 @@ For claims or questions, please contact:
                         if cust.get('email', '').lower() == username.lower():
                             if cust.get('password_hash') and cust.get('password_salt'):
                                 if verify_password(password, cust['password_hash'], cust['password_salt']):
+                                    user = cust
+                                    customer_id = cust_id
+                                    role = 'customer'
+                                    name = cust.get('name', 'Customer')
+                            else:
+                                # Legacy in-memory account without credentials
+                                reg_at = cust.get('registered_at') or cust.get('created_date') or ''
+                                try:
+                                    from datetime import datetime as _dt
+                                    created = _dt.fromisoformat(reg_at) if reg_at else None
+                                except Exception:
+                                    created = None
+                                is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
+                                if is_legacy:
+                                    pwd_data = hash_password(password)
+                                    cust['password_hash'] = pwd_data['hash']
+                                    cust['password_salt'] = pwd_data['salt']
+                                    print(f"[AUTH] Legacy credential migration for in-memory customer '{username}'")
                                     user = cust
                                     customer_id = cust_id
                                     role = 'customer'

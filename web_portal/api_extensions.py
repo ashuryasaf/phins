@@ -889,6 +889,17 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     user_id = body_data.get('user_id', '')
     email = body_data.get('email', '')
     device_fingerprint = body_data.get('device_fingerprint')
+
+    # Resolve the account creation date so the OTP service can exempt
+    # legacy accounts (created before the cutoff) from OTP requirements.
+    account_created_at = None
+    raw_date = body_data.get('account_created_at')
+    if raw_date:
+        try:
+            from datetime import datetime as _dt
+            account_created_at = _dt.fromisoformat(raw_date)
+        except Exception:
+            pass
     
     result = service.check_login_requirements(
         user_type=user_type,
@@ -896,7 +907,8 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
         email=email,
         ip_address=client_ip,
         user_agent=user_agent,
-        device_fingerprint=device_fingerprint
+        device_fingerprint=device_fingerprint,
+        account_created_at=account_created_at
     )
     
     return 200, result.to_dict()
