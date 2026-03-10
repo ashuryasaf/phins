@@ -17833,7 +17833,7 @@ For claims or questions, please contact:
                                         # on first login for accounts created before the OTP
                                         # system cutoff so pre-existing customers retain access.
                                         created = getattr(customer, 'created_date', None)
-                                        is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
+                                        is_legacy = (created is not None and created < LEGACY_ACCOUNT_CUTOFF)
                                         if is_legacy:
                                             pwd_data = hash_password(password)
                                             try:
@@ -17908,7 +17908,7 @@ For claims or questions, please contact:
                                     created = _dt.fromisoformat(reg_at) if reg_at else None
                                 except Exception:
                                     created = None
-                                is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
+                                is_legacy = (created is not None and created < LEGACY_ACCOUNT_CUTOFF)
                                 if is_legacy:
                                     pwd_data = hash_password(password)
                                     cust['password_hash'] = pwd_data['hash']

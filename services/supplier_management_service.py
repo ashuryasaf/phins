@@ -610,7 +610,7 @@ class SupplierManagementService:
                 created = datetime.fromisoformat(created_raw).replace(tzinfo=timezone.utc) if created_raw else None
             except Exception:
                 created = None
-            is_legacy = (created is None or created < self.LEGACY_ACCOUNT_CUTOFF)
+            is_legacy = (created is not None and created < self.LEGACY_ACCOUNT_CUTOFF)
             if not is_legacy:
                 raise ValueError("Invalid email or password")
             pw_hash, pw_salt = self.hash_password(password)
@@ -629,7 +629,7 @@ class SupplierManagementService:
                 created = datetime.fromisoformat(created_raw).replace(tzinfo=timezone.utc) if created_raw else None
             except Exception:
                 created = None
-            is_legacy = (created is None or created < self.LEGACY_ACCOUNT_CUTOFF)
+            is_legacy = (created is not None and created < self.LEGACY_ACCOUNT_CUTOFF)
             if is_legacy:
                 supplier['portal_active'] = True
                 print(f"[SUPPLIER-AUTH] Auto-activated portal for legacy supplier '{email}'")
