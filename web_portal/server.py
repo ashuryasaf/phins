@@ -15,7 +15,7 @@ import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import uuid
 import hashlib
@@ -1695,40 +1695,64 @@ def load_dynamic_customers():
             if not email:
                 continue
             
-            # Skip if already exists
-            if email in USERS:
-                continue
-            
-            # SECURITY: Check if password is already hashed (new secure format)
+            def _is_valid_hex_hash(value: str) -> bool:
+                """Return True when *value* looks like a real PBKDF2 hex digest."""
+                if not value or not isinstance(value, str):
+                    return False
+                placeholder = value.strip().upper()
+                if placeholder in ('REDACTED', 'NONE', 'NULL', ''):
+                    return False
+                try:
+                    bytes.fromhex(value)
+                    return len(value) >= 32
+                except ValueError:
+                    return False
+
+            pwd_hash: str | None = None
+            pwd_salt: str | None = None
+
             if 'password_hash' in customer and 'password_salt' in customer:
-                # New format: pre-hashed password
-                pwd_hash = customer['password_hash']
-                pwd_salt = customer['password_salt']
-            elif 'password' in customer:
-                # LEGACY: Plain-text password (migrate and hash)
-                # SECURITY: Default password from env var, or generate random unusable password
-                default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
-                pwd_data = hash_password(customer.get('password', default_pwd))
-                pwd_hash = pwd_data['hash']
-                pwd_salt = pwd_data['salt']
-                legacy_count += 1
-            else:
-                # No password at all - generate unusable random password
-                pwd_data = hash_password(secrets.token_urlsafe(32))
-                pwd_hash = pwd_data['hash']
-                pwd_salt = pwd_data['salt']
-            
-            USERS[email] = {
+                raw_hash = customer['password_hash']
+                raw_salt = customer['password_salt']
+                if _is_valid_hex_hash(raw_hash) and _is_valid_hex_hash(raw_salt):
+                    pwd_hash = raw_hash
+                    pwd_salt = raw_salt
+                else:
+                    print(f"[DYNAMIC] Skipping invalid/redacted credentials for '{email}'")
+
+            if pwd_hash is None:
+                if 'password' in customer:
+                    default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+                    pwd_data = hash_password(customer.get('password', default_pwd))
+                    pwd_hash = pwd_data['hash']
+                    pwd_salt = pwd_data['salt']
+                    legacy_count += 1
+                else:
+                    pwd_data = hash_password(secrets.token_urlsafe(32))
+                    pwd_hash = pwd_data['hash']
+                    pwd_salt = pwd_data['salt']
+
+            user_entry = {
                 'hash': pwd_hash,
                 'salt': pwd_salt,
                 'role': 'customer',
                 'name': customer.get('name', email),
                 'customer_id': customer.get('customer_id', f"CUST-{email}")
             }
+
+            if email in USERS:
+                if _is_valid_hex_hash(pwd_hash):
+                    existing = USERS.get(email) if hasattr(USERS, 'get') else USERS[email] if isinstance(USERS, dict) else None
+                    if existing and not _is_valid_hex_hash(existing.get('hash', '')):
+                        USERS[email] = user_entry
+                    else:
+                        USERS[email] = user_entry
+                continue
             
-            # Also add to CUSTOMERS if customer_id is present
+            USERS[email] = user_entry
+            
             customer_id = customer.get('customer_id')
-            if customer_id and customer_id not in CUSTOMERS:
+            if customer_id:
                 CUSTOMERS[customer_id] = {
                     'id': customer_id,
                     'name': customer.get('name', email),
@@ -3145,7 +3169,7 @@ except ImportError as e:
 # customers / suppliers registered before the OTP system was introduced
 # retain seamless access to their accounts.
 ECOSYSTEM_ENABLED: bool = supplier_service_enabled and supply_chain_enabled
-LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0)
+LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
 
 if ECOSYSTEM_ENABLED:
     print("✓ Full PHINS Ecosystem enabled (supplier + supply-chain)")
@@ -17801,7 +17825,7 @@ For claims or questions, please contact:
                             with DatabaseManager() as db:
                                 customer = db.customers.get_by_email(username.lower())
                                 if customer:
-                                    if not getattr(customer, 'portal_active', True):
+                                    if getattr(customer, 'portal_active', True) is False:
                                         print(f"[AUTH] Customer '{username}' portal access is deactivated")
                                     elif getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
                                         if verify_password(password, customer.password_hash, customer.password_salt):
@@ -17833,6 +17857,8 @@ For claims or questions, please contact:
                                         # on first login for accounts created before the OTP
                                         # system cutoff so pre-existing customers retain access.
                                         created = getattr(customer, 'created_date', None)
+                                        if created is not None and created.tzinfo is None:
+                                            created = created.replace(tzinfo=timezone.utc)
                                         is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
                                         if is_legacy:
                                             pwd_data = hash_password(password)
@@ -17853,6 +17879,16 @@ For claims or questions, please contact:
                                             customer_id = customer.id
                                             role = 'customer'
                                             name = customer.name
+                                            try:
+                                                USERS[username] = {
+                                                    'hash': pwd_data['hash'],
+                                                    'salt': pwd_data['salt'],
+                                                    'role': 'customer',
+                                                    'name': customer.name,
+                                                    'customer_id': customer.id
+                                                }
+                                            except Exception:
+                                                pass
                                             if customer.id not in CUSTOMERS:
                                                 try:
                                                     cust_dict = customer.to_dict() if hasattr(customer, 'to_dict') else {}
@@ -17904,10 +17940,11 @@ For claims or questions, please contact:
                                 # Legacy in-memory account without credentials
                                 reg_at = cust.get('registered_at') or cust.get('created_date') or ''
                                 try:
-                                    from datetime import datetime as _dt
-                                    created = _dt.fromisoformat(reg_at) if reg_at else None
+                                    created = datetime.fromisoformat(reg_at) if reg_at else None
                                 except Exception:
                                     created = None
+                                if created is not None and created.tzinfo is None:
+                                    created = created.replace(tzinfo=timezone.utc)
                                 is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
                                 if is_legacy:
                                     pwd_data = hash_password(password)
@@ -17918,6 +17955,16 @@ For claims or questions, please contact:
                                     customer_id = cust_id
                                     role = 'customer'
                                     name = cust.get('name', 'Customer')
+                                    try:
+                                        USERS[username] = {
+                                            'hash': pwd_data['hash'],
+                                            'salt': pwd_data['salt'],
+                                            'role': 'customer',
+                                            'name': name,
+                                            'customer_id': cust_id
+                                        }
+                                    except Exception:
+                                        pass
                             break
                 
                 if user:

@@ -1,19 +1,5 @@
 [
   {
-    "customer_id": "12345",
-    "name": "John Doe",
-    "email": "john.doe@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED"
-  },
-  {
-    "customer_id": "67890",
-    "name": "Jane Smith",
-    "email": "jane.smith@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED"
-  },
-  {
     "username": "newcustomer@example.com",
     "password_hash": "340617f5ca5f440745254d2eeaa1e31616adb068978f8888906e9fe8d18693b3",
     "password_salt": "1dfd70eee8b15ca164e1d29d38a86562",

@@ -890,14 +890,35 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     email = body_data.get('email', '')
     device_fingerprint = body_data.get('device_fingerprint')
 
-    # Resolve the account creation date so the OTP service can exempt
-    # legacy accounts (created before the cutoff) from OTP requirements.
+    # Resolve account creation date SERVER-SIDE to prevent OTP bypass.
+    # Never trust client-provided dates for security-critical decisions.
     account_created_at = None
-    raw_date = body_data.get('account_created_at')
-    if raw_date:
+    if email:
         try:
-            from datetime import datetime as _dt
-            account_created_at = _dt.fromisoformat(raw_date)
+            from datetime import datetime as _dt, timezone as _tz
+            import os as _os
+            if _os.environ.get('USE_DATABASE', '').lower() in ('1', 'true', 'yes'):
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as _db:
+                        _cust = _db.customers.get_by_email(email.lower())
+                        if _cust and getattr(_cust, 'created_date', None):
+                            account_created_at = _cust.created_date
+                            if account_created_at.tzinfo is None:
+                                account_created_at = account_created_at.replace(tzinfo=_tz.utc)
+                except Exception:
+                    pass
+            if account_created_at is None:
+                import web_portal.server as _srv
+                for _cid, _cd in getattr(_srv, 'CUSTOMERS', {}).items():
+                    if (_cd.get('email', '') or '').lower() == email.lower():
+                        _raw = _cd.get('created_date') or _cd.get('registered_at') or ''
+                        if _raw:
+                            _parsed = _dt.fromisoformat(_raw)
+                            if _parsed.tzinfo is None:
+                                _parsed = _parsed.replace(tzinfo=_tz.utc)
+                            account_created_at = _parsed
+                        break
         except Exception:
             pass
     
