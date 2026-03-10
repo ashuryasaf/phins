@@ -4119,9 +4119,19 @@ def validate_amount(amount: Any) -> bool:
 # Pre-established customer accounts with default passwords.
 # In production, override via the corresponding environment variable.
 _PRE_ESTABLISHED_ACCOUNT_DEFAULTS: Dict[str, str] = {
+    'PHINS_ADMIN_PASSWORD': 'admin123',
+    'PHINS_UNDERWRITER_PASSWORD': 'under123',
+    'PHINS_CLAIMS_PASSWORD': 'claims123',
+    'PHINS_ACCOUNTANT_PASSWORD': 'acct123',
+    'PHINS_ACTUARY_PASSWORD': 'actuary123',
+    'PHINS_SUPPLIER_PASSWORD': 'supplier123',
+    'PHINS_MEDIA_PASSWORD': 'media123',
     'PHINS_USER_ASAF_ASSURANCE_PASSWORD': 'Asaf2026!Assurance',
+    'PHINS_USER_ASAF_PHINS_PASSWORD': 'Asaf2026!Phins',
     'PHINS_USER_SHOSH_PASSWORD': 'Shosh2026!Phins',
     'PHINS_USER_EFRAT_PASSWORD': 'Efrat2026!Phins',
+    'PHINS_USER_ASI_PASSWORD': 'Asi2026!Phins',
+    'PHINS_USER_KAYLA_PASSWORD': 'Kayla2026!Phins',
 }
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
@@ -4163,7 +4173,8 @@ def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
         'asaf@assurance.co.il': {**_get_secure_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
         'efrat@phins.ai': {**_get_secure_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
         'asi@phins.ai': {**_get_secure_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
-        'shosh@phins.ai': {**_get_secure_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
+        'shosh@phins.ai': {**_get_secure_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'},
+        'kayla@phins.ai': {**_get_secure_password('PHINS_USER_KAYLA_PASSWORD', 'kayla@phins.ai'), 'role': 'customer', 'name': 'Kayla PHINS', 'customer_id': 'CUST-KAYLA-001'},
     }
 
 # Fallback in-memory users (always available for admin access)
@@ -32995,6 +33006,7 @@ def run_server(port: int = PORT) -> None:
                         {'username': 'asi@phins.ai', 'password': _resolve_password('PHINS_USER_ASI_PASSWORD'), 'role': 'customer', 'name': 'Asi PHINS'},
                         {'username': 'shosh@phins.ai', 'password': _resolve_password('PHINS_USER_SHOSH_PASSWORD'), 'role': 'customer', 'name': 'Shosh PHINS'},
                         {'username': 'efrat@phins.ai', 'password': _resolve_password('PHINS_USER_EFRAT_PASSWORD'), 'role': 'customer', 'name': 'Efrat PHINS'},
+                        {'username': 'kayla@phins.ai', 'password': _resolve_password('PHINS_USER_KAYLA_PASSWORD'), 'role': 'customer', 'name': 'Kayla PHINS'},
                     ]
                     
                     for user_data in ensure_users:
@@ -34123,6 +34135,20 @@ def run_server(port: int = PORT) -> None:
                 'age': 35,
                 'gender': 'female',
                 'occupation': 'Product Manager',
+                'email_verified': True,
+                'email_verified_at': _integrity_ts,
+                'phone_verified': False,
+                'phone_verified_at': None,
+            },
+            {
+                'id': 'CUST-KAYLA-001',
+                'name': 'Kayla PHINS',
+                'email': 'kayla@phins.ai',
+                'phone': '+972-50-3334444',
+                'date_of_birth': '1992-11-20',
+                'age': 33,
+                'gender': 'female',
+                'occupation': 'Financial Analyst',
                 'email_verified': True,
                 'email_verified_at': _integrity_ts,
                 'phone_verified': False,

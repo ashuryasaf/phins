@@ -40,9 +40,19 @@ def hash_password(password: str) -> dict:
 
 
 _PRE_ESTABLISHED_ACCOUNT_DEFAULTS: dict = {
+    'PHINS_ADMIN_PASSWORD': 'admin123',
+    'PHINS_UNDERWRITER_PASSWORD': 'under123',
+    'PHINS_CLAIMS_PASSWORD': 'claims123',
+    'PHINS_ACCOUNTANT_PASSWORD': 'acct123',
+    'PHINS_ACTUARY_PASSWORD': 'actuary123',
+    'PHINS_SUPPLIER_PASSWORD': 'supplier123',
+    'PHINS_MEDIA_PASSWORD': 'media123',
     'PHINS_USER_ASAF_ASSURANCE_PASSWORD': 'Asaf2026!Assurance',
+    'PHINS_USER_ASAF_PHINS_PASSWORD': 'Asaf2026!Phins',
     'PHINS_USER_SHOSH_PASSWORD': 'Shosh2026!Phins',
     'PHINS_USER_EFRAT_PASSWORD': 'Efrat2026!Phins',
+    'PHINS_USER_ASI_PASSWORD': 'Asi2026!Phins',
+    'PHINS_USER_KAYLA_PASSWORD': 'Kayla2026!Phins',
 }
 
 def _get_env_password(env_var: str, username: str) -> str:
@@ -169,6 +179,14 @@ def seed_default_users(session=None):
                 'role': 'customer',
                 'name': 'Shosh PHINS',
                 'email': 'shosh@phins.ai'
+            },
+            # Customer account for kayla@phins.ai - PERSISTENT ACCOUNT
+            {
+                'username': 'kayla@phins.ai',
+                'password': _get_env_password('PHINS_USER_KAYLA_PASSWORD', 'kayla@phins.ai'),
+                'role': 'customer',
+                'name': 'Kayla PHINS',
+                'email': 'kayla@phins.ai'
             }
         ]
         
