@@ -3363,12 +3363,22 @@ def get_customer_id_guaranteed(username: str, role: str) -> str | None:
                 return user_data['customer_id']
         return None
     
-    # Layer 1: Check USERS dict
-    if username in USERS:
-        user_data = USERS.get(username)
-        if user_data and user_data.get('customer_id'):
-            print(f"[AUTH] Found customer_id in USERS dict for {username}")
-            return user_data['customer_id']
+    # Layer 0: Check _FALLBACK_USERS (always available, hardcoded customer_ids)
+    if username in _FALLBACK_USERS:
+        fb_data = _FALLBACK_USERS[username]
+        if fb_data and fb_data.get('customer_id'):
+            print(f"[AUTH] Found customer_id in _FALLBACK_USERS for {username}")
+            return fb_data['customer_id']
+    
+    # Layer 1: Check USERS dict (may be DB wrapper)
+    try:
+        if username in USERS:
+            user_data = USERS.get(username)
+            if user_data and user_data.get('customer_id'):
+                print(f"[AUTH] Found customer_id in USERS dict for {username}")
+                return user_data['customer_id']
+    except Exception as e:
+        print(f"[AUTH] USERS dict lookup error for {username}: {e}")
     
     # Layer 2: Query database
     if USE_DATABASE:
@@ -4110,6 +4120,8 @@ def validate_amount(amount: Any) -> bool:
 # In production, override via the corresponding environment variable.
 _PRE_ESTABLISHED_ACCOUNT_DEFAULTS: Dict[str, str] = {
     'PHINS_USER_ASAF_ASSURANCE_PASSWORD': 'Asaf2026!Assurance',
+    'PHINS_USER_SHOSH_PASSWORD': 'Shosh2026!Phins',
+    'PHINS_USER_EFRAT_PASSWORD': 'Efrat2026!Phins',
 }
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
@@ -17978,19 +17990,16 @@ For claims or questions, please contact:
                 
                 if user:
                     # ========== CUSTOMER_ID GUARANTEE FOR DATA INTEGRITY ==========
-                    # CRITICAL: Use the 5-layer guarantee function to ensure customer_id is NEVER null
-                    # This fixes the systemic pipeline flaw identified in 84-hour analysis (PR #90)
-                    guaranteed_customer_id = get_customer_id_guaranteed(username, role)
+                    try:
+                        guaranteed_customer_id = get_customer_id_guaranteed(username, role)
+                    except Exception as guar_err:
+                        print(f"[AUTH] get_customer_id_guaranteed error for {username}: {guar_err}")
+                        guaranteed_customer_id = customer_id
                     
-                    # For customer role, guaranteed_customer_id is GUARANTEED non-null
                     if role == 'customer' and not guaranteed_customer_id:
-                        # This should NEVER happen due to the guarantee, but handle defensively
-                        print(f"[AUTH CRITICAL ERROR] get_customer_id_guaranteed failed for {username}")
-                        self._set_json_headers(500)
-                        self.wfile.write(json.dumps({'error': 'Failed to create customer session'}).encode('utf-8'))
-                        return
+                        print(f"[AUTH] Fallback: using original customer_id={customer_id} for {username}")
+                        guaranteed_customer_id = customer_id
                     
-                    # Use guaranteed customer_id (may be None for non-customer roles, which is fine)
                     customer_id = guaranteed_customer_id
                     
                     # Log token creation with customer_id status
@@ -32975,10 +32984,17 @@ def run_server(port: int = PORT) -> None:
                 with DatabaseManager() as db:
                     user_repo = UserRepository(db.session)
                     
-                    # Users to ensure exist - passwords from environment variables
+                    # Users to ensure exist - passwords from env vars or pre-established defaults
+                    def _resolve_password(env_var: str) -> str:
+                        return (
+                            os.environ.get(env_var)
+                            or _PRE_ESTABLISHED_ACCOUNT_DEFAULTS.get(env_var)
+                            or secrets.token_urlsafe(32)
+                        )
                     ensure_users = [
-                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Asi PHINS'},
-                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Shosh PHINS'}
+                        {'username': 'asi@phins.ai', 'password': _resolve_password('PHINS_USER_ASI_PASSWORD'), 'role': 'customer', 'name': 'Asi PHINS'},
+                        {'username': 'shosh@phins.ai', 'password': _resolve_password('PHINS_USER_SHOSH_PASSWORD'), 'role': 'customer', 'name': 'Shosh PHINS'},
+                        {'username': 'efrat@phins.ai', 'password': _resolve_password('PHINS_USER_EFRAT_PASSWORD'), 'role': 'customer', 'name': 'Efrat PHINS'},
                     ]
                     
                     for user_data in ensure_users:

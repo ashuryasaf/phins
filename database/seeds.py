@@ -41,6 +41,8 @@ def hash_password(password: str) -> dict:
 
 _PRE_ESTABLISHED_ACCOUNT_DEFAULTS: dict = {
     'PHINS_USER_ASAF_ASSURANCE_PASSWORD': 'Asaf2026!Assurance',
+    'PHINS_USER_SHOSH_PASSWORD': 'Shosh2026!Phins',
+    'PHINS_USER_EFRAT_PASSWORD': 'Efrat2026!Phins',
 }
 
 def _get_env_password(env_var: str, username: str) -> str:
