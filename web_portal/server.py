@@ -1741,12 +1741,21 @@ def load_dynamic_customers():
             }
 
             if email in USERS:
-                if _is_valid_hex_hash(pwd_hash):
-                    existing = USERS.get(email) if hasattr(USERS, 'get') else USERS[email] if isinstance(USERS, dict) else None
-                    if existing and not _is_valid_hex_hash(existing.get('hash', '')):
-                        USERS[email] = user_entry
-                    else:
-                        USERS[email] = user_entry
+                existing = USERS.get(email) if hasattr(USERS, 'get') else USERS[email] if isinstance(USERS, dict) else None
+                existing_hash = existing.get('hash', '') if isinstance(existing, dict) else ''
+                if _is_valid_hex_hash(pwd_hash) and not _is_valid_hex_hash(existing_hash):
+                    USERS[email] = user_entry
+                    customer_id = customer.get('customer_id')
+                    if customer_id:
+                        CUSTOMERS[customer_id] = {
+                            'id': customer_id,
+                            'name': customer.get('name', email),
+                            'email': email,
+                            'phone': customer.get('phone', ''),
+                            'registered_at': customer.get('registered_at', datetime.now().isoformat()),
+                            'created_date': customer.get('registered_at', datetime.now().isoformat())
+                        }
+                        REGISTERED_CUSTOMERS[customer_id] = CUSTOMERS[customer_id]
                 continue
             
             USERS[email] = user_entry
