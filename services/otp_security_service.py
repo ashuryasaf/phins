@@ -1114,6 +1114,11 @@ class OTPSecurityService:
         # Normalize
         return min(score, 1.0)
     
+    # Accounts created before this cutoff bypass OTP requirements so that
+    # pre-existing customers and suppliers retain seamless access even if they
+    # never completed OTP registration.
+    LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
+
     def check_login_requirements(
         self,
         user_type: str,
@@ -1121,11 +1126,19 @@ class OTPSecurityService:
         email: str,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        device_fingerprint: Optional[str] = None
+        device_fingerprint: Optional[str] = None,
+        account_created_at: Optional[datetime] = None
     ) -> SecurityResult:
         """Check what security requirements are needed for login"""
         requires_otp = False
         requires_captcha = OTPSecurityConfig.CAPTCHA_ENABLED
+
+        # Legacy accounts created before the cutoff are exempt from OTP
+        is_legacy_account = False
+        if account_created_at is not None:
+            if account_created_at.tzinfo is None:
+                account_created_at = account_created_at.replace(tzinfo=timezone.utc)
+            is_legacy_account = account_created_at < self.LEGACY_ACCOUNT_CUTOFF
         
         # Check if device is trusted
         is_trusted = False
@@ -1136,8 +1149,8 @@ class OTPSecurityService:
                 # Update last seen
                 trusted.last_seen = datetime.now(timezone.utc)
         
-        # Require OTP for new devices
-        if not is_trusted and OTPSecurityConfig.OTP_REQUIRED_FOR_NEW_DEVICE:
+        # Require OTP for new devices (skip for legacy accounts)
+        if not is_legacy_account and not is_trusted and OTPSecurityConfig.OTP_REQUIRED_FOR_NEW_DEVICE:
             requires_otp = True
         
         # Calculate risk
@@ -1147,8 +1160,8 @@ class OTPSecurityService:
             user_agent=user_agent
         )
         
-        # High risk always requires OTP
-        if risk_score > 0.5:
+        # High risk always requires OTP (skip for legacy accounts)
+        if not is_legacy_account and risk_score > 0.5:
             requires_otp = True
         
         return SecurityResult(
@@ -1157,6 +1170,7 @@ class OTPSecurityService:
             requires_captcha=requires_captcha,
             data={
                 "is_trusted_device": is_trusted,
+                "is_legacy_account": is_legacy_account,
                 "risk_score": risk_score,
                 "risk_level": "high" if risk_score > 0.7 else ("medium" if risk_score > 0.4 else "low")
             }
