@@ -890,16 +890,31 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     email = body_data.get('email', '')
     device_fingerprint = body_data.get('device_fingerprint')
 
-    # Resolve the account creation date so the OTP service can exempt
-    # legacy accounts (created before the cutoff) from OTP requirements.
+    # Resolve the account creation date server-side so the OTP service can
+    # exempt legacy accounts (created before the cutoff) from OTP requirements.
+    # Never trust client-supplied dates for this security decision.
     account_created_at = None
-    raw_date = body_data.get('account_created_at')
-    if raw_date:
-        try:
-            from datetime import datetime as _dt
-            account_created_at = _dt.fromisoformat(raw_date)
-        except Exception:
-            pass
+    try:
+        import web_portal.server as _srv
+        _customer_record = None
+        if user_id:
+            _customer_record = _srv.get_customer_with_fallback(user_id)
+        if not _customer_record and email:
+            _customer_record = _srv.get_customer_with_fallback(email)
+        if _customer_record:
+            _raw = (
+                _customer_record.get('created_date')
+                or _customer_record.get('created_at')
+                or _customer_record.get('registered_at')
+            )
+            if _raw:
+                from datetime import datetime as _dt
+                if isinstance(_raw, _dt):
+                    account_created_at = _raw
+                elif isinstance(_raw, str):
+                    account_created_at = _dt.fromisoformat(_raw)
+    except Exception:
+        pass
     
     result = service.check_login_requirements(
         user_type=user_type,
