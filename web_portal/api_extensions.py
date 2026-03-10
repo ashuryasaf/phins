@@ -890,16 +890,8 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     email = body_data.get('email', '')
     device_fingerprint = body_data.get('device_fingerprint')
 
-    # Resolve the account creation date so the OTP service can exempt
-    # legacy accounts (created before the cutoff) from OTP requirements.
-    account_created_at = None
-    raw_date = body_data.get('account_created_at')
-    if raw_date:
-        try:
-            from datetime import datetime as _dt
-            account_created_at = _dt.fromisoformat(raw_date)
-        except Exception:
-            pass
+    # Resolve account creation timestamp server-side to prevent request tampering.
+    account_created_at = _resolve_account_created_at(user_type=user_type, user_id=user_id, email=email)
     
     result = service.check_login_requirements(
         user_type=user_type,
@@ -912,6 +904,91 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     )
     
     return 200, result.to_dict()
+
+
+def _parse_account_created_at(value: Any) -> Optional[datetime]:
+    """Parse account creation timestamp and normalize to UTC."""
+    if isinstance(value, datetime):
+        created = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            created = datetime.fromisoformat(raw)
+        except Exception:
+            return None
+    else:
+        return None
+    if created.tzinfo is None:
+        return created.replace(tzinfo=timezone.utc)
+    return created.astimezone(timezone.utc)
+
+
+def _resolve_account_created_at(user_type: str, user_id: str, email: str) -> Optional[datetime]:
+    """Resolve account creation timestamp from server-side records only."""
+    normalized_type = str(user_type or 'customer').strip().lower()
+    normalized_user_id = str(user_id or '').strip()
+    normalized_email = str(email or '').strip().lower()
+
+    if normalized_type == 'customer':
+        try:
+            from database.manager import DatabaseManager
+            from database.repositories.customer_repository import CustomerRepository
+            db_manager = DatabaseManager.get_instance()
+            if db_manager and db_manager.enabled:
+                session = db_manager.get_session()
+                if session:
+                    try:
+                        repo = CustomerRepository(session)
+                        customer = repo.get_by_id(normalized_user_id) if normalized_user_id else None
+                        if not customer and normalized_email:
+                            customer = repo.get_by_email(normalized_email)
+                        if customer:
+                            created_raw = (
+                                getattr(customer, 'created_date', None)
+                                or getattr(customer, 'created_at', None)
+                                or getattr(customer, 'registered_at', None)
+                            )
+                            return _parse_account_created_at(created_raw)
+                    finally:
+                        session.close()
+        except Exception:
+            pass
+
+    try:
+        import web_portal.server as _srv
+    except Exception:
+        return None
+
+    if normalized_type == 'supplier':
+        supplier_store = getattr(_srv, 'SUPPLIERS', None)
+        if not isinstance(supplier_store, dict):
+            return None
+        for supplier_id, supplier in supplier_store.items():
+            if not isinstance(supplier, dict):
+                continue
+            if normalized_user_id and str(supplier_id) != normalized_user_id and str(supplier.get('id', '')) != normalized_user_id:
+                continue
+            if not normalized_user_id and normalized_email and str(supplier.get('contact_email', '')).lower() != normalized_email:
+                continue
+            created_raw = supplier.get('created_date') or supplier.get('application_date') or supplier.get('registered_at')
+            return _parse_account_created_at(created_raw)
+        return None
+
+    customers_store = getattr(_srv, 'CUSTOMERS', None)
+    if not isinstance(customers_store, dict):
+        return None
+    for customer_id, customer in customers_store.items():
+        if not isinstance(customer, dict):
+            continue
+        if normalized_user_id and str(customer_id) != normalized_user_id and str(customer.get('id', '')) != normalized_user_id:
+            continue
+        if not normalized_user_id and normalized_email and str(customer.get('email', '')).lower() != normalized_email:
+            continue
+        created_raw = customer.get('registered_at') or customer.get('created_date')
+        return _parse_account_created_at(created_raw)
+    return None
 
 
 def handle_security_welcome_report(session: Dict, body_data: Dict) -> Tuple[int, Dict]:

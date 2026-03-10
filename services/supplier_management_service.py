@@ -580,6 +580,25 @@ class SupplierManagementService:
     # credential auto-provisioning on first login.
     LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
 
+    @staticmethod
+    def _parse_account_created_at(value: Any) -> Optional[datetime]:
+        """Parse account creation timestamp and normalize to UTC."""
+        if isinstance(value, datetime):
+            created = value
+        elif isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            try:
+                created = datetime.fromisoformat(raw)
+            except Exception:
+                return None
+        else:
+            return None
+        if created.tzinfo is None:
+            return created.replace(tzinfo=timezone.utc)
+        return created.astimezone(timezone.utc)
+
     def authenticate_supplier(self, email: str, password: str) -> Dict[str, Any]:
         """
         Authenticate a supplier login.
@@ -606,11 +625,8 @@ class SupplierManagementService:
                 raise ValueError("Invalid email or password")
         else:
             created_raw = supplier.get('created_date') or supplier.get('application_date') or ''
-            try:
-                created = datetime.fromisoformat(created_raw).replace(tzinfo=timezone.utc) if created_raw else None
-            except Exception:
-                created = None
-            is_legacy = (created is None or created < self.LEGACY_ACCOUNT_CUTOFF)
+            created = self._parse_account_created_at(created_raw)
+            is_legacy = bool(created is not None and created < self.LEGACY_ACCOUNT_CUTOFF)
             if not is_legacy:
                 raise ValueError("Invalid email or password")
             pw_hash, pw_salt = self.hash_password(password)
@@ -625,11 +641,8 @@ class SupplierManagementService:
         if not supplier.get('portal_active'):
             # Auto-activate portal for legacy approved suppliers
             created_raw = supplier.get('created_date') or supplier.get('application_date') or ''
-            try:
-                created = datetime.fromisoformat(created_raw).replace(tzinfo=timezone.utc) if created_raw else None
-            except Exception:
-                created = None
-            is_legacy = (created is None or created < self.LEGACY_ACCOUNT_CUTOFF)
+            created = self._parse_account_created_at(created_raw)
+            is_legacy = bool(created is not None and created < self.LEGACY_ACCOUNT_CUTOFF)
             if is_legacy:
                 supplier['portal_active'] = True
                 print(f"[SUPPLIER-AUTH] Auto-activated portal for legacy supplier '{email}'")

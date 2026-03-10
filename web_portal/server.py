@@ -15,7 +15,7 @@ import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import uuid
 import hashlib
@@ -3145,7 +3145,26 @@ except ImportError as e:
 # customers / suppliers registered before the OTP system was introduced
 # retain seamless access to their accounts.
 ECOSYSTEM_ENABLED: bool = supplier_service_enabled and supply_chain_enabled
-LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0)
+LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def _parse_account_created_at(value: Any) -> Optional[datetime]:
+    """Parse account creation timestamp and normalize to UTC."""
+    if isinstance(value, datetime):
+        created = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            created = datetime.fromisoformat(raw)
+        except Exception:
+            return None
+    else:
+        return None
+    if created.tzinfo is None:
+        return created.replace(tzinfo=timezone.utc)
+    return created.astimezone(timezone.utc)
 
 if ECOSYSTEM_ENABLED:
     print("✓ Full PHINS Ecosystem enabled (supplier + supply-chain)")
@@ -17832,8 +17851,8 @@ For claims or questions, please contact:
                                         # Legacy account without credentials – auto-provision
                                         # on first login for accounts created before the OTP
                                         # system cutoff so pre-existing customers retain access.
-                                        created = getattr(customer, 'created_date', None)
-                                        is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
+                                        created = _parse_account_created_at(getattr(customer, 'created_date', None))
+                                        is_legacy = bool(created is not None and created < LEGACY_ACCOUNT_CUTOFF)
                                         if is_legacy:
                                             pwd_data = hash_password(password)
                                             try:
@@ -17903,12 +17922,8 @@ For claims or questions, please contact:
                             else:
                                 # Legacy in-memory account without credentials
                                 reg_at = cust.get('registered_at') or cust.get('created_date') or ''
-                                try:
-                                    from datetime import datetime as _dt
-                                    created = _dt.fromisoformat(reg_at) if reg_at else None
-                                except Exception:
-                                    created = None
-                                is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
+                                created = _parse_account_created_at(reg_at)
+                                is_legacy = bool(created is not None and created < LEGACY_ACCOUNT_CUTOFF)
                                 if is_legacy:
                                     pwd_data = hash_password(password)
                                     cust['password_hash'] = pwd_data['hash']
