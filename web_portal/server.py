@@ -4106,9 +4106,16 @@ def validate_amount(amount: Any) -> bool:
 #   PHINS_USER_{EMAIL}_PASSWORD - For specific user accounts (replace @ with _AT_ and . with _DOT_)
 # =============================================================================
 
+# Pre-established customer accounts with default passwords.
+# In production, override via the corresponding environment variable.
+_PRE_ESTABLISHED_ACCOUNT_DEFAULTS: Dict[str, str] = {
+    'PHINS_USER_ASAF_ASSURANCE_PASSWORD': 'Asaf2026!Assurance',
+}
+
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable or generate unusable random password.
+    Get password from environment variable, pre-established defaults, or
+    generate unusable random password.
     
     Args:
         env_var_name: Name of environment variable containing the password
@@ -4120,12 +4127,14 @@ def _get_secure_password(env_var_name: str, username: str) -> dict:
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    else:
-        # Generate a random password that will be impossible to guess
-        # This ensures the system starts but users cannot login without proper env config
-        random_pwd = secrets.token_urlsafe(32)
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-        return hash_password(random_pwd)
+
+    default_password = _PRE_ESTABLISHED_ACCOUNT_DEFAULTS.get(env_var_name)
+    if default_password:
+        return hash_password(default_password)
+
+    random_pwd = secrets.token_urlsafe(32)
+    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+    return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""
@@ -34045,7 +34054,22 @@ def run_server(port: int = PORT) -> None:
     # Final step 1: Ensure all PHINS customers exist in the CUSTOMERS dictionary
     print("🔧 Final data integrity check - PHINS customer records...")
     try:
+        _integrity_ts = '2026-03-01T00:00:00+00:00'
         phins_customer_records = [
+            {
+                'id': 'CUST-ASAF-001',
+                'name': 'Asaf Assurance',
+                'email': 'asaf@assurance.co.il',
+                'phone': '+972-50-1234567',
+                'date_of_birth': '1985-03-15',
+                'age': 40,
+                'gender': 'male',
+                'occupation': 'Business Owner',
+                'email_verified': True,
+                'email_verified_at': _integrity_ts,
+                'phone_verified': True,
+                'phone_verified_at': _integrity_ts,
+            },
             {
                 'id': 'CUST-ASI-001',
                 'name': 'Asi PHINS',
@@ -34054,7 +34078,11 @@ def run_server(port: int = PORT) -> None:
                 'date_of_birth': '1985-03-20',
                 'age': 40,
                 'gender': 'male',
-                'occupation': 'Software Engineer'
+                'occupation': 'Software Engineer',
+                'email_verified': True,
+                'email_verified_at': _integrity_ts,
+                'phone_verified': False,
+                'phone_verified_at': None,
             },
             {
                 'id': 'CUST-SHOSH-001',
@@ -34064,7 +34092,11 @@ def run_server(port: int = PORT) -> None:
                 'date_of_birth': '1988-09-10',
                 'age': 37,
                 'gender': 'female',
-                'occupation': 'Marketing Director'
+                'occupation': 'Marketing Director',
+                'email_verified': True,
+                'email_verified_at': _integrity_ts,
+                'phone_verified': False,
+                'phone_verified_at': None,
             },
             {
                 'id': 'CUST-EFRAT-001',
@@ -34074,7 +34106,11 @@ def run_server(port: int = PORT) -> None:
                 'date_of_birth': '1990-06-15',
                 'age': 35,
                 'gender': 'female',
-                'occupation': 'Product Manager'
+                'occupation': 'Product Manager',
+                'email_verified': True,
+                'email_verified_at': _integrity_ts,
+                'phone_verified': False,
+                'phone_verified_at': None,
             }
         ]
         
@@ -34088,6 +34124,11 @@ def run_server(port: int = PORT) -> None:
                     'status': 'active'
                 }
                 customers_created += 1
+            else:
+                existing = CUSTOMERS[cust_id]
+                for vf in ('email_verified', 'email_verified_at', 'phone_verified', 'phone_verified_at'):
+                    if vf not in existing:
+                        existing[vf] = cust.get(vf)
                 
                 # Initialize wallets
                 if cust_id not in HEALTH_WALLETS:

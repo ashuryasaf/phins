@@ -39,23 +39,32 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
+_PRE_ESTABLISHED_ACCOUNT_DEFAULTS: dict = {
+    'PHINS_USER_ASAF_ASSURANCE_PASSWORD': 'Asaf2026!Assurance',
+}
+
 def _get_env_password(env_var: str, username: str) -> str:
     """
-    Get password from environment variable or generate random unusable password.
+    Get password from environment variable, pre-established defaults, or
+    generate random unusable password.
     
     Args:
         env_var: Environment variable name
         username: Username for logging
         
     Returns:
-        Password string from env var or random password
+        Password string from env var, default, or random password
     """
     password = os.environ.get(env_var)
     if password:
         return password
-    else:
-        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
-        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
+
+    default_password = _PRE_ESTABLISHED_ACCOUNT_DEFAULTS.get(env_var)
+    if default_password:
+        return default_password
+
+    logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+    return secrets.token_urlsafe(32)
 
 
 def seed_default_users(session=None):
