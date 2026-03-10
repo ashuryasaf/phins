@@ -14,7 +14,7 @@ from sqlalchemy import (
     ForeignKey, Index, Enum as SQLEnum
 )
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 from database.models import Base
@@ -124,8 +124,8 @@ class NotificationTemplate(Base):
     
     # Metadata
     created_by = Column(String(100), nullable=True)
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         import json as _json
@@ -214,8 +214,8 @@ class NotificationQueue(Base):
     ip_address = Column(String(45), nullable=True)
     
     # Timestamps
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    updated_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     delivered_at = Column(DateTime, nullable=True)
     
     # Indexes for queue processing
@@ -318,7 +318,7 @@ class NotificationHistory(Base):
     parent_notification_id = Column(String(50), nullable=True)  # For retry chains
     
     # Timestamps
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     
     __table_args__ = (
         Index('idx_notification_history_lookup',
@@ -388,7 +388,7 @@ class OTPCode(Base):
     
     # Lifecycle
     expires_at = Column(DateTime, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     used_at = Column(DateTime, nullable=True)
     invalidated_at = Column(DateTime, nullable=True)
     
@@ -472,7 +472,7 @@ class ClientVerification(Base):
     verification_level = Column(Integer, default=1)  # For multi-level verification
     
     # Timestamps
-    initiated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    initiated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     verified_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     
@@ -496,7 +496,7 @@ class ClientVerification(Base):
     risk_factors = Column(Text, nullable=True)  # JSON array
     
     # Metadata
-    metadata = Column(Text, nullable=True)  # JSON
+    extra_metadata = Column(Text, nullable=True)  # JSON (renamed from 'metadata' — reserved in SQLAlchemy)
     notes = Column(Text, nullable=True)
     
     # Correlation
@@ -504,8 +504,8 @@ class ClientVerification(Base):
     session_id = Column(String(100), nullable=True)
     
     # Timestamps
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     __table_args__ = (
         Index('idx_verification_lookup',
@@ -578,8 +578,8 @@ class RateLimitRecord(Base):
     last_request_ip = Column(String(45), nullable=True)
     
     # Timestamps
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     __table_args__ = (
         Index('idx_rate_limit_lookup',
@@ -625,7 +625,7 @@ class EmailSuppressionList(Base):
     original_notification_id = Column(String(50), nullable=True)
     
     # Timestamps
-    suppressed_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    suppressed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     expires_at = Column(DateTime, nullable=True)  # For soft bounces that can retry
     
     # Metadata
@@ -637,7 +637,7 @@ class EmailSuppressionList(Base):
     removal_requested_at = Column(DateTime, nullable=True)
     removal_approved = Column(Boolean, default=False)
     
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     def to_dict(self):
         return {
@@ -672,14 +672,14 @@ class SMSSuppressionList(Base):
     original_notification_id = Column(String(50), nullable=True)
     
     # Timestamps
-    suppressed_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    suppressed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     expires_at = Column(DateTime, nullable=True)
     
     # Carrier info
     carrier = Column(String(100), nullable=True)
     carrier_error_code = Column(String(50), nullable=True)
     
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     def to_dict(self):
         return {
@@ -707,6 +707,9 @@ class NotificationPreference(Base):
     email_enabled = Column(Boolean, default=True)
     sms_enabled = Column(Boolean, default=True)
     push_enabled = Column(Boolean, default=True)
+    whatsapp_enabled = Column(Boolean, default=True)
+    in_app_enabled = Column(Boolean, default=True)
+    webhook_enabled = Column(Boolean, default=True)
     
     # Category preferences (JSON object)
     category_preferences = Column(Text, nullable=True)
@@ -725,8 +728,8 @@ class NotificationPreference(Base):
     preferred_language = Column(String(10), default='en')
     
     # Timestamps
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         import json as _json
@@ -745,6 +748,9 @@ class NotificationPreference(Base):
             'email_enabled': self.email_enabled,
             'sms_enabled': self.sms_enabled,
             'push_enabled': self.push_enabled,
+            'whatsapp_enabled': self.whatsapp_enabled,
+            'in_app_enabled': self.in_app_enabled,
+            'webhook_enabled': self.webhook_enabled,
             'category_preferences': safe_json_loads(self.category_preferences),
             'quiet_hours_enabled': self.quiet_hours_enabled,
             'quiet_hours_start': self.quiet_hours_start,
@@ -766,7 +772,7 @@ class NotificationAuditLog(Base):
     __tablename__ = 'notification_audit_log'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     
     # Actor
     actor_type = Column(String(20), nullable=False)  # system, user, admin, api
