@@ -15,7 +15,7 @@ import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import uuid
 import hashlib
@@ -3145,7 +3145,7 @@ except ImportError as e:
 # customers / suppliers registered before the OTP system was introduced
 # retain seamless access to their accounts.
 ECOSYSTEM_ENABLED: bool = supplier_service_enabled and supply_chain_enabled
-LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0)
+LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
 
 if ECOSYSTEM_ENABLED:
     print("✓ Full PHINS Ecosystem enabled (supplier + supply-chain)")
@@ -17833,6 +17833,8 @@ For claims or questions, please contact:
                                         # on first login for accounts created before the OTP
                                         # system cutoff so pre-existing customers retain access.
                                         created = getattr(customer, 'created_date', None)
+                                        if created is not None and created.tzinfo is None:
+                                            created = created.replace(tzinfo=timezone.utc)
                                         is_legacy = (created is not None and created < LEGACY_ACCOUNT_CUTOFF)
                                         if is_legacy:
                                             pwd_data = hash_password(password)
@@ -17908,6 +17910,8 @@ For claims or questions, please contact:
                                     created = _dt.fromisoformat(reg_at) if reg_at else None
                                 except Exception:
                                     created = None
+                                if created is not None and created.tzinfo is None:
+                                    created = created.replace(tzinfo=timezone.utc)
                                 is_legacy = (created is not None and created < LEGACY_ACCOUNT_CUTOFF)
                                 if is_legacy:
                                     pwd_data = hash_password(password)
