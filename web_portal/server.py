@@ -1521,7 +1521,7 @@ def save_ledger_data():
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
-def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
+def append_customer_to_seeds(email: str, name: str, customer_id: str, registered_at: str):
     """
     Append newly registered customer to dynamic seeds file for restart persistence.
     
@@ -18387,7 +18387,7 @@ For claims or questions, please contact:
                 # Persist all state
                 save_ledger_data()
                 save_invitation_codes_to_file()
-                append_customer_to_seeds(email, password, name, customer_id, registration_date)
+                append_customer_to_seeds(email, name, customer_id, registration_date)
 
                 # Best-effort branded welcome communication package
                 welcome_notification_sent = False
