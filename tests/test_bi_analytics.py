@@ -409,9 +409,9 @@ def test_delivery_analytics(bi_service):
 def test_supplier_analytics(bi_service):
     """Test supplier ecosystem analytics"""
     suppliers = {
-        'SUP-001': {'id': 'SUP-001', 'status': 'approved', 'category': 'delivery'},
-        'SUP-002': {'id': 'SUP-002', 'status': 'approved', 'category': 'healthcare'},
-        'SUP-003': {'id': 'SUP-003', 'status': 'pending', 'category': 'delivery'}
+        'SUP-001': {'id': 'SUP-001', 'status': 'approved', 'category': 'delivery', 'supplier_type': 'delivery'},
+        'SUP-002': {'id': 'SUP-002', 'status': 'approved', 'category': 'healthcare', 'supplier_type': 'healthcare'},
+        'SUP-003': {'id': 'SUP-003', 'status': 'pending', 'category': 'delivery', 'supplier_type': 'delivery'}
     }
     
     supplier_orders = {
@@ -440,6 +440,11 @@ def test_supplier_analytics(bi_service):
     assert analytics['orders']['avg_order_value'] == 150.0
     
     assert len(analytics['top_suppliers']) == 2
+
+    assert analytics['total_orders'] == 3
+    assert analytics['total_order_value'] == 450.0
+    assert analytics['by_type']['delivery'] == 2
+    assert analytics['by_type']['healthcare'] == 1
 
 
 if __name__ == '__main__':
