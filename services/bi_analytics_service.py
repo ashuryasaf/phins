@@ -27,26 +27,20 @@ from collections import defaultdict
 import logging
 
 logger = logging.getLogger('phins.bi_analytics')
-PHINS BI and Statistical Analytics Service
-Comprehensive Business Intelligence and Statistical Analysis for:
-- System optimization
-- Performance metrics
-- Predictive analytics
-- Trend analysis
-- KPI monitoring
-- Community/Foundation analytics
 
-Provides AI-driven insights for decision making across the platform.
-"""
+# PHINS BI and Statistical Analytics Service
+# Comprehensive Business Intelligence and Statistical Analysis for:
+# - System optimization
+# - Performance metrics
+# - Predictive analytics
+# - Trend analysis
+# - KPI monitoring
+# - Community/Foundation analytics
+# Provides AI-driven insights for decision making across the platform.
 
-import json
 import math
-import statistics
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from collections import defaultdict
 import random
 
 
@@ -148,14 +142,50 @@ class BIAnalyticsService:
     - AI-powered recommendations
     """
     
-    def __init__(self):
-        """Initialize BI analytics service"""
+    def __init__(self,
+                 customers: Dict = None,
+                 suppliers: Dict = None,
+                 policies: Dict = None,
+                 claims: Dict = None,
+                 bills: Dict = None,
+                 underwriting_apps: Dict = None,
+                 health_wallets: Dict = None,
+                 investment_accounts: Dict = None,
+                 transaction_ledger: Dict = None,
+                 foundations: Dict = None,
+                 foundation_members: Dict = None,
+                 foundation_funds: Dict = None,
+                 supplier_orders: Dict = None,
+                 delivery_requests: Dict = None,
+                 delivery_bids: Dict = None):
+        """Initialize BI analytics service with optional data stores"""
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.cache_ttl_seconds = 300  # 5 minutes cache
+
+        self.customers = customers or {}
+        self.suppliers = suppliers or {}
+        self.policies = policies or {}
+        self.claims = claims or {}
+        self.bills = bills or {}
+        self.underwriting_apps = underwriting_apps or {}
+        self.health_wallets = health_wallets or {}
+        self.investment_accounts = investment_accounts or {}
+        self.transaction_ledger = transaction_ledger or {}
+        self.foundations = foundations or {}
+        self.foundation_members = foundation_members or {}
+        self.foundation_funds = foundation_funds or {}
+        self.supplier_orders = supplier_orders or {}
+        self.delivery_requests = delivery_requests or {}
+        self.delivery_bids = delivery_bids or {}
+
+        self._metrics_cache = {}
+        self._cache_timestamp = None
+        self._cache_ttl_seconds = 300
+        self._insight_counter = 0
         
         logger.info("BI Analytics Service initialized")
     
-    def get_executive_dashboard(
+    def get_executive_dashboard_parametric(
         self,
         customers: Dict[str, Any],
         policies: Dict[str, Any],
@@ -166,7 +196,7 @@ class BIAnalyticsService:
         deliveries: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
-        Generate executive dashboard with high-level KPIs.
+        Generate executive dashboard with explicit data arguments.
         
         Returns comprehensive business health indicators.
         """
@@ -290,57 +320,14 @@ class BIAnalyticsService:
             },
             'supplier_metrics': supplier_metrics,
             'delivery_metrics': delivery_metrics,
-    Comprehensive BI and Statistical Analytics Service.
-    
-    Provides:
-    - Real-time KPI monitoring
-    - Trend analysis
-    - Predictive analytics
-    - System optimization recommendations
-    - Community/Foundation analytics
-    - Financial performance tracking
-    """
-    
-    def __init__(self,
-                 customers: Dict = None,
-                 suppliers: Dict = None,
-                 policies: Dict = None,
-                 claims: Dict = None,
-                 bills: Dict = None,
-                 underwriting_apps: Dict = None,
-                 health_wallets: Dict = None,
-                 investment_accounts: Dict = None,
-                 transaction_ledger: Dict = None,
-                 foundations: Dict = None,
-                 foundation_members: Dict = None,
-                 foundation_funds: Dict = None,
-                 supplier_orders: Dict = None,
-                 delivery_requests: Dict = None,
-                 delivery_bids: Dict = None):
-        """Initialize with all data stores"""
-        self.customers = customers or {}
-        self.suppliers = suppliers or {}
-        self.policies = policies or {}
-        self.claims = claims or {}
-        self.bills = bills or {}
-        self.underwriting_apps = underwriting_apps or {}
-        self.health_wallets = health_wallets or {}
-        self.investment_accounts = investment_accounts or {}
-        self.transaction_ledger = transaction_ledger or {}
-        self.foundations = foundations or {}
-        self.foundation_members = foundation_members or {}
-        self.foundation_funds = foundation_funds or {}
-        self.supplier_orders = supplier_orders or {}
-        self.delivery_requests = delivery_requests or {}
-        self.delivery_bids = delivery_bids or {}
+        }
         
-        # Cache for computed metrics
-        self._metrics_cache = {}
-        self._cache_timestamp = None
-        self._cache_ttl_seconds = 300  # 5 minutes
-        
-        self._insight_counter = 0
-    
+        return dashboard
+
+    # =========================================================================
+    # EXTENDED ANALYTICS (delivery, customer, supplier analytics, forecasting)
+    # =========================================================================
+
     def _generate_insight_id(self) -> str:
         """Generate unique insight ID"""
         self._insight_counter += 1
@@ -468,7 +455,50 @@ class BIAnalyticsService:
         }
         
         return dashboard
-    
+
+    def _get_financial_kpis(self) -> List[Dict[str, Any]]:
+        """Calculate financial KPIs from stored data."""
+        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
+        total_monthly = sum(float(p.get('monthly_premium', 0) or 0) for p in self.policies.values())
+        return [
+            {'name': 'Total Premium Revenue', 'value': round(total_premium, 2), 'category': 'financial'},
+            {'name': 'Total Monthly Premium', 'value': round(total_monthly, 2), 'category': 'financial'},
+        ]
+
+    def _get_operational_kpis(self) -> List[Dict[str, Any]]:
+        """Calculate operational KPIs from stored data."""
+        total_claims = len(self.claims)
+        pending = sum(1 for c in self.claims.values() if c.get('status') == 'pending')
+        return [
+            {'name': 'Total Claims', 'value': total_claims, 'category': 'operational'},
+            {'name': 'Pending Claims', 'value': pending, 'category': 'operational'},
+        ]
+
+    def _get_customer_kpis(self) -> List[Dict[str, Any]]:
+        """Calculate customer KPIs from stored data."""
+        return [
+            {'name': 'Total Customers', 'value': len(self.customers), 'category': 'customer'},
+            {'name': 'Total Policies', 'value': len(self.policies), 'category': 'customer'},
+        ]
+
+    def _generate_insights(self) -> List[Dict[str, Any]]:
+        """Generate insights based on current data."""
+        return []
+
+    def _generate_alerts(self) -> List[Dict[str, Any]]:
+        """Generate alerts based on current data."""
+        return []
+
+    def _calculate_platform_health_score(self) -> float:
+        """Calculate overall platform health score (0-100)."""
+        score = 50.0
+        if self.policies:
+            active_ratio = sum(1 for p in self.policies.values() if p.get('status') == 'active') / len(self.policies)
+            score += active_ratio * 25
+        if self.customers:
+            score += min(25.0, len(self.customers) * 2.5)
+        return min(100.0, max(0.0, round(score, 2)))
+
     def get_delivery_analytics(
         self,
         delivery_requests: Dict[str, Any],
@@ -674,9 +704,9 @@ class BIAnalyticsService:
     
     def get_supplier_analytics(
         self,
-        suppliers: Dict[str, Any],
-        supplier_orders: Dict[str, Any],
-        supplier_metrics: Dict[str, Any]
+        suppliers: Dict[str, Any] = None,
+        supplier_orders: Dict[str, Any] = None,
+        supplier_metrics: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Analyze supplier ecosystem performance.
@@ -684,6 +714,12 @@ class BIAnalyticsService:
         Returns:
             Supplier analytics and performance metrics
         """
+        if suppliers is None:
+            suppliers = self.suppliers
+        if supplier_orders is None:
+            supplier_orders = self.supplier_orders
+        if supplier_metrics is None:
+            supplier_metrics = {}
         total_suppliers = len(suppliers)
         
         # Status breakdown
@@ -737,6 +773,9 @@ class BIAnalyticsService:
         ]
         
         return {
+            'total_suppliers': total_suppliers,
+            'by_status': dict(status_breakdown),
+            'by_type': dict(category_breakdown),
             'summary': {
                 'total_suppliers': total_suppliers,
                 'active_suppliers': active_suppliers,
@@ -952,6 +991,64 @@ class BIAnalyticsService:
         
         return min(100.0, max(0.0, round(score, 2)))
 
+    def get_premium_statistics(self) -> Dict[str, Any]:
+        """Calculate premium statistics from stored policies."""
+        annual_premiums = [
+            p.get('annual_premium', 0) for p in self.policies.values()
+            if isinstance(p.get('annual_premium'), (int, float))
+        ]
+        monthly_premiums = [
+            p.get('monthly_premium', 0) for p in self.policies.values()
+            if isinstance(p.get('monthly_premium'), (int, float))
+        ]
+        return {
+            'annual_premium': asdict(self._calculate_statistics(annual_premiums)),
+            'monthly_premium': asdict(self._calculate_statistics(monthly_premiums)),
+        }
+
+    def get_claims_statistics(self) -> Dict[str, Any]:
+        """Calculate claims statistics from stored claims."""
+        claimed_amounts = [
+            c.get('amount', 0) for c in self.claims.values()
+            if isinstance(c.get('amount'), (int, float))
+        ]
+        by_status: Dict[str, int] = defaultdict(int)
+        for c in self.claims.values():
+            status = c.get('status', 'unknown')
+            by_status[status] += 1
+        return {
+            'total_claims': len(self.claims),
+            'claimed_amounts': asdict(self._calculate_statistics(claimed_amounts)),
+            'by_status': dict(by_status),
+        }
+
+    def get_optimization_recommendations(self) -> List[Dict[str, Any]]:
+        """Generate optimization recommendations based on current data."""
+        recs: List[Dict[str, Any]] = []
+        if self.policies:
+            active = sum(1 for p in self.policies.values() if p.get('status') == 'active')
+            if active < len(self.policies) * 0.5:
+                recs.append({
+                    'area': 'policy_retention',
+                    'priority': 'high',
+                    'recommendation': 'More than 50% of policies are inactive. Review retention strategies.',
+                })
+        if self.claims:
+            pending = sum(1 for c in self.claims.values() if c.get('status') == 'pending')
+            if pending > len(self.claims) * 0.3:
+                recs.append({
+                    'area': 'claims_processing',
+                    'priority': 'medium',
+                    'recommendation': 'Significant pending claims backlog. Consider automation.',
+                })
+        if not recs:
+            recs.append({
+                'area': 'general',
+                'priority': 'low',
+                'recommendation': 'All systems operating within normal parameters.',
+            })
+        return recs
+
 
 # Singleton instance
 _bi_analytics_service: Optional[BIAnalyticsService] = None
@@ -963,3 +1060,7 @@ def get_bi_analytics_service() -> BIAnalyticsService:
     if _bi_analytics_service is None:
         _bi_analytics_service = BIAnalyticsService()
     return _bi_analytics_service
+
+
+# Backward-compatible alias
+init_bi_analytics_service = get_bi_analytics_service

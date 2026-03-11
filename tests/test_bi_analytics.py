@@ -116,7 +116,7 @@ def sample_balance_sheet():
 def test_executive_dashboard(bi_service, sample_customers, sample_policies, 
                             sample_claims, sample_billing, sample_balance_sheet):
     """Test executive dashboard generation"""
-    dashboard = bi_service.get_executive_dashboard(
+    dashboard = bi_service.get_executive_dashboard_parametric(
         customers=sample_customers,
         policies=sample_policies,
         claims=sample_claims,
