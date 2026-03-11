@@ -158,55 +158,5 @@
     "customer_id": "CUST-53337",
     "email": "invitation-flow-secondary@example.com",
     "registered_at": "2026-03-11T16:28:47.407894"
-  },
-  {
-    "username": "ledger_test_customer@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "Ledger Test Customer",
-    "role": "customer",
-    "customer_id": "CUST-41187",
-    "email": "ledger_test_customer@example.com",
-    "registered_at": "2026-03-11T17:21:53.844483"
-  },
-  {
-    "username": "newcustomer@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "New Customer",
-    "role": "customer",
-    "customer_id": "CUST-61152",
-    "email": "newcustomer@example.com",
-    "registered_at": "2026-03-11T17:21:55.434650"
-  },
-  {
-    "username": "legacyotp@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "Legacy OTP Payload User",
-    "role": "customer",
-    "customer_id": "CUST-38908",
-    "email": "legacyotp@example.com",
-    "registered_at": "2026-03-11T17:21:56.182781"
-  },
-  {
-    "username": "invitation-flow-primary@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "First Invite User",
-    "role": "customer",
-    "customer_id": "CUST-68874",
-    "email": "invitation-flow-primary@example.com",
-    "registered_at": "2026-03-11T17:21:56.907697"
-  },
-  {
-    "username": "invitation-flow-secondary@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "Replay Invite Success User",
-    "role": "customer",
-    "customer_id": "CUST-13735",
-    "email": "invitation-flow-secondary@example.com",
-    "registered_at": "2026-03-11T17:21:56.952871"
   }
 ]
