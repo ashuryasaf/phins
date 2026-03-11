@@ -1,6 +1,0 @@
-title = "PHINS Gitleaks Configuration"
-
-[allowlist]
-  paths = [
-    '''database/dynamic_customers\.json''',
-  ]
