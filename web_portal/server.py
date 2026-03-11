@@ -1521,11 +1521,15 @@ def save_ledger_data():
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
-def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
+def append_customer_to_seeds(email: str, name: str, customer_id: str, registered_at: str):
     """
     Append newly registered customer to dynamic seeds file for restart persistence.
     
-    SECURITY: Passwords are hashed before storage - NEVER store plain-text passwords.
+    SECURITY: Password hashes are NOT stored in the seeds file to avoid
+    committing credential material to version control.  On reload the seed
+    loader generates a fresh random password for each entry (or uses
+    PHINS_DEFAULT_CUSTOMER_PASSWORD when set).  The authoritative credential
+    store is the database, not this JSON file.
     """
     try:
         seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
@@ -1536,15 +1540,10 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
             with open(seeds_file, 'r') as f:
                 dynamic_customers = json.load(f)
         
-        # SECURITY: Hash password before storing
-        pwd_hash = hash_password(password)
-        
-        # Add new customer with hashed password
         dynamic_customers.append({
             'username': email,
-            # SECURITY: Store hash and salt, NEVER plain-text password
-            'password_hash': pwd_hash['hash'],
-            'password_salt': pwd_hash['salt'],
+            'password_hash': 'REDACTED',
+            'password_salt': 'REDACTED',
             'name': name,
             'role': 'customer',
             'customer_id': customer_id,
@@ -1556,7 +1555,7 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
         with open(seeds_file, 'w') as f:
             json.dump(dynamic_customers, f, indent=2)
         
-        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file (password hashed)")
+        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file")
     except Exception as e:
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
@@ -18326,7 +18325,7 @@ For claims or questions, please contact:
                 # Persist all state
                 save_ledger_data()
                 save_invitation_codes_to_file()
-                append_customer_to_seeds(email, password, name, customer_id, registration_date)
+                append_customer_to_seeds(email, name, customer_id, registration_date)
 
                 # Best-effort branded welcome communication package
                 welcome_notification_sent = False
