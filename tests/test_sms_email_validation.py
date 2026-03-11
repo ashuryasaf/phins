@@ -301,6 +301,9 @@ class TestHandleCustomerVerifyContact:
         )
         return create.verification_id
 
+    def _session(self, customer_id='CUST-VERIFY-01'):
+        return {'user': 'testuser', 'customer_id': customer_id}
+
     def test_verify_email_updates_customer(self):
         from web_portal.api_extensions import handle_customer_verify_contact
         vid = self._verified_verification_id()
@@ -317,9 +320,9 @@ class TestHandleCustomerVerifyContact:
             client_ip='127.0.0.1',
             body_data={
                 'verification_id': vid,
-                'customer_id': 'CUST-VERIFY-01',
                 'channel': 'email',
             },
+            session_data=self._session('CUST-VERIFY-01'),
             customers_store=customers,
         )
         assert status == 200
@@ -347,9 +350,9 @@ class TestHandleCustomerVerifyContact:
             client_ip='127.0.0.1',
             body_data={
                 'verification_id': vid,
-                'customer_id': 'CUST-VERIFY-02',
                 'channel': 'sms',
             },
+            session_data=self._session('CUST-VERIFY-02'),
             customers_store=customers,
         )
         assert status == 200
@@ -363,9 +366,9 @@ class TestHandleCustomerVerifyContact:
             client_ip='127.0.0.1',
             body_data={
                 'verification_id': 'BOGUS-ID',
-                'customer_id': 'CUST-001',
                 'channel': 'email',
             },
+            session_data=self._session('CUST-001'),
         )
         assert status == 400
         assert data['success'] is False
@@ -375,8 +378,17 @@ class TestHandleCustomerVerifyContact:
         status, data = handle_customer_verify_contact(
             client_ip='127.0.0.1',
             body_data={},
+            session_data=self._session('CUST-001'),
         )
         assert status == 400
+
+    def test_reject_unauthenticated(self):
+        from web_portal.api_extensions import handle_customer_verify_contact
+        status, data = handle_customer_verify_contact(
+            client_ip='127.0.0.1',
+            body_data={'verification_id': 'X', 'channel': 'email'},
+        )
+        assert status == 401
 
 
 # ============================================================================
@@ -385,6 +397,9 @@ class TestHandleCustomerVerifyContact:
 
 class TestHandleCustomerUpdateContact:
     """Test PUT /api/customer/contact handler."""
+
+    def _session(self, customer_id):
+        return {'user': 'testuser', 'customer_id': customer_id}
 
     def test_email_change_resets_verification(self):
         from web_portal.api_extensions import handle_customer_update_contact
@@ -403,9 +418,9 @@ class TestHandleCustomerUpdateContact:
         status, data = handle_customer_update_contact(
             client_ip='127.0.0.1',
             body_data={
-                'customer_id': 'CUST-UPD-01',
                 'email': 'new@example.com',
             },
+            session_data=self._session('CUST-UPD-01'),
             customers_store=customers,
         )
         assert status == 200
@@ -434,9 +449,9 @@ class TestHandleCustomerUpdateContact:
         status, data = handle_customer_update_contact(
             client_ip='127.0.0.1',
             body_data={
-                'customer_id': 'CUST-UPD-02',
                 'phone': '+15559998888',
             },
+            session_data=self._session('CUST-UPD-02'),
             customers_store=customers,
         )
         assert status == 200
@@ -462,9 +477,9 @@ class TestHandleCustomerUpdateContact:
         status, data = handle_customer_update_contact(
             client_ip='127.0.0.1',
             body_data={
-                'customer_id': 'CUST-UPD-03',
                 'email': 'same@example.com',
             },
+            session_data=self._session('CUST-UPD-03'),
             customers_store=customers,
         )
         assert status == 200
@@ -476,9 +491,9 @@ class TestHandleCustomerUpdateContact:
         status, data = handle_customer_update_contact(
             client_ip='127.0.0.1',
             body_data={
-                'customer_id': 'CUST-001',
                 'email': 'not-an-email',
             },
+            session_data=self._session('CUST-001'),
         )
         assert status == 400
 
@@ -487,11 +502,19 @@ class TestHandleCustomerUpdateContact:
         status, data = handle_customer_update_contact(
             client_ip='127.0.0.1',
             body_data={
-                'customer_id': 'CUST-001',
                 'phone': 'abc',
             },
+            session_data=self._session('CUST-001'),
         )
         assert status == 400
+
+    def test_reject_unauthenticated(self):
+        from web_portal.api_extensions import handle_customer_update_contact
+        status, data = handle_customer_update_contact(
+            client_ip='127.0.0.1',
+            body_data={'email': 'new@example.com'},
+        )
+        assert status == 401
 
 
 # ============================================================================

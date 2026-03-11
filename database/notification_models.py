@@ -371,8 +371,7 @@ class OTPCode(Base):
     # Target identification
     customer_id = Column(String(50), nullable=True, index=True)
     user_id = Column(String(50), nullable=True, index=True)
-    identifier = Column(String(255), nullable=False)  # email or phone
-    identifier_hash = Column(String(64), nullable=False, index=True)  # For secure lookup
+    identifier_hash = Column(String(64), nullable=False, index=True)  # For secure lookup (no plaintext PII stored)
     
     # OTP storage (NEVER store plaintext)
     code_hash = Column(String(255), nullable=False)  # Argon2/bcrypt hash
