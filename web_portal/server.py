@@ -16977,8 +16977,19 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Customer account required to generate referral codes'}).encode('utf-8'))
                 return
             
-            # Check if customer exists
+            # Resolve customer profile from any available source
             customer = CUSTOMERS.get(customer_id) or REGISTERED_CUSTOMERS.get(customer_id)
+            if not customer:
+                # Fallback: build minimal profile from _FALLBACK_USERS (pre-established accounts)
+                for _fb_email, _fb_data in _FALLBACK_USERS.items():
+                    if _fb_data.get('customer_id') == customer_id:
+                        customer = {
+                            'id': customer_id,
+                            'name': _fb_data.get('name', _fb_email.split('@')[0].title()),
+                            'email': _fb_email,
+                        }
+                        CUSTOMERS[customer_id] = customer
+                        break
             if not customer:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'Customer profile not found'}).encode('utf-8'))
