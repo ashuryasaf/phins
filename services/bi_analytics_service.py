@@ -323,46 +323,6 @@ class BIAnalyticsService:
         }
                                                                                                               
         return dashboard
-    
-    def __init__(self,
-                 customers: Dict = None,
-                 suppliers: Dict = None,
-                 policies: Dict = None,
-                 claims: Dict = None,
-                 bills: Dict = None,
-                 underwriting_apps: Dict = None,
-                 health_wallets: Dict = None,
-                 investment_accounts: Dict = None,
-                 transaction_ledger: Dict = None,
-                 foundations: Dict = None,
-                 foundation_members: Dict = None,
-                 foundation_funds: Dict = None,
-                 supplier_orders: Dict = None,
-                 delivery_requests: Dict = None,
-                 delivery_bids: Dict = None):
-        """Initialize with all data stores"""
-        self.customers = customers or {}
-        self.suppliers = suppliers or {}
-        self.policies = policies or {}
-        self.claims = claims or {}
-        self.bills = bills or {}
-        self.underwriting_apps = underwriting_apps or {}
-        self.health_wallets = health_wallets or {}
-        self.investment_accounts = investment_accounts or {}
-        self.transaction_ledger = transaction_ledger or {}
-        self.foundations = foundations or {}
-        self.foundation_members = foundation_members or {}
-        self.foundation_funds = foundation_funds or {}
-        self.supplier_orders = supplier_orders or {}
-        self.delivery_requests = delivery_requests or {}
-        self.delivery_bids = delivery_bids or {}
-        
-        # Cache for computed metrics
-        self._metrics_cache = {}
-        self._cache_timestamp = None
-        self._cache_ttl_seconds = 300  # 5 minutes
-        
-        return dashboard
 
     # =========================================================================
     # EXTENDED ANALYTICS (delivery, customer, supplier analytics, forecasting)
@@ -1145,34 +1105,6 @@ class BIAnalyticsService:
             'total_claims': len(self.claims),
             'claimed_amounts': self._calculate_statistics(claimed_amounts).to_dict() if claimed_amounts else {},
             'by_status': dict(by_status),
-        }
-
-    def get_supplier_analytics(
-        self,
-        suppliers: Dict[str, Any] = None,
-        supplier_orders: Dict[str, Any] = None,
-        supplier_metrics: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
-        """Analyze supplier ecosystem – uses stored data stores when no arguments are provided"""
-        suppliers = suppliers if suppliers is not None else self.suppliers
-        supplier_orders = supplier_orders if supplier_orders is not None else self.supplier_orders
-
-        total_suppliers = len(suppliers)
-        by_status: Dict[str, int] = defaultdict(int)
-        by_type: Dict[str, int] = defaultdict(int)
-        for s in suppliers.values():
-            by_status[str(s.get('status', 'unknown')).lower()] += 1
-            by_type[str(s.get('supplier_type', s.get('type', 'unknown'))).lower()] += 1
-
-        total_orders = len(supplier_orders)
-        total_order_value = sum(float(o.get('total_amount', 0) or 0) for o in supplier_orders.values())
-
-        return {
-            'total_suppliers': total_suppliers,
-            'by_status': dict(by_status),
-            'by_type': dict(by_type),
-            'total_orders': total_orders,
-            'total_order_value': round(total_order_value, 2),
         }
 
     def get_optimization_recommendations(self) -> List[Dict]:
