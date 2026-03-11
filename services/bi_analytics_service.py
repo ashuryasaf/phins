@@ -731,9 +731,12 @@ class BIAnalyticsService:
         active_suppliers = status_breakdown.get('approved', 0)
         pending_suppliers = status_breakdown.get('pending', 0)
         
-        # Category breakdown
+        # Type breakdown (prefer supplier_type/type, fall back to category)
+        type_breakdown = defaultdict(int)
         category_breakdown = defaultdict(int)
         for supplier in suppliers.values():
+            stype = supplier.get('supplier_type', supplier.get('type', supplier.get('category', 'unknown')))
+            type_breakdown[stype] += 1
             category = supplier.get('category', 'unknown')
             category_breakdown[category] += 1
 
