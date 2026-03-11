@@ -736,6 +736,14 @@ class BIAnalyticsService:
         for supplier in suppliers.values():
             category = supplier.get('category', 'unknown')
             category_breakdown[category] += 1
+
+        # Supplier type breakdown (legacy interface compatibility)
+        type_breakdown = defaultdict(int)
+        for supplier in suppliers.values():
+            supplier_type = str(
+                supplier.get('supplier_type', supplier.get('type', 'unknown'))
+            ).lower()
+            type_breakdown[supplier_type] += 1
         
         # Order analytics
         total_orders = len(supplier_orders)
@@ -775,7 +783,9 @@ class BIAnalyticsService:
         return {
             'total_suppliers': total_suppliers,
             'by_status': dict(status_breakdown),
-            'by_type': dict(category_breakdown),
+            'by_type': dict(type_breakdown),
+            'total_orders': total_orders,
+            'total_order_value': round(total_order_value, 2),
             'summary': {
                 'total_suppliers': total_suppliers,
                 'active_suppliers': active_suppliers,
