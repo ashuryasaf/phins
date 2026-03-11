@@ -636,8 +636,8 @@ class NotificationAuditLogger:
                 logger.warning("Failed to persist audit log to DB: %s", db_err)
                 try:
                     self._db_session.rollback()
-                except Exception:
-                    pass
+                except Exception as _rb_err:
+                    logger.debug("Rollback failed: %s", _rb_err)
     
     def get_recent_events(
         self,
@@ -1770,7 +1770,6 @@ class OTPService:
                     id=otp_id,
                     customer_id=request.customer_id,
                     user_id=request.user_id,
-                    identifier=request.identifier,
                     identifier_hash=identifier_hash,
                     code_hash=code_hash,
                     code_salt=salt,
@@ -1793,8 +1792,8 @@ class OTPService:
                 logger.warning("Failed to persist OTP to DB: %s", db_err)
                 try:
                     self._db_session.rollback()
-                except Exception:
-                    pass
+                except Exception as _rb_err:
+                    logger.debug("Rollback failed: %s", _rb_err)
 
         with self._lock:
             # Invalidate any existing active OTPs for this identifier and type (in-memory)
@@ -1826,8 +1825,8 @@ class OTPService:
                     logger.warning("Failed to update OTP status in DB: %s", db_err)
                     try:
                         self._db_session.rollback()
-                    except Exception:
-                        pass
+                    except Exception as _rb_err:
+                        logger.debug("Rollback failed: %s", _rb_err)
             
             return OTPResult(
                 success=False,
@@ -2111,8 +2110,8 @@ class OTPService:
             logger.warning("DB OTP verification error: %s", db_err)
             try:
                 self._db_session.rollback()
-            except Exception:
-                pass
+            except Exception as _rb_err:
+                logger.debug("Rollback failed: %s", _rb_err)
             return OTPResult(
                 success=False,
                 error_code="DB_ERROR",
@@ -2147,8 +2146,8 @@ class OTPService:
                 logger.warning("Failed to invalidate OTP in DB: %s", db_err)
                 try:
                     self._db_session.rollback()
-                except Exception:
-                    pass
+                except Exception as _rb_err:
+                    logger.debug("Rollback failed: %s", _rb_err)
 
         with self._lock:
             for record in self._otp_store.values():
@@ -2802,7 +2801,7 @@ class NotificationService:
                     id=result.notification_id,
                     customer_id=request.customer_id,
                     user_id=getattr(request, 'user_id', None),
-                    recipient_identifier=request.recipient,
+                    recipient_identifier=self._mask_recipient(request.recipient, request.channel),
                     recipient_identifier_hash=hash_identifier(request.recipient),
                     channel=request.channel.value,
                     template_id=request.template_id,
@@ -2824,8 +2823,8 @@ class NotificationService:
                 logger.warning("Failed to persist notification history to DB: %s", db_err)
                 try:
                     self._db_session.rollback()
-                except Exception:
-                    pass
+                except Exception as _rb_err:
+                    logger.debug("Rollback failed: %s", _rb_err)
     
     def _mask_recipient(self, recipient: str, channel: NotificationChannel) -> str:
         """Mask recipient for logging"""

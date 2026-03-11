@@ -176,8 +176,7 @@ def seed_default_users(session=None):
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
 
-                if not existing_user.active:
-                    existing_user.active = True
+                # Do NOT force-reactivate deactivated users; respect admin decisions
 
                 if needs_commit:
                     session.commit()
@@ -626,8 +625,7 @@ def seed_sample_data(session=None):
             pwd = hash_password(_get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'))
             primary_customer.password_hash = pwd['hash']
             primary_customer.password_salt = pwd['salt']
-            if not primary_customer.portal_active:
-                primary_customer.portal_active = True
+            # Do NOT force-reactivate portal_active; respect admin deactivation decisions
             session.commit()
             logger.info(f"Synced credentials for primary customer {primary_customer.email}")
         
@@ -752,12 +750,11 @@ def seed_sample_data(session=None):
         for phins_cust in phins_customers:
             existing = customer_repo.find_one_by(email=phins_cust['email'])
             if existing:
-                # Always sync password from env var so returning customers can log in
+                # Sync password from env var so returning customers can log in.
+                # Do NOT force-reactivate portal_active; respect admin deactivation.
                 pwd = hash_password(phins_cust['password'])
                 existing.password_hash = pwd['hash']
                 existing.password_salt = pwd['salt']
-                if not existing.portal_active:
-                    existing.portal_active = True
                 session.commit()
                 logger.info(f"Synced credentials for PHINS customer {phins_cust['email']}")
             else:

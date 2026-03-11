@@ -597,44 +597,25 @@ class SupplierManagementService:
         if not supplier:
             raise ValueError("Invalid email or password")
         
-        # Check password – with legacy credential migration for pre-cutoff accounts
+        # SECURITY: Require stored credentials for all accounts.  Auto-provisioning
+        # with any password is an account-takeover vector.  Suppliers without
+        # credentials must go through a proper credential-setup or reset flow.
         has_credentials = bool(supplier.get('password_hash') and supplier.get('password_salt'))
 
-        if has_credentials:
-            if not self.verify_password(password, supplier['password_hash'],
-                                        supplier['password_salt']):
-                raise ValueError("Invalid email or password")
-        else:
-            created_raw = supplier.get('created_date') or supplier.get('application_date') or ''
-            try:
-                created = datetime.fromisoformat(created_raw).replace(tzinfo=timezone.utc) if created_raw else None
-            except Exception:
-                created = None
-            is_legacy = (created is None or created < self.LEGACY_ACCOUNT_CUTOFF)
-            if not is_legacy:
-                raise ValueError("Invalid email or password")
-            pw_hash, pw_salt = self.hash_password(password)
-            supplier['password_hash'] = pw_hash
-            supplier['password_salt'] = pw_salt
-            print(f"[SUPPLIER-AUTH] Legacy credential migration for supplier '{email}' (created {created_raw})")
+        if not has_credentials:
+            print(f"[SUPPLIER-AUTH] Supplier '{email}' has no stored credentials; credential reset required")
+            raise ValueError("Invalid email or password")
+
+        if not self.verify_password(password, supplier['password_hash'],
+                                    supplier['password_salt']):
+            raise ValueError("Invalid email or password")
         
         # Check status – legacy approved suppliers retain access
         if supplier['status'] != 'approved':
             raise ValueError(f"Account not active. Status: {supplier['status']}")
         
         if not supplier.get('portal_active'):
-            # Auto-activate portal for legacy approved suppliers
-            created_raw = supplier.get('created_date') or supplier.get('application_date') or ''
-            try:
-                created = datetime.fromisoformat(created_raw).replace(tzinfo=timezone.utc) if created_raw else None
-            except Exception:
-                created = None
-            is_legacy = (created is None or created < self.LEGACY_ACCOUNT_CUTOFF)
-            if is_legacy:
-                supplier['portal_active'] = True
-                print(f"[SUPPLIER-AUTH] Auto-activated portal for legacy supplier '{email}'")
-            else:
-                raise ValueError("Portal access is disabled")
+            raise ValueError("Portal access is disabled")
         
         # Update last login
         now = datetime.now(timezone.utc)

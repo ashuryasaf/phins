@@ -1114,10 +1114,12 @@ class OTPSecurityService:
         # Normalize
         return min(score, 1.0)
     
-    # Accounts created before this cutoff bypass OTP requirements so that
-    # pre-existing customers and suppliers retain seamless access even if they
-    # never completed OTP registration.
+    # Accounts created before this cutoff AND before the sunset date may be
+    # exempt from new-device OTP (but never from high-risk OTP).
+    # Accounts with unknown creation dates are NOT treated as legacy.
     LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
+    # After this date the legacy exemption expires entirely.
+    LEGACY_EXEMPTION_SUNSET = datetime(2026, 6, 9, 0, 0, 0, tzinfo=timezone.utc)
 
     def check_login_requirements(
         self,
@@ -1133,9 +1135,12 @@ class OTPSecurityService:
         requires_otp = False
         requires_captcha = OTPSecurityConfig.CAPTCHA_ENABLED
 
-        # Legacy accounts created before the cutoff are exempt from OTP
+        now = datetime.now(timezone.utc)
+
+        # Legacy exemption: only when the account has a known creation date
+        # that predates the cutoff AND the sunset has not yet passed.
         is_legacy_account = False
-        if account_created_at is not None:
+        if account_created_at is not None and now < self.LEGACY_EXEMPTION_SUNSET:
             if account_created_at.tzinfo is None:
                 account_created_at = account_created_at.replace(tzinfo=timezone.utc)
             is_legacy_account = account_created_at < self.LEGACY_ACCOUNT_CUTOFF
@@ -1160,8 +1165,8 @@ class OTPSecurityService:
             user_agent=user_agent
         )
         
-        # High risk always requires OTP (skip for legacy accounts)
-        if not is_legacy_account and risk_score > 0.5:
+        # High risk ALWAYS requires OTP regardless of legacy status
+        if risk_score > 0.5:
             requires_otp = True
         
         return SecurityResult(

@@ -17841,8 +17841,8 @@ For claims or questions, please contact:
                                             try:
                                                 db.customers.update_last_login(customer.id)
                                                 db.commit()
-                                            except Exception:
-                                                pass
+                                            except Exception as _login_err:
+                                                print(f"[AUTH] Failed to update last_login for {customer.id}: {_login_err}")
                                             # Sync to in-memory CUSTOMERS for pipeline data retrieval
                                             if customer.id not in CUSTOMERS:
                                                 try:
@@ -17850,52 +17850,14 @@ For claims or questions, please contact:
                                                     if cust_dict:
                                                         CUSTOMERS[customer.id] = cust_dict
                                                         print(f"[AUTH] Synced customer {customer.id} to in-memory store")
-                                                except Exception:
-                                                    pass
+                                                except Exception as _sync_err:
+                                                    print(f"[AUTH] Failed to sync customer {customer.id} to memory: {_sync_err}")
                                     else:
-                                        # Legacy account without credentials – auto-provision
-                                        # on first login for accounts created before the OTP
-                                        # system cutoff so pre-existing customers retain access.
-                                        created = getattr(customer, 'created_date', None)
-                                        if created is not None and created.tzinfo is None:
-                                            created = created.replace(tzinfo=timezone.utc)
-                                        is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
-                                        if is_legacy:
-                                            pwd_data = hash_password(password)
-                                            try:
-                                                db.customers.set_portal_credentials(
-                                                    customer.id, pwd_data['hash'], pwd_data['salt']
-                                                )
-                                                db.commit()
-                                                print(f"[AUTH] Legacy credential migration for customer '{username}' (created {created})")
-                                            except Exception as cred_err:
-                                                print(f"[AUTH] Credential migration DB error: {cred_err}")
-                                            user = {
-                                                'hash': pwd_data['hash'],
-                                                'salt': pwd_data['salt'],
-                                                'role': 'customer',
-                                                'name': customer.name
-                                            }
-                                            customer_id = customer.id
-                                            role = 'customer'
-                                            name = customer.name
-                                            try:
-                                                USERS[username] = {
-                                                    'hash': pwd_data['hash'],
-                                                    'salt': pwd_data['salt'],
-                                                    'role': 'customer',
-                                                    'name': customer.name,
-                                                    'customer_id': customer.id
-                                                }
-                                            except Exception:
-                                                pass
-                                            if customer.id not in CUSTOMERS:
-                                                try:
-                                                    cust_dict = customer.to_dict() if hasattr(customer, 'to_dict') else {}
-                                                    if cust_dict:
-                                                        CUSTOMERS[customer.id] = cust_dict
-                                                except Exception:
-                                                    pass
+                                        # SECURITY: Accounts without credentials must go through
+                                        # a proper credential reset flow (e.g. OTP to registered
+                                        # email).  Auto-provisioning with any password is an
+                                        # account-takeover vector and is no longer permitted.
+                                        print(f"[AUTH] Customer '{username}' has no stored credentials; credential reset required")
                     except (OperationalError, DatabaseError, DisconnectionError) as db_err:
                         print(f"[AUTH] Database connection error during customer auth: {db_err}")
                         # Attempt reconnection for future requests
@@ -17937,34 +17899,10 @@ For claims or questions, please contact:
                                     role = 'customer'
                                     name = cust.get('name', 'Customer')
                             else:
-                                # Legacy in-memory account without credentials
-                                reg_at = cust.get('registered_at') or cust.get('created_date') or ''
-                                try:
-                                    created = datetime.fromisoformat(reg_at) if reg_at else None
-                                except Exception:
-                                    created = None
-                                if created is not None and created.tzinfo is None:
-                                    created = created.replace(tzinfo=timezone.utc)
-                                is_legacy = (created is None or created < LEGACY_ACCOUNT_CUTOFF)
-                                if is_legacy:
-                                    pwd_data = hash_password(password)
-                                    cust['password_hash'] = pwd_data['hash']
-                                    cust['password_salt'] = pwd_data['salt']
-                                    print(f"[AUTH] Legacy credential migration for in-memory customer '{username}'")
-                                    user = cust
-                                    customer_id = cust_id
-                                    role = 'customer'
-                                    name = cust.get('name', 'Customer')
-                                    try:
-                                        USERS[username] = {
-                                            'hash': pwd_data['hash'],
-                                            'salt': pwd_data['salt'],
-                                            'role': 'customer',
-                                            'name': name,
-                                            'customer_id': cust_id
-                                        }
-                                    except Exception:
-                                        pass
+                                # SECURITY: In-memory accounts without credentials must go
+                                # through a proper credential reset flow.  Auto-provisioning
+                                # with any password is an account-takeover vector.
+                                print(f"[AUTH] In-memory customer '{username}' has no stored credentials; credential reset required")
                             break
                 
                 if user:
