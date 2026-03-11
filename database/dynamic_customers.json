@@ -66,7 +66,7 @@
     "name": "Duplicate Test",
     "role": "customer",
     "customer_id": "CUST-59854",
-    "email": "ledger_test_customer@example.com",
+    "email": "duplicate@example.com",
     "registered_at": "2026-03-04T17:59:54.157770"
   },
   {

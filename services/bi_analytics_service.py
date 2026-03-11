@@ -324,46 +324,6 @@ class BIAnalyticsService:
                                                                                                               
         return dashboard
     
-    def __init__(self,
-                 customers: Dict = None,
-                 suppliers: Dict = None,
-                 policies: Dict = None,
-                 claims: Dict = None,
-                 bills: Dict = None,
-                 underwriting_apps: Dict = None,
-                 health_wallets: Dict = None,
-                 investment_accounts: Dict = None,
-                 transaction_ledger: Dict = None,
-                 foundations: Dict = None,
-                 foundation_members: Dict = None,
-                 foundation_funds: Dict = None,
-                 supplier_orders: Dict = None,
-                 delivery_requests: Dict = None,
-                 delivery_bids: Dict = None):
-        """Initialize with all data stores"""
-        self.customers = customers or {}
-        self.suppliers = suppliers or {}
-        self.policies = policies or {}
-        self.claims = claims or {}
-        self.bills = bills or {}
-        self.underwriting_apps = underwriting_apps or {}
-        self.health_wallets = health_wallets or {}
-        self.investment_accounts = investment_accounts or {}
-        self.transaction_ledger = transaction_ledger or {}
-        self.foundations = foundations or {}
-        self.foundation_members = foundation_members or {}
-        self.foundation_funds = foundation_funds or {}
-        self.supplier_orders = supplier_orders or {}
-        self.delivery_requests = delivery_requests or {}
-        self.delivery_bids = delivery_bids or {}
-        
-        # Cache for computed metrics
-        self._metrics_cache = {}
-        self._cache_timestamp = None
-        self._cache_ttl_seconds = 300  # 5 minutes
-        
-        return dashboard
-
     # =========================================================================
     # EXTENDED ANALYTICS (delivery, customer, supplier analytics, forecasting)
     # =========================================================================
