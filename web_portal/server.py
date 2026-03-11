@@ -4965,7 +4965,34 @@ For claims or questions, please contact:
         # Periodic cleanup of stale data
         cleanup_stale_data()
         
-        # Health check endpoint - bypasses rate limiting for Railway/load balancers
+        # Security checks (apply to ALL endpoints including health)
+        client_ip = self.client_address[0]
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+        _ensure_test_port_state(server_port)
+        
+        # Check if IP is blocked
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+        
+        # Rate limiting (trusted IPs in production get 5x allowance via check_rate_limit)
+        if not check_rate_limit(client_ip, server_port):
+            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
+            return
+        
+        # Health check endpoint
         if self.path == '/api/health' or self.path == '/health':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -5017,33 +5044,6 @@ For claims or questions, please contact:
                 health_status['recovery_url'] = '/api/diagnostics/db-recovery'
             
             self.wfile.write(json.dumps(health_status).encode('utf-8'))
-            return
-        
-        # Security checks
-        client_ip = self.client_address[0]
-        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
-        _ensure_test_port_state(server_port)
-        
-        # Check if IP is blocked
-        is_blocked, block_reason = is_ip_blocked(client_ip)
-        if is_blocked:
-            self.send_response(403)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                'error': 'Access denied',
-                'message': 'Your IP has been blocked due to suspicious activity'
-            }).encode('utf-8'))
-            return
-        
-        # Rate limiting
-        if not check_rate_limit(client_ip, server_port):
-            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
-            self.send_response(429)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Retry-After', '60')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
             return
         
         parsed = urlparse.urlparse(self.path)
