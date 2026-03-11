@@ -340,7 +340,8 @@ class TestBillingCreditService:
         # Check summary calculations
         summary = report['summary']
         assert summary['total_billed'] > 0
-        assert summary['total_credits'] == 100.00
+        # 100.00 manual credit + 50.00 auto-detected overpayment on BILL-002 (refresh=True)
+        assert summary['total_credits'] == 150.00
     
     def test_ledger_report_includes_credits(self, credit_service):
         """Test ledger report includes credit details"""
