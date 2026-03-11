@@ -687,6 +687,7 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
 def handle_customer_verify_contact(
     client_ip: str,
     body_data: Dict,
+    session_data: Optional[Dict] = None,
     customers_store: Optional[Dict] = None,
     registered_customers_store: Optional[Dict] = None
 ) -> Tuple[int, Dict]:
@@ -696,16 +697,21 @@ def handle_customer_verify_contact(
     After the client completes OTP verify, this endpoint consumes the verification
     token and updates the customer record with the verified status.
 
+    Requires an authenticated session.  The customer_id is resolved from the
+    session to prevent cross-account manipulation.
+
     Required body:
         - verification_id: str  (from OTP verify response)
-        - customer_id: str
         - channel: "email" | "sms"
     """
+    if not session_data or not session_data.get('user'):
+        return 401, {"error": "Authentication required"}
+
     if not OTP_SERVICE_AVAILABLE:
         return 503, {"error": "OTP security service not available"}
 
     verification_id = body_data.get('verification_id', '').strip()
-    customer_id = body_data.get('customer_id', '').strip()
+    customer_id = (session_data.get('customer_id') or '').strip()
     channel = body_data.get('channel', 'email').lower()
 
     if not verification_id or not customer_id:
@@ -790,17 +796,20 @@ def handle_customer_update_contact(
     When email or phone changes, the corresponding verified flag is reset
     so that the customer must re-verify through OTP.
 
+    Requires an authenticated session.  The customer_id is resolved from
+    the session to prevent IDOR (cross-account modification).
+
     Required body:
-        - customer_id: str  (or taken from session)
         - email: str  (new email, optional)
         - phone: str  (new phone, optional)
     """
-    customer_id = body_data.get('customer_id', '').strip()
-    if not customer_id and session_data:
-        customer_id = session_data.get('customer_id', '')
+    if not session_data or not session_data.get('user'):
+        return 401, {"success": False, "error": "Authentication required"}
+
+    customer_id = (session_data.get('customer_id') or '').strip()
 
     if not customer_id:
-        return 400, {"success": False, "error": "customer_id is required"}
+        return 403, {"success": False, "error": "No customer account associated with this session"}
 
     new_email = body_data.get('email', '').strip().lower() if body_data.get('email') else None
     new_phone = body_data.get('phone', '').strip() if body_data.get('phone') else None
@@ -3014,6 +3023,7 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
             pass
         return handle_customer_verify_contact(
             client_ip, body_data,
+            session_data=session,
             customers_store=customers_store,
             registered_customers_store=registered_customers_store
         )

@@ -232,7 +232,7 @@ class TestOTPDBPersistence:
         assert row.status == OTPStatus.INVALIDATED.value
 
     def test_otp_plaintext_never_stored(self, db_session, mock_email_provider, mock_sms_provider):
-        """DB row must never contain the plaintext OTP code."""
+        """DB row must never contain the plaintext OTP code or plaintext identifier."""
         from database.notification_models import OTPCode
 
         svc = OTPService(
@@ -250,7 +250,8 @@ class TestOTPDBPersistence:
         # Plaintext OTP must not appear anywhere in the DB row
         assert sent_code not in (row.code_hash or "")
         assert sent_code not in (row.code_salt or "")
-        assert sent_code not in (row.identifier or "")
+        # The plaintext identifier column has been removed; only the hash remains
+        assert not hasattr(row, 'identifier') or row.identifier is None
 
 
 # ============================================================================
@@ -278,7 +279,7 @@ class TestNotificationHistoryPersistence:
         assert row.channel == NotificationChannel.EMAIL.value
         assert row.status == "delivered"
         assert row.content_hash  # SHA-256 present
-        assert row.recipient_identifier == req.recipient
+        assert row.recipient_identifier != req.recipient  # must be masked, not plaintext
         assert row.recipient_identifier_hash  # hashed for privacy
 
     def test_send_sms_creates_history_row(self, db_session, mock_email_provider, mock_sms_provider):
