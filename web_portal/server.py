@@ -33065,13 +33065,9 @@ def run_server(port: int = PORT) -> None:
             except Exception as e:
                 print(f"Note: Sample data seeding skipped (may already exist): {e}")
             
-            # Sync ALL database records into in-memory dicts so pipeline
-            # endpoints see every customer/policy/claim/bill that exists in
-            # PostgreSQL — not just the ones created during this startup.
-            try:
-                _sync_db_to_memory()
-            except Exception as e:
-                print(f"Note: DB-to-memory sync: {e}")
+            # DB-to-memory sync is deferred to a background thread so the
+            # HTTP server can start listening immediately and pass Railway's
+            # health check.  See _deferred_db_sync_thread below.
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")
@@ -34360,6 +34356,20 @@ def run_server(port: int = PORT) -> None:
     # Test isolation only needs to clear state for *other* ports spun up by
     # the pytest test fixtures.
     _TEST_PORTS_INITIALIZED.add(port)
+
+    # Launch deferred DB-to-memory sync in a background thread so the
+    # HTTP server can start accepting connections (and pass Railway's
+    # health check) immediately.
+    if USE_DATABASE and database_enabled:
+        def _deferred_db_sync():
+            import time
+            time.sleep(2)
+            try:
+                _sync_db_to_memory()
+            except Exception as e:
+                print(f"⚠️  Deferred DB sync failed (non-critical): {e}")
+        sync_thread = threading.Thread(target=_deferred_db_sync, daemon=True)
+        sync_thread.start()
 
     print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
