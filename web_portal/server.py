@@ -9586,13 +9586,15 @@ For claims or questions, please contact:
             bills = [b for b in BILLING.values() 
                      if b.get('customer_id') == customer_id or b.get('policy_id') in policy_ids]
 
+            # Get claims for this customer
+            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+
             # Determine overall application status (simple heuristic)
             overall = 'no_application'
             if uw_apps:
                 most_recent = sorted(uw_apps, key=lambda x: x.get('submitted_date', ''), reverse=True)[0]
                 overall = most_recent.get('status', 'pending')
                 if overall == 'approved':
-                    # Check if policy is active
                     linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
                     if linked and status_eq(linked, 'active'):
                         overall = 'active_policy'
@@ -9610,6 +9612,7 @@ For claims or questions, please contact:
                 'overall_status': overall,
                 'policies': policies,
                 'underwriting_applications': uw_apps,
+                'claims': customer_claims,
                 'billing': bills,
                 'billing_summary': {
                     'total_outstanding': round(total_outstanding, 2),
@@ -34232,6 +34235,14 @@ def run_server(port: int = PORT) -> None:
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
     httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
+
+    # Mark the main server port as already initialized so that
+    # _ensure_test_port_state() does NOT clear the in-memory data stores
+    # (wallets, investments, allocations, etc.) that were just seeded above.
+    # Test isolation only needs to clear state for *other* ports spun up by
+    # the pytest test fixtures.
+    _TEST_PORTS_INITIALIZED.add(port)
+
     print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
     print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')
