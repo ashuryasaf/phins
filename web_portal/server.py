@@ -4111,24 +4111,28 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable or generate unusable random password.
+    Get password from environment variable, falling back to a documented
+    default for named accounts so they remain accessible out of the box.
     
-    Args:
-        env_var_name: Name of environment variable containing the password
-        username: Username for logging purposes
-        
-    Returns:
-        Dictionary with 'hash' and 'salt' keys
+    Priority:
+      1. Environment variable (production override)
+      2. Documented default from LEGACY_DEMO_PASSWORDS (named accounts)
+      3. Random unusable password (unnamed/generic accounts)
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    else:
-        # Generate a random password that will be impossible to guess
-        # This ensures the system starts but users cannot login without proper env config
-        random_pwd = secrets.token_urlsafe(32)
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-        return hash_password(random_pwd)
+    # For named accounts that have a documented default, use it so the
+    # account is accessible even when the env var is not configured.
+    default_pwd = LEGACY_DEMO_PASSWORDS.get(username)
+    if default_pwd:
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable. Using documented default.")
+        return hash_password(default_pwd)
+    # Generic/system accounts without a documented default get a random
+    # password – they cannot log in until the env var is set.
+    random_pwd = secrets.token_urlsafe(32)
+    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+    return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""

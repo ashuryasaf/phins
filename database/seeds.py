@@ -39,23 +39,33 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
+_NAMED_ACCOUNT_DEFAULTS: dict = {
+    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
+    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
+    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
+    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
+}
+
+
 def _get_env_password(env_var: str, username: str) -> str:
     """
-    Get password from environment variable or generate random unusable password.
-    
-    Args:
-        env_var: Environment variable name
-        username: Username for logging
-        
-    Returns:
-        Password string from env var or random password
+    Get password from environment variable, falling back to a documented
+    default for named accounts so they remain accessible out of the box.
+
+    Priority:
+      1. Environment variable (production override)
+      2. Documented default for named accounts
+      3. Random unusable password (generic/system accounts)
     """
     password = os.environ.get(env_var)
     if password:
         return password
-    else:
-        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
-        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
+    default_pwd = _NAMED_ACCOUNT_DEFAULTS.get(username)
+    if default_pwd:
+        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable. Using documented default.")
+        return default_pwd
+    logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+    return secrets.token_urlsafe(32)
 
 
 def seed_default_users(session=None):
