@@ -297,9 +297,16 @@ class PaymentValidator:
 class DocumentUploadHandler:
     """Handles large document uploads for contributions"""
     
-    def __init__(self, upload_dir: str = "/workspace/uploads/contributions"):
+    def __init__(self, upload_dir: str = None):
+        if upload_dir is None:
+            upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads', 'contributions')
         self.upload_dir = upload_dir
-        os.makedirs(upload_dir, exist_ok=True)
+        try:
+            os.makedirs(upload_dir, exist_ok=True)
+        except PermissionError:
+            import tempfile
+            self.upload_dir = os.path.join(tempfile.gettempdir(), 'phins_uploads', 'contributions')
+            os.makedirs(self.upload_dir, exist_ok=True)
     
     def validate_file(self, file_name: str, file_size: int, file_type: str) -> Tuple[bool, str]:
         """Validate file before upload"""

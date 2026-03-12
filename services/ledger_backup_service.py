@@ -44,7 +44,7 @@ class LedgerBackupService:
             backup_base_dir: Base directory for all backups
         """
         if backup_base_dir is None:
-            workspace = os.environ.get('WORKSPACE_PATH', '/workspace')
+            workspace = os.environ.get('WORKSPACE_PATH', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             backup_base_dir = os.path.join(workspace, 'data', 'backups')
         
         self.backup_base_dir = backup_base_dir
