@@ -39,23 +39,33 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
+_NAMED_ACCOUNT_DEFAULTS: dict = {
+    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
+    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
+    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
+    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
+}
+
+
 def _get_env_password(env_var: str, username: str) -> str:
     """
-    Get password from environment variable or generate random unusable password.
-    
-    Args:
-        env_var: Environment variable name
-        username: Username for logging
-        
-    Returns:
-        Password string from env var or random password
+    Get password from environment variable, falling back to a documented
+    default for named accounts so they remain accessible out of the box.
+
+    Priority:
+      1. Environment variable (production override)
+      2. Documented default for named accounts
+      3. Random unusable password (generic/system accounts)
     """
     password = os.environ.get(env_var)
     if password:
         return password
-    else:
-        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
-        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
+    default_pwd = _NAMED_ACCOUNT_DEFAULTS.get(username)
+    if default_pwd:
+        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable. Using documented default.")
+        return default_pwd
+    logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+    return secrets.token_urlsafe(32)
 
 
 def seed_default_users(session=None):
@@ -319,7 +329,7 @@ def seed_sample_data(session=None):
             )
             logger.info(f"Created primary customer: {primary_customer.email}")
             
-            # Sync primary customer to memory
+            # Sync primary customer to memory (include credentials for auth fallback)
             if sync_primary_to_memory:
                 CUSTOMERS['CUST-ASAF-001'] = {
                     'id': 'CUST-ASAF-001',
@@ -327,7 +337,11 @@ def seed_sample_data(session=None):
                     'email': 'asaf@assurance.co.il',
                     'phone': '+972-50-1234567',
                     'date_of_birth': '1985-03-15',
-                    'created_date': now.isoformat()
+                    'created_date': now.isoformat(),
+                    'password_hash': pwd['hash'],
+                    'password_salt': pwd['salt'],
+                    'portal_active': True,
+                    'status': 'active'
                 }
             
             # Initialize health wallet with $20,000 deposit (as per user's test data)
@@ -465,6 +479,7 @@ def seed_sample_data(session=None):
                     'description': 'Emergency room visit for chest pain - cardiac evaluation',
                     'claimed_amount': 15000.00,
                     'approved_amount': 15000.00,
+                    'paid_amount': 15000.00,
                     'status': 'Paid'
                 },
                 {
@@ -474,6 +489,7 @@ def seed_sample_data(session=None):
                     'description': 'Monthly prescription medications - cardiovascular',
                     'claimed_amount': 850.00,
                     'approved_amount': 850.00,
+                    'paid_amount': 850.00,
                     'status': 'Paid'
                 },
                 {
@@ -483,6 +499,7 @@ def seed_sample_data(session=None):
                     'description': 'Fender bender accident - rear bumper damage repair',
                     'claimed_amount': 3500.00,
                     'approved_amount': 3200.00,
+                    'paid_amount': 3200.00,
                     'status': 'Paid'
                 },
                 {
@@ -514,6 +531,7 @@ def seed_sample_data(session=None):
                         description=claim_data['description'],
                         claimed_amount=claim_data['claimed_amount'],
                         approved_amount=claim_data.get('approved_amount'),
+                        paid_amount=claim_data.get('paid_amount'),
                         status=claim_data['status'],
                         filed_date=filed_date
                     )
@@ -529,6 +547,7 @@ def seed_sample_data(session=None):
                             'description': claim_data['description'],
                             'claimed_amount': claim_data['claimed_amount'],
                             'approved_amount': claim_data.get('approved_amount', 0),
+                            'paid_amount': claim_data.get('paid_amount', 0),
                             'status': claim_data['status'],
                             'filed_date': filed_date.isoformat(),
                             'created_date': filed_date.isoformat(),
@@ -625,9 +644,23 @@ def seed_sample_data(session=None):
             pwd = hash_password(_get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'))
             primary_customer.password_hash = pwd['hash']
             primary_customer.password_salt = pwd['salt']
-            # Do NOT force-reactivate portal_active; respect admin deactivation decisions
             session.commit()
             logger.info(f"Synced credentials for primary customer {primary_customer.email}")
+
+            # Sync to in-memory CUSTOMERS for auth fallback
+            if sync_primary_to_memory:
+                if 'CUST-ASAF-001' not in CUSTOMERS:
+                    CUSTOMERS['CUST-ASAF-001'] = {}
+                cust_mem = CUSTOMERS['CUST-ASAF-001']
+                cust_mem.update({
+                    'id': 'CUST-ASAF-001',
+                    'name': primary_customer.name or 'Asaf Assurance',
+                    'email': 'asaf@assurance.co.il',
+                    'password_hash': pwd['hash'],
+                    'password_salt': pwd['salt'],
+                    'portal_active': getattr(primary_customer, 'portal_active', True),
+                    'status': 'active'
+                })
         
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
@@ -843,7 +876,7 @@ def seed_sample_data(session=None):
                     }
                     logger.info(f"Synced billing record {bill_id} to memory")
             
-            # Sync to memory
+            # Sync to memory (include credentials for auth fallback)
             if sync_to_memory:
                 CUSTOMERS[phins_cust['id']] = {
                     'id': phins_cust['id'],
@@ -855,7 +888,10 @@ def seed_sample_data(session=None):
                     'gender': phins_cust['gender'],
                     'occupation': phins_cust['occupation'],
                     'created_date': now.isoformat(),
-                    'status': 'active'
+                    'status': 'active',
+                    'password_hash': pwd['hash'],
+                    'password_salt': pwd['salt'],
+                    'portal_active': True
                 }
                 
                 POLICIES[pol_data['id']] = {

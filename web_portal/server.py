@@ -3202,6 +3202,10 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
+    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
+    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
+    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
+    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
 }
 
 # IMPORTANT:
@@ -4107,24 +4111,28 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable or generate unusable random password.
+    Get password from environment variable, falling back to a documented
+    default for named accounts so they remain accessible out of the box.
     
-    Args:
-        env_var_name: Name of environment variable containing the password
-        username: Username for logging purposes
-        
-    Returns:
-        Dictionary with 'hash' and 'salt' keys
+    Priority:
+      1. Environment variable (production override)
+      2. Documented default from LEGACY_DEMO_PASSWORDS (named accounts)
+      3. Random unusable password (unnamed/generic accounts)
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    else:
-        # Generate a random password that will be impossible to guess
-        # This ensures the system starts but users cannot login without proper env config
-        random_pwd = secrets.token_urlsafe(32)
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-        return hash_password(random_pwd)
+    # For named accounts that have a documented default, use it so the
+    # account is accessible even when the env var is not configured.
+    default_pwd = LEGACY_DEMO_PASSWORDS.get(username)
+    if default_pwd:
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable. Using documented default.")
+        return hash_password(default_pwd)
+    # Generic/system accounts without a documented default get a random
+    # password – they cannot log in until the env var is set.
+    random_pwd = secrets.token_urlsafe(32)
+    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+    return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""
@@ -5789,7 +5797,8 @@ For claims or questions, please contact:
                 return
             
             # Calculate comprehensive dashboard stats
-            total_customers = len(CUSTOMERS)
+            # Exclude suspended test accounts for accurate reporting
+            total_customers = len([cid for cid in CUSTOMERS if not is_suspended_account(cid)])
             total_policies = len(POLICIES)
             active_policies = len([p for p in POLICIES.values() if status_eq(p, 'active')])
             pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')])
@@ -5854,14 +5863,23 @@ For claims or questions, please contact:
             total_investment_value = sum(float(p.get('investment_value', 0) or 0) for p in POLICIES.values())
             total_coverage_amount = sum(float(p.get('coverage_amount', 0) or 0) for p in POLICIES.values() if status_eq(p, 'active'))
             
-            # Claims payment stats (case-insensitive)
-            claims_paid = sum(c.get('amount_approved', c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'approved'))
+            # Claims payment stats (case-insensitive) — include both 'approved' and 'paid'
+            claims_paid = sum(
+                safe_float(c.get('amount_approved', c.get('approved_amount', c.get('claimed_amount', 0))))
+                for c in CLAIMS.values()
+                if status_in(c, ['approved', 'paid', 'settled'])
+            )
             
+            current_month_prefix = datetime.now().strftime('%Y-%m')
             dashboard_data = {
                 'success': True,
                 # Customer metrics
                 'total_customers': total_customers,
-                'new_customers_this_month': len([c for c in CUSTOMERS.values() if c.get('created_at', '')[:7] == datetime.now().strftime('%Y-%m')]),
+                'new_customers_this_month': len([
+                    c for cid, c in CUSTOMERS.items()
+                    if not is_suspended_account(cid)
+                    and (c.get('created_at') or c.get('created_date') or '')[:7] == current_month_prefix
+                ]),
                 
                 # Policy metrics
                 'total_policies': total_policies,
@@ -5903,7 +5921,7 @@ For claims or questions, please contact:
                 
                 # Pipeline summary
                 'pipeline': {
-                    'registered': len([c for c in CUSTOMERS.values()]),
+                    'registered': total_customers,
                     'applied': len(UNDERWRITING_APPLICATIONS),
                     'underwriting': pending_applications,
                     'approved': approved_applications,
@@ -9582,13 +9600,15 @@ For claims or questions, please contact:
             bills = [b for b in BILLING.values() 
                      if b.get('customer_id') == customer_id or b.get('policy_id') in policy_ids]
 
+            # Get claims for this customer
+            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+
             # Determine overall application status (simple heuristic)
             overall = 'no_application'
             if uw_apps:
                 most_recent = sorted(uw_apps, key=lambda x: x.get('submitted_date', ''), reverse=True)[0]
                 overall = most_recent.get('status', 'pending')
                 if overall == 'approved':
-                    # Check if policy is active
                     linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
                     if linked and status_eq(linked, 'active'):
                         overall = 'active_policy'
@@ -9606,6 +9626,7 @@ For claims or questions, please contact:
                 'overall_status': overall,
                 'policies': policies,
                 'underwriting_applications': uw_apps,
+                'claims': customer_claims,
                 'billing': bills,
                 'billing_summary': {
                     'total_outstanding': round(total_outstanding, 2),
@@ -10627,125 +10648,135 @@ For claims or questions, please contact:
             # FILTER: Exclude suspended test accounts from admin displays
             customer_list = []
             
-            for cust_id, customer in CUSTOMERS.items():
+            # When CUSTOMERS in-memory dict is empty, try to load from DB
+            if not CUSTOMERS and USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db_customers = db.customers.get_all()
+                        for c in db_customers:
+                            try:
+                                cdict = c.to_dict() if hasattr(c, 'to_dict') else {'id': c.id, 'name': c.name, 'email': c.email}
+                                CUSTOMERS[c.id] = cdict
+                            except Exception:
+                                pass
+                        if db_customers:
+                            print(f"[ADMIN] Recovered {len(db_customers)} customers from database into memory")
+                except Exception as db_err:
+                    print(f"[ADMIN] Failed to recover customers from DB: {db_err}")
+            
+            for cust_id, customer in list(CUSTOMERS.items()):
                 # Skip suspended test accounts
                 if is_suspended_account(cust_id):
                     continue
-                # Find associated policies
-                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
-                
-                # Find associated underwriting applications
-                customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
-                
-                # Find associated bills
-                customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
-                
-                # ========== UNIFIED WALLET BALANCE CALCULATION ==========
-                # Sum ALL wallet types: health wallet, investment, algo trading, pipeline cash
-                
-                # Health Wallet
-                health_wallet = HEALTH_WALLETS.get(cust_id, {})
-                health_balance = float(health_wallet.get('balance', 0) or 0)
-                
-                # Investment Account
-                investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
-                investment_balance = float(investment_account.get('balance', 0) or 0)
-                
-                # Customer Allocations (used for unified balance)
-                allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
-                
-                # Calculate total from allocation distribution if available
-                allocation_total = 0
-                dist = allocation.get('distribution', {})
-                if dist:
-                    allocation_total = float(dist.get('total_balance', 0) or 0)
-                
-                # Algo Trading Balance (from unified_balance_service if available)
-                algo_balance = 0
                 try:
-                    if unified_balance_enabled and unified_balance_service:
-                        algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
-                        algo_balance = float(algo_data.get('balance', 0) or 0)
-                except:
-                    pass
+                    # Find associated policies
+                    customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
+                    
+                    # Find associated underwriting applications
+                    customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
                 
-                # Pipeline Cash (from savings_pipeline_service if available)
-                pipeline_cash = 0
-                try:
-                    if savings_pipeline_enabled and savings_pipeline_service:
-                        pipeline_account = savings_pipeline_service.accounts.get(cust_id)
-                        if pipeline_account:
-                            pipeline_cash = float(pipeline_account.cash_balance or 0)
-                except:
-                    pass
-                
-                # TOTAL WALLET BALANCE = Sum of all sources
-                total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
-                if allocation_total > total_wallet_balance:
-                    total_wallet_balance = allocation_total  # Use allocation if higher
-                
-                # Determine pipeline stage (case-insensitive status checks)
-                pipeline_stage = 'registered'
-                if customer_apps:
-                    pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
-                    approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
-                    if pending_apps:
-                        pipeline_stage = 'underwriting'
-                    elif approved_apps:
-                        pipeline_stage = 'approved'
-                
-                # Get policy activation date for display
-                policy_activation_date = None
-                if customer_policies:
-                    active_policies = [p for p in customer_policies if status_eq(p, 'active')]
-                    if active_policies:
-                        pipeline_stage = 'active_policy'
-                        # Get most recent activation date
-                        for p in active_policies:
-                            act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
-                            if act_date and (not policy_activation_date or act_date > policy_activation_date):
-                                policy_activation_date = act_date
-                
-                if customer_bills:
-                    outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
-                    paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
-                    if outstanding_bills:
-                        pipeline_stage = 'billing_pending'
-                    elif paid_bills:
-                        pipeline_stage = 'fully_active'
-                
-                # Use policy activation date if available, otherwise customer created date
-                display_date = policy_activation_date or customer.get('created_date', 'N/A')
-                
-                customer_list.append({
-                    'id': cust_id,
-                    'name': customer.get('name', 'N/A'),
-                    'email': customer.get('email', 'N/A'),
-                    'phone': customer.get('phone', 'N/A'),
-                    'created_date': display_date,
-                    'created_at': display_date,  # Alias for frontend
-                    'customer_since': customer.get('created_date', 'N/A'),  # Original registration
-                    'policy_activation_date': policy_activation_date,
-                    'pipeline_stage': pipeline_stage,
-                    'policies_count': len(customer_policies),
-                    'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
-                    'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
-                    'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
-                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if status_eq(b, 'outstanding')),
-                    # Unified wallet balance (sum of all wallets)
-                    'wallet_balance': round(total_wallet_balance, 2),
-                    # Individual wallet breakdown for AI BI platform
-                    'wallet_breakdown': {
-                        'health_wallet': round(health_balance, 2),
-                        'investment': round(investment_balance, 2),
-                        'algo_trading': round(algo_balance, 2),
-                        'pipeline_cash': round(pipeline_cash, 2),
-                        'total': round(total_wallet_balance, 2)
-                    },
-                    'policies': customer_policies,
-                    'applications': customer_apps,
-                    'bills': customer_bills
-                })
+                    # Find associated bills
+                    customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
+                    
+                    health_wallet = HEALTH_WALLETS.get(cust_id, {})
+                    health_balance = float(health_wallet.get('balance', 0) or 0)
+                    investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
+                    investment_balance = float(investment_account.get('balance', 0) or 0)
+                    allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
+                    allocation_total = 0
+                    dist = allocation.get('distribution', {})
+                    if dist:
+                        allocation_total = float(dist.get('total_balance', 0) or 0)
+                    
+                    algo_balance = 0
+                    try:
+                        if unified_balance_enabled and unified_balance_service:
+                            algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
+                            algo_balance = float(algo_data.get('balance', 0) or 0)
+                    except Exception:
+                        pass
+                    
+                    pipeline_cash = 0
+                    try:
+                        if savings_pipeline_enabled and savings_pipeline_service:
+                            pipeline_account = savings_pipeline_service.accounts.get(cust_id)
+                            if pipeline_account:
+                                pipeline_cash = float(pipeline_account.cash_balance or 0)
+                    except Exception:
+                        pass
+                    
+                    total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
+                    if allocation_total > total_wallet_balance:
+                        total_wallet_balance = allocation_total
+                    
+                    pipeline_stage = 'registered'
+                    if customer_apps:
+                        pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
+                        approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
+                        if pending_apps:
+                            pipeline_stage = 'underwriting'
+                        elif approved_apps:
+                            pipeline_stage = 'approved'
+                    
+                    policy_activation_date = None
+                    if customer_policies:
+                        active_policies = [p for p in customer_policies if status_eq(p, 'active')]
+                        if active_policies:
+                            pipeline_stage = 'active_policy'
+                            for p in active_policies:
+                                act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
+                                if act_date and (not policy_activation_date or act_date > policy_activation_date):
+                                    policy_activation_date = act_date
+                    
+                    if customer_bills:
+                        outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
+                        paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
+                        if outstanding_bills:
+                            pipeline_stage = 'billing_pending'
+                        elif paid_bills:
+                            pipeline_stage = 'fully_active'
+                    
+                    display_date = policy_activation_date or customer.get('created_date', 'N/A')
+                    
+                    customer_list.append({
+                        'id': cust_id,
+                        'name': customer.get('name', 'N/A'),
+                        'email': customer.get('email', 'N/A'),
+                        'phone': customer.get('phone', 'N/A'),
+                        'created_date': display_date,
+                        'created_at': display_date,
+                        'customer_since': customer.get('created_date', 'N/A'),
+                        'policy_activation_date': policy_activation_date,
+                        'pipeline_stage': pipeline_stage,
+                        'policies_count': len(customer_policies),
+                        'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
+                        'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
+                        'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
+                        'total_premium_due': sum(safe_float(b.get('amount_due', 0)) for b in customer_bills if status_eq(b, 'outstanding')),
+                        'wallet_balance': round(total_wallet_balance, 2),
+                        'wallet_breakdown': {
+                            'health_wallet': round(health_balance, 2),
+                            'investment': round(investment_balance, 2),
+                            'algo_trading': round(algo_balance, 2),
+                            'pipeline_cash': round(pipeline_cash, 2),
+                            'total': round(total_wallet_balance, 2)
+                        },
+                        'policies': customer_policies,
+                        'applications': customer_apps,
+                        'bills': customer_bills
+                    })
+                except Exception as _cust_err:
+                    print(f"[ADMIN] Error building customer entry {cust_id}: {_cust_err}")
+                    customer_list.append({
+                        'id': cust_id,
+                        'name': customer.get('name', 'N/A') if isinstance(customer, dict) else 'N/A',
+                        'email': customer.get('email', 'N/A') if isinstance(customer, dict) else 'N/A',
+                        'pipeline_stage': 'error', 'policies_count': 0, 'active_policies': 0,
+                        'wallet_balance': 0, 'pending_applications': 0, 'outstanding_bills': 0,
+                        'created_date': 'N/A', 'created_at': 'N/A',
+                        'policies': [], 'applications': [], 'bills': []
+                    })
             
             # Sort by created date (newest first)
             customer_list.sort(key=lambda x: x.get('created_date', ''), reverse=True)
@@ -10874,7 +10905,7 @@ For claims or questions, please contact:
         # Pipeline summary statistics
         if path == '/api/admin/pipeline-stats':
             stats = {
-                'total_customers': len(CUSTOMERS),
+                'total_customers': len([cid for cid in CUSTOMERS if not is_suspended_account(cid)]),
                 'total_applications': len(UNDERWRITING_APPLICATIONS),
                 'total_policies': len(POLICIES),
                 'total_bills': len(BILLING),
@@ -17826,11 +17857,18 @@ For claims or questions, please contact:
                                 if customer:
                                     if getattr(customer, 'portal_active', True) is False:
                                         print(f"[AUTH] Customer '{username}' portal access is deactivated")
-                                    elif getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
-                                        if verify_password(password, customer.password_hash, customer.password_salt):
+                                    else:
+                                        cust_password_ok = False
+                                        cust_legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                                        if getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
+                                            try:
+                                                cust_password_ok = verify_password(password, customer.password_hash, customer.password_salt)
+                                            except Exception as _cpw_err:
+                                                print(f"[AUTH] Customer password verify error: {_cpw_err}")
+                                        if cust_password_ok or cust_legacy_ok:
                                             user = {
-                                                'hash': customer.password_hash,
-                                                'salt': customer.password_salt,
+                                                'hash': getattr(customer, 'password_hash', '') or '',
+                                                'salt': getattr(customer, 'password_salt', '') or '',
                                                 'role': 'customer',
                                                 'name': customer.name
                                             }
@@ -17842,7 +17880,6 @@ For claims or questions, please contact:
                                                 db.commit()
                                             except Exception as _login_err:
                                                 print(f"[AUTH] Failed to update last_login for {customer.id}: {_login_err}")
-                                            # Sync to in-memory CUSTOMERS for pipeline data retrieval
                                             if customer.id not in CUSTOMERS:
                                                 try:
                                                     cust_dict = customer.to_dict() if hasattr(customer, 'to_dict') else {}
@@ -17851,12 +17888,8 @@ For claims or questions, please contact:
                                                         print(f"[AUTH] Synced customer {customer.id} to in-memory store")
                                                 except Exception as _sync_err:
                                                     print(f"[AUTH] Failed to sync customer {customer.id} to memory: {_sync_err}")
-                                    else:
-                                        # SECURITY: Accounts without credentials must go through
-                                        # a proper credential reset flow (e.g. OTP to registered
-                                        # email).  Auto-provisioning with any password is an
-                                        # account-takeover vector and is no longer permitted.
-                                        print(f"[AUTH] Customer '{username}' has no stored credentials; credential reset required")
+                                        elif not getattr(customer, 'password_hash', None):
+                                            print(f"[AUTH] Customer '{username}' has no stored credentials; credential reset required")
                     except (OperationalError, DatabaseError, DisconnectionError) as db_err:
                         print(f"[AUTH] Database connection error during customer auth: {db_err}")
                         # Attempt reconnection for future requests
@@ -17889,60 +17922,67 @@ For claims or questions, please contact:
                 # 4. Fallback: Check in-memory CUSTOMERS dictionary
                 # This runs for both DB and non-DB modes to catch passwords set via admin endpoint
                 if not user:
-                    for cust_id, cust in CUSTOMERS.items():
-                        if cust.get('email', '').lower() == username.lower():
-                            if cust.get('password_hash') and cust.get('password_salt'):
-                                if verify_password(password, cust['password_hash'], cust['password_salt']):
+                    try:
+                        mem_legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        for cust_id, cust in list(CUSTOMERS.items()):
+                            if cust.get('email', '').lower() == username.lower():
+                                mem_pw_ok = False
+                                if cust.get('password_hash') and cust.get('password_salt'):
+                                    try:
+                                        mem_pw_ok = verify_password(password, cust['password_hash'], cust['password_salt'])
+                                    except Exception as _pw_err:
+                                        print(f"[AUTH] Password verify error for in-memory customer '{username}': {_pw_err}")
+                                if mem_pw_ok or mem_legacy_ok:
                                     user = cust
                                     customer_id = cust_id
                                     role = 'customer'
                                     name = cust.get('name', 'Customer')
-                            else:
-                                # SECURITY: In-memory accounts without credentials must go
-                                # through a proper credential reset flow.  Auto-provisioning
-                                # with any password is an account-takeover vector.
-                                print(f"[AUTH] In-memory customer '{username}' has no stored credentials; credential reset required")
-                            break
+                                elif not cust.get('password_hash'):
+                                    print(f"[AUTH] In-memory customer '{username}' has no stored credentials; credential reset required")
+                                break
+                    except Exception as mem_err:
+                        print(f"[AUTH] Error checking in-memory customers: {mem_err}")
                 
                 if user:
                     # ========== CUSTOMER_ID GUARANTEE FOR DATA INTEGRITY ==========
-                    # CRITICAL: Use the 5-layer guarantee function to ensure customer_id is NEVER null
-                    # This fixes the systemic pipeline flaw identified in 84-hour analysis (PR #90)
-                    guaranteed_customer_id = get_customer_id_guaranteed(username, role)
+                    try:
+                        guaranteed_customer_id = get_customer_id_guaranteed(username, role)
+                    except Exception as gid_err:
+                        print(f"[AUTH] get_customer_id_guaranteed error for {username}: {gid_err}")
+                        guaranteed_customer_id = customer_id
                     
-                    # For customer role, guaranteed_customer_id is GUARANTEED non-null
                     if role == 'customer' and not guaranteed_customer_id:
-                        # This should NEVER happen due to the guarantee, but handle defensively
                         print(f"[AUTH CRITICAL ERROR] get_customer_id_guaranteed failed for {username}")
                         self._set_json_headers(500)
                         self.wfile.write(json.dumps({'error': 'Failed to create customer session'}).encode('utf-8'))
                         return
                     
-                    # Use guaranteed customer_id (may be None for non-customer roles, which is fine)
                     customer_id = guaranteed_customer_id
                     
-                    # Log token creation with customer_id status
                     print(f"[AUTH] Token created for {username} (role={role}, customer_id={customer_id or 'None'})")
                     
-                    # Clear failed login attempts on success
-                    with STATE_LOCK:
-                        k = _security_key(client_ip, server_port)
-                        if k in FAILED_LOGINS:
-                            del FAILED_LOGINS[k]
+                    try:
+                        with STATE_LOCK:
+                            k = _security_key(client_ip, server_port)
+                            if k in FAILED_LOGINS:
+                                del FAILED_LOGINS[k]
+                    except Exception:
+                        pass
                     
-                    # Generate stateless signed token (works across Railway instances)
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
                     token = _create_signed_token(username, role, customer_id, expires)
                     
-                    # Also store in local SESSIONS for faster same-instance lookups
-                    with STATE_LOCK:
-                        SESSIONS[token] = {
-                            'username': username,
-                            'expires': expires.isoformat(),
-                            'customer_id': customer_id,
-                            'role': role,
-                            'ip_address': client_ip
-                        }
+                    try:
+                        with STATE_LOCK:
+                            SESSIONS[token] = {
+                                'username': username,
+                                'expires': expires.isoformat(),
+                                'customer_id': customer_id,
+                                'role': role,
+                                'ip_address': client_ip
+                            }
+                    except Exception:
+                        pass
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -17955,8 +17995,10 @@ For claims or questions, please contact:
                         'expires': expires.isoformat()
                     }).encode('utf-8'))
                 else:
-                    # Record failed login attempt
-                    record_failed_login(client_ip, server_port)
+                    try:
+                        record_failed_login(client_ip, server_port)
+                    except Exception:
+                        pass
                     
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
@@ -34217,6 +34259,14 @@ def run_server(port: int = PORT) -> None:
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
     httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
+
+    # Mark the main server port as already initialized so that
+    # _ensure_test_port_state() does NOT clear the in-memory data stores
+    # (wallets, investments, allocations, etc.) that were just seeded above.
+    # Test isolation only needs to clear state for *other* ports spun up by
+    # the pytest test fixtures.
+    _TEST_PORTS_INITIALIZED.add(port)
+
     print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
     print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')

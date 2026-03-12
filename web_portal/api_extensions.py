@@ -479,12 +479,32 @@ def _session_user_id(session: Optional[Dict[str, Any]]) -> Optional[str]:
 # ============================================================================
 
 def handle_captcha_create(client_ip: str, body_data: Dict) -> Tuple[int, Dict]:
-    """POST /api/security/captcha - Create CAPTCHA challenge"""
+    """POST /api/security/captcha - Create CAPTCHA challenge
+
+    Login already has rate-limiting, IP lockout, and password verification.
+    CAPTCHA is skipped for login because the in-memory challenge store does
+    not survive Railway multi-instance routing or process restarts, which
+    causes legitimate users to fail verification (INVALID_CHALLENGE).
+    CAPTCHA remains active for registration and other one-shot actions.
+    """
+    action = body_data.get('action', 'login')
+
+    if action == 'login':
+        return 200, {
+            "success": True,
+            "message": None,
+            "error_code": None,
+            "data": None,
+            "requires_otp": False,
+            "requires_captcha": False,
+            "verification_id": None,
+            "challenge": None,
+        }
+
     if not OTP_SERVICE_AVAILABLE:
         return 503, {"error": "OTP security service not available"}
     
     service = get_otp_security_service()
-    action = body_data.get('action', 'login')
     
     result = service.create_captcha_challenge(
         action=action,
