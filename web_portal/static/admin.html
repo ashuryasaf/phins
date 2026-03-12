@@ -1723,14 +1723,17 @@
           const data = await response.json();
           allCustomers = data.customers || [];
           displayCustomers(allCustomers);
-          
-          // Update customer count in stats
           document.getElementById('stat-customers').textContent = allCustomers.length;
+        } else {
+          console.error('Customer list endpoint returned', response.status);
+          const errData = await response.json().catch(() => ({}));
+          document.getElementById('customers-table').innerHTML = 
+            `<tr><td colspan="8" style="text-align:center;color:#dc3545;">Failed to load customers (${response.status}: ${errData.error || 'Server error'})</td></tr>`;
         }
       } catch (err) {
         console.error('Failed to load customers:', err);
         document.getElementById('customers-table').innerHTML = 
-          '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Failed to load customers</td></tr>';
+          '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Failed to load customers: ' + (err.message || 'Network error') + '</td></tr>';
       }
     }
     

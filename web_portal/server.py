@@ -10648,125 +10648,135 @@ For claims or questions, please contact:
             # FILTER: Exclude suspended test accounts from admin displays
             customer_list = []
             
-            for cust_id, customer in CUSTOMERS.items():
+            # When CUSTOMERS in-memory dict is empty, try to load from DB
+            if not CUSTOMERS and USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db_customers = db.customers.get_all()
+                        for c in db_customers:
+                            try:
+                                cdict = c.to_dict() if hasattr(c, 'to_dict') else {'id': c.id, 'name': c.name, 'email': c.email}
+                                CUSTOMERS[c.id] = cdict
+                            except Exception:
+                                pass
+                        if db_customers:
+                            print(f"[ADMIN] Recovered {len(db_customers)} customers from database into memory")
+                except Exception as db_err:
+                    print(f"[ADMIN] Failed to recover customers from DB: {db_err}")
+            
+            for cust_id, customer in list(CUSTOMERS.items()):
                 # Skip suspended test accounts
                 if is_suspended_account(cust_id):
                     continue
-                # Find associated policies
-                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
-                
-                # Find associated underwriting applications
-                customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
-                
-                # Find associated bills
-                customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
-                
-                # ========== UNIFIED WALLET BALANCE CALCULATION ==========
-                # Sum ALL wallet types: health wallet, investment, algo trading, pipeline cash
-                
-                # Health Wallet
-                health_wallet = HEALTH_WALLETS.get(cust_id, {})
-                health_balance = float(health_wallet.get('balance', 0) or 0)
-                
-                # Investment Account
-                investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
-                investment_balance = float(investment_account.get('balance', 0) or 0)
-                
-                # Customer Allocations (used for unified balance)
-                allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
-                
-                # Calculate total from allocation distribution if available
-                allocation_total = 0
-                dist = allocation.get('distribution', {})
-                if dist:
-                    allocation_total = float(dist.get('total_balance', 0) or 0)
-                
-                # Algo Trading Balance (from unified_balance_service if available)
-                algo_balance = 0
                 try:
-                    if unified_balance_enabled and unified_balance_service:
-                        algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
-                        algo_balance = float(algo_data.get('balance', 0) or 0)
-                except:
-                    pass
+                    # Find associated policies
+                    customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
+                    
+                    # Find associated underwriting applications
+                    customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
                 
-                # Pipeline Cash (from savings_pipeline_service if available)
-                pipeline_cash = 0
-                try:
-                    if savings_pipeline_enabled and savings_pipeline_service:
-                        pipeline_account = savings_pipeline_service.accounts.get(cust_id)
-                        if pipeline_account:
-                            pipeline_cash = float(pipeline_account.cash_balance or 0)
-                except:
-                    pass
-                
-                # TOTAL WALLET BALANCE = Sum of all sources
-                total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
-                if allocation_total > total_wallet_balance:
-                    total_wallet_balance = allocation_total  # Use allocation if higher
-                
-                # Determine pipeline stage (case-insensitive status checks)
-                pipeline_stage = 'registered'
-                if customer_apps:
-                    pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
-                    approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
-                    if pending_apps:
-                        pipeline_stage = 'underwriting'
-                    elif approved_apps:
-                        pipeline_stage = 'approved'
-                
-                # Get policy activation date for display
-                policy_activation_date = None
-                if customer_policies:
-                    active_policies = [p for p in customer_policies if status_eq(p, 'active')]
-                    if active_policies:
-                        pipeline_stage = 'active_policy'
-                        # Get most recent activation date
-                        for p in active_policies:
-                            act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
-                            if act_date and (not policy_activation_date or act_date > policy_activation_date):
-                                policy_activation_date = act_date
-                
-                if customer_bills:
-                    outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
-                    paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
-                    if outstanding_bills:
-                        pipeline_stage = 'billing_pending'
-                    elif paid_bills:
-                        pipeline_stage = 'fully_active'
-                
-                # Use policy activation date if available, otherwise customer created date
-                display_date = policy_activation_date or customer.get('created_date', 'N/A')
-                
-                customer_list.append({
-                    'id': cust_id,
-                    'name': customer.get('name', 'N/A'),
-                    'email': customer.get('email', 'N/A'),
-                    'phone': customer.get('phone', 'N/A'),
-                    'created_date': display_date,
-                    'created_at': display_date,  # Alias for frontend
-                    'customer_since': customer.get('created_date', 'N/A'),  # Original registration
-                    'policy_activation_date': policy_activation_date,
-                    'pipeline_stage': pipeline_stage,
-                    'policies_count': len(customer_policies),
-                    'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
-                    'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
-                    'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
-                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if status_eq(b, 'outstanding')),
-                    # Unified wallet balance (sum of all wallets)
-                    'wallet_balance': round(total_wallet_balance, 2),
-                    # Individual wallet breakdown for AI BI platform
-                    'wallet_breakdown': {
-                        'health_wallet': round(health_balance, 2),
-                        'investment': round(investment_balance, 2),
-                        'algo_trading': round(algo_balance, 2),
-                        'pipeline_cash': round(pipeline_cash, 2),
-                        'total': round(total_wallet_balance, 2)
-                    },
-                    'policies': customer_policies,
-                    'applications': customer_apps,
-                    'bills': customer_bills
-                })
+                    # Find associated bills
+                    customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
+                    
+                    health_wallet = HEALTH_WALLETS.get(cust_id, {})
+                    health_balance = float(health_wallet.get('balance', 0) or 0)
+                    investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
+                    investment_balance = float(investment_account.get('balance', 0) or 0)
+                    allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
+                    allocation_total = 0
+                    dist = allocation.get('distribution', {})
+                    if dist:
+                        allocation_total = float(dist.get('total_balance', 0) or 0)
+                    
+                    algo_balance = 0
+                    try:
+                        if unified_balance_enabled and unified_balance_service:
+                            algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
+                            algo_balance = float(algo_data.get('balance', 0) or 0)
+                    except Exception:
+                        pass
+                    
+                    pipeline_cash = 0
+                    try:
+                        if savings_pipeline_enabled and savings_pipeline_service:
+                            pipeline_account = savings_pipeline_service.accounts.get(cust_id)
+                            if pipeline_account:
+                                pipeline_cash = float(pipeline_account.cash_balance or 0)
+                    except Exception:
+                        pass
+                    
+                    total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
+                    if allocation_total > total_wallet_balance:
+                        total_wallet_balance = allocation_total
+                    
+                    pipeline_stage = 'registered'
+                    if customer_apps:
+                        pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
+                        approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
+                        if pending_apps:
+                            pipeline_stage = 'underwriting'
+                        elif approved_apps:
+                            pipeline_stage = 'approved'
+                    
+                    policy_activation_date = None
+                    if customer_policies:
+                        active_policies = [p for p in customer_policies if status_eq(p, 'active')]
+                        if active_policies:
+                            pipeline_stage = 'active_policy'
+                            for p in active_policies:
+                                act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
+                                if act_date and (not policy_activation_date or act_date > policy_activation_date):
+                                    policy_activation_date = act_date
+                    
+                    if customer_bills:
+                        outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
+                        paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
+                        if outstanding_bills:
+                            pipeline_stage = 'billing_pending'
+                        elif paid_bills:
+                            pipeline_stage = 'fully_active'
+                    
+                    display_date = policy_activation_date or customer.get('created_date', 'N/A')
+                    
+                    customer_list.append({
+                        'id': cust_id,
+                        'name': customer.get('name', 'N/A'),
+                        'email': customer.get('email', 'N/A'),
+                        'phone': customer.get('phone', 'N/A'),
+                        'created_date': display_date,
+                        'created_at': display_date,
+                        'customer_since': customer.get('created_date', 'N/A'),
+                        'policy_activation_date': policy_activation_date,
+                        'pipeline_stage': pipeline_stage,
+                        'policies_count': len(customer_policies),
+                        'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
+                        'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
+                        'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
+                        'total_premium_due': sum(safe_float(b.get('amount_due', 0)) for b in customer_bills if status_eq(b, 'outstanding')),
+                        'wallet_balance': round(total_wallet_balance, 2),
+                        'wallet_breakdown': {
+                            'health_wallet': round(health_balance, 2),
+                            'investment': round(investment_balance, 2),
+                            'algo_trading': round(algo_balance, 2),
+                            'pipeline_cash': round(pipeline_cash, 2),
+                            'total': round(total_wallet_balance, 2)
+                        },
+                        'policies': customer_policies,
+                        'applications': customer_apps,
+                        'bills': customer_bills
+                    })
+                except Exception as _cust_err:
+                    print(f"[ADMIN] Error building customer entry {cust_id}: {_cust_err}")
+                    customer_list.append({
+                        'id': cust_id,
+                        'name': customer.get('name', 'N/A') if isinstance(customer, dict) else 'N/A',
+                        'email': customer.get('email', 'N/A') if isinstance(customer, dict) else 'N/A',
+                        'pipeline_stage': 'error', 'policies_count': 0, 'active_policies': 0,
+                        'wallet_balance': 0, 'pending_applications': 0, 'outstanding_bills': 0,
+                        'created_date': 'N/A', 'created_at': 'N/A',
+                        'policies': [], 'applications': [], 'bills': []
+                    })
             
             # Sort by created date (newest first)
             customer_list.sort(key=lambda x: x.get('created_date', ''), reverse=True)
