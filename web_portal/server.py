@@ -5797,7 +5797,8 @@ For claims or questions, please contact:
                 return
             
             # Calculate comprehensive dashboard stats
-            total_customers = len(CUSTOMERS)
+            # Exclude suspended test accounts for accurate reporting
+            total_customers = len([cid for cid in CUSTOMERS if not is_suspended_account(cid)])
             total_policies = len(POLICIES)
             active_policies = len([p for p in POLICIES.values() if status_eq(p, 'active')])
             pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')])
@@ -5862,14 +5863,23 @@ For claims or questions, please contact:
             total_investment_value = sum(float(p.get('investment_value', 0) or 0) for p in POLICIES.values())
             total_coverage_amount = sum(float(p.get('coverage_amount', 0) or 0) for p in POLICIES.values() if status_eq(p, 'active'))
             
-            # Claims payment stats (case-insensitive)
-            claims_paid = sum(c.get('amount_approved', c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'approved'))
+            # Claims payment stats (case-insensitive) — include both 'approved' and 'paid'
+            claims_paid = sum(
+                safe_float(c.get('amount_approved', c.get('approved_amount', c.get('claimed_amount', 0))))
+                for c in CLAIMS.values()
+                if status_in(c, ['approved', 'paid', 'settled'])
+            )
             
+            current_month_prefix = datetime.now().strftime('%Y-%m')
             dashboard_data = {
                 'success': True,
                 # Customer metrics
                 'total_customers': total_customers,
-                'new_customers_this_month': len([c for c in CUSTOMERS.values() if c.get('created_at', '')[:7] == datetime.now().strftime('%Y-%m')]),
+                'new_customers_this_month': len([
+                    c for cid, c in CUSTOMERS.items()
+                    if not is_suspended_account(cid)
+                    and (c.get('created_at') or c.get('created_date') or '')[:7] == current_month_prefix
+                ]),
                 
                 # Policy metrics
                 'total_policies': total_policies,
@@ -5911,7 +5921,7 @@ For claims or questions, please contact:
                 
                 # Pipeline summary
                 'pipeline': {
-                    'registered': len([c for c in CUSTOMERS.values()]),
+                    'registered': total_customers,
                     'applied': len(UNDERWRITING_APPLICATIONS),
                     'underwriting': pending_applications,
                     'approved': approved_applications,
@@ -10885,7 +10895,7 @@ For claims or questions, please contact:
         # Pipeline summary statistics
         if path == '/api/admin/pipeline-stats':
             stats = {
-                'total_customers': len(CUSTOMERS),
+                'total_customers': len([cid for cid in CUSTOMERS if not is_suspended_account(cid)]),
                 'total_applications': len(UNDERWRITING_APPLICATIONS),
                 'total_policies': len(POLICIES),
                 'total_bills': len(BILLING),

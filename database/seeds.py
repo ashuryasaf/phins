@@ -479,6 +479,7 @@ def seed_sample_data(session=None):
                     'description': 'Emergency room visit for chest pain - cardiac evaluation',
                     'claimed_amount': 15000.00,
                     'approved_amount': 15000.00,
+                    'paid_amount': 15000.00,
                     'status': 'Paid'
                 },
                 {
@@ -488,6 +489,7 @@ def seed_sample_data(session=None):
                     'description': 'Monthly prescription medications - cardiovascular',
                     'claimed_amount': 850.00,
                     'approved_amount': 850.00,
+                    'paid_amount': 850.00,
                     'status': 'Paid'
                 },
                 {
@@ -497,6 +499,7 @@ def seed_sample_data(session=None):
                     'description': 'Fender bender accident - rear bumper damage repair',
                     'claimed_amount': 3500.00,
                     'approved_amount': 3200.00,
+                    'paid_amount': 3200.00,
                     'status': 'Paid'
                 },
                 {
@@ -528,6 +531,7 @@ def seed_sample_data(session=None):
                         description=claim_data['description'],
                         claimed_amount=claim_data['claimed_amount'],
                         approved_amount=claim_data.get('approved_amount'),
+                        paid_amount=claim_data.get('paid_amount'),
                         status=claim_data['status'],
                         filed_date=filed_date
                     )
@@ -543,6 +547,7 @@ def seed_sample_data(session=None):
                             'description': claim_data['description'],
                             'claimed_amount': claim_data['claimed_amount'],
                             'approved_amount': claim_data.get('approved_amount', 0),
+                            'paid_amount': claim_data.get('paid_amount', 0),
                             'status': claim_data['status'],
                             'filed_date': filed_date.isoformat(),
                             'created_date': filed_date.isoformat(),
