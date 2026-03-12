@@ -32881,6 +32881,93 @@ For claims or questions, please contact:
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
 
 
+def _sync_db_to_memory() -> None:
+    """Load all DB records into in-memory dicts so pipeline endpoints see complete data.
+
+    On Railway with PostgreSQL, in-memory dicts are empty on startup except
+    for records created by seed_sample_data().  Any customers/policies/claims
+    created through API endpoints in previous deployments only exist in the
+    DB.  This function merges them into the in-memory dicts.
+    """
+    if not USE_DATABASE or not database_enabled:
+        return
+    try:
+        from database.manager import DatabaseManager
+        counts = {}
+        with DatabaseManager() as db:
+            for c in db.customers.get_all():
+                if c.id not in CUSTOMERS:
+                    try:
+                        CUSTOMERS[c.id] = c.to_dict() if hasattr(c, 'to_dict') else {
+                            'id': c.id, 'name': c.name, 'email': c.email,
+                            'phone': getattr(c, 'phone', ''), 'status': 'active',
+                            'portal_active': getattr(c, 'portal_active', True),
+                            'created_date': str(getattr(c, 'created_at', '')),
+                        }
+                    except Exception:
+                        pass
+            counts['customers'] = len(CUSTOMERS)
+
+            for p in db.policies.get_all():
+                if p.id not in POLICIES:
+                    try:
+                        POLICIES[p.id] = p.to_dict() if hasattr(p, 'to_dict') else {
+                            'id': p.id, 'customer_id': p.customer_id,
+                            'type': getattr(p, 'type', ''), 'status': getattr(p, 'status', ''),
+                            'coverage_amount': getattr(p, 'coverage_amount', 0),
+                            'annual_premium': getattr(p, 'annual_premium', 0),
+                            'monthly_premium': getattr(p, 'monthly_premium', 0),
+                        }
+                    except Exception:
+                        pass
+            counts['policies'] = len(POLICIES)
+
+            for cl in db.claims.get_all():
+                if cl.id not in CLAIMS:
+                    try:
+                        CLAIMS[cl.id] = cl.to_dict() if hasattr(cl, 'to_dict') else {
+                            'id': cl.id, 'customer_id': cl.customer_id,
+                            'policy_id': getattr(cl, 'policy_id', ''),
+                            'claimed_amount': getattr(cl, 'claimed_amount', 0),
+                            'approved_amount': getattr(cl, 'approved_amount', 0),
+                            'paid_amount': getattr(cl, 'paid_amount', 0),
+                            'status': getattr(cl, 'status', ''),
+                        }
+                    except Exception:
+                        pass
+            counts['claims'] = len(CLAIMS)
+
+            for b in db.billing.get_all():
+                if b.id not in BILLING:
+                    try:
+                        BILLING[b.id] = b.to_dict() if hasattr(b, 'to_dict') else {
+                            'id': b.id, 'customer_id': getattr(b, 'customer_id', ''),
+                            'policy_id': getattr(b, 'policy_id', ''),
+                            'amount': getattr(b, 'amount', 0),
+                            'amount_paid': getattr(b, 'amount_paid', 0),
+                            'status': getattr(b, 'status', ''),
+                        }
+                    except Exception:
+                        pass
+            counts['billing'] = len(BILLING)
+
+            for u in db.underwriting.get_all():
+                if u.id not in UNDERWRITING_APPLICATIONS:
+                    try:
+                        UNDERWRITING_APPLICATIONS[u.id] = u.to_dict() if hasattr(u, 'to_dict') else {
+                            'id': u.id, 'customer_id': u.customer_id,
+                            'policy_id': getattr(u, 'policy_id', ''),
+                            'status': getattr(u, 'status', ''),
+                        }
+                    except Exception:
+                        pass
+            counts['underwriting'] = len(UNDERWRITING_APPLICATIONS)
+
+        print(f"✓ DB-to-memory sync complete: {counts}")
+    except Exception as e:
+        print(f"⚠️  DB-to-memory sync failed (non-critical): {e}")
+
+
 def run_server(port: int = PORT) -> None:
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
@@ -32977,10 +33064,17 @@ def run_server(port: int = PORT) -> None:
                 print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
             except Exception as e:
                 print(f"Note: Sample data seeding skipped (may already exist): {e}")
+            
+            # Sync ALL database records into in-memory dicts so pipeline
+            # endpoints see every customer/policy/claim/bill that exists in
+            # PostgreSQL — not just the ones created during this startup.
+            try:
+                _sync_db_to_memory()
+            except Exception as e:
+                print(f"Note: DB-to-memory sync: {e}")
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")
-            # Don't fail - just fall back to in-memory
     
     # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
     print("👤 Initializing customer accounts...")
