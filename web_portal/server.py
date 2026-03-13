@@ -1739,16 +1739,10 @@ def load_dynamic_customers():
                 'customer_id': customer.get('customer_id', f"CUST-{email}")
             }
 
-            if email in USERS:
-                if _is_valid_hex_hash(pwd_hash):
-                    existing = USERS.get(email) if hasattr(USERS, 'get') else USERS[email] if isinstance(USERS, dict) else None
-                    if existing and not _is_valid_hex_hash(existing.get('hash', '')):
-                        USERS[email] = user_entry
-                    else:
-                        USERS[email] = user_entry
-                continue
-            
-            USERS[email] = user_entry
+            # Write to _FALLBACK_USERS directly to avoid DB round-trips
+            # through UserDictWrapper (which hangs when PostgreSQL is booting).
+            # The DB is populated separately by seed_dynamic_customers().
+            _FALLBACK_USERS[email] = user_entry
             
             customer_id = customer.get('customer_id')
             if customer_id:
@@ -33034,8 +33028,8 @@ def run_server(port: int = PORT) -> None:
                     
                     # Users to ensure exist - passwords from environment variables
                     ensure_users = [
-                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Asi PHINS'},
-                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Shosh PHINS'}
+                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', LEGACY_DEMO_PASSWORDS.get('asi@phins.ai', 'Asi20240!')), 'role': 'customer', 'name': 'Asi PHINS'},
+                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', LEGACY_DEMO_PASSWORDS.get('shosh@phins.ai', 'Shosh2024!')), 'role': 'customer', 'name': 'Shosh PHINS'}
                     ]
                     
                     for user_data in ensure_users:
