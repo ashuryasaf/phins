@@ -68,6 +68,38 @@ def _get_env_password(env_var: str, username: str) -> str:
     return secrets.token_urlsafe(32)
 
 
+def _get_explicit_env_password(env_var: str) -> str | None:
+    """Return an explicitly configured password override, if present."""
+    password = os.environ.get(env_var)
+    if password:
+        return password
+    return None
+
+
+def _sync_seeded_credentials_if_configured(entity, env_var: str, username: str) -> bool:
+    """
+    Update credentials for an existing seeded account only when an explicit
+    environment override is present.
+
+    This protects production credentials from being replaced during deploys
+    where password env vars are missing or temporarily unavailable.
+    """
+    configured_password = _get_explicit_env_password(env_var)
+    if not configured_password:
+        if not getattr(entity, 'password_hash', None) or not getattr(entity, 'password_salt', None):
+            logger.warning(
+                "⚠️  Existing seeded account '%s' has no stored credentials and %s is not set.",
+                username,
+                env_var,
+            )
+        return False
+
+    password_data = hash_password(configured_password)
+    entity.password_hash = password_data['hash']
+    entity.password_salt = password_data['salt']
+    return True
+
+
 def seed_default_users(session=None):
     """Create default system users"""
     should_close = False
@@ -82,6 +114,7 @@ def seed_default_users(session=None):
         default_users = [
             {
                 'username': 'admin',
+                'password_env_var': 'PHINS_ADMIN_PASSWORD',
                 'password': _get_env_password('PHINS_ADMIN_PASSWORD', 'admin'),
                 'role': 'admin',
                 'name': 'Admin User',
@@ -89,6 +122,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'actuary',
+                'password_env_var': 'PHINS_ACTUARY_PASSWORD',
                 'password': _get_env_password('PHINS_ACTUARY_PASSWORD', 'actuary'),
                 'role': 'actuary',
                 'name': 'Actuary User',
@@ -96,6 +130,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'supplier',
+                'password_env_var': 'PHINS_SUPPLIER_PASSWORD',
                 'password': _get_env_password('PHINS_SUPPLIER_PASSWORD', 'supplier'),
                 'role': 'supplier',
                 'name': 'Supplier User',
@@ -103,6 +138,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'underwriter',
+                'password_env_var': 'PHINS_UNDERWRITER_PASSWORD',
                 'password': _get_env_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'),
                 'role': 'underwriter',
                 'name': 'John Underwriter',
@@ -110,6 +146,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'claims_adjuster',
+                'password_env_var': 'PHINS_CLAIMS_PASSWORD',
                 'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
                 'role': 'claims',
                 'name': 'Jane Claims',
@@ -117,6 +154,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'accountant',
+                'password_env_var': 'PHINS_ACCOUNTANT_PASSWORD',
                 'password': _get_env_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'),
                 'role': 'accountant',
                 'name': 'Bob Accountant',
@@ -124,6 +162,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'media_ad',
+                'password_env_var': 'PHINS_MEDIA_PASSWORD',
                 'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
                 'role': 'media',
                 'name': 'Media Admin',
@@ -132,6 +171,7 @@ def seed_default_users(session=None):
             # Primary customer account (links to CUST-ASAF-001 in customers table)
             {
                 'username': 'asaf@assurance.co.il',
+                'password_env_var': 'PHINS_USER_ASAF_ASSURANCE_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'),
                 'role': 'customer',
                 'name': 'Asaf Assurance',
@@ -140,6 +180,7 @@ def seed_default_users(session=None):
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asaf@phins.ai',
+                'password_env_var': 'PHINS_USER_ASAF_PHINS_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'),
                 'role': 'admin',
                 'name': 'Asaf PHINS',
@@ -148,6 +189,7 @@ def seed_default_users(session=None):
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'efrat@phins.ai',
+                'password_env_var': 'PHINS_USER_EFRAT_PASSWORD',
                 'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
                 'role': 'customer',
                 'name': 'Efrat PHINS',
@@ -156,6 +198,7 @@ def seed_default_users(session=None):
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asi@phins.ai',
+                'password_env_var': 'PHINS_USER_ASI_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
                 'role': 'customer',
                 'name': 'Asi PHINS',
@@ -164,6 +207,7 @@ def seed_default_users(session=None):
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'shosh@phins.ai',
+                'password_env_var': 'PHINS_USER_SHOSH_PASSWORD',
                 'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
                 'role': 'customer',
                 'name': 'Shosh PHINS',
@@ -177,20 +221,22 @@ def seed_default_users(session=None):
             if existing_user:
                 needs_commit = False
 
-                # Always sync password hash from env var so DB stays current
-                password_data = hash_password(user_data['password'])
-                existing_user.password_hash = password_data['hash']
-                existing_user.password_salt = password_data['salt']
-                needs_commit = True
+                if _sync_seeded_credentials_if_configured(
+                    existing_user,
+                    user_data['password_env_var'],
+                    user_data['username'],
+                ):
+                    needs_commit = True
 
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
+                    needs_commit = True
 
                 # Do NOT force-reactivate deactivated users; respect admin decisions
 
                 if needs_commit:
                     session.commit()
-                    logger.info(f"Synced credentials for user '{user_data['username']}' (role={user_data['role']})")
+                    logger.info(f"Updated seeded user '{user_data['username']}' (role={user_data['role']})")
                 continue
             
             # Hash password
@@ -640,12 +686,18 @@ def seed_sample_data(session=None):
                 except Exception as e:
                     logger.warning(f"Could not create underwriting application for primary customer: {e}")
         else:
-            # Sync credentials for existing primary customer so login stays current
-            pwd = hash_password(_get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'))
-            primary_customer.password_hash = pwd['hash']
-            primary_customer.password_salt = pwd['salt']
-            session.commit()
-            logger.info(f"Synced credentials for primary customer {primary_customer.email}")
+            if _sync_seeded_credentials_if_configured(
+                primary_customer,
+                'PHINS_USER_ASAF_ASSURANCE_PASSWORD',
+                'asaf@assurance.co.il',
+            ):
+                session.commit()
+                logger.info(f"Updated seeded credentials for primary customer {primary_customer.email}")
+
+            pwd = {
+                'hash': primary_customer.password_hash,
+                'salt': primary_customer.password_salt,
+            }
 
             # Sync to in-memory CUSTOMERS for auth fallback
             if sync_primary_to_memory:
@@ -671,6 +723,7 @@ def seed_sample_data(session=None):
                 'id': 'CUST-EFRAT-001',
                 'name': 'Efrat PHINS',
                 'email': 'efrat@phins.ai',
+                'password_env_var': 'PHINS_USER_EFRAT_PASSWORD',
                 'phone': '+972-50-9876543',
                 'dob': '1990-06-15',
                 'age': 35,
@@ -703,6 +756,7 @@ def seed_sample_data(session=None):
                 'id': 'CUST-ASI-001',
                 'name': 'Asi PHINS',
                 'email': 'asi@phins.ai',
+                'password_env_var': 'PHINS_USER_ASI_PASSWORD',
                 'phone': '+972-50-1111111',
                 'dob': '1985-03-20',
                 'age': 40,
@@ -735,6 +789,7 @@ def seed_sample_data(session=None):
                 'id': 'CUST-SHOSH-001',
                 'name': 'Shosh PHINS',
                 'email': 'shosh@phins.ai',
+                'password_env_var': 'PHINS_USER_SHOSH_PASSWORD',
                 'phone': '+972-50-2222222',
                 'dob': '1988-09-10',
                 'age': 37,
@@ -783,13 +838,20 @@ def seed_sample_data(session=None):
         for phins_cust in phins_customers:
             existing = customer_repo.find_one_by(email=phins_cust['email'])
             if existing:
-                # Sync password from env var so returning customers can log in.
-                # Do NOT force-reactivate portal_active; respect admin deactivation.
-                pwd = hash_password(phins_cust['password'])
-                existing.password_hash = pwd['hash']
-                existing.password_salt = pwd['salt']
-                session.commit()
-                logger.info(f"Synced credentials for PHINS customer {phins_cust['email']}")
+                # Only explicit env overrides should rotate credentials for
+                # already-existing customers. Do NOT force-reactivate
+                # portal_active; respect admin deactivation.
+                if _sync_seeded_credentials_if_configured(
+                    existing,
+                    phins_cust['password_env_var'],
+                    phins_cust['email'],
+                ):
+                    session.commit()
+                    logger.info(f"Updated seeded credentials for PHINS customer {phins_cust['email']}")
+                pwd = {
+                    'hash': existing.password_hash,
+                    'salt': existing.password_salt,
+                }
             else:
                 pwd = hash_password(phins_cust['password'])
                 customer = customer_repo.create(
