@@ -376,7 +376,7 @@ if USE_DATABASE:
                         time.sleep(retry_delay)
                         retry_delay *= 2  # exponential backoff
                     else:
-                        print("⚠️  Database connection check failed after all retries - using in-memory storage")
+                        print("⚠️  Database connection check failed after all retries - starting in degraded in-memory mode")
                         print("=" * 60)
                         print("DATABASE TROUBLESHOOTING:")
                         print("-" * 60)
@@ -391,8 +391,8 @@ if USE_DATABASE:
                             print("    - PostgreSQL service failed to deploy (check Railway dashboard)")
                             print("    - Stale credentials (recreate PostgreSQL service)")
                             print("    - Network/firewall issues")
+                        print("  → The app remains configured for database mode and will keep trying to recover.")
                         print("=" * 60)
-                        USE_DATABASE = False
             except Exception as e:
                 if attempt < max_retries - 1:
                     print(f"⚠️  Database connection test failed (attempt {attempt + 1}/{max_retries}): {e}")
@@ -417,9 +417,9 @@ if USE_DATABASE:
                         print("  → Tables will be auto-created on next successful connection")
                     else:
                         print(f"  → Error: {e}")
-                    print("  → Falling back to in-memory storage (data not persisted)")
+                    print("  → Starting in degraded in-memory mode (data not persisted until recovery succeeds)")
+                    print("  → Database mode remains enabled so recovery endpoints and reconnect logic can work")
                     print("=" * 60)
-                    USE_DATABASE = False
             
     except ImportError as e:
         print(f"Warning: Database support not available: {e}")
@@ -3216,14 +3216,28 @@ ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
 import hmac
 import base64
 
-# Session signing key - loaded from environment variable.
-# Falls back to a per-process random key so tokens are never signed with a
-# publicly-known default value.  Set SESSION_SECRET_KEY in production.
-_TOKEN_SECRET = (
-    os.environ.get('SESSION_SECRET_KEY')
-    or os.environ.get('PHINS_ADMIN_PASSWORD')
-    or secrets.token_hex(32)
-)
+def _resolve_token_secret() -> str:
+    """Resolve the session signing key from the supported environment aliases."""
+    for env_name in (
+        'SESSION_SECRET_KEY',
+        'SESSION_SECRET',
+        'PHINS_SECRET_KEY',
+        'SECRET_KEY',
+    ):
+        value = os.environ.get(env_name)
+        if value:
+            return value
+    admin_password = os.environ.get('PHINS_ADMIN_PASSWORD')
+    if admin_password:
+        return admin_password
+    return secrets.token_hex(32)
+
+
+# Session signing key - loaded from environment variable aliases used across
+# the deployment docs. Falls back to an operator-supplied admin password and
+# finally to a per-process random key so tokens are never signed with a
+# publicly-known default value.
+_TOKEN_SECRET = _resolve_token_secret()
 
 def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
     """Create an HMAC-signed token with embedded user data (stateless auth)"""
@@ -4996,10 +5010,6 @@ For claims or questions, please contact:
         
         # Health check endpoint
         if self.path == '/api/health' or self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            
             # Perform actual database connection check
             db_status = 'in-memory'
             db_connected = False
@@ -5025,14 +5035,20 @@ For claims or questions, please contact:
             except Exception:
                 pass
             
+            is_degraded = bool(USE_DATABASE and not db_connected)
+            self.send_response(503 if is_degraded else 200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+
             health_status = {
-                'status': 'healthy',
+                'status': 'degraded' if is_degraded else 'healthy',
                 'service': 'phins-portal',
                 'timestamp': datetime.now().isoformat(),
                 'database': db_status,
                 'database_enabled': database_enabled,
                 'database_connected': db_connected,
                 'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'configured_storage_mode': 'database' if USE_DATABASE else 'in-memory',
                 'customers_available': customers_count,
                 'ecosystem_enabled': ECOSYSTEM_ENABLED,
                 'supplier_service_enabled': supplier_service_enabled,
@@ -5044,6 +5060,8 @@ For claims or questions, please contact:
             if customers_count == 0 and USE_DATABASE and not database_enabled:
                 health_status['recovery_recommended'] = True
                 health_status['recovery_url'] = '/api/diagnostics/db-recovery'
+            if is_degraded:
+                health_status['degraded_reason'] = 'database_unavailable'
             
             self.wfile.write(json.dumps(health_status).encode('utf-8'))
             return
