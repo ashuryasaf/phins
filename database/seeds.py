@@ -237,26 +237,52 @@ def seed_dynamic_customers(session, user_repo):
             logger.info("Dynamic customers file is empty")
             return
         
+        default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', 'Customer2024!')
+        
         for customer in dynamic_customers:
             username = customer.get('username', customer.get('email', ''))
             if not username:
                 continue
             
-            # Check if already exists
+            # Extract hash/salt from JSON before checking DB
+            stored_hash = customer.get('password_hash', '')
+            stored_salt = customer.get('password_salt', '')
+            is_valid_hash = (
+                stored_hash and stored_salt
+                and stored_hash not in ('REDACTED', 'NONE', 'NULL', '')
+                and stored_salt not in ('REDACTED', 'NONE', 'NULL', '')
+                and len(stored_hash) >= 32
+            )
+            
             existing_user = user_repo.get_by_username(username)
             if existing_user:
-                logger.info(f"Dynamic customer '{username}' already exists, skipping...")
+                if is_valid_hash:
+                    existing_user.password_hash = stored_hash
+                    existing_user.password_salt = stored_salt
+                else:
+                    pwd_data = hash_password(customer.get('password', default_cust_pwd))
+                    existing_user.password_hash = pwd_data['hash']
+                    existing_user.password_salt = pwd_data['salt']
+                try:
+                    session.commit()
+                except Exception:
+                    try: session.rollback()
+                    except Exception: pass
+                logger.info(f"Synced credentials for dynamic customer '{username}'")
                 continue
             
-            # Hash password - use env var for default or generate random
-            default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
-            password_hash = hash_password(customer.get('password', default_cust_pwd))
+            if is_valid_hash:
+                pwd_hash = stored_hash
+                pwd_salt = stored_salt
+            else:
+                pwd_data = hash_password(customer.get('password', default_cust_pwd))
+                pwd_hash = pwd_data['hash']
+                pwd_salt = pwd_data['salt']
             
-            # Create user
             user_repo.create(
                 username=username,
-                password_hash=password_hash['hash'],
-                password_salt=password_hash['salt'],
+                password_hash=pwd_hash,
+                password_salt=pwd_salt,
                 role='customer',
                 name=customer.get('name', username),
                 email=customer.get('email', username),
@@ -270,6 +296,36 @@ def seed_dynamic_customers(session, user_repo):
         logger.error(f"Error parsing dynamic customers file: {e}")
     except Exception as e:
         logger.error(f"Error loading dynamic customers: {e}")
+
+    # Ensure every customer in the DB has a matching user record.
+    # Customers created by /api/register or e2e tests may exist in
+    # the customers table without a users-table record after a DB wipe.
+    try:
+        from database.repositories import CustomerRepository
+        customer_repo = CustomerRepository(session)
+        all_customers = customer_repo.get_all()
+        synced = 0
+        for cust in all_customers:
+            if not cust.email:
+                continue
+            existing_user = user_repo.get_by_username(cust.email)
+            if not existing_user:
+                pwd = hash_password(default_cust_pwd)
+                user_repo.create(
+                    username=cust.email,
+                    password_hash=pwd['hash'],
+                    password_salt=pwd['salt'],
+                    role='customer',
+                    name=cust.name or cust.email,
+                    email=cust.email,
+                    customer_id=cust.id,
+                    active=True
+                )
+                synced += 1
+        if synced:
+            logger.info(f"Created {synced} user record(s) for orphaned customers")
+    except Exception as e:
+        logger.warning(f"Orphaned customer sweep: {e}")
 
 
 def seed_sample_data(session=None):
