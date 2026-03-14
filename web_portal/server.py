@@ -1720,16 +1720,14 @@ def load_dynamic_customers():
                     print(f"[DYNAMIC] Skipping invalid/redacted credentials for '{email}'")
 
             if pwd_hash is None:
+                default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', 'Customer2024!')
                 if 'password' in customer:
-                    default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
                     pwd_data = hash_password(customer.get('password', default_pwd))
-                    pwd_hash = pwd_data['hash']
-                    pwd_salt = pwd_data['salt']
                     legacy_count += 1
                 else:
-                    pwd_data = hash_password(secrets.token_urlsafe(32))
-                    pwd_hash = pwd_data['hash']
-                    pwd_salt = pwd_data['salt']
+                    pwd_data = hash_password(default_pwd)
+                pwd_hash = pwd_data['hash']
+                pwd_salt = pwd_data['salt']
 
             user_entry = {
                 'hash': pwd_hash,
