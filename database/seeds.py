@@ -39,65 +39,23 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
-_NAMED_ACCOUNT_DEFAULTS: dict = {
-    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
-    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
-    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
-    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
-}
-
-
 def _get_env_password(env_var: str, username: str) -> str:
     """
-    Get password from environment variable, falling back to a documented
-    default for named accounts so they remain accessible out of the box.
-
-    Priority:
-      1. Environment variable (production override)
-      2. Documented default for named accounts
-      3. Random unusable password (generic/system accounts)
+    Get password from environment variable or generate random unusable password.
+    
+    Args:
+        env_var: Environment variable name
+        username: Username for logging
+        
+    Returns:
+        Password string from env var or random password
     """
     password = os.environ.get(env_var)
     if password:
         return password
-    default_pwd = _NAMED_ACCOUNT_DEFAULTS.get(username)
-    if default_pwd:
-        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable. Using documented default.")
-        return default_pwd
-    logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
-    return secrets.token_urlsafe(32)
-
-
-def _get_explicit_env_password(env_var: str) -> str | None:
-    """Return an explicitly configured password override, if present."""
-    password = os.environ.get(env_var)
-    if password:
-        return password
-    return None
-
-
-def _sync_seeded_credentials_if_configured(entity, env_var: str, username: str) -> bool:
-    """
-    Update credentials for an existing seeded account only when an explicit
-    environment override is present.
-
-    This protects production credentials from being replaced during deploys
-    where password env vars are missing or temporarily unavailable.
-    """
-    configured_password = _get_explicit_env_password(env_var)
-    if not configured_password:
-        if not getattr(entity, 'password_hash', None) or not getattr(entity, 'password_salt', None):
-            logger.warning(
-                "⚠️  Existing seeded account '%s' has no stored credentials and %s is not set.",
-                username,
-                env_var,
-            )
-        return False
-
-    password_data = hash_password(configured_password)
-    entity.password_hash = password_data['hash']
-    entity.password_salt = password_data['salt']
-    return True
+    else:
+        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
 
 
 def seed_default_users(session=None):
@@ -114,7 +72,6 @@ def seed_default_users(session=None):
         default_users = [
             {
                 'username': 'admin',
-                'password_env_var': 'PHINS_ADMIN_PASSWORD',
                 'password': _get_env_password('PHINS_ADMIN_PASSWORD', 'admin'),
                 'role': 'admin',
                 'name': 'Admin User',
@@ -122,7 +79,6 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'actuary',
-                'password_env_var': 'PHINS_ACTUARY_PASSWORD',
                 'password': _get_env_password('PHINS_ACTUARY_PASSWORD', 'actuary'),
                 'role': 'actuary',
                 'name': 'Actuary User',
@@ -130,7 +86,6 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'supplier',
-                'password_env_var': 'PHINS_SUPPLIER_PASSWORD',
                 'password': _get_env_password('PHINS_SUPPLIER_PASSWORD', 'supplier'),
                 'role': 'supplier',
                 'name': 'Supplier User',
@@ -138,7 +93,6 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'underwriter',
-                'password_env_var': 'PHINS_UNDERWRITER_PASSWORD',
                 'password': _get_env_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'),
                 'role': 'underwriter',
                 'name': 'John Underwriter',
@@ -146,7 +100,6 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'claims_adjuster',
-                'password_env_var': 'PHINS_CLAIMS_PASSWORD',
                 'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
                 'role': 'claims',
                 'name': 'Jane Claims',
@@ -154,7 +107,6 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'accountant',
-                'password_env_var': 'PHINS_ACCOUNTANT_PASSWORD',
                 'password': _get_env_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'),
                 'role': 'accountant',
                 'name': 'Bob Accountant',
@@ -162,7 +114,6 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'media_ad',
-                'password_env_var': 'PHINS_MEDIA_PASSWORD',
                 'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
                 'role': 'media',
                 'name': 'Media Admin',
@@ -171,7 +122,6 @@ def seed_default_users(session=None):
             # Primary customer account (links to CUST-ASAF-001 in customers table)
             {
                 'username': 'asaf@assurance.co.il',
-                'password_env_var': 'PHINS_USER_ASAF_ASSURANCE_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'),
                 'role': 'customer',
                 'name': 'Asaf Assurance',
@@ -180,7 +130,6 @@ def seed_default_users(session=None):
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asaf@phins.ai',
-                'password_env_var': 'PHINS_USER_ASAF_PHINS_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'),
                 'role': 'admin',
                 'name': 'Asaf PHINS',
@@ -189,7 +138,6 @@ def seed_default_users(session=None):
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'efrat@phins.ai',
-                'password_env_var': 'PHINS_USER_EFRAT_PASSWORD',
                 'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
                 'role': 'customer',
                 'name': 'Efrat PHINS',
@@ -198,7 +146,6 @@ def seed_default_users(session=None):
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asi@phins.ai',
-                'password_env_var': 'PHINS_USER_ASI_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
                 'role': 'customer',
                 'name': 'Asi PHINS',
@@ -207,7 +154,6 @@ def seed_default_users(session=None):
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'shosh@phins.ai',
-                'password_env_var': 'PHINS_USER_SHOSH_PASSWORD',
                 'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
                 'role': 'customer',
                 'name': 'Shosh PHINS',
@@ -219,24 +165,13 @@ def seed_default_users(session=None):
             # Check if user already exists
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
-                needs_commit = False
-
-                if _sync_seeded_credentials_if_configured(
-                    existing_user,
-                    user_data['password_env_var'],
-                    user_data['username'],
-                ):
-                    needs_commit = True
-
+                # Update role if it has changed (important for role changes like media_ad)
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
-                    needs_commit = True
-
-                # Do NOT force-reactivate deactivated users; respect admin decisions
-
-                if needs_commit:
                     session.commit()
-                    logger.info(f"Updated seeded user '{user_data['username']}' (role={user_data['role']})")
+                    logger.info(f"Updated user '{user_data['username']}' role to: {user_data['role']}")
+                else:
+                    logger.info(f"User '{user_data['username']}' already exists with correct role, skipping...")
                 continue
             
             # Hash password
@@ -283,52 +218,26 @@ def seed_dynamic_customers(session, user_repo):
             logger.info("Dynamic customers file is empty")
             return
         
-        default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', 'Customer2024!')
-        
         for customer in dynamic_customers:
             username = customer.get('username', customer.get('email', ''))
             if not username:
                 continue
             
-            # Extract hash/salt from JSON before checking DB
-            stored_hash = customer.get('password_hash', '')
-            stored_salt = customer.get('password_salt', '')
-            is_valid_hash = (
-                stored_hash and stored_salt
-                and stored_hash not in ('REDACTED', 'NONE', 'NULL', '')
-                and stored_salt not in ('REDACTED', 'NONE', 'NULL', '')
-                and len(stored_hash) >= 32
-            )
-            
+            # Check if already exists
             existing_user = user_repo.get_by_username(username)
             if existing_user:
-                if is_valid_hash:
-                    existing_user.password_hash = stored_hash
-                    existing_user.password_salt = stored_salt
-                else:
-                    pwd_data = hash_password(customer.get('password', default_cust_pwd))
-                    existing_user.password_hash = pwd_data['hash']
-                    existing_user.password_salt = pwd_data['salt']
-                try:
-                    session.commit()
-                except Exception:
-                    try: session.rollback()
-                    except Exception: pass
-                logger.info(f"Synced credentials for dynamic customer '{username}'")
+                logger.info(f"Dynamic customer '{username}' already exists, skipping...")
                 continue
             
-            if is_valid_hash:
-                pwd_hash = stored_hash
-                pwd_salt = stored_salt
-            else:
-                pwd_data = hash_password(customer.get('password', default_cust_pwd))
-                pwd_hash = pwd_data['hash']
-                pwd_salt = pwd_data['salt']
+            # Hash password - use env var for default or generate random
+            default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+            password_hash = hash_password(customer.get('password', default_cust_pwd))
             
+            # Create user
             user_repo.create(
                 username=username,
-                password_hash=pwd_hash,
-                password_salt=pwd_salt,
+                password_hash=password_hash['hash'],
+                password_salt=password_hash['salt'],
                 role='customer',
                 name=customer.get('name', username),
                 email=customer.get('email', username),
@@ -342,36 +251,6 @@ def seed_dynamic_customers(session, user_repo):
         logger.error(f"Error parsing dynamic customers file: {e}")
     except Exception as e:
         logger.error(f"Error loading dynamic customers: {e}")
-
-    # Ensure every customer in the DB has a matching user record.
-    # Customers created by /api/register or e2e tests may exist in
-    # the customers table without a users-table record after a DB wipe.
-    try:
-        from database.repositories import CustomerRepository
-        customer_repo = CustomerRepository(session)
-        all_customers = customer_repo.get_all()
-        synced = 0
-        for cust in all_customers:
-            if not cust.email:
-                continue
-            existing_user = user_repo.get_by_username(cust.email)
-            if not existing_user:
-                pwd = hash_password(default_cust_pwd)
-                user_repo.create(
-                    username=cust.email,
-                    password_hash=pwd['hash'],
-                    password_salt=pwd['salt'],
-                    role='customer',
-                    name=cust.name or cust.email,
-                    email=cust.email,
-                    customer_id=cust.id,
-                    active=True
-                )
-                synced += 1
-        if synced:
-            logger.info(f"Created {synced} user record(s) for orphaned customers")
-    except Exception as e:
-        logger.warning(f"Orphaned customer sweep: {e}")
 
 
 def seed_sample_data(session=None):
@@ -431,7 +310,7 @@ def seed_sample_data(session=None):
             )
             logger.info(f"Created primary customer: {primary_customer.email}")
             
-            # Sync primary customer to memory (include credentials for auth fallback)
+            # Sync primary customer to memory
             if sync_primary_to_memory:
                 CUSTOMERS['CUST-ASAF-001'] = {
                     'id': 'CUST-ASAF-001',
@@ -439,11 +318,7 @@ def seed_sample_data(session=None):
                     'email': 'asaf@assurance.co.il',
                     'phone': '+972-50-1234567',
                     'date_of_birth': '1985-03-15',
-                    'created_date': now.isoformat(),
-                    'password_hash': pwd['hash'],
-                    'password_salt': pwd['salt'],
-                    'portal_active': True,
-                    'status': 'active'
+                    'created_date': now.isoformat()
                 }
             
             # Initialize health wallet with $20,000 deposit (as per user's test data)
@@ -581,7 +456,6 @@ def seed_sample_data(session=None):
                     'description': 'Emergency room visit for chest pain - cardiac evaluation',
                     'claimed_amount': 15000.00,
                     'approved_amount': 15000.00,
-                    'paid_amount': 15000.00,
                     'status': 'Paid'
                 },
                 {
@@ -591,7 +465,6 @@ def seed_sample_data(session=None):
                     'description': 'Monthly prescription medications - cardiovascular',
                     'claimed_amount': 850.00,
                     'approved_amount': 850.00,
-                    'paid_amount': 850.00,
                     'status': 'Paid'
                 },
                 {
@@ -601,7 +474,6 @@ def seed_sample_data(session=None):
                     'description': 'Fender bender accident - rear bumper damage repair',
                     'claimed_amount': 3500.00,
                     'approved_amount': 3200.00,
-                    'paid_amount': 3200.00,
                     'status': 'Paid'
                 },
                 {
@@ -633,7 +505,6 @@ def seed_sample_data(session=None):
                         description=claim_data['description'],
                         claimed_amount=claim_data['claimed_amount'],
                         approved_amount=claim_data.get('approved_amount'),
-                        paid_amount=claim_data.get('paid_amount'),
                         status=claim_data['status'],
                         filed_date=filed_date
                     )
@@ -649,7 +520,6 @@ def seed_sample_data(session=None):
                             'description': claim_data['description'],
                             'claimed_amount': claim_data['claimed_amount'],
                             'approved_amount': claim_data.get('approved_amount', 0),
-                            'paid_amount': claim_data.get('paid_amount', 0),
                             'status': claim_data['status'],
                             'filed_date': filed_date.isoformat(),
                             'created_date': filed_date.isoformat(),
@@ -742,33 +612,7 @@ def seed_sample_data(session=None):
                 except Exception as e:
                     logger.warning(f"Could not create underwriting application for primary customer: {e}")
         else:
-            if _sync_seeded_credentials_if_configured(
-                primary_customer,
-                'PHINS_USER_ASAF_ASSURANCE_PASSWORD',
-                'asaf@assurance.co.il',
-            ):
-                session.commit()
-                logger.info(f"Updated seeded credentials for primary customer {primary_customer.email}")
-
-            pwd = {
-                'hash': primary_customer.password_hash,
-                'salt': primary_customer.password_salt,
-            }
-
-            # Sync to in-memory CUSTOMERS for auth fallback
-            if sync_primary_to_memory:
-                if 'CUST-ASAF-001' not in CUSTOMERS:
-                    CUSTOMERS['CUST-ASAF-001'] = {}
-                cust_mem = CUSTOMERS['CUST-ASAF-001']
-                cust_mem.update({
-                    'id': 'CUST-ASAF-001',
-                    'name': primary_customer.name or 'Asaf Assurance',
-                    'email': 'asaf@assurance.co.il',
-                    'password_hash': pwd['hash'],
-                    'password_salt': pwd['salt'],
-                    'portal_active': getattr(primary_customer, 'portal_active', True),
-                    'status': 'active'
-                })
+            logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
         
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
@@ -779,7 +623,6 @@ def seed_sample_data(session=None):
                 'id': 'CUST-EFRAT-001',
                 'name': 'Efrat PHINS',
                 'email': 'efrat@phins.ai',
-                'password_env_var': 'PHINS_USER_EFRAT_PASSWORD',
                 'phone': '+972-50-9876543',
                 'dob': '1990-06-15',
                 'age': 35,
@@ -812,7 +655,6 @@ def seed_sample_data(session=None):
                 'id': 'CUST-ASI-001',
                 'name': 'Asi PHINS',
                 'email': 'asi@phins.ai',
-                'password_env_var': 'PHINS_USER_ASI_PASSWORD',
                 'phone': '+972-50-1111111',
                 'dob': '1985-03-20',
                 'age': 40,
@@ -845,7 +687,6 @@ def seed_sample_data(session=None):
                 'id': 'CUST-SHOSH-001',
                 'name': 'Shosh PHINS',
                 'email': 'shosh@phins.ai',
-                'password_env_var': 'PHINS_USER_SHOSH_PASSWORD',
                 'phone': '+972-50-2222222',
                 'dob': '1988-09-10',
                 'age': 37,
@@ -894,20 +735,7 @@ def seed_sample_data(session=None):
         for phins_cust in phins_customers:
             existing = customer_repo.find_one_by(email=phins_cust['email'])
             if existing:
-                # Only explicit env overrides should rotate credentials for
-                # already-existing customers. Do NOT force-reactivate
-                # portal_active; respect admin deactivation.
-                if _sync_seeded_credentials_if_configured(
-                    existing,
-                    phins_cust['password_env_var'],
-                    phins_cust['email'],
-                ):
-                    session.commit()
-                    logger.info(f"Updated seeded credentials for PHINS customer {phins_cust['email']}")
-                pwd = {
-                    'hash': existing.password_hash,
-                    'salt': existing.password_salt,
-                }
+                logger.info(f"PHINS customer {phins_cust['email']} already exists, syncing to memory...")
             else:
                 pwd = hash_password(phins_cust['password'])
                 customer = customer_repo.create(
@@ -994,7 +822,7 @@ def seed_sample_data(session=None):
                     }
                     logger.info(f"Synced billing record {bill_id} to memory")
             
-            # Sync to memory (include credentials for auth fallback)
+            # Sync to memory
             if sync_to_memory:
                 CUSTOMERS[phins_cust['id']] = {
                     'id': phins_cust['id'],
@@ -1006,10 +834,7 @@ def seed_sample_data(session=None):
                     'gender': phins_cust['gender'],
                     'occupation': phins_cust['occupation'],
                     'created_date': now.isoformat(),
-                    'status': 'active',
-                    'password_hash': pwd['hash'],
-                    'password_salt': pwd['salt'],
-                    'portal_active': True
+                    'status': 'active'
                 }
                 
                 POLICIES[pol_data['id']] = {

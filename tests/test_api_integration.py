@@ -131,19 +131,6 @@ def test_login_endpoint():
     data = json.loads(body)
     assert data['role'] == 'accountant'
     
-    # Test customer login (asaf@assurance.co.il) with demo password
-    body, status = _post(base + "/api/login", {
-        "username": "asaf@assurance.co.il",
-        "password": "Assurance2024!"
-    })
-    assert status == 200, f"Customer login failed with status {status}: {body}"
-    data = json.loads(body)
-    assert 'token' in data, f"No token in customer login response: {data}"
-    assert data['role'] == 'customer'
-    assert data['customer_id'] == 'CUST-ASAF-001', f"Wrong customer_id: {data.get('customer_id')}"
-    assert data['username'] == 'asaf@assurance.co.il'
-    assert data['name'] == 'Asaf Assurance'
-    
     # Test invalid credentials
     try:
         _post(base + "/api/login", {

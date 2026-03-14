@@ -425,47 +425,6 @@ def _send_otp_email(
     return False, "; ".join(errors) if errors else "Unable to send OTP notification"
 
 
-def _send_otp_sms(
-    phone: str,
-    otp_code: str,
-    expiry_seconds: int,
-    purpose: str,
-    ip_address: Optional[str] = None
-) -> Tuple[bool, Optional[str]]:
-    """
-    Send OTP through notification service via SMS with provider fallback.
-    """
-    try:
-        from services.notification_service import (
-            NotificationRequest,
-            NotificationChannel,
-            NotificationPriority
-        )
-    except Exception as exc:
-        return False, f"Notification service unavailable: {exc}"
-
-    use_mock_notifications = PHINS_TEST_MODE or str(
-        os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
-    ).lower() in ('1', 'true', 'yes', 'y')
-
-    try:
-        from services.notification_service import create_notification_service
-        notification_service = create_notification_service(use_mock=use_mock_notifications)
-        result = notification_service.send(NotificationRequest(
-            channel=NotificationChannel.SMS,
-            recipient=phone,
-            content=f"Your PHINS verification code is: {otp_code}. Expires in {max(1, int(expiry_seconds // 60))} min. Never share this code.",
-            priority=NotificationPriority.CRITICAL,
-            ip_address=ip_address,
-            metadata={'purpose': purpose}
-        ))
-        if bool(result.success):
-            return True, None
-        return False, result.error_message or "SMS send failure"
-    except Exception as exc:
-        return False, f"SMS delivery error: {exc}"
-
-
 def _session_user_id(session: Optional[Dict[str, Any]]) -> Optional[str]:
     """Resolve canonical user identifier from session."""
     if not session:
@@ -479,32 +438,12 @@ def _session_user_id(session: Optional[Dict[str, Any]]) -> Optional[str]:
 # ============================================================================
 
 def handle_captcha_create(client_ip: str, body_data: Dict) -> Tuple[int, Dict]:
-    """POST /api/security/captcha - Create CAPTCHA challenge
-
-    Login already has rate-limiting, IP lockout, and password verification.
-    CAPTCHA is skipped for login because the in-memory challenge store does
-    not survive Railway multi-instance routing or process restarts, which
-    causes legitimate users to fail verification (INVALID_CHALLENGE).
-    CAPTCHA remains active for registration and other one-shot actions.
-    """
-    action = body_data.get('action', 'login')
-
-    if action == 'login':
-        return 200, {
-            "success": True,
-            "message": None,
-            "error_code": None,
-            "data": None,
-            "requires_otp": False,
-            "requires_captcha": False,
-            "verification_id": None,
-            "challenge": None,
-        }
-
+    """POST /api/security/captcha - Create CAPTCHA challenge"""
     if not OTP_SERVICE_AVAILABLE:
         return 503, {"error": "OTP security service not available"}
     
     service = get_otp_security_service()
+    action = body_data.get('action', 'login')
     
     result = service.create_captcha_challenge(
         action=action,
@@ -536,33 +475,20 @@ def handle_captcha_verify(client_ip: str, body_data: Dict) -> Tuple[int, Dict]:
 
 
 def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") -> Tuple[int, Dict]:
-    """POST /api/security/otp/request - Request OTP for verification via email or SMS"""
+    """POST /api/security/otp/request - Request OTP for verification"""
     if not OTP_SERVICE_AVAILABLE:
         return 503, {"error": "OTP security service not available"}
     
     service = get_otp_security_service()
     
-    channel = body_data.get('channel', 'email').lower()
     email = body_data.get('email')
-    phone = body_data.get('phone')
     purpose = body_data.get('purpose', 'login')
     user_type = body_data.get('user_type', 'customer')
-    user_id = body_data.get('user_id')
+    user_id = body_data.get('user_id', email)  # Use email as user_id if not provided
     device_fingerprint = body_data.get('device_fingerprint')
     
-    if channel == 'sms':
-        if not phone:
-            return 400, {"success": False, "error": "Phone number is required for SMS verification"}
-        identifier = phone
-        if not user_id:
-            user_id = phone
-    else:
-        channel = 'email'
-        if not email:
-            return 400, {"success": False, "error": "Email is required"}
-        identifier = email
-        if not user_id:
-            user_id = email
+    if not email:
+        return 400, {"success": False, "error": "Email is required"}
     
     # Convert purpose string to enum
     try:
@@ -573,14 +499,14 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     result = service.create_otp_verification(
         user_type=user_type,
         user_id=user_id,
-        email=identifier,
+        email=email,
         purpose=purpose_enum,
         ip_address=client_ip,
         user_agent=user_agent,
         device_fingerprint=device_fingerprint
     )
     
-    response_data, otp_code, _delivery_identifier = _prepare_otp_client_response(result.to_dict())
+    response_data, otp_code, _delivery_email = _prepare_otp_client_response(result.to_dict())
 
     if result.success:
         expiry_seconds = int(response_data.get('expires_in_seconds', 300) or 300)
@@ -588,38 +514,29 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
         notification_error = None
 
         if otp_code:
-            if channel == 'sms':
-                notification_sent, notification_error = _send_otp_sms(
-                    phone=phone,
-                    otp_code=otp_code,
-                    expiry_seconds=expiry_seconds,
-                    purpose=purpose,
-                    ip_address=client_ip
-                )
-            else:
-                notification_sent, notification_error = _send_otp_email(
-                    email=email,
-                    otp_code=otp_code,
-                    expiry_seconds=expiry_seconds,
-                    purpose=purpose,
-                    ip_address=client_ip
-                )
+            notification_sent, notification_error = _send_otp_email(
+                email=email,
+                otp_code=otp_code,
+                expiry_seconds=expiry_seconds,
+                purpose=purpose,
+                ip_address=client_ip
+            )
         response_data['notification_sent'] = notification_sent
-        response_data['channel'] = channel
 
         if not notification_sent:
-            response_data['notification_error'] = notification_error or f'Unable to send OTP via {channel}'
-            if channel == 'email' and _apply_registration_demo_otp_fallback(
+            response_data['notification_error'] = notification_error or 'Unable to send OTP notification'
+            if _apply_registration_demo_otp_fallback(
                 response_data=response_data,
                 otp_code=otp_code,
                 purpose=purpose
             ):
                 return 200, response_data
+            # If OTP cannot be delivered and demo OTP is disabled, fail safely.
             if not EXPOSE_DEMO_OTP:
                 response_data['success'] = False
                 response_data['error_code'] = 'OTP_DELIVERY_FAILED'
                 response_data['message'] = (
-                    f"Unable to deliver verification code via {channel} right now. Please try again later."
+                    "Unable to deliver verification code right now. Please try again later."
                 )
                 return 503, response_data
 
@@ -704,204 +621,6 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
     return 200 if response_data.get('success') else 400, response_data
 
 
-def handle_customer_verify_contact(
-    client_ip: str,
-    body_data: Dict,
-    session_data: Optional[Dict] = None,
-    customers_store: Optional[Dict] = None,
-    registered_customers_store: Optional[Dict] = None
-) -> Tuple[int, Dict]:
-    """
-    POST /api/customer/verify-contact - Confirm email or phone verification for a customer.
-
-    After the client completes OTP verify, this endpoint consumes the verification
-    token and updates the customer record with the verified status.
-
-    Requires an authenticated session.  The customer_id is resolved from the
-    session to prevent cross-account manipulation.
-
-    Required body:
-        - verification_id: str  (from OTP verify response)
-        - channel: "email" | "sms"
-    """
-    if not session_data or not session_data.get('user'):
-        return 401, {"error": "Authentication required"}
-
-    if not OTP_SERVICE_AVAILABLE:
-        return 503, {"error": "OTP security service not available"}
-
-    verification_id = body_data.get('verification_id', '').strip()
-    customer_id = (session_data.get('customer_id') or '').strip()
-    channel = body_data.get('channel', 'email').lower()
-
-    if not verification_id or not customer_id:
-        return 400, {"success": False, "error": "verification_id and customer_id are required"}
-
-    if channel not in ('email', 'sms'):
-        return 400, {"success": False, "error": "channel must be 'email' or 'sms'"}
-
-    expected_purpose = OTPPurpose.EMAIL_VERIFICATION if channel == 'email' else OTPPurpose.PHONE_VERIFICATION
-
-    service = get_otp_security_service()
-    consume_result = service.consume_verification(
-        verification_id=verification_id,
-        expected_purpose=expected_purpose,
-        ip_address=client_ip
-    )
-
-    if not consume_result.success:
-        return 400, {
-            "success": False,
-            "error": consume_result.message or "Verification failed",
-            "error_code": consume_result.error_code
-        }
-
-    from datetime import datetime as _dt, timezone as _tz
-    now_iso = _dt.now(_tz.utc).isoformat()
-
-    verified_field = 'email_verified' if channel == 'email' else 'phone_verified'
-    verified_at_field = f'{verified_field}_at'
-
-    updated_in_memory = False
-    for store in [customers_store, registered_customers_store]:
-        if not store:
-            continue
-        customer = store.get(customer_id)
-        if isinstance(customer, dict):
-            customer[verified_field] = True
-            customer[verified_at_field] = now_iso
-            updated_in_memory = True
-
-    updated_in_db = False
-    try:
-        from database.manager import DatabaseManager
-        db_manager = DatabaseManager.get_instance()
-        if db_manager and db_manager.enabled:
-            from database.repositories.customer_repository import CustomerRepository
-            session = db_manager.get_session()
-            if session:
-                try:
-                    repo = CustomerRepository(session)
-                    if channel == 'email':
-                        updated_in_db = repo.set_email_verified(customer_id)
-                    else:
-                        updated_in_db = repo.set_phone_verified(customer_id)
-                finally:
-                    session.close()
-    except Exception as db_err:
-        print(f"[VERIFY-CONTACT] DB update failed: {db_err}")
-
-    return 200, {
-        "success": True,
-        "customer_id": customer_id,
-        "channel": channel,
-        verified_field: True,
-        verified_at_field: now_iso,
-        "updated_in_memory": updated_in_memory,
-        "updated_in_db": updated_in_db,
-        "message": f"Customer {channel} verified successfully"
-    }
-
-
-def handle_customer_update_contact(
-    client_ip: str,
-    body_data: Dict,
-    session_data: Optional[Dict] = None,
-    customers_store: Optional[Dict] = None,
-    registered_customers_store: Optional[Dict] = None
-) -> Tuple[int, Dict]:
-    """
-    PUT /api/customer/contact - Update customer email or phone.
-
-    When email or phone changes, the corresponding verified flag is reset
-    so that the customer must re-verify through OTP.
-
-    Requires an authenticated session.  The customer_id is resolved from
-    the session to prevent IDOR (cross-account modification).
-
-    Required body:
-        - email: str  (new email, optional)
-        - phone: str  (new phone, optional)
-    """
-    if not session_data or not session_data.get('user'):
-        return 401, {"success": False, "error": "Authentication required"}
-
-    customer_id = (session_data.get('customer_id') or '').strip()
-
-    if not customer_id:
-        return 403, {"success": False, "error": "No customer account associated with this session"}
-
-    new_email = body_data.get('email', '').strip().lower() if body_data.get('email') else None
-    new_phone = body_data.get('phone', '').strip() if body_data.get('phone') else None
-
-    if not new_email and not new_phone:
-        return 400, {"success": False, "error": "At least one of email or phone must be provided"}
-
-    if new_email:
-        import re as _re_email
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not _re_email.match(email_pattern, new_email) or len(new_email) > 254:
-            return 400, {"success": False, "error": "Invalid email format"}
-
-    if new_phone:
-        phone_pattern = r'^\+?[\d\s\-\(\)\.]{7,20}$'
-        import re as _re_phone
-        if not _re_phone.match(phone_pattern, new_phone):
-            return 400, {"success": False, "error": "Invalid phone number format"}
-
-    changes = {}
-    verification_needed = []
-
-    for store in [customers_store, registered_customers_store]:
-        if not store:
-            continue
-        customer = store.get(customer_id)
-        if not isinstance(customer, dict):
-            continue
-
-        if new_email and new_email != customer.get('email', '').lower():
-            customer['email'] = new_email
-            customer['email_verified'] = False
-            customer['email_verified_at'] = None
-            changes['email'] = new_email
-            if 'email' not in verification_needed:
-                verification_needed.append('email')
-
-        if new_phone and new_phone != customer.get('phone', ''):
-            customer['phone'] = new_phone
-            customer['phone_verified'] = False
-            customer['phone_verified_at'] = None
-            changes['phone'] = new_phone
-            if 'sms' not in verification_needed:
-                verification_needed.append('sms')
-
-    try:
-        from database.manager import DatabaseManager
-        db_manager = DatabaseManager.get_instance()
-        if db_manager and db_manager.enabled:
-            from database.repositories.customer_repository import CustomerRepository
-            session = db_manager.get_session()
-            if session:
-                try:
-                    repo = CustomerRepository(session)
-                    if new_email and 'email' in changes:
-                        repo.reset_email_verification(customer_id, new_email)
-                    if new_phone and 'sms' in [v for v in verification_needed]:
-                        repo.reset_phone_verification(customer_id, new_phone)
-                finally:
-                    session.close()
-    except Exception as db_err:
-        print(f"[UPDATE-CONTACT] DB update failed: {db_err}")
-
-    return 200, {
-        "success": True,
-        "customer_id": customer_id,
-        "changes": changes,
-        "verification_needed": verification_needed,
-        "message": "Contact updated. Please verify changed contact information."
-    }
-
-
 def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") -> Tuple[int, Dict]:
     """POST /api/security/login/check - Check login security requirements"""
     if not OTP_SERVICE_AVAILABLE:
@@ -918,38 +637,6 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     user_id = body_data.get('user_id', '')
     email = body_data.get('email', '')
     device_fingerprint = body_data.get('device_fingerprint')
-
-    # Resolve account creation date SERVER-SIDE to prevent OTP bypass.
-    # Never trust client-provided dates for security-critical decisions.
-    account_created_at = None
-    if email:
-        try:
-            from datetime import datetime as _dt, timezone as _tz
-            import os as _os
-            if _os.environ.get('USE_DATABASE', '').lower() in ('1', 'true', 'yes'):
-                try:
-                    from database.manager import DatabaseManager
-                    with DatabaseManager() as _db:
-                        _cust = _db.customers.get_by_email(email.lower())
-                        if _cust and getattr(_cust, 'created_date', None):
-                            account_created_at = _cust.created_date
-                            if account_created_at.tzinfo is None:
-                                account_created_at = account_created_at.replace(tzinfo=_tz.utc)
-                except Exception:
-                    pass
-            if account_created_at is None:
-                import web_portal.server as _srv
-                for _cid, _cd in getattr(_srv, 'CUSTOMERS', {}).items():
-                    if (_cd.get('email', '') or '').lower() == email.lower():
-                        _raw = _cd.get('created_date') or _cd.get('registered_at') or ''
-                        if _raw:
-                            _parsed = _dt.fromisoformat(_raw)
-                            if _parsed.tzinfo is None:
-                                _parsed = _parsed.replace(tzinfo=_tz.utc)
-                            account_created_at = _parsed
-                        break
-        except Exception:
-            pass
     
     result = service.check_login_requirements(
         user_type=user_type,
@@ -957,8 +644,7 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
         email=email,
         ip_address=client_ip,
         user_agent=user_agent,
-        device_fingerprint=device_fingerprint,
-        account_created_at=account_created_at
+        device_fingerprint=device_fingerprint
     )
     
     return 200, result.to_dict()
@@ -3030,40 +2716,6 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     # Security: Login check
     if path == '/api/security/login/check':
         return handle_login_check(client_ip, body_data, user_agent)
-    
-    # Customer: Verify contact (email or phone via OTP)
-    if path == '/api/customer/verify-contact':
-        customers_store = None
-        registered_customers_store = None
-        try:
-            import web_portal.server as _srv
-            customers_store = getattr(_srv, 'CUSTOMERS', None)
-            registered_customers_store = getattr(_srv, 'REGISTERED_CUSTOMERS', None)
-        except Exception:
-            pass
-        return handle_customer_verify_contact(
-            client_ip, body_data,
-            session_data=session,
-            customers_store=customers_store,
-            registered_customers_store=registered_customers_store
-        )
-    
-    # Customer: Update contact info (triggers re-verification)
-    if path == '/api/customer/contact':
-        customers_store = None
-        registered_customers_store = None
-        try:
-            import web_portal.server as _srv
-            customers_store = getattr(_srv, 'CUSTOMERS', None)
-            registered_customers_store = getattr(_srv, 'REGISTERED_CUSTOMERS', None)
-        except Exception:
-            pass
-        return handle_customer_update_contact(
-            client_ip, body_data,
-            session_data=session,
-            customers_store=customers_store,
-            registered_customers_store=registered_customers_store
-        )
     
     # Security: Branded welcome communication package
     if path == '/api/security/communications/welcome-report':

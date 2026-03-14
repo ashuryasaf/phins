@@ -563,11 +563,10 @@ class NotificationAuditLogger:
     Tracks all security-relevant events.
     """
     
-    def __init__(self, db_session=None):
+    def __init__(self):
         self._events: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
         self._max_events = 10000
-        self._db_session = db_session
     
     def log(
         self,
@@ -610,34 +609,6 @@ class NotificationAuditLogger:
         # Log to standard logger as well
         log_level = logging.INFO if success else logging.WARNING
         logger.log(log_level, f"AUDIT: {action} - {json.dumps(event)}")
-
-        # Persist to DB when session is available
-        if self._db_session is not None:
-            try:
-                from database.notification_models import NotificationAuditLog
-                db_record = NotificationAuditLog(
-                    timestamp=datetime.now(timezone.utc),
-                    actor_type=actor_type,
-                    actor_id=actor_id,
-                    action=action,
-                    target_type=target_type,
-                    target_id=target_id,
-                    customer_id=customer_id,
-                    notification_id=notification_id,
-                    details=json.dumps(details or {}),
-                    ip_address=ip_address,
-                    success=success,
-                    error_message=error_message,
-                    risk_level=risk_level,
-                )
-                self._db_session.add(db_record)
-                self._db_session.commit()
-            except Exception as db_err:
-                logger.warning("Failed to persist audit log to DB: %s", db_err)
-                try:
-                    self._db_session.rollback()
-                except Exception as _rb_err:
-                    logger.debug("Rollback failed: %s", _rb_err)
     
     def get_recent_events(
         self,
@@ -646,21 +617,6 @@ class NotificationAuditLogger:
         customer_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get recent audit events"""
-        if self._db_session is not None:
-            try:
-                from database.notification_models import NotificationAuditLog
-                query = self._db_session.query(NotificationAuditLog).order_by(
-                    NotificationAuditLog.timestamp.desc()
-                )
-                if action:
-                    query = query.filter(NotificationAuditLog.action == action)
-                if customer_id:
-                    query = query.filter(NotificationAuditLog.customer_id == customer_id)
-                rows = query.limit(limit).all()
-                return [r.to_dict() for r in reversed(rows)]
-            except Exception as db_err:
-                logger.warning("Failed to query audit log from DB: %s", db_err)
-
         with self._lock:
             events = self._events.copy()
         
@@ -1655,14 +1611,12 @@ class OTPService:
     def __init__(
         self,
         email_provider: Optional[EmailProvider] = None,
-        sms_provider: Optional[SMSProvider] = None,
-        db_session=None
+        sms_provider: Optional[SMSProvider] = None
     ):
         self._email_provider = email_provider or MockEmailProvider()
         self._sms_provider = sms_provider or MockSMSProvider()
-        self._db_session = db_session
         
-        # In-memory OTP storage — used as fallback when db_session is None
+        # In-memory OTP storage (use database in production)
         self._otp_store: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
     
@@ -1753,50 +1707,8 @@ class OTPService:
         }
         
         # Store OTP
-        if self._db_session is not None:
-            try:
-                from database.notification_models import OTPCode
-                now = datetime.now(timezone.utc)
-                # Invalidate existing active OTPs for same identifier + type in DB
-                self._db_session.query(OTPCode).filter(
-                    OTPCode.identifier_hash == identifier_hash,
-                    OTPCode.verification_type == request.verification_type.value,
-                    OTPCode.status == OTPStatus.ACTIVE.value,
-                ).update(
-                    {'status': OTPStatus.INVALIDATED.value, 'invalidated_at': now},
-                    synchronize_session=False,
-                )
-                db_otp = OTPCode(
-                    id=otp_id,
-                    customer_id=request.customer_id,
-                    user_id=request.user_id,
-                    identifier_hash=identifier_hash,
-                    code_hash=code_hash,
-                    code_salt=salt,
-                    code_length=request.otp_length,
-                    verification_type=request.verification_type.value,
-                    channel=request.channel.value,
-                    status=OTPStatus.ACTIVE.value,
-                    expires_at=expires_at,
-                    created_at=now,
-                    attempt_count=0,
-                    max_attempts=NotificationConfig.OTP_MAX_ATTEMPTS,
-                    ip_address=request.ip_address,
-                    user_agent=request.user_agent,
-                    device_fingerprint=request.device_fingerprint,
-                    correlation_id=request.correlation_id,
-                )
-                self._db_session.add(db_otp)
-                self._db_session.commit()
-            except Exception as db_err:
-                logger.warning("Failed to persist OTP to DB: %s", db_err)
-                try:
-                    self._db_session.rollback()
-                except Exception as _rb_err:
-                    logger.debug("Rollback failed: %s", _rb_err)
-
         with self._lock:
-            # Invalidate any existing active OTPs for this identifier and type (in-memory)
+            # Invalidate any existing active OTPs for this identifier and type
             for key, record in list(self._otp_store.items()):
                 if (record['identifier_hash'] == identifier_hash and
                     record['verification_type'] == request.verification_type.value and
@@ -1812,21 +1724,6 @@ class OTPService:
             # Mark OTP as failed
             with self._lock:
                 self._otp_store[otp_id]['status'] = OTPStatus.INVALIDATED.value
-            if self._db_session is not None:
-                try:
-                    from database.notification_models import OTPCode
-                    self._db_session.query(OTPCode).filter(OTPCode.id == otp_id).update(
-                        {'status': OTPStatus.INVALIDATED.value,
-                         'invalidated_at': datetime.now(timezone.utc)},
-                        synchronize_session=False,
-                    )
-                    self._db_session.commit()
-                except Exception as db_err:
-                    logger.warning("Failed to update OTP status in DB: %s", db_err)
-                    try:
-                        self._db_session.rollback()
-                    except Exception as _rb_err:
-                        logger.debug("Rollback failed: %s", _rb_err)
             
             return OTPResult(
                 success=False,
@@ -1881,10 +1778,7 @@ class OTPService:
         - One-time use enforcement
         """
         identifier_hash = hash_identifier(identifier)
-
-        if self._db_session is not None:
-            return self._verify_db(identifier_hash, code, verification_type, ip_address)
-
+        
         with self._lock:
             # Find matching active OTP
             matching_otp = None
@@ -1985,138 +1879,6 @@ class OTPService:
                 otp_id=matching_otp['id'],
                 status=OTPStatus.USED
             )
-
-    def _verify_db(
-        self,
-        identifier_hash: str,
-        code: str,
-        verification_type: VerificationType,
-        ip_address: Optional[str] = None
-    ) -> OTPResult:
-        """DB-backed OTP verification with atomic read-update."""
-        from database.notification_models import OTPCode
-        try:
-            now = datetime.now(timezone.utc)
-            # Lock the matching row for update to prevent concurrent verification races
-            db_otp = (
-                self._db_session.query(OTPCode)
-                .filter(
-                    OTPCode.identifier_hash == identifier_hash,
-                    OTPCode.verification_type == verification_type.value,
-                    OTPCode.status == OTPStatus.ACTIVE.value,
-                )
-                .with_for_update()
-                .first()
-            )
-
-            if not db_otp:
-                _audit_logger.log(
-                    action="otp_verify_no_active",
-                    ip_address=ip_address,
-                    success=False,
-                    details={'identifier_hash': identifier_hash[:16] + '...'},
-                    risk_level="medium"
-                )
-                return OTPResult(
-                    success=False,
-                    error_code="NO_ACTIVE_OTP",
-                    error_message="No active OTP found for this identifier"
-                )
-
-            # Check expiry
-            expires_at = db_otp.expires_at
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if now > expires_at:
-                db_otp.status = OTPStatus.EXPIRED.value
-                self._db_session.commit()
-                _audit_logger.log(
-                    action="otp_verify_expired",
-                    target_id=db_otp.id,
-                    ip_address=ip_address,
-                    success=False
-                )
-                return OTPResult(
-                    success=False,
-                    otp_id=db_otp.id,
-                    status=OTPStatus.EXPIRED,
-                    error_code="OTP_EXPIRED",
-                    error_message="OTP has expired"
-                )
-
-            # Increment attempt count
-            db_otp.attempt_count = (db_otp.attempt_count or 0) + 1
-            attempts_remaining = db_otp.max_attempts - db_otp.attempt_count
-
-            # Check max attempts
-            if db_otp.attempt_count > db_otp.max_attempts:
-                db_otp.status = OTPStatus.INVALIDATED.value
-                db_otp.invalidated_at = now
-                self._db_session.commit()
-                _audit_logger.log(
-                    action="otp_verify_max_attempts",
-                    target_id=db_otp.id,
-                    ip_address=ip_address,
-                    success=False,
-                    risk_level="high"
-                )
-                return OTPResult(
-                    success=False,
-                    otp_id=db_otp.id,
-                    status=OTPStatus.INVALIDATED,
-                    error_code="MAX_ATTEMPTS_EXCEEDED",
-                    error_message="Maximum verification attempts exceeded"
-                )
-
-            # Verify code (constant-time comparison)
-            code_hash = hash_otp(code, db_otp.code_salt)
-            if not hmac.compare_digest(code_hash, db_otp.code_hash):
-                self._db_session.commit()
-                _audit_logger.log(
-                    action="otp_verify_failed",
-                    target_id=db_otp.id,
-                    ip_address=ip_address,
-                    success=False,
-                    details={'attempts_remaining': attempts_remaining}
-                )
-                return OTPResult(
-                    success=False,
-                    otp_id=db_otp.id,
-                    status=OTPStatus.ACTIVE,
-                    attempts_remaining=attempts_remaining,
-                    error_code="INVALID_CODE",
-                    error_message=f"Invalid OTP code. {attempts_remaining} attempts remaining."
-                )
-
-            # Success - mark as used
-            db_otp.status = OTPStatus.USED.value
-            db_otp.used_at = now
-            self._db_session.commit()
-
-            _audit_logger.log(
-                action="otp_verified",
-                target_id=db_otp.id,
-                customer_id=db_otp.customer_id,
-                ip_address=ip_address,
-                success=True
-            )
-
-            return OTPResult(
-                success=True,
-                otp_id=db_otp.id,
-                status=OTPStatus.USED
-            )
-        except Exception as db_err:
-            logger.warning("DB OTP verification error: %s", db_err)
-            try:
-                self._db_session.rollback()
-            except Exception as _rb_err:
-                logger.debug("Rollback failed: %s", _rb_err)
-            return OTPResult(
-                success=False,
-                error_code="DB_ERROR",
-                error_message="Internal verification error"
-            )
     
     def invalidate(
         self,
@@ -2126,29 +1888,7 @@ class OTPService:
         """Invalidate all active OTPs for an identifier"""
         identifier_hash = hash_identifier(identifier)
         count = 0
-
-        if self._db_session is not None:
-            try:
-                from database.notification_models import OTPCode
-                now = datetime.now(timezone.utc)
-                q = self._db_session.query(OTPCode).filter(
-                    OTPCode.identifier_hash == identifier_hash,
-                    OTPCode.status == OTPStatus.ACTIVE.value,
-                )
-                if verification_type is not None:
-                    q = q.filter(OTPCode.verification_type == verification_type.value)
-                count = q.update(
-                    {'status': OTPStatus.INVALIDATED.value, 'invalidated_at': now},
-                    synchronize_session=False,
-                )
-                self._db_session.commit()
-            except Exception as db_err:
-                logger.warning("Failed to invalidate OTP in DB: %s", db_err)
-                try:
-                    self._db_session.rollback()
-                except Exception as _rb_err:
-                    logger.debug("Rollback failed: %s", _rb_err)
-
+        
         with self._lock:
             for record in self._otp_store.values():
                 if (record['identifier_hash'] == identifier_hash and
@@ -2288,18 +2028,15 @@ class NotificationService:
     def __init__(
         self,
         email_provider: Optional[EmailProvider] = None,
-        sms_provider: Optional[SMSProvider] = None,
-        db_session=None
+        sms_provider: Optional[SMSProvider] = None
     ):
         self._email_provider = email_provider or MockEmailProvider()
         self._sms_provider = sms_provider or MockSMSProvider()
-        self._db_session = db_session
         
         # OTP service
         self.otp_service = OTPService(
             email_provider=self._email_provider,
-            sms_provider=self._sms_provider,
-            db_session=db_session
+            sms_provider=self._sms_provider
         )
         
         # Templates (in-memory, use database in production)
@@ -2530,21 +2267,6 @@ class NotificationService:
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get notification history"""
-        if self._db_session is not None:
-            try:
-                from database.notification_models import NotificationHistory
-                query = self._db_session.query(NotificationHistory).order_by(
-                    NotificationHistory.created_date.desc()
-                )
-                if customer_id:
-                    query = query.filter(NotificationHistory.customer_id == customer_id)
-                if channel:
-                    query = query.filter(NotificationHistory.channel == channel.value)
-                rows = query.limit(limit).all()
-                return [r.to_dict() for r in reversed(rows)]
-            except Exception as db_err:
-                logger.warning("Failed to query notification history from DB: %s", db_err)
-
         with self._history_lock:
             history = self._history.copy()
         
@@ -2770,7 +2492,6 @@ class NotificationService:
         content: str
     ) -> None:
         """Record notification in history"""
-        now = datetime.now(timezone.utc)
         record = {
             'id': result.notification_id,
             'customer_id': request.customer_id,
@@ -2783,7 +2504,7 @@ class NotificationService:
             'error_code': result.error_code,
             'error_message': result.error_message,
             'sent_at': result.sent_at.isoformat() if result.sent_at else None,
-            'created_at': now.isoformat()
+            'created_at': datetime.now(timezone.utc).isoformat()
         }
         
         with self._history_lock:
@@ -2791,40 +2512,6 @@ class NotificationService:
             # Keep last 10000 records
             if len(self._history) > 10000:
                 self._history = self._history[-10000:]
-
-        # Persist to DB when session is available
-        if self._db_session is not None:
-            try:
-                from database.notification_models import NotificationHistory
-                content_bytes = content.encode('utf-8', errors='replace')
-                db_record = NotificationHistory(
-                    id=result.notification_id,
-                    customer_id=request.customer_id,
-                    user_id=getattr(request, 'user_id', None),
-                    recipient_identifier=self._mask_recipient(request.recipient, request.channel),
-                    recipient_identifier_hash=hash_identifier(request.recipient),
-                    channel=request.channel.value,
-                    template_id=request.template_id,
-                    priority=request.priority.value if request.priority else None,
-                    subject=subject,
-                    content_hash=hashlib.sha256(content_bytes).hexdigest(),
-                    content_size_bytes=len(content_bytes),
-                    status=result.status.value,
-                    provider_message_id=result.provider_message_id,
-                    sent_at=result.sent_at,
-                    error_code=result.error_code,
-                    ip_address=getattr(request, 'ip_address', None),
-                    correlation_id=getattr(request, 'correlation_id', None),
-                    created_date=now,
-                )
-                self._db_session.add(db_record)
-                self._db_session.commit()
-            except Exception as db_err:
-                logger.warning("Failed to persist notification history to DB: %s", db_err)
-                try:
-                    self._db_session.rollback()
-                except Exception as _rb_err:
-                    logger.debug("Rollback failed: %s", _rb_err)
     
     def _mask_recipient(self, recipient: str, channel: NotificationChannel) -> str:
         """Mask recipient for logging"""
@@ -3391,8 +3078,7 @@ def _build_email_provider(provider_type: str) -> EmailProvider:
 def create_notification_service(
     use_mock: bool = True,
     email_provider: Optional[EmailProvider] = None,
-    sms_provider: Optional[SMSProvider] = None,
-    db_session=None
+    sms_provider: Optional[SMSProvider] = None
 ) -> NotificationService:
     """
     Factory function to create NotificationService with appropriate providers.
@@ -3401,8 +3087,6 @@ def create_notification_service(
         use_mock: If True, use mock providers for testing
         email_provider: Custom email provider (overrides EMAIL_PROVIDER config)
         sms_provider: Custom SMS provider (overrides SMS_PROVIDER config)
-        db_session: Optional SQLAlchemy session for DB persistence. When None,
-                    all services fall back to in-memory storage.
     
     Returns:
         Configured NotificationService instance
@@ -3457,8 +3141,7 @@ def create_notification_service(
     
     return NotificationService(
         email_provider=email,
-        sms_provider=sms,
-        db_session=db_session
+        sms_provider=sms
     )
 
 

@@ -6,9 +6,6 @@ from datetime import datetime, timezone
 from database.models import Customer
 from .base import BaseRepository
 
-import logging
-logger = logging.getLogger('phins.customer_repository')
-
 
 class CustomerRepository(BaseRepository[Customer]):
     """
@@ -88,70 +85,3 @@ class CustomerRepository(BaseRepository[Customer]):
     def get_active_portal_customers(self) -> List[Customer]:
         """Get all customers with active portal access"""
         return self.filter_by(portal_active=True)
-    
-    def set_email_verified(self, customer_id: str) -> bool:
-        """Mark customer email as verified with timestamp."""
-        try:
-            customer = self.get_by_id(customer_id)
-            if customer:
-                customer.email_verified = True
-                customer.email_verified_at = datetime.now(timezone.utc)
-                self.session.commit()
-                return True
-            return False
-        except Exception:
-            self.session.rollback()
-            return False
-    
-    def set_phone_verified(self, customer_id: str) -> bool:
-        """Mark customer phone as verified with timestamp."""
-        try:
-            customer = self.get_by_id(customer_id)
-            if customer:
-                customer.phone_verified = True
-                customer.phone_verified_at = datetime.now(timezone.utc)
-                self.session.commit()
-                return True
-            return False
-        except Exception:
-            self.session.rollback()
-            return False
-    
-    def reset_email_verification(self, customer_id: str, new_email: str) -> bool:
-        """Reset verification when email changes."""
-        try:
-            customer = self.get_by_id(customer_id)
-            if customer:
-                customer.email = new_email.lower().strip()
-                customer.email_verified = False
-                customer.email_verified_at = None
-                self.session.commit()
-                return True
-            return False
-        except Exception:
-            self.session.rollback()
-            return False
-    
-    def reset_phone_verification(self, customer_id: str, new_phone: str) -> bool:
-        """Reset verification when phone changes."""
-        try:
-            customer = self.get_by_id(customer_id)
-            if customer:
-                customer.phone = new_phone.strip()
-                customer.phone_verified = False
-                customer.phone_verified_at = None
-                self.session.commit()
-                return True
-            return False
-        except Exception:
-            self.session.rollback()
-            return False
-    
-    def get_unverified_customers(self) -> List[Customer]:
-        """Get customers with unverified email or phone."""
-        try:
-            return self.session.query(Customer).filter(
-                (Customer.email_verified == False) | (Customer.phone_verified == False)
-            ).all()
-        except Exception:
-            return []

@@ -109,7 +109,7 @@ class QueueItem:
     error_history: List[Dict[str, Any]] = field(default_factory=list)
     
     # Timestamps
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     

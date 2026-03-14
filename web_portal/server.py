@@ -15,7 +15,7 @@ import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import random
 import uuid
 import hashlib
@@ -376,7 +376,7 @@ if USE_DATABASE:
                         time.sleep(retry_delay)
                         retry_delay *= 2  # exponential backoff
                     else:
-                        print("⚠️  Database connection check failed after all retries - starting in degraded in-memory mode")
+                        print("⚠️  Database connection check failed after all retries - using in-memory storage")
                         print("=" * 60)
                         print("DATABASE TROUBLESHOOTING:")
                         print("-" * 60)
@@ -391,8 +391,8 @@ if USE_DATABASE:
                             print("    - PostgreSQL service failed to deploy (check Railway dashboard)")
                             print("    - Stale credentials (recreate PostgreSQL service)")
                             print("    - Network/firewall issues")
-                        print("  → The app remains configured for database mode and will keep trying to recover.")
                         print("=" * 60)
+                        USE_DATABASE = False
             except Exception as e:
                 if attempt < max_retries - 1:
                     print(f"⚠️  Database connection test failed (attempt {attempt + 1}/{max_retries}): {e}")
@@ -417,9 +417,9 @@ if USE_DATABASE:
                         print("  → Tables will be auto-created on next successful connection")
                     else:
                         print(f"  → Error: {e}")
-                    print("  → Starting in degraded in-memory mode (data not persisted until recovery succeeds)")
-                    print("  → Database mode remains enabled so recovery endpoints and reconnect logic can work")
+                    print("  → Falling back to in-memory storage (data not persisted)")
                     print("=" * 60)
+                    USE_DATABASE = False
             
     except ImportError as e:
         print(f"Warning: Database support not available: {e}")
@@ -1521,15 +1521,11 @@ def save_ledger_data():
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
-def append_customer_to_seeds(email: str, name: str, customer_id: str, registered_at: str):
+def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
     """
     Append newly registered customer to dynamic seeds file for restart persistence.
     
-    SECURITY: Password hashes are NOT stored in the seeds file to avoid
-    committing credential material to version control.  On reload the seed
-    loader generates a fresh random password for each entry (or uses
-    PHINS_DEFAULT_CUSTOMER_PASSWORD when set).  The authoritative credential
-    store is the database, not this JSON file.
+    SECURITY: Passwords are hashed before storage - NEVER store plain-text passwords.
     """
     try:
         seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
@@ -1540,10 +1536,15 @@ def append_customer_to_seeds(email: str, name: str, customer_id: str, registered
             with open(seeds_file, 'r') as f:
                 dynamic_customers = json.load(f)
         
+        # SECURITY: Hash password before storing
+        pwd_hash = hash_password(password)
+        
+        # Add new customer with hashed password
         dynamic_customers.append({
             'username': email,
-            'password_hash': 'REDACTED',
-            'password_salt': 'REDACTED',
+            # SECURITY: Store hash and salt, NEVER plain-text password
+            'password_hash': pwd_hash['hash'],
+            'password_salt': pwd_hash['salt'],
             'name': name,
             'role': 'customer',
             'customer_id': customer_id,
@@ -1555,7 +1556,7 @@ def append_customer_to_seeds(email: str, name: str, customer_id: str, registered
         with open(seeds_file, 'w') as f:
             json.dump(dynamic_customers, f, indent=2)
         
-        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file")
+        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file (password hashed)")
     except Exception as e:
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
@@ -1638,37 +1639,6 @@ def load_dynamic_customers():
     
     seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
     
-    def _is_regulated_production_mode() -> bool:
-        """Return True when running in regulated production mode."""
-        truthy = {'1', 'true', 'yes', 'y', 'on'}
-        test_mode = str(os.environ.get('PHINS_TEST_MODE', '')).strip().lower() in truthy
-        if test_mode:
-            return False
-
-        regulated_flags = [
-            os.environ.get('PHINS_REGULATED_PRODUCTION', ''),
-            os.environ.get('PHINS_REGULATED_MODE', ''),
-        ]
-        if any(str(flag).strip().lower() in truthy for flag in regulated_flags):
-            return True
-
-        env_values = [
-            os.environ.get('ENVIRONMENT', ''),
-            os.environ.get('PHINS_ENV', ''),
-            os.environ.get('APP_ENV', ''),
-        ]
-        return any(str(v).strip().lower() in {'regulated', 'regulated_production'} for v in env_values)
-
-    def _is_test_seed_customer(customer: Dict[str, Any]) -> bool:
-        """
-        Identify clearly test-only seed customers.
-        In regulated production, we exclude these credentials from runtime loading.
-        """
-        if bool(customer.get('test_only')):
-            return True
-        email = str(customer.get('email') or customer.get('username') or '').strip().lower()
-        return email.endswith('@example.com') or email.endswith('@test.local')
-
     try:
         if not os.path.exists(seeds_file):
             print("[DYNAMIC] No dynamic customers file found")
@@ -1683,67 +1653,46 @@ def load_dynamic_customers():
         
         loaded_count = 0
         legacy_count = 0
-        skipped_test_count = 0
-        regulated_mode = _is_regulated_production_mode()
         
         for customer in dynamic_customers:
-            if regulated_mode and _is_test_seed_customer(customer):
-                skipped_test_count += 1
-                continue
             email = customer.get('email') or customer.get('username')
             if not email:
                 continue
             
-            def _is_valid_hex_hash(value: str) -> bool:
-                """Return True when *value* looks like a real PBKDF2 hex digest."""
-                if not value or not isinstance(value, str):
-                    return False
-                placeholder = value.strip().upper()
-                if placeholder in ('REDACTED', 'NONE', 'NULL', ''):
-                    return False
-                try:
-                    bytes.fromhex(value)
-                    return len(value) >= 32
-                except ValueError:
-                    return False
-
-            pwd_hash: str | None = None
-            pwd_salt: str | None = None
-
+            # Skip if already exists
+            if email in USERS:
+                continue
+            
+            # SECURITY: Check if password is already hashed (new secure format)
             if 'password_hash' in customer and 'password_salt' in customer:
-                raw_hash = customer['password_hash']
-                raw_salt = customer['password_salt']
-                if _is_valid_hex_hash(raw_hash) and _is_valid_hex_hash(raw_salt):
-                    pwd_hash = raw_hash
-                    pwd_salt = raw_salt
-                else:
-                    print(f"[DYNAMIC] Skipping invalid/redacted credentials for '{email}'")
-
-            if pwd_hash is None:
-                default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', 'Customer2024!')
-                if 'password' in customer:
-                    pwd_data = hash_password(customer.get('password', default_pwd))
-                    legacy_count += 1
-                else:
-                    pwd_data = hash_password(default_pwd)
+                # New format: pre-hashed password
+                pwd_hash = customer['password_hash']
+                pwd_salt = customer['password_salt']
+            elif 'password' in customer:
+                # LEGACY: Plain-text password (migrate and hash)
+                # SECURITY: Default password from env var, or generate random unusable password
+                default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+                pwd_data = hash_password(customer.get('password', default_pwd))
                 pwd_hash = pwd_data['hash']
                 pwd_salt = pwd_data['salt']
-
-            user_entry = {
+                legacy_count += 1
+            else:
+                # No password at all - generate unusable random password
+                pwd_data = hash_password(secrets.token_urlsafe(32))
+                pwd_hash = pwd_data['hash']
+                pwd_salt = pwd_data['salt']
+            
+            USERS[email] = {
                 'hash': pwd_hash,
                 'salt': pwd_salt,
                 'role': 'customer',
                 'name': customer.get('name', email),
                 'customer_id': customer.get('customer_id', f"CUST-{email}")
             }
-
-            # Write to _FALLBACK_USERS directly to avoid DB round-trips
-            # through UserDictWrapper (which hangs when PostgreSQL is booting).
-            # The DB is populated separately by seed_dynamic_customers().
-            _FALLBACK_USERS[email] = user_entry
             
+            # Also add to CUSTOMERS if customer_id is present
             customer_id = customer.get('customer_id')
-            if customer_id:
+            if customer_id and customer_id not in CUSTOMERS:
                 CUSTOMERS[customer_id] = {
                     'id': customer_id,
                     'name': customer.get('name', email),
@@ -1758,8 +1707,6 @@ def load_dynamic_customers():
         
         if legacy_count > 0:
             print(f"[DYNAMIC] WARNING: {legacy_count} customers have legacy plain-text passwords. Run password migration.")
-        if skipped_test_count > 0:
-            print(f"[DYNAMIC] Regulated mode: skipped {skipped_test_count} test-only seed customer(s)")
         
         print(f"[DYNAMIC] Loaded {loaded_count} dynamic customers from seeds file")
         return loaded_count
@@ -3153,25 +3100,6 @@ try:
 except ImportError as e:
     print(f"Warning: Supply Chain Ecosystem service not available: {e}")
 
-# ============ ECOSYSTEM ENABLEMENT ============
-# Unified flag: the ecosystem is enabled when both supplier and supply-chain
-# services are operational.  Legacy accounts created before this cutoff date
-# are granted credential auto-provisioning and OTP-free login so that
-# customers / suppliers registered before the OTP system was introduced
-# retain seamless access to their accounts.
-ECOSYSTEM_ENABLED: bool = supplier_service_enabled and supply_chain_enabled
-LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
-
-if ECOSYSTEM_ENABLED:
-    print("✓ Full PHINS Ecosystem enabled (supplier + supply-chain)")
-else:
-    missing = []
-    if not supplier_service_enabled:
-        missing.append("Supplier Management")
-    if not supply_chain_enabled:
-        missing.append("Supply Chain")
-    print(f"⚠ Partial ecosystem – missing: {', '.join(missing)}")
-
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
@@ -3194,13 +3122,6 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
-    'supplier': os.environ.get('PHINS_DEMO_SUPPLIER_PASSWORD', 'supplier123'),
-    'media_ad': os.environ.get('PHINS_DEMO_MEDIA_PASSWORD', 'media123'),
-    'asaf@phins.ai': os.environ.get('PHINS_DEMO_ASAF_PHINS_PASSWORD', 'AsafPhins2024!'),
-    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
-    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
-    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
-    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
 }
 
 # IMPORTANT:
@@ -3217,28 +3138,14 @@ ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
 import hmac
 import base64
 
-def _resolve_token_secret() -> str:
-    """Resolve the session signing key from the supported environment aliases."""
-    for env_name in (
-        'SESSION_SECRET_KEY',
-        'SESSION_SECRET',
-        'PHINS_SECRET_KEY',
-        'SECRET_KEY',
-    ):
-        value = os.environ.get(env_name)
-        if value:
-            return value
-    admin_password = os.environ.get('PHINS_ADMIN_PASSWORD')
-    if admin_password:
-        return admin_password
-    return secrets.token_hex(32)
-
-
-# Session signing key - loaded from environment variable aliases used across
-# the deployment docs. Falls back to an operator-supplied admin password and
-# finally to a per-process random key so tokens are never signed with a
-# publicly-known default value.
-_TOKEN_SECRET = _resolve_token_secret()
+# Session signing key - loaded from environment variable.
+# Falls back to a per-process random key so tokens are never signed with a
+# publicly-known default value.  Set SESSION_SECRET_KEY in production.
+_TOKEN_SECRET = (
+    os.environ.get('SESSION_SECRET_KEY')
+    or os.environ.get('PHINS_ADMIN_PASSWORD')
+    or secrets.token_hex(32)
+)
 
 def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
     """Create an HMAC-signed token with embedded user data (stateless auth)"""
@@ -4120,28 +4027,24 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable, falling back to a documented
-    default for named accounts so they remain accessible out of the box.
+    Get password from environment variable or generate unusable random password.
     
-    Priority:
-      1. Environment variable (production override)
-      2. Documented default from LEGACY_DEMO_PASSWORDS (named accounts)
-      3. Random unusable password (unnamed/generic accounts)
+    Args:
+        env_var_name: Name of environment variable containing the password
+        username: Username for logging purposes
+        
+    Returns:
+        Dictionary with 'hash' and 'salt' keys
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    # For named accounts that have a documented default, use it so the
-    # account is accessible even when the env var is not configured.
-    default_pwd = LEGACY_DEMO_PASSWORDS.get(username)
-    if default_pwd:
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable. Using documented default.")
-        return hash_password(default_pwd)
-    # Generic/system accounts without a documented default get a random
-    # password – they cannot log in until the env var is set.
-    random_pwd = secrets.token_urlsafe(32)
-    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-    return hash_password(random_pwd)
+    else:
+        # Generate a random password that will be impossible to guess
+        # This ensures the system starts but users cannot login without proper env config
+        random_pwd = secrets.token_urlsafe(32)
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+        return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""
@@ -4178,31 +4081,21 @@ if USE_DATABASE and database_enabled:
                 with DatabaseManager() as db:
                     user = db.users.get_by_username(username)
                     if user:
-                        if not getattr(user, 'active', True):
-                            print(f"[AUTH] User '{username}' exists but is inactive")
-                            return default
-
-                        stored_hash = user.password_hash or ''
-                        stored_salt = user.password_salt or ''
-
                         # Get customer_id - either from user record or by looking up by email
                         customer_id = getattr(user, 'customer_id', None)
                         if not customer_id and user.role == 'customer':
+                            # Try to find customer by email using repository
                             customer = db.customers.get_by_email(username)
                             if customer:
                                 customer_id = customer.id
-
-                        if stored_hash and stored_salt:
-                            return {
-                                'hash': stored_hash,
-                                'salt': stored_salt,
-                                'role': user.role,
-                                'name': user.name,
-                                'customer_id': customer_id
-                            }
-
-                        # DB user has empty credentials — fall through to fallback
-                        print(f"[AUTH] DB user '{username}' has empty credentials, trying fallback")
+                        
+                        return {
+                            'hash': user.password_hash,
+                            'salt': user.password_salt,
+                            'role': user.role,
+                            'name': user.name,
+                            'customer_id': customer_id
+                        }
             except ImportError as e:
                 print(f"Warning: Database module not available: {e}")
             except Exception as e:
@@ -4982,35 +4875,12 @@ For claims or questions, please contact:
         # Periodic cleanup of stale data
         cleanup_stale_data()
         
-        # Security checks (apply to ALL endpoints including health)
-        client_ip = self.client_address[0]
-        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
-        _ensure_test_port_state(server_port)
-        
-        # Check if IP is blocked
-        is_blocked, block_reason = is_ip_blocked(client_ip)
-        if is_blocked:
-            self.send_response(403)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                'error': 'Access denied',
-                'message': 'Your IP has been blocked due to suspicious activity'
-            }).encode('utf-8'))
-            return
-        
-        # Rate limiting (trusted IPs in production get 5x allowance via check_rate_limit)
-        if not check_rate_limit(client_ip, server_port):
-            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
-            self.send_response(429)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Retry-After', '60')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
-            return
-        
-        # Health check endpoint
+        # Health check endpoint - bypasses rate limiting for Railway/load balancers
         if self.path == '/api/health' or self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            
             # Perform actual database connection check
             db_status = 'in-memory'
             db_connected = False
@@ -5036,24 +4906,15 @@ For claims or questions, please contact:
             except Exception:
                 pass
             
-            is_degraded = bool(USE_DATABASE and not db_connected)
-            self.send_response(503 if is_degraded else 200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-
             health_status = {
-                'status': 'degraded' if is_degraded else 'healthy',
+                'status': 'healthy',
                 'service': 'phins-portal',
                 'timestamp': datetime.now().isoformat(),
                 'database': db_status,
                 'database_enabled': database_enabled,
                 'database_connected': db_connected,
                 'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
-                'configured_storage_mode': 'database' if USE_DATABASE else 'in-memory',
                 'customers_available': customers_count,
-                'ecosystem_enabled': ECOSYSTEM_ENABLED,
-                'supplier_service_enabled': supplier_service_enabled,
-                'supply_chain_enabled': supply_chain_enabled,
                 'version': '2.0.0'
             }
             
@@ -5061,10 +4922,35 @@ For claims or questions, please contact:
             if customers_count == 0 and USE_DATABASE and not database_enabled:
                 health_status['recovery_recommended'] = True
                 health_status['recovery_url'] = '/api/diagnostics/db-recovery'
-            if is_degraded:
-                health_status['degraded_reason'] = 'database_unavailable'
             
             self.wfile.write(json.dumps(health_status).encode('utf-8'))
+            return
+        
+        # Security checks
+        client_ip = self.client_address[0]
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+        _ensure_test_port_state(server_port)
+        
+        # Check if IP is blocked
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+        
+        # Rate limiting
+        if not check_rate_limit(client_ip, server_port):
+            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
             return
         
         parsed = urlparse.urlparse(self.path)
@@ -5213,11 +5099,11 @@ For claims or questions, please contact:
             except Exception as e:
                 print(f"API extension error (GET {path}): {e}")
 
-        # ========== AI + BI MARKETING SALES AGENT (Admin only) ==========
+        # ========== AI + BI MARKETING SALES AGENT (Admin/Media) ==========
         if path == '/api/admin/marketing-sales-agent':
-            if not require_role(session, ['admin']):
+            if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
 
             try:
@@ -5261,9 +5147,9 @@ For claims or questions, please contact:
                 return
 
         if path == '/api/admin/marketing-sales-agent/latest':
-            if not require_role(session, ['admin']):
+            if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
 
             marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
@@ -5810,8 +5696,7 @@ For claims or questions, please contact:
                 return
             
             # Calculate comprehensive dashboard stats
-            # Exclude suspended test accounts for accurate reporting
-            total_customers = len([cid for cid in CUSTOMERS if not is_suspended_account(cid)])
+            total_customers = len(CUSTOMERS)
             total_policies = len(POLICIES)
             active_policies = len([p for p in POLICIES.values() if status_eq(p, 'active')])
             pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')])
@@ -5876,23 +5761,14 @@ For claims or questions, please contact:
             total_investment_value = sum(float(p.get('investment_value', 0) or 0) for p in POLICIES.values())
             total_coverage_amount = sum(float(p.get('coverage_amount', 0) or 0) for p in POLICIES.values() if status_eq(p, 'active'))
             
-            # Claims payment stats (case-insensitive) — include both 'approved' and 'paid'
-            claims_paid = sum(
-                safe_float(c.get('amount_approved', c.get('approved_amount', c.get('claimed_amount', 0))))
-                for c in CLAIMS.values()
-                if status_in(c, ['approved', 'paid', 'settled'])
-            )
+            # Claims payment stats (case-insensitive)
+            claims_paid = sum(c.get('amount_approved', c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'approved'))
             
-            current_month_prefix = datetime.now().strftime('%Y-%m')
             dashboard_data = {
                 'success': True,
                 # Customer metrics
                 'total_customers': total_customers,
-                'new_customers_this_month': len([
-                    c for cid, c in CUSTOMERS.items()
-                    if not is_suspended_account(cid)
-                    and (c.get('created_at') or c.get('created_date') or '')[:7] == current_month_prefix
-                ]),
+                'new_customers_this_month': len([c for c in CUSTOMERS.values() if c.get('created_at', '')[:7] == datetime.now().strftime('%Y-%m')]),
                 
                 # Policy metrics
                 'total_policies': total_policies,
@@ -5934,7 +5810,7 @@ For claims or questions, please contact:
                 
                 # Pipeline summary
                 'pipeline': {
-                    'registered': total_customers,
+                    'registered': len([c for c in CUSTOMERS.values()]),
                     'applied': len(UNDERWRITING_APPLICATIONS),
                     'underwriting': pending_applications,
                     'approved': approved_applications,
@@ -6991,12 +6867,6 @@ For claims or questions, please contact:
                 'env_vars_configured': env_status,
                 'total_password_vars_set': vars_set,
                 'all_required_set': vars_set >= 7,
-                'ecosystem': {
-                    'enabled': ECOSYSTEM_ENABLED,
-                    'supplier_service': supplier_service_enabled,
-                    'supply_chain': supply_chain_enabled,
-                    'legacy_account_cutoff': LEGACY_ACCOUNT_CUTOFF.isoformat(),
-                },
                 'message': 'All password env vars must be set for login to work' if vars_set < 7 else 'Environment configured correctly'
             }).encode('utf-8'))
             return
@@ -9613,15 +9483,13 @@ For claims or questions, please contact:
             bills = [b for b in BILLING.values() 
                      if b.get('customer_id') == customer_id or b.get('policy_id') in policy_ids]
 
-            # Get claims for this customer
-            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
-
             # Determine overall application status (simple heuristic)
             overall = 'no_application'
             if uw_apps:
                 most_recent = sorted(uw_apps, key=lambda x: x.get('submitted_date', ''), reverse=True)[0]
                 overall = most_recent.get('status', 'pending')
                 if overall == 'approved':
+                    # Check if policy is active
                     linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
                     if linked and status_eq(linked, 'active'):
                         overall = 'active_policy'
@@ -9639,7 +9507,6 @@ For claims or questions, please contact:
                 'overall_status': overall,
                 'policies': policies,
                 'underwriting_applications': uw_apps,
-                'claims': customer_claims,
                 'billing': bills,
                 'billing_summary': {
                     'total_outstanding': round(total_outstanding, 2),
@@ -10399,29 +10266,27 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id query parameter is required'}).encode('utf-8'))
                 return
             refundable_bills = []
-            # Public endpoint by product policy; snapshot data under lock for consistency.
-            with STATE_LOCK:
-                for bid, bill in BILLING.items():
-                    if bill.get('customer_id') != customer_id_param:
-                        continue
-                    bill_status = (bill.get('status') or '').lower()
-                    amount_paid = safe_float(bill.get('amount_paid', 0))
-                    already_refunded = safe_float(bill.get('refunded_amount', 0))
-                    refundable = round(amount_paid - already_refunded, 2)
-                    if bill_status in ('paid', 'partial') and refundable > 0:
-                        policy = POLICIES.get(bill.get('policy_id', ''), {})
-                        refundable_bills.append({
-                            'bill_id': bid,
-                            'policy_id': bill.get('policy_id'),
-                            'policy_type': policy.get('type') or policy.get('policy_type', 'N/A'),
-                            'amount_due': safe_float(bill.get('amount', bill.get('amount_due', 0))),
-                            'amount_paid': amount_paid,
-                            'already_refunded': already_refunded,
-                            'refundable_amount': refundable,
-                            'status': bill_status,
-                            'paid_date': bill.get('paid_date') or bill.get('updated_at'),
-                            'due_date': bill.get('due_date')
-                        })
+            for bid, bill in BILLING.items():
+                if bill.get('customer_id') != customer_id_param:
+                    continue
+                bill_status = (bill.get('status') or '').lower()
+                amount_paid = safe_float(bill.get('amount_paid', 0))
+                already_refunded = safe_float(bill.get('refunded_amount', 0))
+                refundable = round(amount_paid - already_refunded, 2)
+                if bill_status in ('paid', 'partial') and refundable > 0:
+                    policy = POLICIES.get(bill.get('policy_id', ''), {})
+                    refundable_bills.append({
+                        'bill_id': bid,
+                        'policy_id': bill.get('policy_id'),
+                        'policy_type': policy.get('type') or policy.get('policy_type', 'N/A'),
+                        'amount_due': safe_float(bill.get('amount', bill.get('amount_due', 0))),
+                        'amount_paid': amount_paid,
+                        'already_refunded': already_refunded,
+                        'refundable_amount': refundable,
+                        'status': bill_status,
+                        'paid_date': bill.get('paid_date') or bill.get('updated_at'),
+                        'due_date': bill.get('due_date')
+                    })
             refundable_bills.sort(key=lambda b: b.get('paid_date') or '', reverse=True)
             self._set_json_headers()
             self.wfile.write(json.dumps({'refundable_bills': refundable_bills, 'count': len(refundable_bills)}).encode('utf-8'))
@@ -10661,135 +10526,125 @@ For claims or questions, please contact:
             # FILTER: Exclude suspended test accounts from admin displays
             customer_list = []
             
-            # When CUSTOMERS in-memory dict is empty, try to load from DB
-            if not CUSTOMERS and USE_DATABASE and database_enabled:
-                try:
-                    from database.manager import DatabaseManager
-                    with DatabaseManager() as db:
-                        db_customers = db.customers.get_all()
-                        for c in db_customers:
-                            try:
-                                cdict = c.to_dict() if hasattr(c, 'to_dict') else {'id': c.id, 'name': c.name, 'email': c.email}
-                                CUSTOMERS[c.id] = cdict
-                            except Exception:
-                                pass
-                        if db_customers:
-                            print(f"[ADMIN] Recovered {len(db_customers)} customers from database into memory")
-                except Exception as db_err:
-                    print(f"[ADMIN] Failed to recover customers from DB: {db_err}")
-            
-            for cust_id, customer in list(CUSTOMERS.items()):
+            for cust_id, customer in CUSTOMERS.items():
                 # Skip suspended test accounts
                 if is_suspended_account(cust_id):
                     continue
-                try:
-                    # Find associated policies
-                    customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
-                    
-                    # Find associated underwriting applications
-                    customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
+                # Find associated policies
+                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
                 
-                    # Find associated bills
-                    customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
-                    
-                    health_wallet = HEALTH_WALLETS.get(cust_id, {})
-                    health_balance = float(health_wallet.get('balance', 0) or 0)
-                    investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
-                    investment_balance = float(investment_account.get('balance', 0) or 0)
-                    allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
-                    allocation_total = 0
-                    dist = allocation.get('distribution', {})
-                    if dist:
-                        allocation_total = float(dist.get('total_balance', 0) or 0)
-                    
-                    algo_balance = 0
-                    try:
-                        if unified_balance_enabled and unified_balance_service:
-                            algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
-                            algo_balance = float(algo_data.get('balance', 0) or 0)
-                    except Exception:
-                        pass
-                    
-                    pipeline_cash = 0
-                    try:
-                        if savings_pipeline_enabled and savings_pipeline_service:
-                            pipeline_account = savings_pipeline_service.accounts.get(cust_id)
-                            if pipeline_account:
-                                pipeline_cash = float(pipeline_account.cash_balance or 0)
-                    except Exception:
-                        pass
-                    
-                    total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
-                    if allocation_total > total_wallet_balance:
-                        total_wallet_balance = allocation_total
-                    
-                    pipeline_stage = 'registered'
-                    if customer_apps:
-                        pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
-                        approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
-                        if pending_apps:
-                            pipeline_stage = 'underwriting'
-                        elif approved_apps:
-                            pipeline_stage = 'approved'
-                    
-                    policy_activation_date = None
-                    if customer_policies:
-                        active_policies = [p for p in customer_policies if status_eq(p, 'active')]
-                        if active_policies:
-                            pipeline_stage = 'active_policy'
-                            for p in active_policies:
-                                act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
-                                if act_date and (not policy_activation_date or act_date > policy_activation_date):
-                                    policy_activation_date = act_date
-                    
-                    if customer_bills:
-                        outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
-                        paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
-                        if outstanding_bills:
-                            pipeline_stage = 'billing_pending'
-                        elif paid_bills:
-                            pipeline_stage = 'fully_active'
-                    
-                    display_date = policy_activation_date or customer.get('created_date', 'N/A')
-                    
-                    customer_list.append({
-                        'id': cust_id,
-                        'name': customer.get('name', 'N/A'),
-                        'email': customer.get('email', 'N/A'),
-                        'phone': customer.get('phone', 'N/A'),
-                        'created_date': display_date,
-                        'created_at': display_date,
-                        'customer_since': customer.get('created_date', 'N/A'),
-                        'policy_activation_date': policy_activation_date,
-                        'pipeline_stage': pipeline_stage,
-                        'policies_count': len(customer_policies),
-                        'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
-                        'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
-                        'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
-                        'total_premium_due': sum(safe_float(b.get('amount_due', 0)) for b in customer_bills if status_eq(b, 'outstanding')),
-                        'wallet_balance': round(total_wallet_balance, 2),
-                        'wallet_breakdown': {
-                            'health_wallet': round(health_balance, 2),
-                            'investment': round(investment_balance, 2),
-                            'algo_trading': round(algo_balance, 2),
-                            'pipeline_cash': round(pipeline_cash, 2),
-                            'total': round(total_wallet_balance, 2)
-                        },
-                        'policies': customer_policies,
-                        'applications': customer_apps,
-                        'bills': customer_bills
-                    })
-                except Exception as _cust_err:
-                    print(f"[ADMIN] Error building customer entry {cust_id}: {_cust_err}")
-                    customer_list.append({
-                        'id': cust_id,
-                        'name': customer.get('name', 'N/A') if isinstance(customer, dict) else 'N/A',
-                        'email': customer.get('email', 'N/A') if isinstance(customer, dict) else 'N/A',
-                        'pipeline_stage': 'error', 'policies_count': 0, 'active_policies': 0,
-                        'wallet_balance': 0, 'pending_applications': 0, 'outstanding_bills': 0,
-                        'created_date': 'N/A', 'created_at': 'N/A',
-                        'policies': [], 'applications': [], 'bills': []
-                    })
+                # Find associated underwriting applications
+                customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
+                
+                # Find associated bills
+                customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
+                
+                # ========== UNIFIED WALLET BALANCE CALCULATION ==========
+                # Sum ALL wallet types: health wallet, investment, algo trading, pipeline cash
+                
+                # Health Wallet
+                health_wallet = HEALTH_WALLETS.get(cust_id, {})
+                health_balance = float(health_wallet.get('balance', 0) or 0)
+                
+                # Investment Account
+                investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
+                investment_balance = float(investment_account.get('balance', 0) or 0)
+                
+                # Customer Allocations (used for unified balance)
+                allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
+                
+                # Calculate total from allocation distribution if available
+                allocation_total = 0
+                dist = allocation.get('distribution', {})
+                if dist:
+                    allocation_total = float(dist.get('total_balance', 0) or 0)
+                
+                # Algo Trading Balance (from unified_balance_service if available)
+                algo_balance = 0
+                try:
+                    if unified_balance_enabled and unified_balance_service:
+                        algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
+                        algo_balance = float(algo_data.get('balance', 0) or 0)
+                except:
+                    pass
+                
+                # Pipeline Cash (from savings_pipeline_service if available)
+                pipeline_cash = 0
+                try:
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        pipeline_account = savings_pipeline_service.accounts.get(cust_id)
+                        if pipeline_account:
+                            pipeline_cash = float(pipeline_account.cash_balance or 0)
+                except:
+                    pass
+                
+                # TOTAL WALLET BALANCE = Sum of all sources
+                total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
+                if allocation_total > total_wallet_balance:
+                    total_wallet_balance = allocation_total  # Use allocation if higher
+                
+                # Determine pipeline stage (case-insensitive status checks)
+                pipeline_stage = 'registered'
+                if customer_apps:
+                    pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
+                    approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
+                    if pending_apps:
+                        pipeline_stage = 'underwriting'
+                    elif approved_apps:
+                        pipeline_stage = 'approved'
+                
+                # Get policy activation date for display
+                policy_activation_date = None
+                if customer_policies:
+                    active_policies = [p for p in customer_policies if status_eq(p, 'active')]
+                    if active_policies:
+                        pipeline_stage = 'active_policy'
+                        # Get most recent activation date
+                        for p in active_policies:
+                            act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
+                            if act_date and (not policy_activation_date or act_date > policy_activation_date):
+                                policy_activation_date = act_date
+                
+                if customer_bills:
+                    outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
+                    paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
+                    if outstanding_bills:
+                        pipeline_stage = 'billing_pending'
+                    elif paid_bills:
+                        pipeline_stage = 'fully_active'
+                
+                # Use policy activation date if available, otherwise customer created date
+                display_date = policy_activation_date or customer.get('created_date', 'N/A')
+                
+                customer_list.append({
+                    'id': cust_id,
+                    'name': customer.get('name', 'N/A'),
+                    'email': customer.get('email', 'N/A'),
+                    'phone': customer.get('phone', 'N/A'),
+                    'created_date': display_date,
+                    'created_at': display_date,  # Alias for frontend
+                    'customer_since': customer.get('created_date', 'N/A'),  # Original registration
+                    'policy_activation_date': policy_activation_date,
+                    'pipeline_stage': pipeline_stage,
+                    'policies_count': len(customer_policies),
+                    'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
+                    'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
+                    'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
+                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if status_eq(b, 'outstanding')),
+                    # Unified wallet balance (sum of all wallets)
+                    'wallet_balance': round(total_wallet_balance, 2),
+                    # Individual wallet breakdown for AI BI platform
+                    'wallet_breakdown': {
+                        'health_wallet': round(health_balance, 2),
+                        'investment': round(investment_balance, 2),
+                        'algo_trading': round(algo_balance, 2),
+                        'pipeline_cash': round(pipeline_cash, 2),
+                        'total': round(total_wallet_balance, 2)
+                    },
+                    'policies': customer_policies,
+                    'applications': customer_apps,
+                    'bills': customer_bills
+                })
             
             # Sort by created date (newest first)
             customer_list.sort(key=lambda x: x.get('created_date', ''), reverse=True)
@@ -10918,7 +10773,7 @@ For claims or questions, please contact:
         # Pipeline summary statistics
         if path == '/api/admin/pipeline-stats':
             stats = {
-                'total_customers': len([cid for cid in CUSTOMERS if not is_suspended_account(cid)]),
+                'total_customers': len(CUSTOMERS),
                 'total_applications': len(UNDERWRITING_APPLICATIONS),
                 'total_policies': len(POLICIES),
                 'total_bills': len(BILLING),
@@ -16346,7 +16201,7 @@ For claims or questions, please contact:
         # =====================================================================
         if api_extensions_enabled and api_ext_post:
             # These endpoints need JSON body parsing
-            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations', '/api/customer/verify-contact', '/api/customer/contact']
+            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations']
             is_extension_path = any(path.startswith(p) for p in security_paths)
             
             if is_extension_path:
@@ -16423,15 +16278,15 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
                 return
 
-        # ========== AI + BI MARKETING SALES AGENT PUBLISH (Admin only) ==========
+        # ========== AI + BI MARKETING SALES AGENT PUBLISH (Admin/Media) ==========
         if path == '/api/admin/marketing-sales-agent/publish':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
 
-            if not require_role(session, ['admin']):
+            if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
 
             length = int(self.headers.get('Content-Length', 0))
@@ -17866,43 +17721,25 @@ For claims or questions, please contact:
                         
                         if db_healthy:
                             with DatabaseManager() as db:
+                                # Use repository method to get customer by email
                                 customer = db.customers.get_by_email(username.lower())
-                                if customer:
-                                    if getattr(customer, 'portal_active', True) is False:
-                                        print(f"[AUTH] Customer '{username}' portal access is deactivated")
-                                    else:
-                                        cust_password_ok = False
-                                        cust_legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
-                                        if getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
-                                            try:
-                                                cust_password_ok = verify_password(password, customer.password_hash, customer.password_salt)
-                                            except Exception as _cpw_err:
-                                                print(f"[AUTH] Customer password verify error: {_cpw_err}")
-                                        if cust_password_ok or cust_legacy_ok:
-                                            user = {
-                                                'hash': getattr(customer, 'password_hash', '') or '',
-                                                'salt': getattr(customer, 'password_salt', '') or '',
-                                                'role': 'customer',
-                                                'name': customer.name
-                                            }
-                                            customer_id = customer.id
-                                            role = 'customer'
-                                            name = customer.name
-                                            try:
-                                                db.customers.update_last_login(customer.id)
-                                                db.commit()
-                                            except Exception as _login_err:
-                                                print(f"[AUTH] Failed to update last_login for {customer.id}: {_login_err}")
-                                            if customer.id not in CUSTOMERS:
-                                                try:
-                                                    cust_dict = customer.to_dict() if hasattr(customer, 'to_dict') else {}
-                                                    if cust_dict:
-                                                        CUSTOMERS[customer.id] = cust_dict
-                                                        print(f"[AUTH] Synced customer {customer.id} to in-memory store")
-                                                except Exception as _sync_err:
-                                                    print(f"[AUTH] Failed to sync customer {customer.id} to memory: {_sync_err}")
-                                        elif not getattr(customer, 'password_hash', None):
-                                            print(f"[AUTH] Customer '{username}' has no stored credentials; credential reset required")
+                                if customer and getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
+                                    if verify_password(password, customer.password_hash, customer.password_salt):
+                                        user = {
+                                            'hash': customer.password_hash,
+                                            'salt': customer.password_salt,
+                                            'role': 'customer',
+                                            'name': customer.name
+                                        }
+                                        customer_id = customer.id
+                                        role = 'customer'
+                                        name = customer.name
+                                        # Update last login
+                                        try:
+                                            db.customers.update_last_login(customer.id)
+                                            db.commit()
+                                        except Exception:
+                                            pass  # Non-critical
                     except (OperationalError, DatabaseError, DisconnectionError) as db_err:
                         print(f"[AUTH] Database connection error during customer auth: {db_err}")
                         # Attempt reconnection for future requests
@@ -17935,67 +17772,55 @@ For claims or questions, please contact:
                 # 4. Fallback: Check in-memory CUSTOMERS dictionary
                 # This runs for both DB and non-DB modes to catch passwords set via admin endpoint
                 if not user:
-                    try:
-                        mem_legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
-                        for cust_id, cust in list(CUSTOMERS.items()):
-                            if cust.get('email', '').lower() == username.lower():
-                                mem_pw_ok = False
-                                if cust.get('password_hash') and cust.get('password_salt'):
-                                    try:
-                                        mem_pw_ok = verify_password(password, cust['password_hash'], cust['password_salt'])
-                                    except Exception as _pw_err:
-                                        print(f"[AUTH] Password verify error for in-memory customer '{username}': {_pw_err}")
-                                if mem_pw_ok or mem_legacy_ok:
+                    for cust_id, cust in CUSTOMERS.items():
+                        if cust.get('email', '').lower() == username.lower():
+                            if cust.get('password_hash') and cust.get('password_salt'):
+                                if verify_password(password, cust['password_hash'], cust['password_salt']):
                                     user = cust
                                     customer_id = cust_id
                                     role = 'customer'
                                     name = cust.get('name', 'Customer')
-                                elif not cust.get('password_hash'):
-                                    print(f"[AUTH] In-memory customer '{username}' has no stored credentials; credential reset required")
-                                break
-                    except Exception as mem_err:
-                        print(f"[AUTH] Error checking in-memory customers: {mem_err}")
+                            break
                 
                 if user:
                     # ========== CUSTOMER_ID GUARANTEE FOR DATA INTEGRITY ==========
-                    try:
-                        guaranteed_customer_id = get_customer_id_guaranteed(username, role)
-                    except Exception as gid_err:
-                        print(f"[AUTH] get_customer_id_guaranteed error for {username}: {gid_err}")
-                        guaranteed_customer_id = customer_id
+                    # CRITICAL: Use the 5-layer guarantee function to ensure customer_id is NEVER null
+                    # This fixes the systemic pipeline flaw identified in 84-hour analysis (PR #90)
+                    guaranteed_customer_id = get_customer_id_guaranteed(username, role)
                     
+                    # For customer role, guaranteed_customer_id is GUARANTEED non-null
                     if role == 'customer' and not guaranteed_customer_id:
+                        # This should NEVER happen due to the guarantee, but handle defensively
                         print(f"[AUTH CRITICAL ERROR] get_customer_id_guaranteed failed for {username}")
                         self._set_json_headers(500)
                         self.wfile.write(json.dumps({'error': 'Failed to create customer session'}).encode('utf-8'))
                         return
                     
+                    # Use guaranteed customer_id (may be None for non-customer roles, which is fine)
                     customer_id = guaranteed_customer_id
                     
+                    # Log token creation with customer_id status
                     print(f"[AUTH] Token created for {username} (role={role}, customer_id={customer_id or 'None'})")
                     
-                    try:
-                        with STATE_LOCK:
-                            k = _security_key(client_ip, server_port)
-                            if k in FAILED_LOGINS:
-                                del FAILED_LOGINS[k]
-                    except Exception:
-                        pass
+                    # Clear failed login attempts on success
+                    with STATE_LOCK:
+                        k = _security_key(client_ip, server_port)
+                        if k in FAILED_LOGINS:
+                            del FAILED_LOGINS[k]
                     
+                    # Generate stateless signed token (works across Railway instances)
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
                     token = _create_signed_token(username, role, customer_id, expires)
                     
-                    try:
-                        with STATE_LOCK:
-                            SESSIONS[token] = {
-                                'username': username,
-                                'expires': expires.isoformat(),
-                                'customer_id': customer_id,
-                                'role': role,
-                                'ip_address': client_ip
-                            }
-                    except Exception:
-                        pass
+                    # Also store in local SESSIONS for faster same-instance lookups
+                    with STATE_LOCK:
+                        SESSIONS[token] = {
+                            'username': username,
+                            'expires': expires.isoformat(),
+                            'customer_id': customer_id,
+                            'role': role,
+                            'ip_address': client_ip
+                        }
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -18008,10 +17833,8 @@ For claims or questions, please contact:
                         'expires': expires.isoformat()
                     }).encode('utf-8'))
                 else:
-                    try:
-                        record_failed_login(client_ip, server_port)
-                    except Exception:
-                        pass
+                    # Record failed login attempt
+                    record_failed_login(client_ip, server_port)
                     
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
@@ -18134,17 +17957,6 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Invalid email format'}).encode('utf-8'))
                     return
                 
-                if phone:
-                    phone_pattern = r'^\+?[\d\s\-\(\)\.]{7,20}$'
-                    import re as _re_phone
-                    if not _re_phone.match(phone_pattern, phone):
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Invalid phone number format',
-                            'code': 'INVALID_PHONE'
-                        }).encode('utf-8'))
-                        return
-
                 if len(password) < 8:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
@@ -18158,36 +17970,8 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                # ========== OTP EMAIL VERIFICATION (optional, backward compatible) ==========
-                # When a valid, pre-verified OTP token is provided the email is
-                # marked verified at creation time.  Unknown/placeholder tokens are
-                # silently ignored for backward compatibility with older clients.
-                # Only hard-fail when the token was found but is consumed/mismatched.
-                verification_id = data.get('verification_id', '').strip()
-                email_verified_via_otp = False
-                if verification_id:
-                    try:
-                        from services.otp_security_service import get_otp_security_service, OTPPurpose
-                        otp_svc = get_otp_security_service()
-                        consume_result = otp_svc.consume_verification(
-                            verification_id=verification_id,
-                            expected_email=email,
-                            expected_purpose=OTPPurpose.REGISTRATION,
-                            ip_address=client_ip
-                        )
-                        if consume_result.success:
-                            email_verified_via_otp = True
-                        elif consume_result.error_code not in ('INVALID_VERIFICATION',):
-                            self._set_json_headers(400)
-                            self.wfile.write(json.dumps({
-                                'error': consume_result.message or 'Email verification failed',
-                                'code': consume_result.error_code or 'VERIFICATION_FAILED'
-                            }).encode('utf-8'))
-                            return
-                    except ImportError:
-                        pass
-                    except Exception as otp_err:
-                        print(f"[REGISTER] OTP verification check failed: {otp_err}")
+                # Registration is invitation-code-only. Legacy OTP fields in the payload
+                # are intentionally ignored to keep API compatibility with older clients.
 
                 registration_date = datetime.now().isoformat()
                 pwd_hash = hash_password(password)
@@ -18283,11 +18067,6 @@ For claims or questions, please contact:
                         'email': email,
                         'phone': phone,
                         'dob': dob,
-                        # Contact verification status
-                        'email_verified': email_verified_via_otp,
-                        'email_verified_at': registration_date if email_verified_via_otp else None,
-                        'phone_verified': False,
-                        'phone_verified_at': None,
                         # Registration tracking
                         'invitation_code': invitation_code,
                         'invitation_type': invitation_type,
@@ -18380,7 +18159,7 @@ For claims or questions, please contact:
                 # Persist all state
                 save_ledger_data()
                 save_invitation_codes_to_file()
-                append_customer_to_seeds(email, name, customer_id, registration_date)
+                append_customer_to_seeds(email, password, name, customer_id, registration_date)
 
                 # Best-effort branded welcome communication package
                 welcome_notification_sent = False
@@ -18437,19 +18216,12 @@ For claims or questions, please contact:
                     'success': True,
                     'customer_id': customer_id,
                     'email': email,
-                    'email_verified': email_verified_via_otp,
-                    'phone_verified': False,
                     'registered_at': registration_date,
                     'welcome_notification_sent': welcome_notification_sent,
                     'welcome_whatsapp_sent': welcome_whatsapp_sent,
                     'welcome_report_summary': welcome_report_summary,
                     'message': 'Account created successfully. Please login with your credentials.'
                 }
-                if not email_verified_via_otp:
-                    response_data['verification_required'] = True
-                    response_data['verification_channels'] = ['email']
-                    if phone:
-                        response_data['verification_channels'].append('sms')
 
                 if referrer_customer_id:
                     referrer = CUSTOMERS.get(referrer_customer_id) or REGISTERED_CUSTOMERS.get(referrer_customer_id)
@@ -25397,135 +25169,128 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'bill_id and customer_id are required'}).encode('utf-8'))
                         return
 
-                    # Public endpoint by product policy; perform all mutating work atomically.
-                    with STATE_LOCK:
-                        bill = BILLING.get(bill_id)
-                        if not bill:
-                            self._set_json_headers(404)
-                            self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
-                            return
+                    bill = BILLING.get(bill_id)
+                    if not bill:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
+                        return
 
-                        # Verify bill belongs to the requesting customer
-                        if bill.get('customer_id') != customer_id:
-                            self._set_json_headers(403)
-                            self.wfile.write(json.dumps({'error': 'Access denied: bill does not belong to this customer'}).encode('utf-8'))
-                            return
+                    # Verify bill belongs to the requesting customer
+                    if bill.get('customer_id') != customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied: bill does not belong to this customer'}).encode('utf-8'))
+                        return
 
-                        # Only paid bills are eligible for refund
-                        bill_status = (bill.get('status') or '').lower()
-                        amount_paid = safe_float(bill.get('amount_paid', 0))
-                        if bill_status not in ('paid', 'partial') or amount_paid <= 0:
+                    # Only paid bills are eligible for refund
+                    bill_status = (bill.get('status') or '').lower()
+                    amount_paid = safe_float(bill.get('amount_paid', 0))
+                    if bill_status not in ('paid', 'partial') or amount_paid <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Only paid bills are eligible for refund', 'bill_status': bill_status}).encode('utf-8'))
+                        return
+
+                    # Determine refund amount (cannot exceed amount_paid; already-refunded amount is excluded)
+                    already_refunded = safe_float(bill.get('refunded_amount', 0))
+                    refundable = round(amount_paid - already_refunded, 2)
+                    if refundable <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'This bill has already been fully refunded'}).encode('utf-8'))
+                        return
+
+                    if refund_amount_req is not None:
+                        refund_amount = round(float(refund_amount_req), 2)
+                        if refund_amount <= 0 or refund_amount > refundable:
                             self._set_json_headers(400)
-                            self.wfile.write(json.dumps({'error': 'Only paid bills are eligible for refund', 'bill_status': bill_status}).encode('utf-8'))
+                            self.wfile.write(json.dumps({'error': f'Refund amount must be between $0.01 and ${refundable:.2f}', 'refundable': refundable}).encode('utf-8'))
                             return
+                    else:
+                        refund_amount = refundable
 
-                        # Determine refund amount (cannot exceed amount_paid; already-refunded amount is excluded)
-                        already_refunded = safe_float(bill.get('refunded_amount', 0))
-                        refundable = round(amount_paid - already_refunded, 2)
-                        if refundable <= 0:
-                            self._set_json_headers(400)
-                            self.wfile.write(json.dumps({'error': 'This bill has already been fully refunded'}).encode('utf-8'))
-                            return
+                    refund_id = f"RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
 
-                        if refund_amount_req is not None:
-                            try:
-                                refund_amount = round(float(refund_amount_req), 2)
-                            except (TypeError, ValueError):
-                                self._set_json_headers(400)
-                                self.wfile.write(json.dumps({'error': 'Refund amount must be numeric'}).encode('utf-8'))
-                                return
-                            if refund_amount <= 0 or refund_amount > refundable:
-                                self._set_json_headers(400)
-                                self.wfile.write(json.dumps({'error': f'Refund amount must be between $0.01 and ${refundable:.2f}', 'refundable': refundable}).encode('utf-8'))
-                                return
-                        else:
-                            refund_amount = refundable
+                    # Update billing record to reflect the refund
+                    bill['refunded_amount'] = already_refunded + refund_amount
+                    bill['last_refund_id'] = refund_id
+                    bill['last_refund_reason'] = reason
+                    bill['last_refund_date'] = datetime.now().isoformat()
+                    if bill['refunded_amount'] >= amount_paid:
+                        bill['status'] = 'refunded'
+                    BILLING[bill_id] = bill
 
-                        refund_id = f"RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
+                    # Deposit refund to customer's health wallet
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0.0,
+                            'monthly_deposit': 0.0,
+                            'transactions': []
+                        }
+                    prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
+                    HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
+                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
 
-                        # Update billing record to reflect the refund
-                        bill['refunded_amount'] = already_refunded + refund_amount
-                        bill['last_refund_id'] = refund_id
-                        bill['last_refund_reason'] = reason
-                        bill['last_refund_date'] = datetime.now().isoformat()
-                        if bill['refunded_amount'] >= amount_paid:
-                            bill['status'] = 'refunded'
-                        BILLING[bill_id] = bill
+                    wallet_tx = {
+                        'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                        'type': 'refund_deposit',
+                        'amount': refund_amount,
+                        'refund_id': refund_id,
+                        'bill_id': bill_id,
+                        'policy_id': bill.get('policy_id'),
+                        'description': f'Premium refund deposited for bill {bill_id}',
+                        'reason': reason,
+                        'previous_balance': prev_wallet_balance,
+                        'balance_after': new_wallet_balance,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
 
-                        # Deposit refund to customer's health wallet
-                        if customer_id not in HEALTH_WALLETS:
-                            HEALTH_WALLETS[customer_id] = {
-                                'customer_id': customer_id,
-                                'balance': 0.0,
-                                'monthly_deposit': 0.0,
-                                'transactions': []
-                            }
-                        prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
-                        HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
-                        new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
-
-                        wallet_tx = {
-                            'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                            'type': 'refund_deposit',
-                            'amount': refund_amount,
+                    # Record in TRANSACTION_LEDGER and NFT_LEDGER for full audit trail
+                    refund_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='premium_refund',
+                        amount=refund_amount,
+                        description=f'Refund of ${refund_amount:.2f} for bill {bill_id} deposited to health wallet',
+                        metadata={
                             'refund_id': refund_id,
                             'bill_id': bill_id,
                             'policy_id': bill.get('policy_id'),
-                            'description': f'Premium refund deposited for bill {bill_id}',
                             'reason': reason,
-                            'previous_balance': prev_wallet_balance,
-                            'balance_after': new_wallet_balance,
-                            'timestamp': datetime.now().isoformat()
+                            'original_amount_paid': amount_paid,
+                            'refunded_amount': bill['refunded_amount'],
+                            'wallet_balance_before': prev_wallet_balance,
+                            'wallet_balance_after': new_wallet_balance,
+                            'wallet_tx_id': wallet_tx['id']
                         }
-                        HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+                    )
 
-                        # Record in TRANSACTION_LEDGER and NFT_LEDGER for full audit trail
-                        refund_tx = record_transaction(
-                            customer_id=customer_id,
-                            tx_type='premium_refund',
+                    # Record refund as an expense on the PHINS balance sheet
+                    try:
+                        record_balance_sheet_transaction(
+                            tx_type='expense',
+                            category='refunds',
                             amount=refund_amount,
-                            description=f'Refund of ${refund_amount:.2f} for bill {bill_id} deposited to health wallet',
-                            metadata={
-                                'refund_id': refund_id,
-                                'bill_id': bill_id,
-                                'policy_id': bill.get('policy_id'),
-                                'reason': reason,
-                                'original_amount_paid': amount_paid,
-                                'refunded_amount': bill['refunded_amount'],
-                                'wallet_balance_before': prev_wallet_balance,
-                                'wallet_balance_after': new_wallet_balance,
-                                'wallet_tx_id': wallet_tx['id']
-                            }
+                            description=f'Customer premium refund for bill {bill_id}',
+                            actor='billing_system',
+                            customer_id=customer_id,
+                            metadata={'refund_id': refund_id, 'bill_id': bill_id}
                         )
+                    except Exception as bs_err:
+                        print(f"[BALANCE_SHEET] Refund expense record error: {bs_err}")
 
-                        # Record refund as an expense on the PHINS balance sheet
+                    # Audit log
+                    if audit:
                         try:
-                            record_balance_sheet_transaction(
-                                tx_type='expense',
-                                category='refunds',
-                                amount=refund_amount,
-                                description=f'Customer premium refund for bill {bill_id}',
-                                actor='billing_system',
-                                customer_id=customer_id,
-                                metadata={'refund_id': refund_id, 'bill_id': bill_id}
-                            )
-                        except Exception as bs_err:
-                            print(f"[BALANCE_SHEET] Refund expense record error: {bs_err}")
+                            audit.log(customer_id, 'refund', 'bill', bill_id, {
+                                'refund_id': refund_id,
+                                'amount': refund_amount,
+                                'reason': reason,
+                                'destination': 'health_wallet'
+                            })
+                        except Exception:
+                            pass
 
-                        # Audit log
-                        if audit:
-                            try:
-                                audit.log(customer_id, 'refund', 'bill', bill_id, {
-                                    'refund_id': refund_id,
-                                    'amount': refund_amount,
-                                    'reason': reason,
-                                    'destination': 'health_wallet'
-                                })
-                            except Exception:
-                                pass
-
-                        # Persist changes while holding lock to keep snapshot coherent.
-                        save_ledger_data()
+                    # Persist changes
+                    save_ledger_data()
 
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
@@ -32894,93 +32659,6 @@ For claims or questions, please contact:
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
 
 
-def _sync_db_to_memory() -> None:
-    """Load all DB records into in-memory dicts so pipeline endpoints see complete data.
-
-    On Railway with PostgreSQL, in-memory dicts are empty on startup except
-    for records created by seed_sample_data().  Any customers/policies/claims
-    created through API endpoints in previous deployments only exist in the
-    DB.  This function merges them into the in-memory dicts.
-    """
-    if not USE_DATABASE or not database_enabled:
-        return
-    try:
-        from database.manager import DatabaseManager
-        counts = {}
-        with DatabaseManager() as db:
-            for c in db.customers.get_all():
-                if c.id not in CUSTOMERS:
-                    try:
-                        CUSTOMERS[c.id] = c.to_dict() if hasattr(c, 'to_dict') else {
-                            'id': c.id, 'name': c.name, 'email': c.email,
-                            'phone': getattr(c, 'phone', ''), 'status': 'active',
-                            'portal_active': getattr(c, 'portal_active', True),
-                            'created_date': str(getattr(c, 'created_at', '')),
-                        }
-                    except Exception:
-                        pass
-            counts['customers'] = len(CUSTOMERS)
-
-            for p in db.policies.get_all():
-                if p.id not in POLICIES:
-                    try:
-                        POLICIES[p.id] = p.to_dict() if hasattr(p, 'to_dict') else {
-                            'id': p.id, 'customer_id': p.customer_id,
-                            'type': getattr(p, 'type', ''), 'status': getattr(p, 'status', ''),
-                            'coverage_amount': getattr(p, 'coverage_amount', 0),
-                            'annual_premium': getattr(p, 'annual_premium', 0),
-                            'monthly_premium': getattr(p, 'monthly_premium', 0),
-                        }
-                    except Exception:
-                        pass
-            counts['policies'] = len(POLICIES)
-
-            for cl in db.claims.get_all():
-                if cl.id not in CLAIMS:
-                    try:
-                        CLAIMS[cl.id] = cl.to_dict() if hasattr(cl, 'to_dict') else {
-                            'id': cl.id, 'customer_id': cl.customer_id,
-                            'policy_id': getattr(cl, 'policy_id', ''),
-                            'claimed_amount': getattr(cl, 'claimed_amount', 0),
-                            'approved_amount': getattr(cl, 'approved_amount', 0),
-                            'paid_amount': getattr(cl, 'paid_amount', 0),
-                            'status': getattr(cl, 'status', ''),
-                        }
-                    except Exception:
-                        pass
-            counts['claims'] = len(CLAIMS)
-
-            for b in db.billing.get_all():
-                if b.id not in BILLING:
-                    try:
-                        BILLING[b.id] = b.to_dict() if hasattr(b, 'to_dict') else {
-                            'id': b.id, 'customer_id': getattr(b, 'customer_id', ''),
-                            'policy_id': getattr(b, 'policy_id', ''),
-                            'amount': getattr(b, 'amount', 0),
-                            'amount_paid': getattr(b, 'amount_paid', 0),
-                            'status': getattr(b, 'status', ''),
-                        }
-                    except Exception:
-                        pass
-            counts['billing'] = len(BILLING)
-
-            for u in db.underwriting.get_all():
-                if u.id not in UNDERWRITING_APPLICATIONS:
-                    try:
-                        UNDERWRITING_APPLICATIONS[u.id] = u.to_dict() if hasattr(u, 'to_dict') else {
-                            'id': u.id, 'customer_id': u.customer_id,
-                            'policy_id': getattr(u, 'policy_id', ''),
-                            'status': getattr(u, 'status', ''),
-                        }
-                    except Exception:
-                        pass
-            counts['underwriting'] = len(UNDERWRITING_APPLICATIONS)
-
-        print(f"✓ DB-to-memory sync complete: {counts}")
-    except Exception as e:
-        print(f"⚠️  DB-to-memory sync failed (non-critical): {e}")
-
-
 def run_server(port: int = PORT) -> None:
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
@@ -33047,8 +32725,8 @@ def run_server(port: int = PORT) -> None:
                     
                     # Users to ensure exist - passwords from environment variables
                     ensure_users = [
-                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', LEGACY_DEMO_PASSWORDS.get('asi@phins.ai', 'Asi20240!')), 'role': 'customer', 'name': 'Asi PHINS'},
-                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', LEGACY_DEMO_PASSWORDS.get('shosh@phins.ai', 'Shosh2024!')), 'role': 'customer', 'name': 'Shosh PHINS'}
+                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Asi PHINS'},
+                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Shosh PHINS'}
                     ]
                     
                     for user_data in ensure_users:
@@ -33077,13 +32755,10 @@ def run_server(port: int = PORT) -> None:
                 print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
             except Exception as e:
                 print(f"Note: Sample data seeding skipped (may already exist): {e}")
-            
-            # DB-to-memory sync is deferred to a background thread so the
-            # HTTP server can start listening immediately and pass Railway's
-            # health check.  See _deferred_db_sync_thread below.
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")
+            # Don't fail - just fall back to in-memory
     
     # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
     print("👤 Initializing customer accounts...")
@@ -34362,28 +34037,6 @@ def run_server(port: int = PORT) -> None:
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
     httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
-
-    # Mark the main server port as already initialized so that
-    # _ensure_test_port_state() does NOT clear the in-memory data stores
-    # (wallets, investments, allocations, etc.) that were just seeded above.
-    # Test isolation only needs to clear state for *other* ports spun up by
-    # the pytest test fixtures.
-    _TEST_PORTS_INITIALIZED.add(port)
-
-    # Launch deferred DB-to-memory sync in a background thread so the
-    # HTTP server can start accepting connections (and pass Railway's
-    # health check) immediately.
-    if USE_DATABASE and database_enabled:
-        def _deferred_db_sync():
-            import time
-            time.sleep(2)
-            try:
-                _sync_db_to_memory()
-            except Exception as e:
-                print(f"⚠️  Deferred DB sync failed (non-critical): {e}")
-        sync_thread = threading.Thread(target=_deferred_db_sync, daemon=True)
-        sync_thread.start()
-
     print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
     print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')

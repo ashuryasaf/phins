@@ -576,10 +576,6 @@ class SupplierManagementService:
     # SUPPLIER AUTHENTICATION
     # =========================================================================
     
-    # Accounts created before this date bypass OTP and are granted
-    # credential auto-provisioning on first login.
-    LEGACY_ACCOUNT_CUTOFF = datetime(2026, 3, 9, 0, 0, 0, tzinfo=timezone.utc)
-
     def authenticate_supplier(self, email: str, password: str) -> Dict[str, Any]:
         """
         Authenticate a supplier login.
@@ -597,20 +593,12 @@ class SupplierManagementService:
         if not supplier:
             raise ValueError("Invalid email or password")
         
-        # SECURITY: Require stored credentials for all accounts.  Auto-provisioning
-        # with any password is an account-takeover vector.  Suppliers without
-        # credentials must go through a proper credential-setup or reset flow.
-        has_credentials = bool(supplier.get('password_hash') and supplier.get('password_salt'))
-
-        if not has_credentials:
-            print(f"[SUPPLIER-AUTH] Supplier '{email}' has no stored credentials; credential reset required")
-            raise ValueError("Invalid email or password")
-
-        if not self.verify_password(password, supplier['password_hash'],
-                                    supplier['password_salt']):
+        # Check password
+        if not self.verify_password(password, supplier.get('password_hash', ''), 
+                                    supplier.get('password_salt', '')):
             raise ValueError("Invalid email or password")
         
-        # Check status – legacy approved suppliers retain access
+        # Check status
         if supplier['status'] != 'approved':
             raise ValueError(f"Account not active. Status: {supplier['status']}")
         
