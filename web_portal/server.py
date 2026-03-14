@@ -3122,6 +3122,13 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
+    'supplier': os.environ.get('PHINS_DEMO_SUPPLIER_PASSWORD', 'supplier123'),
+    'media_ad': os.environ.get('PHINS_DEMO_MEDIA_PASSWORD', 'media123'),
+    'asaf@phins.ai': os.environ.get('PHINS_DEMO_ASAF_PHINS_PASSWORD', 'AsafPhins2024!'),
+    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
+    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
+    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
+    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
 }
 
 # IMPORTANT:
@@ -4027,24 +4034,19 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable or generate unusable random password.
-    
-    Args:
-        env_var_name: Name of environment variable containing the password
-        username: Username for logging purposes
-        
-    Returns:
-        Dictionary with 'hash' and 'salt' keys
+    Get password from environment variable, falling back to a documented
+    default for named accounts so they remain accessible out of the box.
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    else:
-        # Generate a random password that will be impossible to guess
-        # This ensures the system starts but users cannot login without proper env config
-        random_pwd = secrets.token_urlsafe(32)
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-        return hash_password(random_pwd)
+    default_pwd = LEGACY_DEMO_PASSWORDS.get(username)
+    if default_pwd:
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable. Using documented default.")
+        return hash_password(default_pwd)
+    random_pwd = secrets.token_urlsafe(32)
+    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+    return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""
