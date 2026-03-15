@@ -185,27 +185,6 @@ def seed_sample_data(session=None):
                     'created_date': now.isoformat()
                 }
             
-            # Initialize health wallet with $20,000 deposit (as per user's test data)
-            from web_portal.server import HEALTH_WALLETS
-            HEALTH_WALLETS['CUST-ASAF-001'] = {
-                'customer_id': 'CUST-ASAF-001',
-                'balance': 20000.00,
-                'monthly_deposit': 500.00,
-                'transactions': [
-                    {
-                        'id': 'TXN-SEED-001',
-                        'type': 'deposit',
-                        'amount': 20000.00,
-                        'payment_method': 'bank_transfer',
-                        'timestamp': datetime.utcnow().isoformat(),
-                        'description': 'Initial deposit via billing',
-                        'balance_after': 20000.00
-                    }
-                ],
-                'created_at': datetime.utcnow().isoformat()
-            }
-            logger.info(f"Created health wallet with $20,000 balance for CUST-ASAF-001")
-            
             # Create policies for primary customer
             policies_data = [
                 {
@@ -384,6 +363,31 @@ def seed_sample_data(session=None):
                     logger.warning(f"Could not create claim {claim_data['id']}: {e}")
         else:
             logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
+        
+        # Always initialize health wallet on startup (in-memory, lost on restart)
+        try:
+            from web_portal.server import HEALTH_WALLETS
+            if 'CUST-ASAF-001' not in HEALTH_WALLETS or HEALTH_WALLETS['CUST-ASAF-001'].get('balance', 0) == 0:
+                HEALTH_WALLETS['CUST-ASAF-001'] = {
+                    'customer_id': 'CUST-ASAF-001',
+                    'balance': 20000.00,
+                    'monthly_deposit': 500.00,
+                    'transactions': [
+                        {
+                            'id': 'TXN-SEED-001',
+                            'type': 'deposit',
+                            'amount': 20000.00,
+                            'payment_method': 'bank_transfer',
+                            'timestamp': datetime.utcnow().isoformat(),
+                            'description': 'Initial deposit via billing',
+                            'balance_after': 20000.00
+                        }
+                    ],
+                    'created_at': datetime.utcnow().isoformat()
+                }
+                logger.info("Initialized health wallet with $20,000 for CUST-ASAF-001")
+        except ImportError:
+            logger.warning("Could not import HEALTH_WALLETS for initialization")
         
         # =================================================================
         # ADDITIONAL TEST CUSTOMERS WITH PENDING UNDERWRITING

@@ -1518,6 +1518,10 @@ def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bo
     if not session:
         return False
     
+    session_role = session.get('role')
+    if session_role and session_role in allowed_roles:
+        return True
+    
     username = session.get('username')
     if not username:
         return False
@@ -1890,8 +1894,153 @@ else:
         'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
         # Permanent admin accounts - NEVER DELETE
         'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
-        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance'}
+        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'}
     }
+
+
+def _init_health_wallets():
+    """Initialize health wallets for known customers on every startup.
+    Health wallets are always in-memory and don't survive restarts."""
+    now = datetime.now()
+    if 'CUST-ASAF-001' not in HEALTH_WALLETS:
+        HEALTH_WALLETS['CUST-ASAF-001'] = {
+            'customer_id': 'CUST-ASAF-001',
+            'balance': 20000.00,
+            'monthly_deposit': 500.00,
+            'transactions': [{
+                'id': 'TXN-SEED-001', 'type': 'deposit', 'amount': 20000.00,
+                'payment_method': 'bank_transfer', 'timestamp': now.isoformat(),
+                'description': 'Initial deposit via billing', 'balance_after': 20000.00
+            }],
+            'created_at': now.isoformat()
+        }
+    print(f"✓ Health wallets initialized ({len(HEALTH_WALLETS)} active)")
+
+
+def initialize_in_memory_demo_data():
+    """Populate in-memory data stores with demo data when DB is not available.
+    Mirrors the seed data created by database/seeds.py for consistency."""
+    now = datetime.now()
+
+    # Primary customer
+    pwd_asaf = hash_password('Assurance2024!')
+    CUSTOMERS['CUST-ASAF-001'] = {
+        'id': 'CUST-ASAF-001',
+        'name': 'Asaf Assurance',
+        'first_name': 'Asaf',
+        'last_name': 'Assurance',
+        'email': 'asaf@assurance.co.il',
+        'phone': '+972-50-1234567',
+        'date_of_birth': '1985-03-15',
+        'occupation': 'Business Owner',
+        'address': '123 Insurance Blvd',
+        'city': 'Tel Aviv',
+        'state': 'Israel',
+        'zip': '6100001',
+        'password_hash': pwd_asaf['hash'],
+        'password_salt': pwd_asaf['salt'],
+        'portal_active': True,
+        'created_date': now.isoformat()
+    }
+
+    HEALTH_WALLETS['CUST-ASAF-001'] = {
+        'customer_id': 'CUST-ASAF-001',
+        'balance': 20000.00,
+        'monthly_deposit': 500.00,
+        'transactions': [{
+            'id': 'TXN-SEED-001',
+            'type': 'deposit',
+            'amount': 20000.00,
+            'payment_method': 'bank_transfer',
+            'timestamp': now.isoformat(),
+            'description': 'Initial deposit via billing',
+            'balance_after': 20000.00
+        }],
+        'created_at': now.isoformat()
+    }
+
+    policies_data = [
+        {'id': 'POL-ASAF-LIFE-001', 'type': 'life', 'coverage_amount': 1000000.0, 'annual_premium': 12000.0, 'monthly_premium': 1000.0, 'risk_score': 'low'},
+        {'id': 'POL-ASAF-HEALTH-001', 'type': 'health', 'coverage_amount': 500000.0, 'annual_premium': 6000.0, 'monthly_premium': 500.0, 'risk_score': 'medium'},
+        {'id': 'POL-ASAF-AUTO-001', 'type': 'auto', 'coverage_amount': 100000.0, 'annual_premium': 2400.0, 'monthly_premium': 200.0, 'risk_score': 'low'},
+    ]
+    for pol in policies_data:
+        POLICIES[pol['id']] = {
+            **pol, 'customer_id': 'CUST-ASAF-001', 'status': 'active',
+            'start_date': now.isoformat(),
+            'end_date': (now + timedelta(days=365)).isoformat(),
+            'approval_date': now.isoformat(),
+            'created_date': now.isoformat(),
+            'updated_date': now.isoformat()
+        }
+        bill_id = f"BILL-{pol['id'].replace('POL-', '')}"
+        BILLING[bill_id] = {
+            'id': bill_id, 'policy_id': pol['id'], 'customer_id': 'CUST-ASAF-001',
+            'amount': pol['monthly_premium'], 'amount_due': pol['monthly_premium'],
+            'amount_paid': 0.0, 'status': 'outstanding',
+            'due_date': (now + timedelta(days=30)).isoformat(),
+            'paid_date': None, 'payment_method': None, 'transaction_id': None,
+            'late_fee': 0.0, 'created_date': now.isoformat(), 'updated_date': now.isoformat()
+        }
+
+    claims_data = [
+        {'id': 'CLM-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'type': 'Medical', 'description': 'Emergency room visit', 'claimed_amount': 15000.00, 'status': 'Pending'},
+        {'id': 'CLM-ASAF-002', 'policy_id': 'POL-ASAF-HEALTH-001', 'type': 'Prescription', 'description': 'Monthly prescription medications', 'claimed_amount': 850.00, 'status': 'Under Review'},
+        {'id': 'CLM-ASAF-003', 'policy_id': 'POL-ASAF-AUTO-001', 'type': 'Collision', 'description': 'Fender bender - rear bumper damage', 'claimed_amount': 3500.00, 'status': 'Approved', 'approved_amount': 3200.00},
+        {'id': 'CLM-ASAF-004', 'policy_id': 'POL-ASAF-HEALTH-001', 'type': 'Dental', 'description': 'Root canal treatment and crown', 'claimed_amount': 2800.00, 'status': 'Pending'},
+        {'id': 'CLM-ASAF-005', 'policy_id': 'POL-ASAF-LIFE-001', 'type': 'Disability', 'description': 'Temporary disability claim', 'claimed_amount': 45000.00, 'status': 'Under Review'},
+    ]
+    for claim in claims_data:
+        filed = now - timedelta(days=random.randint(1, 30))
+        CLAIMS[claim['id']] = {
+            **claim, 'customer_id': 'CUST-ASAF-001',
+            'approved_amount': claim.get('approved_amount', 0),
+            'filed_date': filed.isoformat(),
+            'created_date': filed.isoformat(),
+            'updated_date': now.isoformat()
+        }
+
+    # Additional test customers with pending underwriting
+    test_customers = [
+        {'id': 'CUST-TEST-100', 'name': 'Sarah Cohen', 'email': 'sarah.cohen@test.com', 'policy_type': 'life', 'coverage': 750000},
+        {'id': 'CUST-TEST-101', 'name': 'David Levy', 'email': 'david.levy@test.com', 'policy_type': 'health', 'coverage': 300000},
+        {'id': 'CUST-TEST-102', 'name': 'Rachel Green', 'email': 'rachel.green@test.com', 'policy_type': 'property', 'coverage': 500000},
+    ]
+    test_pwd = hash_password('Test123!')
+    for tc in test_customers:
+        CUSTOMERS[tc['id']] = {
+            'id': tc['id'], 'name': tc['name'], 'email': tc['email'],
+            'phone': f"+1-555-{hash(tc['email']) % 10000:04d}",
+            'password_hash': test_pwd['hash'], 'password_salt': test_pwd['salt'],
+            'portal_active': True, 'created_date': now.isoformat()
+        }
+        USERS[tc['email']] = {
+            **hash_password('Test123!'), 'role': 'customer', 'name': tc['name'], 'customer_id': tc['id']
+        }
+        pol_id = f"POL-{tc['id'].replace('CUST-', '')}"
+        uw_id = f"UW-{tc['id'].replace('CUST-', '')}"
+        annual = tc['coverage'] * 0.012
+        monthly = tc['coverage'] * 0.001
+        POLICIES[pol_id] = {
+            'id': pol_id, 'customer_id': tc['id'], 'type': tc['policy_type'],
+            'coverage_amount': float(tc['coverage']), 'annual_premium': float(annual),
+            'monthly_premium': float(monthly), 'status': 'pending_underwriting',
+            'underwriting_id': uw_id, 'risk_score': 'medium',
+            'start_date': now.isoformat(), 'end_date': (now + timedelta(days=365)).isoformat(),
+            'created_date': now.isoformat(), 'updated_date': now.isoformat()
+        }
+        UNDERWRITING_APPLICATIONS[uw_id] = {
+            'id': uw_id, 'policy_id': pol_id, 'customer_id': tc['id'],
+            'customer_name': tc['name'], 'customer_email': tc['email'],
+            'policy_type': tc['policy_type'], 'coverage_amount': float(tc['coverage']),
+            'annual_premium': float(annual), 'monthly_premium': float(monthly),
+            'status': 'pending', 'risk_assessment': 'medium', 'risk_score': 'medium',
+            'medical_exam_required': False, 'additional_documents_required': False,
+            'submitted_date': now.isoformat(), 'created_date': now.isoformat(),
+            'updated_date': now.isoformat()
+        }
+
+    print(f"✓ In-memory demo data initialized: {len(CUSTOMERS)} customers, {len(POLICIES)} policies, {len(CLAIMS)} claims, {len(BILLING)} bills")
 
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
@@ -2258,6 +2407,19 @@ For claims or questions, please contact:
         session = validate_session(token) if token else None
         is_authenticated = session is not None
         
+        # Health check endpoint (unauthenticated)
+        if path == '/api/health':
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'status': 'healthy',
+                'service': 'phins-web-portal',
+                'timestamp': datetime.now().isoformat(),
+                'storage': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'customers_count': len(CUSTOMERS),
+                'policies_count': len(POLICIES)
+            }).encode('utf-8'))
+            return
+
         # Session validation endpoint (GET) - validates token and returns user info
         if path == '/api/session/validate':
             if not session:
@@ -3745,13 +3907,15 @@ For claims or questions, please contact:
             bills = [b for b in BILLING.values() 
                      if b.get('customer_id') == customer_id or b.get('policy_id') in policy_ids]
 
-            # Determine overall application status (simple heuristic)
+            # Determine overall application status
             overall = 'no_application'
-            if uw_apps:
+            active_policies = [p for p in policies if status_eq(p, 'active')]
+            if active_policies:
+                overall = 'active_policy'
+            elif uw_apps:
                 most_recent = sorted(uw_apps, key=lambda x: x.get('submitted_date', ''), reverse=True)[0]
                 overall = most_recent.get('status', 'pending')
                 if overall == 'approved':
-                    # Check if policy is active
                     linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
                     if linked and status_eq(linked, 'active'):
                         overall = 'active_policy'
@@ -3759,6 +3923,9 @@ For claims or questions, please contact:
             # Calculate billing summary (case-insensitive)
             outstanding_bills = [b for b in bills if status_eq(b, 'outstanding')]
             total_outstanding = sum(b.get('amount', 0) or b.get('amount_due', 0) for b in outstanding_bills)
+
+            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+            wallet = HEALTH_WALLETS.get(customer_id, {})
 
             payload = {
                 'customer': {
@@ -3769,11 +3936,16 @@ For claims or questions, please contact:
                 'overall_status': overall,
                 'policies': policies,
                 'underwriting_applications': uw_apps,
+                'claims': customer_claims,
                 'billing': bills,
                 'billing_summary': {
                     'total_outstanding': round(total_outstanding, 2),
                     'outstanding_count': len(outstanding_bills),
                     'next_due': min((b.get('due_date') for b in outstanding_bills), default=None)
+                },
+                'health_wallet': {
+                    'balance': wallet.get('balance', 0),
+                    'monthly_deposit': wallet.get('monthly_deposit', 0)
                 }
             }
 
@@ -15334,10 +15506,10 @@ For claims or questions, please contact:
             for field_name in critical_fields:
                 field_value = fields.get(field_name, '')
                 if field_value:
-                    threat = validate_input_security(field_value, field_name, self.client_address[0])
-                    if threat:
+                    is_valid, error_msg = validate_input_security(field_value, self.client_address[0], field_name)
+                    if not is_valid:
                         self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}: {threat}'}).encode('utf-8'))
+                        self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}'}).encode('utf-8'))
                         return
             
             # Generate IDs
@@ -15574,10 +15746,15 @@ def run_server(port: int = PORT) -> None:
                 print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
             except Exception as e:
                 print(f"Note: Sample data seeding skipped (may already exist): {e}")
+            
+            # Always initialize health wallets (in-memory, lost on restart)
+            _init_health_wallets()
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")
-            # Don't fail - just fall back to in-memory
+            initialize_in_memory_demo_data()
+    else:
+        initialize_in_memory_demo_data()
     
     server_address = ('0.0.0.0', port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
