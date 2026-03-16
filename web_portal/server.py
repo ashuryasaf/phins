@@ -5100,6 +5100,11 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"API extension error (GET {path}): {e}")
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Service temporarily unavailable'}).encode('utf-8'))
+                return
 
         # ========== AI + BI MARKETING SALES AGENT (Admin/Media) ==========
         if path == '/api/admin/marketing-sales-agent':
@@ -16228,10 +16233,17 @@ For claims or questions, please contact:
                         self._set_json_headers(status_code)
                         self.wfile.write(json.dumps(response_data).encode('utf-8'))
                         return
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'Endpoint not found: {path}'}).encode('utf-8'))
+                        return
                 except Exception as e:
                     print(f"API extension error (POST {path}): {e}")
                     import traceback
                     traceback.print_exc()
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Security service temporarily unavailable'}).encode('utf-8'))
+                    return
         
         # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
@@ -32061,8 +32073,12 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
             return
         
-        # Default: not found
-        self.send_error(404, 'Not Found')
+        # Default: not found (JSON for API paths, HTML for others)
+        if path.startswith('/api/'):
+            self._set_json_headers(404)
+            self.wfile.write(json.dumps({'error': f'Endpoint not found: {path}'}).encode('utf-8'))
+        else:
+            self.send_error(404, 'Not Found')
     
     def handle_quote_submission(self):
         """Handle quote form submission with multipart data"""
@@ -32601,10 +32617,17 @@ For claims or questions, please contact:
                         self._set_json_headers(status_code)
                         self.wfile.write(json.dumps(response_data).encode('utf-8'))
                         return
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'Endpoint not found: {path}'}).encode('utf-8'))
+                        return
                 except Exception as e:
                     print(f"API extension error (PUT {path}): {e}")
                     import traceback
                     traceback.print_exc()
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Service temporarily unavailable'}).encode('utf-8'))
+                    return
         
         # Default: Method not allowed for unhandled PUT requests
         self._set_json_headers(405)
