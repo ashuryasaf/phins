@@ -476,8 +476,11 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
           captchaResult = await captchaResponse.json();
         } catch (parseErr) {
-          console.warn('CAPTCHA verify response parse error, skipping CAPTCHA:', parseErr);
-          captchaResult = { success: true };
+          console.warn('CAPTCHA verify response parse error, failing CAPTCHA verification:', parseErr);
+          captchaResult = {
+            success: false,
+            message: 'Verification unavailable. Please try again.'
+          };
         }
         
         if (!captchaResult.success) {
