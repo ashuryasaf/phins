@@ -1,0 +1,5 @@
+[allowlist]
+  paths = [
+    "database/dynamic_customers.json",
+    "database/invitation_codes.json",
+  ]
