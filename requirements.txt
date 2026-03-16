@@ -3,7 +3,6 @@ reportlab>=4.0
 # install if available to silence mypy missing-stub errors
 types-reportlab>=0.0.1
 pytest>=7.0
-pytest-timeout>=0.0.1
 mypy>=1.0
 requests>=2.0
 # Optional: convert PDF pages to images for visual diffing (requires poppler on the system)

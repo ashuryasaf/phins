@@ -85,24 +85,18 @@ document.addEventListener('DOMContentLoaded', function () {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'login' })
       });
-      
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        console.log('CAPTCHA response parse error, proceeding without:', parseErr);
-        captchaSection.style.display = 'none';
-        return;
-      }
+      const data = await response.json();
       
       if (data.success && data.challenge) {
         captchaId.value = data.challenge.challenge_id;
         if (data.challenge.challenge_type === 'simple') {
           captchaQuestion.textContent = data.challenge.challenge_question;
         } else {
+          // For hCaptcha/reCAPTCHA, we'd load their widget here
           captchaQuestion.innerHTML = '<em>Advanced verification loaded</em>';
         }
       } else {
+        // CAPTCHA disabled or unavailable
         captchaSection.style.display = 'none';
       }
     } catch (e) {
@@ -199,16 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
           verification_id: verificationId.value
         })
       });
-      
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        console.error('Failed to parse OTP resend response:', parseErr);
-        msg.textContent = 'Server error. Please try again.';
-        msg.style.color = '#dc3545';
-        return;
-      }
+      const data = await response.json();
       
       if (data.success) {
         msg.textContent = 'New code sent!';
@@ -220,8 +205,7 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.style.color = '#dc3545';
       }
     } catch (e) {
-      console.error('OTP resend network error:', e);
-      msg.textContent = 'Connection error. Please try again.';
+      msg.textContent = 'Error sending code';
       msg.style.color = '#dc3545';
     }
   });
@@ -268,18 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
           device_fingerprint: getDeviceFingerprint()
         })
       });
-      
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        console.error('Failed to parse OTP verify response:', parseErr, 'status:', response.status);
-        msg.textContent = 'Server error during verification. Please try again.';
-        msg.style.color = '#dc3545';
-        clearOTPInputs();
-        submitBtn.disabled = false;
-        return;
-      }
+      const data = await response.json();
       
       if (data.success) {
         msg.textContent = 'Verified! Completing login...';
@@ -294,8 +267,7 @@ document.addEventListener('DOMContentLoaded', function () {
         submitBtn.disabled = false;
       }
     } catch (e) {
-      console.error('OTP verification network error:', e);
-      msg.textContent = 'Connection error during verification. Please try again.';
+      msg.textContent = 'Verification error';
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
     }
@@ -326,16 +298,7 @@ document.addEventListener('DOMContentLoaded', function () {
           verification_id: verificationId.value
         })
       });
-      
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        console.error('Failed to parse login response:', parseErr, 'status:', response.status);
-        msg.textContent = 'Server error (status ' + response.status + '). Please try again.';
-        msg.style.color = '#dc3545';
-        return;
-      }
+      const data = await response.json();
       
       if (data.token) {
         handleLoginSuccess(data, pendingLoginData.username);
@@ -344,8 +307,7 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.style.color = '#dc3545';
       }
     } catch (e) {
-      console.error('Login network error:', e);
-      msg.textContent = 'Connection error. Please check your network and try again.';
+      msg.textContent = 'Login error. Please try again.';
       msg.style.color = '#dc3545';
     }
   }
@@ -460,9 +422,9 @@ document.addEventListener('DOMContentLoaded', function () {
     msg.style.color = '#546e7a';
     submitBtn.disabled = true;
     
-    // Step 1: Verify CAPTCHA if present (separate error handling)
-    if (captchaIdValue && captchaValue) {
-      try {
+    try {
+      // Step 1: Verify CAPTCHA if present
+      if (captchaIdValue && captchaValue) {
         const captchaResponse = await fetch('/api/security/captcha/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -471,30 +433,19 @@ document.addEventListener('DOMContentLoaded', function () {
             response: captchaValue
           })
         });
-        
-        let captchaResult;
-        try {
-          captchaResult = await captchaResponse.json();
-        } catch (parseErr) {
-          console.warn('CAPTCHA verify response parse error, skipping CAPTCHA:', parseErr);
-          captchaResult = { success: true };
-        }
+        const captchaResult = await captchaResponse.json();
         
         if (!captchaResult.success) {
           msg.textContent = captchaResult.message || 'Verification failed. Please try again.';
           msg.style.color = '#dc3545';
           submitBtn.disabled = false;
-          loadCaptcha();
+          loadCaptcha(); // Reload CAPTCHA
           captchaAnswer.value = '';
           return;
         }
-      } catch (captchaErr) {
-        console.warn('CAPTCHA verification unavailable, proceeding with login:', captchaErr);
       }
-    }
-    
-    // Step 2: Attempt login (separate error handling)
-    try {
+      
+      // Step 2: Attempt login
       const loginData = {
         username,
         password,
@@ -507,18 +458,7 @@ document.addEventListener('DOMContentLoaded', function () {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginData)
       });
-      
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        console.error('Failed to parse login response:', parseErr, 'status:', response.status);
-        msg.textContent = 'Server error (status ' + response.status + '). Please try again later.';
-        msg.style.color = '#dc3545';
-        submitBtn.disabled = false;
-        loadCaptcha();
-        return;
-      }
+      const data = await response.json();
       
       if (data.requires_otp) {
         // OTP required - show OTP step
@@ -544,8 +484,8 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       
     } catch (err) {
-      console.error('Login network error:', err);
-      msg.textContent = 'Connection error. Please check your network and try again.';
+      console.error('Login error:', err);
+      msg.textContent = 'Login error. Please try again.';
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
       loadCaptcha();

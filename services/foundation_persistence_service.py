@@ -40,7 +40,7 @@ class FoundationPersistenceService:
         """
         if data_dir is None:
             # Default to data/foundations in workspace
-            workspace = os.environ.get('WORKSPACE_PATH', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            workspace = os.environ.get('WORKSPACE_PATH', '/workspace')
             data_dir = os.path.join(workspace, 'data', 'foundations')
         
         self.data_dir = data_dir
