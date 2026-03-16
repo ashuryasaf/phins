@@ -9,6 +9,10 @@ on:
     # Run weekly on Sundays at midnight
     - cron: '0 0 * * 0'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   credential-scan:
     name: Scan for Hardcoded Credentials
@@ -62,7 +66,7 @@ jobs:
               --exclude="*.sample" \
               --exclude="*test*" \
               --exclude="*spec*" \
-              . 2>/dev/null || true)
+              . 2>/dev/null || true) 
             
             if [ -n "$MATCHES" ]; then
               # Filter out environment variable references (os.environ, process.env)
@@ -188,7 +192,7 @@ jobs:
             
             if [ "$HIGH_ISSUES" -gt 0 ]; then
               echo "⚠️  Found $HIGH_ISSUES high severity security issues:"
-              python3 -c "import json; data=json.load(open('bandit-report.json')); [print(f'  - {i[\"filename\"]}:{i[\"line_number\"]}: {i[\"issue_text\"]}') for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']"
+              python3 -c "import json; data=json.load(open('bandit-report.json')); [print(f'  - {i["filename"]}:{i["line_number"]}: {i["issue_text"]}') for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']"
             else
               echo "✅ No high severity issues found"
             fi
