@@ -1,9 +1,6 @@
 name: Python package
 
-on:
-  push:
-    branches:
-      - cursor/login-access-errors-b2b6
+on: [push]
 
 jobs:
   build:
