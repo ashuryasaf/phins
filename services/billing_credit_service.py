@@ -244,7 +244,7 @@ class BillingCreditService:
         self._credit_transactions: List[Dict[str, Any]] = []
         
         # Thread safety
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         
         logger.info("Billing credit service initialized")
     

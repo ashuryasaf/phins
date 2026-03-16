@@ -106,6 +106,7 @@ class DatabaseConfig:
                 'max_overflow': cls.MAX_OVERFLOW,
                 'pool_timeout': cls.POOL_TIMEOUT,
                 'pool_recycle': cls.POOL_RECYCLE,
+                'connect_args': {'connect_timeout': 5, 'options': '-c statement_timeout=5000'},
             })
         else:
             # SQLite-specific options

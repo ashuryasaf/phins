@@ -3122,13 +3122,6 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
-    'supplier': os.environ.get('PHINS_DEMO_SUPPLIER_PASSWORD', 'supplier123'),
-    'media_ad': os.environ.get('PHINS_DEMO_MEDIA_PASSWORD', 'media123'),
-    'asaf@phins.ai': os.environ.get('PHINS_DEMO_ASAF_PHINS_PASSWORD', 'AsafPhins2024!'),
-    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
-    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
-    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
-    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
 }
 
 # IMPORTANT:
@@ -4034,19 +4027,24 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable, falling back to a documented
-    default for named accounts so they remain accessible out of the box.
+    Get password from environment variable or generate unusable random password.
+    
+    Args:
+        env_var_name: Name of environment variable containing the password
+        username: Username for logging purposes
+        
+    Returns:
+        Dictionary with 'hash' and 'salt' keys
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    default_pwd = LEGACY_DEMO_PASSWORDS.get(username)
-    if default_pwd:
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable. Using documented default.")
-        return hash_password(default_pwd)
-    random_pwd = secrets.token_urlsafe(32)
-    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-    return hash_password(random_pwd)
+    else:
+        # Generate a random password that will be impossible to guess
+        # This ensures the system starts but users cannot login without proper env config
+        random_pwd = secrets.token_urlsafe(32)
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+        return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""
@@ -4877,25 +4875,54 @@ For claims or questions, please contact:
         # Periodic cleanup of stale data
         cleanup_stale_data()
         
-        # Health check endpoint - bypasses rate limiting for Railway/load balancers
+        # Security checks (apply to ALL endpoints including health)
+        client_ip = self.client_address[0]
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+        _ensure_test_port_state(server_port)
+        
+        # Check if IP is blocked
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+        
+        # Rate limiting
+        if not check_rate_limit(client_ip, server_port):
+            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
+            return
+        
+        # Health check endpoint
         if self.path == '/api/health' or self.path == '/health':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             
-            # Perform actual database connection check
+            # Perform database connection check with timeout protection
             db_status = 'in-memory'
             db_connected = False
             if USE_DATABASE:
                 if database_enabled:
-                    # Try a quick connection test
                     try:
                         from database import check_database_connection
-                        if check_database_connection(retry_on_failure=False):
-                            db_status = 'connected'
-                            db_connected = True
-                        else:
-                            db_status = 'disconnected'
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(check_database_connection, retry_on_failure=False)
+                            if future.result(timeout=5):
+                                db_status = 'connected'
+                                db_connected = True
+                            else:
+                                db_status = 'disconnected'
                     except Exception:
                         db_status = 'error'
                 else:
@@ -4926,33 +4953,6 @@ For claims or questions, please contact:
                 health_status['recovery_url'] = '/api/diagnostics/db-recovery'
             
             self.wfile.write(json.dumps(health_status).encode('utf-8'))
-            return
-        
-        # Security checks
-        client_ip = self.client_address[0]
-        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
-        _ensure_test_port_state(server_port)
-        
-        # Check if IP is blocked
-        is_blocked, block_reason = is_ip_blocked(client_ip)
-        if is_blocked:
-            self.send_response(403)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                'error': 'Access denied',
-                'message': 'Your IP has been blocked due to suspicious activity'
-            }).encode('utf-8'))
-            return
-        
-        # Rate limiting
-        if not check_rate_limit(client_ip, server_port):
-            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
-            self.send_response(429)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Retry-After', '60')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
             return
         
         parsed = urlparse.urlparse(self.path)

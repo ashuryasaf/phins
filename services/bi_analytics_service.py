@@ -28,14 +28,19 @@ import logging
 
 logger = logging.getLogger('phins.bi_analytics')
 
-import json
+# PHINS BI and Statistical Analytics Service
+# Comprehensive Business Intelligence and Statistical Analysis for:
+# - System optimization
+# - Performance metrics
+# - Predictive analytics
+# - Trend analysis
+# - KPI monitoring
+# - Community/Foundation analytics
+# Provides AI-driven insights for decision making across the platform.
+
 import math
-import statistics
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from collections import defaultdict
 import random
 
 
@@ -137,28 +142,29 @@ class BIAnalyticsService:
     - AI-powered recommendations
     """
     
-    def __init__(self):
-        """Initialize BI analytics service"""
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl_seconds = 300  # 5 minutes cache
-        
-        logger.info("BI Analytics Service initialized")
-    
     def get_executive_dashboard(
         self,
-        customers: Dict[str, Any],
-        policies: Dict[str, Any],
-        claims: Dict[str, Any],
-        billing: Dict[str, Any],
-        balance_sheet: Dict[str, Any],
+        customers: Dict[str, Any] = None,
+        policies: Dict[str, Any] = None,
+        claims: Dict[str, Any] = None,
+        billing: Dict[str, Any] = None,
+        balance_sheet: Dict[str, Any] = None,
         suppliers: Dict[str, Any] = None,
         deliveries: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Generate executive dashboard with high-level KPIs.
         
-        Returns comprehensive business health indicators.
+        When called with no arguments, uses stored data (self.*).
+        When called with explicit arguments, uses those instead.
         """
+        if customers is None and policies is None and claims is None:
+            return self._get_executive_dashboard_from_stored_data()
+        customers = customers if customers is not None else self.customers
+        policies = policies if policies is not None else self.policies
+        claims = claims if claims is not None else self.claims
+        billing = billing if billing is not None else self.bills
+        balance_sheet = balance_sheet if balance_sheet is not None else {}
         now = datetime.now(timezone.utc)
         
         # Customer metrics
@@ -282,7 +288,7 @@ class BIAnalyticsService:
         }
         
         return dashboard
-    
+
     def __init__(self,
                  customers: Dict = None,
                  suppliers: Dict = None,
@@ -299,7 +305,10 @@ class BIAnalyticsService:
                  supplier_orders: Dict = None,
                  delivery_requests: Dict = None,
                  delivery_bids: Dict = None):
-        """Initialize with all data stores"""
+        """Initialize BI analytics service with optional data stores"""
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_ttl_seconds = 300
+
         self.customers = customers or {}
         self.suppliers = suppliers or {}
         self.policies = policies or {}
@@ -315,13 +324,13 @@ class BIAnalyticsService:
         self.supplier_orders = supplier_orders or {}
         self.delivery_requests = delivery_requests or {}
         self.delivery_bids = delivery_bids or {}
-        
-        # Cache for computed metrics
+
         self._metrics_cache = {}
         self._cache_timestamp = None
-        self._cache_ttl_seconds = 300  # 5 minutes
-        
+        self._cache_ttl_seconds = 300
         self._insight_counter = 0
+        
+        logger.info("BI Analytics Service initialized")
     
     def _generate_insight_id(self) -> str:
         """Generate unique insight ID"""
@@ -394,9 +403,9 @@ class BIAnalyticsService:
     # CORE KPI DASHBOARD
     # =========================================================================
     
-    def get_executive_dashboard(self) -> Dict[str, Any]:
+    def _get_executive_dashboard_from_stored_data(self) -> Dict[str, Any]:
         """
-        Get executive-level dashboard with key metrics.
+        Get executive-level dashboard from stored data attributes.
         
         Returns comprehensive view of platform health and performance.
         """
@@ -450,6 +459,107 @@ class BIAnalyticsService:
         }
         
         return dashboard
+
+    def _get_financial_kpis(self) -> List[Dict[str, Any]]:
+        """Calculate financial KPIs from stored data."""
+        total_premium = round(sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values()), 2)
+        total_monthly = round(sum(float(p.get('monthly_premium', 0) or 0) for p in self.policies.values()), 2)
+        total_claims_paid = round(sum(
+            float(c.get('approved_amount', 0) or 0)
+            for c in self.claims.values()
+            if str(c.get('status', '')).lower() in ['paid', 'approved']
+        ), 2)
+        return [
+            {'name': 'Total Premium Revenue', 'value': total_premium, 'unit': 'currency'},
+            {'name': 'Monthly Premium Revenue', 'value': total_monthly, 'unit': 'currency'},
+            {'name': 'Total Claims Paid', 'value': total_claims_paid, 'unit': 'currency'},
+            {'name': 'Loss Ratio', 'value': round((total_claims_paid / total_premium * 100) if total_premium > 0 else 0, 2), 'unit': 'percentage'},
+        ]
+
+    def _get_operational_kpis(self) -> List[Dict[str, Any]]:
+        """Calculate operational KPIs from stored data."""
+        total_claims = len(self.claims)
+        pending = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
+        approved = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() in ['approved', 'paid'])
+        rate = round((approved / total_claims * 100) if total_claims > 0 else 0, 2)
+        return [
+            {'name': 'Total Claims', 'value': total_claims, 'unit': 'count'},
+            {'name': 'Pending Claims', 'value': pending, 'unit': 'count'},
+            {'name': 'Claims Approval Rate', 'value': rate, 'unit': 'percentage'},
+            {'name': 'Active Policies', 'value': sum(1 for p in self.policies.values() if str(p.get('status', '')).lower() == 'active'), 'unit': 'count'},
+        ]
+
+    def _get_customer_kpis(self) -> List[Dict[str, Any]]:
+        """Calculate customer KPIs from stored data."""
+        wallet_balance = round(sum(float(w.get('balance', 0) or 0) for w in self.health_wallets.values()), 2)
+        return [
+            {'name': 'Total Customers', 'value': len(self.customers), 'unit': 'count'},
+            {'name': 'Active Customers', 'value': sum(1 for c in self.customers.values() if str(c.get('status', '')).lower() == 'active'), 'unit': 'count'},
+            {'name': 'Total Wallet Balance', 'value': wallet_balance, 'unit': 'currency'},
+        ]
+
+    def _generate_insights(self) -> List[Dict[str, Any]]:
+        """Generate AI-driven business insights."""
+        insights = []
+        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
+        if total_premium > 0:
+            insights.append({'id': self._generate_insight_id(), 'type': 'financial', 'message': f'Total annual premium book stands at ${total_premium:,.2f}', 'priority': 'info'})
+        pending = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
+        if pending > 0:
+            insights.append({'id': self._generate_insight_id(), 'type': 'operational', 'message': f'{pending} claims are pending review', 'priority': 'warning' if pending > 5 else 'info'})
+        return insights
+
+    def _generate_alerts(self) -> List[Dict[str, Any]]:
+        """Generate system alerts."""
+        alerts = []
+        overdue = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
+        if overdue > 10:
+            alerts.append({'severity': 'critical', 'message': f'{overdue} claims pending', 'area': 'claims'})
+        return alerts
+
+    def _calculate_platform_health_score(self) -> float:
+        """Calculate overall platform health score (0-100)."""
+        score = 50.0
+        active_policies = sum(1 for p in self.policies.values() if str(p.get('status', '')).lower() == 'active')
+        total_policies = len(self.policies)
+        if total_policies > 0:
+            score += (active_policies / total_policies) * 25
+        if self.customers:
+            score += min(25.0, len(self.customers) * 2.5)
+        return min(100.0, max(0.0, round(score, 2)))
+
+    def get_premium_statistics(self) -> Dict[str, Any]:
+        """Calculate premium statistics across all policies."""
+        annual = [float(p.get('annual_premium', 0) or 0) for p in self.policies.values()]
+        monthly = [float(p.get('monthly_premium', 0) or 0) for p in self.policies.values()]
+        def _stats(vals):
+            if not vals:
+                return {'count': 0, 'mean': 0, 'total': 0}
+            return {'count': len(vals), 'mean': round(statistics.mean(vals), 2), 'total': round(sum(vals), 2)}
+        return {'annual_premium': _stats(annual), 'monthly_premium': _stats(monthly)}
+
+    def get_claims_statistics(self) -> Dict[str, Any]:
+        """Calculate claims statistics."""
+        by_status: Dict[str, int] = defaultdict(int)
+        amounts = []
+        for c in self.claims.values():
+            status = str(c.get('status', 'unknown')).lower()
+            by_status[status] += 1
+            amounts.append(float(c.get('claimed_amount', 0) or 0))
+        return {'total_claims': len(self.claims), 'by_status': dict(by_status), 'claimed_amounts': {'count': len(amounts), 'total': round(sum(amounts), 2)}}
+
+    def get_optimization_recommendations(self) -> List[Dict]:
+        """Generate optimization recommendations based on current data."""
+        recs = []
+        pending_claims = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
+        if pending_claims > 0:
+            recs.append({'area': 'claims', 'priority': 'high' if pending_claims > 5 else 'medium', 'recommendation': f'Review and process {pending_claims} pending claim(s) to reduce backlog'})
+        pending_suppliers = sum(1 for s in self.suppliers.values() if str(s.get('status', '')).lower() == 'pending')
+        if pending_suppliers > 0:
+            recs.append({'area': 'suppliers', 'priority': 'medium', 'recommendation': f'Approve or reject {pending_suppliers} pending supplier application(s)'})
+        if not recs:
+            recs.append({'area': 'general', 'priority': 'low', 'recommendation': 'Platform is operating within normal parameters'})
+        return recs
     
     def get_delivery_analytics(
         self,
@@ -656,9 +766,9 @@ class BIAnalyticsService:
     
     def get_supplier_analytics(
         self,
-        suppliers: Dict[str, Any],
-        supplier_orders: Dict[str, Any],
-        supplier_metrics: Dict[str, Any]
+        suppliers: Dict[str, Any] = None,
+        supplier_orders: Dict[str, Any] = None,
+        supplier_metrics: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Analyze supplier ecosystem performance.
@@ -666,6 +776,12 @@ class BIAnalyticsService:
         Returns:
             Supplier analytics and performance metrics
         """
+        if suppliers is None:
+            suppliers = self.suppliers
+        if supplier_orders is None:
+            supplier_orders = self.supplier_orders
+        if supplier_metrics is None:
+            supplier_metrics = {}
         total_suppliers = len(suppliers)
         
         # Status breakdown
@@ -719,6 +835,9 @@ class BIAnalyticsService:
         ]
         
         return {
+            'total_suppliers': total_suppliers,
+            'by_status': dict(status_breakdown),
+            'by_type': dict(category_breakdown),
             'summary': {
                 'total_suppliers': total_suppliers,
                 'active_suppliers': active_suppliers,
@@ -934,189 +1053,8 @@ class BIAnalyticsService:
         
         return min(100.0, max(0.0, round(score, 2)))
 
-    def _get_financial_kpis(self) -> List[Dict]:
-        """Calculate financial KPI metrics"""
-        total_premium = round(sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values()), 2)
-        monthly_premium = round(sum(float(p.get('monthly_premium', 0) or 0) for p in self.policies.values()), 2)
-        total_claims_paid = round(sum(
-            float(c.get('approved_amount', 0) or 0)
-            for c in self.claims.values()
-            if str(c.get('status', '')).lower() in ['paid', 'approved']
-        ), 2)
 
-        return [
-            {'name': 'Total Premium Revenue', 'value': total_premium, 'unit': 'currency'},
-            {'name': 'Monthly Premium Revenue', 'value': monthly_premium, 'unit': 'currency'},
-            {'name': 'Total Claims Paid', 'value': total_claims_paid, 'unit': 'currency'},
-            {'name': 'Loss Ratio', 'value': round((total_claims_paid / total_premium * 100) if total_premium > 0 else 0, 2), 'unit': 'percentage'},
-        ]
-
-    def _get_operational_kpis(self) -> List[Dict]:
-        """Calculate operational KPI metrics"""
-        total_claims = len(self.claims)
-        pending_claims = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
-        approved_claims = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() in ['approved', 'paid'])
-        approval_rate = round((approved_claims / total_claims * 100) if total_claims > 0 else 0, 2)
-
-        return [
-            {'name': 'Total Claims', 'value': total_claims, 'unit': 'count'},
-            {'name': 'Pending Claims', 'value': pending_claims, 'unit': 'count'},
-            {'name': 'Claims Approval Rate', 'value': approval_rate, 'unit': 'percentage'},
-            {'name': 'Active Policies', 'value': sum(1 for p in self.policies.values() if str(p.get('status', '')).lower() == 'active'), 'unit': 'count'},
-        ]
-
-    def _get_customer_kpis(self) -> List[Dict]:
-        """Calculate customer KPI metrics"""
-        total_customers = len(self.customers)
-        active_customers = sum(1 for c in self.customers.values() if str(c.get('status', '')).lower() == 'active')
-        wallet_balance = round(sum(float(w.get('balance', 0) or 0) for w in self.health_wallets.values()), 2)
-
-        return [
-            {'name': 'Total Customers', 'value': total_customers, 'unit': 'count'},
-            {'name': 'Active Customers', 'value': active_customers, 'unit': 'count'},
-            {'name': 'Total Wallet Balance', 'value': wallet_balance, 'unit': 'currency'},
-        ]
-
-    def _generate_insights(self) -> List[Dict]:
-        """Generate AI-driven business insights"""
-        insights = []
-        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
-        if total_premium > 0:
-            insights.append({
-                'id': self._generate_insight_id(),
-                'type': 'financial',
-                'message': f'Total annual premium book stands at ${total_premium:,.2f}',
-                'priority': 'info'
-            })
-        if self.claims:
-            pending = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
-            if pending > 0:
-                insights.append({
-                    'id': self._generate_insight_id(),
-                    'type': 'operational',
-                    'message': f'{pending} claims are pending review',
-                    'priority': 'warning' if pending > 5 else 'info'
-                })
-        return insights
-
-    def _generate_alerts(self) -> List[Dict]:
-        """Generate system alerts"""
-        alerts = []
-        overdue_claims = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
-        if overdue_claims > 10:
-            alerts.append({
-                'severity': 'critical',
-                'message': f'{overdue_claims} claims pending – immediate attention required',
-                'area': 'claims'
-            })
-        return alerts
-
-    def _calculate_platform_health_score(self) -> float:
-        """Calculate overall platform health score (0-100)"""
-        score = 50.0
-
-        # Policy book score (25 points)
-        active_policies = sum(1 for p in self.policies.values() if str(p.get('status', '')).lower() == 'active')
-        total_policies = len(self.policies)
-        if total_policies > 0:
-            score += (active_policies / total_policies) * 25
-
-        # Claims efficiency (25 points)
-        total_claims = len(self.claims)
-        if total_claims > 0:
-            resolved = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() in ['paid', 'approved', 'closed'])
-            score += (resolved / total_claims) * 25
-
-        return min(100.0, max(0.0, round(score, 2)))
-
-    def get_premium_statistics(self) -> Dict[str, Any]:
-        """Return statistical summary of premium amounts"""
-        annual_premiums = [float(p.get('annual_premium', 0) or 0) for p in self.policies.values()]
-        monthly_premiums = [float(p.get('monthly_premium', 0) or 0) for p in self.policies.values()]
-        return {
-            'annual_premium': self._calculate_statistics(annual_premiums).to_dict() if annual_premiums else {},
-            'monthly_premium': self._calculate_statistics(monthly_premiums).to_dict() if monthly_premiums else {},
-        }
-
-    def get_claims_statistics(self) -> Dict[str, Any]:
-        """Return statistical summary of claims data"""
-        claimed_amounts = [float(c.get('claimed_amount', 0) or 0) for c in self.claims.values()]
-        by_status: Dict[str, int] = defaultdict(int)
-        for c in self.claims.values():
-            by_status[str(c.get('status', 'unknown')).lower()] += 1
-        return {
-            'total_claims': len(self.claims),
-            'claimed_amounts': self._calculate_statistics(claimed_amounts).to_dict() if claimed_amounts else {},
-            'by_status': dict(by_status),
-        }
-
-    def get_supplier_analytics(
-        self,
-        suppliers: Dict[str, Any] = None,
-        supplier_orders: Dict[str, Any] = None,
-        supplier_metrics: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
-        """Analyze supplier ecosystem – uses stored data stores when no arguments are provided"""
-        suppliers = suppliers if suppliers is not None else self.suppliers
-        supplier_orders = supplier_orders if supplier_orders is not None else self.supplier_orders
-
-        total_suppliers = len(suppliers)
-        by_status: Dict[str, int] = defaultdict(int)
-        by_type: Dict[str, int] = defaultdict(int)
-        for s in suppliers.values():
-            by_status[str(s.get('status', 'unknown')).lower()] += 1
-            by_type[str(s.get('supplier_type', s.get('type', 'unknown'))).lower()] += 1
-
-        total_orders = len(supplier_orders)
-        total_order_value = sum(float(o.get('total_amount', 0) or 0) for o in supplier_orders.values())
-
-        return {
-            'total_suppliers': total_suppliers,
-            'by_status': dict(by_status),
-            'by_type': dict(by_type),
-            'total_orders': total_orders,
-            'total_order_value': round(total_order_value, 2),
-        }
-
-    def get_optimization_recommendations(self) -> List[Dict]:
-        """Generate optimization recommendations based on current data"""
-        recommendations = []
-
-        # Claims backlog
-        pending_claims = sum(1 for c in self.claims.values() if str(c.get('status', '')).lower() == 'pending')
-        if pending_claims > 0:
-            recommendations.append({
-                'area': 'claims',
-                'priority': 'high' if pending_claims > 5 else 'medium',
-                'recommendation': f'Review and process {pending_claims} pending claim(s) to reduce backlog',
-            })
-
-        # Supplier onboarding
-        pending_suppliers = sum(1 for s in self.suppliers.values() if str(s.get('status', '')).lower() == 'pending')
-        if pending_suppliers > 0:
-            recommendations.append({
-                'area': 'suppliers',
-                'priority': 'medium',
-                'recommendation': f'Approve or reject {pending_suppliers} pending supplier application(s)',
-            })
-
-        # Policy activation
-        inactive_policies = sum(1 for p in self.policies.values() if str(p.get('status', '')).lower() not in ['active', 'cancelled'])
-        if inactive_policies > 0:
-            recommendations.append({
-                'area': 'policies',
-                'priority': 'low',
-                'recommendation': f'{inactive_policies} policy(ies) are not yet active – follow up with underwriting',
-            })
-
-        if not recommendations:
-            recommendations.append({
-                'area': 'general',
-                'priority': 'low',
-                'recommendation': 'Platform is operating within normal parameters',
-            })
-
-        return recommendations
+# Singleton instance
 _bi_analytics_service: Optional[BIAnalyticsService] = None
 
 

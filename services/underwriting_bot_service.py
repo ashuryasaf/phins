@@ -34,11 +34,10 @@ import os
 # ============================================================================
 
 # Allowed base directories for file uploads (configurable via environment)
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOWED_UPLOAD_DIRS = [
-    os.path.join(_PROJECT_ROOT, 'uploads'),
+    '/workspace/uploads',
     '/tmp/phins_uploads',
-    os.environ.get('PHINS_UPLOAD_DIR', os.path.join(_PROJECT_ROOT, 'uploads'))
+    os.environ.get('PHINS_UPLOAD_DIR', '/workspace/uploads')
 ]
 
 def validate_file_path(file_path: str, file_name: str) -> Tuple[bool, str, str]:
@@ -78,7 +77,7 @@ def validate_file_path(file_path: str, file_name: str) -> Tuple[bool, str, str]:
     
     if not is_allowed:
         # If not in allowed dir, generate a safe path
-        safe_dir = os.environ.get('PHINS_UPLOAD_DIR', os.path.join(_PROJECT_ROOT, 'uploads'))
+        safe_dir = os.environ.get('PHINS_UPLOAD_DIR', '/workspace/uploads')
         # Sanitize filename - remove any path components and dangerous chars
         safe_name = os.path.basename(file_name) if file_name else 'unnamed'
         safe_name = re.sub(r'[^\w\-_\.]', '_', safe_name)

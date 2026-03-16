@@ -39,30 +39,23 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
-_NAMED_ACCOUNT_DEFAULTS: dict = {
-    'admin': 'admin123', 'underwriter': 'under123',
-    'claims_adjuster': 'claims123', 'accountant': 'acct123',
-    'actuary': 'actuary123', 'supplier': 'supplier123',
-    'media_ad': 'media123', 'asaf@phins.ai': 'AsafPhins2024!',
-    'asaf@assurance.co.il': 'Assurance2024!', 'efrat@phins.ai': 'Efrat2024!',
-    'asi@phins.ai': 'Asi20240!', 'shosh@phins.ai': 'Shosh2024!',
-}
-
-
 def _get_env_password(env_var: str, username: str) -> str:
     """
-    Get password from environment variable, falling back to a documented
-    default for named accounts so they remain accessible out of the box.
+    Get password from environment variable or generate random unusable password.
+    
+    Args:
+        env_var: Environment variable name
+        username: Username for logging
+        
+    Returns:
+        Password string from env var or random password
     """
     password = os.environ.get(env_var)
     if password:
         return password
-    default_pwd = _NAMED_ACCOUNT_DEFAULTS.get(username)
-    if default_pwd:
-        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable. Using documented default.")
-        return default_pwd
-    logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
-    return secrets.token_urlsafe(32)
+    else:
+        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
 
 
 def seed_default_users(session=None):
