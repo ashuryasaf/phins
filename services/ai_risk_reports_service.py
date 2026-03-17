@@ -554,6 +554,10 @@ class AIRiskReportsService:
                     encoding = self._detect_encoding(file_content)
                     text_content = file_content.decode(encoding, errors='replace')
                     parsed = self._parse_csv(text_content)
+
+            if isinstance(parsed, dict):
+                parsed.setdefault('original_filename', filename)
+                parsed.setdefault('file_type', file_type_lower)
             
             result['encoding'] = encoding
             result['parsed_data'] = parsed
