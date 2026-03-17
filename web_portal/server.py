@@ -32059,7 +32059,12 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
             return
         
-        # Default: not found
+        # Default: preserve JSON 404s for unknown API POST endpoints.
+        if path.startswith('/api/'):
+            self._set_json_headers(404)
+            self.wfile.write(json.dumps({'error': 'Not Found'}).encode('utf-8'))
+            return
+
         self.send_error(404, 'Not Found')
     
     def handle_quote_submission(self):
