@@ -26,6 +26,9 @@ def test_risk_reports_dashboard_renders_uploaded_evidence_sections():
 
     assert "function getUploadedEvidenceSnapshots" in content
     assert "function renderUploadedEvidenceInsights" in content
+    assert "function renderCustomer360Insights" in content
     assert "function buildUploadedEvidenceSections" in content
     assert "Exact source values preserved" in content
     assert "Uploaded Data Affiliation Summary" in content
+    assert "Customer 360 BI Summary" in content
+    assert "ZIP Internal Modules" in content

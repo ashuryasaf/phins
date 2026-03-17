@@ -935,7 +935,15 @@ class AIRiskReportsService:
     
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
         """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
-        combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None}
+        combined_data = {
+            'columns': [],
+            'rows': [],
+            'files': [],
+            'pension_data': None,
+            'pension_report': None,
+            'file_type': 'zip'
+        }
+        pension_report_fragments: List[str] = []
         
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
             for name in zf.namelist():
@@ -961,9 +969,6 @@ class AIRiskReportsService:
                     parsed = self._parse_pension_xml(file_content, name)
                     if parsed:
                         file_type = 'pension_xml'
-                        # Store pension data separately for enhanced analysis
-                        if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
                 elif ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
                     parsed = self._parse_image(file_content, name, ext)
                 elif ext == 'pdf':
@@ -973,16 +978,28 @@ class AIRiskReportsService:
                     parsed = self._parse_excel(file_content, name, ext)
                     if parsed:
                         file_type = 'excel'
-                        # Check if this looks like Mislaka data
-                        if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
                 
                 if parsed:
+                    parsed.setdefault('original_filename', name)
+                    parsed.setdefault('file_type', file_type)
+                    if parsed.get('pension_data'):
+                        combined_data['pension_data'] = self._merge_pension_data(
+                            combined_data.get('pension_data'),
+                            parsed.get('pension_data')
+                        )
+                    if parsed.get('pension_report'):
+                        pension_report_fragments.append(f"=== {name} ===\n{parsed.get('pension_report', '')}")
+
+                    file_affiliation = self._build_uploaded_data_affiliation_metadata(
+                        parsed,
+                        parsed.get('pension_data')
+                    )
                     combined_data['files'].append({
                         'name': name,
                         'type': file_type,
                         'columns': parsed.get('columns', []),
-                        'row_count': len(parsed.get('rows', []))
+                        'row_count': len(parsed.get('rows', [])),
+                        'uploaded_data_affiliations': file_affiliation
                     })
                     
                     # Merge columns and rows
@@ -990,8 +1007,111 @@ class AIRiskReportsService:
                         if col not in combined_data['columns']:
                             combined_data['columns'].append(col)
                     combined_data['rows'].extend(parsed.get('rows', []))
-        
+
+        combined_data['uploaded_file_affiliations'] = [
+            file_entry.get('uploaded_data_affiliations')
+            for file_entry in combined_data.get('files', [])
+            if file_entry.get('uploaded_data_affiliations')
+        ]
+        if pension_report_fragments:
+            combined_data['pension_report'] = "\n\n".join(fragment for fragment in pension_report_fragments if fragment.strip())
         return combined_data
+
+    def _merge_pension_data(
+        self,
+        existing: Optional[Dict[str, Any]],
+        new_data: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Merge pension payloads from multiple files into one aggregate view."""
+        if not existing:
+            return new_data
+        if not new_data:
+            return existing
+
+        merged_accounts = list(existing.get('accounts', []) or []) + list(new_data.get('accounts', []) or [])
+        merged_contributions = list(existing.get('contributions', []) or []) + list(new_data.get('contributions', []) or [])
+        merged_severance = list(existing.get('severance', []) or []) + list(new_data.get('severance', []) or [])
+
+        existing_employers = existing.get('employers', []) or []
+        new_employers = new_data.get('employers', []) or []
+        employer_index: Dict[str, Any] = {}
+        for employer in existing_employers + new_employers:
+            if isinstance(employer, dict):
+                key = str(employer.get('id') or employer.get('name') or '').strip()
+            else:
+                key = str(employer or '').strip()
+            if key and key not in employer_index:
+                employer_index[key] = employer
+
+        client_info = existing.get('client') or new_data.get('client') or {}
+        if isinstance(client_info, list):
+            client_info = client_info[0] if client_info else {}
+        if isinstance(new_data.get('client'), dict):
+            for key, value in new_data.get('client', {}).items():
+                if value not in [None, ''] and not client_info.get(key):
+                    client_info[key] = value
+
+        provider_list = sorted({
+            str(account.get('provider') or '').strip()
+            for account in merged_accounts
+            if isinstance(account, dict) and str(account.get('provider') or '').strip()
+        })
+
+        total_balance = sum(self._to_float_amount(account.get('total_balance')) for account in merged_accounts if isinstance(account, dict))
+        total_savings = sum(
+            self._to_float_amount(account.get('savings_balance') if account.get('savings_balance') not in [None, ''] else account.get('total_balance'))
+            for account in merged_accounts
+            if isinstance(account, dict)
+        )
+        total_severance = sum(self._to_float_amount(account.get('severance_balance')) for account in merged_accounts if isinstance(account, dict))
+        section14_accounts = sum(1 for account in merged_accounts if isinstance(account, dict) and account.get('section14'))
+
+        employee_total = sum(self._to_float_amount(item.get('employee_amount')) for item in merged_contributions if isinstance(item, dict))
+        employer_total = sum(self._to_float_amount(item.get('employer_amount')) for item in merged_contributions if isinstance(item, dict))
+        severance_total = sum(self._to_float_amount(item.get('severance_amount')) for item in merged_contributions if isinstance(item, dict))
+        periods = sorted({
+            str(item.get('period') or '').strip()
+            for item in merged_contributions
+            if isinstance(item, dict) and str(item.get('period') or '').strip()
+        })
+
+        header = {}
+        for source in [existing.get('header', {}), new_data.get('header', {})]:
+            if isinstance(source, dict):
+                for key, value in source.items():
+                    if value not in [None, ''] and not header.get(key):
+                        header[key] = value
+
+        return {
+            'client': client_info,
+            'accounts': merged_accounts,
+            'contributions': merged_contributions,
+            'severance': merged_severance,
+            'employers': list(employer_index.values()),
+            'header': header,
+            'totals': {
+                'total_balance': round(total_balance, 2),
+                'total_balance_formatted': f"₪{total_balance:,.0f}",
+                'total_savings': round(total_savings, 2),
+                'total_savings_balance': round(total_savings, 2),
+                'total_savings_formatted': f"₪{total_savings:,.0f}",
+                'total_severance': round(total_severance, 2),
+                'total_severance_balance': round(total_severance, 2),
+                'total_severance_formatted': f"₪{total_severance:,.0f}",
+                'account_count': len(merged_accounts),
+                'provider_count': len(provider_list),
+                'providers': provider_list,
+                'section14_coverage': section14_accounts > 0,
+                'section14_accounts': section14_accounts,
+                'contributions': {
+                    'employee_total': round(employee_total, 2),
+                    'employer_total': round(employer_total, 2),
+                    'severance_total': round(severance_total, 2),
+                    'grand_total': round(employee_total + employer_total + severance_total, 2),
+                    'periods_count': len(periods)
+                }
+            }
+        }
     
     def _parse_pension_xml(self, content: bytes, filename: str) -> Dict[str, Any]:
         """
@@ -2564,6 +2684,7 @@ class AIRiskReportsService:
         
         # Build affiliated savings/coverage/ID summary for sections/charts/downloads
         affiliated_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+        customer_360_summary = self._build_customer_360_summary(doc_data, pension_data)
 
         # Generate sections based on data type (now with original data and pension data)
         sections = self._generate_sections(
@@ -2572,14 +2693,21 @@ class AIRiskReportsService:
             doc_data,
             pension_data,
             pension_report,
-            affiliated_summary
+            affiliated_summary,
+            customer_360_summary
         )
         
         # Generate charts - pass pension_data and affiliated summary for specialized charts
-        charts = self._generate_charts(analysis, pension_data, doc_data, affiliated_summary)
+        charts = self._generate_charts(
+            analysis,
+            pension_data,
+            doc_data,
+            affiliated_summary,
+            customer_360_summary
+        )
         
         # Generate recommendations
-        recommendations = self._generate_recommendations(analysis, lang)
+        recommendations = self._generate_recommendations(analysis, lang, customer_360_summary)
         
         # Determine report title
         titles = {
@@ -2620,6 +2748,7 @@ class AIRiskReportsService:
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
                 'uploaded_data_affiliations': self._build_uploaded_data_affiliation_metadata(doc_data, pension_data),
+                'customer_360_summary': customer_360_summary,
                 'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
                 'savings_cover_id_summary': affiliated_summary,
                 'report_model': self._get_report_model_metadata(),
@@ -2637,7 +2766,8 @@ class AIRiskReportsService:
                           doc_data: Dict[str, Any] = None,
                           pension_data: Dict[str, Any] = None,
                           pension_report: str = None,
-                          savings_cover_id_summary: Dict[str, Any] = None) -> List[ReportSection]:
+                          savings_cover_id_summary: Dict[str, Any] = None,
+                          customer_360_summary: Dict[str, Any] = None) -> List[ReportSection]:
         """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
@@ -2669,6 +2799,8 @@ class AIRiskReportsService:
                     content=data_content_section,
                     order=3
                 ))
+
+        sections.extend(self._build_customer_360_sections(customer_360_summary, is_hebrew))
 
         # 3.5 Savings/Cover/ID affiliation section (table-oriented summary)
         if savings_cover_id_summary is None:
@@ -3237,8 +3369,477 @@ Factors Affecting Score:
             entry.get('field') for entry in metadata['source_columns'] if entry.get('field')
         ]
         metadata['integrity']['preview_row_count'] = len(metadata['preview_rows'])
+        nested_files = [
+            snapshot for snapshot in (doc_data or {}).get('uploaded_file_affiliations', []) or []
+            if isinstance(snapshot, dict)
+        ] if isinstance(doc_data, dict) else []
+        if nested_files:
+            metadata['nested_files'] = nested_files[:20]
+            metadata['source_file_count'] = len(nested_files)
+            metadata['integrity']['notes'].append(
+                'ZIP uploads retain file-level affiliation modules for modular reporting.'
+            )
 
         return metadata
+
+    def _build_customer_360_summary(
+        self,
+        doc_data: Optional[Dict[str, Any]],
+        pension_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Create a 360-degree customer summary across one-to-many uploaded records."""
+        summary = {
+            'records_analyzed': 0,
+            'customer_count': 0,
+            'policy_count': 0,
+            'provider_count': 0,
+            'product_count': 0,
+            'one_to_many_customer_count': 0,
+            'cumulative_balance': 0.0,
+            'cumulative_savings': 0.0,
+            'cumulative_severance': 0.0,
+            'cumulative_hedged_risk': 0.0,
+            'identity_integrity_score': 0.0,
+            'exact_identity_count': 0,
+            'customers': [],
+            'identity_conflicts': [],
+            'file_breakdown': [],
+            'module_breakdown': []
+        }
+
+        if not isinstance(doc_data, dict) and not isinstance(pension_data, dict):
+            return summary
+
+        customer_index: Dict[str, Dict[str, Any]] = {}
+
+        def upsert_customer(
+            *,
+            full_name: Any = '',
+            id_number: Any = '',
+            birth_date: Any = '',
+            policy_number: Any = '',
+            provider: Any = '',
+            product: Any = '',
+            status: Any = '',
+            savings_amount: float = 0.0,
+            severance_amount: float = 0.0,
+            hedged_risk_amount: float = 0.0,
+            balance_amount: float = 0.0,
+            source_file: Any = ''
+        ) -> None:
+            name_value = str(full_name or '').strip()
+            id_value = str(id_number or '').strip()
+            birth_value = str(birth_date or '').strip()
+            customer_key = id_value or '|'.join(part for part in [name_value, birth_value] if part) or str(policy_number or '').strip()
+            if not customer_key:
+                return
+
+            customer = customer_index.setdefault(customer_key, {
+                'customer_key': customer_key,
+                'full_name': name_value,
+                'id_number': id_value,
+                'birth_date': birth_value,
+                'full_names': set(),
+                'id_numbers': set(),
+                'birth_dates': set(),
+                'policies': set(),
+                'providers': set(),
+                'products': set(),
+                'statuses': set(),
+                'source_files': set(),
+                'cumulative_balance': 0.0,
+                'cumulative_savings': 0.0,
+                'cumulative_severance': 0.0,
+                'cumulative_hedged_risk': 0.0
+            })
+
+            if name_value and not customer['full_name']:
+                customer['full_name'] = name_value
+            if id_value and not customer['id_number']:
+                customer['id_number'] = id_value
+            if birth_value and not customer['birth_date']:
+                customer['birth_date'] = birth_value
+
+            if name_value:
+                customer['full_names'].add(name_value)
+            if id_value:
+                customer['id_numbers'].add(id_value)
+            if birth_value:
+                customer['birth_dates'].add(birth_value)
+            if policy_number:
+                customer['policies'].add(str(policy_number).strip())
+            if provider:
+                customer['providers'].add(str(provider).strip())
+            if product:
+                customer['products'].add(str(product).strip())
+            if status:
+                customer['statuses'].add(str(status).strip())
+            if source_file:
+                customer['source_files'].add(str(source_file).strip())
+
+            customer['cumulative_balance'] += float(balance_amount or 0.0)
+            customer['cumulative_savings'] += float(savings_amount or 0.0)
+            customer['cumulative_severance'] += float(severance_amount or 0.0)
+            customer['cumulative_hedged_risk'] += float(hedged_risk_amount or 0.0)
+
+        if isinstance(pension_data, dict) and pension_data.get('accounts'):
+            accounts = pension_data.get('accounts', []) or []
+            client = pension_data.get('client', {}) or {}
+            if isinstance(client, list):
+                client = client[0] if client else {}
+            header = pension_data.get('header', {}) or {}
+            source_file = header.get('filename') or (doc_data or {}).get('original_filename', '')
+
+            for account in accounts[:1000]:
+                if not isinstance(account, dict):
+                    continue
+
+                savings_amount = self._to_float_amount(account.get('savings_balance'))
+                balance_amount = self._to_float_amount(account.get('total_balance'))
+                severance_amount = self._to_float_amount(account.get('severance_balance'))
+                hedged_risk_amount = (
+                    self._to_float_amount(account.get('death_coverage')) +
+                    self._to_float_amount(account.get('disability_coverage'))
+                )
+
+                upsert_customer(
+                    full_name=client.get('full_name') or client.get('client_name'),
+                    id_number=client.get('id_number') or account.get('id_number'),
+                    birth_date=client.get('birth_date') or account.get('birth_date'),
+                    policy_number=account.get('policy_number'),
+                    provider=account.get('provider'),
+                    product=account.get('product_type_name') or account.get('product_type'),
+                    status=account.get('status'),
+                    savings_amount=savings_amount or balance_amount,
+                    severance_amount=severance_amount,
+                    hedged_risk_amount=hedged_risk_amount,
+                    balance_amount=balance_amount or savings_amount + severance_amount,
+                    source_file=source_file
+                )
+
+            summary['records_analyzed'] = len(accounts)
+        else:
+            rows = (doc_data or {}).get('rows', []) or []
+            columns = (doc_data or {}).get('columns', []) or []
+            summary['records_analyzed'] = len(rows)
+
+            def matching_columns(tokens: List[str]) -> List[str]:
+                return [column for column in columns if self._matches_tokens(str(column), tokens)]
+
+            name_columns = matching_columns(['full_name', 'client_name', 'customer_name', 'insured_name', 'policyholder_name', 'שם מלא', 'שם מבוטח', 'שם לקוח'])
+            id_columns = matching_columns(['id_number', 'identity', 'customer_id', 'policyholder_id', 'client_id', 'ת.ז', 'ת"ז', 'תעודת זהות', 'מספר זהות'])
+            birth_columns = matching_columns(['birth_date', 'date_of_birth', 'dob', 'תאריך לידה'])
+            policy_columns = matching_columns(['policy_number', 'policy', 'מספר פוליסה', 'פוליסה'])
+            provider_columns = matching_columns(['provider', 'company', 'carrier', 'issuer', 'יצרן', 'חברה'])
+            product_columns = matching_columns(['product_type', 'product_name', 'product', 'סוג מוצר', 'מוצר'])
+            status_columns = matching_columns(['status', 'state', 'סטטוס', 'מצב'])
+            savings_columns = matching_columns(['saving', 'savings', 'balance', 'accumulated', 'יתרה', 'צבירה', 'חיסכון', 'תגמולים'])
+            severance_columns = matching_columns(['severance', 'פיצויים'])
+            hedge_columns = matching_columns(['cover', 'coverage', 'insured_amount', 'sum_insured', 'death_coverage', 'disability_coverage', 'כיסוי', 'סכום ביטוח'])
+            file_name_columns = matching_columns(['source_file', 'filename', 'file_name'])
+
+            for row in rows[:2000]:
+                if not isinstance(row, dict):
+                    continue
+
+                def first_value(cols: List[str]) -> str:
+                    for column in cols:
+                        candidate = str(row.get(column, '') or '').strip()
+                        if candidate:
+                            return candidate
+                    return ''
+
+                savings_amount = sum(self._to_float_amount(row.get(column)) for column in savings_columns)
+                severance_amount = sum(self._to_float_amount(row.get(column)) for column in severance_columns)
+                hedged_risk_amount = sum(self._to_float_amount(row.get(column)) for column in hedge_columns)
+                balance_amount = savings_amount + severance_amount
+                source_file = first_value(file_name_columns) or (doc_data or {}).get('original_filename', '')
+
+                upsert_customer(
+                    full_name=first_value(name_columns),
+                    id_number=first_value(id_columns),
+                    birth_date=first_value(birth_columns),
+                    policy_number=first_value(policy_columns),
+                    provider=first_value(provider_columns),
+                    product=first_value(product_columns),
+                    status=first_value(status_columns),
+                    savings_amount=savings_amount,
+                    severance_amount=severance_amount,
+                    hedged_risk_amount=hedged_risk_amount,
+                    balance_amount=balance_amount,
+                    source_file=source_file
+                )
+
+        customers = []
+        identity_conflicts = []
+        provider_names = set()
+        product_names = set()
+        policy_numbers = set()
+
+        for customer in customer_index.values():
+            full_names = sorted(value for value in customer['full_names'] if value)
+            id_numbers = sorted(value for value in customer['id_numbers'] if value)
+            birth_dates = sorted(value for value in customer['birth_dates'] if value)
+            policies = sorted(value for value in customer['policies'] if value)
+            providers = sorted(value for value in customer['providers'] if value)
+            products = sorted(value for value in customer['products'] if value)
+            statuses = sorted(value for value in customer['statuses'] if value)
+            source_files = sorted(value for value in customer['source_files'] if value)
+
+            if len(full_names) > 1:
+                identity_conflicts.append({
+                    'customer_key': customer['customer_key'],
+                    'issue': 'multiple_names',
+                    'values': full_names
+                })
+            if len(birth_dates) > 1:
+                identity_conflicts.append({
+                    'customer_key': customer['customer_key'],
+                    'issue': 'multiple_birth_dates',
+                    'values': birth_dates
+                })
+            if len(id_numbers) > 1:
+                identity_conflicts.append({
+                    'customer_key': customer['customer_key'],
+                    'issue': 'multiple_ids',
+                    'values': id_numbers
+                })
+
+            provider_names.update(providers)
+            product_names.update(products)
+            policy_numbers.update(policies)
+
+            customers.append({
+                'customer_key': customer['customer_key'],
+                'full_name': customer['full_name'] or (full_names[0] if full_names else ''),
+                'id_number': customer['id_number'] or (id_numbers[0] if id_numbers else ''),
+                'birth_date': customer['birth_date'] or (birth_dates[0] if birth_dates else ''),
+                'policy_count': len(policies),
+                'provider_count': len(providers),
+                'product_count': len(products),
+                'policies': policies,
+                'providers': providers,
+                'products': products,
+                'statuses': statuses,
+                'source_files': source_files,
+                'cumulative_balance': round(customer['cumulative_balance'], 2),
+                'cumulative_savings': round(customer['cumulative_savings'], 2),
+                'cumulative_severance': round(customer['cumulative_severance'], 2),
+                'cumulative_hedged_risk': round(customer['cumulative_hedged_risk'], 2),
+            })
+
+        customers.sort(key=lambda item: (-(item.get('cumulative_savings', 0) or 0), item.get('full_name') or item.get('customer_key') or ''))
+
+        file_breakdown = []
+        for file_entry in (doc_data or {}).get('files', []) or []:
+            if not isinstance(file_entry, dict):
+                continue
+            snapshot = file_entry.get('uploaded_data_affiliations', {}) if isinstance(file_entry.get('uploaded_data_affiliations', {}), dict) else {}
+            preview_rows = snapshot.get('preview_rows', []) or []
+            customer_refs = set()
+            policy_refs = set()
+            for preview in preview_rows:
+                if not isinstance(preview, dict):
+                    continue
+                reference = str(preview.get('ID Number') or preview.get('Full Name') or preview.get('Policy Number') or '').strip()
+                if reference:
+                    customer_refs.add(reference)
+                policy_number = str(preview.get('Policy Number') or '').strip()
+                if policy_number:
+                    policy_refs.add(policy_number)
+
+            file_breakdown.append({
+                'file': file_entry.get('name', ''),
+                'type': file_entry.get('type', ''),
+                'records': file_entry.get('row_count', 0),
+                'customer_refs': len(customer_refs),
+                'policy_count': len(policy_refs)
+            })
+
+        entity_count = len(customers)
+        exact_identity_count = sum(
+            1 for customer in customers
+            if customer.get('full_name') and customer.get('id_number') and customer.get('birth_date')
+        )
+        one_to_many_customer_count = sum(
+            1 for customer in customers
+            if customer.get('policy_count', 0) > 1 or customer.get('provider_count', 0) > 1 or customer.get('product_count', 0) > 1
+        )
+        completeness_numerator = sum(
+            int(bool(customer.get('full_name'))) +
+            int(bool(customer.get('id_number'))) +
+            int(bool(customer.get('birth_date')))
+            for customer in customers
+        )
+        completeness_score = (completeness_numerator / max(entity_count * 3, 1)) * 100
+        conflict_penalty = min(len(identity_conflicts) * 12, 45)
+        identity_integrity_score = max(0.0, min(100.0, round(completeness_score - conflict_penalty, 2)))
+        cumulative_balance = round(sum(customer.get('cumulative_balance', 0) for customer in customers), 2)
+        cumulative_savings = round(sum(customer.get('cumulative_savings', 0) for customer in customers), 2)
+        cumulative_severance = round(sum(customer.get('cumulative_severance', 0) for customer in customers), 2)
+        cumulative_hedged_risk = round(sum(customer.get('cumulative_hedged_risk', 0) for customer in customers), 2)
+
+        summary.update({
+            'customer_count': entity_count,
+            'policy_count': len(policy_numbers),
+            'provider_count': len(provider_names),
+            'product_count': len(product_names),
+            'one_to_many_customer_count': one_to_many_customer_count,
+            'cumulative_balance': cumulative_balance,
+            'cumulative_savings': cumulative_savings,
+            'cumulative_severance': cumulative_severance,
+            'cumulative_hedged_risk': cumulative_hedged_risk,
+            'identity_integrity_score': identity_integrity_score,
+            'exact_identity_count': exact_identity_count,
+            'customers': customers[:120],
+            'identity_conflicts': identity_conflicts[:60],
+            'file_breakdown': file_breakdown[:60],
+            'module_breakdown': [
+                {
+                    'module': 'identity_360',
+                    'title': 'Customer Identity 360',
+                    'status': 'ready' if exact_identity_count else 'warning',
+                    'metric': exact_identity_count
+                },
+                {
+                    'module': 'portfolio_aggregation',
+                    'title': 'Cumulative Savings & Hedged Risk',
+                    'status': 'ready' if cumulative_savings or cumulative_hedged_risk else 'warning',
+                    'metric': cumulative_savings
+                },
+                {
+                    'module': 'affiliation_graph',
+                    'title': 'One-to-Many Affiliation Graph',
+                    'status': 'ready' if one_to_many_customer_count else 'warning',
+                    'metric': one_to_many_customer_count
+                },
+                {
+                    'module': 'integrity_validation',
+                    'title': 'Identity Integrity Validation',
+                    'status': 'ready' if not identity_conflicts else 'warning',
+                    'metric': identity_integrity_score
+                }
+            ]
+        })
+
+        return summary
+
+    def _build_customer_360_sections(
+        self,
+        summary: Optional[Dict[str, Any]],
+        is_hebrew: bool
+    ) -> List[ReportSection]:
+        """Build modular BI sections for the assessed customer portfolio."""
+        if not summary or not summary.get('customers'):
+            return []
+
+        sections: List[ReportSection] = []
+        overview_rows = [{
+            'לקוחות' if is_hebrew else 'Customers': summary.get('customer_count', 0),
+            'פוליסות' if is_hebrew else 'Policies': summary.get('policy_count', 0),
+            'יצרנים' if is_hebrew else 'Providers': summary.get('provider_count', 0),
+            'מוצרים' if is_hebrew else 'Products': summary.get('product_count', 0),
+            'לקוחות אחד-לרבים' if is_hebrew else 'One-to-Many Customers': summary.get('one_to_many_customer_count', 0),
+            'צבירה מצטברת' if is_hebrew else 'Cumulative Savings': summary.get('cumulative_savings', 0),
+            'פיצויים מצטברים' if is_hebrew else 'Cumulative Severance': summary.get('cumulative_severance', 0),
+            'סיכון מגודר מצטבר' if is_hebrew else 'Cumulative Hedged Risk': summary.get('cumulative_hedged_risk', 0),
+            'ציון שלמות זהות' if is_hebrew else 'Identity Integrity Score': summary.get('identity_integrity_score', 0),
+        }]
+        sections.append(ReportSection(
+            title='תמונת לקוח 360' if is_hebrew else 'Customer 360 Overview',
+            content='סיכום BI מודולרי של הלקוח/ות שהוערכו, כולל קשרי אחד-לרבים, חיסכון מצטבר, סיכון מגודר ושלמות זהות.'
+            if is_hebrew else
+            'Modular BI summary of the assessed customer portfolio including one-to-many relationships, cumulative savings, hedged risk, and identity integrity.',
+            data_table={
+                'columns': list(overview_rows[0].keys()),
+                'rows': overview_rows
+            },
+            order=3
+        ))
+
+        customer_rows = []
+        for customer in summary.get('customers', [])[:80]:
+            customer_rows.append({
+                'שם לקוח' if is_hebrew else 'Customer Name': customer.get('full_name', ''),
+                'תעודת זהות' if is_hebrew else 'ID Number': customer.get('id_number', ''),
+                'תאריך לידה' if is_hebrew else 'Birth Date': customer.get('birth_date', ''),
+                'פוליסות' if is_hebrew else 'Policies': customer.get('policy_count', 0),
+                'יצרנים' if is_hebrew else 'Providers': customer.get('provider_count', 0),
+                'מוצרים' if is_hebrew else 'Products': customer.get('product_count', 0),
+                'חיסכון מצטבר' if is_hebrew else 'Cumulative Savings': customer.get('cumulative_savings', 0),
+                'פיצויים מצטברים' if is_hebrew else 'Cumulative Severance': customer.get('cumulative_severance', 0),
+                'סיכון מגודר' if is_hebrew else 'Hedged Risk': customer.get('cumulative_hedged_risk', 0),
+                'שיוכים' if is_hebrew else 'Affiliations': ', '.join(customer.get('products', [])[:4]) or ', '.join(customer.get('statuses', [])[:4]),
+            })
+
+        sections.append(ReportSection(
+            title='מטריצת לקוח ויחסי שיוך' if is_hebrew else 'Customer Relationship Matrix',
+            content='טבלת קשרי לקוח-למוצר-ליצרן המבוססת על מזהים מדויקים מהקבצים שהועלו.'
+            if is_hebrew else
+            'Customer-to-policy/product/provider relationship matrix built from exact identifiers in the uploaded data.',
+            data_table={
+                'columns': list(customer_rows[0].keys()) if customer_rows else [],
+                'rows': customer_rows
+            },
+            order=4
+        ))
+
+        integrity_rows = [{
+            'ציון שלמות זהות' if is_hebrew else 'Identity Integrity Score': summary.get('identity_integrity_score', 0),
+            'זהויות מלאות' if is_hebrew else 'Complete Identities': summary.get('exact_identity_count', 0),
+            'קונפליקטים' if is_hebrew else 'Conflicts': len(summary.get('identity_conflicts', [])),
+            'קשרי אחד-לרבים' if is_hebrew else 'One-to-Many Relationships': summary.get('one_to_many_customer_count', 0),
+        }]
+
+        conflict_rows = []
+        for conflict in summary.get('identity_conflicts', [])[:40]:
+            conflict_rows.append({
+                'מפתח לקוח' if is_hebrew else 'Customer Key': conflict.get('customer_key', ''),
+                'בעיה' if is_hebrew else 'Issue': conflict.get('issue', ''),
+                'ערכים' if is_hebrew else 'Values': ', '.join(conflict.get('values', []))
+            })
+
+        sections.append(ReportSection(
+            title='בדיקת שלמות זהות' if is_hebrew else 'Identity Integrity Validation',
+            content='אימות התאמה בין שם, תעודת זהות ותאריך לידה לצורך דיווח מדויק וללא עיוותים.'
+            if is_hebrew else
+            'Validation of name, ID number, and birth date consistency to keep reporting exact and distortion-free.',
+            data_table={
+                'columns': list(integrity_rows[0].keys()) if integrity_rows else [],
+                'rows': integrity_rows + conflict_rows
+            },
+            order=5
+        ))
+
+        file_rows = summary.get('file_breakdown', [])[:60]
+        if file_rows:
+            sections.append(ReportSection(
+                title='כיסוי מודולים מתוך ZIP' if is_hebrew else 'ZIP Module Coverage',
+                content='פירוק לפי קבצים פנימיים לצורך דוח מודולרי והצלבת נתונים בין מודולים.'
+                if is_hebrew else
+                'Breakdown by internal uploaded files for modular reporting and cross-file validation.',
+                data_table={
+                    'columns': list(file_rows[0].keys()) if file_rows else [],
+                    'rows': file_rows
+                },
+                order=6
+            ))
+
+        module_rows = summary.get('module_breakdown', [])[:20]
+        if module_rows:
+            sections.append(ReportSection(
+                title='מודולי דוח חכמים' if is_hebrew else 'Modular Report Components',
+                content='מודולים מחושבים ליצירת דוחות BI ניתנים להרחבה עבור הלקוח המוערך.'
+                if is_hebrew else
+                'Computed modules for building extensible BI reports around the assessed customer.',
+                data_table={
+                    'columns': list(module_rows[0].keys()) if module_rows else [],
+                    'rows': module_rows
+                },
+                order=7
+            ))
+
+        return sections
 
     def _get_report_model_metadata(self) -> Optional[Dict[str, Any]]:
         """Include the Swiftness report model section keys for frontend structuring."""
@@ -4238,7 +4839,8 @@ Factors Affecting Score:
         analysis: AnalysisResult,
         pension_data: Dict = None,
         doc_data: Dict[str, Any] = None,
-        savings_cover_id_summary: Dict[str, Any] = None
+        savings_cover_id_summary: Dict[str, Any] = None,
+        customer_360_summary: Dict[str, Any] = None
     ) -> List[ChartConfig]:
         """
         Generate chart configurations.
@@ -4252,11 +4854,14 @@ Factors Affecting Score:
         
         if savings_cover_id_summary is None:
             savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+        if customer_360_summary is None:
+            customer_360_summary = self._build_customer_360_summary(doc_data, pension_data)
 
         # Check if we have pension data for specialized charts
         if pension_data:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
             charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
+            charts.extend(self._build_customer_360_charts(customer_360_summary, analysis.language))
             return charts
         
         # Risk Score Gauge (for non-pension data)
@@ -4305,7 +4910,86 @@ Factors Affecting Score:
                 ))
 
         charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
+        charts.extend(self._build_customer_360_charts(customer_360_summary, analysis.language))
         
+        return charts
+
+    def _build_customer_360_charts(self, summary: Optional[Dict[str, Any]], lang_code: str) -> List[ChartConfig]:
+        """Build BI charts for aggregated one-to-many customer assessment."""
+        if not summary or not summary.get('customers'):
+            return []
+
+        is_hebrew = lang_code == 'hebrew'
+        charts: List[ChartConfig] = []
+        customers = sorted(
+            summary.get('customers', []),
+            key=lambda item: item.get('cumulative_savings', 0) or 0,
+            reverse=True
+        )[:6]
+        labels = [
+            customer.get('full_name') or customer.get('id_number') or customer.get('customer_key')
+            for customer in customers
+        ]
+        savings_values = [customer.get('cumulative_savings', 0) or 0 for customer in customers]
+        hedged_values = [customer.get('cumulative_hedged_risk', 0) or 0 for customer in customers]
+        policy_counts = [customer.get('policy_count', 0) or 0 for customer in customers]
+
+        if any(value > 0 for value in savings_values):
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='חיסכון מצטבר לפי לקוח' if is_hebrew else 'Cumulative Savings by Customer',
+                data={
+                    'labels': labels,
+                    'values': savings_values
+                },
+                options={
+                    'colors': ['#2563eb', '#0ea5e9', '#10b981', '#7c3aed', '#f59e0b', '#ef4444'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+
+        if any(value > 0 for value in hedged_values):
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='סיכון מגודר מצטבר' if is_hebrew else 'Cumulative Hedged Risk',
+                data={
+                    'labels': labels,
+                    'values': hedged_values
+                },
+                options={
+                    'colors': ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#d1fae5'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+
+        if len(labels) > 1 and any(value > 0 for value in policy_counts):
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='פיזור פוליסות לפי לקוח' if is_hebrew else 'Policy Concentration by Customer',
+                data={
+                    'labels': labels,
+                    'values': policy_counts
+                },
+                options={
+                    'colors': ['#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#ede9fe']
+                }
+            ))
+
+        charts.append(ChartConfig(
+            type=ChartType.GAUGE,
+            title='ציון שלמות זהות' if is_hebrew else 'Identity Integrity Score',
+            data={
+                'value': summary.get('identity_integrity_score', 0) or 0,
+                'display_value': f"{summary.get('identity_integrity_score', 0) or 0:.0f}/100",
+                'min': 0,
+                'max': 100,
+                'thresholds': [60, 80, 90]
+            },
+            options={'colors': ['#ef4444', '#f59e0b', '#10b981', '#2563eb']}
+        ))
+
         return charts
     
     def _generate_pension_charts(self, pension_data: Dict, lang_code: str) -> List[ChartConfig]:
@@ -4450,7 +5134,12 @@ Factors Affecting Score:
         
         return charts
     
-    def _generate_recommendations(self, analysis: AnalysisResult, lang: str) -> List[Recommendation]:
+    def _generate_recommendations(
+        self,
+        analysis: AnalysisResult,
+        lang: str,
+        customer_360_summary: Optional[Dict[str, Any]] = None
+    ) -> List[Recommendation]:
         """Generate actionable recommendations"""
         recommendations = []
         rec_id = 1
@@ -4542,6 +5231,66 @@ Factors Affecting Score:
                 expected_impact='שיפור יחס תשואה/סיכון' if lang == 'hebrew' else 'Improved return/risk ratio'
             ))
             rec_id += 1
+
+        if customer_360_summary:
+            conflicts = customer_360_summary.get('identity_conflicts', []) or []
+            one_to_many = int(customer_360_summary.get('one_to_many_customer_count', 0) or 0)
+            cumulative_savings = float(customer_360_summary.get('cumulative_savings', 0) or 0)
+            cumulative_hedged_risk = float(customer_360_summary.get('cumulative_hedged_risk', 0) or 0)
+
+            if conflicts:
+                recommendations.append(Recommendation(
+                    id=f"REC-{rec_id}",
+                    category='identity_integrity',
+                    priority=Priority.HIGH,
+                    title='אימות זהות לקוח' if lang == 'hebrew' else 'Validate Customer Identity Consistency',
+                    description='זוהו פערים בין שם, מזהה או תאריך לידה באותה ישות לקוח' if lang == 'hebrew'
+                               else 'Detected inconsistencies between name, identifier, or birth date within the same customer entity',
+                    action_items=[
+                        'בדוק התאמה בין שם, תעודת זהות ותאריך לידה' if lang == 'hebrew' else 'Verify exact alignment between name, ID, and birth date',
+                        'אחד רשומות כפולות לפני הפקת דוח סופי' if lang == 'hebrew' else 'Merge duplicate records before final reporting',
+                        'אשר את שיוך הפוליסות ללקוח הנכון' if lang == 'hebrew' else 'Confirm policies are linked to the correct customer'
+                    ],
+                    expected_impact='מונע שגיאות זיהוי ועיוותי BI' if lang == 'hebrew'
+                                   else 'Prevents identity drift and BI reporting distortions'
+                ))
+                rec_id += 1
+
+            if one_to_many:
+                recommendations.append(Recommendation(
+                    id=f"REC-{rec_id}",
+                    category='portfolio_360',
+                    priority=Priority.MEDIUM,
+                    title='סקירת קשרי אחד-לרבים' if lang == 'hebrew' else 'Review One-to-Many Customer Relationships',
+                    description=f'זוהו {one_to_many} לקוחות עם מספר פוליסות/יצרנים/מוצרים משויכים' if lang == 'hebrew'
+                               else f'Found {one_to_many} customers with multiple linked policies/providers/products',
+                    action_items=[
+                        'הפק דוח מודולרי לפי לקוח' if lang == 'hebrew' else 'Generate a modular customer-by-customer report',
+                        'השווה צבירה מצטברת מול סיכון מגודר' if lang == 'hebrew' else 'Compare cumulative savings against hedged risk',
+                        'בדוק ריכוזיות אצל יצרן בודד' if lang == 'hebrew' else 'Inspect concentration with a single provider'
+                    ],
+                    expected_impact='משפר תמונת 360 ללקוח והבנת החשיפה' if lang == 'hebrew'
+                                   else 'Improves 360-degree customer visibility and exposure understanding'
+                ))
+                rec_id += 1
+
+            if cumulative_savings > 0 and cumulative_hedged_risk > 0:
+                recommendations.append(Recommendation(
+                    id=f"REC-{rec_id}",
+                    category='bi_reporting',
+                    priority=Priority.MEDIUM,
+                    title='השווה חיסכון מול סיכון מגודר' if lang == 'hebrew' else 'Compare Savings Against Hedged Risk',
+                    description='דוח זה כולל כעת חישובי חיסכון מצטבר מול כיסוי/סיכון מגודר מצטבר' if lang == 'hebrew'
+                               else 'This report now includes cumulative savings versus cumulative hedged-risk calculations',
+                    action_items=[
+                        'נתח יחס בין צבירה לכיסוי' if lang == 'hebrew' else 'Analyze the ratio between savings and coverage',
+                        'השתמש בגרפים לזיהוי חוסרים או עודפים' if lang == 'hebrew' else 'Use the charts to detect gaps or excess coverage',
+                        'תרגם את הממצאים להמלצות פר לקוח' if lang == 'hebrew' else 'Translate the findings into customer-level actions'
+                    ],
+                    expected_impact='מאפשר BI פרסונלי ומודולרי מדויק יותר' if lang == 'hebrew'
+                                   else 'Enables more precise modular and personalized BI reporting'
+                ))
+                rec_id += 1
         
         return recommendations
     
@@ -4883,6 +5632,7 @@ Factors Affecting Score:
             'report_type': report.report_type,
             'risk_score': report.metadata.get('risk_score'),
             'confidence': report.metadata.get('confidence'),
+            'customer_360_summary': report.metadata.get('customer_360_summary', {}),
             'savings_cover_id_summary': summary,
             'table_sections': table_sections,
             'chart_summaries': chart_summaries,

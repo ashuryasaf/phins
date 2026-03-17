@@ -3291,6 +3291,52 @@
       `;
     }
 
+    function renderCustomer360Insights(summary, analysisTypeLabel = 'Auto-detect') {
+      const container = document.getElementById('insightsGrid');
+      if (!container || !summary || !Array.isArray(summary.customers) || summary.customers.length === 0) {
+        return;
+      }
+
+      const topCustomers = (summary.customers || []).slice(0, 4);
+      const topCustomerRows = topCustomers.map(customer => `
+        <div class="stat-detail">
+          <span class="label">${escapeHtml(customer.full_name || customer.id_number || customer.customer_key || 'Customer')}</span>
+          <span class="val">${escapeHtml(customer.policy_count || 0)} policies • ₪${escapeHtml((customer.cumulative_savings || 0).toLocaleString())}</span>
+        </div>
+      `).join('');
+
+      const modules = (summary.module_breakdown || []).map(module => `
+        <span class="tag">${escapeHtml(module.title || module.module)}: ${escapeHtml(module.status || 'ready')}</span>
+      `).join('');
+
+      const conflictCount = (summary.identity_conflicts || []).length;
+
+      container.innerHTML += `
+        <div class="insight-card fade-in" style="border-left-color: #2563eb;">
+          <h5>🧠 Customer 360 BI Summary</h5>
+          <div class="insight-detail">
+            <div class="stat-detail"><span class="label">Run Type</span><span class="val">${escapeHtml(analysisTypeLabel)}</span></div>
+            <div class="stat-detail"><span class="label">Customers</span><span class="val">${escapeHtml(summary.customer_count || 0)}</span></div>
+            <div class="stat-detail"><span class="label">Policies</span><span class="val">${escapeHtml(summary.policy_count || 0)}</span></div>
+            <div class="stat-detail"><span class="label">One-to-many customers</span><span class="val">${escapeHtml(summary.one_to_many_customer_count || 0)}</span></div>
+            <div class="stat-detail"><span class="label">Identity integrity</span><span class="val">${escapeHtml((summary.identity_integrity_score || 0).toFixed(0))}/100</span></div>
+            <div class="stat-detail"><span class="label">Conflicts</span><span class="val">${escapeHtml(conflictCount)}</span></div>
+            <div class="stat-detail"><span class="label">Cumulative savings</span><span class="val">₪${escapeHtml((summary.cumulative_savings || 0).toLocaleString())}</span></div>
+            <div class="stat-detail"><span class="label">Cumulative hedged risk</span><span class="val">₪${escapeHtml((summary.cumulative_hedged_risk || 0).toLocaleString())}</span></div>
+          </div>
+          <div class="tag-grid" style="margin-top: 0.75rem;">${modules || '<span style="color: var(--text-muted);">No report modules available</span>'}</div>
+          <span class="insight-badge">Modular 360 assessment</span>
+        </div>
+        <div class="insight-card fade-in" style="border-left-color: #0f766e;">
+          <h5>👥 Top Customer Aggregations</h5>
+          <div class="insight-detail">
+            ${topCustomerRows || '<div class="stat-detail"><span class="label">Customers</span><span class="val">No aggregated customers available</span></div>'}
+          </div>
+          <span class="insight-badge">One-to-many reasoning</span>
+        </div>
+      `;
+    }
+
     function buildUploadedEvidenceSections(snapshots) {
       if (!snapshots || !snapshots.length) {
         return '';
@@ -3325,6 +3371,16 @@
         const integrityNotes = (snapshot?.integrity?.notes || [])
           .map(note => `<li>${escapeHtml(note)}</li>`)
           .join('');
+        const nestedFileRows = (snapshot?.nested_files || []).map(file => {
+          const exactFields = file?.integrity?.exact_value_fields || (file?.source_columns || []).map(column => column?.field).filter(Boolean);
+          return {
+            File: file?.source_filename || 'ZIP entry',
+            Type: ((file?.file_type || '') + '').toUpperCase() || 'N/A',
+            Records: file?.record_count || 0,
+            'Exact Fields': exactFields.join(', ') || '—',
+            'Mapped Affiliations': file?.affiliation_matches?.length || 0
+          };
+        });
 
         return `
           <div class="report-section fade-in">
@@ -3341,6 +3397,12 @@
                 <h4 style="margin-bottom: 0.5rem;">Affiliation Value Matches</h4>
                 ${matchRows.length ? renderDataTable({ columns: ['Category', 'Source Column', 'Raw Value', 'Affiliation Label', 'Detail'], rows: matchRows }) : '<p style="color: var(--text-muted);">No affiliation-coded values detected in this upload.</p>'}
               </div>
+              ${nestedFileRows.length ? `
+                <div style="margin-top: 1rem;">
+                  <h4 style="margin-bottom: 0.5rem;">ZIP Internal Modules</h4>
+                  ${renderDataTable({ columns: ['File', 'Type', 'Records', 'Exact Fields', 'Mapped Affiliations'], rows: nestedFileRows })}
+                </div>
+              ` : ''}
               ${integrityNotes ? `
                 <div style="margin-top: 1rem;">
                   <h4 style="margin-bottom: 0.5rem;">Integrity Notes</h4>
@@ -3810,6 +3872,11 @@
       const uploadedEvidence = getUploadedEvidenceSnapshots(report, options);
       if (uploadedEvidence.length) {
         renderUploadedEvidenceInsights(uploadedEvidence, options.analysisTypeLabel || 'Auto-detect');
+      }
+
+      const customer360Summary = report?.metadata?.customer_360_summary;
+      if (customer360Summary) {
+        renderCustomer360Insights(customer360Summary, options.analysisTypeLabel || 'Auto-detect');
       }
       
       // Charts (merge generated report charts with affiliation coverage charts)
