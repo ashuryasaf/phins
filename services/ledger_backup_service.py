@@ -25,6 +25,11 @@ import time
 logger = logging.getLogger('phins.ledger_backup')
 
 
+def _default_workspace_dir() -> str:
+    """Return the configured workspace root or this repository's root."""
+    return os.environ.get('WORKSPACE_PATH') or str(Path(__file__).resolve().parents[1])
+
+
 class LedgerBackupService:
     """
     Central backup service for all ledger and financial data.
@@ -44,8 +49,7 @@ class LedgerBackupService:
             backup_base_dir: Base directory for all backups
         """
         if backup_base_dir is None:
-            workspace = os.environ.get('WORKSPACE_PATH', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            backup_base_dir = os.path.join(workspace, 'data', 'backups')
+            backup_base_dir = os.path.join(_default_workspace_dir(), 'data', 'backups')
         
         self.backup_base_dir = backup_base_dir
         self.ledger_backup_dir = os.path.join(backup_base_dir, 'ledgers')

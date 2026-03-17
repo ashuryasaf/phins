@@ -3122,13 +3122,6 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
-    'supplier': os.environ.get('PHINS_DEMO_SUPPLIER_PASSWORD', 'supplier123'),
-    'media_ad': os.environ.get('PHINS_DEMO_MEDIA_PASSWORD', 'media123'),
-    'asaf@phins.ai': os.environ.get('PHINS_DEMO_ASAF_PHINS_PASSWORD', 'AsafPhins2024!'),
-    'asaf@assurance.co.il': os.environ.get('PHINS_DEMO_ASAF_PASSWORD', 'Assurance2024!'),
-    'efrat@phins.ai': os.environ.get('PHINS_DEMO_EFRAT_PASSWORD', 'Efrat2024!'),
-    'asi@phins.ai': os.environ.get('PHINS_DEMO_ASI_PASSWORD', 'Asi20240!'),
-    'shosh@phins.ai': os.environ.get('PHINS_DEMO_SHOSH_PASSWORD', 'Shosh2024!'),
 }
 
 # IMPORTANT:
@@ -4034,19 +4027,24 @@ def validate_amount(amount: Any) -> bool:
 
 def _get_secure_password(env_var_name: str, username: str) -> dict:
     """
-    Get password from environment variable, falling back to a documented
-    default for named accounts so they remain accessible out of the box.
+    Get password from environment variable or generate unusable random password.
+    
+    Args:
+        env_var_name: Name of environment variable containing the password
+        username: Username for logging purposes
+        
+    Returns:
+        Dictionary with 'hash' and 'salt' keys
     """
     password = os.environ.get(env_var_name)
     if password:
         return hash_password(password)
-    default_pwd = LEGACY_DEMO_PASSWORDS.get(username)
-    if default_pwd:
-        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable. Using documented default.")
-        return hash_password(default_pwd)
-    random_pwd = secrets.token_urlsafe(32)
-    print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
-    return hash_password(random_pwd)
+    else:
+        # Generate a random password that will be impossible to guess
+        # This ensures the system starts but users cannot login without proper env config
+        random_pwd = secrets.token_urlsafe(32)
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+        return hash_password(random_pwd)
 
 def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     """Build fallback users dictionary with passwords from environment variables."""
@@ -5100,10 +5098,8 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"API extension error (GET {path}): {e}")
-                import traceback
-                traceback.print_exc()
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Service temporarily unavailable'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
 
         # ========== AI + BI MARKETING SALES AGENT (Admin/Media) ==========
@@ -16233,16 +16229,12 @@ For claims or questions, please contact:
                         self._set_json_headers(status_code)
                         self.wfile.write(json.dumps(response_data).encode('utf-8'))
                         return
-                    else:
-                        self._set_json_headers(404)
-                        self.wfile.write(json.dumps({'error': f'Endpoint not found: {path}'}).encode('utf-8'))
-                        return
                 except Exception as e:
                     print(f"API extension error (POST {path}): {e}")
                     import traceback
                     traceback.print_exc()
                     self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': 'Security service temporarily unavailable'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                     return
         
         # Design settings endpoint (POST) - Admin or Media role
@@ -32073,12 +32065,13 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
             return
         
-        # Default: not found (JSON for API paths, HTML for others)
+        # Default: preserve JSON 404s for unknown API POST endpoints.
         if path.startswith('/api/'):
             self._set_json_headers(404)
-            self.wfile.write(json.dumps({'error': f'Endpoint not found: {path}'}).encode('utf-8'))
-        else:
-            self.send_error(404, 'Not Found')
+            self.wfile.write(json.dumps({'error': 'Not Found'}).encode('utf-8'))
+            return
+
+        self.send_error(404, 'Not Found')
     
     def handle_quote_submission(self):
         """Handle quote form submission with multipart data"""
@@ -32582,7 +32575,7 @@ For claims or questions, please contact:
 
     def do_PUT(self):
         """Handle PUT requests for updates"""
-        parsed = urlparse(self.path)
+        parsed = urlparse.urlparse(self.path)
         path = parsed.path
         
         # Get client IP
@@ -32617,16 +32610,12 @@ For claims or questions, please contact:
                         self._set_json_headers(status_code)
                         self.wfile.write(json.dumps(response_data).encode('utf-8'))
                         return
-                    else:
-                        self._set_json_headers(404)
-                        self.wfile.write(json.dumps({'error': f'Endpoint not found: {path}'}).encode('utf-8'))
-                        return
                 except Exception as e:
                     print(f"API extension error (PUT {path}): {e}")
                     import traceback
                     traceback.print_exc()
                     self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': 'Service temporarily unavailable'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                     return
         
         # Default: Method not allowed for unhandled PUT requests
@@ -32635,7 +32624,7 @@ For claims or questions, please contact:
 
     def do_DELETE(self):
         """Handle DELETE requests"""
-        parsed = urlparse(self.path)
+        parsed = urlparse.urlparse(self.path)
         path = parsed.path
         
         # Get auth token

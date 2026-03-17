@@ -113,14 +113,43 @@ def sample_balance_sheet():
     }
 
 
-def test_executive_dashboard(bi_service):
+def test_executive_dashboard(bi_service, sample_customers, sample_policies, 
+                            sample_claims, sample_billing, sample_balance_sheet):
     """Test executive dashboard generation"""
-    dashboard = bi_service.get_executive_dashboard()
+    dashboard = bi_service.get_executive_dashboard(
+        customers=sample_customers,
+        policies=sample_policies,
+        claims=sample_claims,
+        billing=sample_billing,
+        balance_sheet=sample_balance_sheet
+    )
     
     assert 'summary' in dashboard
-    assert 'financial_kpis' in dashboard
-    assert 'operational_kpis' in dashboard
-    assert 'generated_at' in dashboard
+    assert 'financial' in dashboard
+    assert 'claims' in dashboard
+    assert 'health_scores' in dashboard
+    
+    # Check summary metrics
+    summary = dashboard['summary']
+    assert summary['total_customers'] == 3
+    assert summary['active_customers'] == 2
+    assert summary['total_policies'] == 2
+    assert summary['active_policies'] == 2
+    assert summary['monthly_revenue'] == 1500.0  # 500 + 1000
+    
+    # Check financial metrics
+    financial = dashboard['financial']
+    assert financial['total_assets'] == 1000000.0
+    assert financial['total_liabilities'] == 200000.0
+    assert financial['net_worth'] == 800000.0
+    assert financial['claims_reserve'] == 500000.0
+    
+    # Check claims metrics
+    claims_data = dashboard['claims']
+    assert claims_data['total'] == 3
+    assert claims_data['total_claimed'] == 17000.0  # 5000 + 2000 + 10000
+    assert claims_data['total_approved'] == 13000.0  # 5000 + 8000
+    assert claims_data['total_paid'] == 5000.0
 
 
 def test_customer_analytics(bi_service):
@@ -402,9 +431,15 @@ def test_supplier_analytics(bi_service):
         supplier_metrics=supplier_metrics
     )
     
-    assert analytics['total_suppliers'] == 3
-    assert analytics['total_orders'] == 3
-    assert analytics['total_order_value'] == 450.0
+    assert analytics['summary']['total_suppliers'] == 3
+    assert analytics['summary']['active_suppliers'] == 2
+    assert analytics['summary']['pending_approval'] == 1
+    
+    assert analytics['orders']['total_orders'] == 3
+    assert analytics['orders']['total_order_value'] == 450.0
+    assert analytics['orders']['avg_order_value'] == 150.0
+    
+    assert len(analytics['top_suppliers']) == 2
 
 
 if __name__ == '__main__':
