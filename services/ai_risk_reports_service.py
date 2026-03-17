@@ -3523,8 +3523,12 @@ Factors Affecting Score:
             columns = (doc_data or {}).get('columns', []) or []
             summary['records_analyzed'] = len(rows)
 
-            def matching_columns(tokens: List[str]) -> List[str]:
-                return [column for column in columns if self._matches_tokens(str(column), tokens)]
+            def matching_columns(tokens: List[str], exclude_tokens: Optional[List[str]] = None) -> List[str]:
+                return [
+                    column for column in columns
+                    if self._matches_tokens(str(column), tokens)
+                    and not (exclude_tokens and self._matches_tokens(str(column), exclude_tokens))
+                ]
 
             name_columns = matching_columns(['full_name', 'client_name', 'customer_name', 'insured_name', 'policyholder_name', 'שם מלא', 'שם מבוטח', 'שם לקוח'])
             id_columns = matching_columns(['id_number', 'identity', 'customer_id', 'policyholder_id', 'client_id', 'ת.ז', 'ת"ז', 'תעודת זהות', 'מספר זהות'])
@@ -3533,8 +3537,12 @@ Factors Affecting Score:
             provider_columns = matching_columns(['provider', 'company', 'carrier', 'issuer', 'יצרן', 'חברה'])
             product_columns = matching_columns(['product_type', 'product_name', 'product', 'סוג מוצר', 'מוצר'])
             status_columns = matching_columns(['status', 'state', 'סטטוס', 'מצב'])
-            savings_columns = matching_columns(['saving', 'savings', 'balance', 'accumulated', 'יתרה', 'צבירה', 'חיסכון', 'תגמולים'])
+            savings_columns = matching_columns(
+                ['saving', 'savings', 'balance', 'accumulated', 'יתרה', 'צבירה', 'חיסכון', 'תגמולים'],
+                ['severance', 'פיצויים']
+            )
             severance_columns = matching_columns(['severance', 'פיצויים'])
+            balance_columns = matching_columns(['total_balance', 'accumulated_balance', 'יתרה כוללת', 'total amount'])
             hedge_columns = matching_columns(['cover', 'coverage', 'insured_amount', 'sum_insured', 'death_coverage', 'disability_coverage', 'כיסוי', 'סכום ביטוח'])
             file_name_columns = matching_columns(['source_file', 'filename', 'file_name'])
 
@@ -3552,7 +3560,8 @@ Factors Affecting Score:
                 savings_amount = sum(self._to_float_amount(row.get(column)) for column in savings_columns)
                 severance_amount = sum(self._to_float_amount(row.get(column)) for column in severance_columns)
                 hedged_risk_amount = sum(self._to_float_amount(row.get(column)) for column in hedge_columns)
-                balance_amount = savings_amount + severance_amount
+                explicit_balance_amount = sum(self._to_float_amount(row.get(column)) for column in balance_columns)
+                balance_amount = explicit_balance_amount if explicit_balance_amount > 0 else (savings_amount + severance_amount)
                 source_file = first_value(file_name_columns) or (doc_data or {}).get('original_filename', '')
 
                 upsert_customer(
@@ -4117,7 +4126,11 @@ Factors Affecting Score:
         ]
 
         id_columns = [c for c in columns if self._column_matches(str(c), id_tokens)]
-        savings_columns = [c for c in columns if self._column_matches(str(c), savings_tokens)]
+        savings_columns = [
+            c for c in columns
+            if self._column_matches(str(c), savings_tokens)
+            and not self._column_matches(str(c), ['severance', 'פיצויים'])
+        ]
         cover_columns = [c for c in columns if self._column_matches(str(c), cover_tokens)]
 
         total_savings = 0.0
