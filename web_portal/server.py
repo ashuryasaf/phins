@@ -5098,6 +5098,9 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"API extension error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
 
         # ========== AI + BI MARKETING SALES AGENT (Admin/Media) ==========
         if path == '/api/admin/marketing-sales-agent':
@@ -16230,6 +16233,9 @@ For claims or questions, please contact:
                     print(f"API extension error (POST {path}): {e}")
                     import traceback
                     traceback.print_exc()
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                    return
         
         # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
@@ -32608,6 +32614,9 @@ For claims or questions, please contact:
                     print(f"API extension error (PUT {path}): {e}")
                     import traceback
                     traceback.print_exc()
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                    return
         
         # Default: Method not allowed for unhandled PUT requests
         self._set_json_headers(405)
