@@ -3814,7 +3814,10 @@ Factors Affecting Score:
             if is_hebrew else
             'Validation of name, ID number, and birth date consistency to keep reporting exact and distortion-free.',
             data_table={
-                'columns': list(integrity_rows[0].keys()) if integrity_rows else [],
+                'columns': (
+                    list(integrity_rows[0].keys()) +
+                    [key for key in list(conflict_rows[0].keys()) if key not in integrity_rows[0]]
+                ) if integrity_rows and conflict_rows else (list(integrity_rows[0].keys()) if integrity_rows else []),
                 'rows': integrity_rows + conflict_rows
             },
             order=5
