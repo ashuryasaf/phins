@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let resendCountdown = 0;
   let resendInterval = null;
   let pendingLoginData = null;
+  let localCaptchaAnswer = null;
   
   function safeStorageSet(storage, key, value) {
     try {
@@ -48,6 +49,35 @@ document.addEventListener('DOMContentLoaded', function () {
       console.warn(`Storage set failed (${key}):`, err);
       return false;
     }
+  }
+
+  function generateLocalCaptchaChallenge() {
+    const prompts = [
+      {
+        question: "Type 'human' to continue:",
+        answer: 'human'
+      },
+      {
+        question: "Type 'secure' to continue:",
+        answer: 'secure'
+      },
+      {
+        question: "Type 'yes' to continue:",
+        answer: 'yes'
+      }
+    ];
+
+    return prompts[Math.floor(Math.random() * prompts.length)];
+  }
+
+  function showLocalCaptcha(message) {
+    const localChallenge = generateLocalCaptchaChallenge();
+    localCaptchaAnswer = localChallenge.answer;
+    captchaAnswer.value = '';
+    captchaId.value = '';
+    captchaQuestion.textContent = localChallenge.question;
+    captchaQuestion.title = message || 'Using built-in verification';
+    captchaSection.style.display = '';
   }
   
   // Generate device fingerprint
@@ -79,6 +109,13 @@ document.addEventListener('DOMContentLoaded', function () {
   
   // Initialize CAPTCHA
   async function loadCaptcha() {
+    localCaptchaAnswer = null;
+    captchaAnswer.value = '';
+    captchaId.value = '';
+    captchaQuestion.textContent = 'Loading verification...';
+    captchaQuestion.title = '';
+    captchaSection.style.display = '';
+
     try {
       const response = await fetch('/api/security/captcha', {
         method: 'POST',
@@ -87,21 +124,21 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       const data = await response.json();
       
-      if (data.success && data.challenge) {
+      if (response.ok && data.success && data.challenge) {
         captchaId.value = data.challenge.challenge_id;
         if (data.challenge.challenge_type === 'simple') {
           captchaQuestion.textContent = data.challenge.challenge_question;
+          captchaQuestion.title = '';
         } else {
-          // For hCaptcha/reCAPTCHA, we'd load their widget here
-          captchaQuestion.innerHTML = '<em>Advanced verification loaded</em>';
+          // Keep verification visible even if advanced widgets are unavailable.
+          showLocalCaptcha('Advanced CAPTCHA fallback is active');
         }
       } else {
-        // CAPTCHA disabled or unavailable
-        captchaSection.style.display = 'none';
+        showLocalCaptcha('Verification service is temporarily unavailable');
       }
     } catch (e) {
-      console.log('CAPTCHA not available, proceeding without');
-      captchaSection.style.display = 'none';
+      console.log('CAPTCHA load failed, using local fallback:', e);
+      showLocalCaptcha('Verification service could not be reached');
     }
   }
   
@@ -443,6 +480,13 @@ document.addEventListener('DOMContentLoaded', function () {
           captchaAnswer.value = '';
           return;
         }
+      } else if (localCaptchaAnswer && captchaValue.toLowerCase() !== localCaptchaAnswer) {
+        msg.textContent = 'Verification failed. Please try again.';
+        msg.style.color = '#dc3545';
+        submitBtn.disabled = false;
+        loadCaptcha();
+        captchaAnswer.value = '';
+        return;
       }
       
       // Step 2: Attempt login
