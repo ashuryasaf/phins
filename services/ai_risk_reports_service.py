@@ -560,6 +560,10 @@ class AIRiskReportsService:
             result['status'] = 'completed'
             result['row_count'] = len(parsed.get('rows', []))
             result['column_count'] = len(parsed.get('columns', []))
+            result['uploaded_data_affiliations'] = self._build_uploaded_data_affiliation_metadata(
+                parsed,
+                parsed.get('pension_data')
+            )
             
             # Store document
             self.documents[doc_id] = result
@@ -2611,6 +2615,7 @@ class AIRiskReportsService:
                 'processing_time_ms': analysis.processing_time_ms,
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
+                'uploaded_data_affiliations': self._build_uploaded_data_affiliation_metadata(doc_data, pension_data),
                 'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
                 'savings_cover_id_summary': affiliated_summary,
                 'report_model': self._get_report_model_metadata(),
@@ -2900,6 +2905,336 @@ Factors Affecting Score:
             }
         except Exception:
             return {}
+
+    @staticmethod
+    def _normalize_affiliation_code(value: Any) -> str:
+        """Normalize raw code values for affiliation lookups."""
+        if value is None:
+            return ''
+
+        text = str(value).strip()
+        if not text:
+            return ''
+
+        if re.fullmatch(r'-?\d+(?:\.0+)?', text):
+            try:
+                return str(int(float(text)))
+            except ValueError:
+                return text
+
+        return text
+
+    @staticmethod
+    def _matches_tokens(column_name: str, tokens: List[str]) -> bool:
+        """Case-insensitive token matching for flexible column detection."""
+        column_lower = str(column_name or '').strip().lower()
+        return any(token in column_lower for token in tokens)
+
+    def _lookup_affiliation_info(self, mapping: Dict[Any, Dict[str, Any]], raw_value: Any) -> Optional[Dict[str, Any]]:
+        """Resolve a raw upload value against authoritative affiliation mappings."""
+        normalized = self._normalize_affiliation_code(raw_value)
+        if not normalized:
+            return None
+
+        direct_match = mapping.get(normalized)
+        if direct_match:
+            return direct_match
+
+        normalized_lower = normalized.lower()
+        for info in mapping.values():
+            if not isinstance(info, dict):
+                continue
+
+            for key in ('he', 'en', 'name', 'schema'):
+                candidate = str(info.get(key, '') or '').strip().lower()
+                if candidate and candidate == normalized_lower:
+                    return info
+
+        return None
+
+    def _build_uploaded_data_affiliation_metadata(
+        self,
+        doc_data: Optional[Dict[str, Any]],
+        pension_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Build an exact-value preview of uploaded data aligned to affiliation categories.
+
+        The intent is to preserve source values as parsed (names, birth dates, policy
+        identifiers, etc.) while surfacing how those fields align with Mislaka/
+        Swiftness affiliation groups.
+        """
+        metadata = {
+            'source_filename': '',
+            'file_type': '',
+            'record_count': 0,
+            'source_columns': [],
+            'preview_rows': [],
+            'affiliation_matches': [],
+            'integrity': {
+                'exact_value_fields': [],
+                'preview_row_count': 0,
+                'notes': [
+                    'Preview values are copied directly from parsed upload rows without normalization.',
+                    'Names, dates of birth, and policy fields retain their original parsed formatting.'
+                ]
+            }
+        }
+
+        if not isinstance(doc_data, dict) and not isinstance(pension_data, dict):
+            return metadata
+
+        if isinstance(doc_data, dict):
+            metadata['source_filename'] = str(doc_data.get('original_filename', '') or '')
+            metadata['file_type'] = str(doc_data.get('file_type', '') or '')
+
+        try:
+            from services.pension_data_agent import MislakaSchemaMapping
+        except Exception:
+            MislakaSchemaMapping = None
+
+        field_specs = [
+            {
+                'key': 'full_name',
+                'label': 'Full Name',
+                'tokens': ['full_name', 'client_name', 'customer_name', 'insured_name', 'policyholder_name', 'שם מלא', 'שם מבוטח', 'שם לקוח']
+            },
+            {
+                'key': 'birth_date',
+                'label': 'Birth Date',
+                'tokens': ['birth_date', 'date_of_birth', 'dob', 'birth', 'תאריך לידה']
+            },
+            {
+                'key': 'id_number',
+                'label': 'ID Number',
+                'tokens': ['id_number', 'identity', 'customer_id', 'policyholder_id', 'client_id', 'ת.ז', 'ת"ז', 'תעודת זהות', 'מספר זהות']
+            },
+            {
+                'key': 'id_type',
+                'label': 'ID Type',
+                'tokens': ['id_type', 'identity_type', 'סוג זיהוי', 'סוג מזהה']
+            },
+            {
+                'key': 'policy_number',
+                'label': 'Policy Number',
+                'tokens': ['policy_number', 'policy', 'מספר פוליסה', 'פוליסה']
+            },
+            {
+                'key': 'provider',
+                'label': 'Provider',
+                'tokens': ['provider', 'carrier', 'company', 'issuer', 'יצרן', 'חברה']
+            },
+            {
+                'key': 'product_type',
+                'label': 'Product Type',
+                'tokens': ['product_type', 'product_name', 'product', 'סוג מוצר', 'מוצר']
+            },
+            {
+                'key': 'status',
+                'label': 'Status',
+                'tokens': ['status', 'state', 'סטטוס', 'מצב']
+            },
+            {
+                'key': 'employer_name',
+                'label': 'Employer',
+                'tokens': ['employer_name', 'employer', 'מעסיק']
+            },
+            {
+                'key': 'start_date',
+                'label': 'Start Date',
+                'tokens': ['start_date', 'policy_start', 'תאריך תחילה', 'תחילה']
+            },
+            {
+                'key': 'interface_code',
+                'label': 'Interface Code',
+                'tokens': ['interface_code', 'sug-mimshak', 'kod-mimshak', 'ממשק']
+            },
+        ]
+
+        affiliation_categories = {
+            'interface_code': ('Interface', getattr(MislakaSchemaMapping, 'INTERFACE_CODES', {}) if MislakaSchemaMapping else {}),
+            'product_type': ('Product', getattr(MislakaSchemaMapping, 'PRODUCT_TYPE_CODES', {}) if MislakaSchemaMapping else {}),
+            'status': ('Status', getattr(MislakaSchemaMapping, 'STATUS_CODES', {}) if MislakaSchemaMapping else {}),
+            'id_type': ('ID Type', getattr(MislakaSchemaMapping, 'ID_TYPE_CODES', {}) if MislakaSchemaMapping else {}),
+        }
+
+        if isinstance(pension_data, dict) and pension_data.get('accounts'):
+            accounts = pension_data.get('accounts', []) or []
+            client = pension_data.get('client', {}) or {}
+            if isinstance(client, list):
+                client = client[0] if client else {}
+            header = pension_data.get('header', {}) or {}
+
+            preview_rows = []
+            for account in accounts[:25]:
+                if not isinstance(account, dict):
+                    continue
+
+                row = {}
+                if isinstance(client, dict):
+                    if client.get('full_name') or client.get('client_name'):
+                        row['Full Name'] = client.get('full_name') or client.get('client_name')
+                    if client.get('birth_date'):
+                        row['Birth Date'] = client.get('birth_date')
+                    if client.get('id_number'):
+                        row['ID Number'] = client.get('id_number')
+                    if client.get('id_type'):
+                        row['ID Type'] = client.get('id_type')
+
+                if header.get('interface_code'):
+                    row['Interface Code'] = header.get('interface_code')
+
+                for key, label in [
+                    ('policy_number', 'Policy Number'),
+                    ('provider', 'Provider'),
+                    ('product_type_name', 'Product Type'),
+                    ('status', 'Status'),
+                    ('employer_name', 'Employer'),
+                    ('start_date', 'Start Date'),
+                ]:
+                    value = account.get(key)
+                    if value not in [None, '']:
+                        row[label] = value
+
+                if row:
+                    preview_rows.append(row)
+
+            metadata['record_count'] = len(accounts)
+            metadata['preview_rows'] = preview_rows
+            metadata['source_columns'] = [
+                {'field': 'Full Name', 'source_column': 'client.full_name', 'category': 'identity'},
+                {'field': 'Birth Date', 'source_column': 'client.birth_date', 'category': 'identity'},
+                {'field': 'ID Number', 'source_column': 'client.id_number', 'category': 'identity'},
+                {'field': 'Policy Number', 'source_column': 'accounts.policy_number', 'category': 'policy'},
+                {'field': 'Provider', 'source_column': 'accounts.provider', 'category': 'provider'},
+                {'field': 'Product Type', 'source_column': 'accounts.product_type_name', 'category': 'product'},
+                {'field': 'Status', 'source_column': 'accounts.status', 'category': 'status'},
+                {'field': 'Employer', 'source_column': 'accounts.employer_name', 'category': 'employer'},
+                {'field': 'Start Date', 'source_column': 'accounts.start_date', 'category': 'timeline'},
+            ]
+
+            raw_affiliation_inputs = [
+                ('Interface', 'header.interface_code', header.get('interface_code'), affiliation_categories['interface_code'][1]),
+            ]
+            for account in accounts[:50]:
+                if not isinstance(account, dict):
+                    continue
+                raw_affiliation_inputs.extend([
+                    ('Product', 'accounts.product_type_name', account.get('product_type') or account.get('product_type_name'), affiliation_categories['product_type'][1]),
+                    ('Status', 'accounts.status', account.get('status_code') or account.get('status'), affiliation_categories['status'][1]),
+                ])
+            if isinstance(client, dict):
+                raw_affiliation_inputs.append(
+                    ('ID Type', 'client.id_type', client.get('id_type'), affiliation_categories['id_type'][1])
+                )
+
+            seen_matches = set()
+            for category, source_column, raw_value, mapping in raw_affiliation_inputs:
+                if raw_value in [None, ''] or not mapping:
+                    continue
+                key = (category, source_column, str(raw_value))
+                if key in seen_matches:
+                    continue
+                seen_matches.add(key)
+                info = self._lookup_affiliation_info(mapping, raw_value)
+                metadata['affiliation_matches'].append({
+                    'category': category,
+                    'source_column': source_column,
+                    'raw_value': raw_value,
+                    'affiliation_label': (info or {}).get('he') or (info or {}).get('name') or '',
+                    'affiliation_detail': (info or {}).get('en') or (info or {}).get('schema') or ''
+                })
+        else:
+            rows = (doc_data or {}).get('rows', []) or []
+            columns = (doc_data or {}).get('columns', []) or []
+            metadata['record_count'] = len(rows)
+
+            source_columns = []
+            selected_columns = []
+            for spec in field_specs:
+                matched_column = next(
+                    (column for column in columns if self._matches_tokens(str(column), spec['tokens'])),
+                    None
+                )
+                if matched_column:
+                    selected_columns.append((spec['label'], matched_column, spec['key']))
+                    source_columns.append({
+                        'field': spec['label'],
+                        'source_column': matched_column,
+                        'category': spec['key']
+                    })
+
+            if not selected_columns:
+                selected_columns = [
+                    (str(column), column, 'raw')
+                    for column in columns[:6]
+                ]
+                source_columns = [
+                    {'field': str(column), 'source_column': column, 'category': 'raw'}
+                    for column in columns[:6]
+                ]
+
+            preview_rows = []
+            for row in rows[:25]:
+                if not isinstance(row, dict):
+                    continue
+
+                preview_row = {}
+                for label, source_column, _category in selected_columns:
+                    value = row.get(source_column)
+                    if value not in [None, '']:
+                        preview_row[label] = value
+
+                if preview_row:
+                    preview_rows.append(preview_row)
+
+            metadata['preview_rows'] = preview_rows
+            metadata['source_columns'] = source_columns
+
+            seen_matches = set()
+            for label, source_column, category_key in selected_columns:
+                category_info = affiliation_categories.get(category_key)
+                if not category_info:
+                    continue
+
+                category_name, mapping = category_info
+                if not mapping:
+                    continue
+
+                distinct_values = []
+                seen_values = set()
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    raw_value = row.get(source_column)
+                    normalized = self._normalize_affiliation_code(raw_value)
+                    if not normalized or normalized in seen_values:
+                        continue
+                    seen_values.add(normalized)
+                    distinct_values.append(raw_value)
+                    if len(distinct_values) >= 8:
+                        break
+
+                for raw_value in distinct_values:
+                    key = (category_name, str(source_column), str(raw_value))
+                    if key in seen_matches:
+                        continue
+                    seen_matches.add(key)
+                    info = self._lookup_affiliation_info(mapping, raw_value)
+                    metadata['affiliation_matches'].append({
+                        'category': category_name,
+                        'source_column': source_column,
+                        'raw_value': raw_value,
+                        'affiliation_label': (info or {}).get('he') or (info or {}).get('name') or '',
+                        'affiliation_detail': (info or {}).get('en') or (info or {}).get('schema') or ''
+                    })
+
+        metadata['integrity']['exact_value_fields'] = [
+            entry.get('field') for entry in metadata['source_columns'] if entry.get('field')
+        ]
+        metadata['integrity']['preview_row_count'] = len(metadata['preview_rows'])
+
+        return metadata
 
     def _get_report_model_metadata(self) -> Optional[Dict[str, Any]]:
         """Include the Swiftness report model section keys for frontend structuring."""

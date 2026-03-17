@@ -412,6 +412,52 @@ POL-002,150000,620"""
         self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
 
 
+class TestUploadedEvidenceAffiliationMetadata(unittest.TestCase):
+    """Regression coverage for exact uploaded-data affiliation previews."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_uploaded_evidence_metadata_preserves_exact_values(self):
+        csv_content = b"""full_name,birth_date,id_type,status,product_type,policy_number,provider
+Dana Levy,1988-05-01,3,1,7,POL-9001,Phoenix
+Dana Levy,1988-05-01,3,6,8,POL-9002,Harel"""
+
+        parse_result = self.service.parse_file(
+            'exact_values.csv',
+            csv_content,
+            'csv',
+            owner_id='CUST-EXACT-001',
+            owner_role='customer'
+        )
+
+        uploaded_metadata = parse_result.get('uploaded_data_affiliations', {})
+        self.assertEqual(uploaded_metadata.get('source_filename'), 'exact_values.csv')
+        self.assertEqual(uploaded_metadata.get('record_count'), 2)
+        self.assertGreaterEqual(len(uploaded_metadata.get('preview_rows', [])), 2)
+
+        first_row = uploaded_metadata['preview_rows'][0]
+        self.assertEqual(first_row.get('Full Name'), 'Dana Levy')
+        self.assertEqual(first_row.get('Birth Date'), '1988-05-01')
+        self.assertEqual(first_row.get('Policy Number'), 'POL-9001')
+
+        exact_fields = uploaded_metadata.get('integrity', {}).get('exact_value_fields', [])
+        self.assertIn('Full Name', exact_fields)
+        self.assertIn('Birth Date', exact_fields)
+
+        matches = uploaded_metadata.get('affiliation_matches', [])
+        self.assertTrue(any(match.get('category') == 'Status' and str(match.get('raw_value')) == '1' for match in matches))
+        self.assertTrue(any(match.get('category') == 'Product' and str(match.get('raw_value')) == '7' for match in matches))
+        self.assertTrue(any(match.get('category') == 'ID Type' and str(match.get('raw_value')) == '3' for match in matches))
+
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        report_metadata = report.metadata.get('uploaded_data_affiliations', {})
+        self.assertEqual(report_metadata.get('preview_rows', [])[0].get('Full Name'), 'Dana Levy')
+        self.assertEqual(report_metadata.get('preview_rows', [])[0].get('Birth Date'), '1988-05-01')
+
+
 class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
     """Security and affiliated summary regression coverage."""
 

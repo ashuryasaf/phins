@@ -17029,6 +17029,7 @@ For claims or questions, please contact:
                     'encoding': result.get('encoding', 'utf-8'),
                     'row_count': result.get('row_count', 0),
                     'column_count': result.get('column_count', 0),
+                    'uploaded_data_affiliations': result.get('uploaded_data_affiliations', {}),
                     'status': result['status'],
                     'owner_id': owner_id
                 }).encode('utf-8'))
