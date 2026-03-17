@@ -23,6 +23,11 @@ import logging
 logger = logging.getLogger('phins.foundation_persistence')
 
 
+def _default_workspace_dir() -> str:
+    """Return the configured workspace root or this repository's root."""
+    return os.environ.get('WORKSPACE_PATH') or str(Path(__file__).resolve().parents[1])
+
+
 class FoundationPersistenceService:
     """
     Persistence layer for Foundation data.
@@ -36,12 +41,10 @@ class FoundationPersistenceService:
         Initialize persistence service.
         
         Args:
-            data_dir: Directory to store data files. Defaults to workspace/data/foundations
+            data_dir: Directory to store data files. Defaults to project-relative data/foundations
         """
         if data_dir is None:
-            # Default to data/foundations in workspace
-            workspace = os.environ.get('WORKSPACE_PATH', '/workspace')
-            data_dir = os.path.join(workspace, 'data', 'foundations')
+            data_dir = os.path.join(_default_workspace_dir(), 'data', 'foundations')
         
         self.data_dir = data_dir
         self.backup_dir = os.path.join(data_dir, 'backups')

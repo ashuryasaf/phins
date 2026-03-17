@@ -22,6 +22,7 @@ import hashlib
 import re
 import logging
 import os
+import tempfile
 import uuid
 import base64
 from datetime import datetime, timezone, timedelta
@@ -30,6 +31,13 @@ from dataclasses import dataclass, asdict, field
 from enum import Enum
 
 logger = logging.getLogger('phins.contribution_payment')
+
+
+def _default_workspace_dir() -> str:
+    """Return the configured workspace root or this repository's root."""
+    return os.environ.get('WORKSPACE_PATH') or os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))
+    )
 
 
 # ============================================================================
@@ -297,9 +305,28 @@ class PaymentValidator:
 class DocumentUploadHandler:
     """Handles large document uploads for contributions"""
     
-    def __init__(self, upload_dir: str = "/workspace/uploads/contributions"):
+    def __init__(self, upload_dir: Optional[str] = None):
+        if upload_dir is None:
+            upload_dir = os.path.join(_default_workspace_dir(), 'uploads', 'contributions')
+
         self.upload_dir = upload_dir
-        os.makedirs(upload_dir, exist_ok=True)
+
+        try:
+            os.makedirs(self.upload_dir, exist_ok=True)
+        except PermissionError:
+            fallback_dir = os.path.join(
+                tempfile.gettempdir(),
+                'phins',
+                'uploads',
+                'contributions'
+            )
+            os.makedirs(fallback_dir, exist_ok=True)
+            logger.warning(
+                "Unable to create contribution upload directory %s; falling back to %s",
+                self.upload_dir,
+                fallback_dir
+            )
+            self.upload_dir = fallback_dir
     
     def validate_file(self, file_name: str, file_size: int, file_type: str) -> Tuple[bool, str]:
         """Validate file before upload"""
