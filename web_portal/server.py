@@ -32575,7 +32575,7 @@ For claims or questions, please contact:
 
     def do_PUT(self):
         """Handle PUT requests for updates"""
-        parsed = urlparse(self.path)
+        parsed = urlparse.urlparse(self.path)
         path = parsed.path
         
         # Get client IP
@@ -32624,7 +32624,7 @@ For claims or questions, please contact:
 
     def do_DELETE(self):
         """Handle DELETE requests"""
-        parsed = urlparse(self.path)
+        parsed = urlparse.urlparse(self.path)
         path = parsed.path
         
         # Get auth token

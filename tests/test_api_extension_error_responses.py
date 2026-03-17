@@ -8,7 +8,6 @@ JSON 500 response instead of falling through to unrelated route logic.
 import json
 import threading
 import time
-import urllib.parse
 from http.server import HTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -85,8 +84,6 @@ def test_extension_dispatch_exceptions_return_json_500(
 
     monkeypatch.setattr(portal, "api_extensions_enabled", True)
     monkeypatch.setattr(portal, dispatcher_name, boom)
-    if method == "PUT":
-        monkeypatch.setattr(portal, "urlparse", urllib.parse.urlparse)
 
     status, content_type, body = _request(
         method,
