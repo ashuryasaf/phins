@@ -28,6 +28,9 @@ jobs:
           pip install -r requirements.txt
           pip install pytest-timeout
 
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)" >> $GITHUB_ENV
+
       - name: Run Python syntax smoke test
         run: |
           python - <<'PY'
