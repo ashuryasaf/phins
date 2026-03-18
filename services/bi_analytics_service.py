@@ -137,13 +137,6 @@ class BIAnalyticsService:
     - AI-powered recommendations
     """
     
-    def __init__(self):
-        """Initialize BI analytics service"""
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl_seconds = 300  # 5 minutes cache
-        
-        logger.info("BI Analytics Service initialized")
-    
     def _get_executive_dashboard_parametric(
         self,
         customers: Dict[str, Any],
@@ -316,11 +309,14 @@ class BIAnalyticsService:
         self.delivery_bids = delivery_bids or {}
         
         # Cache for computed metrics
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_ttl_seconds = 300  # 5 minutes cache
         self._metrics_cache = {}
         self._cache_timestamp = None
         self._cache_ttl_seconds = 300  # 5 minutes
         
         self._insight_counter = 0
+        logger.info("BI Analytics Service initialized")
     
     def _generate_insight_id(self) -> str:
         """Generate unique insight ID"""
