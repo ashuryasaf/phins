@@ -27,17 +27,6 @@ from collections import defaultdict
 import logging
 
 logger = logging.getLogger('phins.bi_analytics')
-PHINS BI and Statistical Analytics Service
-Comprehensive Business Intelligence and Statistical Analysis for:
-- System optimization
-- Performance metrics
-- Predictive analytics
-- Trend analysis
-- KPI monitoring
-- Community/Foundation analytics
-
-Provides AI-driven insights for decision making across the platform.
-"""
 
 import json
 import math
@@ -290,16 +279,8 @@ class BIAnalyticsService:
             },
             'supplier_metrics': supplier_metrics,
             'delivery_metrics': delivery_metrics,
-    Comprehensive BI and Statistical Analytics Service.
-    
-    Provides:
-    - Real-time KPI monitoring
-    - Trend analysis
-    - Predictive analytics
-    - System optimization recommendations
-    - Community/Foundation analytics
-    - Financial performance tracking
-    """
+        }
+        return dashboard
     
     def __init__(self,
                  customers: Dict = None,
