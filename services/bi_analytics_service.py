@@ -885,8 +885,8 @@ class BIAnalyticsService:
         Returns:
             Supplier analytics and performance metrics
         """
-        suppliers = suppliers or self.suppliers
-        supplier_orders = supplier_orders or self.supplier_orders
+        suppliers = suppliers if suppliers is not None else self.suppliers
+        supplier_orders = supplier_orders if supplier_orders is not None else self.supplier_orders
         supplier_metrics = supplier_metrics or {}
 
         if not supplier_metrics and suppliers:
