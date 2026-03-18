@@ -1766,34 +1766,39 @@ def load_dynamic_customers():
         
         loaded_count = 0
         legacy_count = 0
-        
+
+        def _is_valid_hex_hash(value: str) -> bool:
+            if not value or not isinstance(value, str):
+                return False
+            placeholder = value.strip().upper()
+            if placeholder in ('REDACTED', 'NONE', 'NULL', ''):
+                return False
+            try:
+                bytes.fromhex(value)
+                return len(value) >= 32
+            except ValueError:
+                return False
+
         for customer in dynamic_customers:
             email = customer.get('email') or customer.get('username')
             if not email:
                 continue
-            
-            def _is_valid_hex_hash(value: str) -> bool:
-                if not value or not isinstance(value, str):
-                    return False
-                placeholder = value.strip().upper()
-                if placeholder in ('REDACTED', 'NONE', 'NULL', ''):
-                    return False
-                try:
-                    bytes.fromhex(value)
-                    return len(value) >= 32
-                except ValueError:
-                    return False
+
+            has_valid_stored_hash = (
+                _is_valid_hex_hash(customer.get('password_hash')) and
+                _is_valid_hex_hash(customer.get('password_salt'))
+            )
+            has_legacy_password = 'password' in customer
 
             # SECURITY: Check if password is already hashed (new secure format)
             if (
                 'password_hash' in customer and
                 'password_salt' in customer and
-                _is_valid_hex_hash(customer['password_hash']) and
-                _is_valid_hex_hash(customer['password_salt'])
+                has_valid_stored_hash
             ):
                 pwd_hash = customer['password_hash']
                 pwd_salt = customer['password_salt']
-            elif 'password' in customer:
+            elif has_legacy_password:
                 # LEGACY: Plain-text password (migrate and hash)
                 # SECURITY: Default password from env var, or generate random unusable password
                 default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
@@ -1816,7 +1821,7 @@ def load_dynamic_customers():
             }
 
             # Later files override earlier seed copies so runtime state wins.
-            if email in USERS and not _is_valid_hex_hash(pwd_hash):
+            if email in USERS and not (has_valid_stored_hash or has_legacy_password):
                 continue
 
             USERS[email] = user_entry
