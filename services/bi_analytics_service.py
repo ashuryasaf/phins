@@ -144,7 +144,7 @@ class BIAnalyticsService:
         
         logger.info("BI Analytics Service initialized")
     
-    def get_executive_dashboard(
+    def _get_executive_dashboard_parametric(
         self,
         customers: Dict[str, Any],
         policies: Dict[str, Any],
@@ -393,12 +393,35 @@ class BIAnalyticsService:
     # CORE KPI DASHBOARD
     # =========================================================================
     
-    def get_executive_dashboard(self) -> Dict[str, Any]:
+    def get_executive_dashboard(
+        self,
+        customers: Optional[Dict[str, Any]] = None,
+        policies: Optional[Dict[str, Any]] = None,
+        claims: Optional[Dict[str, Any]] = None,
+        billing: Optional[Dict[str, Any]] = None,
+        balance_sheet: Optional[Dict[str, Any]] = None,
+        suppliers: Optional[Dict[str, Any]] = None,
+        deliveries: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Get executive-level dashboard with key metrics.
         
         Returns comprehensive view of platform health and performance.
         """
+        if all(
+            dataset is not None
+            for dataset in (customers, policies, claims, billing, balance_sheet)
+        ):
+            return self._get_executive_dashboard_parametric(
+                customers=customers or {},
+                policies=policies or {},
+                claims=claims or {},
+                billing=billing or {},
+                balance_sheet=balance_sheet or {},
+                suppliers=suppliers or self.suppliers,
+                deliveries=deliveries or self.delivery_requests,
+            )
+
         now = datetime.now(timezone.utc)
         
         dashboard = {
