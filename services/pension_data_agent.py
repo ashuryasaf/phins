@@ -52,6 +52,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass, asdict, field
+from defusedxml import ElementTree as defused_etree
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -732,21 +733,18 @@ class PensionDataAgent:
         """Parse Mislaka XML into structured data with proper encoding handling."""
         # Try to parse with automatic encoding detection
         try:
-            if LXML_AVAILABLE:
-                parser = etree.XMLParser(recover=True, encoding='utf-8')
-                root = etree.fromstring(xml_content, parser)
-            else:
-                # Try UTF-8 first
+            try:
+                root = defused_etree.fromstring(xml_content)
+            except Exception:
                 try:
-                    root = etree.fromstring(xml_content.decode('utf-8', errors='replace'))
-                except:
-                    # Fall back to Windows-1255 (Hebrew)
-                    root = etree.fromstring(xml_content.decode('windows-1255', errors='replace'))
+                    root = defused_etree.fromstring(xml_content.decode('utf-8', errors='replace'))
+                except Exception:
+                    root = defused_etree.fromstring(xml_content.decode('windows-1255', errors='replace'))
         except Exception as e:
             # Last resort: try Windows-1255
             try:
                 text = xml_content.decode('windows-1255', errors='replace')
-                root = etree.fromstring(text)
+                root = defused_etree.fromstring(text)
             except Exception as e2:
                 raise ValueError(f"Failed to parse XML: {e2}")
         

@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -30,7 +31,7 @@ os.environ.setdefault("TEST_BASE_URL", "http://localhost:8000")
 # Database-layer tests still use SQLite via USE_SQLITE/SQLITE_PATH.
 os.environ.setdefault("USE_DATABASE", "false")
 os.environ.setdefault("USE_SQLITE", "true")
-os.environ.setdefault("SQLITE_PATH", "/tmp/phins_test.db")
+os.environ.setdefault("SQLITE_PATH", str(Path(tempfile.gettempdir()) / "phins_test.db"))
 os.environ.setdefault("PHINS_TEST_MODE", "true")
 
 

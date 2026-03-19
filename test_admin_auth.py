@@ -6,6 +6,7 @@ import sys
 
 # Test URL
 BASE_URL = "http://localhost:8000"
+REQUEST_TIMEOUT = 10
 
 # Demo accounts from server.py
 USERS = {
@@ -26,7 +27,8 @@ for username, user_data in USERS.items():
         response = requests.post(
             f"{BASE_URL}/api/login",
             json={"username": username, "password": user_data['password']},
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            timeout=REQUEST_TIMEOUT,
         )
         
         if response.status_code == 200:
@@ -44,7 +46,7 @@ for username, user_data in USERS.items():
 print("\n" + "=" * 50)
 print("Testing admin portal page access...")
 try:
-    response = requests.get(f"{BASE_URL}/admin-portal.html")
+    response = requests.get(f"{BASE_URL}/admin-portal.html", timeout=REQUEST_TIMEOUT)
     if response.status_code == 200:
         print("✅ admin-portal.html is accessible")
         if "PHINS Admin Portal" in response.text:

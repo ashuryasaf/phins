@@ -10,6 +10,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
+import json
 
 Base = declarative_base()
 
@@ -555,6 +556,57 @@ class AuditLog(Base):
             'details': self.details,
             'ip_address': self.ip_address,
             'success': self.success
+        }
+
+
+class PlatformLedgerEntry(Base):
+    """Append-only event ledger for financial and operational lineage."""
+    __tablename__ = 'platform_ledger_entries'
+
+    id = Column(String(120), primary_key=True)
+    sequence_no = Column(Integer, nullable=False, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    ledger_type = Column(String(50), default='event', nullable=False, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    entity_type = Column(String(100), index=True)
+    entity_id = Column(String(120), index=True)
+    customer_id = Column(String(50), index=True)
+    actor = Column(String(100), index=True)
+    amount = Column(Float, default=0.0)
+    currency = Column(String(12), default='USD')
+    status = Column(String(50), default='recorded', index=True)
+    source_system = Column(String(100), default='web_portal', index=True)
+    previous_hash = Column(String(128))
+    entry_hash = Column(String(128), nullable=False, index=True)
+    payload = Column(Text)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        payload = self.payload
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass
+
+        return {
+            'id': self.id,
+            'sequence_no': self.sequence_no,
+            'timestamp': self.timestamp.isoformat() if self.timestamp else None,
+            'ledger_type': self.ledger_type,
+            'event_type': self.event_type,
+            'entity_type': self.entity_type,
+            'entity_id': self.entity_id,
+            'customer_id': self.customer_id,
+            'actor': self.actor,
+            'amount': self.amount,
+            'currency': self.currency,
+            'status': self.status,
+            'source_system': self.source_system,
+            'previous_hash': self.previous_hash,
+            'entry_hash': self.entry_hash,
+            'payload': payload,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
         }
 
 

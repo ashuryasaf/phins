@@ -14,6 +14,7 @@ from .billing_repository import BillingRepository
 from .user_repository import UserRepository
 from .session_repository import SessionRepository
 from .audit_repository import AuditRepository
+from .platform_ledger_repository import PlatformLedgerRepository
 from .actuarial_repository import ActuarialRepository
 from .token_repository import TokenRepository
 
@@ -27,6 +28,7 @@ __all__ = [
     'UserRepository',
     'SessionRepository',
     'AuditRepository',
+    'PlatformLedgerRepository',
     'ActuarialRepository',
     'TokenRepository',
 ]

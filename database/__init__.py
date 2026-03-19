@@ -18,6 +18,7 @@ import logging
 import os
 import time
 import threading
+import tempfile
 
 from .config import DatabaseConfig
 from .models import Base
@@ -215,7 +216,7 @@ def init_database(drop_existing: bool = False):
         phins_test_mode = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
         if (not drop_existing) and phins_test_mode and DatabaseConfig.is_sqlite():
             sqlite_path = os.environ.get('SQLITE_PATH', '')
-            if sqlite_path.startswith('/tmp/'):
+            if sqlite_path.startswith(f"{tempfile.gettempdir()}/"):
                 drop_existing = True
     except Exception:
         pass

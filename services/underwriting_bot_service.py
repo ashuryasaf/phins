@@ -27,6 +27,7 @@ import uuid
 import re
 import math
 import os
+import tempfile
 
 
 # ============================================================================
@@ -36,7 +37,7 @@ import os
 # Allowed base directories for file uploads (configurable via environment)
 ALLOWED_UPLOAD_DIRS = [
     '/workspace/uploads',
-    '/tmp/phins_uploads',
+    os.path.join(tempfile.gettempdir(), 'phins_uploads'),
     os.environ.get('PHINS_UPLOAD_DIR', '/workspace/uploads')
 ]
 

@@ -25,6 +25,8 @@ import json
 import hashlib
 import statistics
 
+from services.platform_event_ledger_service import reconcile_ledger_entries
+
 
 @dataclass
 class PipelineStageData:
@@ -102,6 +104,10 @@ class PipelineIntegrityReport:
     # Premium tracking
     premium_consistency_valid: bool = True
     premium_discrepancy: float = 0.0
+
+    # Ledger lineage tracking
+    ledger_integrity_valid: bool = True
+    ledger_integrity_summary: Dict[str, Any] = field(default_factory=dict)
     
     # Recommendations
     ai_recommendations: List[str] = field(default_factory=list)
@@ -214,6 +220,9 @@ class PipelineIntegrityService:
         
         # Validate health wallet setup
         self._validate_health_wallet(report, underwriting, health_wallet)
+
+        # Validate ledger lineage when ledger data is available
+        self._validate_ledger_integrity(report, policy, billing_records)
         
         # Calculate final score and generate AI recommendations
         self._calculate_integrity_score(report)
@@ -512,6 +521,82 @@ class PipelineIntegrityService:
                 auto_fixable=True,
                 suggested_fix=f"Update health wallet allocation_percentage to {expected_alloc}"
             ))
+
+    def _filter_related_ledger_entries(self, policy: Dict) -> List[Dict[str, Any]]:
+        policy_id = policy.get('id') or policy.get('policy_id')
+        customer_id = policy.get('customer_id')
+        related_entries = []
+
+        for entry in self.transaction_ledger.values():
+            entry_customer_id = entry.get('customer_id')
+            entry_policy_id = entry.get('policy_id')
+            metadata = entry.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except Exception:
+                    metadata = {}
+
+            metadata_policy_id = metadata.get('policy_id') if isinstance(metadata, dict) else None
+            metadata_customer_id = metadata.get('customer_id') if isinstance(metadata, dict) else None
+
+            if (
+                (policy_id and entry_policy_id == policy_id)
+                or (policy_id and metadata_policy_id == policy_id)
+                or (customer_id and entry_customer_id == customer_id)
+                or (customer_id and metadata_customer_id == customer_id)
+            ):
+                related_entries.append(entry)
+
+        return related_entries
+
+    def _validate_ledger_integrity(
+        self,
+        report: PipelineIntegrityReport,
+        policy: Dict,
+        billing_records: List[Dict],
+    ):
+        if not self.transaction_ledger:
+            report.ledger_integrity_summary = {
+                'status': 'not_configured',
+                'total_entries': 0,
+                'message': 'Transaction ledger is empty; lineage validation skipped'
+            }
+            return
+
+        related_entries = self._filter_related_ledger_entries(policy)
+        summary = reconcile_ledger_entries(related_entries or self.transaction_ledger.values())
+        summary['scope'] = 'policy' if related_entries else 'platform'
+        summary['related_entries'] = len(related_entries)
+        report.ledger_integrity_summary = summary
+        report.ledger_integrity_valid = summary.get('chain_valid', False)
+
+        if not summary.get('chain_valid', True):
+            report.issues.append(IntegrityIssue(
+                severity='critical',
+                stage='ledger',
+                field='hash_chain',
+                expected_value='tamper-evident append-only chain',
+                actual_value=summary.get('status'),
+                description=(
+                    f"Ledger chain validation failed with {len(summary.get('broken_links', []))} broken links, "
+                    f"{len(summary.get('sequence_gaps', []))} sequence gaps, and "
+                    f"{len(summary.get('duplicate_ids', []))} duplicate IDs"
+                ),
+                auto_fixable=False,
+                suggested_fix='Rebuild or repair ledger chain before relying on BI and actuarial reports'
+            ))
+        elif billing_records and not related_entries:
+            report.issues.append(IntegrityIssue(
+                severity='medium',
+                stage='ledger',
+                field='policy_ledger_coverage',
+                expected_value='ledger entries linked to billing/policy activity',
+                actual_value='no related ledger entries found',
+                description=f"Policy {report.policy_id} has billing activity but no related ledger lineage",
+                auto_fixable=True,
+                suggested_fix='Replay billing and policy events through the centralized platform ledger'
+            ))
     
     def _calculate_integrity_score(self, report: PipelineIntegrityReport):
         """Calculate overall integrity score based on issues found"""
@@ -562,6 +647,12 @@ class PipelineIntegrityService:
             recommendations.append(
                 f"🚨 CRITICAL: {len(critical_issues)} critical integrity issues found. "
                 "These require immediate attention before policy can proceed."
+            )
+
+        if not report.ledger_integrity_valid and report.ledger_integrity_summary:
+            recommendations.append(
+                "⛓️ LEDGER INTEGRITY ALERT: The append-only ledger hash chain is invalid for this "
+                "policy context. Reconcile ledger lineage before using BI, actuarial, or reserve outputs."
             )
         
         # Auto-fixable suggestions
@@ -642,7 +733,20 @@ class PipelineIntegrityService:
             'common_issues': self._get_common_issues_summary(),
             'savings_integrity_failures': sum(1 for r in self.integrity_reports.values() 
                                              if not r.savings_integrity_valid),
-            'recommendations': self._get_top_recommendations()
+            'recommendations': self._get_top_recommendations(),
+            'ledger_integrity': reconcile_ledger_entries(self.transaction_ledger.values()) if self.transaction_ledger else {
+                'status': 'not_configured',
+                'total_entries': 0,
+                'chain_valid': False,
+                'broken_links': [],
+                'sequence_gaps': [],
+                'duplicate_ids': [],
+                'missing_hash_ids': [],
+                'orphaned_entries': [],
+                'type_counts': {},
+                'amount_total': 0.0,
+                'latest_hash': ''
+            }
         }
     
     def _get_common_issues_summary(self) -> List[Dict]:

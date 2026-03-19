@@ -371,10 +371,10 @@ class ProcessPipelineOrchestrator:
                 metadata={"status": "service_not_initialized"}
             )
 
-        requests = self.delivery.delivery_requests
+        delivery_requests = self.delivery.delivery_requests
         bids = self.delivery.delivery_bids
 
-        for req_id, req in requests.items():
+        for req_id, req in delivery_requests.items():
             if hasattr(req, 'status'):
                 status = req.status
                 if status == DeliveryStatus.BID_SELECTED and not req.selected_bid_id:
@@ -399,7 +399,7 @@ class ProcessPipelineOrchestrator:
 
         for bid_id, bid in bids.items():
             if hasattr(bid, 'status') and bid.status == BidStatus.ACCEPTED:
-                req = requests.get(bid.request_id)
+                req = delivery_requests.get(bid.request_id)
                 if req and hasattr(req, 'selected_bid_id') and req.selected_bid_id != bid_id:
                     issues.append({
                         'severity': ValidationSeverity.WARNING.value,
@@ -420,9 +420,9 @@ class ProcessPipelineOrchestrator:
             score=max(0, score),
             issues=issues,
             metadata={
-                'total_requests': len(requests),
+                'total_requests': len(delivery_requests),
                 'total_bids': len(bids),
-                'open_requests': len([r for r in requests.values() if hasattr(r, 'status') and r.status.value == 'bidding_open']),
+                'open_requests': len([r for r in delivery_requests.values() if hasattr(r, 'status') and r.status.value == 'bidding_open']),
             }
         )
 

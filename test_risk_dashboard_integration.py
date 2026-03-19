@@ -8,6 +8,7 @@ import json
 import time
 
 BASE_URL = "http://localhost:8000"
+REQUEST_TIMEOUT = 10
 
 def test_risk_dashboard_integration():
     """Test the complete risk dashboard upload workflow"""
@@ -20,7 +21,7 @@ def test_risk_dashboard_integration():
     login_response = requests.post(f"{BASE_URL}/api/login", json={
         "username": "underwriter",
         "password": "under123"
-    })
+    }, timeout=REQUEST_TIMEOUT)
     
     if login_response.status_code == 200:
         login_data = login_response.json()
@@ -36,7 +37,7 @@ def test_risk_dashboard_integration():
     print("\n[2] Testing session verification...")
     verify_response = requests.get(f"{BASE_URL}/api/session/verify", headers={
         "Authorization": f"Bearer {token}"
-    })
+    }, timeout=REQUEST_TIMEOUT)
     
     if verify_response.status_code == 200:
         verify_data = verify_response.json()
@@ -82,7 +83,8 @@ def test_risk_dashboard_integration():
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
-        }
+        },
+        timeout=REQUEST_TIMEOUT,
     )
     
     if upload_response.status_code in [200, 201]:
@@ -105,7 +107,7 @@ def test_risk_dashboard_integration():
     accountant_login = requests.post(f"{BASE_URL}/api/login", json={
         "username": "accountant",
         "password": "acct123"
-    })
+    }, timeout=REQUEST_TIMEOUT)
     
     if accountant_login.status_code == 200:
         accountant_token = accountant_login.json().get('token')
@@ -117,7 +119,8 @@ def test_risk_dashboard_integration():
             headers={
                 "Authorization": f"Bearer {accountant_token}",
                 "Content-Type": "application/json"
-            }
+            },
+            timeout=REQUEST_TIMEOUT,
         )
         
         if unauthorized_upload.status_code == 403:
@@ -151,7 +154,8 @@ def test_risk_dashboard_integration():
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
-        }
+        },
+        timeout=REQUEST_TIMEOUT,
     )
     
     if invalid_upload.status_code in [200, 201]:

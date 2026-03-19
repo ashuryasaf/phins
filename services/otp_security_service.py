@@ -28,6 +28,8 @@ import threading
 import uuid
 import json
 
+from security.network import validated_urlopen
+
 logger = logging.getLogger('phins.otp_security')
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
@@ -542,7 +544,7 @@ class OTPSecurityService:
                 method='POST'
             )
             
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with validated_urlopen(req, timeout=5, allowed_schemes=('https',)) as resp:
                 result = json.loads(resp.read().decode())
                 return result.get('success', False)
         except Exception as e:
@@ -570,7 +572,7 @@ class OTPSecurityService:
                 method='POST'
             )
             
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with validated_urlopen(req, timeout=5, allowed_schemes=('https',)) as resp:
                 result = json.loads(resp.read().decode())
                 return result.get('success', False)
         except Exception as e:

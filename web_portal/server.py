@@ -25,7 +25,10 @@ import threading
 import time
 import csv
 import io
+import tempfile
 from typing import Dict, Any, Tuple, Optional, List
+
+from services.platform_event_ledger_service import PlatformEventLedgerService
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -431,6 +434,7 @@ else:
 
 # Railway provides PORT via environment variable; default to 8000 for local dev
 PORT = int(os.environ.get('PORT', 8000))
+HOST = os.environ.get('HOST') or ('0.0.0.0' if 'PORT' in os.environ else '127.0.0.1')  # nosec B104
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Storage - either database-backed or in-memory
@@ -576,6 +580,11 @@ INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, 
 
 # Transaction ledger - master ledger for all financial transactions
 TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
+
+platform_event_ledger = PlatformEventLedgerService(
+    TRANSACTION_LEDGER,
+    use_database=lambda: USE_DATABASE and database_enabled,
+)
 
 # Claim files storage - stores uploaded documents for claims
 # Indexed by file_id -> {claim_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
@@ -1437,7 +1446,10 @@ def record_fee_revenue(
 
 # ========== DATA PERSISTENCE LAYER ==========
 # Path for persistent storage file
-LEDGER_PERSISTENCE_FILE = os.environ.get('LEDGER_PERSISTENCE_FILE', '/tmp/phins_ledger_data.json')
+LEDGER_PERSISTENCE_FILE = os.environ.get(
+    'LEDGER_PERSISTENCE_FILE',
+    os.path.join(tempfile.gettempdir(), 'phins_ledger_data.json'),
+)
 PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
 
 # Loaded persistence buffers (used before services are initialized).
@@ -1474,7 +1486,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.9',
+                'version': '2.0',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -1750,6 +1762,7 @@ def load_ledger_data():
         CUSTOMER_ALLOCATIONS.update(data.get('customer_allocations', {}))
         INVESTMENT_ACCOUNTS.update(data.get('investment_accounts', {}))
         TRANSACTION_LEDGER.update(data.get('transaction_ledger', {}))
+        platform_event_ledger.ensure_hash_chain()
         
         # Load pipeline data (v1.1+)
         if data.get('version', '1.0') >= '1.1':
@@ -2568,21 +2581,19 @@ def record_transaction(
 ) -> Dict[str, Any]:
     """Record transaction in master ledger and NFT ledger"""
     tx_id = f"TX-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
-    
+    metadata_dict = metadata if isinstance(metadata, dict) else {}
+
     transaction = {
         'id': tx_id,
         'customer_id': customer_id,
         'type': tx_type,
         'amount': amount,
         'description': description,
-        'metadata': metadata or {},
+        'metadata': metadata_dict,
         'timestamp': datetime.now().isoformat(),
         'status': 'completed'
     }
-    
-    # Store in transaction ledger
-    TRANSACTION_LEDGER[tx_id] = transaction
-    
+
     # Also create NFT token for blockchain record
     nft_token = generate_nft_token(
         customer_id=customer_id,
@@ -2590,15 +2601,30 @@ def record_transaction(
         transaction_id=tx_id,
         amount=amount,
         description=description,
-        metadata=metadata
+        metadata=metadata_dict
     )
-    NFT_LEDGER[nft_token['token_id']] = nft_token
-    
+
     transaction['nft_token_id'] = nft_token['token_id']
-    
+
+    transaction = platform_event_ledger.append_event(
+        event_type=tx_type,
+        entity_type='transaction',
+        entity_id=tx_id,
+        customer_id=customer_id,
+        actor=str(metadata_dict.get('actor', customer_id or 'system')),
+        amount=amount,
+        currency=str(metadata_dict.get('currency', 'USD')),
+        status='completed',
+        source_system=str(metadata_dict.get('source_system', 'web_portal')),
+        payload=transaction,
+        entry_id=tx_id,
+        ledger_type='transaction',
+        timestamp=transaction['timestamp'],
+    )
+
     # Trigger async save to persist changes
     threading.Thread(target=save_ledger_data, daemon=True).start()
-    
+
     return transaction
 
 def generate_nft_token(
@@ -5623,6 +5649,22 @@ For claims or questions, please contact:
             }
             self._set_json_headers()
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/diagnostics/ledger-integrity':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                return
+
+            summary = platform_event_ledger.get_integrity_summary()
+            summary['storage_mode'] = 'database' if (USE_DATABASE and database_enabled) else 'in-memory'
+            self._set_json_headers()
+            self.wfile.write(json.dumps(summary, default=str).encode('utf-8'))
             return
         
         # User Profile Endpoint
@@ -24895,7 +24937,19 @@ For claims or questions, please contact:
                                 'status': 'verified',
                                 'nft_token_id': f'NFT-{tx_id}'
                             }
-                            TRANSACTION_LEDGER[tx_id] = ledger_entry
+                            ledger_entry = platform_event_ledger.append_event(
+                                event_type='customer_registration',
+                                entity_type='customer',
+                                entity_id=entity_id,
+                                customer_id=entity_id,
+                                actor='system',
+                                status='verified',
+                                source_system='ledger_sync',
+                                payload=ledger_entry,
+                                entry_id=tx_id,
+                                ledger_type='transaction',
+                                timestamp=timestamp,
+                            )
                             message = f'Customer {entity_id} synced to ledger'
                     else:
                         self._set_json_headers(404)
@@ -24923,7 +24977,20 @@ For claims or questions, please contact:
                                 'status': 'verified',
                                 'nft_token_id': f'NFT-{tx_id}'
                             }
-                            TRANSACTION_LEDGER[tx_id] = ledger_entry
+                            ledger_entry = platform_event_ledger.append_event(
+                                event_type='policy_approval',
+                                entity_type='policy',
+                                entity_id=entity_id,
+                                customer_id=policy.get('customer_id', 'unknown'),
+                                actor='system',
+                                amount=safe_float(policy.get('monthly_premium', 0)),
+                                status='verified',
+                                source_system='ledger_sync',
+                                payload=ledger_entry,
+                                entry_id=tx_id,
+                                ledger_type='transaction',
+                                timestamp=timestamp,
+                            )
                             message = f'Policy {entity_id} synced to ledger'
                     else:
                         self._set_json_headers(404)
@@ -24952,7 +25019,20 @@ For claims or questions, please contact:
                                 'timestamp': timestamp,
                                 'nft_token_id': f'NFT-{tx_id}'
                             }
-                            TRANSACTION_LEDGER[tx_id] = ledger_entry
+                            ledger_entry = platform_event_ledger.append_event(
+                                event_type='claim_submission',
+                                entity_type='claim',
+                                entity_id=entity_id,
+                                customer_id=claim.get('customer_id', 'unknown'),
+                                actor='system',
+                                amount=safe_float(claim.get('claimed_amount', claim.get('amount', 0))),
+                                status=claim.get('status', 'pending'),
+                                source_system='ledger_sync',
+                                payload=ledger_entry,
+                                entry_id=tx_id,
+                                ledger_type='transaction',
+                                timestamp=timestamp,
+                            )
                             message = f'Claim {entity_id} synced to ledger'
                     else:
                         self._set_json_headers(404)
@@ -32036,7 +32116,16 @@ For claims or questions, please contact:
                 
                 # Store interaction in TRANSACTION_LEDGER for unified activity log
                 tx_id = f"TX-AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                TRANSACTION_LEDGER[tx_id] = {
+                platform_event_ledger.append_event(
+                    event_type='ai_interaction',
+                    entity_type='ai_interaction',
+                    entity_id=interaction_id,
+                    customer_id=customer_id,
+                    actor='system',
+                    amount=0.0,
+                    status='completed',
+                    source_system='ai_assistant',
+                    payload={
                     'tx_id': tx_id,
                     'customer_id': customer_id,
                     'type': 'ai_interaction',
@@ -32047,7 +32136,12 @@ For claims or questions, please contact:
                     'source': source,
                     'nft_token_id': nft_token['token_id'],
                     'created_at': datetime.now().isoformat()
-                }
+                    },
+                    entry_id=tx_id,
+                    ledger_type='event',
+                    timestamp=timestamp,
+                )
+                threading.Thread(target=save_ledger_data, daemon=True).start()
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -33778,7 +33872,20 @@ def run_server(port: int = PORT) -> None:
         
         # Populate TRANSACTION_LEDGER
         for entry in sample_ledger:
-            TRANSACTION_LEDGER[entry['id']] = entry
+            platform_event_ledger.append_event(
+                event_type=entry.get('type', 'event'),
+                entity_type='transaction',
+                entity_id=entry.get('id', ''),
+                customer_id=entry.get('customer_id'),
+                actor='system',
+                amount=safe_float(entry.get('amount', 0)),
+                status=entry.get('status', 'completed'),
+                source_system='demo_seed',
+                payload=entry,
+                entry_id=entry.get('id'),
+                ledger_type='transaction',
+                timestamp=entry.get('timestamp'),
+            )
         
         # Also populate NFT_LEDGER for blockchain verification
         for entry in sample_ledger:
@@ -34047,11 +34154,11 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"   ⚠️  Data integrity check error: {e}")
     
-    server_address = ('0.0.0.0', port)
+    server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
     httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
-    print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
+    print(f'\n🚀 Serving web portal at http://{HOST}:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
     print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')
     print(f'⏱️  Connection timeout: {CONNECTION_TIMEOUT}s | Session timeout: {SESSION_TIMEOUT}s')

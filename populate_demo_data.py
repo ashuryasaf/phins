@@ -9,11 +9,15 @@ from datetime import datetime, timedelta
 import random
 
 BASE_URL = "http://localhost:8000"
+REQUEST_TIMEOUT = 30
 
 def login(username, password):
     """Login and get auth token"""
-    response = requests.post(f"{BASE_URL}/api/login", 
-                           json={"username": username, "password": password})
+    response = requests.post(
+        f"{BASE_URL}/api/login",
+        json={"username": username, "password": password},
+        timeout=REQUEST_TIMEOUT,
+    )
     if response.ok:
         data = response.json()
         print(f"✓ Logged in as {data['name']} ({data['role']})")
@@ -41,7 +45,7 @@ def create_sample_policy(token, customer_data, policy_data):
         }
     }
     
-    response = requests.post(f"{BASE_URL}/api/policies/create", headers=headers, json=payload)
+    response = requests.post(f"{BASE_URL}/api/policies/create", headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
     if response.ok:
         data = response.json()
         print(f"✓ Created policy {data['policy']['id']} for {customer_data['customer_name']}")
@@ -70,7 +74,7 @@ def create_sample_claim(token, policy_id, customer_id):
         "claimed_amount": random.randint(1000, 10000)
     }
     
-    response = requests.post(f"{BASE_URL}/api/claims/create", headers=headers, json=payload)
+    response = requests.post(f"{BASE_URL}/api/claims/create", headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
     if response.ok:
         data = response.json()
         print(f"✓ Created claim {data['id']} for policy {policy_id}")
@@ -83,7 +87,7 @@ def approve_underwriting(token, uw_id):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     payload = {"id": uw_id, "approved_by": "Demo Underwriter"}
     
-    response = requests.post(f"{BASE_URL}/api/underwriting/approve", headers=headers, json=payload)
+    response = requests.post(f"{BASE_URL}/api/underwriting/approve", headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
     if response.ok:
         print(f"✓ Approved underwriting {uw_id}")
         return True
@@ -94,7 +98,7 @@ def approve_claim(token, claim_id, amount):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     payload = {"id": claim_id, "approved_amount": amount, "approved_by": "Demo Claims Adjuster"}
     
-    response = requests.post(f"{BASE_URL}/api/claims/approve", headers=headers, json=payload)
+    response = requests.post(f"{BASE_URL}/api/claims/approve", headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
     if response.ok:
         print(f"✓ Approved claim {claim_id}")
         return True
@@ -105,7 +109,7 @@ def pay_claim(token, claim_id):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     payload = {"id": claim_id, "payment_method": "bank_transfer"}
     
-    response = requests.post(f"{BASE_URL}/api/claims/pay", headers=headers, json=payload)
+    response = requests.post(f"{BASE_URL}/api/claims/pay", headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
     if response.ok:
         data = response.json()
         print(f"✓ Paid claim {claim_id} - Ref: {data['claim']['payment_reference']}")
