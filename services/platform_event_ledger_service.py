@@ -296,7 +296,16 @@ class PlatformEventLedgerService:
 
         for sequence_no, entry in enumerate(sorted_entries, start=1):
             normalized = normalize_ledger_entry(entry)
-            expected_hash = compute_entry_hash({**normalized, "sequence_no": sequence_no}, previous_hash)
+            normalized.setdefault("recorded_at", normalized.get("timestamp") or datetime.utcnow().isoformat())
+            normalized.setdefault("event_type", normalized.get("type") or "event")
+            normalized.setdefault("type", normalized.get("event_type") or "event")
+            normalized.setdefault("entity_type", normalized.get("entity_type") or "transaction")
+            normalized.setdefault("entity_id", normalized.get("entity_id") or normalized.get("id"))
+            normalized.setdefault("ledger_type", normalized.get("ledger_type") or "event")
+            normalized["sequence_no"] = sequence_no
+            normalized["previous_hash"] = previous_hash
+            normalized["ledger_version"] = LEDGER_VERSION
+            expected_hash = compute_entry_hash(normalized, previous_hash)
             needs_update = (
                 normalized.get("sequence_no") != sequence_no
                 or normalized.get("previous_hash") != previous_hash
@@ -304,16 +313,7 @@ class PlatformEventLedgerService:
                 or normalized.get("ledger_version") != LEDGER_VERSION
             )
 
-            normalized["sequence_no"] = sequence_no
-            normalized["previous_hash"] = previous_hash
-            normalized["ledger_version"] = LEDGER_VERSION
             normalized["entry_hash"] = expected_hash
-            normalized.setdefault("recorded_at", normalized.get("timestamp") or datetime.utcnow().isoformat())
-            normalized.setdefault("event_type", normalized.get("type") or "event")
-            normalized.setdefault("type", normalized.get("event_type") or "event")
-            normalized.setdefault("entity_type", normalized.get("entity_type") or "transaction")
-            normalized.setdefault("entity_id", normalized.get("entity_id") or normalized.get("id"))
-            normalized.setdefault("ledger_type", normalized.get("ledger_type") or "event")
             self.transaction_ledger[normalized["id"]] = normalized
 
             if needs_update:
