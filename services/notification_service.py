@@ -34,6 +34,8 @@ from functools import wraps
 import threading
 import uuid
 
+from security.network import validated_urlopen
+
 # Local imports
 try:
     from security.vault import encrypt_json, decrypt_json
@@ -1089,7 +1091,7 @@ class SendGridEmailProvider(EmailProvider):
             req.add_header('Content-Type', 'application/json')
             
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
                     # SendGrid returns 202 Accepted on success
                     if response.status in [200, 202]:
                         # Extract message ID from headers
@@ -1246,7 +1248,7 @@ class MailgunEmailProvider(EmailProvider):
             req.add_header('Authorization', f'Basic {auth}')
             
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
                     result = json.loads(response.read().decode())
                     message_id = result.get('id', generate_id('MG'))
                     return True, message_id, None
@@ -1318,7 +1320,7 @@ class ResendEmailProvider(EmailProvider):
             req.add_header('Content-Type', 'application/json')
 
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
                     if response.status not in [200, 201, 202]:
                         return False, None, f"Unexpected status: {response.status}"
                     result = json.loads(response.read().decode('utf-8') or '{}')
@@ -1518,7 +1520,7 @@ class VonageSMSProvider(SMSProvider):
             req = urllib.request.Request(url, data=encoded_data, method='POST')
             
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
                     result = json.loads(response.read().decode())
                     
                     if result.get('messages'):
@@ -1577,7 +1579,7 @@ class MessageBirdSMSProvider(SMSProvider):
             req.add_header('Content-Type', 'application/json')
             
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
                     result = json.loads(response.read().decode())
                     message_id = result.get('id', generate_id('MB'))
                     return True, message_id, None

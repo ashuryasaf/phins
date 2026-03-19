@@ -19,6 +19,8 @@ import argparse
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
+from security.network import validated_urlopen
+
 
 class HealthChecker:
     def __init__(self, base_url):
@@ -52,7 +54,7 @@ class HealthChecker:
         if token:
             headers['Authorization'] = f'Bearer {token}'
         req = Request(url, headers=headers)
-        with urlopen(req, timeout=10) as resp:
+        with validated_urlopen(req, timeout=10, allowed_schemes=('http', 'https')) as resp:
             return resp.read().decode('utf-8'), resp.headers
     
     def _post(self, path, payload, token=None):
@@ -63,7 +65,7 @@ class HealthChecker:
         if token:
             headers['Authorization'] = f'Bearer {token}'
         req = Request(url, data=data, headers=headers)
-        with urlopen(req, timeout=10) as resp:
+        with validated_urlopen(req, timeout=10, allowed_schemes=('http', 'https')) as resp:
             return resp.read().decode('utf-8'), resp.headers
     
     def test_server_responds(self):

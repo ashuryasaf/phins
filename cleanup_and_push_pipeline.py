@@ -20,6 +20,8 @@ import urllib.error
 import sys
 from datetime import datetime
 
+from security.network import validated_urlopen
+
 # Server configuration
 SERVER_URL = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:8080'
 
@@ -40,7 +42,7 @@ def api_call(method, endpoint, data=None):
         req = urllib.request.Request(url, headers=headers, method=method)
     
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with validated_urlopen(req, timeout=30, allowed_schemes=('http', 'https')) as response:
             return json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         print(f"  ⚠ HTTP Error {e.code}: {e.reason}")

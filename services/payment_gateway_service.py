@@ -24,6 +24,8 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
+from security.network import validated_urlopen
+
 
 class PaymentMethod(Enum):
     CREDIT_CARD = "credit_card"
@@ -118,7 +120,7 @@ class PayPalSandbox:
             req.add_header('Authorization', auth_header)
             req.add_header('Content-Type', 'application/x-www-form-urlencoded')
             
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
                 result = json.loads(response.read().decode())
                 self._access_token = result['access_token']
                 self._token_expiry = datetime.now() + timedelta(seconds=result.get('expires_in', 3600) - 60)

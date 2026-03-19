@@ -25,6 +25,7 @@ import threading
 import time
 import csv
 import io
+import tempfile
 from typing import Dict, Any, Tuple, Optional, List
 
 from services.platform_event_ledger_service import PlatformEventLedgerService
@@ -433,6 +434,7 @@ else:
 
 # Railway provides PORT via environment variable; default to 8000 for local dev
 PORT = int(os.environ.get('PORT', 8000))
+HOST = os.environ.get('HOST') or ('0.0.0.0' if 'PORT' in os.environ else '127.0.0.1')
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Storage - either database-backed or in-memory
@@ -1444,7 +1446,10 @@ def record_fee_revenue(
 
 # ========== DATA PERSISTENCE LAYER ==========
 # Path for persistent storage file
-LEDGER_PERSISTENCE_FILE = os.environ.get('LEDGER_PERSISTENCE_FILE', '/tmp/phins_ledger_data.json')
+LEDGER_PERSISTENCE_FILE = os.environ.get(
+    'LEDGER_PERSISTENCE_FILE',
+    os.path.join(tempfile.gettempdir(), 'phins_ledger_data.json'),
+)
 PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
 
 # Loaded persistence buffers (used before services are initialized).
@@ -34149,11 +34154,11 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"   ⚠️  Data integrity check error: {e}")
     
-    server_address = ('0.0.0.0', port)
+    server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
     httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
-    print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
+    print(f'\n🚀 Serving web portal at http://{HOST}:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
     print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')
     print(f'⏱️  Connection timeout: {CONNECTION_TIMEOUT}s | Session timeout: {SESSION_TIMEOUT}s')

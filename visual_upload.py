@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+REQUEST_TIMEOUT = 60
+
 
 def upload_transfer(file_path: Path) -> str:
     """Upload file to transfer.sh and return the URL.
@@ -28,7 +30,7 @@ def upload_transfer(file_path: Path) -> str:
 
     url = f"https://transfer.sh/{file_path.name}"
     with file_path.open("rb") as fh:
-        resp = requests.put(url, data=fh)
+        resp = requests.put(url, data=fh, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     return resp.text.strip()
 
@@ -42,7 +44,7 @@ def upload_fileio(file_path: Path) -> str:
         raise RuntimeError("`requests` is required for upload. Install with `pip install requests`.") from e
 
     files = {"file": (file_path.name, file_path.open("rb"))}
-    resp = requests.post("https://file.io", files=files)
+    resp = requests.post("https://file.io", files=files, timeout=REQUEST_TIMEOUT)
     files["file"][1].close()
     resp.raise_for_status()
     data = resp.json()

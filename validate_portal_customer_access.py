@@ -19,6 +19,8 @@ import ssl
 import sys
 from datetime import datetime
 
+from security.network import validated_urlopen
+
 
 # Production base URL
 BASE_URL = "https://phins-portal-production.up.railway.app"
@@ -43,7 +45,12 @@ def make_request(endpoint, method="GET", data=None, token=None, timeout=30):
         # Create SSL context
         ctx = ssl.create_default_context()
         
-        with urllib.request.urlopen(req, context=ctx, timeout=timeout) as response:
+        with validated_urlopen(
+            req,
+            context=ctx,
+            timeout=timeout,
+            allowed_schemes=('https',),
+        ) as response:
             body = response.read().decode('utf-8')
             try:
                 return {

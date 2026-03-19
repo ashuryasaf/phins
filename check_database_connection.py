@@ -211,7 +211,7 @@ def verify_data_integrity():
         return
     
     try:
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import MetaData, Table, create_engine, func, inspect, select
         
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
@@ -221,10 +221,17 @@ def verify_data_integrity():
         with engine.connect() as conn:
             # Check for key tables
             key_tables = ['customers', 'policies', 'claims', 'billing', 'users']
+            inspector = inspect(engine)
+            metadata = MetaData()
             
             for table in key_tables:
                 try:
-                    result = conn.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                    if table not in inspector.get_table_names():
+                        print(f"   {table}: table not found")
+                        continue
+
+                    reflected_table = Table(table, metadata, autoload_with=engine)
+                    result = conn.execute(select(func.count()).select_from(reflected_table))
                     count = result.scalar()
                     print(f"   {table}: {count} records")
                 except Exception:

@@ -1063,14 +1063,14 @@ class AIRiskReportsService:
         Parse generic XML file into tabular format.
         """
         try:
-            import xml.etree.ElementTree as ET
+            from defusedxml import ElementTree as DefusedET
             
             # Decode content
             encoding = self._detect_encoding(content)
             xml_str = content.decode(encoding, errors='replace')
             
             # Parse XML
-            root = ET.fromstring(xml_str)
+            root = DefusedET.fromstring(xml_str)
             
             # Extract all leaf elements as rows
             columns = ['element', 'value', 'path']
