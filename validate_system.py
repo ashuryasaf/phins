@@ -12,7 +12,7 @@ def run_command(cmd, desc):
     print(f"Testing: {desc}")
     print(f"{'='*70}")
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
         if result.returncode == 0:
             print(f"✅ PASS: {desc}")
             if result.stdout:
@@ -34,52 +34,53 @@ def main():
     print("🛡️ "*35)
     
     results = {}
+    python_executable = sys.executable or "python3"
     
     # Test 1: Python syntax
     results['Python Syntax'] = run_command(
-        "python -m py_compile web_portal/server.py billing_engine.py accounting_engine.py",
+        [python_executable, "-m", "py_compile", "web_portal/server.py", "billing_engine.py", "accounting_engine.py"],
         "Python Syntax Check"
     )
     
     # Test 2: Import tests
     results['Module Imports'] = run_command(
-        "python -c 'from web_portal import server; from billing_engine import billing_engine; print(\"All imports successful\")'",
+        [python_executable, "-c", "from web_portal import server; from billing_engine import billing_engine; print('All imports successful')"],
         "Module Import Test"
     )
     
     # Test 3: Server methods exist
     results['Server Methods'] = run_command(
-        "python -c 'from web_portal.server import PortalHandler; assert hasattr(PortalHandler, \"handle_quote_submission\"); print(\"All server methods present\")'",
+        [python_executable, "-c", "from web_portal.server import PortalHandler; assert hasattr(PortalHandler, 'handle_quote_submission'); print('All server methods present')"],
         "Server Methods Check"
     )
     
     # Test 4: Storage dictionaries
     results['Storage Dictionaries'] = run_command(
-        "python -c 'from web_portal import server; assert hasattr(server, \"CUSTOMERS\"); assert hasattr(server, \"UNDERWRITING_APPLICATIONS\"); print(\"All storage dictionaries present\")'",
+        [python_executable, "-c", "from web_portal import server; assert hasattr(server, 'CUSTOMERS'); assert hasattr(server, 'UNDERWRITING_APPLICATIONS'); print('All storage dictionaries present')"],
         "Storage Dictionaries Check"
     )
     
     # Test 5: Unit tests
     results['Unit Tests'] = run_command(
-        "pytest tests/ -q --tb=line",
+        [python_executable, "-m", "pytest", "tests/", "-q", "--tb=line"],
         "Unit Tests (pytest)"
     )
     
     # Test 6: Customer validation module
     results['Customer Validation'] = run_command(
-        "python -c 'from customer_validation import Customer, Validator; print(\"Customer validation module OK\")'",
+        [python_executable, "-c", "from customer_validation import Customer, Validator; print('Customer validation module OK')"],
         "Customer Validation Module"
     )
     
     # Test 7: Billing engine
     results['Billing Engine'] = run_command(
-        "python -c 'from billing_engine import billing_engine; print(\"Billing engine OK\")'",
+        [python_executable, "-c", "from billing_engine import billing_engine; print('Billing engine OK')"],
         "Billing Engine Check"
     )
     
     # Test 8: Test complete flow
     results['Complete Flow'] = run_command(
-        "python test_complete_flow.py > /dev/null 2>&1 && echo 'Complete flow test passed'",
+        [python_executable, "test_complete_flow.py"],
         "Complete Application Flow Test"
     )
     

@@ -97,7 +97,7 @@ class BaseMockAdapter:
 
     def quote(self, req: ReinsuranceQuoteRequest) -> List[ReinsuranceQuote]:
         seed = f"{self.name}|{req.currency}|{req.total_exposure}|{req.expected_loss_ratio}|{req.risk_band}|{req.region}|{req.line_of_business}"
-        provider_request_id = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]  # short ref
+        provider_request_id = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]  # short deterministic ref
 
         # Simple, deterministic pricing model:
         # base rate increases with loss ratio and risk band, and provider "spread".

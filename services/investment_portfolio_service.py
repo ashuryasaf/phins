@@ -614,7 +614,7 @@ class InvestmentPortfolioService:
             if abs(diff) > 5:  # 5% threshold
                 action = "sell" if diff > 0 else "buy"
                 rec = InvestmentRecommendation(
-                    recommendation_id=f"REC-{hashlib.md5(f'{account_id}-{asset_class}-{datetime.now().isoformat()}'.encode()).hexdigest()[:8]}",
+                    recommendation_id=f"REC-{hashlib.sha256(f'{account_id}-{asset_class}-{datetime.now().isoformat()}'.encode()).hexdigest()[:8]}",
                     action=action,
                     symbol=asset_class.upper(),
                     asset_class=AssetClass(asset_class) if asset_class in [e.value for e in AssetClass] else AssetClass.EQUITY,
@@ -656,7 +656,7 @@ class InvestmentPortfolioService:
         
         for rec in market_recommendations:
             symbol = rec["symbol"]
-            rec["recommendation_id"] = f"REC-{hashlib.md5(f'{account_id}-{symbol}'.encode()).hexdigest()[:8]}"
+            rec["recommendation_id"] = f"REC-{hashlib.sha256(f'{account_id}-{symbol}'.encode()).hexdigest()[:8]}"
             rec["asset_class"] = self.MARKET_DATA.get(symbol, {}).get("class", AssetClass.EQUITY).value
             rec["time_horizon"] = "medium-term"
             rec["created_at"] = datetime.now().isoformat()
