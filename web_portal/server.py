@@ -434,7 +434,7 @@ else:
 
 # Railway provides PORT via environment variable; default to 8000 for local dev
 PORT = int(os.environ.get('PORT', 8000))
-HOST = os.environ.get('HOST') or ('0.0.0.0' if 'PORT' in os.environ else '127.0.0.1')
+HOST = os.environ.get('HOST') or ('0.0.0.0' if 'PORT' in os.environ else '127.0.0.1')  # nosec B104
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Storage - either database-backed or in-memory
