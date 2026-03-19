@@ -28,6 +28,11 @@ import io
 import tempfile
 from typing import Dict, Any, Tuple, Optional, List
 
+# Ensure repository-root imports work when the server is executed as a script
+# (e.g. `python3 web_portal/server.py` on Railway).
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 from services.platform_event_ledger_service import PlatformEventLedgerService
 
 # ==============================================================================
