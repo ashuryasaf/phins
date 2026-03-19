@@ -24,6 +24,7 @@ from database.repositories import (
     UserRepository,
     SessionRepository,
     AuditRepository,
+    PlatformLedgerRepository,
     ActuarialRepository,
     TokenRepository,
 )
@@ -64,6 +65,7 @@ class DatabaseManager:
         self._users = None
         self._sessions = None
         self._audit = None
+        self._platform_ledger = None
         self._actuarial = None
         self._tokens = None
     
@@ -92,6 +94,7 @@ class DatabaseManager:
         self._users = None
         self._sessions = None
         self._audit = None
+        self._platform_ledger = None
         self._actuarial = None
         self._tokens = None
     
@@ -150,6 +153,13 @@ class DatabaseManager:
         if self._audit is None:
             self._audit = AuditRepository(self._ensure_session())
         return self._audit
+
+    @property
+    def platform_ledger(self) -> PlatformLedgerRepository:
+        """Get platform ledger repository"""
+        if self._platform_ledger is None:
+            self._platform_ledger = PlatformLedgerRepository(self._ensure_session())
+        return self._platform_ledger
 
     @property
     def actuarial(self) -> ActuarialRepository:
