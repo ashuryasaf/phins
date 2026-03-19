@@ -188,11 +188,36 @@ jobs:
           
           # Display high severity issues
           if [ -f bandit-report.json ]; then
-            HIGH_ISSUES=$(python3 -c "import json; data=json.load(open('bandit-report.json')); issues=[i for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']; print(len(issues))")
+            HIGH_ISSUES=$(python3 <<'PY'
+import json
+
+with open('bandit-report.json', 'r', encoding='utf-8') as handle:
+    data = json.load(handle)
+
+issues = [
+    issue for issue in data.get('results', [])
+    if issue.get('issue_severity') == 'HIGH'
+]
+print(len(issues))
+PY
+)
             
             if [ "$HIGH_ISSUES" -gt 0 ]; then
               echo "⚠️  Found $HIGH_ISSUES high severity security issues:"
-              python3 -c "import json; data=json.load(open('bandit-report.json')); [print(f'  - {i["filename"]}:{i["line_number"]}: {i["issue_text"]}') for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']"
+              python3 <<'PY'
+import json
+
+with open('bandit-report.json', 'r', encoding='utf-8') as handle:
+    data = json.load(handle)
+
+for issue in data.get('results', []):
+    if issue.get('issue_severity') != 'HIGH':
+        continue
+    filename = issue.get('filename', '<unknown>')
+    line_number = issue.get('line_number', '?')
+    issue_text = issue.get('issue_text', 'Unknown issue')
+    print(f"  - {filename}:{line_number}: {issue_text}")
+PY
             else
               echo "✅ No high severity issues found"
             fi
