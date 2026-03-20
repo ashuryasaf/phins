@@ -2752,72 +2752,61 @@
       const processingMessage = document.getElementById('processingMessage');
       
       try {
-        let allResults = [];
-        
-        for (let i = 0; i < uploadedFiles.length; i++) {
-          const file = uploadedFiles[i];
-          processingMessage.textContent = `Learning from ${file.name}... (${i + 1}/${uploadedFiles.length})`;
-          
-          // Read file
-          const content = await readFileAsBase64(file);
-          const fileType = file.name.split('.').pop().toLowerCase();
-          
-          // Upload and parse
-          const parseResponse = await fetch('/api/reports/upload', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
-            },
-            body: JSON.stringify({
-              filename: file.name,
-              file_type: fileType,
-              content: content
-            })
-          });
-          
-          const parseResult = await parseResponse.json();
-          
-          if (!parseResponse.ok || parseResult.error || !parseResult.document_id) {
-            const parseError = parseResult.error || `Upload parse failed (${parseResponse.status})`;
-            console.warn(`Skipping ${file.name}: ${parseError}`);
-            continue;
-          }
-          
-          // Analyze with inductive reasoning
-          processingMessage.textContent = `AI analyzing patterns in ${file.name}...`;
-          
-          const analyzeResponse = await fetch('/api/reports/analyze', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
-            },
-            body: JSON.stringify({
-              document_id: parseResult.document_id
-            })
-          });
-          
-          const analyzeResult = await analyzeResponse.json();
-          if (!analyzeResponse.ok || analyzeResult.error || !analyzeResult.id) {
-            const analyzeError = analyzeResult.error || `Analysis failed (${analyzeResponse.status})`;
-            console.warn(`Skipping ${file.name}: ${analyzeError}`);
-            continue;
-          }
-          if (analyzeResult.id) {
-            allResults.push(analyzeResult);
-          }
+        processingMessage.textContent = uploadedFiles.length > 1
+          ? `Combining ${uploadedFiles.length} files into one assessment...`
+          : `Learning from ${uploadedFiles[0].name}...`;
+
+        const filesPayload = await Promise.all(uploadedFiles.map(async (file) => ({
+          filename: file.name,
+          file_type: file.name.split('.').pop().toLowerCase(),
+          content: await readFileAsBase64(file)
+        })));
+
+        const parseResponse = await fetch('/api/reports/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            files: filesPayload,
+            bundle_name: uploadedFiles.length > 1
+              ? `combined_assessment_${Date.now()}.zip`
+              : uploadedFiles[0]?.name
+          })
+        });
+
+        const parseResult = await parseResponse.json();
+
+        if (!parseResponse.ok || parseResult.error || !parseResult.document_id) {
+          throw new Error(parseResult.error || `Upload parse failed (${parseResponse.status})`);
         }
-        
-        if (allResults.length === 0) {
-          throw new Error('No files could be analyzed');
+
+        // Analyze the combined/single parsed document
+        processingMessage.textContent = parseResult.combined
+          ? 'AI analyzing combined multi-file patterns and affiliated Mislaka fields...'
+          : `AI analyzing patterns in ${parseResult.filename}...`;
+
+        const analyzeResponse = await fetch('/api/reports/analyze', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            document_id: parseResult.document_id
+          })
+        });
+
+        const analyzeResult = await analyzeResponse.json();
+        if (!analyzeResponse.ok || analyzeResult.error || !analyzeResult.id) {
+          throw new Error(analyzeResult.error || `Analysis failed (${analyzeResponse.status})`);
         }
         
         // Generate report
         processingMessage.textContent = 'Generating comprehensive AI report...';
         
         const language = outputLanguage.value === 'auto' ? null : outputLanguage.value;
-        const lastAnalysis = allResults[allResults.length - 1];
         
         const reportResponse = await fetch('/api/reports/generate', {
           method: 'POST',
@@ -2826,7 +2815,7 @@
             'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
           },
           body: JSON.stringify({
-            analysis_id: lastAnalysis.id,
+            analysis_id: analyzeResult.id,
             language: language
           })
         });
@@ -2835,7 +2824,9 @@
         if (!reportResponse.ok || currentReport.error) {
           throw new Error(currentReport.error || `Report generation failed (${reportResponse.status})`);
         }
-        currentAnalysis = lastAnalysis;
+        currentAnalysis = analyzeResult;
+        currentReport.upload_file_errors = parseResult.file_errors || [];
+        currentReport.file_results = parseResult.file_results || [];
 
         // Combine Swiftness affiliations with uploaded files for output
         processingMessage.textContent = 'Aligning Swiftness affiliations...';
@@ -2869,6 +2860,13 @@
         
         // Refresh report history
         loadReportHistory();
+
+        if (Array.isArray(parseResult.file_errors) && parseResult.file_errors.length > 0) {
+          const warningLines = parseResult.file_errors
+            .slice(0, 5)
+            .map(item => `• ${item.filename}: ${item.error}`);
+          alert(`Analysis completed with ${parseResult.file_errors.length} skipped file(s):\n\n${warningLines.join('\n')}`);
+        }
         
       } catch (error) {
         console.error('Analysis error:', error);
@@ -4522,21 +4520,68 @@
       }
     }
     
-    // Export report to PDF (excludes minimized/closed sections)
+    function showDownloadToast(message) {
+      const successMsg = document.createElement('div');
+      successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10001; font-weight: 600;';
+      successMsg.textContent = message;
+      document.body.appendChild(successMsg);
+      setTimeout(() => successMsg.remove(), 3000);
+    }
+
+    async function downloadResponseBlob(response, fallbackFilename) {
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition') || '';
+      const match = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : fallbackFilename;
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      return filename;
+    }
+
+    // Export report to a downloadable server-generated file
     async function exportReport(format) {
-      if (format !== 'pdf') {
-        alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+      if (!currentReport || !currentReport.id) {
+        alert('Please generate or open a report before exporting.');
         return;
       }
-      
-      // Load jsPDF library dynamically if not already loaded
-      if (typeof window.jspdf === 'undefined') {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = () => generatePDF();
-        document.head.appendChild(script);
-      } else {
-        generatePDF();
+
+      const exportFormat = format === 'excel' ? 'excel' : 'pdf';
+      try {
+        const response = await fetch(`/api/reports/download-summary?report_id=${encodeURIComponent(currentReport.id)}&format=${encodeURIComponent(exportFormat)}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          }
+        });
+
+        if (!response.ok) {
+          let errorText = `Export failed (${response.status})`;
+          try {
+            const payload = await response.json();
+            errorText = payload.error || payload.message || errorText;
+          } catch (e) {
+            const fallback = await response.text();
+            if (fallback) {
+              errorText = fallback;
+            }
+          }
+          throw new Error(errorText);
+        }
+
+        const fallbackFilename = exportFormat === 'excel'
+          ? `phins_risk_report_${Date.now()}.xlsx`
+          : `phins_risk_report_${Date.now()}.pdf`;
+        await downloadResponseBlob(response, fallbackFilename);
+        showDownloadToast(`✓ ${exportFormat.toUpperCase()} Downloaded Successfully`);
+      } catch (error) {
+        console.error('Export error:', error);
+        alert(error.message || 'Failed to export report');
       }
     }
     

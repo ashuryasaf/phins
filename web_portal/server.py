@@ -4589,6 +4589,109 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         return out.getvalue().encode('utf-8')
 
+    def _build_report_summary_excel_bytes(self, summary: Dict[str, Any]) -> bytes:
+        """Build XLSX bytes for downloadable report summary."""
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        summary_sheet = workbook.active
+        summary_sheet.title = 'Summary'
+
+        summary_sheet.append(['PHINS Savings & Insurance Report Summary'])
+        summary_sheet.append(['Generated At', datetime.now().isoformat()])
+        summary_sheet.append([])
+        summary_sheet.append(['Report ID', summary.get('report_id', '')])
+        summary_sheet.append(['Title', summary.get('title', '')])
+        summary_sheet.append(['Language', summary.get('language', '')])
+        summary_sheet.append(['Report Type', summary.get('report_type', '')])
+        summary_sheet.append(['Risk Score', summary.get('risk_score', '')])
+        summary_sheet.append(['Confidence', summary.get('confidence', '')])
+        summary_sheet.append([])
+
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        summary_sheet.append(['Savings / Cover / ID Summary'])
+        summary_sheet.append(['Records Analyzed', sci.get('records_analyzed', 0)])
+        summary_sheet.append(['Unique IDs', sci.get('unique_id_count', 0)])
+        summary_sheet.append(['Total Savings', sci.get('total_savings', 0)])
+        summary_sheet.append(['Average Savings', sci.get('average_savings', 0)])
+        summary_sheet.append(['Total Cover', sci.get('total_cover', 0)])
+        summary_sheet.append(['Average Cover', sci.get('average_cover', 0)])
+        summary_sheet.append(['Cover/Savings Ratio', sci.get('coverage_to_savings_ratio', 'N/A')])
+
+        source_files = summary.get('source_files', []) or []
+        if source_files:
+            files_sheet = workbook.create_sheet(title='Source Files')
+            files_sheet.append(['Name', 'Type', 'Rows', 'Columns'])
+            for item in source_files[:200]:
+                files_sheet.append([
+                    item.get('name', ''),
+                    item.get('type', ''),
+                    item.get('row_count', ''),
+                    ', '.join(item.get('columns', [])[:20]) if isinstance(item.get('columns'), list) else '',
+                ])
+
+        sample_rows = sci.get('sample_rows', []) or []
+        if sample_rows:
+            sample_sheet = workbook.create_sheet(title='Affiliated Summary')
+            sample_columns = ['id', 'savings', 'cover', 'reference']
+            sample_sheet.append(sample_columns)
+            for row in sample_rows[:200]:
+                sample_sheet.append([row.get(col, '') for col in sample_columns])
+
+        def _sheet_title(base: str, used: set[str]) -> str:
+            normalized = self._safe_download_filename(base, fallback='Section')[:31] or 'Section'
+            candidate = normalized
+            index = 2
+            while candidate in used:
+                suffix = f"_{index}"
+                candidate = f"{normalized[:31 - len(suffix)]}{suffix}"
+                index += 1
+            used.add(candidate)
+            return candidate
+
+        used_titles = {'Summary', 'Source Files', 'Affiliated Summary'}
+        for section in summary.get('table_sections', [])[:10]:
+            columns = section.get('columns', []) or []
+            rows = section.get('rows', []) or []
+            if not columns:
+                continue
+            section_sheet = workbook.create_sheet(title=_sheet_title(section.get('title', 'Section'), used_titles))
+            section_sheet.append(columns)
+            for row in rows[:300]:
+                if isinstance(row, dict):
+                    section_sheet.append([row.get(col, '') for col in columns])
+                else:
+                    section_sheet.append([row])
+
+        chart_summaries = summary.get('chart_summaries', []) or []
+        if chart_summaries:
+            chart_sheet = workbook.create_sheet(title='Charts')
+            chart_sheet.append(['Chart Title', 'Chart Type', 'Label', 'Value'])
+            for chart in chart_summaries[:20]:
+                for point in chart.get('series', [])[:60]:
+                    chart_sheet.append([
+                        chart.get('title', ''),
+                        chart.get('type', ''),
+                        point.get('label', ''),
+                        point.get('value', ''),
+                    ])
+
+        recommendations = summary.get('recommendations', []) or []
+        if recommendations:
+            rec_sheet = workbook.create_sheet(title='Recommendations')
+            rec_sheet.append(['Priority', 'Title', 'Description', 'Expected Impact'])
+            for rec in recommendations[:60]:
+                rec_sheet.append([
+                    rec.get('priority', ''),
+                    rec.get('title', ''),
+                    rec.get('description', ''),
+                    rec.get('expected_impact', ''),
+                ])
+
+        output = io.BytesIO()
+        workbook.save(output)
+        return output.getvalue()
+
     def _build_report_summary_pdf_bytes(self, summary: Dict[str, Any]) -> bytes:
         """Build PDF bytes for downloadable report summary."""
         try:
@@ -9258,7 +9361,7 @@ For claims or questions, please contact:
 
             if export_format not in ['pdf', 'excel', 'csv']:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf or excel.'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf, excel, or csv.'}).encode('utf-8'))
                 return
 
             try:
@@ -9284,6 +9387,10 @@ For claims or questions, please contact:
                     file_bytes = self._build_report_summary_pdf_bytes(summary_payload)
                     content_type = 'application/pdf'
                     filename = f"{title_stem}_{timestamp}.pdf"
+                elif export_format == 'excel':
+                    file_bytes = self._build_report_summary_excel_bytes(summary_payload)
+                    content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    filename = f"{title_stem}_{timestamp}.xlsx"
                 else:
                     file_bytes = self._build_report_summary_csv_bytes(summary_payload)
                     content_type = 'text/csv; charset=utf-8'
@@ -17030,24 +17137,6 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body)
-                filename = data.get('filename', 'upload.csv')
-                file_type = data.get('file_type', 'csv')
-                content_b64 = data.get('content', '')
-                
-                if not content_b64:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'No file content provided'}).encode('utf-8'))
-                    return
-                
-                # Decode base64 content
-                import base64
-                try:
-                    file_content = base64.b64decode(content_b64)
-                except Exception as decode_err:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': f'Invalid base64 content: {str(decode_err)}'}).encode('utf-8'))
-                    return
-                
                 # Get AI reports service
                 from services.ai_risk_reports_service import get_ai_reports_service
                 service = get_ai_reports_service()
@@ -17058,15 +17147,62 @@ For claims or questions, please contact:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
                     return
-                
-                # Parse the file with owner tracking
-                result = service.parse_file(filename, file_content, file_type, owner_id, owner_role)
-                
-                if result.get('error'):
+
+                files_payload = data.get('files')
+                if not isinstance(files_payload, list) or not files_payload:
+                    files_payload = [{
+                        'filename': data.get('filename', 'upload.csv'),
+                        'file_type': data.get('file_type', 'csv'),
+                        'content': data.get('content', ''),
+                    }]
+
+                parsed_results: List[Dict[str, Any]] = []
+                file_errors: List[Dict[str, Any]] = []
+
+                for index, file_item in enumerate(files_payload):
+                    filename = str(file_item.get('filename') or f'upload_{index + 1}.csv')
+                    file_type = str(file_item.get('file_type') or filename.split('.')[-1] or 'csv').lower()
+                    content_b64 = file_item.get('content', '')
+
+                    if not content_b64:
+                        file_errors.append({'filename': filename, 'error': 'No file content provided'})
+                        continue
+
+                    import base64
+                    try:
+                        file_content = base64.b64decode(content_b64)
+                    except Exception as decode_err:
+                        file_errors.append({'filename': filename, 'error': f'Invalid base64 content: {decode_err}'})
+                        continue
+
+                    result = service.parse_file(filename, file_content, file_type, owner_id, owner_role)
+                    if result.get('error'):
+                        file_errors.append({'filename': filename, 'error': result['error']})
+                        continue
+                    parsed_results.append(result)
+
+                if not parsed_results:
                     self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': result['error']}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'No files could be parsed', 'file_errors': file_errors}).encode('utf-8'))
                     return
-                
+
+                if len(parsed_results) > 1:
+                    bundle_name = str(data.get('bundle_name') or f"combined_assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
+                    result = service.create_combined_document(
+                        [item['document_id'] for item in parsed_results if item.get('document_id')],
+                        bundle_name,
+                        owner_id,
+                        owner_role,
+                    )
+                    result['file_results'] = [{
+                        'document_id': item.get('document_id'),
+                        'filename': item.get('filename'),
+                        'row_count': item.get('row_count', 0),
+                        'column_count': item.get('column_count', 0),
+                    } for item in parsed_results]
+                else:
+                    result = parsed_results[0]
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -17077,7 +17213,11 @@ For claims or questions, please contact:
                     'row_count': result.get('row_count', 0),
                     'column_count': result.get('column_count', 0),
                     'status': result['status'],
-                    'owner_id': owner_id
+                    'owner_id': owner_id,
+                    'file_count': result.get('source_file_count', len(parsed_results)),
+                    'file_results': result.get('file_results', []),
+                    'file_errors': file_errors,
+                    'combined': len(parsed_results) > 1,
                 }).encode('utf-8'))
                 return
                 

@@ -23,6 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
 import json
+import io
+import zipfile
 from datetime import datetime
 
 from services.ai_risk_reports_service import (
@@ -172,6 +174,20 @@ Jane;2000;2024-02-20"""
         encoding = self.service._detect_encoding(utf8_bom)
         self.assertEqual(encoding, 'utf-8-sig')
 
+    def test_zip_parsing_keeps_multiple_internal_files(self):
+        """ZIP uploads should aggregate internal file rows and preserve file manifest."""
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as archive:
+            archive.writestr('policies.csv', 'policy_number,coverage\nPOL-1,100000\nPOL-2,150000\n')
+            archive.writestr('claims.csv', 'claim_id,amount\nCLM-1,5000\n')
+
+        result = self.service.parse_file('bundle.zip', buffer.getvalue(), 'zip')
+
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(result['row_count'], 3)
+        self.assertEqual(result['parsed_data'].get('file_count'), 2)
+        self.assertEqual(len(result['parsed_data'].get('files', [])), 2)
+
 
 class TestAIAnalysis(unittest.TestCase):
     """Test AI analysis capabilities"""
@@ -319,6 +335,40 @@ POL-003,150000,600,0"""
         
         # Titles should be different
         self.assertNotEqual(report_en.title, report_he.title)
+
+    def test_combined_document_generation_merges_uploaded_files(self):
+        """Multiple uploaded files should become one combined assessment document."""
+        file_a = self.service.parse_file(
+            'policies_a.csv',
+            b'policy_number,coverage_amount\nPOL-1,100000\n',
+            'csv',
+            owner_id='CUST-1',
+            owner_role='customer'
+        )
+        file_b = self.service.parse_file(
+            'policies_b.csv',
+            b'policy_number,coverage_amount\nPOL-2,150000\nPOL-3,175000\n',
+            'csv',
+            owner_id='CUST-1',
+            owner_role='customer'
+        )
+
+        combined = self.service.create_combined_document(
+            [file_a['document_id'], file_b['document_id']],
+            'combined_assessment.zip',
+            owner_id='CUST-1',
+            owner_role='customer'
+        )
+
+        self.assertEqual(combined['status'], 'completed')
+        self.assertEqual(combined['row_count'], 3)
+        self.assertEqual(combined['source_file_count'], 2)
+        self.assertEqual(combined['parsed_data']['file_count'], 2)
+        self.assertIn('coverage_amount', combined['parsed_data']['columns'])
+
+        analysis = self.service.analyze(combined['document_id'])
+        report = self.service.generate_report(analysis.id, 'english')
+        self.assertGreater(len(report.sections), 0)
 
 
 class TestPensionAffiliatedReportGeneration(unittest.TestCase):
@@ -479,6 +529,7 @@ class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
             user_role='customer'
         )
         self.assertIn('savings_cover_id_summary', export_payload)
+        self.assertIn('source_files', export_payload)
         self.assertIn('table_sections', export_payload)
         self.assertIn('chart_summaries', export_payload)
         serialized = json.dumps(export_payload)

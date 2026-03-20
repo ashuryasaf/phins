@@ -572,6 +572,130 @@ class AIRiskReportsService:
             result['error'] = str(e)
         
         return result
+
+    def create_combined_document(
+        self,
+        document_ids: List[str],
+        filename: str,
+        owner_id: str = None,
+        owner_role: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Combine multiple parsed documents into one synthetic document so the
+        analysis/report pipeline can treat multi-file uploads as a single
+        integrity-preserving assessment.
+        """
+        source_documents = []
+        for document_id in document_ids:
+            document = self.documents.get(document_id)
+            if document and document.get('parsed_data'):
+                source_documents.append(document)
+
+        if not source_documents:
+            raise ValueError('No parsed documents available to combine')
+
+        combined_doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        merged_payload = self._merge_parsed_payloads(source_documents)
+
+        result = {
+            'document_id': combined_doc_id,
+            'filename': filename,
+            'file_type': 'bundle',
+            'file_size': sum(int(doc.get('file_size', 0) or 0) for doc in source_documents),
+            'status': 'completed',
+            'parsed_data': merged_payload,
+            'error': None,
+            'owner_id': owner_id,
+            'owner_role': owner_role,
+            'created_at': datetime.now().isoformat(),
+            'row_count': len(merged_payload.get('rows', [])),
+            'column_count': len(merged_payload.get('columns', [])),
+            'source_document_ids': [doc.get('document_id') for doc in source_documents if doc.get('document_id')],
+            'source_files': [doc.get('filename') for doc in source_documents if doc.get('filename')],
+            'source_file_count': len(source_documents),
+        }
+
+        self.documents[combined_doc_id] = result
+        self.save_data()
+        return result
+
+    def _merge_parsed_payloads(self, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge parsed payloads from multiple documents into one structure."""
+        combined = {
+            'columns': [],
+            'rows': [],
+            'files': [],
+            'pension_data': None,
+            'pension_report': None,
+            'source_files': [],
+        }
+
+        pension_payloads: List[Dict[str, Any]] = []
+        columns_seen = set()
+
+        for document in documents:
+            parsed = document.get('parsed_data') or {}
+            if not isinstance(parsed, dict):
+                continue
+
+            for column in parsed.get('columns', []) or []:
+                column_name = str(column)
+                if column_name not in columns_seen:
+                    columns_seen.add(column_name)
+                    combined['columns'].append(column_name)
+
+            rows = parsed.get('rows', []) or []
+            if isinstance(rows, list):
+                combined['rows'].extend(rows)
+
+            file_manifest = parsed.get('files')
+            if isinstance(file_manifest, list) and file_manifest:
+                combined['files'].extend(file_manifest)
+            else:
+                combined['files'].append({
+                    'name': document.get('filename'),
+                    'type': parsed.get('file_type') or document.get('file_type'),
+                    'columns': parsed.get('columns', []),
+                    'row_count': len(rows) if isinstance(rows, list) else 0,
+                })
+
+            if document.get('filename'):
+                combined['source_files'].append(document['filename'])
+
+            pension_data = parsed.get('pension_data')
+            if isinstance(pension_data, dict) and pension_data:
+                pension_payloads.append(pension_data)
+
+        merged_pension_data, merged_pension_report = self._merge_pension_datasets(pension_payloads)
+        if merged_pension_data:
+            combined['pension_data'] = merged_pension_data
+        if merged_pension_report:
+            combined['pension_report'] = merged_pension_report
+
+        combined['file_count'] = len(combined['files'])
+        return combined
+
+    def _merge_pension_datasets(self, pension_datasets: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Merge multiple Mislaka/pension payloads into a single enriched profile."""
+        valid_payloads = [payload for payload in pension_datasets if isinstance(payload, dict) and payload]
+        if not valid_payloads:
+            return None, None
+
+        try:
+            from services.pension_data_agent import ClientProfile, get_pension_agent
+
+            profile = ClientProfile()
+            for payload in valid_payloads:
+                profile.merge_data(payload)
+            profile.finalize()
+
+            agent = get_pension_agent()
+            merged_data = agent._enrich_data(profile.to_dict())
+            merged_report = agent._generate_professional_report(merged_data)
+            return merged_data, merged_report
+        except Exception as exc:
+            print(f"[AI_REPORTS] Warning: failed to merge pension datasets: {exc}")
+            return valid_payloads[0], None
     
     def _detect_encoding(self, content: bytes) -> str:
         """Detect file encoding"""
@@ -927,7 +1051,8 @@ class AIRiskReportsService:
     
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
         """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
-        combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None}
+        combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None, 'pension_report': None}
+        pension_payloads: List[Dict[str, Any]] = []
         
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
             for name in zf.namelist():
@@ -955,7 +1080,7 @@ class AIRiskReportsService:
                         file_type = 'pension_xml'
                         # Store pension data separately for enhanced analysis
                         if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
+                            pension_payloads.append(parsed.get('pension_data'))
                 elif ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
                     parsed = self._parse_image(file_content, name, ext)
                 elif ext == 'pdf':
@@ -967,7 +1092,7 @@ class AIRiskReportsService:
                         file_type = 'excel'
                         # Check if this looks like Mislaka data
                         if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
+                            pension_payloads.append(parsed.get('pension_data'))
                 
                 if parsed:
                     combined_data['files'].append({
@@ -982,6 +1107,13 @@ class AIRiskReportsService:
                         if col not in combined_data['columns']:
                             combined_data['columns'].append(col)
                     combined_data['rows'].extend(parsed.get('rows', []))
+
+        merged_pension_data, merged_pension_report = self._merge_pension_datasets(pension_payloads)
+        if merged_pension_data:
+            combined_data['pension_data'] = merged_pension_data
+        if merged_pension_report:
+            combined_data['pension_report'] = merged_pension_report
+        combined_data['file_count'] = len(combined_data['files'])
         
         return combined_data
     
@@ -4461,6 +4593,13 @@ Factors Affecting Score:
         doc_data = doc.get('parsed_data', {}) if isinstance(doc, dict) else {}
         pension_data = doc_data.get('pension_data') if isinstance(doc_data, dict) else None
         summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+        source_files = doc_data.get('files', []) if isinstance(doc_data, dict) else []
+        if not source_files and isinstance(doc, dict) and doc.get('filename'):
+            source_files = [{
+                'name': doc.get('filename'),
+                'type': doc.get('file_type'),
+                'row_count': len(doc_data.get('rows', []) if isinstance(doc_data, dict) else []),
+            }]
 
         table_sections: List[Dict[str, Any]] = []
         for section in report.sections:
@@ -4545,6 +4684,7 @@ Factors Affecting Score:
             'risk_score': report.metadata.get('risk_score'),
             'confidence': report.metadata.get('confidence'),
             'savings_cover_id_summary': summary,
+            'source_files': source_files,
             'table_sections': table_sections,
             'chart_summaries': chart_summaries,
             'recommendations': recommendations,
