@@ -2896,7 +2896,8 @@ def _init_customer_access_service():
         from services.customer_data_access import init_customer_access_service
         customer_access_service = init_customer_access_service(
             audit_log=AUDIT_LOG if 'AUDIT_LOG' in dir() else [],
-            customers=CUSTOMERS
+            customers=CUSTOMERS,
+            policies=POLICIES,
         )
         customer_access_enabled = True
         print("✓ Customer Data Access service enabled (data isolation enforcement)")

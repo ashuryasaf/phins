@@ -46,16 +46,18 @@ class CustomerDataAccessService:
     # Standard customer role
     CUSTOMER_ROLE = 'customer'
     
-    def __init__(self, audit_log: List = None, customers: Dict = None):
+    def __init__(self, audit_log: List = None, customers: Dict = None, policies: Dict = None):
         """
         Initialize with audit log and customer data store.
         
         Args:
             audit_log: List to append audit entries to
             customers: CUSTOMERS dictionary for customer validation
+            policies: POLICIES dictionary for policy ownership validation
         """
         self.audit_log = audit_log if audit_log is not None else []
         self.customers = customers if customers is not None else {}
+        self.policies = policies if policies is not None else {}
         
         # Track access violations for security monitoring
         self.access_violations: List[Dict] = []
@@ -178,10 +180,30 @@ class CustomerDataAccessService:
         
         resource_customer_id = resource.get('customer_id')
         
-        # For policies, also check policy_id -> customer_id relationship
+        # Resolve ownership through the related policy when the resource does not
+        # carry a direct customer_id (common for claims/bills/attachments).
         if not resource_customer_id and resource.get('policy_id'):
-            # Would need access to POLICIES to resolve - handled by caller
-            pass
+            policy = self.policies.get(resource.get('policy_id')) or {}
+            resource_customer_id = policy.get('customer_id')
+
+        if not resource_customer_id:
+            username = (session or {}).get('username', 'unknown')
+            user_role = ((session or {}).get('role') or '').lower()
+            if user_role in self.ADMIN_ROLES:
+                return True, None
+
+            requested_owner_ref = (
+                resource.get('customer_id')
+                or resource.get('policy_id')
+                or resource.get('id')
+            )
+            self._log_violation(
+                username,
+                requested_owner_ref,
+                resource_type,
+                'resource_owner_unresolved',
+            )
+            return False, 'Access denied - unable to verify resource ownership'
         
         authorized, _, error = self.authorize_customer_access(
             session, resource_customer_id, resource_type
@@ -268,10 +290,16 @@ def get_customer_access_service(**kwargs) -> CustomerDataAccessService:
     return _customer_access_service
 
 
-def init_customer_access_service(audit_log: List = None, customers: Dict = None) -> CustomerDataAccessService:
+def init_customer_access_service(audit_log: List = None,
+                                 customers: Dict = None,
+                                 policies: Dict = None) -> CustomerDataAccessService:
     """Initialize the customer access service with dependencies"""
     global _customer_access_service
-    _customer_access_service = CustomerDataAccessService(audit_log=audit_log, customers=customers)
+    _customer_access_service = CustomerDataAccessService(
+        audit_log=audit_log,
+        customers=customers,
+        policies=policies,
+    )
     return _customer_access_service
 
 
