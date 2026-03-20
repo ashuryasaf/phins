@@ -3,8 +3,8 @@
 Lightweight web portal server (dependency-free) for demo purposes.
 
 Usage:
-  python web_portal/server.py       # start server on http://localhost:8000
-  python web_portal/server.py --test  # run quick local tests and exit
+  python -m web_portal.server         # start server on http://localhost:8000
+  python -m web_portal.server --test  # run quick local tests and exit
 
 This server exposes simple JSON endpoints and serves static files from
 `web_portal/static/`. It's intended as a minimal demo backend suitable
@@ -28,8 +28,8 @@ import io
 import tempfile
 from typing import Dict, Any, Tuple, Optional, List
 
-# Ensure repository-root imports work when the server is executed as a script
-# (e.g. `python3 web_portal/server.py` on Railway).
+# Ensure repository-root imports work whether the server is executed as a module
+# (`python -m web_portal.server`) or as a legacy script path.
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)

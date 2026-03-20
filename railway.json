@@ -9,6 +9,6 @@
     "restartPolicyMaxRetries": 5,
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 60,
-    "startCommand": "python3 web_portal/server.py"
+    "startCommand": "python3 -m web_portal.server"
   }
 }

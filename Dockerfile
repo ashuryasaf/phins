@@ -22,5 +22,5 @@ ENV PORT=8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:' + __import__('os').environ.get('PORT', '8000') + '/api/health')" || exit 1
 
-# Run the server (reads PORT from environment)
-CMD ["python3", "web_portal/server.py"]
+# Run the server as a module so imports are resolved from /app reliably
+CMD ["python3", "-m", "web_portal.server"]

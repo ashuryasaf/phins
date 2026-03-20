@@ -3,7 +3,7 @@ services:
     name: phins-portal
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python3 web_portal/server.py
+    startCommand: python3 -m web_portal.server
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
