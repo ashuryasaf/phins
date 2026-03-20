@@ -3,33 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PHINS — Global Pitch Dashboard</title>
+  <title>PHINS — Global Pitch Dashboard | Executive Disability &amp; LTC Assessment</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --blue-dark:  #0d47a1;
-      --blue-mid:   #1565c0;
+      --blue-dark: #0d47a1;
+      --blue-mid: #1565c0;
       --blue-light: #1976d2;
-      --accent-1:   #42a5f5;
-      --accent-2:   #64b5f6;
-      --green-1:    #4caf50;
+      --accent-1: #42a5f5;
+      --accent-2: #64b5f6;
+      --green-1: #2e7d32;
+      --amber-1: #f59e0b;
+      --red-1: #c62828;
       --gradient-hdr: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
       --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      --text-main:  #1a202c;
-      --text-sub:   #4a5568;
-      --border:     #e2e8f0;
-      --bg-light:   #f8fafc;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f1f5f9;
-      color: var(--text-main);
-      min-height: 100vh;
+      --text-main: #1a202c;
+      --text-sub: #4a5568;
+      --text-soft: #64748b;
+      --border: #dbe4f0;
+      --bg-light: #f8fafc;
+      --bg-page: #edf3fb;
+      --bg-card: #ffffff;
+      --bg-dark-card: #0f274d;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
     }
 
-    /* ── HEADER ── */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.55;
+    }
+
+    a {
+      color: inherit;
+    }
+
     .site-header {
       background: var(--gradient-hdr);
       color: #fff;
@@ -37,386 +54,2705 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 2px 12px rgba(13,71,161,0.3);
+      gap: 16px;
+      box-shadow: 0 2px 12px rgba(13, 71, 161, 0.28);
     }
+
     .logo-row {
       display: flex;
       align-items: center;
       gap: 10px;
     }
+
     .logo-icon {
-      width: 38px; height: 38px;
+      width: 38px;
+      height: 38px;
       border-radius: 10px;
       background: var(--gradient-logo);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 20px;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
     }
-    .logo-text { font-size: 20pt; font-weight: 900; letter-spacing: .06em; }
-    .logo-tagline { font-size: 8.5pt; opacity: .8; letter-spacing: .1em; text-transform: uppercase; margin-top: 1px; }
+
+    .logo-text {
+      font-size: 20pt;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+    }
+
+    .logo-tagline {
+      font-size: 8.5pt;
+      opacity: 0.85;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
     .back-link {
-      color: rgba(255,255,255,.85);
+      color: rgba(255, 255, 255, 0.9);
       text-decoration: none;
       font-size: 9pt;
-      border: 1px solid rgba(255,255,255,.35);
+      border: 1px solid rgba(255, 255, 255, 0.35);
       border-radius: 20px;
       padding: 6px 14px;
-      transition: background .2s;
+      transition: background 0.2s ease, transform 0.2s ease;
     }
-    .back-link:hover { background: rgba(255,255,255,.15); }
 
-    /* ── HERO STRIP ── */
+    .back-link:hover {
+      background: rgba(255, 255, 255, 0.14);
+      transform: translateY(-1px);
+    }
+
     .hero {
-      background: var(--blue-dark);
+      background: radial-gradient(circle at top left, rgba(100, 181, 246, 0.24), transparent 36%), var(--blue-dark);
       color: #fff;
-      text-align: center;
-      padding: 36px 32px 30px;
+      padding: 42px 32px 34px;
     }
-    .hero h1 { font-size: 22pt; font-weight: 800; margin-bottom: 8px; }
-    .hero p { font-size: 10pt; opacity: .85; max-width: 620px; margin: 0 auto; }
 
-    /* ── CONTAINER ── */
-    .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px 56px; }
+    .hero-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.3fr 0.9fr;
+      gap: 20px;
+      align-items: stretch;
+    }
 
-    /* ── SECTION LABEL ── */
-    .section-label {
-      font-size: 10pt;
+    .hero-copy h1 {
+      font-size: 25pt;
+      font-weight: 850;
+      margin-bottom: 10px;
+      line-height: 1.15;
+    }
+
+    .hero-copy p {
+      font-size: 10.3pt;
+      max-width: 820px;
+      opacity: 0.92;
+    }
+
+    .hero-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 8pt;
       font-weight: 700;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
-      letter-spacing: .08em;
-      color: var(--blue-dark);
-      border-left: 4px solid var(--accent-1);
-      padding-left: 10px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .hero-panel {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 20px;
+      backdrop-filter: blur(8px);
+    }
+
+    .hero-panel h2 {
+      font-size: 12pt;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .hero-panel ul {
+      padding-left: 18px;
+      display: grid;
+      gap: 10px;
+      font-size: 8.8pt;
+      opacity: 0.94;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 24px 56px;
+    }
+
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .stat-box {
+      background: var(--gradient-hdr);
+      color: #fff;
+      border-radius: 18px;
+      padding: 20px 16px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-val {
+      font-size: 22pt;
+      font-weight: 850;
+      line-height: 1.1;
+    }
+
+    .stat-lbl {
+      font-size: 8pt;
+      opacity: 0.86;
+      margin-top: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
       margin-bottom: 18px;
     }
 
-    /* ── GRID ── */
-    .pitch-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 40px;
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: var(--shadow);
     }
 
-    /* ── CARD ── */
+    .panel + .panel {
+      margin-top: 0;
+    }
+
+    .section-label {
+      font-size: 9pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--blue-dark);
+      border-left: 4px solid var(--accent-1);
+      padding-left: 10px;
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-size: 16pt;
+      font-weight: 850;
+      color: var(--text-main);
+      margin-bottom: 10px;
+      line-height: 1.2;
+    }
+
+    .section-copy {
+      color: var(--text-sub);
+      font-size: 9.2pt;
+    }
+
+    .section-copy strong {
+      color: var(--text-main);
+    }
+
+    .narrative-list,
+    .bullet-list {
+      margin-top: 14px;
+      padding-left: 18px;
+      display: grid;
+      gap: 10px;
+      color: var(--text-sub);
+      font-size: 9pt;
+    }
+
+    .priority-stack {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .priority-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--bg-light);
+      border: 1px solid var(--border);
+    }
+
+    .priority-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .priority-name {
+      font-size: 9.2pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+    }
+
+    .priority-score {
+      font-size: 7.4pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--green-1);
+      background: #e8f5e9;
+      padding: 4px 9px;
+      border-radius: 999px;
+    }
+
+    .priority-body {
+      font-size: 8.4pt;
+      color: var(--text-sub);
+    }
+
+    .thesis-grid,
+    .integrity-grid,
+    .kpi-grid,
+    .deck-grid,
+    .source-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .thesis-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 18px;
+    }
+
+    .thesis-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .thesis-icon {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    .thesis-card h3 {
+      font-size: 10.2pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      margin-bottom: 7px;
+    }
+
+    .thesis-card p {
+      font-size: 8.5pt;
+      color: var(--text-sub);
+    }
+
+    .integrity-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 14px;
+    }
+
+    .integrity-card {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .integrity-card h4 {
+      font-size: 8.8pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      margin-bottom: 4px;
+    }
+
+    .integrity-card p {
+      font-size: 8.1pt;
+      color: var(--text-sub);
+    }
+
+    .story-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .story-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .story-kicker {
+      font-size: 7.4pt;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--blue-mid);
+      margin-bottom: 8px;
+    }
+
+    .story-card h3 {
+      font-size: 10.2pt;
+      font-weight: 850;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .story-card p {
+      font-size: 8.45pt;
+      color: var(--text-sub);
+    }
+
+    .visual-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .chart-card {
+      display: grid;
+      gap: 14px;
+    }
+
+    .chart-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .chart-head h3 {
+      font-size: 11pt;
+      font-weight: 850;
+      color: var(--blue-dark);
+      margin-bottom: 4px;
+    }
+
+    .chart-sub {
+      max-width: 360px;
+      font-size: 8pt;
+      color: var(--text-soft);
+    }
+
+    .chart-footnote {
+      font-size: 7.9pt;
+      color: var(--text-soft);
+    }
+
+    .bar-chart,
+    .dual-bar-chart {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 138px 1fr 46px;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .bar-label {
+      display: grid;
+      gap: 2px;
+    }
+
+    .bar-label span {
+      font-size: 8.6pt;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .bar-label small {
+      font-size: 7.2pt;
+      color: var(--text-soft);
+    }
+
+    .bar-row.active .bar-label span {
+      color: var(--blue-dark);
+    }
+
+    .bar-track {
+      position: relative;
+      height: 12px;
+      border-radius: 999px;
+      background: #e6eef9;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--gradient-hdr);
+    }
+
+    .bar-fill.margin {
+      background: linear-gradient(135deg, #0ea5e9, #22c55e);
+    }
+
+    .bar-fill.evidence {
+      background: linear-gradient(135deg, #2563eb, #60a5fa);
+    }
+
+    .bar-fill.treaty {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    }
+
+    .bar-fill.green {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+    }
+
+    .bar-fill.amber {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    }
+
+    .bar-fill.red {
+      background: linear-gradient(135deg, #ef4444, #f87171);
+    }
+
+    .bar-value {
+      font-size: 8.2pt;
+      font-weight: 800;
+      color: var(--text-main);
+      text-align: right;
+    }
+
+    .dual-bar-row {
+      display: grid;
+      grid-template-columns: 138px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .dual-bar-stack {
+      display: grid;
+      gap: 6px;
+    }
+
+    .dual-bar-line {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dual-bar-line .bar-track {
+      height: 10px;
+    }
+
+    .mini-value {
+      font-size: 7.4pt;
+      font-weight: 800;
+      color: var(--text-soft);
+      min-width: 38px;
+      text-align: right;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 7.6pt;
+      color: var(--text-soft);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .legend-swatch.evidence {
+      background: linear-gradient(135deg, #2563eb, #60a5fa);
+    }
+
+    .legend-swatch.treaty {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    }
+
+    .scatter-plot,
+    .scatter-wrap {
+      position: relative;
+      height: 330px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      overflow: hidden;
+    }
+
+    .scatter-area,
+    .scatter-stage {
+      position: absolute;
+      left: 64px;
+      right: 18px;
+      top: 18px;
+      bottom: 42px;
+      background-image:
+        linear-gradient(to right, rgba(148, 163, 184, 0.18) 1px, transparent 1px),
+        linear-gradient(to top, rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+      background-size: 25% 100%, 100% 25%;
+      border-left: 1px solid rgba(148, 163, 184, 0.35);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+    }
+
+    .scatter-axis,
+    .scatter-axis-label {
+      position: absolute;
+      font-size: 7.5pt;
+      color: var(--text-soft);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+
+    .scatter-axis.axis-x,
+    .scatter-axis-label.x {
+      left: 64px;
+      right: 18px;
+      bottom: 14px;
+      text-align: right;
+    }
+
+    .scatter-axis.axis-y,
+    .scatter-axis-label.y {
+      left: 12px;
+      top: 18px;
+      bottom: 42px;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+    }
+
+    .scatter-point {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      background: rgba(21, 101, 192, 0.9);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translate(-50%, 50%);
+      box-shadow: 0 8px 18px rgba(13, 71, 161, 0.22);
+      border: 2px solid rgba(255, 255, 255, 0.95);
+      font-size: 8pt;
+      font-weight: 850;
+    }
+
+    .scatter-point.active {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      z-index: 2;
+    }
+
+    .scatter-point-label {
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--text-soft);
+      font-size: 7pt;
+      font-weight: 800;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+    }
+
+    .scenario-shell {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .scenario-sidebar {
+      background: var(--bg-dark-card);
+      color: #fff;
+    }
+
+    .scenario-sidebar .section-label,
+    .scenario-sidebar .section-title,
+    .scenario-sidebar .section-copy {
+      color: #fff;
+      border-left-color: rgba(255, 255, 255, 0.4);
+    }
+
+    .scenario-sidebar .section-copy {
+      opacity: 0.86;
+    }
+
+    .control-grid {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .control-group {
+      display: grid;
+      gap: 6px;
+    }
+
+    .control-group label,
+    .radio-label {
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+
+    .scenario-sidebar .control-group label,
+    .scenario-sidebar .radio-label {
+      color: rgba(255, 255, 255, 0.76);
+    }
+
+    select,
+    input[type="number"] {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 11px 12px;
+      font-family: inherit;
+      font-size: 9pt;
+      color: var(--text-main);
+    }
+
+    .scenario-sidebar select,
+    .scenario-sidebar input[type="number"] {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+
+    .scenario-sidebar select option {
+      color: #111827;
+    }
+
+    .mode-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .mode-option {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      cursor: pointer;
+      background: #fff;
+    }
+
+    .scenario-sidebar .mode-option {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .mode-option input {
+      margin-top: 3px;
+    }
+
+    .mode-option strong {
+      display: block;
+      font-size: 8.5pt;
+      margin-bottom: 2px;
+    }
+
+    .mode-option span {
+      display: block;
+      font-size: 7.5pt;
+      color: var(--text-soft);
+    }
+
+    .scenario-sidebar .mode-option span {
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .helper-note,
+    .scenario-note,
+    .table-note,
+    .source-note {
+      font-size: 8pt;
+      color: var(--text-soft);
+    }
+
+    .scenario-sidebar .helper-note {
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .scenario-results {
+      display: grid;
+      gap: 16px;
+    }
+
+    .scenario-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+
+    .export-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .export-btn {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--blue-dark);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-family: inherit;
+      font-size: 7.8pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .export-btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent-1);
+      box-shadow: 0 8px 18px rgba(13, 71, 161, 0.12);
+    }
+
+    .export-status {
+      font-size: 7.9pt;
+      color: var(--text-soft);
+      margin-top: 2px;
+    }
+
+    .kpi-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .kpi-card {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      padding: 16px;
+    }
+
+    .kpi-label {
+      font-size: 7.6pt;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+      margin-bottom: 6px;
+    }
+
+    .kpi-value {
+      font-size: 16pt;
+      font-weight: 850;
+      color: var(--blue-dark);
+      line-height: 1.1;
+    }
+
+    .kpi-foot {
+      margin-top: 6px;
+      font-size: 8pt;
+      color: var(--text-sub);
+    }
+
+    .scenario-detail {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+    }
+
+    .detail-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .detail-card h3 {
+      font-size: 9.5pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      margin-bottom: 8px;
+    }
+
+    .formula-box {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #eff6ff;
+      color: var(--blue-dark);
+      font-size: 8.4pt;
+      font-weight: 700;
+      margin: 8px 0 10px;
+    }
+
+    .detail-list {
+      display: grid;
+      gap: 8px;
+      font-size: 8.5pt;
+      color: var(--text-sub);
+    }
+
+    .detail-list strong {
+      color: var(--text-main);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: #fff;
+      margin-top: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1080px;
+    }
+
+    th {
+      text-align: left;
+      padding: 12px 14px;
+      font-size: 7.6pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #eef5ff;
+      color: var(--blue-dark);
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      vertical-align: top;
+      padding: 14px;
+      font-size: 8.35pt;
+      color: var(--text-sub);
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr:nth-child(even) td {
+      background: #fbfdff;
+    }
+
+    .country-cell {
+      min-width: 170px;
+    }
+
+    .country-name {
+      font-weight: 800;
+      color: var(--text-main);
+      font-size: 9pt;
+      margin-bottom: 4px;
+    }
+
+    .country-sub {
+      font-size: 7.7pt;
+      color: var(--text-soft);
+    }
+
+    .data-badges,
+    .source-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .data-badge,
+    .source-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 7pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .data-badge.public {
+      background: #e8f5e9;
+      color: #256029;
+    }
+
+    .data-badge.private {
+      background: #e3f2fd;
+      color: #0d47a1;
+    }
+
+    .data-badge.proxy {
+      background: #fff7ed;
+      color: #9a3412;
+    }
+
+    .source-tag {
+      background: #eef2ff;
+      color: #3730a3;
+      text-decoration: none;
+    }
+
+    .source-tag:hover {
+      background: #dbeafe;
+    }
+
+    .assessment-box {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .assessment-box h3 {
+      font-size: 9.8pt;
+      font-weight: 850;
+      color: var(--blue-dark);
+      margin-bottom: 8px;
+    }
+
+    .assessment-box p {
+      font-size: 8.5pt;
+      color: var(--text-sub);
+    }
+
+    .source-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 14px;
+    }
+
+    .source-card {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 16px;
+    }
+
+    .source-card h4 {
+      font-size: 9pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+    }
+
+    .source-card p {
+      font-size: 8.2pt;
+      color: var(--text-sub);
+      margin-bottom: 8px;
+    }
+
+    .source-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .source-meta-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .source-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 6.9pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .source-chip.official {
+      background: #e0f2fe;
+      color: #075985;
+    }
+
+    .source-chip.industry {
+      background: #eef2ff;
+      color: #4338ca;
+    }
+
+    .source-chip.analysis {
+      background: #fff7ed;
+      color: #b45309;
+    }
+
+    .source-chip.neutral {
+      background: #f1f5f9;
+      color: #475569;
+    }
+
+    .source-card a {
+      font-size: 8pt;
+      font-weight: 700;
+      color: var(--blue-mid);
+      text-decoration: none;
+    }
+
+    .source-card a:hover {
+      text-decoration: underline;
+    }
+
+    .deck-grid {
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      margin-top: 14px;
+    }
+
     .pitch-card {
       background: #fff;
       border: 1.5px solid var(--border);
-      border-radius: 14px;
+      border-radius: 16px;
       padding: 20px 16px 16px;
       text-align: center;
       text-decoration: none;
       color: var(--text-main);
-      transition: transform .18s, box-shadow .18s, border-color .18s;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 8px;
       position: relative;
       overflow: hidden;
+      box-shadow: var(--shadow);
     }
+
     .pitch-card::before {
-      content: '';
+      content: "";
       position: absolute;
-      top: 0; left: 0; right: 0;
+      top: 0;
+      left: 0;
+      right: 0;
       height: 4px;
       background: var(--gradient-hdr);
     }
-    .pitch-card.il::before { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+
+    .pitch-card.il::before {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    }
+
     .pitch-card:hover {
       transform: translateY(-3px);
-      box-shadow: 0 8px 28px rgba(13,71,161,0.18);
+      box-shadow: 0 10px 30px rgba(13, 71, 161, 0.16);
       border-color: var(--accent-1);
     }
-    .card-flag { font-size: 32px; line-height: 1; }
+
+    .card-flag {
+      font-size: 32px;
+      line-height: 1;
+    }
+
     .card-country {
       font-size: 10.5pt;
       font-weight: 700;
       color: var(--blue-dark);
     }
+
     .card-authority {
       font-size: 7.5pt;
       color: var(--text-sub);
       line-height: 1.4;
     }
+
     .card-cta {
       margin-top: 6px;
       font-size: 8pt;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--blue-mid);
       background: #ebf4ff;
       border-radius: 20px;
       padding: 4px 12px;
-      letter-spacing: .03em;
+      letter-spacing: 0.03em;
     }
+
     .pitch-card:hover .card-cta {
       background: var(--blue-dark);
       color: #fff;
     }
 
-    /* ── STATS STRIP ── */
-    .stats-strip {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 36px;
-    }
-    .stat-box {
-      background: var(--gradient-hdr);
-      color: #fff;
-      border-radius: 14px;
-      padding: 20px 16px;
-      text-align: center;
-    }
-    .stat-val { font-size: 22pt; font-weight: 800; }
-    .stat-lbl { font-size: 8pt; opacity: .85; margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
-
-    /* ── FOOTER ── */
     .site-footer {
       background: var(--blue-dark);
-      color: rgba(255,255,255,.7);
+      color: rgba(255, 255, 255, 0.75);
       text-align: center;
       padding: 18px 32px;
       font-size: 8pt;
+      margin-top: 14px;
+    }
+
+    @media (max-width: 1100px) {
+      .hero-inner,
+      .layout-grid,
+      .scenario-shell,
+      .scenario-detail {
+        grid-template-columns: 1fr;
+      }
+
+      .story-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .visual-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-strip,
+      .thesis-grid,
+      .integrity-grid,
+      .kpi-grid,
+      .source-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .site-header,
+      .hero {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+
+      .container {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .stats-strip,
+      .story-grid,
+      .thesis-grid,
+      .integrity-grid,
+      .visual-grid,
+      .kpi-grid,
+      .source-grid,
+      .input-row,
+      .mode-switch {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-row,
+      .dual-bar-row {
+        grid-template-columns: 1fr;
+      }
+
+      .chart-head,
+      .scenario-header,
+      .source-card-head {
+        flex-direction: column;
+      }
+
+      .scatter-point {
+        width: 32px;
+        height: 32px;
+      }
+
+      .scatter-point.active {
+        width: 38px;
+        height: 38px;
+      }
+
+      .logo-text {
+        font-size: 16pt;
+      }
+
+      .hero-copy h1 {
+        font-size: 20pt;
+      }
     }
   </style>
 </head>
 <body>
-
-<header class="site-header">
-  <div class="logo-row">
-    <div class="logo-icon">🛡️</div>
-    <div>
-      <div class="logo-text">PHINS</div>
-      <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+  <header class="site-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
     </div>
-  </div>
-  <div style="display:flex;gap:10px;align-items:center;">
-    <a href="/nda-dashboard.html" class="back-link">📋 NDA Documents →</a>
-    <a href="/admin.html" class="back-link">← Back to Admin</a>
-  </div>
-</header>
-
-<div class="hero">
-  <h1>🌍 Global Pitch Dashboard</h1>
-  <p>Executive pitch decks for insurance and capital markets regulatory authorities worldwide. Click any card to open the full A4-formatted PDF-ready presentation.</p>
-</div>
-
-<div class="container">
-
-  <!-- Stats -->
-  <div class="stats-strip">
-    <div class="stat-box">
-      <div class="stat-val">25</div>
-      <div class="stat-lbl">Countries Covered</div>
+    <div class="header-actions">
+      <a href="/nda-dashboard.html" class="back-link">📋 NDA Documents →</a>
+      <a href="/admin.html" class="back-link">← Back to Admin</a>
     </div>
-    <div class="stat-box">
-      <div class="stat-val">25</div>
-      <div class="stat-lbl">Pitch Decks Ready</div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <h1>PHI Permanent 3+ ADL Executive Business Assessment</h1>
+        <p>
+          Board-grade assessment of health, disability, and long-term care opportunity across Israel, the USA,
+          Canada, West and North Europe, the Middle East, Japan, and Australia. The page separates public
+          evidence from PHINS assumptions so teams can adjust TAM, ceded premium, and margin without corrupting
+          the underlying statistics.
+        </p>
+        <div class="hero-badges">
+          <span class="pill">Public data locked</span>
+          <span class="pill">PHINS assumptions adjustable</span>
+          <span class="pill">Local currency preserved</span>
+          <span class="pill">Private vs. government split</span>
+        </div>
+      </div>
+      <div class="hero-panel">
+        <h2>Executive conclusion</h2>
+        <ul>
+          <li><strong>Israel is the strongest first narrative:</strong> high home-care orientation, large private LTC penetration, and visible public spend create a credible launch market for a digital-first severity product.</li>
+          <li><strong>The USA is the largest immediate private monetization pool:</strong> disability prevalence, stand-alone LTC in-force, and disability premium density support a sizable reinsurable layer if the trigger stays objectively severe.</li>
+          <li><strong>Canada is a group-distribution market:</strong> strong disability benefit flow and large health-insured population support employer and affinity entry more than retail pure LTC.</li>
+          <li><strong>Europe and Japan validate the demand side:</strong> mature public LTC systems confirm persistent need, but PHINS should enter as a top-up and orchestration layer rather than a public-system replacement.</li>
+        </ul>
+      </div>
     </div>
-    <div class="stat-box">
-      <div class="stat-val">9</div>
-      <div class="stat-lbl">Pages per Deck</div>
-    </div>
-  </div>
+  </section>
 
-  <!-- IL Pitch (original) -->
-  <div class="section-label">🇮🇱 Israel — Original Pitch (IL Pitch)</div>
-  <div class="pitch-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 32px;">
-    <a href="/israel-capital-markets-pitch.html" target="_blank" class="pitch-card il">
-      <div class="card-flag">🇮🇱</div>
-      <div class="card-country">Israel</div>
-      <div class="card-authority">Authority of Capital Markets, Insurance &amp; Savings<br><small>רשות שוק ההון, ביטוח וחיסכון</small></div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
-    <a href="/israel-isa-prospectus.html" target="_blank" class="pitch-card il">
-      <div class="card-flag">🇮🇱</div>
-      <div class="card-country">ISA Prospectus</div>
-      <div class="card-authority">Israel Securities Authority (ISA)<br><small>רשות ניירות ערך — תשקיף IPO</small></div>
-      <div class="card-cta">Open Prospectus →</div>
-    </a>
-  </div>
+  <main class="container">
+    <section class="stats-strip">
+      <div class="stat-box">
+        <div class="stat-val">7</div>
+        <div class="stat-lbl">Priority markets modeled</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">21</div>
+        <div class="stat-lbl">Source families mapped</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">2</div>
+        <div class="stat-lbl">Scenario modes: lives / premium share</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">25</div>
+        <div class="stat-lbl">Country decks still linked below</div>
+      </div>
+    </section>
 
-  <!-- All Countries -->
-  <div class="section-label">🌐 Global Presentations</div>
-  <div class="pitch-grid">
+    <section class="layout-grid">
+      <div class="panel">
+        <div class="section-label">Executive assessment</div>
+        <h2 class="section-title">PHINS should sell a severity layer, not a generic disability promise</h2>
+        <p class="section-copy">
+          The evidence across OECD-aligned systems is clear: <strong>demand for disability and long-term care
+          protection is structurally rising</strong>, but funding models vary sharply between public entitlements,
+          employer disability plans, private LTC contracts, and household out-of-pocket payments. The winning
+          PHINS position is not broad morbidity cover. It is a <strong>Permanent 3+ ADL severity layer</strong>
+          with optional <strong>VR (vocational rehabilitation) and care-navigation orchestration</strong>.
+        </p>
+        <ul class="narrative-list">
+          <li><strong>Why 3+ ADL matters:</strong> it is a materially stricter threshold than the common private LTC reference point of 2 of 6 ADLs, which helps keep the product in a high-severity, lower-frequency zone that is easier to price, explain, and reinsure.</li>
+          <li><strong>Why permanent matters:</strong> PHINS should reserve the indemnity engine for durable impairment while using AI triage, home-care routing, and VR workflows to reduce false positives and shorten non-permanent claim pathways.</li>
+          <li><strong>Why AI/BI matters:</strong> market facts should remain fixed while attachment, premium, cession, claims ratio, and expense ratio remain adjustable so executive teams can stress-test market entry without introducing data contamination.</li>
+          <li><strong>Why government vs. private separation matters:</strong> public LTC spend validates demand, but it is not premium. Private disability premium validates commercial capacity, but it is not prevalence. This dashboard preserves that separation everywhere.</li>
+        </ul>
+      </div>
 
-    <a href="/usa-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇺🇸</div>
-      <div class="card-country">USA</div>
-      <div class="card-authority">SEC / NAIC</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+      <div class="panel">
+        <div class="section-label">Sequencing</div>
+        <h2 class="section-title">Recommended market order</h2>
+        <div class="priority-stack">
+          <div class="priority-item">
+            <div class="priority-head">
+              <div class="priority-name">1. Israel</div>
+              <div class="priority-score">Best launch fit</div>
+            </div>
+            <div class="priority-body">Home-based care dominates, private LTC coverage already exists at national scale, and the product can be framed as a transparent digital upgrade to a known benefit category.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head">
+              <div class="priority-name">2. USA</div>
+              <div class="priority-score">Largest private pool</div>
+            </div>
+            <div class="priority-body">Highest private monetization potential, but underwriting discipline and state-by-state compliance are mandatory before broad rollout.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head">
+              <div class="priority-name">3. Canada</div>
+              <div class="priority-score">Group route</div>
+            </div>
+            <div class="priority-body">Strong disability benefit flow and broad group health coverage make Canada attractive for employer, association, and affinity distribution.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head">
+              <div class="priority-name">4. Germany / Netherlands / Japan</div>
+              <div class="priority-score">Top-up markets</div>
+            </div>
+            <div class="priority-body">Public LTC systems validate lasting demand, but the private wedge is likely top-up cover, care management, and digital claim-routing rather than wholesale risk replacement.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head">
+              <div class="priority-name">5. UAE / GCC and Australia</div>
+              <div class="priority-score">Capital-light adjacencies</div>
+            </div>
+            <div class="priority-body">UAE offers strong premium flow and visible reinsurance retention/cession structure; Australia offers a large disabled population but requires strict pricing governance because DII sustainability has already been a regulator focus.</div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <a href="/england-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🏴</div>
-      <div class="card-country">England</div>
-      <div class="card-authority">FCA / PRA</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="panel">
+      <div class="section-label">Investor framing</div>
+      <h2 class="section-title">A visual investor story: where the PHINS thesis is strongest</h2>
+      <p class="section-copy">
+        These visuals do not invent new public facts. They translate the evidence layer into an investor-friendly
+        ranking of market fit, monetization capacity, and treaty readiness.
+      </p>
+      <div class="story-grid">
+        <article class="story-card">
+          <h3>Market entry thesis</h3>
+          <div class="story-kpi">Israel first</div>
+          <p>The cleanest launch story combines home-care intensity, known LTC behavior, and a product structure that customers and regulators can understand quickly.</p>
+        </article>
+        <article class="story-card">
+          <h3>Largest premium upside</h3>
+          <div class="story-kpi">USA scale</div>
+          <p>The U.S. remains the most economically meaningful private market if PHINS preserves a strict severe-impairment trigger and avoids broad disability wording.</p>
+        </article>
+        <article class="story-card">
+          <h3>Best distribution adjacency</h3>
+          <div class="story-kpi">Canada groups</div>
+          <p>Employer and affinity channels make Canada compelling for modernized disability, care-navigation, and return-to-function overlays.</p>
+        </article>
+        <article class="story-card">
+          <h3>Capital-light wedge</h3>
+          <div class="story-kpi">Middle East</div>
+          <p>Published retention dynamics and visible health premium flow make the UAE/GCC cluster attractive for fronting, MGA, and partnership structures.</p>
+        </article>
+      </div>
+      <div class="visual-grid">
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <h3>Market priority scorecard</h3>
+              <p>Composite visual based on demand clarity, premium depth, and operating fit.</p>
+            </div>
+            <div class="chart-legend">
+              <span><i class="legend-dot blue"></i> Priority score</span>
+            </div>
+          </div>
+          <div id="priority-bar-chart" class="bar-chart"></div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <h3>Demand vs. monetization map</h3>
+              <p>Bubble size reflects strategic fit; x-axis shows demand validation, y-axis shows private monetization clarity.</p>
+            </div>
+            <div class="chart-legend">
+              <span><i class="legend-dot green"></i> High fit</span>
+              <span><i class="legend-dot amber"></i> Transitional</span>
+              <span><i class="legend-dot red"></i> Caution</span>
+            </div>
+          </div>
+          <div class="scatter-plot">
+            <div class="scatter-axis axis-x">Demand clarity</div>
+            <div class="scatter-axis axis-y">Monetization clarity</div>
+            <div id="market-scatter" class="scatter-area"></div>
+          </div>
+        </article>
+      </div>
+      <div class="visual-grid" style="margin-top:14px;">
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <h3>Public system depth vs. private premium accessibility</h3>
+              <p>Shows why PHINS must approach some markets as top-up plays and others as direct monetization opportunities.</p>
+            </div>
+          </div>
+          <div id="dual-bar-chart" class="dual-bar-chart"></div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-head">
+            <div>
+              <h3>Investor readout</h3>
+              <p>What each chart should mean in a financing or distribution conversation.</p>
+            </div>
+          </div>
+          <ul class="bullet-list" style="margin-top:0;">
+            <li><strong>Israel</strong> is the strongest proof market because demand, product familiarity, and operating logic all line up.</li>
+            <li><strong>USA</strong> is the largest premium engine, but it carries the highest underwriting-discipline burden.</li>
+            <li><strong>Canada</strong> and <strong>Australia</strong> reward disciplined channel strategy more than aggressive retail expansion.</li>
+            <li><strong>Europe</strong> and <strong>Japan</strong> validate need and payment logic, but mostly as supplemental or orchestration markets.</li>
+            <li><strong>Middle East</strong> is strategically interesting because the capital structure is visible even when morbidity disclosure is thinner.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
 
-    <a href="/canada-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇨🇦</div>
-      <div class="card-country">Canada</div>
-      <div class="card-authority">OSFI</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="thesis-grid">
+      <article class="thesis-card">
+        <div class="thesis-icon">📊</div>
+        <h3>Severity over frequency</h3>
+        <p>PHINS should insure catastrophic and durable loss of function, not every short-duration income interruption. That keeps claims interpretable, reserving cleaner, and treaty conversations more realistic.</p>
+      </article>
+      <article class="thesis-card">
+        <div class="thesis-icon">🏠</div>
+        <h3>Home-care first</h3>
+        <p>OECD evidence favors home-based care, and Israel is the clearest example. A digital-first model should route claimants toward home support, navigation, and family-facing workflows before institutional spend escalation.</p>
+      </article>
+      <article class="thesis-card">
+        <div class="thesis-icon">🧠</div>
+        <h3>VR as claim management</h3>
+        <p>VR should be a managed-services layer for working-age lives: vocational triage, recovery planning, employer coordination, and step-down benefits. It improves loss economics more than it changes top-line premium.</p>
+      </article>
+      <article class="thesis-card">
+        <div class="thesis-icon">♻️</div>
+        <h3>Reinsurance-ready design</h3>
+        <p>A strict permanent 3+ ADL trigger, waiting periods, and objective adjudication artifacts create a better handoff to quota-share or stop-loss reinsurance than broad occupational disability wording.</p>
+      </article>
+    </section>
 
-    <a href="/australia-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇦🇺</div>
-      <div class="card-country">Australia</div>
-      <div class="card-authority">APRA / ASIC</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="panel">
+      <div class="section-label">Data integrity architecture</div>
+      <h2 class="section-title">The page keeps reported evidence and PHINS scenarios separate by design</h2>
+      <p class="section-copy">
+        Public statistics below remain fixed and source-tagged. The calculator never rewrites them. It only applies
+        explicit PHINS assumptions on top of them.
+      </p>
+      <div class="integrity-grid">
+        <div class="integrity-card">
+          <h4>1. Local currency only</h4>
+          <p>USD, NIS, CAD, EUR, AED, JPY, and AUD are preserved in source currency. No hidden FX normalization appears in the evidence table.</p>
+        </div>
+        <div class="integrity-card">
+          <h4>2. Public is not premium</h4>
+          <p>Government LTC outlays and statutory contribution rates validate demand and funding structure, but they are not added to commercial premium pools.</p>
+        </div>
+        <div class="integrity-card">
+          <h4>3. Missing disclosure stays missing</h4>
+          <p>When public line-level reinsurance or premium splits are not disclosed, the table says so explicitly instead of inventing a number.</p>
+        </div>
+        <div class="integrity-card">
+          <h4>4. TAM is scenario-based</h4>
+          <p>TAM, ceded premium, and underwriting contribution are modeled outputs. They are useful for planning, but they are not shown as reported market facts.</p>
+        </div>
+      </div>
+    </section>
 
-    <a href="/japan-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇯🇵</div>
-      <div class="card-country">Japan</div>
-      <div class="card-authority">FSA Japan (金融庁)</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="scenario-shell">
+      <aside class="panel scenario-sidebar">
+        <div class="section-label">AI / BI adjustable tool</div>
+        <h2 class="section-title">PHINS scenario lab</h2>
+        <p class="section-copy">
+          Choose a market, select the scenario basis, and adjust the core economics. The evidence table remains fixed;
+          only the modeled outputs change.
+        </p>
 
-    <a href="/germany-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇩🇪</div>
-      <div class="card-country">Germany</div>
-      <div class="card-authority">BaFin</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+        <div class="control-grid">
+          <div class="control-group">
+            <label for="region-select">Market</label>
+            <select id="region-select"></select>
+            <div class="helper-note" id="region-basis-note"></div>
+          </div>
 
-    <a href="/swisserland-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇨🇭</div>
-      <div class="card-country">Switzerland</div>
-      <div class="card-authority">FINMA</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div class="control-group">
+            <div class="radio-label">Scenario basis</div>
+            <div class="mode-switch">
+              <label class="mode-option">
+                <input type="radio" name="scenario-mode" value="lives" checked>
+                <div>
+                  <strong>Lives mode</strong>
+                  <span>Addressable lives × attach rate × annual premium</span>
+                </div>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="scenario-mode" value="premium">
+                <div>
+                  <strong>Premium-share mode</strong>
+                  <span>Reported premium pool × target share</span>
+                </div>
+              </label>
+            </div>
+          </div>
 
-    <a href="/netherlands-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇳🇱</div>
-      <div class="card-country">Netherlands</div>
-      <div class="card-authority">AFM / DNB</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div id="lives-controls">
+            <div class="control-group">
+              <label for="addressable-lives">PHINS addressable lives assumption</label>
+              <input id="addressable-lives" type="number" min="0" step="1000">
+            </div>
+            <div class="input-row">
+              <div class="control-group">
+                <label for="attach-rate">Attach rate (%)</label>
+                <input id="attach-rate" type="number" min="0" max="100" step="0.1">
+              </div>
+              <div class="control-group">
+                <label for="annual-premium">Annual premium</label>
+                <input id="annual-premium" type="number" min="0" step="1">
+              </div>
+            </div>
+          </div>
 
-    <a href="/france-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇫🇷</div>
-      <div class="card-country">France</div>
-      <div class="card-authority">ACPR / AMF</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div id="premium-controls" hidden>
+            <div class="control-group">
+              <label for="market-premium-pool">Reported premium pool</label>
+              <input id="market-premium-pool" type="number" min="0" step="1">
+            </div>
+            <div class="control-group">
+              <label for="target-share">PHINS target share (%)</label>
+              <input id="target-share" type="number" min="0" max="100" step="0.1">
+            </div>
+          </div>
 
-    <a href="/sweden-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇸🇪</div>
-      <div class="card-country">Sweden</div>
-      <div class="card-authority">Finansinspektionen</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div class="input-row">
+            <div class="control-group">
+              <label for="cession-rate">Cession / quota share (%)</label>
+              <input id="cession-rate" type="number" min="0" max="100" step="0.1">
+            </div>
+            <div class="control-group">
+              <label for="loss-ratio">Expected loss ratio on net premium (%)</label>
+              <input id="loss-ratio" type="number" min="0" max="100" step="0.1">
+            </div>
+          </div>
 
-    <a href="/spain-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇪🇸</div>
-      <div class="card-country">Spain</div>
-      <div class="card-authority">DGSFP / CNMV</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div class="control-group">
+            <label for="expense-ratio">Operating expense ratio on net premium (%)</label>
+            <input id="expense-ratio" type="number" min="0" max="100" step="0.1">
+          </div>
 
-    <a href="/syngapore-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇸🇬</div>
-      <div class="card-country">Singapore</div>
-      <div class="card-authority">MAS</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div class="helper-note">
+            Scenario assumptions are PHINS planning values. They are intentionally editable and do not alter any public data shown elsewhere on this page.
+          </div>
+        </div>
+      </aside>
 
-    <a href="/italy-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇮🇹</div>
-      <div class="card-country">Italy</div>
-      <div class="card-authority">IVASS / CONSOB</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+      <section class="scenario-results">
+        <div class="panel">
+          <div class="scenario-header">
+            <div>
+          <div class="section-label">Modeled output</div>
+          <h2 class="section-title" id="scenario-title">Scenario output</h2>
+          <p class="section-copy" id="scenario-subtitle"></p>
+            </div>
+            <div class="export-actions">
+              <button type="button" class="export-btn" id="download-json">Download JSON</button>
+              <button type="button" class="export-btn" id="download-csv">Download CSV</button>
+            </div>
+          </div>
 
-    <a href="/portugal-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇵🇹</div>
-      <div class="card-country">Portugal</div>
-      <div class="card-authority">ASF / CMVM</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">Gross written premium</div>
+              <div class="kpi-value" id="gwp-value">-</div>
+              <div class="kpi-foot" id="gwp-foot">-</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Ceded premium</div>
+              <div class="kpi-value" id="ceded-value">-</div>
+              <div class="kpi-foot" id="ceded-foot">-</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Net premium retained</div>
+              <div class="kpi-value" id="net-value">-</div>
+              <div class="kpi-foot" id="net-foot">-</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Expected claims</div>
+              <div class="kpi-value" id="claims-value">-</div>
+              <div class="kpi-foot" id="claims-foot">Loss ratio applied to net premium</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Operating expenses</div>
+              <div class="kpi-value" id="opex-value">-</div>
+              <div class="kpi-foot" id="opex-foot">Expense ratio applied to net premium</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Underwriting contribution</div>
+              <div class="kpi-value" id="uw-value">-</div>
+              <div class="kpi-foot" id="uw-foot">Net premium less claims and expenses</div>
+            </div>
+          </div>
 
-    <a href="/south_africa-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇿🇦</div>
-      <div class="card-country">South Africa</div>
-      <div class="card-authority">FSCA</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+          <div class="scenario-detail">
+            <div class="detail-card">
+              <h3>Scenario formula and calibration notes</h3>
+              <div class="formula-box" id="formula-box">-</div>
+              <div class="detail-list">
+                <div><strong>Mode note:</strong> <span id="mode-note">-</span></div>
+                <div><strong>Reinsurance note:</strong> <span id="reinsurance-note">-</span></div>
+                <div><strong>Interpretation:</strong> <span id="interpretation-note">-</span></div>
+              </div>
+            </div>
+            <div class="detail-card">
+              <h3>PHINS management readout</h3>
+              <div class="detail-list">
+                <div><strong>Product frame:</strong> Permanent 3+ ADL benefit with optional severe cognitive trigger and care-navigation layer.</div>
+                <div><strong>VR layer:</strong> Use return-to-function and vocational rehabilitation workflows for working-age claimants to reduce false permanence and improve employer value.</div>
+                <div><strong>Distribution frame:</strong> Israel first; USA and Canada for private and employer channels; Europe and Japan for top-up positioning; UAE/GCC for capital-light partnerships.</div>
+                <div><strong>Actuarial caution:</strong> Before filing, replace scenario ratios with country-specific incidence, lapse, recovery, selection, and reinsurance quote data.</div>
+              </div>
+            </div>
+          </div>
+          <div class="detail-card" style="margin-top:16px;">
+            <h3>Scenario export notes</h3>
+            <div class="detail-list">
+              <div><strong>JSON export:</strong> includes the selected market, source references, assumptions, and current modeled outputs.</div>
+              <div><strong>CSV export:</strong> provides a flat investor-ready line item for spreadsheet analysis and diligence workflows.</div>
+              <div><strong>Integrity rule:</strong> exports include a clear split between reported public evidence and PHINS scenario assumptions.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
 
-    <a href="/emirates-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇦🇪</div>
-      <div class="card-country">UAE / Emirates</div>
-      <div class="card-authority">CBUAE / FSRA</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="panel">
+      <div class="section-label">Evidence matrix</div>
+      <h2 class="section-title">Reported public statistics, premium anchors, and reinsurance markers</h2>
+      <p class="section-copy">
+        Each row preserves the source scope. Public LTC beneficiaries, statutory contribution rates, private
+        in-force business, and insurance turnover are shown as distinct metrics rather than forced into one
+        synthetic number.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>Demand and disability signal</th>
+              <th>Premium / benefit anchor</th>
+              <th>Reinsurance / retention signal</th>
+              <th>PHINS read-through</th>
+              <th>Sources</th>
+            </tr>
+          </thead>
+          <tbody id="evidence-body"></tbody>
+        </table>
+      </div>
+      <p class="table-note">
+        West and North Europe is shown as a clearly labeled regional proxy using Germany and the Netherlands because
+        those are the strongest public LTC anchors in the available source set. No blended regional premium number is invented.
+      </p>
+    </section>
 
-    <a href="/dubai-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇦🇪</div>
-      <div class="card-country">Dubai</div>
-      <div class="card-authority">DFSA</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="layout-grid">
+      <div class="panel">
+        <div class="section-label">Board call</div>
+        <h2 class="section-title">What the numbers imply for PHINS</h2>
+        <div class="assessment-box">
+          <h3>1. Israel is the cleanest proof market</h3>
+          <p>Israel already trains customers to think in LTC and home-care terms. More than five million people have private LTC cover, public beneficiaries exceed 346,000, and home-care dominates. That makes Israel the best place to prove digital underwriting, claim navigation, and a more disciplined permanent-trigger product.</p>
+        </div>
+        <div class="assessment-box" style="margin-top:12px;">
+          <h3>2. The USA supports the largest private premium story</h3>
+          <p>The U.S. combines a large disabled-beneficiary base, large stand-alone LTC in-force, and meaningful private disability premium flow. It is the best market for an economically significant reinsurance conversation, but only if PHINS avoids soft wording and treats pricing discipline as non-negotiable.</p>
+        </div>
+        <div class="assessment-box" style="margin-top:12px;">
+          <h3>3. Canada is likely a group and affinity play</h3>
+          <p>Canada’s disability prevalence and disability benefits flow are large, but employer and group channels dominate the health-insurance landscape. PHINS should emphasize embedded coverage, return-to-work services, and benefit modernization rather than a pure direct-to-consumer retail thesis.</p>
+        </div>
+      </div>
 
-    <a href="/hawaii-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🌺</div>
-      <div class="card-country">Hawaii</div>
-      <div class="card-authority">DCCA Insurance Division</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+      <div class="panel">
+        <div class="section-label">Strategic caution</div>
+        <h2 class="section-title">Where the company can lose discipline</h2>
+        <ul class="bullet-list">
+          <li><strong>Do not use disability prevalence as insured TAM.</strong> Prevalence validates need, but insured conversion depends on underwriting eligibility, affordability, employer sponsorship, and cultural acceptance.</li>
+          <li><strong>Do not use public LTC spend as private premium.</strong> A government benefit budget supports the care narrative but does not tell you what a private balance-sheet carrier can write.</li>
+          <li><strong>Do not assume reinsurance appetite without treaty language.</strong> Cession assumptions are planning tools until PHINS has objective triggers, waiting periods, adjudication rules, and credible exposure data.</li>
+          <li><strong>Do not blur elderly care and working-age disability.</strong> The claim operations, rehabilitation logic, and distribution channel are different even when the funding thesis overlaps.</li>
+          <li><strong>Do not promise cross-country comparability where disclosure does not exist.</strong> The dashboard is intentionally conservative about what is and is not known.</li>
+        </ul>
+      </div>
+    </section>
 
-    <a href="/brazil-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇧🇷</div>
-      <div class="card-country">Brazil</div>
-      <div class="card-authority">SUSEP / CVM</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="panel">
+      <div class="section-label">Source register</div>
+      <h2 class="section-title">Public and actuarial reference set</h2>
+      <p class="section-copy">
+        These sources back the fixed evidence layer. If a number is not traceable to one of these publications,
+        it is not treated as a reported fact on this page.
+      </p>
+      <div class="source-grid" id="source-grid"></div>
+      <p class="source-note">
+        Dataset refresh point: public materials released in 2024-2026, using the most recent available market or
+        system statistics surfaced during this dashboard refresh. Scenario outputs should be recalibrated whenever
+        fresh statutory, regulator, or reinsurer data arrives.
+      </p>
+    </section>
 
-    <a href="/india-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇮🇳</div>
-      <div class="card-country">India</div>
-      <div class="card-authority">IRDAI / SEBI</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="panel">
+      <div class="section-label">🇮🇱 Israel — original pitch</div>
+      <h2 class="section-title">Core PHINS documents</h2>
+      <div class="deck-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
+        <a href="/israel-capital-markets-pitch.html" target="_blank" class="pitch-card il">
+          <div class="card-flag">🇮🇱</div>
+          <div class="card-country">Israel</div>
+          <div class="card-authority">Authority of Capital Markets, Insurance &amp; Savings<br><small>רשות שוק ההון, ביטוח וחיסכון</small></div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/israel-isa-prospectus.html" target="_blank" class="pitch-card il">
+          <div class="card-flag">🇮🇱</div>
+          <div class="card-country">ISA Prospectus</div>
+          <div class="card-authority">Israel Securities Authority (ISA)<br><small>רשות ניירות ערך — תשקיף IPO</small></div>
+          <div class="card-cta">Open Prospectus →</div>
+        </a>
+      </div>
+    </section>
 
-    <a href="/poland-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇵🇱</div>
-      <div class="card-country">Poland</div>
-      <div class="card-authority">KNF</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    <section class="panel">
+      <div class="section-label">🌐 Global presentations</div>
+      <h2 class="section-title">Country and regulator pitch library</h2>
+      <div class="deck-grid">
+        <a href="/usa-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇺🇸</div>
+          <div class="card-country">USA</div>
+          <div class="card-authority">SEC / NAIC</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/england-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🏴</div>
+          <div class="card-country">England</div>
+          <div class="card-authority">FCA / PRA</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/canada-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇨🇦</div>
+          <div class="card-country">Canada</div>
+          <div class="card-authority">OSFI</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/australia-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇺</div>
+          <div class="card-country">Australia</div>
+          <div class="card-authority">APRA / ASIC</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/japan-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇯🇵</div>
+          <div class="card-country">Japan</div>
+          <div class="card-authority">FSA Japan (金融庁)</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/germany-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇩🇪</div>
+          <div class="card-country">Germany</div>
+          <div class="card-authority">BaFin</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/swisserland-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇨🇭</div>
+          <div class="card-country">Switzerland</div>
+          <div class="card-authority">FINMA</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/netherlands-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇳🇱</div>
+          <div class="card-country">Netherlands</div>
+          <div class="card-authority">AFM / DNB</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/france-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇫🇷</div>
+          <div class="card-country">France</div>
+          <div class="card-authority">ACPR / AMF</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/sweden-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇸🇪</div>
+          <div class="card-country">Sweden</div>
+          <div class="card-authority">Finansinspektionen</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/spain-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇪🇸</div>
+          <div class="card-country">Spain</div>
+          <div class="card-authority">DGSFP / CNMV</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/syngapore-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇸🇬</div>
+          <div class="card-country">Singapore</div>
+          <div class="card-authority">MAS</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/italy-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇮🇹</div>
+          <div class="card-country">Italy</div>
+          <div class="card-authority">IVASS / CONSOB</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/portugal-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇵🇹</div>
+          <div class="card-country">Portugal</div>
+          <div class="card-authority">ASF / CMVM</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/south_africa-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇿🇦</div>
+          <div class="card-country">South Africa</div>
+          <div class="card-authority">FSCA</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/emirates-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇪</div>
+          <div class="card-country">UAE / Emirates</div>
+          <div class="card-authority">CBUAE / FSRA</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/dubai-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇪</div>
+          <div class="card-country">Dubai</div>
+          <div class="card-authority">DFSA</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/hawaii-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🌺</div>
+          <div class="card-country">Hawaii</div>
+          <div class="card-authority">DCCA Insurance Division</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/brazil-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇧🇷</div>
+          <div class="card-country">Brazil</div>
+          <div class="card-authority">SUSEP / CVM</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/india-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇮🇳</div>
+          <div class="card-country">India</div>
+          <div class="card-authority">IRDAI / SEBI</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/poland-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇵🇱</div>
+          <div class="card-country">Poland</div>
+          <div class="card-authority">KNF</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/greece-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇬🇷</div>
+          <div class="card-country">Greece</div>
+          <div class="card-authority">HCMC / Bank of Greece</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/mexico-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇲🇽</div>
+          <div class="card-country">Mexico</div>
+          <div class="card-authority">CNSF / CNBV</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/irland-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇮🇪</div>
+          <div class="card-country">Ireland</div>
+          <div class="card-authority">Central Bank of Ireland</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+      </div>
+    </section>
+  </main>
 
-    <a href="/greece-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇬🇷</div>
-      <div class="card-country">Greece</div>
-      <div class="card-authority">HCMC / Bank of Greece</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+  <footer class="site-footer">
+    © 2026 PHINS Insurance Company &nbsp;|&nbsp; Executive assessment and scenario lab are confidential working materials &nbsp;|&nbsp; phins.ai
+  </footer>
 
-    <a href="/mexico-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇲🇽</div>
-      <div class="card-country">Mexico</div>
-      <div class="card-authority">CNSF / CNBV</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+  <script>
+    const sourceRegistry = {
+      oecd_2025: {
+        title: "OECD Health at a Glance 2025",
+        url: "https://www.oecd.org/en/publications/health-at-a-glance-2025_8f9e3f98-en.html",
+        note: "Used for OECD long-term care comparisons, including average LTC spending, home-care orientation, and cross-country care-system benchmarks.",
+        sourceType: "official",
+        evidenceStrength: "benchmark"
+      },
+      israel_nii_2024: {
+        title: "Israel National Insurance Institute — Long-term care annual report chapter",
+        url: "http://www.btl.gov.il/Publications/Skira_shnatit/2024/Documents/chap-3-04-siud.pdf",
+        note: "Direct official PDF chapter for Israel long-term care program context and public-benefit framing.",
+        sourceType: "official",
+        evidenceStrength: "direct pdf"
+      },
+      taub_2024: {
+        title: "Taub Center — Long Term Care in Israel (2024)",
+        url: "https://www.taubcenter.org.il/en/research/ltc/",
+        note: "Used for Israel private LTC insured lives, public LTC beneficiary counts, and annual public LTC spend references.",
+        sourceType: "analysis",
+        evidenceStrength: "synthesis"
+      },
+      israel_cbs_2024: {
+        title: "Israel CBS Social Survey 2023 release (2024)",
+        url: "https://www.cbs.gov.il/he/mediarelease/DocLib/2024/377/19_24_377b.pdf",
+        note: "Used for Israel severe functional disability prevalence among adults.",
+        sourceType: "official",
+        evidenceStrength: "direct pdf"
+      },
+      ssa_2024: {
+        title: "U.S. SSA Disability Statistical Reports 2024",
+        url: "https://www.ssa.gov/policy/docs/statcomps/di_asr/2024/di_asr24.pdf",
+        note: "Direct official SSA PDF used for U.S. disability beneficiary counts and disabled-worker benefit statistics.",
+        sourceType: "official",
+        evidenceStrength: "direct pdf"
+      },
+      milliman_ltci_2024: {
+        title: "Milliman — LTCI industry through 2024",
+        url: "https://www.milliman.com/en/insight/ltci-2024-statistics-experience-reporting-forms",
+        note: "Used for U.S. stand-alone LTC insured lives and incurred-claims anchor.",
+        sourceType: "analysis",
+        evidenceStrength: "industry analysis"
+      },
+      genre_idi_2024: {
+        title: "Gen Re — 2024 U.S. Individual Disability Market Survey",
+        url: "https://www.genre.com/us/knowledge/publications/2025/may/surveylhidisum25-en",
+        note: "Used for U.S. IDI new sales premium and in-force premium reference points.",
+        sourceType: "industry",
+        evidenceStrength: "market survey"
+      },
+      limra_2024: {
+        title: "LIMRA — Workplace disability sales release (Q3 2024)",
+        url: "https://www.limra.com/en/newsroom/news-releases/2024/limra-workplace-life-insurance-and-supplemental-health-product-sales-continue-to-rise-in-third-quarter-2024/",
+        note: "Used for U.S. workplace disability new premium signal.",
+        sourceType: "industry",
+        evidenceStrength: "market release"
+      },
+      statcan_2024: {
+        title: "Statistics Canada — Disability profile (released 2024)",
+        url: "https://www150.statcan.gc.ca/n1/pub/89-654-x/89-654-x2024001-eng.htm",
+        note: "Used for Canadian disability prevalence among people aged 15+.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      clhia_2024: {
+        title: "CLHIA — Canadian Life and Health Insurance Facts 2024",
+        url: "https://www.clhia.ca/web/CLHIA_LP4W_LND_Webstation.nsf/resources/Factbook2024/$file/CLHIA-2024Facts.pdf",
+        note: "Direct industry PDF used for Canada premium mix, insured population, and health-insurance scale.",
+        sourceType: "industry",
+        evidenceStrength: "direct pdf"
+      },
+      clhia_benefits_2024: {
+        title: "CLHIA — 2024 benefits release",
+        url: "https://www.clhia.ca/web/CLHIA_LP4W_LND_Webstation.nsf/page/4554DF09386ECB0985258D080051020B!OpenDocument",
+        note: "Used for 2024 disability benefits paid and aggregate claims flow.",
+        sourceType: "industry",
+        evidenceStrength: "news release"
+      },
+      clhia_ltc_guide: {
+        title: "CLHIA Consumer Guide — Long-Term Care Insurance",
+        url: "https://www.clhia.ca/web/CLHIA_LP4W_LND_Webstation.nsf/resources/Consumer+Brochures/$file/Brochure_Guide_Long_Term_Care_ENG.pdf",
+        note: "Used for the common 2-of-6 ADL consumer trigger reference point.",
+        sourceType: "industry",
+        evidenceStrength: "consumer guide"
+      },
+      aihw_2024: {
+        title: "AIHW — People with disability in Australia (updated 2024)",
+        url: "https://www.aihw.gov.au/reports/disability/people-with-disability-in-australia/contents/summary",
+        note: "Used for Australia disability prevalence and severe/profound disability statistics.",
+        sourceType: "official",
+        evidenceStrength: "official summary"
+      },
+      apra_2024: {
+        title: "APRA — Private health insurance membership summary (Dec 2024)",
+        url: "https://www.apra.gov.au/quarterly-private-health-insurance-membership-and-benefits-summary-december-2024",
+        note: "Used for Australia insured-pool scale and current membership benchmark.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      apra_dii: {
+        title: "APRA — Thematic review of individual disability income insurance",
+        url: "https://handbook.apra.gov.au/letter/372/letter-life-insurers-thematic-review-individual-disability-income-insurance",
+        note: "Used to frame Australian pricing discipline and sustainability risk in DII.",
+        sourceType: "official",
+        evidenceStrength: "regulatory letter"
+      },
+      japan_mhlw_2024: {
+        title: "MHLW Japan — Long-term care insurance and FY2024-26 premium release",
+        url: "https://www.mhlw.go.jp/content/12303500/001253798.pdf",
+        note: "Direct official PDF used for Japan average monthly LTC premium and service planning references.",
+        sourceType: "official",
+        evidenceStrength: "direct pdf"
+      },
+      japan_ltc_english: {
+        title: "MHLW Japan — Long-term Care Insurance in Japan",
+        url: "https://www.mhlw.go.jp/english/topics/elderly/care/2.html",
+        note: "Used for Japan LTC system eligibility and service-user scale.",
+        sourceType: "official",
+        evidenceStrength: "official summary"
+      },
+      destatis_2024: {
+        title: "Destatis — 5.7 million people needing long-term care (end-2023)",
+        url: "https://www.destatis.de/DE/Presse/Pressemitteilungen/2024/12/PD24_478_224.html",
+        note: "Used for Germany long-term care scale and home-vs-institution split.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      bundesrat_2025: {
+        title: "Bundesrat / Germany — Pflegebeitrag 2025",
+        url: "https://www.bundesrat.de/DE/plenum/bundesrat-kompakt/24/1050/31.html?nn=5492626&view=main%5BDrucken%5D",
+        note: "Used for German social LTC contribution-rate change reference.",
+        sourceType: "official",
+        evidenceStrength: "official release"
+      },
+      cbuae_2024: {
+        title: "CBUAE — Annual Statistical Report for the Insurance Sector 2024",
+        url: "https://www.centralbank.ae/media/jubnwh13/annual-statistical-report-for-the-insurance-sector-2024-en.pdf",
+        note: "Used for UAE health-insurance turnover and sector mix.",
+        sourceType: "official",
+        evidenceStrength: "direct pdf"
+      },
+      cbuae_h1_2024: {
+        title: "CBUAE — June 2024 Quarterly Economic Review",
+        url: "https://www.centralbank.ae/media/yxlb5sot/qer_june_2024.pdf",
+        note: "Used for UAE retention ratio and implied cession benchmark.",
+        sourceType: "official",
+        evidenceStrength: "direct pdf"
+      }
+    };
 
-    <a href="/irland-capital-markets-pitch.html" target="_blank" class="pitch-card">
-      <div class="card-flag">🇮🇪</div>
-      <div class="card-country">Ireland</div>
-      <div class="card-authority">Central Bank of Ireland</div>
-      <div class="card-cta">Open Pitch →</div>
-    </a>
+    const marketData = [
+      {
+        id: "israel",
+        name: "Israel",
+        flag: "🇮🇱",
+        scope: "Country",
+        focus: "Private LTC plus public LTC benefit",
+        currency: "ILS",
+        tags: ["public", "private"],
+        demand: "346,000 elderly people were receiving public LTC benefits as of Dec 2023; more than 5.0 million people held private LTC cover; 16% of adults aged 20+ reported severe functional disability; 95% of formal LTC recipients receive care at home in the OECD comparison.",
+        premium: "Public LTC benefit spend exceeds NIS 16 billion annually. Private LTC coverage fell from 69% of population in 2012 to roughly 60% in 2022 but remains nationally scaled.",
+        reinsurance: "No current public line-level reinsurance cession benchmark surfaced for Israeli LTC or disability products; treaty assumptions should stay explicit and separate from reported market evidence.",
+        insight: "Best launch market for a digital severity-layer product: customers understand LTC, home-care logistics are central, and the case for AI triage plus care navigation is immediately legible.",
+        sources: ["israel_nii_2024", "taub_2024", "israel_cbs_2024", "oecd_2025"],
+        defaultMode: "lives",
+        investorScores: { priority: 96, demand: 92, monetization: 78, publicDepth: 88, privateAccess: 80, fit: 92, color: "green" },
+        assumptionDefaults: {
+          addressableLives: 5000000,
+          attachRate: 2.4,
+          annualPremium: 2400,
+          marketPremiumPool: 300000000,
+          targetShare: 10.0,
+          cessionRate: 18.0,
+          lossRatio: 62.0,
+          expenseRatio: 18.0
+        },
+        basisNote: "Default lives basis uses Israel's reported private LTC insured population as a conservative current-market proxy rather than total population.",
+        reinsuranceNote: "Use quoted treaty terms, not market folklore. Public Israeli LTC cession disclosure was not located in the current evidence set.",
+        interpretationNote: "The model reflects a severity-layer attachment on top of an already educated LTC market."
+      },
+      {
+        id: "usa",
+        name: "United States",
+        flag: "🇺🇸",
+        scope: "Country",
+        focus: "Private LTC and disability insurance",
+        currency: "USD",
+        tags: ["public", "private"],
+        demand: "11.342 million disabled people under age 65 received Social Security and/or SSI in Dec 2024; 7.231 million disabled-worker beneficiaries were on SSDI; 5.8 million people had stand-alone LTC cover at year-end 2024.",
+        premium: "NAIC/Milliman reference point indicates roughly USD 17 billion of LTCI incurred claims in 2024. Gen Re reports USD 478.9 million of new IDI sales premium and USD 5.5 billion of in-force IDI premium; LIMRA reported USD 3.1 billion of workplace disability new premium in the first nine months of 2024.",
+        reinsurance: "Public summaries do not provide a current line-level cession rate for U.S. disability or LTC blocks. Reinsurance economics must therefore be quote-driven in the scenario layer.",
+        insight: "Largest private commercial opportunity, but also the market where trigger looseness, anti-selection, and filing complexity can destroy economics fastest.",
+        sources: ["ssa_2024", "milliman_ltci_2024", "genre_idi_2024", "limra_2024"],
+        defaultMode: "lives",
+        investorScores: { priority: 91, demand: 85, monetization: 96, publicDepth: 48, privateAccess: 96, fit: 88, color: "green" },
+        assumptionDefaults: {
+          addressableLives: 5800000,
+          attachRate: 3.5,
+          annualPremium: 5500,
+          marketPremiumPool: 5500000000,
+          targetShare: 4.0,
+          cessionRate: 25.0,
+          lossRatio: 60.0,
+          expenseRatio: 17.0
+        },
+        basisNote: "Default lives basis uses reported stand-alone LTC covered lives as a conservative insured-pool anchor, not the full national disability population.",
+        reinsuranceNote: "Cession defaults are planning placeholders. Replace them with state-approved product wording and live treaty quotes before any real underwriting decision.",
+        interpretationNote: "This is the best market to prove that PHINS can turn a strict ADL trigger into a scalable premium and treaty story."
+      },
+      {
+        id: "canada",
+        name: "Canada",
+        flag: "🇨🇦",
+        scope: "Country",
+        focus: "Group health, disability, and LTC adjacency",
+        currency: "CAD",
+        tags: ["public", "private"],
+        demand: "27.0% of Canadians aged 15+ (about 8.0 million people) had at least one disability in 2022, released in 2024. Canadian insurers paid CAD 10 billion in disability benefits in 2024, supporting 12 million Canadians while unable to work.",
+        premium: "Canadian life and health insurers collected CAD 168 billion of premiums and annuity contributions in 2024, including CAD 65.9 billion of health insurance premiums; 27 million Canadians had health insurance coverage.",
+        reinsurance: "Current public source set does not disclose a Canada disability or LTC cession benchmark. Employer-group structures are visible; line-level ceded share is not.",
+        insight: "Canada is attractive for employer and association distribution. A PHINS product should read as a modernized disability and care-support layer, not a purely retail catastrophic LTC pitch.",
+        sources: ["statcan_2024", "clhia_2024", "clhia_benefits_2024", "clhia_ltc_guide"],
+        defaultMode: "lives",
+        investorScores: { priority: 82, demand: 76, monetization: 74, publicDepth: 55, privateAccess: 82, fit: 80, color: "green" },
+        assumptionDefaults: {
+          addressableLives: 27000000,
+          attachRate: 1.0,
+          annualPremium: 1800,
+          marketPremiumPool: 65900000000,
+          targetShare: 0.7,
+          cessionRate: 20.0,
+          lossRatio: 61.0,
+          expenseRatio: 16.0
+        },
+        basisNote: "Default lives basis uses reported health-insured lives because Canada is primarily an employer and group-distribution opportunity in the current evidence set.",
+        reinsuranceNote: "Treat any ceded-share assumption as a PHINS planning input until OSFI-facing or treaty-specific block data is available.",
+        interpretationNote: "Canada supports a group-distribution thesis better than a direct retail LTC-only story."
+      },
+      {
+        id: "wneurope",
+        name: "West & North Europe",
+        flag: "🇪🇺",
+        scope: "Regional proxy (Germany + Netherlands)",
+        focus: "Public LTC-heavy system proxy",
+        currency: "EUR",
+        tags: ["public", "proxy"],
+        demand: "Germany had 5.7 million people needing long-term care at end-2023, with 86% cared for at home. The Netherlands spent 4.4% of GDP on LTC in 2021 versus the OECD average of 1.8%, showing one of the world's deepest formal care commitments.",
+        premium: "Germany's social LTC contribution rate moved to 3.6% in 2025, confirming the scale of public funding pressure. The row is intentionally a regional proxy and does not fabricate a blended private premium figure.",
+        reinsurance: "Public retention or cession ratios for disability/LTC are not consistently disclosed across the regional proxy set, so reinsurance should be treated as a negotiated product-level assumption.",
+        insight: "These markets validate structural need and home-care demand. PHINS fits as a top-up, orchestration, or carve-out layer rather than a replacement for statutory LTC systems.",
+        sources: ["destatis_2024", "bundesrat_2025", "oecd_2025"],
+        defaultMode: "lives",
+        investorScores: { priority: 73, demand: 90, monetization: 50, publicDepth: 95, privateAccess: 42, fit: 68, color: "amber" },
+        assumptionDefaults: {
+          addressableLives: 5700000,
+          attachRate: 4.0,
+          annualPremium: 2700,
+          marketPremiumPool: 615600000,
+          targetShare: 5.0,
+          cessionRate: 22.0,
+          lossRatio: 58.0,
+          expenseRatio: 16.0
+        },
+        basisNote: "Default lives basis uses Germany's reported care-dependent population as a conservative regional proxy. It is not a full West/North Europe population estimate.",
+        reinsuranceNote: "Regional disclosure is uneven. Keep treaty economics quote-based and market-specific.",
+        interpretationNote: "Europe proves need, but commercial entry depends on narrow product placement around public systems."
+      },
+      {
+        id: "middleeast",
+        name: "Middle East",
+        flag: "🇦🇪",
+        scope: "Regional proxy (UAE/GCC anchor)",
+        focus: "Premium-pool and reinsurance structure anchor",
+        currency: "AED",
+        tags: ["private", "proxy"],
+        demand: "Public disability prevalence and LTC disclosure are thinner than in OECD systems, so the most defensible near-term anchor is market premium flow rather than beneficiary count.",
+        premium: "UAE health insurance accounted for AED 31.3 billion of 2024 insurance turnover, equal to 48.1% of total sector turnover, giving PHINS a visible premium pool for capital-light partnership scenarios.",
+        reinsurance: "CBUAE reported a 53.1% retention ratio in H1 2024, implying roughly 46.9% of written premiums were ceded. This is the clearest published cession marker in the current data set.",
+        insight: "The region is compelling for MGA, fronting, or partnership models where PHINS brings adjudication, AI triage, and digital servicing into an already ceded and intermediary-driven market structure.",
+        sources: ["cbuae_2024", "cbuae_h1_2024"],
+        defaultMode: "premium",
+        investorScores: { priority: 75, demand: 42, monetization: 79, publicDepth: 28, privateAccess: 84, fit: 72, color: "amber" },
+        assumptionDefaults: {
+          addressableLives: 2000000,
+          attachRate: 2.0,
+          annualPremium: 1500,
+          marketPremiumPool: 31300000000,
+          targetShare: 1.2,
+          cessionRate: 46.9,
+          lossRatio: 60.0,
+          expenseRatio: 15.0
+        },
+        basisNote: "Default mode is premium-share because a reported UAE premium pool exists, while a comparable regional disability-insured-lives number does not.",
+        reinsuranceNote: "Unlike other rows, the default cession assumption is tied to a published UAE retention ratio benchmark.",
+        interpretationNote: "This is a partnership and capital-structure opportunity first, not yet the cleanest morbidity data market."
+      },
+      {
+        id: "japan",
+        name: "Japan",
+        flag: "🇯🇵",
+        scope: "Country",
+        focus: "Public LTC system with private top-up potential",
+        currency: "JPY",
+        tags: ["public", "private"],
+        demand: "Japan's LTCI system supported 6.90 million service users as of March 2024. The public program covers those aged 65+ and those aged 40-64 with age-related disabilities under a structured needs-assessment model.",
+        premium: "The average monthly public LTC premium for people aged 65+ in FY2024-26 is JPY 6,225, with 10%-30% coinsurance depending on income. This is one of the clearest public affordability anchors in the set.",
+        reinsurance: "Because the dominant system is social insurance, public reinsurance metrics are not the right benchmark. PHINS should model optional private top-up layers instead.",
+        insight: "Japan offers an excellent proof point for top-up, home-care guidance, and severe-impairment orchestration, but the commercial wedge is supplemental rather than foundational.",
+        sources: ["japan_mhlw_2024", "japan_ltc_english"],
+        defaultMode: "lives",
+        investorScores: { priority: 70, demand: 94, monetization: 44, publicDepth: 94, privateAccess: 38, fit: 66, color: "amber" },
+        assumptionDefaults: {
+          addressableLives: 6900000,
+          attachRate: 1.8,
+          annualPremium: 84000,
+          marketPremiumPool: 515430000000,
+          targetShare: 1.2,
+          cessionRate: 12.0,
+          lossRatio: 57.0,
+          expenseRatio: 14.0
+        },
+        basisNote: "Default lives basis uses reported public LTC service users as a top-up target pool, not the full Japanese senior population.",
+        reinsuranceNote: "Reinsurance assumptions should only be applied to the private supplemental layer because the public LTC scheme is the dominant funding platform.",
+        interpretationNote: "Japan validates demand intensity and payment discipline more than it validates open commercial premium capture."
+      },
+      {
+        id: "australia",
+        name: "Australia",
+        flag: "🇦🇺",
+        scope: "Country",
+        focus: "Disability prevalence with DII pricing caution",
+        currency: "AUD",
+        tags: ["public", "private"],
+        demand: "An estimated 21% of Australians had disability in 2022, including 8% with severe or profound disability; 12.4 million people held hospital treatment cover at Dec 2024.",
+        premium: "Current APRA public summary provides a large insured-pool benchmark, but not a clean stand-alone DII premium split in the surfaced data. APRA has separately highlighted sustainability issues in disability income insurance.",
+        reinsurance: "No direct public cession ratio was surfaced for Australian disability products in the current data set. Reinsurance should therefore be stress-tested conservatively in the PHINS model.",
+        insight: "Australia is a credible market only with disciplined pricing, explicit waiting periods, and strong claims controls. It is not the place for a loose or growth-at-all-costs wording strategy.",
+        sources: ["aihw_2024", "apra_2024", "apra_dii"],
+        defaultMode: "lives",
+        investorScores: { priority: 68, demand: 72, monetization: 58, publicDepth: 52, privateAccess: 62, fit: 61, color: "red" },
+        assumptionDefaults: {
+          addressableLives: 12400000,
+          attachRate: 1.4,
+          annualPremium: 2200,
+          marketPremiumPool: 38192000000,
+          targetShare: 0.8,
+          cessionRate: 23.0,
+          lossRatio: 63.0,
+          expenseRatio: 17.0
+        },
+        basisNote: "Default lives basis uses APRA's current insured pool as the commercial anchor because public DII premium granularity was not cleanly surfaced.",
+        reinsuranceNote: "APRA's DII sustainability review is the key warning signal: assume tighter pricing and treaty appetite than a casual market narrative suggests.",
+        interpretationNote: "Australia is attractive, but only after the PHINS product language and claims engine are proven elsewhere."
+      }
+    ];
 
-  </div>
-</div>
+    const regionSelect = document.getElementById("region-select");
+    const evidenceBody = document.getElementById("evidence-body");
+    const sourceGrid = document.getElementById("source-grid");
+    const basisNoteEl = document.getElementById("region-basis-note");
+    const livesControls = document.getElementById("lives-controls");
+    const premiumControls = document.getElementById("premium-controls");
+    const priorityBarChart = document.getElementById("priority-bar-chart");
+    const marketScatter = document.getElementById("market-scatter");
+    const dualBarChart = document.getElementById("dual-bar-chart");
+    const downloadJsonBtn = document.getElementById("download-json");
+    const downloadCsvBtn = document.getElementById("download-csv");
 
-<footer class="site-footer">
-  © 2026 PHINS Insurance Company &nbsp;|&nbsp; All presentations are CONFIDENTIAL &nbsp;|&nbsp; phins.ai
-</footer>
+    let currentScenarioState = null;
 
+    const controls = {
+      addressableLives: document.getElementById("addressable-lives"),
+      attachRate: document.getElementById("attach-rate"),
+      annualPremium: document.getElementById("annual-premium"),
+      marketPremiumPool: document.getElementById("market-premium-pool"),
+      targetShare: document.getElementById("target-share"),
+      cessionRate: document.getElementById("cession-rate"),
+      lossRatio: document.getElementById("loss-ratio"),
+      expenseRatio: document.getElementById("expense-ratio")
+    };
+
+    const outputs = {
+      title: document.getElementById("scenario-title"),
+      subtitle: document.getElementById("scenario-subtitle"),
+      gwpValue: document.getElementById("gwp-value"),
+      gwpFoot: document.getElementById("gwp-foot"),
+      cededValue: document.getElementById("ceded-value"),
+      cededFoot: document.getElementById("ceded-foot"),
+      netValue: document.getElementById("net-value"),
+      netFoot: document.getElementById("net-foot"),
+      claimsValue: document.getElementById("claims-value"),
+      opexValue: document.getElementById("opex-value"),
+      uwValue: document.getElementById("uw-value"),
+      uwFoot: document.getElementById("uw-foot"),
+      formulaBox: document.getElementById("formula-box"),
+      modeNote: document.getElementById("mode-note"),
+      reinsuranceNote: document.getElementById("reinsurance-note"),
+      interpretationNote: document.getElementById("interpretation-note")
+    };
+
+    function sourceChipClass(sourceType) {
+      if (sourceType === "official") {
+        return "official";
+      }
+      if (sourceType === "industry") {
+        return "industry";
+      }
+      if (sourceType === "analysis") {
+        return "analysis";
+      }
+      return "neutral";
+    }
+
+    function currentMode() {
+      return document.querySelector('input[name="scenario-mode"]:checked').value;
+    }
+
+    function getRegion(regionId) {
+      return marketData.find((item) => item.id === regionId) || marketData[0];
+    }
+
+    function formatInteger(value) {
+      return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+    }
+
+    function formatPercent(value) {
+      return `${Number(value).toFixed(1)}%`;
+    }
+
+    function formatMoney(value, currency) {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 0
+      }).format(value);
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function renderEvidenceTable() {
+      evidenceBody.innerHTML = marketData.map((row) => {
+        const badges = row.tags.map((tag) => {
+          const cls = tag === "public" ? "public" : tag === "private" ? "private" : "proxy";
+          return `<span class="data-badge ${cls}">${escapeHtml(tag)}</span>`;
+        }).join("");
+
+        const sourceLinks = row.sources.map((sourceKey) => {
+          const source = sourceRegistry[sourceKey];
+          return `<a class="source-tag" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a>`;
+        }).join("");
+
+        return `
+          <tr>
+            <td class="country-cell">
+              <div class="country-name">${escapeHtml(row.flag)} ${escapeHtml(row.name)}</div>
+              <div class="country-sub">${escapeHtml(row.scope)} · ${escapeHtml(row.focus)}</div>
+              <div class="data-badges">${badges}</div>
+            </td>
+            <td>${escapeHtml(row.demand)}</td>
+            <td>${escapeHtml(row.premium)}</td>
+            <td>${escapeHtml(row.reinsurance)}</td>
+            <td>${escapeHtml(row.insight)}</td>
+            <td><div class="source-tags">${sourceLinks}</div></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderSources() {
+      sourceGrid.innerHTML = Object.values(sourceRegistry).map((source) => `
+        <article class="source-card">
+          <div class="source-card-head">
+            <h4>${escapeHtml(source.title)}</h4>
+            <span class="source-chip ${sourceChipClass(source.sourceType)}">${escapeHtml(source.sourceType || "source")}</span>
+          </div>
+          <div class="source-meta-line">
+            <span class="source-chip neutral">${escapeHtml(source.evidenceStrength || "reference")}</span>
+          </div>
+          <p>${escapeHtml(source.note)}</p>
+          <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
+        </article>
+      `).join("");
+    }
+
+    function renderInvestorCharts() {
+      priorityBarChart.innerHTML = marketData.map((row) => `
+        <div class="bar-row">
+          <div class="bar-label">${escapeHtml(row.flag)} ${escapeHtml(row.name)}</div>
+          <div class="bar-track">
+            <div class="bar-fill ${escapeHtml(row.investorScores.color)}" style="width:${row.investorScores.priority}%;"></div>
+          </div>
+          <div class="bar-value">${row.investorScores.priority}</div>
+        </div>
+      `).join("");
+
+      marketScatter.innerHTML = marketData.map((row) => `
+        <button
+          type="button"
+          class="scatter-point ${escapeHtml(row.investorScores.color)} ${row.id === "israel" ? "active" : ""}"
+          style="left: calc(${row.investorScores.demand}% - 18px); bottom: calc(${row.investorScores.monetization}% - 18px);"
+          data-region-id="${escapeHtml(row.id)}"
+          title="${escapeHtml(row.name)}"
+          aria-label="${escapeHtml(row.name)}"
+        >${escapeHtml(row.flag)}</button>
+      `).join("");
+
+      dualBarChart.innerHTML = marketData.map((row) => `
+        <div class="dual-bar-row">
+          <div class="bar-label">${escapeHtml(row.flag)} ${escapeHtml(row.name)}</div>
+          <div class="dual-bar-stack">
+            <div class="dual-bar-line">
+              <div class="bar-track">
+                <div class="bar-fill evidence" style="width:${row.investorScores.publicDepth}%;"></div>
+              </div>
+              <span class="mini-value">Public ${row.investorScores.publicDepth}</span>
+            </div>
+            <div class="dual-bar-line">
+              <div class="bar-track">
+                <div class="bar-fill treaty" style="width:${row.investorScores.privateAccess}%;"></div>
+              </div>
+              <span class="mini-value">Private ${row.investorScores.privateAccess}</span>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      marketScatter.querySelectorAll(".scatter-point").forEach((button) => {
+        button.addEventListener("click", () => {
+          marketScatter.querySelectorAll(".scatter-point").forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          regionSelect.value = button.dataset.regionId;
+          loadRegion(regionSelect.value);
+        });
+      });
+    }
+
+    function slugify(text) {
+      return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    }
+
+    function buildScenarioState() {
+      const region = getRegion(regionSelect.value);
+      const mode = currentMode();
+      return {
+        exportedAt: new Date().toISOString(),
+        region: {
+          id: region.id,
+          name: region.name,
+          currency: region.currency,
+          focus: region.focus
+        },
+        mode,
+        assumptions: {
+          addressableLives: numericValue(controls.addressableLives),
+          attachRate: numericValue(controls.attachRate),
+          annualPremium: numericValue(controls.annualPremium),
+          marketPremiumPool: numericValue(controls.marketPremiumPool),
+          targetShare: numericValue(controls.targetShare),
+          cessionRate: numericValue(controls.cessionRate),
+          lossRatio: numericValue(controls.lossRatio),
+          expenseRatio: numericValue(controls.expenseRatio)
+        },
+        outputs: currentScenarioState ? currentScenarioState.outputs : null,
+        sources: region.sources.map((key) => sourceRegistry[key]).filter(Boolean),
+        integrity: {
+          note: "Reported public evidence is separate from PHINS scenario assumptions."
+        }
+      };
+    }
+
+    function triggerDownload(filename, mimeType, content) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadScenarioJson() {
+      const payload = buildScenarioState();
+      const filename = `${slugify(payload.region.name)}-phins-scenario.json`;
+      triggerDownload(filename, "application/json", `${JSON.stringify(payload, null, 2)}\n`);
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+    }
+
+    function downloadScenarioCsv() {
+      const payload = buildScenarioState();
+      const rows = [
+        ["exported_at", payload.exportedAt],
+        ["region_id", payload.region.id],
+        ["region_name", payload.region.name],
+        ["currency", payload.region.currency],
+        ["focus", payload.region.focus],
+        ["mode", payload.mode],
+        ["addressable_lives", payload.assumptions.addressableLives],
+        ["attach_rate_pct", payload.assumptions.attachRate],
+        ["annual_premium", payload.assumptions.annualPremium],
+        ["market_premium_pool", payload.assumptions.marketPremiumPool],
+        ["target_share_pct", payload.assumptions.targetShare],
+        ["cession_rate_pct", payload.assumptions.cessionRate],
+        ["loss_ratio_pct", payload.assumptions.lossRatio],
+        ["expense_ratio_pct", payload.assumptions.expenseRatio],
+        ["gross_written_premium", payload.outputs ? payload.outputs.grossWrittenPremium : ""],
+        ["ceded_premium", payload.outputs ? payload.outputs.cededPremium : ""],
+        ["net_premium", payload.outputs ? payload.outputs.netPremium : ""],
+        ["expected_claims", payload.outputs ? payload.outputs.expectedClaims : ""],
+        ["operating_expenses", payload.outputs ? payload.outputs.operatingExpenses : ""],
+        ["underwriting_contribution", payload.outputs ? payload.outputs.underwritingContribution : ""],
+        ["net_margin_pct", payload.outputs ? payload.outputs.netMargin : ""],
+        ["integrity_note", payload.integrity.note]
+      ];
+
+      const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+      const filename = `${slugify(payload.region.name)}-phins-scenario.csv`;
+      triggerDownload(filename, "text/csv;charset=utf-8", `${csv}\n`);
+    }
+
+    function loadRegion(regionId) {
+      const region = getRegion(regionId);
+      const defaults = region.assumptionDefaults;
+
+      basisNoteEl.textContent = region.basisNote;
+      controls.addressableLives.value = defaults.addressableLives;
+      controls.attachRate.value = defaults.attachRate;
+      controls.annualPremium.value = defaults.annualPremium;
+      controls.marketPremiumPool.value = defaults.marketPremiumPool;
+      controls.targetShare.value = defaults.targetShare;
+      controls.cessionRate.value = defaults.cessionRate;
+      controls.lossRatio.value = defaults.lossRatio;
+      controls.expenseRatio.value = defaults.expenseRatio;
+
+      document.querySelector(`input[name="scenario-mode"][value="${region.defaultMode}"]`).checked = true;
+      toggleMode(region.defaultMode);
+      updateScenario();
+    }
+
+    function toggleMode(mode) {
+      livesControls.hidden = mode !== "lives";
+      premiumControls.hidden = mode !== "premium";
+    }
+
+    function numericValue(input) {
+      const value = Number(input.value);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function updateScenario() {
+      const region = getRegion(regionSelect.value);
+      const mode = currentMode();
+      const currency = region.currency;
+      const cessionRate = numericValue(controls.cessionRate);
+      const lossRatio = numericValue(controls.lossRatio);
+      const expenseRatio = numericValue(controls.expenseRatio);
+
+      let grossWrittenPremium = 0;
+      let basisDescription = "";
+      let grossFoot = "";
+
+      if (mode === "lives") {
+        const addressableLives = numericValue(controls.addressableLives);
+        const attachRate = numericValue(controls.attachRate);
+        const annualPremium = numericValue(controls.annualPremium);
+        const writtenLives = addressableLives * attachRate / 100;
+
+        grossWrittenPremium = writtenLives * annualPremium;
+        basisDescription = `${formatInteger(addressableLives)} addressable lives × ${formatPercent(attachRate)} attach × ${formatMoney(annualPremium, currency)} annual premium`;
+        grossFoot = `${formatInteger(Math.round(writtenLives))} modeled written lives`;
+      } else {
+        const marketPremiumPool = numericValue(controls.marketPremiumPool);
+        const targetShare = numericValue(controls.targetShare);
+
+        grossWrittenPremium = marketPremiumPool * targetShare / 100;
+        basisDescription = `${formatMoney(marketPremiumPool, currency)} reported premium pool × ${formatPercent(targetShare)} PHINS share`;
+        grossFoot = "Premium-share scenario on reported market pool";
+      }
+
+      const cededPremium = grossWrittenPremium * cessionRate / 100;
+      const netPremium = grossWrittenPremium - cededPremium;
+      const expectedClaims = netPremium * lossRatio / 100;
+      const operatingExpenses = netPremium * expenseRatio / 100;
+      const underwritingContribution = netPremium - expectedClaims - operatingExpenses;
+      const netMargin = netPremium > 0 ? underwritingContribution / netPremium * 100 : 0;
+
+      outputs.title.textContent = `${region.name} — ${mode === "lives" ? "Lives-based" : "Premium-share"} PHINS scenario`;
+      outputs.subtitle.textContent = `Currency preserved in ${currency}. Reported market facts remain fixed; only PHINS planning assumptions below affect these outputs.`;
+
+      outputs.gwpValue.textContent = formatMoney(grossWrittenPremium, currency);
+      outputs.gwpFoot.textContent = grossFoot;
+
+      outputs.cededValue.textContent = formatMoney(cededPremium, currency);
+      outputs.cededFoot.textContent = `${formatPercent(cessionRate)} ceded from gross written premium`;
+
+      outputs.netValue.textContent = formatMoney(netPremium, currency);
+      outputs.netFoot.textContent = `${formatPercent(100 - cessionRate)} retained before claims and expenses`;
+
+      outputs.claimsValue.textContent = formatMoney(expectedClaims, currency);
+      outputs.opexValue.textContent = formatMoney(operatingExpenses, currency);
+      outputs.uwValue.textContent = formatMoney(underwritingContribution, currency);
+      outputs.uwFoot.textContent = `${formatPercent(netMargin)} contribution margin on net premium`;
+
+      outputs.formulaBox.textContent = mode === "lives"
+        ? `Gross written premium = addressable lives × attach rate × annual premium. Net retained premium = GWP − ceded premium.`
+        : `Gross written premium = reported premium pool × PHINS target share. Net retained premium = GWP − ceded premium.`;
+
+      outputs.modeNote.textContent = `${mode === "lives" ? "Lives mode" : "Premium-share mode"} currently uses: ${basisDescription}.`;
+      outputs.reinsuranceNote.textContent = region.reinsuranceNote;
+      outputs.interpretationNote.textContent = region.interpretationNote;
+
+      currentScenarioState = {
+        regionId: region.id,
+        mode,
+        outputs: {
+          grossWrittenPremium,
+          cededPremium,
+          netPremium,
+          expectedClaims,
+          operatingExpenses,
+          underwritingContribution,
+          netMargin
+        }
+      };
+    }
+
+    function initializeScenario() {
+      regionSelect.innerHTML = marketData.map((row) => `
+        <option value="${row.id}">${row.flag} ${row.name} — ${row.focus}</option>
+      `).join("");
+
+      regionSelect.value = marketData[0].id;
+
+      regionSelect.addEventListener("change", () => loadRegion(regionSelect.value));
+      document.querySelectorAll('input[name="scenario-mode"]').forEach((input) => {
+        input.addEventListener("change", () => {
+          toggleMode(currentMode());
+          updateScenario();
+        });
+      });
+
+      Object.values(controls).forEach((input) => {
+        input.addEventListener("input", updateScenario);
+      });
+
+      loadRegion(regionSelect.value);
+      if (downloadJsonBtn) {
+        downloadJsonBtn.addEventListener("click", downloadScenarioJson);
+      }
+      if (downloadCsvBtn) {
+        downloadCsvBtn.addEventListener("click", downloadScenarioCsv);
+      }
+    }
+
+    renderEvidenceTable();
+    renderSources();
+    renderInvestorCharts();
+    initializeScenario();
+  </script>
 </body>
 </html>
