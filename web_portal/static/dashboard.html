@@ -1802,6 +1802,8 @@
     }
     let walletBalance = 0.00;
     let customerNFTs = [];
+    let customerLedgerEntries = [];
+    let customerLedgerSummary = {};
     
     // ==================== AI QUERY ASSISTANT ====================
     
@@ -6427,13 +6429,15 @@
       
       try {
         // Check NFT ledger
-        const nftResponse = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const nftResponse = await fetch(`/api/nft-ledger?customer_id=${cid}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
         const nftData = await nftResponse.json();
         
         // Check transaction ledger
         const txResponse = await fetch('/api/unified-payment/history', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
           body: JSON.stringify({ customer_id: cid, limit: 100 })
         });
         const txData = await txResponse.json();
@@ -6471,10 +6475,12 @@
       try {
         // Get NFT and transaction ledgers
         const [nftResponse, txResponse] = await Promise.all([
-          fetch(`/api/nft-ledger?customer_id=${cid}`),
+          fetch(`/api/nft-ledger?customer_id=${cid}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+          }),
           fetch('/api/unified-payment/history', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
             body: JSON.stringify({ customer_id: cid, limit: 200 })
           })
         ]);
@@ -6491,7 +6497,7 @@
           const txRecord = txData.transactions?.find(t => 
             t.id === purchase.ledger_tx_id || 
             t.metadata?.purchase_id === purchase.id ||
-            (t.tx_type === 'medical_purchase' && Math.abs(t.amount - purchase.amount) < 0.01)
+            ((t.type || t.tx_type) === 'medical_purchase' && Math.abs(t.amount - purchase.amount) < 0.01)
           );
           
           if (nftRecord && txRecord) {
@@ -6633,26 +6639,38 @@
     async function loadNFTLedger() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
-        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
         const data = await response.json();
         
         if (data.success) {
+          customerLedgerEntries = data.ledger || [];
+          customerLedgerSummary = data.summary || {};
           renderNFTLedger(data.ledger, data.summary);
         } else {
+          customerLedgerEntries = [];
+          customerLedgerSummary = {};
           renderNFTLedger([], {});
         }
       } catch (err) {
         console.error('Error loading NFT ledger:', err);
+        customerLedgerEntries = [];
+        customerLedgerSummary = {};
         renderNFTLedger([], {});
       }
     }
     
     function renderNFTLedger(ledger, summary) {
       // Update summary cards
-      document.getElementById('ledger-token-count').textContent = `${summary.total_tokens || 0} Tokens`;
+      document.getElementById('ledger-token-count').textContent = `${summary.total_tokens || 0} Tokens • ${summary.activated_tokens || 0} Active`;
       document.getElementById('ledger-total-deposits').textContent = `$${(summary.total_deposits || 0).toFixed(2)}`;
       document.getElementById('ledger-total-purchases').textContent = `$${(summary.total_purchases || 0).toFixed(2)}`;
       document.getElementById('ledger-net-flow').textContent = `$${(summary.net_flow || 0).toFixed(2)}`;
+      const chainBadge = document.getElementById('ledger-chain-badge');
+      if (chainBadge) {
+        chainBadge.textContent = `PHINS-CHAIN • ${summary.total_transactions || (ledger || []).length || 0} Entries`;
+      }
       
       const tbody = document.getElementById('nft-ledger-table');
       
@@ -6669,44 +6687,83 @@
       }
       
       tbody.innerHTML = ledger.map(nft => {
-        const date = new Date(nft.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const time = new Date(nft.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        const typeIcon = nft.transaction_type === 'wallet_deposit' ? '💰' : nft.transaction_type === 'medical_purchase' ? '🛒' : '📋';
-        const typeColor = nft.transaction_type === 'wallet_deposit' ? '#28a745' : '#1565c0';
-        const amountPrefix = nft.transaction_type === 'wallet_deposit' ? '+' : '-';
-        const amountColor = nft.transaction_type === 'wallet_deposit' ? '#28a745' : '#dc3545';
+        const eventDate = nft.created_at || nft.timestamp || new Date().toISOString();
+        const date = new Date(eventDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const time = new Date(eventDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const typeMeta = getLedgerTypeMeta(nft.transaction_type);
+        const signedAmount = Number(nft.signed_amount ?? nft.amount ?? 0);
+        const amountPrefix = signedAmount > 0 ? '+' : signedAmount < 0 ? '-' : '';
+        const amountColor = signedAmount > 0 ? '#28a745' : signedAmount < 0 ? '#dc3545' : '#455a64';
+        const statusInfo = getLedgerStatusMeta(nft);
+        const tokenLabel = nft.token_id ? `${nft.token_id.substring(0, 16)}...` : 'Pending NFT';
+        const hashValue = (nft.transaction_hash || nft.verification_hash || nft.ledger_tx_id || '').toString();
         
         return `
           <tr>
             <td>
-              <span style="font-family: monospace; font-size: 0.85rem; background: #f5f5f5; padding: 4px 8px; border-radius: 4px;">${nft.token_id.substring(0, 16)}...</span>
+              <span style="font-family: monospace; font-size: 0.85rem; background: #f5f5f5; padding: 4px 8px; border-radius: 4px;" title="${nft.token_id || nft.ledger_tx_id || 'Pending'}">${tokenLabel}</span>
             </td>
             <td>
-              <span style="color: ${typeColor}; font-weight: 500;">${typeIcon} ${nft.transaction_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+              <span style="color: ${typeMeta.color}; font-weight: 500;">${typeMeta.icon} ${typeMeta.label}</span>
             </td>
             <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${nft.description}</td>
-            <td style="font-weight: 600; color: ${amountColor};">${amountPrefix}$${nft.amount.toFixed(2)}</td>
+            <td style="font-weight: 600; color: ${amountColor};">${amountPrefix}$${Math.abs(signedAmount).toFixed(2)}</td>
             <td>
-              <span style="font-family: monospace; font-size: 0.8rem; color: #666;" title="${nft.transaction_hash}">${nft.transaction_hash.substring(0, 8)}...</span>
+              <span style="font-family: monospace; font-size: 0.8rem; color: #666;" title="${hashValue}">${hashValue ? `${hashValue.substring(0, 8)}...` : '—'}</span>
             </td>
-            <td style="font-family: monospace; color: #666;">#${nft.block_number}</td>
+            <td style="font-family: monospace; color: #666;">${nft.block_number ? `#${nft.block_number}` : '—'}</td>
             <td>
               <div style="font-size: 0.85rem;">${date}</div>
               <div style="font-size: 0.75rem; color: #666;">${time}</div>
+              <div style="font-size: 0.72rem; color: ${statusInfo.color}; margin-top: 4px;">${statusInfo.label}</div>
             </td>
             <td>
-              <button onclick="verifyToken('${nft.token_id}')" style="background: none; border: 1px solid #28a745; color: #28a745; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
-                ✓ Verify
-              </button>
+              ${nft.token_id ? `
+                <button onclick="verifyToken('${nft.token_id}')" style="background: none; border: 1px solid #28a745; color: #28a745; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
+                  ✓ Verify
+                </button>
+              ` : `<span style="font-size: 0.8rem; color: #ef6c00;">Awaiting NFT</span>`}
             </td>
           </tr>
         `;
       }).join('');
     }
+
+    function getLedgerTypeMeta(type) {
+      const normalized = String(type || 'transaction').toLowerCase();
+      const typeMap = {
+        wallet_deposit: { icon: '💰', color: '#2e7d32', label: 'Wallet Deposit' },
+        medical_purchase: { icon: '🛒', color: '#1565c0', label: 'Medical Purchase' },
+        premium_payment: { icon: '💳', color: '#8e24aa', label: 'Premium Payment' },
+        bill_payment: { icon: '💳', color: '#8e24aa', label: 'Bill Payment' },
+        investment_deposit: { icon: '📈', color: '#0d47a1', label: 'Investment Deposit' },
+        internal_transfer: { icon: '🔄', color: '#ef6c00', label: 'Internal Transfer' },
+        policy_activated: { icon: '✅', color: '#2e7d32', label: 'Policy Activated' },
+        health_wallet_activated: { icon: '🏥', color: '#00796b', label: 'Health Wallet Activated' },
+        customer_registration: { icon: '🆔', color: '#455a64', label: 'Customer Registration' },
+        password_change: { icon: '🔐', color: '#6a1b9a', label: 'Password Change' },
+        admin_action: { icon: '⚙️', color: '#5d4037', label: 'Admin Action' },
+        ai_interaction: { icon: '🤖', color: '#3949ab', label: 'AI Interaction' }
+      };
+      return typeMap[normalized] || {
+        icon: '📋',
+        color: '#1565c0',
+        label: normalized.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+      };
+    }
+
+    function getLedgerStatusMeta(entry) {
+      if (!entry) return { label: 'Unknown', color: '#607d8b' };
+      if (entry.activated) return { label: 'Active / Verified', color: '#2e7d32' };
+      if (entry.has_nft) return { label: String(entry.status || 'Pending').replace(/_/g, ' '), color: '#ef6c00' };
+      return { label: 'Transaction Only / Pending NFT', color: '#c62828' };
+    }
     
     async function verifyToken(tokenId) {
       try {
-        const response = await fetch(`/api/nft-ledger/verify?token_id=${tokenId}`);
+        const response = await fetch(`/api/nft-ledger/verify?token_id=${tokenId}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
         const data = await response.json();
         
         if (data.valid) {
@@ -6730,22 +6787,19 @@
     
     function exportLedger() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
-      const rows = [['Token ID', 'Type', 'Description', 'Amount', 'Tx Hash', 'Block #', 'Timestamp', 'Status']];
-      const tbody = document.getElementById('nft-ledger-table');
-      tbody.querySelectorAll('tr').forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 7) {
-          rows.push([
-            cells[0].textContent.trim(),
-            cells[1].textContent.trim(),
-            cells[2].textContent.trim(),
-            cells[3].textContent.trim(),
-            cells[4].textContent.trim(),
-            cells[5].textContent.trim(),
-            cells[6].textContent.trim(),
-            'Confirmed'
-          ]);
-        }
+      const rows = [['Token ID', 'Ledger Tx', 'Type', 'Description', 'Amount', 'Hash', 'Block #', 'Timestamp', 'Status']];
+      (customerLedgerEntries || []).forEach(entry => {
+        rows.push([
+          entry.token_id || '',
+          entry.ledger_tx_id || '',
+          entry.transaction_type || '',
+          entry.description || '',
+          Number(entry.signed_amount || 0).toFixed(2),
+          entry.transaction_hash || entry.verification_hash || '',
+          entry.block_number || '',
+          entry.created_at || entry.timestamp || '',
+          getLedgerStatusMeta(entry).label
+        ]);
       });
       
       const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
@@ -6763,15 +6817,19 @@
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       try {
-        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
         const data = await response.json();
         
         if (data.success && data.ledger) {
           let verified = 0;
           let failed = 0;
           
-          for (const nft of data.ledger) {
-            const verifyResp = await fetch(`/api/nft-ledger/verify?token_id=${nft.token_id}`);
+          for (const nft of data.ledger.filter(item => item.token_id)) {
+            const verifyResp = await fetch(`/api/nft-ledger/verify?token_id=${nft.token_id}`, {
+              headers: { 'Authorization': `Bearer ${authToken}` }
+            });
             const verifyData = await verifyResp.json();
             if (verifyData.valid) {
               verified++;

@@ -127,6 +127,154 @@ def get_transaction_type(tx: Dict[str, Any]) -> str:
     return str(tx.get('type') or tx.get('tx_type') or '').strip().lower()
 
 
+LEDGER_CREDIT_TX_TYPES = {
+    'wallet_deposit',
+    'investment_deposit',
+    'algo_trading_deposit',
+    'claim_payment',
+    'claim_approved_payment',
+    'refund',
+    'refund_issued',
+    'customer_registration',
+}
+
+LEDGER_DEBIT_TX_TYPES = {
+    'medical_purchase',
+    'premium_payment',
+    'bill_payment',
+    'bill_paid',
+    'supplier_payment',
+    'service_purchase',
+    'product_purchase',
+    'claim_submission',
+}
+
+
+def is_activated_nft_status(status: Any) -> bool:
+    """Return whether an NFT/token status should be treated as active."""
+    return str(status or '').strip().lower() in {'confirmed', 'reactivated', 'verified', 'completed'}
+
+
+def classify_ledger_flow(tx_type: str, amount: Any) -> tuple[str, float]:
+    """Classify ledger flow and return (direction, signed_amount)."""
+    amt = safe_float(amount, 0.0)
+    if tx_type in LEDGER_CREDIT_TX_TYPES:
+        return 'credit', abs(amt)
+    if tx_type in LEDGER_DEBIT_TX_TYPES:
+        return 'debit', -abs(amt)
+    if amt > 0:
+        return 'neutral', amt
+    if amt < 0:
+        return 'neutral', amt
+    return 'neutral', 0.0
+
+
+def build_customer_nft_ledger_view(customer_id: str) -> Dict[str, Any]:
+    """Build a joined customer ledger view from transaction and NFT records."""
+    customer_transactions = [
+        tx for tx in TRANSACTION_LEDGER.values()
+        if tx.get('customer_id') == customer_id
+    ]
+    customer_nfts = [
+        nft for nft in NFT_LEDGER.values()
+        if nft.get('owner_id') == customer_id
+    ]
+
+    nft_by_token_id = {
+        str(nft.get('token_id')): nft
+        for nft in customer_nfts
+        if nft.get('token_id')
+    }
+    seen_tokens = set()
+    entries: List[Dict[str, Any]] = []
+
+    for tx in customer_transactions:
+        tx_type = get_transaction_type(tx)
+        metadata = tx.get('metadata', {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        token_id = tx.get('nft_token_id') or metadata.get('nft_token_id')
+        nft = nft_by_token_id.get(str(token_id)) if token_id else None
+        if nft and nft.get('token_id'):
+            seen_tokens.add(str(nft.get('token_id')))
+
+        direction, signed_amount = classify_ledger_flow(tx_type, tx.get('amount', 0))
+        entry_status = (
+            nft.get('status')
+            if nft
+            else (tx.get('status') or ('pending_nft' if token_id else 'transaction_only'))
+        )
+        activated = is_activated_nft_status(entry_status)
+
+        entries.append({
+            'token_id': token_id,
+            'ledger_tx_id': tx.get('id') or tx.get('tx_id'),
+            'transaction_type': tx_type or str(nft.get('transaction_type') if nft else 'transaction'),
+            'description': tx.get('description') or (nft.get('description') if nft else 'Ledger transaction'),
+            'amount': safe_float(tx.get('amount', 0), 0.0),
+            'signed_amount': round(signed_amount, 2),
+            'flow_direction': direction,
+            'transaction_hash': (nft.get('transaction_hash') if nft else tx.get('entry_hash')) or '',
+            'verification_hash': nft.get('verification_hash') if nft else '',
+            'block_number': nft.get('block_number') if nft else None,
+            'created_at': nft.get('created_at') or tx.get('timestamp') or tx.get('created_at'),
+            'timestamp': tx.get('timestamp') or tx.get('created_at') or nft.get('created_at'),
+            'status': entry_status,
+            'activated': activated,
+            'has_nft': bool(nft),
+            'source': 'joined' if nft else 'transaction_only',
+        })
+
+    for nft in customer_nfts:
+        token_id = str(nft.get('token_id') or '')
+        if not token_id or token_id in seen_tokens:
+            continue
+        direction, signed_amount = classify_ledger_flow(
+            str(nft.get('transaction_type') or ''),
+            nft.get('amount', 0),
+        )
+        entries.append({
+            'token_id': token_id,
+            'ledger_tx_id': nft.get('transaction_id'),
+            'transaction_type': str(nft.get('transaction_type') or 'transaction'),
+            'description': nft.get('description') or 'NFT ledger entry',
+            'amount': safe_float(nft.get('amount', 0), 0.0),
+            'signed_amount': round(signed_amount, 2),
+            'flow_direction': direction,
+            'transaction_hash': nft.get('transaction_hash') or '',
+            'verification_hash': nft.get('verification_hash') or '',
+            'block_number': nft.get('block_number'),
+            'created_at': nft.get('created_at'),
+            'timestamp': nft.get('created_at'),
+            'status': nft.get('status', 'confirmed'),
+            'activated': is_activated_nft_status(nft.get('status')),
+            'has_nft': True,
+            'source': 'nft_only',
+        })
+
+    entries.sort(key=lambda x: x.get('created_at') or x.get('timestamp') or '', reverse=True)
+
+    total_tokens = sum(1 for entry in entries if entry.get('token_id'))
+    activated_tokens = sum(1 for entry in entries if entry.get('token_id') and entry.get('activated'))
+    pending_tokens = sum(1 for entry in entries if not entry.get('activated'))
+    total_deposits = sum(entry.get('signed_amount', 0) for entry in entries if entry.get('signed_amount', 0) > 0)
+    total_purchases = abs(sum(entry.get('signed_amount', 0) for entry in entries if entry.get('signed_amount', 0) < 0))
+    net_flow = sum(entry.get('signed_amount', 0) for entry in entries)
+
+    return {
+        'ledger': entries,
+        'summary': {
+            'total_tokens': total_tokens,
+            'total_transactions': len(entries),
+            'activated_tokens': activated_tokens,
+            'pending_tokens': pending_tokens,
+            'total_deposits': round(total_deposits, 2),
+            'total_purchases': round(total_purchases, 2),
+            'net_flow': round(net_flow, 2),
+        }
+    }
+
+
 def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[str, float]:
     """
     Calculate cumulative premium income with data-integrity safeguards.
@@ -11880,34 +12028,14 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
             
-            # Get all NFT tokens for this customer
-            customer_nfts = [
-                nft for nft in NFT_LEDGER.values() 
-                if nft.get('owner_id') == customer_id
-            ]
-            customer_nfts.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-            
-            # Calculate summary stats
-            total_deposits = sum(
-                nft.get('amount', 0) for nft in customer_nfts 
-                if nft.get('transaction_type') == 'wallet_deposit'
-            )
-            total_purchases = sum(
-                nft.get('amount', 0) for nft in customer_nfts 
-                if nft.get('transaction_type') == 'medical_purchase'
-            )
+            ledger_view = build_customer_nft_ledger_view(customer_id)
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
                 'customer_id': customer_id,
-                'ledger': customer_nfts[:100],  # Last 100 entries
-                'summary': {
-                    'total_tokens': len(customer_nfts),
-                    'total_deposits': total_deposits,
-                    'total_purchases': total_purchases,
-                    'net_flow': total_deposits - total_purchases
-                },
+                'ledger': ledger_view['ledger'][:100],  # Last 100 joined entries
+                'summary': ledger_view['summary'],
                 'chain_info': {
                     'chain_type': 'PHINS-CHAIN',
                     'smart_contract': f"PHINS-SC-{datetime.now().strftime('%Y%m')}-WALLET",
@@ -12002,7 +12130,7 @@ For claims or questions, please contact:
                 'block_number': block_num,
                 'token': found_nft,
                 'status': found_nft.get('status', 'unknown'),
-                'activated': found_nft.get('status') == 'confirmed'
+                'activated': is_activated_nft_status(found_nft.get('status'))
             }).encode('utf-8'))
             return
         
@@ -13204,8 +13332,10 @@ For claims or questions, please contact:
                 
                 # Also check ledger for algo trades
                 algo_tx_types = ['algo_trade', 'algo_manual_trade', 'algo_profit', 'algo_deposit']
-                ledger_trades = [tx for tx in TRANSACTION_LEDGER.values() 
-                               if tx.get('customer_id') == customer_id and tx.get('tx_type') in algo_tx_types]
+                ledger_trades = [
+                    tx for tx in TRANSACTION_LEDGER.values()
+                    if tx.get('customer_id') == customer_id and get_transaction_type(tx) in algo_tx_types
+                ]
                 
                 if ledger_trades and stats['total_trades'] == 0:
                     stats['total_trades'] = len(ledger_trades)
@@ -14538,11 +14668,12 @@ For claims or questions, please contact:
             
             # 4. Algo Trading Orders (from transaction ledger)
             for tx in TRANSACTION_LEDGER.values():
-                if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['algo_trade', 'algo_order']:
+                tx_type = get_transaction_type(tx)
+                if tx.get('customer_id') == customer_id and tx_type in ['algo_trade', 'algo_order']:
                     meta = tx.get('metadata', {})
                     activities.append({
                         'id': tx.get('id'),
-                        'type': 'algo_trade',
+                        'type': tx_type or 'algo_trade',
                         'category': 'algo_trading',
                         'icon': '🤖',
                         'description': f"Algo Trade: {meta.get('side', 'Trade')} {meta.get('symbol', '')}",
@@ -14557,14 +14688,15 @@ For claims or questions, please contact:
             
             # 5. Bill Payments
             for tx in TRANSACTION_LEDGER.values():
-                if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['bill_payment', 'premium_payment']:
+                tx_type = get_transaction_type(tx)
+                if tx.get('customer_id') == customer_id and tx_type in ['bill_payment', 'premium_payment']:
                     meta = tx.get('metadata', {})
                     activities.append({
                         'id': tx.get('id'),
-                        'type': tx.get('tx_type'),
+                        'type': tx_type,
                         'category': 'billing',
                         'icon': '💳',
-                        'description': f"{'Premium' if tx.get('tx_type') == 'premium_payment' else 'Bill'} Payment",
+                        'description': f"{'Premium' if tx_type == 'premium_payment' else 'Bill'} Payment",
                         'amount': -tx.get('amount', 0),
                         'timestamp': tx.get('timestamp', tx.get('created_at', '')),
                         'nft_token_id': tx.get('nft_token_id'),
@@ -14636,7 +14768,7 @@ For claims or questions, please contact:
             total_algo_volume = sum(
                 abs(tx.get('amount', 0)) 
                 for tx in TRANSACTION_LEDGER.values() 
-                if tx.get('tx_type') in ['algo_trade', 'algo_order']
+                if get_transaction_type(tx) in ['algo_trade', 'algo_order']
             )
             
             # 2. Medical Purchases by Category
@@ -14676,13 +14808,13 @@ For claims or questions, please contact:
             # Algo trading customer count
             algo_customers = set()
             for tx in TRANSACTION_LEDGER.values():
-                if tx.get('tx_type') in ['algo_trade', 'algo_order']:
+                if get_transaction_type(tx) in ['algo_trade', 'algo_order']:
                     algo_customers.add(tx.get('customer_id'))
             investments_by_asset['algo_trading']['customers'] = len(algo_customers)
             investments_by_asset['algo_trading']['total_usd'] = total_algo_volume
             
             # 4. Algo Trading Stats
-            algo_orders = [tx for tx in TRANSACTION_LEDGER.values() if tx.get('tx_type') in ['algo_trade', 'algo_order']]
+            algo_orders = [tx for tx in TRANSACTION_LEDGER.values() if get_transaction_type(tx) in ['algo_trade', 'algo_order']]
             algo_stats = {
                 'active_bots': len(getattr(algo_trading_service, 'bots', {})) if algo_trading_enabled else 0,
                 'total_orders': len(algo_orders),
@@ -26514,7 +26646,8 @@ For claims or questions, please contact:
                 transactions = []
                 for tx in TRANSACTION_LEDGER.values():
                     if tx.get('customer_id') == customer_id:
-                        if tx_type and tx.get('tx_type') != tx_type:
+                        current_type = get_transaction_type(tx)
+                        if tx_type and current_type != tx_type:
                             continue
                         transactions.append(tx)
                 
