@@ -595,6 +595,29 @@
       background: linear-gradient(135deg, #f59e0b, #fbbf24);
     }
 
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .legend-dot.blue {
+      background: linear-gradient(135deg, #2563eb, #60a5fa);
+    }
+
+    .legend-dot.green {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+    }
+
+    .legend-dot.amber {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    }
+
+    .legend-dot.red {
+      background: linear-gradient(135deg, #ef4444, #f87171);
+    }
+
     .scatter-plot,
     .scatter-wrap {
       position: relative;
@@ -661,6 +684,21 @@
       border: 2px solid rgba(255, 255, 255, 0.95);
       font-size: 8pt;
       font-weight: 850;
+    }
+
+    .scatter-point.green {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      box-shadow: 0 8px 18px rgba(21, 128, 61, 0.22);
+    }
+
+    .scatter-point.amber {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+      box-shadow: 0 8px 18px rgba(180, 83, 9, 0.22);
+    }
+
+    .scatter-point.red {
+      background: linear-gradient(135deg, #ef4444, #f87171);
+      box-shadow: 0 8px 18px rgba(185, 28, 28, 0.22);
     }
 
     .scatter-point.active {
@@ -2489,7 +2527,7 @@
         <button
           type="button"
           class="scatter-point ${escapeHtml(row.investorScores.color)} ${row.id === "israel" ? "active" : ""}"
-          style="left: calc(${row.investorScores.demand}% - 18px); bottom: calc(${row.investorScores.monetization}% - 18px);"
+          style="left: ${row.investorScores.demand}%; bottom: ${row.investorScores.monetization}%;"
           data-region-id="${escapeHtml(row.id)}"
           title="${escapeHtml(row.name)}"
           aria-label="${escapeHtml(row.name)}"
