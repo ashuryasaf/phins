@@ -199,12 +199,13 @@ def build_customer_nft_ledger_view(customer_id: str) -> Dict[str, Any]:
             seen_tokens.add(str(nft.get('token_id')))
 
         direction, signed_amount = classify_ledger_flow(tx_type, tx.get('amount', 0))
-        entry_status = (
-            nft.get('status')
-            if nft
-            else (tx.get('status') or ('pending_nft' if token_id else 'transaction_only'))
-        )
-        activated = is_activated_nft_status(entry_status)
+        if nft:
+            entry_status = nft.get('status') or tx.get('status') or 'confirmed'
+        elif token_id:
+            entry_status = 'pending_nft'
+        else:
+            entry_status = 'transaction_only'
+        activated = bool(nft) and is_activated_nft_status(entry_status)
 
         entries.append({
             'token_id': token_id,
@@ -217,8 +218,8 @@ def build_customer_nft_ledger_view(customer_id: str) -> Dict[str, Any]:
             'transaction_hash': (nft.get('transaction_hash') if nft else tx.get('entry_hash')) or '',
             'verification_hash': nft.get('verification_hash') if nft else '',
             'block_number': nft.get('block_number') if nft else None,
-            'created_at': nft.get('created_at') or tx.get('timestamp') or tx.get('created_at'),
-            'timestamp': tx.get('timestamp') or tx.get('created_at') or nft.get('created_at'),
+            'created_at': (nft.get('created_at') if nft else None) or tx.get('timestamp') or tx.get('created_at'),
+            'timestamp': tx.get('timestamp') or tx.get('created_at') or (nft.get('created_at') if nft else None),
             'status': entry_status,
             'activated': activated,
             'has_nft': bool(nft),
