@@ -233,9 +233,14 @@ class TestCustomerDataAccessService(unittest.TestCase):
             'CUST001': {'id': 'CUST001', 'name': 'John Doe'},
             'CUST002': {'id': 'CUST002', 'name': 'Jane Smith'}
         }
+        self.policies = {
+            'POL-SARA-001': {'id': 'POL-SARA-001', 'customer_id': 'CUST-TEST-100'},
+            'POL-JOHN-001': {'id': 'POL-JOHN-001', 'customer_id': 'CUST001'},
+        }
         self.service = CustomerDataAccessService(
             audit_log=self.audit_log,
-            customers=self.customers
+            customers=self.customers,
+            policies=self.policies,
         )
     
     def test_access_violations_logged(self):
@@ -304,6 +309,57 @@ class TestCustomerDataAccessService(unittest.TestCase):
         self.assertEqual(len(filtered), 3, "Admin should see all 3 resources")
         
         print(f"✓ Admin can see all resources")
+
+    def test_validate_resource_ownership_resolves_policy_owner(self):
+        """Resources without customer_id should inherit ownership from policy_id."""
+        sara_session = {
+            'username': 'sara_cohen',
+            'role': 'customer',
+            'customer_id': 'CUST-TEST-100'
+        }
+
+        authorized, error = self.service.validate_resource_ownership(
+            sara_session,
+            {'id': 'CLM-001', 'policy_id': 'POL-SARA-001'},
+            'claim'
+        )
+
+        self.assertTrue(authorized, "Sara should access a claim linked to her policy")
+        self.assertIsNone(error)
+
+    def test_validate_resource_ownership_denies_other_policy_owner(self):
+        """Policy ownership lookup must still deny access to another customer."""
+        sara_session = {
+            'username': 'sara_cohen',
+            'role': 'customer',
+            'customer_id': 'CUST-TEST-100'
+        }
+
+        authorized, error = self.service.validate_resource_ownership(
+            sara_session,
+            {'id': 'BILL-001', 'policy_id': 'POL-JOHN-001'},
+            'billing'
+        )
+
+        self.assertFalse(authorized, "Sara should not access resources linked to John's policy")
+        self.assertIn('own billing', error)
+
+    def test_validate_resource_ownership_denies_unknown_policy(self):
+        """Unknown policies should not be treated as owned resources."""
+        sara_session = {
+            'username': 'sara_cohen',
+            'role': 'customer',
+            'customer_id': 'CUST-TEST-100'
+        }
+
+        authorized, error = self.service.validate_resource_ownership(
+            sara_session,
+            {'id': 'DOC-001', 'policy_id': 'POL-MISSING-001'},
+            'document'
+        )
+
+        self.assertFalse(authorized, "Unknown policy ownership should be denied")
+        self.assertIsNotNone(error)
 
 
 def run_sara_cohen_isolation_test():
