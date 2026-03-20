@@ -1838,7 +1838,7 @@
 
         const sourceLinks = row.sources.map((sourceKey) => {
           const source = sourceRegistry[sourceKey];
-          return `<a class="source-tag" href="${source.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a>`;
+          return `<a class="source-tag" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a>`;
         }).join("");
 
         return `
@@ -1863,7 +1863,7 @@
         <article class="source-card">
           <h4>${escapeHtml(source.title)}</h4>
           <p>${escapeHtml(source.note)}</p>
-          <a href="${source.url}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
+          <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>
         </article>
       `).join("");
     }
