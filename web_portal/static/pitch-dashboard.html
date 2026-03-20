@@ -516,6 +516,18 @@
       background: linear-gradient(135deg, #f59e0b, #fbbf24);
     }
 
+    .bar-fill.green {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+    }
+
+    .bar-fill.amber {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    }
+
+    .bar-fill.red {
+      background: linear-gradient(135deg, #ef4444, #f87171);
+    }
+
     .bar-value {
       font-size: 8.2pt;
       font-weight: 800;
@@ -1470,10 +1482,10 @@
               <span><i class="legend-dot red"></i> Caution</span>
             </div>
           </div>
-          <div class="scatter-wrap">
-            <div class="scatter-axis-label x">Demand clarity</div>
-            <div class="scatter-axis-label y">Monetization clarity</div>
-            <div id="market-scatter" class="scatter-stage"></div>
+          <div class="scatter-plot">
+            <div class="scatter-axis axis-x">Demand clarity</div>
+            <div class="scatter-axis axis-y">Monetization clarity</div>
+            <div id="market-scatter" class="scatter-area"></div>
           </div>
         </article>
       </div>
@@ -2486,18 +2498,20 @@
 
       dualBarChart.innerHTML = marketData.map((row) => `
         <div class="dual-bar-row">
-          <div class="dual-bar-label">${escapeHtml(row.flag)} ${escapeHtml(row.name)}</div>
+          <div class="bar-label">${escapeHtml(row.flag)} ${escapeHtml(row.name)}</div>
           <div class="dual-bar-stack">
-            <div class="dual-bar-track">
-              <div class="dual-bar-fill blue" style="width:${row.investorScores.publicDepth}%;"></div>
+            <div class="dual-bar-line">
+              <div class="bar-track">
+                <div class="bar-fill evidence" style="width:${row.investorScores.publicDepth}%;"></div>
+              </div>
+              <span class="mini-value">Public ${row.investorScores.publicDepth}</span>
             </div>
-            <div class="dual-bar-track">
-              <div class="dual-bar-fill green" style="width:${row.investorScores.privateAccess}%;"></div>
+            <div class="dual-bar-line">
+              <div class="bar-track">
+                <div class="bar-fill treaty" style="width:${row.investorScores.privateAccess}%;"></div>
+              </div>
+              <span class="mini-value">Private ${row.investorScores.privateAccess}</span>
             </div>
-          </div>
-          <div class="dual-bar-values">
-            <span>Public ${row.investorScores.publicDepth}</span>
-            <span>Private ${row.investorScores.privateAccess}</span>
           </div>
         </div>
       `).join("");
