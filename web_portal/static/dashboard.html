@@ -162,7 +162,8 @@
       #health-wallet h2 {
         font-size: 1.1rem !important;
       }
-      #health-wallet > div:first-child {
+      #health-wallet > div:first-child,
+      #health-wallet .dashboard-section-body > div:first-child {
         flex-direction: column !important;
         align-items: flex-start !important;
         gap: 8px !important;
@@ -189,7 +190,8 @@
       #nft-ledger {
         padding: 16px !important;
       }
-      #nft-ledger > div:first-child {
+      #nft-ledger > div:first-child,
+      #nft-ledger .dashboard-section-body > div:first-child {
         flex-direction: column !important;
         align-items: flex-start !important;
         gap: 12px !important;
@@ -443,6 +445,62 @@
     .badge-secondary {
       background: linear-gradient(135deg, #adb5bd, #ced4da);
       color: #333;
+    }
+
+    /* Dashboard section minimize / scroll helpers */
+    .section-content {
+      position: relative;
+      scroll-margin-top: 96px;
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    .section-content.section-focused {
+      box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.18), 0 10px 26px rgba(13, 71, 161, 0.12);
+    }
+    .dashboard-section-controls {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 4;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .dashboard-section-toggle {
+      border: none;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
+      color: #0d47a1;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    .dashboard-section-toggle:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+      background: #fff;
+    }
+    .dashboard-section-body {
+      transition: opacity 0.2s ease;
+    }
+    .section-content.section-collapsed .dashboard-section-body {
+      display: none;
+    }
+    .section-content.section-collapsed {
+      min-height: 84px;
+    }
+
+    @media screen and (max-width: 768px) {
+      .dashboard-section-controls {
+        top: 12px;
+        right: 12px;
+      }
+      .dashboard-section-toggle {
+        padding: 7px 10px;
+        font-size: 0.78rem;
+      }
     }
     
     /* Policy Table Actions */
@@ -2006,6 +2064,181 @@
         panel.dataset.minimized = 'true';
       }
     }
+
+    const DASHBOARD_SECTION_STATE_KEY = 'phins_dashboard_section_state_v1';
+
+    function loadDashboardSectionState() {
+      try {
+        return JSON.parse(localStorage.getItem(DASHBOARD_SECTION_STATE_KEY) || '{}');
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function saveDashboardSectionState(state) {
+      try {
+        localStorage.setItem(DASHBOARD_SECTION_STATE_KEY, JSON.stringify(state));
+      } catch (err) {
+        console.warn('Unable to persist dashboard section state:', err);
+      }
+    }
+
+    let dashboardSectionState = loadDashboardSectionState();
+
+    function getDashboardSectionKey(section, index) {
+      if (section.id) return section.id;
+      return `dashboard-section-${index + 1}`;
+    }
+
+    function getDashboardHeaderOffset() {
+      const header = document.querySelector('.phins-header');
+      return (header ? header.getBoundingClientRect().height : 0) + 16;
+    }
+
+    function setDashboardSectionCollapsed(section, collapsed, { persist = true } = {}) {
+      if (!section) return;
+      const key = section.dataset.sectionKey;
+      const body = section.querySelector('.dashboard-section-body');
+      const toggleBtn = section.querySelector('.dashboard-section-toggle');
+      if (!body || !toggleBtn) return;
+
+      section.classList.toggle('section-collapsed', !!collapsed);
+      body.style.display = collapsed ? 'none' : '';
+      toggleBtn.textContent = collapsed ? '➕ Expand' : '➖ Minimize';
+      toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+      toggleBtn.setAttribute('title', collapsed ? 'Expand section' : 'Minimize section');
+
+      if (persist && key) {
+        dashboardSectionState[key] = !!collapsed;
+        saveDashboardSectionState(dashboardSectionState);
+      }
+    }
+
+    function toggleDashboardSection(sectionId) {
+      const section = typeof sectionId === 'string'
+        ? document.getElementById(sectionId) || document.querySelector(`[data-section-key="${sectionId}"]`)
+        : sectionId;
+      if (!section) return;
+      const collapsed = section.classList.contains('section-collapsed');
+      setDashboardSectionCollapsed(section, !collapsed);
+    }
+
+    function focusDashboardSection(section) {
+      if (!section) return;
+      section.classList.add('section-focused');
+      window.setTimeout(() => section.classList.remove('section-focused'), 1800);
+    }
+
+    function updateDashboardNavActive(sectionId) {
+      const navLinks = document.querySelectorAll('.phins-nav a[href^="#"], .phins-nav a[href^="/dashboard.html#"]');
+      navLinks.forEach(link => {
+        const href = link.getAttribute('href') || '';
+        const hashIndex = href.indexOf('#');
+        const targetHash = hashIndex >= 0 ? href.slice(hashIndex + 1) : '';
+        link.classList.toggle('active', !!sectionId && targetHash === sectionId);
+      });
+    }
+
+    function scrollToDashboardSection(sectionId, { updateHash = true } = {}) {
+      if (!sectionId) return false;
+      const section = document.getElementById(sectionId);
+      if (!section) return false;
+
+      if (section.classList.contains('section-collapsed')) {
+        setDashboardSectionCollapsed(section, false);
+      }
+
+      const top = window.scrollY + section.getBoundingClientRect().top - getDashboardHeaderOffset();
+      window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+      focusDashboardSection(section);
+      updateDashboardNavActive(sectionId);
+
+      if (updateHash) {
+        history.replaceState(null, '', `#${sectionId}`);
+      }
+      return true;
+    }
+
+    function initializeDashboardSections() {
+      const sections = Array.from(document.querySelectorAll('main .section-content'));
+      sections.forEach((section, index) => {
+        if (section.dataset.sectionControlsInitialized === 'true') return;
+        section.dataset.sectionControlsInitialized = 'true';
+
+        const key = getDashboardSectionKey(section, index);
+        section.dataset.sectionKey = key;
+
+        const existingChildren = Array.from(section.childNodes);
+        const bodyWrapper = document.createElement('div');
+        bodyWrapper.className = 'dashboard-section-body';
+        existingChildren.forEach(child => bodyWrapper.appendChild(child));
+
+        const controls = document.createElement('div');
+        controls.className = 'dashboard-section-controls';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'dashboard-section-toggle';
+        toggleBtn.addEventListener('click', () => toggleDashboardSection(section));
+
+        controls.appendChild(toggleBtn);
+        section.appendChild(bodyWrapper);
+        section.appendChild(controls);
+
+        const shouldCollapse = !!dashboardSectionState[key];
+        setDashboardSectionCollapsed(section, shouldCollapse, { persist: false });
+      });
+    }
+
+    function initializeDashboardAnchorScroll() {
+      const selectors = [
+        'a[href^="#"]',
+        'a[href^="/dashboard.html#"]'
+      ];
+      document.querySelectorAll(selectors.join(',')).forEach(link => {
+        if (link.dataset.dashboardScrollInit === 'true') return;
+        link.dataset.dashboardScrollInit = 'true';
+        link.addEventListener('click', (event) => {
+          const href = link.getAttribute('href') || '';
+          const hashIndex = href.indexOf('#');
+          if (hashIndex === -1) return;
+          const targetId = href.slice(hashIndex + 1);
+          if (!targetId) return;
+          const target = document.getElementById(targetId);
+          if (!target) return;
+          event.preventDefault();
+          scrollToDashboardSection(targetId);
+        });
+      });
+
+      window.addEventListener('hashchange', () => {
+        const targetId = window.location.hash.replace('#', '');
+        if (targetId) {
+          scrollToDashboardSection(targetId, { updateHash: false });
+        }
+      });
+    }
+
+    function initializeDashboardSectionObserver() {
+      const sections = Array.from(document.querySelectorAll('main .section-content[id]'))
+        .filter(section => section.offsetParent !== null);
+      if (!('IntersectionObserver' in window) || sections.length === 0) return;
+
+      const observer = new IntersectionObserver((entries) => {
+        const visibleEntries = entries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visibleEntries.length > 0) {
+          updateDashboardNavActive(visibleEntries[0].target.id);
+        }
+      }, {
+        root: null,
+        threshold: [0.25, 0.5, 0.75],
+        rootMargin: '-90px 0px -45% 0px'
+      });
+
+      sections.forEach(section => observer.observe(section));
+    }
     
     // Process AI query
     async function processAIQuery() {
@@ -3320,6 +3553,10 @@
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', async () => {
+      initializeDashboardSections();
+      initializeDashboardAnchorScroll();
+      initializeDashboardSectionObserver();
+
       // Failsafe: Always hide splash screen after max 8 seconds regardless of errors
       const splashFailsafe = setTimeout(() => {
         console.warn('Splash screen failsafe triggered - forcing hide');
@@ -3514,6 +3751,13 @@
       
       // Hide splash screen after minimum display time (1.5s for branding)
       setTimeout(hideSplashScreen, 1500);
+
+      if (window.location.hash) {
+        const targetId = window.location.hash.replace('#', '');
+        setTimeout(() => {
+          scrollToDashboardSection(targetId, { updateHash: false });
+        }, 200);
+      }
     });
     
     // Load customer info and update the info panel
