@@ -583,7 +583,8 @@
       background: linear-gradient(135deg, #f59e0b, #fbbf24);
     }
 
-    .scatter-plot {
+    .scatter-plot,
+    .scatter-wrap {
       position: relative;
       height: 330px;
       border-radius: 18px;
@@ -592,7 +593,8 @@
       overflow: hidden;
     }
 
-    .scatter-area {
+    .scatter-area,
+    .scatter-stage {
       position: absolute;
       left: 64px;
       right: 18px;
@@ -606,7 +608,8 @@
       border-bottom: 1px solid rgba(148, 163, 184, 0.35);
     }
 
-    .scatter-axis {
+    .scatter-axis,
+    .scatter-axis-label {
       position: absolute;
       font-size: 7.5pt;
       color: var(--text-soft);
@@ -614,14 +617,16 @@
       letter-spacing: 0.03em;
     }
 
-    .scatter-axis.axis-x {
+    .scatter-axis.axis-x,
+    .scatter-axis-label.x {
       left: 64px;
       right: 18px;
       bottom: 14px;
       text-align: right;
     }
 
-    .scatter-axis.axis-y {
+    .scatter-axis.axis-y,
+    .scatter-axis-label.y {
       left: 12px;
       top: 18px;
       bottom: 42px;
