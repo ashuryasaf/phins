@@ -39,6 +39,15 @@ from services.notification_service import (
 logger = logging.getLogger('phins.notification_queue')
 
 
+def _normalize_utc_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    """Normalize datetimes used by the queue to timezone-aware UTC values."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 # ============================================================================
 # QUEUE CONFIGURATION
 # ============================================================================
@@ -284,6 +293,8 @@ class NotificationQueueService:
             Queue item ID
         """
         item_id = generate_id('QUEUE')
+        scheduled_at = _normalize_utc_datetime(scheduled_at or request.send_at)
+        expires_at = _normalize_utc_datetime(expires_at or request.expires_at)
         
         item = QueueItem(
             id=item_id,
@@ -298,7 +309,13 @@ class NotificationQueueService:
         with self._items_lock:
             self._items[item_id] = item
         
-        if scheduled_at and scheduled_at > datetime.now(timezone.utc):
+        now = datetime.now(timezone.utc)
+
+        if expires_at and expires_at <= now:
+            item.status = QueueItemStatus.EXPIRED
+            item.completed_at = now
+            logger.info(f"Notification {item_id} expired before queueing")
+        elif scheduled_at and scheduled_at > now:
             # Scheduled for later
             item.status = QueueItemStatus.SCHEDULED
             with self._items_lock:
