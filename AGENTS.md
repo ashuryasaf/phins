@@ -1,124 +1,137 @@
 # AGENTS.md - AI Agent Guide for PHINS
 
-This document is the working guide for AI agents contributing to the PHINS codebase.
+This file is the working guide for AI agents contributing to the PHINS codebase.
+Keep changes narrow, verify behavior with targeted tests, and prefer existing
+patterns over new abstractions.
 
 ## 1) Project Summary
 
-**PHINS (Professional Insurance Management System)** is an insurance platform with:
-- Customer, policy, underwriting, claims, and billing workflows
-- Web portal + REST-style API
-- SQLite/PostgreSQL persistence via SQLAlchemy
-- Automation services for underwriting, claims, and analytics
+**PHINS (Professional Insurance Management System)** is a Python-first insurance
+platform with:
 
-Primary runtime language is **Python**.
+- Customer, policy, underwriting, claims, billing, and reporting workflows
+- A lightweight HTTP portal and JSON API in `web_portal/server.py`
+- Optional persistence through SQLite or PostgreSQL via SQLAlchemy
+- A large set of service modules for domain workflows, analytics, integrity, and
+  automation
 
-## 2) Repository Map (High Value Paths)
+The repository mixes demo-style in-memory flows with production-oriented database
+support. When changing behavior, preserve backward compatibility unless the task
+explicitly says otherwise.
+
+## 2) Repository Map (High-Value Paths)
 
 ```text
 /workspace
-|- phins_system.py                    # Core domain entities and logic
+|- AGENTS.md                          # This guide
+|- README.md                          # Product overview and deployment pointers
+|- phins_system.py                    # Core insurance domain entities/logic
+|- billing_engine.py                  # Billing engine used by validation/tests
+|- accounting_engine.py               # Accounting engine used by validation/tests
+|- customer_validation.py             # Validation models/utilities
+|- config.py                          # Root-level application/config helpers
+|- conftest.py                        # Global pytest setup; embedded server for tests
+|- validate_system.py                 # Broad validation script
+|- check_database_connection.py       # Database health check helper
+|- init_database.py                   # Database initialization helper
+|- quick_smoke_test.sh                # Lightweight HTTP smoke test
 |- web_portal/
-|  |- server.py                       # Main API/server module (large file)
-|  |- api_extensions.py               # API extension routes/helpers
-|  |- connectors.py                   # External integration connectors
+|  |- server.py                       # Main HTTP server and many route handlers
+|  |- api_extensions.py               # Extension dispatch for extra API routes
+|  |- connectors.py                   # Integration connectors
+|  |- api_bi_analytics.py             # Additional API module; verify wiring before use
+|  |- api_delivery_bidding.py         # Additional API module; verify wiring before use
 |  `- static/                         # Frontend assets (HTML/CSS/JS)
-|- services/                          # Business services (50+ modules)
+|- services/                          # 50+ business/service modules
 |- database/
-|  |- models.py                       # SQLAlchemy ORM models
-|  |- manager.py                      # DB initialization/manager
+|  |- __init__.py                     # Connection/session helpers
 |  |- config.py                       # DB config
+|  |- models.py                       # SQLAlchemy ORM models
+|  |- notification_models.py          # Additional ORM models
+|  |- manager.py                      # High-level repository manager
+|  |- data_access.py                  # Dict-like bridge for DB-backed storage
 |  |- seeds.py                        # Seed data
-|  `- repositories/                   # Repository pattern implementations
-|- tests/                             # pytest suite
+|  |- migrate_data.py                 # Data migration helpers
+|  |- migrations/                     # Migration scripts/assets
+|  `- repositories/                   # Repository implementations
 |- security/                          # Security helpers/utilities
+|- scripts/                           # Operational and one-off scripts
+|- tests/                             # Main pytest suite
+|- test_*.py                          # Additional root-level integration tests
 `- docs/                              # Design and implementation docs
 ```
 
 ## 3) Architecture Notes
 
-1. **Domain layer**: `phins_system.py` contains core insurance entities.
-2. **Service layer**: `services/*.py` contains business workflows.
-3. **Data access layer**: `database/repositories/*` encapsulates persistence.
-4. **Transport/API layer**: `web_portal/server.py` and related modules expose endpoints.
-5. **Storage modes**:
-   - SQLite in local/dev mode
-   - PostgreSQL in production mode
-   - In-memory fallback when DB is unavailable
+1. **Transport/API layer**
+   - `web_portal/server.py` is the main HTTP entry point.
+   - This is **not** a Flask/FastAPI app; it is built on
+     `http.server.BaseHTTPRequestHandler`.
+   - `web_portal/api_extensions.py` provides extension dispatch used by the main
+     server for some GET/POST/PUT paths.
 
-## 4) Local Setup and Common Commands
+2. **Domain and engine layer**
+   - `phins_system.py` contains core insurance entities and orchestration logic.
+   - `billing_engine.py` and `accounting_engine.py` are important root-level
+     engines and are part of validation flows.
 
-Install dependencies:
+3. **Service layer**
+   - `services/*.py` contains most business workflows.
+   - Reuse service modules from route handlers instead of embedding new business
+     logic directly in `web_portal/server.py` where practical.
 
-```bash
-pip install -r requirements.txt
-```
+4. **Persistence layer**
+   - Default/demo flows often use in-memory dictionaries in `web_portal/server.py`.
+   - Database-backed flows go through `database/manager.py`,
+     `database/repositories/*`, and `database/data_access.py`.
+   - Storage modes:
+     - In-memory fallback/default for many HTTP tests and demos
+     - SQLite for local/dev persistence
+     - PostgreSQL for production deployments
 
-Run server (default):
+5. **Testing harness**
+   - Root `conftest.py` starts an embedded server on `http://localhost:8000`
+     during pytest runs and sets default test environment variables.
+   - Read it before changing server startup assumptions, ports, or storage mode
+     behavior in tests.
 
-```bash
-python3 web_portal/server.py
-```
+## 4) Important Existing Patterns
 
-Run with SQLite:
+### Status and Numeric Helpers
 
-```bash
-export USE_DATABASE=1
-export USE_SQLITE=1
-python3 web_portal/server.py
-```
-
-Run targeted tests:
-
-```bash
-pytest -v tests/
-pytest tests/test_api_integration.py
-pytest -k "billing" tests/
-```
-
-Useful validations:
-
-```bash
-python3 validate_system.py
-python3 check_database_connection.py
-```
-
-## 5) Coding and Design Conventions
-
-### Python Style
-- Follow PEP 8.
-- Use `snake_case` for functions/variables.
-- Use `PascalCase` for classes.
-- Use `UPPER_CASE` for constants.
-- Add type hints for new/updated function signatures when practical.
-
-### Domain Conventions
-- ID prefixes:
-  - Company: `COM`
-  - Customer: `CUST`
-  - Policy: `POL`
-  - Claim: `CLM`
-  - Bill: `BILL`
-
-### Status Handling
-Use existing helpers to avoid fragile string checks and conversion errors:
+Case-insensitive status and defensive numeric conversion helpers already exist in
+`web_portal/server.py`:
 
 ```python
 status_eq(item, "approved", "paid")
+status_in(item, ["pending", "under_review"])
 safe_float(value, default=0.0)
 safe_int(value, default=0)
 ```
 
-## 6) API and Data Expectations
+Prefer reusing these helpers for portal/data-integrity work instead of redoing
+string normalization or unsafe numeric casting.
 
-- Keep API contracts backward compatible unless explicitly migrating.
-- Validate request inputs on every endpoint.
-- Return consistent JSON error payloads:
+### Repository Usage
+
+- `database/manager.py` exposes repository properties such as `customers`,
+  `policies`, `claims`, `billing`, `audit`, `platform_ledger`, `actuarial`,
+  and `tokens`.
+- `DatabaseManager.session_scope()` is the preferred pattern for grouped
+  transactional work.
+- `database/repositories/base.py` auto-commits write operations. Keep that in
+  mind when composing multiple repository calls.
+
+### API Shape
+
+- Validate request payloads on every endpoint.
+- Preserve JSON error responses in the form:
 
 ```json
 { "error": "Error message description" }
 ```
 
-- For list endpoints, preserve paginated response shape where applicable:
+- Preserve paginated/list response shapes where applicable:
 
 ```json
 {
@@ -129,54 +142,168 @@ safe_int(value, default=0)
 }
 ```
 
+## 5) Local Setup and Common Commands
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run the server:
+
+```bash
+python3 web_portal/server.py
+```
+
+Run with SQLite persistence:
+
+```bash
+export USE_DATABASE=1
+export USE_SQLITE=1
+python3 web_portal/server.py
+```
+
+Useful validation commands:
+
+```bash
+python3 validate_system.py
+python3 check_database_connection.py
+bash quick_smoke_test.sh
+```
+
+Targeted pytest examples:
+
+```bash
+pytest tests/test_api_integration.py
+pytest tests/test_database.py
+pytest tests/test_billing_engine.py
+pytest tests/test_accounting_engine.py
+pytest -k "billing" tests/
+pytest tests/ -q --tb=line
+```
+
+Full-repo pytest note:
+
+```bash
+pytest
+```
+
+Running `pytest` from the repo root may collect both `tests/` and root-level
+`test_*.py` files. Running `pytest tests/` will skip the root-level tests.
+
+## 6) Coding and Design Conventions
+
+### Python Style
+
+- Follow PEP 8.
+- Use `snake_case` for functions/variables.
+- Use `PascalCase` for classes.
+- Use `UPPER_CASE` for constants.
+- Add type hints for new or updated function signatures when practical.
+
+### Domain Conventions
+
+Common ID prefixes:
+
+- Company: `COM`
+- Customer: `CUST`
+- Policy: `POL`
+- Claim: `CLM`
+- Bill: `BILL`
+
+### Design Guidance
+
+- Keep route handlers thin when possible.
+- Reuse existing services/repositories before adding new modules.
+- Avoid embedding raw SQL or ORM-heavy logic inside route handlers.
+- For database changes, update models, repositories, seeds/migrations, and tests
+  together.
+- For large `server.py` edits, inspect nearby patterns first; many behaviors are
+  implemented in-place rather than through a clean controller split.
+
 ## 7) Standard Agent Workflows
 
-### Add a New Service
-1. Create module in `services/`.
-2. Wire it into `web_portal/server.py` (or extension module).
-3. Add/update tests in `tests/`.
-4. Update related docs when behavior changes.
+### Add or Update an API Endpoint
 
-### Add a New API Endpoint
-1. Add route handler.
-2. Reuse existing service logic where possible.
-3. Validate inputs and error paths.
-4. Add endpoint tests (success + failure cases).
+1. Inspect existing routes in `web_portal/server.py`.
+2. Check whether the behavior belongs in `server.py` or `api_extensions.py`.
+3. Reuse existing service logic where possible.
+4. Validate request inputs and preserve response conventions.
+5. Add tests for success and failure paths.
 
-### Modify Database Schema
-1. Update `database/models.py`.
-2. Add migration strategy if needed.
-3. Update affected repositories/services/tests.
-4. Verify startup + data seeding paths.
+### Add or Update a Service
 
-### Add/Update Repository Layer
-1. Follow existing repository pattern.
-2. Keep data access concerns inside repository modules.
-3. Avoid embedding SQL/ORM query logic directly in route handlers.
+1. Create or modify the module in `services/`.
+2. Wire it into the relevant route/engine layer.
+3. Add or update targeted tests.
+4. Update docs if behavior or operator workflow changes.
+
+### Modify Database Schema or Persistence Logic
+
+1. Update `database/models.py` and any related model files.
+2. Update repositories, `database/manager.py`, and `database/data_access.py`
+   if the schema affects dict-like compatibility.
+3. Review seeds, initialization, and migrations.
+4. Run database-focused tests and startup checks.
+
+### Modify Billing/Accounting Workflows
+
+1. Inspect `billing_engine.py`, `accounting_engine.py`, and related services.
+2. Check matching tests in `tests/test_billing_engine.py`,
+   `tests/test_accounting_engine.py`, and any affected API/integration tests.
+3. Run `python3 validate_system.py` if the change is broad enough to affect the
+   validation flow.
 
 ## 8) Testing Guidance
 
 Before merging non-trivial changes:
 
-1. Run targeted tests related to changed area.
-2. Run at least one broader integration/smoke test for impacted workflow.
-3. Verify no regressions in auth, billing, underwriting, or data integrity paths.
+1. Run targeted tests for the files or workflow you changed.
+2. Run at least one broader integration or smoke test for the impacted area.
+3. Verify no regressions in auth, billing, underwriting, data isolation, or
+   dashboard integrity when those areas are touched.
 
 High-value test modules include:
+
 - `tests/test_api_integration.py`
 - `tests/test_database.py`
-- `tests/test_e2e_insurance_pipeline.py`
-- `tests/test_security_performance.py`
-- `tests/test_dashboard_data_integrity.py`
 - `tests/test_billing_engine.py`
+- `tests/test_accounting_engine.py`
+- `tests/test_dashboard_data_integrity.py`
+- `tests/test_security_performance.py`
+- `tests/test_customer_data_isolation.py`
+- `tests/test_api_customer_ledger_isolation.py`
+- `tests/test_e2e_insurance_pipeline.py`
+- `tests/test_platform_event_ledger.py`
+- `tests/test_notification_service.py`
+- `tests/test_process_pipeline_orchestrator.py`
+
+Useful root-level integration tests include:
+
+- `test_complete_flow.py`
+- `test_portal_complete.py`
+- `test_integration.py`
+- `test_pr_complete.py`
+
+### Test Environment Notes
+
+- `conftest.py` defaults HTTP tests to in-memory portal storage:
+  - `USE_DATABASE=false`
+  - `USE_SQLITE=true`
+  - `PHINS_TEST_MODE=true`
+- It also starts an embedded server on port `8000`.
+- Be careful when changing startup, port binding, or state-reset behavior.
 
 ## 9) Security and Reliability Rules
 
 - Never hardcode credentials, secrets, or tokens.
-- Avoid customer data leakage across accounts/tenants.
-- Use audit logging for sensitive/admin operations.
-- Handle missing/invalid numeric values defensively.
-- Keep graceful fallback behavior for degraded external dependencies.
+- Avoid customer/account data leakage across tenants or users.
+- Use audit logging for sensitive or admin-facing operations when the surrounding
+  code already supports it.
+- Handle missing or invalid numeric values defensively.
+- Preserve graceful fallback behavior for degraded external dependencies.
+- Be careful with logs and test fixtures so they do not expose secrets or PII.
 
 ## 10) Deployment and Ops Notes
 
@@ -186,28 +313,36 @@ Environment variables commonly used:
 |---|---|
 | `USE_DATABASE` | Enable persistence mode |
 | `USE_SQLITE` | Use SQLite instead of PostgreSQL |
+| `SQLITE_PATH` | Override SQLite database path |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `ENABLE_LEDGER_PERSISTENCE` | Enable ledger persistence |
-| `SECRET_KEY` | Session encryption key |
 | `PORT` | Server port (default 8000) |
+| `PHINS_TEST_MODE` | Test-mode behavior for server/tests |
 
-Diagnostic endpoints:
+Common health and diagnostics endpoints include:
+
 - `/api/health`
+- `/health`
 - `/api/diagnostics/db-test`
 - `/api/diagnostics/env-check`
 
+Do not assume every auxiliary API module is live. For files such as
+`web_portal/api_bi_analytics.py` or `web_portal/api_delivery_bidding.py`,
+confirm the route wiring before making behavior assumptions.
+
 ## 11) Agent Checklist Before Commit
 
-- [ ] Changes are scoped to requested task.
-- [ ] Existing patterns were followed (service/repository/api split).
-- [ ] Relevant tests were run and passed locally.
+- [ ] Changes are scoped to the requested task.
+- [ ] Nearby existing patterns were inspected before editing.
+- [ ] Relevant tests or validations were run, or the task is docs-only.
 - [ ] Docs/comments were updated if behavior changed.
-- [ ] No secrets introduced.
-- [ ] Error handling and validation paths were considered.
+- [ ] No secrets or environment-specific credentials were introduced.
+- [ ] Error handling, validation, and backward compatibility were considered.
 
 ## 12) Reference Docs
 
 Start with:
+
 - `README.md`
 - `DEPLOYMENT.md`
 - `SECURITY.md`
@@ -215,52 +350,56 @@ Start with:
 - `AI_ARCHITECTURE.md`
 - `RAILWAY_DEPLOYMENT.md`
 - `RAILWAY_POSTGRES_FIX.md`
+- Other `RAILWAY_*.md` files in the repo root when deployment work is involved
 
-## 13) Agent Operating Rules (Practical)
+## 13) Practical Operating Rules
 
 Use these guardrails during implementation work:
 
-1. Keep changes tightly scoped to the requested task.
-2. Reuse existing services/repositories before introducing new abstractions.
-3. Preserve API response shape and error payload conventions.
+1. Keep changes tightly scoped to the request.
+2. Reuse existing services, repositories, and helper functions first.
+3. Preserve API response shape and error conventions.
 4. Avoid modifying unrelated files, even if they are already changed locally.
 5. Add or update tests whenever behavior changes.
-6. Prefer targeted test runs for speed, then run a broader smoke test for high-risk areas.
-7. Document non-obvious behavior changes in code comments or docs when needed.
-8. Commit with clear, descriptive messages that explain what changed and why.
-9. Never include secrets, tokens, or environment-specific credentials in code or logs.
-10. If a request is ambiguous, choose the least disruptive implementation path.
+6. Prefer targeted tests first, then a broader smoke/integration check for
+   moderate- or high-risk work.
+7. Document non-obvious behavior changes when needed.
+8. Commit with clear, descriptive messages.
+9. Verify whether `pytest` should include or exclude root-level `test_*.py`
+   files for your task.
+10. If the request is ambiguous, choose the least disruptive implementation path.
 
 ## 14) Quick Start Workflow (Per Task)
 
-Use this sequence for most requests:
+Use this sequence for most tasks:
 
-1. Read the task and confirm impacted layer(s): API, service, repository, or domain.
-2. Inspect nearby existing patterns before introducing new abstractions.
-3. Implement the smallest viable change that solves the request.
-4. Add or update tests in `tests/` for success and failure paths.
-5. Run targeted tests first, then one broader smoke/integration test if risk is moderate/high.
-6. Verify API responses remain backward compatible unless migration is requested.
-7. Update docs/comments only where behavior changed or logic is non-obvious.
+1. Identify the impacted layer: API, service, engine, repository, or domain.
+2. Inspect adjacent code for patterns already used in that area.
+3. Implement the smallest viable change.
+4. Add or update tests for the affected workflow.
+5. Run targeted tests first.
+6. Run a broader validation step if the change crosses module boundaries.
+7. Update docs/comments only where behavior or assumptions changed.
 8. Commit with a clear message describing scope and intent.
 
 ## 15) Cloud Agent Git Workflow (Required)
 
-When running in cloud agent mode, follow this sequence:
+When running in cloud agent mode:
 
 1. Confirm you are on the assigned feature branch before editing.
-2. Keep commits small and task-focused (prefer multiple small commits over one large commit).
-3. Stage only intended files (`git add <paths>`), then commit with a clear message.
+2. Keep commits small and task-focused where practical.
+3. Stage only intended files, then commit with a clear message.
 4. Push with upstream tracking when needed:
 
 ```bash
 git push -u origin <branch-name>
 ```
 
-5. If push fails due to transient network issues, retry with exponential backoff (4s, 8s, 16s, 32s).
-6. Do not rewrite history (`push --force`) unless explicitly requested.
-7. If the change is documentation-only, note that tests were not required in the task summary.
+5. Retry transient network push failures with exponential backoff.
+6. Do not rewrite history unless explicitly requested.
+7. If the change is documentation-only, note that tests were not required in the
+   task summary.
 
 ---
 
-Last updated: February 27, 2026
+Last updated: March 20, 2026
