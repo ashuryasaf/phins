@@ -491,6 +491,30 @@
     .section-content.section-collapsed {
       min-height: 84px;
     }
+    .dashboard-bulk-controls {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 6px 0 22px 0;
+    }
+    .dashboard-bulk-controls .bulk-btn {
+      border: 1px solid rgba(13, 71, 161, 0.18);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.95);
+      color: #0d47a1;
+      padding: 8px 14px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    .dashboard-bulk-controls .bulk-btn:hover {
+      background: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(0,0,0,0.1);
+    }
 
     @media screen and (max-width: 768px) {
       .dashboard-section-controls {
@@ -500,6 +524,13 @@
       .dashboard-section-toggle {
         padding: 7px 10px;
         font-size: 0.78rem;
+      }
+      .dashboard-bulk-controls {
+        justify-content: stretch;
+      }
+      .dashboard-bulk-controls .bulk-btn {
+        flex: 1 1 180px;
+        text-align: center;
       }
     }
     
@@ -840,6 +871,11 @@
         <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Risk • Insurance • Investment</div>
       </a>
       
+    </div>
+
+    <div class="dashboard-bulk-controls" aria-label="Dashboard section controls">
+      <button type="button" class="bulk-btn" onclick="setAllDashboardSectionsCollapsed(false)">📖 Expand All</button>
+      <button type="button" class="bulk-btn" onclick="setAllDashboardSectionsCollapsed(true)">🗂️ Collapse All</button>
     </div>
 
     <!-- Quick Stats -->
@@ -2121,6 +2157,16 @@
       if (!section) return;
       const collapsed = section.classList.contains('section-collapsed');
       setDashboardSectionCollapsed(section, !collapsed);
+    }
+
+    function setAllDashboardSectionsCollapsed(collapsed) {
+      const sections = Array.from(document.querySelectorAll('main .section-content'))
+        .filter(section => section.dataset.sectionControlsInitialized === 'true');
+      sections.forEach(section => setDashboardSectionCollapsed(section, collapsed));
+      const activeSectionId = window.location.hash.replace('#', '');
+      if (!collapsed && activeSectionId) {
+        scrollToDashboardSection(activeSectionId, { updateHash: false });
+      }
     }
 
     function focusDashboardSection(section) {
