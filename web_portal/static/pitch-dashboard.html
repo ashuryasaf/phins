@@ -1222,6 +1222,187 @@
       margin-top: 14px;
     }
 
+    .download-btn {
+      position: fixed;
+      right: 28px;
+      bottom: 28px;
+      z-index: 9999;
+      border: none;
+      border-radius: 999px;
+      padding: 14px 22px;
+      background: var(--gradient-hdr);
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(13, 71, 161, 0.3);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 34px rgba(13, 71, 161, 0.38);
+    }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 10mm;
+      }
+
+      body {
+        background: #fff;
+        margin: 0;
+      }
+
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      .download-btn,
+      .header-actions,
+      .scenario-sidebar,
+      .export-actions,
+      .deck-grid,
+      .source-note {
+        display: none !important;
+      }
+
+      .site-header,
+      .hero,
+      .panel,
+      .stat-box,
+      .thesis-card,
+      .assessment-box,
+      .source-card,
+      .chart-card,
+      .kpi-card,
+      .detail-card,
+      .integrity-card,
+      .story-card,
+      .priority-item {
+        box-shadow: none !important;
+      }
+
+      .site-header {
+        padding: 0 0 10px;
+        color: var(--text-main);
+        background: transparent;
+        border-bottom: 2px solid var(--border);
+      }
+
+      .logo-tagline {
+        color: var(--text-soft);
+      }
+
+      .logo-icon {
+        box-shadow: none;
+      }
+
+      .hero {
+        padding: 18px 0 14px;
+        background: transparent;
+        color: var(--text-main);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .hero-copy p,
+      .hero-panel ul,
+      .section-copy,
+      .narrative-list,
+      .bullet-list,
+      .priority-body,
+      .assessment-box p,
+      .source-card p,
+      .detail-list,
+      .kpi-foot,
+      td,
+      .country-sub {
+        color: var(--text-sub) !important;
+      }
+
+      .hero-badges {
+        margin-top: 10px;
+      }
+
+      .pill,
+      .priority-score,
+      .source-chip,
+      .data-badge,
+      .source-tag {
+        border: 1px solid var(--border);
+      }
+
+      .hero-panel {
+        background: #fff;
+        border: 1px solid var(--border);
+      }
+
+      .container {
+        max-width: none;
+        padding: 14px 0 0;
+      }
+
+      .stats-strip,
+      .layout-grid,
+      .scenario-shell,
+      .scenario-detail,
+      .visual-grid,
+      .story-grid,
+      .thesis-grid,
+      .integrity-grid,
+      .source-grid,
+      .kpi-grid {
+        grid-template-columns: 1fr 1fr !important;
+      }
+
+      .scenario-shell {
+        display: block;
+      }
+
+      .scenario-results {
+        display: block;
+      }
+
+      .panel,
+      .chart-card,
+      .story-card,
+      .stat-box,
+      .thesis-card,
+      .assessment-box,
+      .source-card,
+      .kpi-card,
+      .detail-card,
+      .integrity-card,
+      .priority-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .visual-grid,
+      .thesis-grid,
+      .integrity-grid,
+      .scenario-shell,
+      .layout-grid {
+        margin-bottom: 14px;
+      }
+
+      .section-label {
+        margin-bottom: 8px;
+      }
+
+      .site-footer {
+        margin-top: 10px;
+        padding: 10px 0 0;
+        background: transparent;
+        color: var(--text-soft);
+        border-top: 1px solid var(--border);
+      }
+    }
+
     @media (max-width: 1100px) {
       .hero-inner,
       .layout-grid,
@@ -1303,6 +1484,7 @@
   </style>
 </head>
 <body>
+  <button type="button" class="download-btn" onclick="window.print()">📥 Download Executive Assessment PDF</button>
   <header class="site-header">
     <div class="logo-row">
       <div class="logo-icon">🛡️</div>
