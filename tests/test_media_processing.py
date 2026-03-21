@@ -125,8 +125,6 @@ class _StubMediaGenerationService:
             "content_type": "video/mp4",
             "size": 16,
         }
-
-
 def test_media_subtitle_job_lifecycle_and_download():
     port = 8290
     srv = ServerThread(port)

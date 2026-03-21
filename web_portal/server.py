@@ -1258,19 +1258,15 @@ def create_media_video_job(
     return job
 
 
-def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> None:
-    """Mark a queued or processing media video job as cancelled."""
-    if not isinstance(job, dict):
-        return
-    if str(job.get('job_kind') or '') != 'video_generation':
-        return
-    if str(job.get('status') or '') in {'completed', 'failed', 'cancelled'}:
-        return
+def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
+    """Mark a queued or processing video job as cancelled."""
     job['status'] = 'cancelled'
     job['provider_status'] = 'cancelled'
     job['completed_at'] = datetime.now().isoformat()
-    job['error'] = None
     job['message'] = f"Cancelled by {cancelled_by or 'admin'}."
+    job['error'] = None
+    job['progress_pct'] = safe_int(job.get('progress_pct'), 0)
+    return job
 
 
 def build_video_job_reference_image_data_url(asset_id: str) -> str:
@@ -1399,17 +1395,6 @@ def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
         poll_and_finalize_media_video_job(job_id)
 
     threading.Thread(target=_runner, daemon=True).start()
-
-
-def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
-    """Mark a queued or processing video job as cancelled."""
-    job['status'] = 'cancelled'
-    job['provider_status'] = 'cancelled'
-    job['completed_at'] = datetime.now().isoformat()
-    job['message'] = f"Cancelled by {cancelled_by or 'admin'}."
-    job['error'] = None
-    job['progress_pct'] = safe_int(job.get('progress_pct'), 0)
-    return job
 
 
 def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
@@ -17790,7 +17775,6 @@ For claims or questions, please contact:
                     'generated_video_asset': serialize_media_asset(asset) if asset else None,
                 }).encode('utf-8'))
                 return
-
             asset, track = complete_media_subtitle_job(job, data)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
