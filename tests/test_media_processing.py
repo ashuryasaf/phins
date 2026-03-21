@@ -79,6 +79,42 @@ def _inject_session(token, username="admin", role="admin", customer_id=""):
         portal.USERS[username] = {"role": role, "username": username}
 
 
+class _StubMediaGenerationService:
+    def __init__(self):
+        self.submissions = []
+        self.polls = []
+        self.downloads = []
+
+    def submit_video_generation(self, **kwargs):
+        self.submissions.append(kwargs)
+        return {
+            "provider": kwargs["provider"],
+            "provider_job_id": "stub-provider-job-1",
+            "status": "queued",
+            "message": "Stub provider accepted video generation request.",
+            "provider_state": {"operation_name": "operations/stub-provider-job-1"},
+        }
+
+    def poll_video_generation(self, **kwargs):
+        self.polls.append(kwargs)
+        return {
+            "status": "completed",
+            "message": "Stub provider completed the video.",
+            "provider_job_id": kwargs["provider_job_id"],
+            "download_url": "https://cdn.example.com/generated/stub-video.mp4",
+            "duration": 8,
+            "provider_state": {"done": True},
+        }
+
+    def download_generated_video(self, **kwargs):
+        self.downloads.append(kwargs)
+        return {
+            "data_url": "data:video/mp4;base64,c3R1Yi12aWRlby1ieXRlcw==",
+            "content_type": "video/mp4",
+            "size": 16,
+        }
+
+
 def test_media_subtitle_job_lifecycle_and_download():
     port = 8290
     srv = ServerThread(port)
@@ -262,4 +298,91 @@ def test_delete_media_removes_processing_job_state():
         assert delete_resp["id"] == asset_id
         assert job_id not in portal.MEDIA_PROCESSING_JOBS
     finally:
+        srv.stop()
+
+
+def test_marketing_video_generation_job_creates_media_asset():
+    port = 8293
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_generation"
+    _inject_session(token, "media_admin_generation", "admin")
+
+    stub_service = _StubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub_service
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "latest_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-TEST-VIDEO",
+                    "generated_at": datetime.now().isoformat(),
+                    "ai_video_blueprints": [
+                        {
+                            "title": "Family Coverage Hero",
+                            "format": "Short vertical explainer",
+                            "voiceover_style": "Warm and trustworthy",
+                            "storyboard": [
+                                "A family reviews policy options on a tablet.",
+                                "A quick claims support moment builds confidence.",
+                            ],
+                        }
+                    ],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "stub"},
+                "assets_created": [],
+            },
+            "published_campaigns": [],
+            "social_connections": {},
+        }
+
+        status, create_resp = _json_request(
+            base + "/api/admin/media/video-jobs",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": "MKT-TEST-VIDEO",
+                "blueprint_index": 0,
+                "provider": "gemini",
+            },
+        )
+        assert status == 202
+        job = create_resp["job"]
+        assert job["job_kind"] == "video_generation"
+        assert job["provider"] == "gemini"
+        assert stub_service.submissions
+
+        generated_asset_id = ""
+        final_job = None
+        for _ in range(20):
+            time.sleep(0.15)
+            status, jobs_resp = _json_request(
+                base + "/api/admin/media/video-jobs?campaign_id=MKT-TEST-VIDEO",
+                token=token,
+            )
+            assert status == 200
+            final_job = jobs_resp["jobs"][0]
+            generated_asset_id = final_job.get("generated_asset_id", "")
+            if final_job.get("status") == "completed" and generated_asset_id:
+                break
+
+        assert final_job is not None
+        assert final_job["status"] == "completed"
+        assert generated_asset_id
+        assert stub_service.polls
+        assert stub_service.downloads
+
+        status, asset_resp = _json_request(base + f"/api/media/{generated_asset_id}", token=token)
+        assert status == 200
+        assert asset_resp["type"] == "video"
+        assert asset_resp["source"] == "ai_video_generation"
+        assert asset_resp["metadata"]["campaign_id"] == "MKT-TEST-VIDEO"
+        assert final_job["generated_asset_id"] == generated_asset_id
+    finally:
+        portal.get_media_generation_service = original_factory
         srv.stop()

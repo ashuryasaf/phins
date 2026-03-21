@@ -630,6 +630,7 @@ MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
+DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'gemini')
 
 
 def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
@@ -671,6 +672,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
     """Return a safe media job payload for API responses."""
     payload = {
         'id': job.get('id'),
+        'job_kind': job.get('job_kind', 'subtitle'),
         'asset_id': job.get('asset_id'),
         'asset_name': job.get('asset_name'),
         'provider': job.get('provider'),
@@ -683,6 +685,11 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'error': job.get('error'),
         'message': job.get('message', ''),
         'subtitle_track_id': job.get('subtitle_track_id'),
+        'campaign_id': job.get('campaign_id'),
+        'blueprint_index': job.get('blueprint_index'),
+        'generated_asset_id': job.get('generated_asset_id'),
+        'provider_operation_name': job.get('provider_operation_name', ''),
+        'provider_status': job.get('provider_status', ''),
     }
     if include_callback:
         payload['callback_path'] = job.get('callback_path', '')
@@ -704,6 +711,19 @@ def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(track, dict)
         ]
     return payload
+
+
+def media_asset_url(asset: Dict[str, Any]) -> str:
+    """Resolve the best available playback/download URL for a media asset."""
+    return str(asset.get('url') or asset.get('data') or '').strip()
+
+
+def get_media_asset_playback_url(asset_id: str) -> str:
+    """Return the current playable URL for a media asset, if any."""
+    asset = MEDIA_ASSETS.get(asset_id)
+    if not asset:
+        return ''
+    return media_asset_url(asset)
 
 
 def get_media_subtitle_tracks(asset: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -842,6 +862,30 @@ def find_media_processing_job(job_id: str = '', provider_job_id: str = '') -> Op
             if job.get('provider_job_id') == provider_job_id:
                 return job
     return None
+
+
+def list_media_processing_jobs_for_campaign(campaign_id: str, job_kind: str = '') -> List[Dict[str, Any]]:
+    """Return media processing jobs associated with a campaign."""
+    items: List[Dict[str, Any]] = []
+    for job in MEDIA_PROCESSING_JOBS.values():
+        if not isinstance(job, dict):
+            continue
+        if campaign_id and str(job.get('campaign_id') or '') != campaign_id:
+            continue
+        if job_kind and str(job.get('job_kind') or '') != job_kind:
+            continue
+        items.append(job)
+    items.sort(key=lambda item: item.get('requested_at', ''), reverse=True)
+    return items
+
+
+def marketing_state_dict() -> Dict[str, Any]:
+    """Ensure marketing sales agent state is always a mutable dict."""
+    state = DESIGN_SETTINGS.setdefault('marketing_sales_agent', {})
+    if not isinstance(state, dict):
+        state = {}
+        DESIGN_SETTINGS['marketing_sales_agent'] = state
+    return state
 
 
 def get_media_subtitle_track(asset: Dict[str, Any], track_id: str = '') -> Optional[Dict[str, Any]]:
@@ -1018,6 +1062,219 @@ def verify_media_provider_callback(headers: Any, raw_body: bytes, payload: Dict[
         return hmac.compare_digest(provided_signature, expected_signature)
 
     return False
+
+
+def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, Any]) -> None:
+    """Normalize provider job state onto a video generation job record."""
+    if not isinstance(payload, dict):
+        return
+    job['provider_status'] = str(payload.get('status') or job.get('provider_status') or '').strip().lower()
+    if payload.get('provider_job_id'):
+        job['provider_job_id'] = str(payload.get('provider_job_id'))
+    if payload.get('provider_state') is not None:
+        job['provider_state'] = payload.get('provider_state')
+    if payload.get('download_url'):
+        job['download_url'] = str(payload.get('download_url')).strip()
+    if payload.get('message'):
+        job['message'] = str(payload.get('message'))
+    if payload.get('error'):
+        job['error'] = str(payload.get('error'))
+
+
+def create_media_video_job(
+    *,
+    campaign_id: str,
+    blueprint_index: int,
+    blueprint: Dict[str, Any],
+    requested_by: str,
+    provider: str,
+    image_data_url: str = '',
+) -> Dict[str, Any]:
+    """Create and submit a provider-backed video generation job."""
+    service = get_media_generation_service()
+    prompt_parts = [
+        str(blueprint.get('title') or '').strip(),
+        str(blueprint.get('format') or '').strip(),
+        str(blueprint.get('voiceover_style') or '').strip(),
+    ]
+    storyboard = blueprint.get('storyboard') or []
+    if isinstance(storyboard, list) and storyboard:
+        prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
+    prompt = '. '.join(part for part in prompt_parts if part)
+    if not prompt:
+        prompt = f"Marketing video for campaign {campaign_id}"
+
+    aspect_ratio = '16:9'
+    format_hint = str(blueprint.get('format') or '').lower()
+    if 'vertical' in format_hint or 'short' in format_hint or 'reel' in format_hint:
+        aspect_ratio = '9:16'
+
+    submission = service.submit_video_generation(
+        provider=provider,
+        prompt=prompt,
+        title=str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
+        aspect_ratio=aspect_ratio,
+        duration_seconds=8,
+        resolution='720p',
+        image_data_url=image_data_url,
+        metadata={
+            'campaign_id': campaign_id,
+            'blueprint_index': blueprint_index,
+            'requested_by': requested_by,
+        },
+    )
+
+    requested_at = datetime.now().isoformat()
+    job_id = f"mjob-{uuid.uuid4().hex[:12]}"
+    job = {
+        'id': job_id,
+        'job_kind': 'video_generation',
+        'campaign_id': campaign_id,
+        'blueprint_index': blueprint_index,
+        'asset_id': '',
+        'asset_name': str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
+        'provider': provider,
+        'provider_job_id': str(submission.get('provider_job_id') or ''),
+        'provider_operation_name': str((submission.get('provider_state') or {}).get('operation_name') or ''),
+        'provider_status': str(submission.get('status') or 'queued'),
+        'provider_state': submission.get('provider_state') or {},
+        'language': 'en',
+        'status': 'queued',
+        'requested_at': requested_at,
+        'requested_by': requested_by or 'admin',
+        'completed_at': None,
+        'error': None,
+        'message': str(submission.get('message') or 'Video generation submitted to provider.'),
+        'subtitle_track_id': None,
+        'generated_asset_id': '',
+        'download_url': '',
+    }
+    MEDIA_PROCESSING_JOBS[job_id] = job
+    return job
+
+
+def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Download a completed provider video and store it as a media asset."""
+    from services.media_generation_service import MediaGenerationError
+
+    if not isinstance(job, dict):
+        return None
+
+    update_video_generation_job_state(job, poll_result)
+    status_value = str(poll_result.get('status') or '').strip().lower()
+    if status_value == 'processing':
+        job['status'] = 'processing'
+        return None
+    if status_value == 'failed':
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(poll_result.get('error') or 'Provider video generation failed')
+        return None
+
+    download_url = str(poll_result.get('download_url') or '').strip()
+    if not download_url:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = 'Provider completed without a downloadable video URL'
+        return None
+
+    service = get_media_generation_service()
+    try:
+        downloaded = service.download_generated_video(provider=str(job.get('provider') or ''), download_url=download_url)
+    except MediaGenerationError as exc:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(exc)
+        return None
+
+    campaign_id = str(job.get('campaign_id') or 'MKT-UNKNOWN')
+    asset_id = f"media-{uuid.uuid4().hex[:12]}"
+    uploaded_at = datetime.now().isoformat()
+    asset = {
+        'id': asset_id,
+        'name': f"{job.get('asset_name') or campaign_id}.mp4",
+        'type': 'video',
+        'format': str(downloaded.get('content_type') or 'video/mp4'),
+        'size': safe_int(downloaded.get('size'), 0),
+        'url': '',
+        'data': str(downloaded.get('data_url') or ''),
+        'thumbnail': '',
+        'duration': safe_int(poll_result.get('duration') or 8, 8),
+        'source': 'ai_video_generation',
+        'uploaded_at': uploaded_at,
+        'uploaded_by': str(job.get('requested_by') or 'admin'),
+        'metadata': {
+            'campaign_id': campaign_id,
+            'job_id': job.get('id'),
+            'provider': job.get('provider'),
+            'blueprint_index': job.get('blueprint_index'),
+            'generated_from': 'marketing_video_blueprint',
+        }
+    }
+    MEDIA_ASSETS[asset_id] = asset
+    job['generated_asset_id'] = asset_id
+    job['status'] = 'completed'
+    job['completed_at'] = uploaded_at
+    job['error'] = None
+    job['message'] = str(poll_result.get('message') or 'Generated video saved to media library.')
+    job['download_url'] = download_url
+    return asset
+
+
+def poll_and_finalize_media_video_job(job_id: str) -> None:
+    """Poll a provider-backed video generation job and finalize it if ready."""
+    from services.media_generation_service import MediaGenerationError
+
+    job = MEDIA_PROCESSING_JOBS.get(job_id)
+    if not isinstance(job, dict):
+        return
+    if str(job.get('job_kind') or '') != 'video_generation':
+        return
+    if str(job.get('status') or '') in {'completed', 'failed'}:
+        return
+
+    service = get_media_generation_service()
+    try:
+        poll_result = service.poll_video_generation(
+            provider=str(job.get('provider') or ''),
+            provider_job_id=str(job.get('provider_job_id') or ''),
+            provider_state=job.get('provider_state') if isinstance(job.get('provider_state'), dict) else {},
+        )
+        update_video_generation_job_state(job, poll_result)
+        finalize_media_video_job(job, poll_result)
+    except MediaGenerationError as exc:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(exc)
+        job['message'] = str(exc)
+    finally:
+        save_ledger_data()
+
+
+def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
+    """Poll a media generation job in the background once after a short delay."""
+    wait_seconds = max(safe_int(delay_seconds, 5), 1)
+
+    def _runner() -> None:
+        time.sleep(wait_seconds)
+        poll_and_finalize_media_video_job(job_id)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
+def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
+    """Serialize video generation jobs for a campaign."""
+    return [
+        serialize_media_job(job, include_callback=True)
+        for job in list_media_processing_jobs_for_campaign(campaign_id, job_kind='video_generation')
+    ]
+
+
+def get_media_generation_service():
+    """Return the provider-backed media generation service."""
+    from services.media_generation_service import get_media_generation_service as _get_media_generation_service
+
+    return _get_media_generation_service()
 
 # ========== INVITATION CODES (Registration by Invitation Only) ==========
 # Invitation codes for new user registration
@@ -5615,6 +5872,27 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        if path == '/api/admin/media/video-jobs':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            campaign_id = str(qs.get('campaign_id', [''])[0]).strip()
+            if not campaign_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+
+            jobs = video_generation_jobs_for_campaign_response(campaign_id)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'campaign_id': campaign_id,
+                'jobs': jobs,
+            }).encode('utf-8'))
+            return
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':
@@ -17188,6 +17466,76 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
         
+        # ========== MEDIA GENERATION JOBS ==========
+        if path == '/api/admin/media/video-jobs':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            campaign_id = str(data.get('campaign_id') or '').strip()
+            blueprint_index = safe_int(data.get('blueprint_index'), -1)
+            provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
+            if not campaign_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+            if blueprint_index < 0:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'blueprint_index is required'}).encode('utf-8'))
+                return
+
+            marketing_state = marketing_state_dict()
+            latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
+            campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
+            if str(campaign_payload.get('campaign_id') or '') != campaign_id:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Campaign not found or not loaded as latest campaign'}).encode('utf-8'))
+                return
+
+            blueprints = campaign_payload.get('ai_video_blueprints')
+            if not isinstance(blueprints, list) or blueprint_index >= len(blueprints):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Video blueprint not found'}).encode('utf-8'))
+                return
+
+            try:
+                job = create_media_video_job(
+                    campaign_id=campaign_id,
+                    blueprint_index=blueprint_index,
+                    blueprint=blueprints[blueprint_index],
+                    requested_by=(session or {}).get('username', 'admin'),
+                    provider=provider,
+                    image_data_url=str(data.get('image_data_url') or ''),
+                )
+                save_ledger_data()
+                start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
+                self._set_json_headers(202)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Video generation job queued',
+                    'job': serialize_media_job(job, include_callback=True),
+                    'jobs': video_generation_jobs_for_campaign_response(campaign_id),
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+
         # ========== MEDIA ASSETS API - Subtitle Jobs ==========
         if path.startswith('/api/provider/media-processing/callback'):
             length = int(self.headers.get('Content-Length', 0))
