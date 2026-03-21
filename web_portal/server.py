@@ -638,8 +638,15 @@ MEDIA_STORAGE_DIR = os.environ.get(
 MEDIA_INLINE_MAX_BYTES = safe_int(os.environ.get('PHINS_MEDIA_INLINE_MAX_BYTES', 5 * 1024 * 1024), 5 * 1024 * 1024)
 
 
-def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
-    """Create a compact ASCII-safe filename stem."""
+def _sanitize_ascii_filename_stem(
+    value: str,
+    fallback: str,
+    *,
+    strip_chars: str,
+    collapse_repeated_underscores: bool,
+    max_length: Optional[int] = None,
+) -> str:
+    """Create a compact ASCII-safe filename stem with caller-specific cleanup."""
     value = (value or '').strip()
     if not value:
         return fallback
@@ -651,10 +658,24 @@ def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> st
         elif ch in (' ', '.'):
             safe_chars.append('_')
 
-    cleaned = ''.join(safe_chars).strip('._')
-    while '__' in cleaned:
-        cleaned = cleaned.replace('__', '_')
-    return cleaned[:80] or fallback
+    cleaned = ''.join(safe_chars).strip(strip_chars)
+    if collapse_repeated_underscores:
+        while '__' in cleaned:
+            cleaned = cleaned.replace('__', '_')
+    if max_length is not None:
+        cleaned = cleaned[:max_length]
+    return cleaned or fallback
+
+
+def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
+    """Create a compact ASCII-safe filename stem."""
+    return _sanitize_ascii_filename_stem(
+        value,
+        fallback,
+        strip_chars='._',
+        collapse_repeated_underscores=True,
+        max_length=80,
+    )
 
 
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
@@ -5339,17 +5360,12 @@ class PortalHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _safe_download_filename(value: str, fallback: str = 'report_summary') -> str:
         """Create a filesystem-safe ASCII filename stem."""
-        value = (value or '').strip()
-        if not value:
-            return fallback
-        safe_chars = []
-        for ch in value:
-            if ord(ch) < 128 and (ch.isalnum() or ch in ('-', '_')):
-                safe_chars.append(ch)
-            elif ch in (' ', '.'):
-                safe_chars.append('_')
-        safe = ''.join(safe_chars).strip('_')
-        return safe or fallback
+        return _sanitize_ascii_filename_stem(
+            value,
+            fallback,
+            strip_chars='_',
+            collapse_repeated_underscores=False,
+        )
 
     def _build_report_summary_csv_bytes(self, summary: Dict[str, Any]) -> bytes:
         """Build CSV bytes for downloadable report summary."""
