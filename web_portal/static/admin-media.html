@@ -2065,14 +2065,68 @@
             }
         }
 
-        function downloadLatestSubtitle(assetId) {
+        function extractDownloadFilename(contentDisposition, fallbackFilename) {
+            if (!contentDisposition) return fallbackFilename;
+            const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utf8Match && utf8Match[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1].trim().replace(/"/g, '')) || fallbackFilename;
+                } catch (e) {
+                    return utf8Match[1].trim().replace(/"/g, '') || fallbackFilename;
+                }
+            }
+            const basicMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+            return (basicMatch && basicMatch[1]) ? basicMatch[1].trim() : fallbackFilename;
+        }
+
+        async function downloadLatestSubtitle(assetId) {
             const media = mediaAssets.find(item => item.id === assetId);
             const latestTrack = getLatestSubtitleTrack(media);
             if (!latestTrack || !latestTrack.download_url) {
                 showToast('No downloadable subtitle track is available yet.', 'error');
                 return;
             }
-            window.open(latestTrack.download_url, '_blank');
+
+            const token = getToken();
+            if (!token) {
+                showToast('Session expired. Please login again.', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(latestTrack.download_url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    let errorMessage = 'Subtitle download failed';
+                    try {
+                        const errorPayload = await response.json();
+                        if (errorPayload && errorPayload.error) {
+                            errorMessage = errorPayload.error;
+                        }
+                    } catch (e) {
+                        // Keep default message when response is not JSON.
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const blob = await response.blob();
+                const fallbackFilename = `${(latestTrack.id || 'subtitle_track')}.srt`;
+                const filename = extractDownloadFilename(
+                    response.headers.get('Content-Disposition') || '',
+                    fallbackFilename
+                );
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+            } catch (e) {
+                showToast('Subtitle download failed: ' + e.message, 'error');
+            }
         }
         
         // ==================== UI FUNCTIONS ====================
@@ -2266,7 +2320,7 @@
                     <div class="preview-detail-label">Subtitles</div>
                     <div class="preview-detail-value">
                         ${latestTrack
-                            ? `<a href="${latestTrack.download_url}" target="_blank" style="color:#a8f0c4;text-decoration:none;">${escapeGrowthHtml(latestTrack.label || 'Download SRT')}</a>`
+                            ? `<a href="#" onclick="event.preventDefault(); downloadLatestSubtitle('${media.id}');" style="color:#a8f0c4;text-decoration:none;">${escapeGrowthHtml(latestTrack.label || 'Download SRT')}</a>`
                             : escapeGrowthHtml((media.processing && media.processing.subtitle_status) || 'Not generated')}
                     </div>
                 </div>

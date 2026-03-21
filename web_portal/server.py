@@ -631,26 +631,6 @@ MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
 
-
-def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
-    """Create a compact ASCII-safe filename stem."""
-    value = (value or '').strip()
-    if not value:
-        return fallback
-
-    safe_chars = []
-    for ch in value:
-        if ord(ch) < 128 and (ch.isalnum() or ch in ('-', '_')):
-            safe_chars.append(ch)
-        elif ch in (' ', '.'):
-            safe_chars.append('_')
-
-    cleaned = ''.join(safe_chars).strip('._')
-    while '__' in cleaned:
-        cleaned = cleaned.replace('__', '_')
-    return cleaned[:80] or fallback
-
-
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
     """Return subtitle track metadata without embedded subtitle content."""
     return {
@@ -923,7 +903,7 @@ def build_media_subtitle_track(
         srt_content += '\n'
 
     track_id = str(job.get('subtitle_track_id') or f"sub-{uuid.uuid4().hex[:12]}")
-    filename_stem = safe_ascii_filename_stem(
+    filename_stem = PortalHandler._safe_download_filename(
         f"{asset.get('name') or asset.get('id') or 'video'}_{language}",
         fallback='subtitle_track',
     )
