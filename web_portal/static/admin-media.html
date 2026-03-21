@@ -511,11 +511,53 @@
             align-items: center;
             gap: 8px;
         }
-        .growth-meta-grid {
+        .growth-bridge-card {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 10px;
-            margin-bottom: 12px;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: start;
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .growth-bridge-main {
+            min-width: 0;
+        }
+        .growth-bridge-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .growth-bridge-summary {
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: rgba(255,255,255,0.82);
+            margin-bottom: 10px;
+        }
+        .growth-bridge-kpis {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .growth-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.12);
+            font-size: 0.74rem;
+        }
+        .growth-chip strong {
+            color: #fff;
+        }
+        .growth-bridge-side {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 160px;
         }
         .growth-meta-card {
             background: rgba(255,255,255,0.10);
@@ -533,31 +575,37 @@
             font-weight: 700;
             word-break: break-word;
         }
-        .growth-lists-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 10px;
-        }
-        .growth-list-card {
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 9px;
-            padding: 10px;
-        }
-        .growth-list-card h4 {
-            margin: 0 0 8px 0;
-            font-size: 0.85rem;
-        }
-        .growth-list-card ul {
-            margin: 0;
-            padding-left: 18px;
-            font-size: 0.78rem;
-            line-height: 1.45;
-        }
         .growth-status {
             margin-top: 8px;
             font-size: 0.8rem;
             color: rgba(255,255,255,0.82);
+        }
+        .subtitle-status {
+            margin-top: 8px;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.75);
+            line-height: 1.4;
+        }
+        .subtitle-status strong {
+            color: #fff;
+        }
+        .media-actions-secondary {
+            display: flex;
+            gap: 4px;
+            padding: 0 10px 10px;
+        }
+        .media-action-btn.subtitle {
+            background: rgba(255,255,255,0.12);
+            color: white;
+        }
+        .media-action-btn.download {
+            background: rgba(46, 213, 115, 0.18);
+            color: #a8f0c4;
+        }
+        .media-action-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
         }
         
         /* ========== DESIGN SETTINGS PANEL ========== */
@@ -839,6 +887,8 @@
             .upload-header { flex-direction: column; gap: 12px; }
             .library-header { flex-direction: column; align-items: flex-start; }
             .media-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+            .growth-bridge-card { grid-template-columns: 1fr; }
+            .growth-bridge-side { min-width: 0; }
         }
     </style>
 </head>
@@ -1009,48 +1059,34 @@
         <!-- Growth Agent Bridge -->
         <section class="growth-bridge-section">
             <div class="growth-bridge-header">
-                <h2>🚀 Growth Agent Bridge (Admin + Media)</h2>
+                <h2>🚀 Growth Agent Bridge</h2>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-secondary" onclick="loadGrowthBridgeCampaign()">🔄 Refresh</button>
-                    <a href="/admin.html#growth-agent-section" class="btn btn-primary">⚙️ Open Admin Builder</a>
+                    <a id="growth-bridge-link" href="/admin.html#growth-agent-section" class="btn btn-primary">⚙️ Open Admin Builder</a>
                 </div>
             </div>
 
-            <div class="growth-meta-grid">
-                <div class="growth-meta-card">
-                    <div class="growth-meta-label">Campaign ID</div>
-                    <div class="growth-meta-value" id="growth-campaign-id">-</div>
+            <div class="growth-bridge-card">
+                <div class="growth-bridge-main">
+                    <div class="growth-bridge-title" id="growth-bridge-title">Latest published campaign</div>
+                    <div class="growth-bridge-summary" id="growth-bridge-summary">
+                        Pull the latest published campaign from the admin dashboard to sync a compact summary into media.
+                    </div>
+                    <div class="growth-bridge-kpis">
+                        <span class="growth-chip"><strong id="growth-assets-count">0</strong> synced briefs</span>
+                        <span class="growth-chip"><strong id="growth-blueprint-count">0</strong> video blueprints</span>
+                        <span class="growth-chip"><strong id="growth-integrity">-</strong></span>
+                    </div>
                 </div>
-                <div class="growth-meta-card">
-                    <div class="growth-meta-label">Published At</div>
-                    <div class="growth-meta-value" id="growth-published-at">-</div>
-                </div>
-                <div class="growth-meta-card">
-                    <div class="growth-meta-label">Integrity</div>
-                    <div class="growth-meta-value" id="growth-integrity">-</div>
-                </div>
-                <div class="growth-meta-card">
-                    <div class="growth-meta-label">Brief Assets</div>
-                    <div class="growth-meta-value" id="growth-assets-count">0</div>
-                </div>
-            </div>
-
-            <div class="growth-lists-grid">
-                <div class="growth-list-card">
-                    <h4>🎯 Sales Playbooks</h4>
-                    <div id="growth-sales-list">No campaign loaded yet.</div>
-                </div>
-                <div class="growth-list-card">
-                    <h4>🎬 AI Video Blueprints</h4>
-                    <div id="growth-videos-list">No campaign loaded yet.</div>
-                </div>
-                <div class="growth-list-card">
-                    <h4>📣 Social Network Plan</h4>
-                    <div id="growth-social-list">No campaign loaded yet.</div>
-                </div>
-                <div class="growth-list-card">
-                    <h4>📄 Synced Media Briefs</h4>
-                    <div id="growth-assets-list">No campaign loaded yet.</div>
+                <div class="growth-bridge-side">
+                    <div class="growth-meta-card">
+                        <div class="growth-meta-label">Campaign ID</div>
+                        <div class="growth-meta-value" id="growth-campaign-id">-</div>
+                    </div>
+                    <div class="growth-meta-card">
+                        <div class="growth-meta-label">Published At</div>
+                        <div class="growth-meta-value" id="growth-published-at">-</div>
+                    </div>
                 </div>
             </div>
 
@@ -1567,13 +1603,6 @@
             if (el) el.textContent = message;
         }
 
-        function renderGrowthList(items, renderer) {
-            if (!Array.isArray(items) || items.length === 0) {
-                return '<div style="font-size:0.78rem;opacity:0.8;">No data available</div>';
-            }
-            return `<ul>${items.map(renderer).join('')}</ul>`;
-        }
-
         function renderGrowthBridgeCampaign(campaignEnvelope) {
             if (!campaignEnvelope || !campaignEnvelope.campaign) {
                 setGrowthStatus('No campaign payload available.');
@@ -1589,6 +1618,14 @@
             const publishedAtEl = document.getElementById('growth-published-at');
             const integrityEl = document.getElementById('growth-integrity');
             const assetsCountEl = document.getElementById('growth-assets-count');
+            const blueprintCountEl = document.getElementById('growth-blueprint-count');
+            const summaryEl = document.getElementById('growth-bridge-summary');
+            const titleEl = document.getElementById('growth-bridge-title');
+            const builderLinkEl = document.getElementById('growth-bridge-link');
+            const blueprintCount = Array.isArray(campaign.ai_video_blueprints) ? campaign.ai_video_blueprints.length : 0;
+            const socialCount = Array.isArray(campaign.social_network_plan) ? campaign.social_network_plan.length : 0;
+            const playbookCount = Array.isArray(campaign.sales_playbooks) ? campaign.sales_playbooks.length : 0;
+
             if (campaignIdEl) campaignIdEl.textContent = campaign.campaign_id || '-';
             if (publishedAtEl) {
                 const publishRef = campaignEnvelope.published_at || campaign.generated_at;
@@ -1600,34 +1637,26 @@
                     : `Unverified (${String(integrity.algorithm || 'unknown').toUpperCase()})`;
             }
             if (assetsCountEl) assetsCountEl.textContent = String(assets.length || 0);
-
-            const salesListEl = document.getElementById('growth-sales-list');
-            const videosListEl = document.getElementById('growth-videos-list');
-            const socialListEl = document.getElementById('growth-social-list');
-            const assetsListEl = document.getElementById('growth-assets-list');
-
-            if (salesListEl) {
-                salesListEl.innerHTML = renderGrowthList(campaign.sales_playbooks, (item) => `
-                    <li><strong>${escapeGrowthHtml(item.playbook)}</strong><br>${escapeGrowthHtml(item.kpi_target || '')}</li>
-                `);
+            if (blueprintCountEl) blueprintCountEl.textContent = String(blueprintCount);
+            if (titleEl) {
+                titleEl.textContent = campaign.title || campaign.campaign_name || `Campaign ${campaign.campaign_id || ''}`.trim();
             }
-            if (videosListEl) {
-                videosListEl.innerHTML = renderGrowthList(campaign.ai_video_blueprints, (item) => `
-                    <li><strong>${escapeGrowthHtml(item.title)}</strong><br>${escapeGrowthHtml(item.format || '')}</li>
-                `);
+            if (summaryEl) {
+                const scope = campaign.scope || {};
+                const summaryParts = [];
+                if (scope.vertical) summaryParts.push(`Vertical: ${escapeGrowthHtml(scope.vertical)}`);
+                if (scope.objective) summaryParts.push(`Objective: ${escapeGrowthHtml(scope.objective)}`);
+                summaryParts.push(`${playbookCount} playbooks`);
+                summaryParts.push(`${blueprintCount} video blueprints`);
+                summaryParts.push(`${socialCount} social channels`);
+                summaryParts.push(`${assets.length || 0} synced briefs`);
+                summaryEl.innerHTML = summaryParts.join(' &middot; ');
             }
-            if (socialListEl) {
-                socialListEl.innerHTML = renderGrowthList(campaign.social_network_plan, (item) => `
-                    <li><strong>${escapeGrowthHtml(String(item.network || '').toUpperCase())}</strong><br>${escapeGrowthHtml(item.cadence || '')}</li>
-                `);
-            }
-            if (assetsListEl) {
-                assetsListEl.innerHTML = renderGrowthList(assets, (asset) => `
-                    <li>${escapeGrowthHtml(asset.name || asset.id || 'Campaign Brief')}</li>
-                `);
+            if (builderLinkEl && campaign.campaign_id) {
+                builderLinkEl.href = `/admin.html#growth-agent-section`;
             }
 
-            setGrowthStatus(`Loaded campaign ${campaign.campaign_id || ''} and synced media briefs.`);
+            setGrowthStatus(`Loaded campaign ${campaign.campaign_id || ''} with ${blueprintCount} video blueprints and ${assets.length || 0} synced briefs.`);
         }
 
         async function loadGrowthBridgeCampaign() {
@@ -1932,6 +1961,119 @@
                 showToast('Error: ' + e.message, 'error');
             }
         }
+
+        function getLatestSubtitleTrack(media) {
+            if (!media || !Array.isArray(media.subtitles) || media.subtitles.length === 0) {
+                return null;
+            }
+            return media.subtitles[0];
+        }
+
+        function renderSubtitleSummary(media) {
+            if (!media || media.type !== 'video') return '';
+            const processing = media.processing || {};
+            const latestTrack = getLatestSubtitleTrack(media);
+            const status = processing.subtitle_status || (latestTrack ? latestTrack.status : 'idle');
+            const provider = processing.provider || (latestTrack ? latestTrack.provider : '');
+            const statusLabel = status ? status.replace(/_/g, ' ') : 'idle';
+
+            if (latestTrack) {
+                return `
+                    <div class="subtitle-status">
+                        <strong>Subtitles:</strong> ${escapeGrowthHtml(statusLabel)}
+                        (${escapeGrowthHtml((latestTrack.language || 'en').toUpperCase())})
+                    </div>
+                `;
+            }
+
+            if (status && status !== 'idle') {
+                return `
+                    <div class="subtitle-status">
+                        <strong>Subtitles:</strong> ${escapeGrowthHtml(statusLabel)}
+                        ${provider ? `via ${escapeGrowthHtml(provider)}` : ''}
+                    </div>
+                `;
+            }
+
+            return '<div class="subtitle-status"><strong>Subtitles:</strong> Not generated yet</div>';
+        }
+
+        async function refreshMediaAsset(assetId, options = {}) {
+            const token = getToken();
+            try {
+                const response = await fetch(`/api/media/${assetId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    throw new Error(`Refresh failed (${response.status})`);
+                }
+                const asset = await response.json();
+                const index = mediaAssets.findIndex(item => item.id === assetId);
+                if (index >= 0) {
+                    mediaAssets[index] = asset;
+                } else {
+                    mediaAssets.unshift(asset);
+                }
+                renderMediaGrid();
+                populateAssignmentSelects();
+                updateAssignmentUI();
+                updateStats();
+                if (!options.silent) {
+                    showToast('Media refreshed', 'success');
+                }
+                return asset;
+            } catch (e) {
+                if (!options.silent) {
+                    showToast('Unable to refresh media asset: ' + e.message, 'error');
+                }
+                return null;
+            }
+        }
+
+        async function requestSubtitleJob(assetId) {
+            const media = mediaAssets.find(item => item.id === assetId);
+            if (!media || media.type !== 'video') {
+                showToast('Subtitle generation is only available for videos.', 'error');
+                return;
+            }
+
+            const token = getToken();
+            try {
+                const response = await fetch(`/api/media/${assetId}/subtitles`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ language: 'en', provider: 'bridge' })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Subtitle request failed');
+                }
+
+                if (data.asset) {
+                    const index = mediaAssets.findIndex(item => item.id === assetId);
+                    if (index >= 0) {
+                        mediaAssets[index] = data.asset;
+                    }
+                    renderMediaGrid();
+                }
+                showToast('Subtitle job queued. Complete it via provider callback when processing finishes.', 'success');
+            } catch (e) {
+                showToast('Subtitle request failed: ' + e.message, 'error');
+            }
+        }
+
+        function downloadLatestSubtitle(assetId) {
+            const media = mediaAssets.find(item => item.id === assetId);
+            const latestTrack = getLatestSubtitleTrack(media);
+            if (!latestTrack || !latestTrack.download_url) {
+                showToast('No downloadable subtitle track is available yet.', 'error');
+                return;
+            }
+            window.open(latestTrack.download_url, '_blank');
+        }
         
         // ==================== UI FUNCTIONS ====================
         function renderMediaGrid() {
@@ -1963,12 +2105,31 @@
                             <span>${formatFileSize(media.size || 0)}</span>
                             <span>${formatDate(media.uploaded_at)}</span>
                         </div>
+                        ${renderSubtitleSummary(media)}
                     </div>
                     <div class="media-actions">
                         <button class="media-action-btn use" onclick="useMedia('${media.id}')">Use</button>
                         <button class="media-action-btn preview" onclick="previewMedia('${media.id}')">👁️</button>
                         <button class="media-action-btn delete" onclick="deleteMedia('${media.id}')">🗑️</button>
                     </div>
+                    ${media.type === 'video' ? `
+                        <div class="media-actions-secondary">
+                            <button
+                                class="media-action-btn subtitle"
+                                onclick="requestSubtitleJob('${media.id}')"
+                                ${media.processing?.subtitle_status === 'queued' ? 'disabled' : ''}
+                            >
+                                💬 SRT
+                            </button>
+                            <button
+                                class="media-action-btn download"
+                                onclick="downloadLatestSubtitle('${media.id}')"
+                                ${getLatestSubtitleTrack(media)?.download_url ? '' : 'disabled'}
+                            >
+                                ⬇️ Download
+                            </button>
+                        </div>
+                    ` : ''}
                 </div>
             `).join('');
         }
@@ -2099,6 +2260,17 @@
             }
             
             // Render details
+            const latestTrack = getLatestSubtitleTrack(media);
+            const subtitleDetail = media.type === 'video' ? `
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Subtitles</div>
+                    <div class="preview-detail-value">
+                        ${latestTrack
+                            ? `<a href="${latestTrack.download_url}" target="_blank" style="color:#a8f0c4;text-decoration:none;">${escapeGrowthHtml(latestTrack.label || 'Download SRT')}</a>`
+                            : escapeGrowthHtml((media.processing && media.processing.subtitle_status) || 'Not generated')}
+                    </div>
+                </div>
+            ` : '';
             details.innerHTML = `
                 <div class="preview-detail">
                     <div class="preview-detail-label">Type</div>
@@ -2124,6 +2296,7 @@
                     <div class="preview-detail-label">ID</div>
                     <div class="preview-detail-value" style="font-size:0.8rem;">${media.id}</div>
                 </div>
+                ${subtitleDetail}
             `;
             
             modal.classList.add('active');
