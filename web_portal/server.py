@@ -1277,6 +1277,14 @@ def build_video_job_reference_image_data_url(asset_id: str) -> str:
     return str(asset.get('data') or asset.get('url') or '').strip()
 
 
+def current_request_base_url(handler: "PortalHandler") -> str:
+    """Build the public base URL for callback links from the current request."""
+    host = str(handler.headers.get('Host') or f'127.0.0.1:{PORT}').strip()
+    forwarded_proto = str(handler.headers.get('X-Forwarded-Proto') or '').strip().lower()
+    scheme = forwarded_proto if forwarded_proto in {'http', 'https'} else 'https'
+    return f"{scheme}://{host}"
+
+
 def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Download a completed provider video and store it as a media asset."""
     from services.media_generation_service import MediaGenerationError
