@@ -27,13 +27,18 @@ class MediaGenerationService:
     """Thin provider abstraction over real video generation APIs."""
 
     SUPPORTED_PROVIDERS = {"gemini", "kling"}
+    DEFAULT_PROVIDER_MODELS = {
+        "gemini": ["veo-3.1-generate-preview", "veo-3-fast-preview"],
+        "kling": ["kling-v2.6-pro", "kling-v2.6-std"],
+    }
 
     def __init__(self) -> None:
         self._gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         self._gemini_model = os.environ.get("PHINS_GEMINI_VIDEO_MODEL", "veo-3.1-generate-preview").strip()
         self._kling_api_key = os.environ.get("KLING_API_KEY", "").strip()
         self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingai.com").strip().rstrip("/")
-        self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text-to-video").strip()
+        self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
+        self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
 
     def supported_provider_config(self) -> Dict[str, Dict[str, Any]]:
         """Return provider availability and public configuration hints."""
@@ -42,11 +47,13 @@ class MediaGenerationService:
                 "enabled": bool(self._gemini_api_key),
                 "label": "Gemini / Veo",
                 "model": self._gemini_model,
+                "models": list(self.DEFAULT_PROVIDER_MODELS["gemini"]),
             },
             "kling": {
                 "enabled": bool(self._kling_api_key),
                 "label": "Kling",
                 "base_url": self._kling_base_url,
+                "models": list(self.DEFAULT_PROVIDER_MODELS["kling"]),
             },
         }
 
@@ -56,10 +63,12 @@ class MediaGenerationService:
         provider: str,
         prompt: str,
         title: str,
+        model: str = "",
         aspect_ratio: str = "16:9",
         duration_seconds: int = 8,
         resolution: str = "720p",
         image_data_url: str = "",
+        callback_url: str = "",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Submit a provider-backed video generation request."""
@@ -73,19 +82,23 @@ class MediaGenerationService:
             return self._submit_gemini_video(
                 prompt=prompt,
                 title=title,
+                model=model,
                 aspect_ratio=aspect_ratio,
                 duration_seconds=duration_seconds,
                 resolution=resolution,
                 image_data_url=image_data_url,
+                callback_url=callback_url,
                 metadata=metadata or {},
             )
 
         return self._submit_kling_video(
             prompt=prompt,
             title=title,
+            model=model,
             aspect_ratio=aspect_ratio,
             duration_seconds=duration_seconds,
             image_data_url=image_data_url,
+            callback_url=callback_url,
             metadata=metadata or {},
         )
 
@@ -140,18 +153,22 @@ class MediaGenerationService:
         *,
         prompt: str,
         title: str,
+        model: str,
         aspect_ratio: str,
         duration_seconds: int,
         resolution: str,
         image_data_url: str,
+        callback_url: str,
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         if not self._gemini_api_key:
             raise MediaGenerationError("GEMINI_API_KEY is not configured")
 
+        selected_model = str(model or self._gemini_model).strip() or self._gemini_model
+
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{urllib.parse.quote(self._gemini_model, safe='')}:predictLongRunning"
+            f"{urllib.parse.quote(selected_model, safe='')}:predictLongRunning"
         )
         instance: Dict[str, Any] = {"prompt": prompt}
         image_payload = self._parse_data_url(image_data_url)
@@ -171,6 +188,9 @@ class MediaGenerationService:
         }
         if metadata:
             request_body["metadata"] = metadata
+        if callback_url:
+            request_body.setdefault("metadata", {})
+            request_body["metadata"]["phins_callback_url"] = callback_url
 
         payload = json.dumps(request_body).encode("utf-8")
         request = urllib.request.Request(
@@ -196,7 +216,7 @@ class MediaGenerationService:
             "message": f"Submitted to Gemini/Veo for \"{title}\"",
             "provider_state": {
                 "operation_name": operation_name,
-                "model": self._gemini_model,
+                "model": selected_model,
             },
         }
 
@@ -257,30 +277,39 @@ class MediaGenerationService:
         *,
         prompt: str,
         title: str,
+        model: str,
         aspect_ratio: str,
         duration_seconds: int,
         image_data_url: str,
+        callback_url: str,
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         if not self._kling_api_key:
             raise MediaGenerationError("KLING_API_KEY is not configured")
 
+        selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
         body: Dict[str, Any] = {
+            "model": selected_model,
             "prompt": prompt,
             "aspect_ratio": aspect_ratio or "16:9",
             "duration": int(max(1, duration_seconds or 8)),
             "title": title,
         }
         image_payload = self._parse_data_url(image_data_url)
+        endpoint_path = self._kling_text_to_video_path
         if image_payload:
+            endpoint_path = self._kling_image_to_video_path
             body["image"] = {
                 "data": image_payload["bytes_b64"],
                 "mime_type": image_payload["mime_type"],
             }
         if metadata:
             body["metadata"] = metadata
+        if callback_url:
+            body.setdefault("metadata", {})
+            body["metadata"]["phins_callback_url"] = callback_url
 
-        url = f"{self._kling_base_url}{self._kling_text_to_video_path}"
+        url = f"{self._kling_base_url}{endpoint_path}"
         payload = json.dumps(body).encode("utf-8")
         request = urllib.request.Request(
             url,
@@ -313,6 +342,7 @@ class MediaGenerationService:
             "provider_state": {
                 "submit_response": response_body,
                 "status_url": self._build_kling_status_url(provider_job_id),
+                "model": selected_model,
             },
         }
 

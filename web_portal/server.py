@@ -631,6 +631,11 @@ MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
 DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'gemini')
+MEDIA_STORAGE_DIR = os.environ.get(
+    'PHINS_MEDIA_STORAGE_DIR',
+    os.path.join(tempfile.gettempdir(), 'phins_media_assets'),
+)
+MEDIA_INLINE_MAX_BYTES = safe_int(os.environ.get('PHINS_MEDIA_INLINE_MAX_BYTES', 5 * 1024 * 1024), 5 * 1024 * 1024)
 
 
 def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
@@ -724,6 +729,66 @@ def get_media_asset_playback_url(asset_id: str) -> str:
     if not asset:
         return ''
     return media_asset_url(asset)
+
+
+def ensure_media_storage_dir() -> None:
+    """Create the on-disk media storage directory if it does not already exist."""
+    os.makedirs(MEDIA_STORAGE_DIR, exist_ok=True)
+
+
+def build_internal_media_file_url(asset_id: str, filename: str) -> str:
+    """Build the internal route used to stream a stored media file."""
+    safe_name = safe_ascii_filename_stem(filename or asset_id, fallback=asset_id)
+    return f"/media-files/{asset_id}/{safe_name}"
+
+
+def write_media_binary_payload(asset_id: str, filename: str, payload_bytes: bytes) -> str:
+    """Persist heavy media bytes to disk and return the saved file path."""
+    ensure_media_storage_dir()
+    stem = safe_ascii_filename_stem(filename or asset_id, fallback=asset_id)
+    file_path = os.path.join(MEDIA_STORAGE_DIR, f"{asset_id}-{stem}")
+    with open(file_path, 'wb') as handle:
+        handle.write(payload_bytes)
+    return file_path
+
+
+def decode_media_data_url(data_url: str) -> tuple[bytes, str]:
+    """Decode a data URL into raw bytes and mime type."""
+    value = str(data_url or '').strip()
+    if not value.startswith('data:') or ',' not in value:
+        raise ValueError('Expected a valid data URL payload')
+    header, encoded = value.split(',', 1)
+    mime_type = header[5:].split(';', 1)[0].strip() or 'application/octet-stream'
+    if ';base64' in header:
+        payload_bytes = base64.b64decode(encoded.encode('ascii'))
+    else:
+        payload_bytes = urlparse.unquote_to_bytes(encoded)
+    return payload_bytes, mime_type
+
+
+def persist_media_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
+    """Offload heavy inline media payloads to file storage when appropriate."""
+    if not isinstance(asset, dict):
+        return asset
+    data_url = str(asset.get('data') or '').strip()
+    if not data_url:
+        return asset
+    try:
+        payload_bytes, mime_type = decode_media_data_url(data_url)
+    except Exception:
+        return asset
+    if len(payload_bytes) <= MEDIA_INLINE_MAX_BYTES:
+        return asset
+
+    filename = str(asset.get('name') or asset.get('id') or 'media_asset').strip() or 'media_asset'
+    file_path = write_media_binary_payload(str(asset.get('id') or uuid.uuid4().hex), filename, payload_bytes)
+    asset['data'] = ''
+    asset['url'] = build_internal_media_file_url(str(asset.get('id') or ''), filename)
+    asset['file_path'] = file_path
+    asset['stored_externally'] = True
+    asset['format'] = asset.get('format') or mime_type
+    asset['size'] = safe_int(asset.get('size') or len(payload_bytes), len(payload_bytes))
+    return asset
 
 
 def get_media_subtitle_tracks(asset: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1088,7 +1153,10 @@ def create_media_video_job(
     blueprint: Dict[str, Any],
     requested_by: str,
     provider: str,
+    callback_base_url: str = '',
+    provider_model: str = '',
     image_data_url: str = '',
+    auto_publish_to_hero: bool = False,
 ) -> Dict[str, Any]:
     """Create and submit a provider-backed video generation job."""
     service = get_media_generation_service()
@@ -1113,10 +1181,12 @@ def create_media_video_job(
         provider=provider,
         prompt=prompt,
         title=str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
+        model=provider_model,
         aspect_ratio=aspect_ratio,
         duration_seconds=8,
         resolution='720p',
         image_data_url=image_data_url,
+        callback_url=f"{callback_base_url.rstrip('/')}/api/provider/media-processing/callback" if callback_base_url else '',
         metadata={
             'campaign_id': campaign_id,
             'blueprint_index': blueprint_index,
@@ -1138,6 +1208,7 @@ def create_media_video_job(
         'provider_operation_name': str((submission.get('provider_state') or {}).get('operation_name') or ''),
         'provider_status': str(submission.get('status') or 'queued'),
         'provider_state': submission.get('provider_state') or {},
+        'provider_model': provider_model or '',
         'language': 'en',
         'status': 'queued',
         'requested_at': requested_at,
@@ -1148,6 +1219,7 @@ def create_media_video_job(
         'subtitle_track_id': None,
         'generated_asset_id': '',
         'download_url': '',
+        'auto_publish_to_hero': bool(auto_publish_to_hero),
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
     return job
@@ -1211,6 +1283,7 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
             'generated_from': 'marketing_video_blueprint',
         }
     }
+    asset = persist_media_asset_payload(asset)
     MEDIA_ASSETS[asset_id] = asset
     job['generated_asset_id'] = asset_id
     job['status'] = 'completed'
@@ -1218,6 +1291,11 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     job['error'] = None
     job['message'] = str(poll_result.get('message') or 'Generated video saved to media library.')
     job['download_url'] = download_url
+    if job.get('auto_publish_to_hero'):
+        DESIGN_SETTINGS['hero_video_id'] = asset_id
+        DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
+        DESIGN_SETTINGS['updated_at'] = uploaded_at
+        DESIGN_SETTINGS['updated_by'] = str(job.get('requested_by') or 'admin')
     return asset
 
 
@@ -16875,8 +16953,11 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
+        if path.startswith('/media-files/'):
+            rel = path[len('/media-files/'):].lstrip('/')
+            file_path = os.path.join(MEDIA_STORAGE_DIR, rel)
         # Serve static files from web_portal/static
-        if path == '/' or path == '/index.html':
+        elif path == '/' or path == '/index.html':
             file_path = os.path.join(ROOT, 'index.html')
         else:
             rel = path.lstrip('/')
@@ -17565,6 +17646,26 @@ For claims or questions, please contact:
             if expected_token and not secrets.compare_digest(callback_token, expected_token):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Invalid callback token'}).encode('utf-8'))
+                return
+
+            job_kind = str(job.get('job_kind') or 'subtitle')
+            if job_kind == 'video_generation':
+                asset = finalize_media_video_job(job, {
+                    'status': str(data.get('status') or data.get('state') or 'completed'),
+                    'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
+                    'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
+                    'duration': data.get('duration'),
+                    'message': data.get('message') or 'Provider webhook completed the generated video.',
+                    'provider_state': data,
+                    'error': data.get('error'),
+                })
+                save_ledger_data()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'job': serialize_media_job(job),
+                    'generated_video_asset': serialize_media_asset(asset) if asset else None,
+                }).encode('utf-8'))
                 return
 
             asset, track = complete_media_subtitle_job(job, data)

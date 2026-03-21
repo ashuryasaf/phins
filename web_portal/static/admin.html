@@ -1296,6 +1296,47 @@
       <div id="mkt-video-job-status" style="display:none; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.82rem; line-height: 1.45;">
         No provider video jobs yet.
       </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:16px;">
+        <div>
+          <label for="mkt-video-provider" style="font-size: 0.78rem; opacity: 0.82;">Default Video Provider</label>
+          <select id="mkt-video-provider" style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;">
+            <option value="gemini">Gemini / Veo</option>
+            <option value="kling">Kling</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-video-model" style="font-size: 0.78rem; opacity: 0.82;">Provider Model</label>
+          <select id="mkt-video-model" style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;">
+            <option value="">Provider default</option>
+            <option value="veo-3.1-generate-preview">Veo 3.1 Preview</option>
+            <option value="veo-3-fast-preview">Veo 3 Fast</option>
+            <option value="kling-v2.6-pro">Kling 2.6 Pro</option>
+            <option value="kling-v2.6-std">Kling 2.6 Std</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-video-reference-image" style="font-size: 0.78rem; opacity: 0.82;">Reference Image (PHINS media)</label>
+          <select id="mkt-video-reference-image" style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;">
+            <option value="">None (text-to-video)</option>
+          </select>
+        </div>
+        <div>
+          <label for="mkt-video-poll-mode" style="font-size: 0.78rem; opacity: 0.82;">Completion Mode</label>
+          <select id="mkt-video-poll-mode" style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;">
+            <option value="webhook">Webhook first</option>
+            <option value="poll">Background polling</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:-4px 0 16px 0;font-size:0.82rem;">
+        <label style="display:flex;gap:8px;align-items:center;">
+          <input id="mkt-video-auto-hero" type="checkbox" checked>
+          Auto-publish generated video to landing-page hero
+        </label>
+        <button onclick="loadMarketingVideoJobs({ silent: false })" style="background:rgba(255,255,255,0.14);color:white;border:1px solid rgba(255,255,255,0.25);padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
+          🔄 Refresh Video Jobs
+        </button>
+      </div>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px;">
         <div style="background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 10px;">
@@ -2806,6 +2847,7 @@
 
     let latestMarketingCampaignPayload = null;
     let latestMarketingVideoJobs = [];
+    let latestMarketingMediaAssets = [];
 
     function escapeMarketingHtml(value) {
       return String(value || '')
@@ -2862,6 +2904,57 @@
 
     function getCurrentCampaignId() {
       return latestMarketingCampaignPayload?.campaign?.campaign_id || '';
+    }
+
+    function selectedMarketingVideoProvider() {
+      return (document.getElementById('mkt-video-provider')?.value || 'gemini').trim();
+    }
+
+    function selectedMarketingVideoModel() {
+      return (document.getElementById('mkt-video-model')?.value || '').trim();
+    }
+
+    function selectedMarketingReferenceImageId() {
+      return (document.getElementById('mkt-video-reference-image')?.value || '').trim();
+    }
+
+    function selectedMarketingPollMode() {
+      return (document.getElementById('mkt-video-poll-mode')?.value || 'webhook').trim();
+    }
+
+    function selectedMarketingAutoHero() {
+      return Boolean(document.getElementById('mkt-video-auto-hero')?.checked);
+    }
+
+    function selectedMarketingReferenceImage() {
+      const imageId = selectedMarketingReferenceImageId();
+      if (!imageId) return null;
+      return latestMarketingMediaAssets.find(asset => asset.id === imageId) || null;
+    }
+
+    async function loadMarketingMediaAssets() {
+      try {
+        const response = await fetch('/api/media', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) return [];
+        const data = await response.json();
+        latestMarketingMediaAssets = Array.isArray(data.assets) ? data.assets : [];
+        const select = document.getElementById('mkt-video-reference-image');
+        if (select) {
+          const currentValue = select.value || '';
+          const images = latestMarketingMediaAssets.filter(asset => asset.type === 'image');
+          select.innerHTML = '<option value="">None (text-to-video)</option>' + images
+            .map(asset => `<option value="${asset.id}">${escapeMarketingHtml(asset.name || asset.id)}</option>`)
+            .join('');
+          if (currentValue && images.some(asset => asset.id === currentValue)) {
+            select.value = currentValue;
+          }
+        }
+        return latestMarketingMediaAssets;
+      } catch (err) {
+        return [];
+      }
     }
 
     function getVideoJobsForBlueprint(index) {
@@ -2929,7 +3022,7 @@
       }
     }
 
-    async function generateMarketingBlueprintVideo(index, provider) {
+    async function generateMarketingBlueprintVideo(index, providerOverride = '') {
       const campaign = latestMarketingCampaignPayload?.campaign;
       const campaignId = campaign?.campaign_id;
       const blueprint = Array.isArray(campaign?.ai_video_blueprints) ? campaign.ai_video_blueprints[index] : null;
@@ -2937,6 +3030,12 @@
         setMarketingStatus('Generate a campaign before requesting provider video generation.', 'warning');
         return;
       }
+
+      const provider = (providerOverride || selectedMarketingVideoProvider() || 'gemini').trim().toLowerCase();
+      const referenceImage = selectedMarketingReferenceImage();
+      const pollMode = selectedMarketingPollMode();
+      const providerModel = selectedMarketingVideoModel();
+      const autoPublishToHero = selectedMarketingAutoHero();
 
       try {
         setMarketingVideoJobStatus(`Submitting "${blueprint.title || `Blueprint ${index + 1}`}" to ${String(provider).toUpperCase()}...`, 'info');
@@ -2949,7 +3048,12 @@
           body: JSON.stringify({
             campaign_id: campaignId,
             blueprint_index: index,
-            provider: provider
+            provider: provider,
+            provider_model: providerModel,
+            image_data_url: referenceImage ? (referenceImage.data || referenceImage.url || '') : '',
+            reference_image_asset_id: referenceImage ? referenceImage.id : '',
+            poll_mode: pollMode,
+            auto_publish_to_hero: autoPublishToHero
           })
         });
         const data = await response.json();
@@ -2961,7 +3065,8 @@
           latestMarketingVideoJobs = [data.job, ...latestMarketingVideoJobs.filter(job => job.id !== data.job.id)];
         }
         renderMarketingCampaign(latestMarketingCampaignPayload);
-        setMarketingVideoJobStatus(`${String(provider).toUpperCase()} job queued for "${blueprint.title || `Blueprint ${index + 1}`}". Refresh status in a few moments.`, 'success');
+        const modeLabel = pollMode === 'webhook' ? 'webhook-first completion' : 'background polling';
+        setMarketingVideoJobStatus(`${String(provider).toUpperCase()} job queued for "${blueprint.title || `Blueprint ${index + 1}`}" using ${modeLabel}.`, 'success');
         setMarketingStatus(`Video generation queued with ${String(provider).toUpperCase()}.`, 'success');
         setTimeout(() => loadMarketingVideoJobs({ silent: false }), 7000);
       } catch (err) {
@@ -3040,7 +3145,8 @@
             <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">Voiceover: ${escapeMarketingHtml(item.voiceover_style)}</div>
             ${storyboard.length ? `<div style="font-size:0.76rem;opacity:0.82;margin-top:6px;">Storyboard: ${escapeMarketingHtml(storyboard.join(' | '))}</div>` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-              <button onclick="generateMarketingBlueprintVideo(${index}, 'gemini')" style="background:#42a5f5;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Veo / Gemini</button>
+              <button onclick="generateMarketingBlueprintVideo(${index})" style="background:#42a5f5;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Generate with selected provider</button>
+              <button onclick="generateMarketingBlueprintVideo(${index}, 'gemini')" style="background:#1976d2;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Veo / Gemini</button>
               <button onclick="generateMarketingBlueprintVideo(${index}, 'kling')" style="background:#7c4dff;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Kling</button>
             </div>
             ${renderVideoJobSummary(job)}
@@ -3086,6 +3192,7 @@
         const data = await response.json();
         if (data && data.latest_campaign) {
           renderMarketingCampaign(data.latest_campaign);
+          await loadMarketingMediaAssets();
           await loadMarketingVideoJobs({ silent: true });
           setMarketingStatus(`Latest campaign loaded (${data.latest_campaign.campaign?.campaign_id || 'unknown'}).`, 'success');
         } else {
