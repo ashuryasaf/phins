@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHINS Admin - AI Agents Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #091a3a 0%, #0d47a1 45%, #1976d2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .admin-header {
+            background: rgba(0,0,0,0.24);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .header-left, .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+        }
+        .page-title {
+            font-size: 0.92rem;
+            color: rgba(255,255,255,0.76);
+            padding-left: 12px;
+            border-left: 1px solid rgba(255,255,255,0.16);
+        }
+        .btn {
+            padding: 9px 14px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 700;
+            text-decoration: none;
+            font-size: 0.82rem;
+            transition: all 0.2s ease;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.18);
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.16); }
+        .btn-primary {
+            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(25,118,210,0.35);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+            color: white;
+        }
+        .btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(67,160,71,0.35);
+        }
+        .main-container {
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+        .hero-panel {
+            background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 18px;
+            padding: 24px;
+            margin-bottom: 18px;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.18);
+        }
+        .hero-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+        .hero-header h1 {
+            margin: 0;
+            font-size: 1.7rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .hero-header p {
+            margin-top: 8px;
+            max-width: 860px;
+            color: rgba(255,255,255,0.82);
+            line-height: 1.6;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 12px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 16px;
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .stat-value {
+            font-size: 1.45rem;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 0.76rem;
+            color: rgba(255,255,255,0.68);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .layout-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .panel {
+            background: rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: 0 10px 28px rgba(0,0,0,0.12);
+        }
+        .panel h2 {
+            margin: 0 0 8px 0;
+            font-size: 1.08rem;
+        }
+        .panel p {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .meta-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .meta-label {
+            font-size: 0.72rem;
+            color: rgba(255,255,255,0.64);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .meta-value {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-top: 4px;
+            word-break: break-word;
+        }
+        .agents-grid {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            gap: 16px;
+        }
+        .control-card, .preview-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            padding: 18px;
+        }
+        .section-title {
+            margin: 0 0 10px 0;
+            font-size: 1rem;
+            font-weight: 800;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .form-group {
+            display: grid;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+        .form-group label {
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.78);
+            font-weight: 600;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 9px;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.08);
+            color: white;
+            font-family: inherit;
+            font-size: 0.88rem;
+        }
+        .form-group textarea {
+            min-height: 88px;
+            resize: vertical;
+        }
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: rgba(255,255,255,0.45);
+        }
+        .form-group select option {
+            color: #111827;
+        }
+        .action-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .status-box, .note-box {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+        .status-box {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .note-box {
+            background: rgba(144, 202, 249, 0.12);
+            border: 1px solid rgba(144, 202, 249, 0.25);
+            color: rgba(255,255,255,0.86);
+        }
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .template-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 14px;
+        }
+        .template-card h4 {
+            margin: 0 0 6px 0;
+            font-size: 0.92rem;
+        }
+        .template-card p {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.74);
+            line-height: 1.45;
+            min-height: 52px;
+        }
+        .template-chip-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: 10px 0 12px;
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .pre-box {
+            background: rgba(0,0,0,0.25);
+            border-radius: 12px;
+            padding: 14px;
+            min-height: 220px;
+            overflow: auto;
+            border: 1px solid rgba(255,255,255,0.08);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.77rem;
+            white-space: pre-wrap;
+            color: #e5efff;
+        }
+        .jobs-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .job-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        .job-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .job-chip {
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .job-chip.success { background: rgba(67,160,71,0.18); color: #a5d6a7; }
+        .job-chip.pending { background: rgba(251,192,45,0.18); color: #ffe082; }
+        .job-chip.error { background: rgba(239,83,80,0.18); color: #ef9a9a; }
+        .mini-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .mini-actions button {
+            padding: 7px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.16);
+            background: rgba(255,255,255,0.08);
+            color: white;
+            cursor: pointer;
+            font-size: 0.76rem;
+            font-weight: 700;
+        }
+        .bridge-panel {
+            margin-top: 16px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            padding: 16px;
+        }
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            background: #15284f;
+            color: white;
+            padding: 14px 18px;
+            border-radius: 10px;
+            box-shadow: 0 10px 26px rgba(0,0,0,0.28);
+            border-left: 4px solid #42a5f5;
+            min-width: 250px;
+        }
+        .toast.success { border-color: #4caf50; }
+        .toast.error { border-color: #ef5350; }
+        .toast.info { border-color: #42a5f5; }
+        @media (max-width: 1180px) {
+            .layout-grid,
+            .agents-grid {
+                grid-template-columns: 1fr;
+            }
+            .meta-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 760px) {
+            .admin-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .form-grid,
+            .meta-grid,
+            .template-grid,
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="admin-header">
+        <div class="header-left">
+            <a href="/admin.html" class="logo">
+                <div class="logo-icon">🤖</div>
+                <span>PHINS</span>
+            </a>
+            <span class="page-title">AI Agents Studio</span>
+        </div>
+        <div class="header-right">
+            <a href="/admin.html" class="btn btn-secondary">← Admin</a>
+            <a href="/admin-media.html" class="btn btn-secondary">📁 Media</a>
+            <button type="button" class="btn btn-success" onclick="saveAgentsSettings()">💾 Save Agents Settings</button>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <section class="hero-panel">
+            <div class="hero-header">
+                <div>
+                    <h1>🎭 PHINS AI Agents Dashboard</h1>
+                    <p>
+                        Dedicated control plane for video, avatar, voiceover, and provider-orchestration agents.
+                        Use the latest signed AI + BI Marketing &amp; Sales Agent context, generate role-specific
+                        scripts, export voiceover packs, synthesize audio with ElevenLabs or OpenAI TTS, and
+                        dispatch/poll Kling-style jobs without corrupting campaign integrity.
+                    </p>
+                </div>
+                <div class="action-row">
+                    <button type="button" class="btn btn-secondary" onclick="loadAgentsDashboard()">🔄 Refresh Dashboard</button>
+                    <button type="button" class="btn btn-primary" onclick="generateAgentPacket()">🪄 Generate Signed Packet</button>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="agents-stat-templates">0</div>
+                    <div class="stat-label">Ready-made templates</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="agents-stat-jobs">0</div>
+                    <div class="stat-label">Stored jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="agents-stat-campaign">-</div>
+                    <div class="stat-label">Latest campaign</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="agents-stat-integrity">-</div>
+                    <div class="stat-label">Campaign integrity</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="layout-grid">
+            <div class="panel">
+                <h2>Provider and campaign status</h2>
+                <p>Providers, templates, TTS settings, and campaign context are loaded from the server-side signed workflow.</p>
+                <div class="meta-grid">
+                    <div class="meta-card">
+                        <div class="meta-label">Selected video provider</div>
+                        <div class="meta-value" id="agents-provider-active">-</div>
+                    </div>
+                    <div class="meta-card">
+                        <div class="meta-label">Selected TTS provider</div>
+                        <div class="meta-value" id="agents-tts-active">-</div>
+                    </div>
+                    <div class="meta-card">
+                        <div class="meta-label">Latest campaign ID</div>
+                        <div class="meta-value" id="agents-campaign-id">-</div>
+                    </div>
+                    <div class="meta-card">
+                        <div class="meta-label">Campaign verified</div>
+                        <div class="meta-value" id="agents-campaign-verified">-</div>
+                    </div>
+                </div>
+                <div class="note-box" id="agents-provider-note">
+                    Provider note: select a provider to review dispatch readiness, polling support, and API-key expectations.
+                </div>
+            </div>
+            <div class="panel">
+                <h2>PHINS template launcher</h2>
+                <p>Start from purpose-built templates for welcome, underwriting, claims, and sales-helper avatars.</p>
+                <div class="template-grid" id="template-grid">
+                    <div class="template-card">Loading templates...</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="agents-grid">
+            <div class="control-card">
+                <h2 class="section-title">Packet generation, export, TTS, and provider dispatch</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="agent-template">Template</label>
+                        <select id="agent-template"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="agent-role">Agent Role</label>
+                        <select id="agent-role"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="video-provider">Video Provider</label>
+                        <select id="video-provider"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="video-mode">Generation Mode</label>
+                        <select id="video-mode">
+                            <option value="photo_to_video">Photo to Video</option>
+                            <option value="avatar">Avatar Video</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="video-aspect-ratio">Aspect Ratio</label>
+                        <select id="video-aspect-ratio">
+                            <option value="16:9">16:9</option>
+                            <option value="9:16">9:16</option>
+                            <option value="1:1">1:1</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="video-duration">Duration (seconds)</label>
+                        <input id="video-duration" type="number" min="3" max="15" step="1" value="5">
+                    </div>
+                    <div class="form-group">
+                        <label for="video-language">Language</label>
+                        <input id="video-language" type="text" value="en">
+                    </div>
+                    <div class="form-group">
+                        <label for="video-source-image">Source Image Asset</label>
+                        <select id="video-source-image">
+                            <option value="">-- Select image --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="video-audio-url">Avatar Audio URL</label>
+                        <input id="video-audio-url" type="text" placeholder="https://.../voice.mp3">
+                    </div>
+                    <div class="form-group">
+                        <label for="video-company-name">Brand / Company</label>
+                        <input id="video-company-name" type="text" value="PHINS">
+                    </div>
+                    <div class="form-group">
+                        <label for="video-tagline">Tagline</label>
+                        <input id="video-tagline" type="text" value="Personal Health Insurance & Savings">
+                    </div>
+                    <div class="form-group">
+                        <label for="video-cta">Call to Action</label>
+                        <input id="video-cta" type="text" value="Visit phins.ai and request a guided walkthrough.">
+                    </div>
+                    <div class="form-group">
+                        <label for="tts-provider">TTS Provider</label>
+                        <select id="tts-provider"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="tts-voice-id">TTS Voice</label>
+                        <input id="tts-voice-id" type="text" placeholder="voice id / alloy">
+                    </div>
+                    <div class="form-group">
+                        <label for="tts-model">TTS Model</label>
+                        <input id="tts-model" type="text" placeholder="eleven_multilingual_v2">
+                    </div>
+                    <div class="form-group">
+                        <label for="tts-output-format">TTS Format</label>
+                        <input id="tts-output-format" type="text" placeholder="mp3">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-base-url">Provider Base URL</label>
+                        <input id="provider-base-url" type="text" placeholder="https://klingapi.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-image-path">Photo-to-Video Path</label>
+                        <input id="provider-image-path" type="text" placeholder="/v1/videos/image2video">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-avatar-path">Avatar Path</label>
+                        <input id="provider-avatar-path" type="text" placeholder="/v2/video/generations">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-api-key-env">Video API Key Env</label>
+                        <input id="provider-api-key-env" type="text" placeholder="KLING_API_KEY">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-model">Video Model</label>
+                        <input id="provider-model" type="text" placeholder="pro-image-to-video">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-avatar-model">Avatar Model</label>
+                        <input id="provider-avatar-model" type="text" placeholder="klingai/avatar-pro">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="video-custom-instructions">Custom Instructions</label>
+                    <textarea id="video-custom-instructions" placeholder="Use AI + BI marketing style, keep all product claims accurate and compliance-safe."></textarea>
+                </div>
+                <div class="action-row">
+                    <button type="button" class="btn btn-secondary" onclick="saveAgentsSettings()">💾 Save Settings</button>
+                    <button type="button" class="btn btn-primary" onclick="generateAgentPacket()">🧠 Generate Packet</button>
+                    <button type="button" class="btn btn-secondary" onclick="exportVoiceoverText()">📄 Export TXT</button>
+                    <button type="button" class="btn btn-secondary" onclick="exportVoiceoverJson()">🧾 Export JSON</button>
+                    <button type="button" class="btn btn-success" onclick="generateTtsAudio()">🔊 Generate TTS</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAgentJob()">🚀 Submit Video Job</button>
+                </div>
+                <div class="status-box" id="agents-status">Ready to build PHINS agent packets.</div>
+                <div class="note-box">
+                    Integrity rules: campaign context is referenced but never mutated, generated packets are signed, and provider dispatch/polling only runs when required credentials and source assets exist.
+                </div>
+                <div id="tts-audio-preview" class="bridge-panel" style="display:none;">
+                    <h3 style="margin:0 0 8px 0;font-size:0.95rem;">Generated TTS Audio</h3>
+                    <audio id="tts-audio-player" controls style="width:100%;"></audio>
+                </div>
+            </div>
+
+            <div class="preview-card">
+                <h2 class="section-title">Signed packet preview</h2>
+                <div class="pre-box" id="packet-preview">No packet generated yet.</div>
+                <div class="bridge-panel">
+                    <h3 style="margin:0 0 8px 0;font-size:0.95rem;">Stored jobs & provider refresh</h3>
+                    <div class="jobs-list" id="jobs-list">
+                        <div class="job-card">No jobs yet.</div>
+                    </div>
+                </div>
+                <div class="bridge-panel">
+                    <h3 style="margin:0 0 8px 0;font-size:0.95rem;">Media dashboard bridge</h3>
+                    <p style="font-size:0.84rem;color:rgba(255,255,255,0.82);line-height:1.5;">
+                        Media dashboard remains the asset library and landing-page assignment surface. This agents dashboard is now the primary control plane for PHINS welcome videos, underwriting/claims explainers, avatar agents, and voiceover generation.
+                    </p>
+                    <div class="action-row">
+                        <a href="/admin-media.html" class="btn btn-secondary">📁 Open Media Dashboard</a>
+                        <a href="/admin.html#growth-agent-section" class="btn btn-secondary">🚀 Open Marketing Agent</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        let agentsState = null;
+        let latestPacketEnvelope = null;
+        let mediaAssets = [];
+        let latestCampaignEnvelope = null;
+
+        function getToken() {
+            return localStorage.getItem('phins_token');
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function setStatus(message) {
+            const el = document.getElementById('agents-status');
+            if (el) el.textContent = message;
+        }
+
+        async function loadMediaAssets() {
+            const token = getToken();
+            if (!token) return;
+            const response = await fetch('/api/media', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!response.ok) throw new Error(`Media load failed (${response.status})`);
+            const data = await response.json();
+            mediaAssets = Array.isArray(data) ? data : (data.assets || []);
+            const imageSelect = document.getElementById('video-source-image');
+            if (imageSelect) {
+                const current = imageSelect.value;
+                const options = mediaAssets
+                    .filter(item => item.type === 'image')
+                    .map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`)
+                    .join('');
+                imageSelect.innerHTML = `<option value="">-- Select image --</option>${options}`;
+                if (current) imageSelect.value = current;
+            }
+        }
+
+        function renderTemplateCards(templates) {
+            const grid = document.getElementById('template-grid');
+            const select = document.getElementById('agent-template');
+            document.getElementById('agents-stat-templates').textContent = String((templates || []).length || 0);
+            if (grid) {
+                if (!templates?.length) {
+                    grid.innerHTML = '<div class="template-card">No templates available.</div>';
+                } else {
+                    grid.innerHTML = templates.map(template => `
+                        <div class="template-card">
+                            <h4>${escapeHtml(template.label)}</h4>
+                            <p>${escapeHtml(template.custom_instructions || 'PHINS-ready template')}</p>
+                            <div class="template-chip-row">
+                                <span class="chip">${escapeHtml(template.agent_role)}</span>
+                                <span class="chip">${escapeHtml(template.generation_mode)}</span>
+                                <span class="chip">${escapeHtml(template.aspect_ratio)}</span>
+                            </div>
+                            <button type="button" class="btn btn-secondary" onclick="applyTemplate('${escapeHtml(template.id)}')">Use Template</button>
+                        </div>
+                    `).join('');
+                }
+            }
+            if (select) {
+                select.innerHTML = (templates || []).map(template => `
+                    <option value="${template.id}">${escapeHtml(template.label)}</option>
+                `).join('');
+            }
+        }
+
+        function renderMeta() {
+            document.getElementById('agents-provider-active').textContent = agentsState?.selected_provider || '-';
+            document.getElementById('agents-tts-active').textContent = agentsState?.tts?.provider || '-';
+            const campaignId = latestCampaignEnvelope?.campaign?.campaign_id || '-';
+            const verified = latestCampaignEnvelope?.integrity?.verified ? 'Verified' : '-';
+            document.getElementById('agents-campaign-id').textContent = campaignId;
+            document.getElementById('agents-campaign-verified').textContent = verified;
+            document.getElementById('agents-stat-campaign').textContent = campaignId;
+            document.getElementById('agents-stat-integrity').textContent = verified;
+            document.getElementById('agents-provider-note').textContent =
+                `Video provider ${agentsState?.selected_provider || '-'} and TTS provider ${agentsState?.tts?.provider || '-'} are loaded from signed server state.`;
+            document.getElementById('agents-stat-jobs').textContent = String((agentsState?.jobs || []).length);
+        }
+
+        function populateControls() {
+            const providerSelect = document.getElementById('video-provider');
+            const roleSelect = document.getElementById('agent-role');
+            const ttsProviderSelect = document.getElementById('tts-provider');
+            if (providerSelect) {
+                providerSelect.innerHTML = Object.entries(agentsState?.providers || {}).map(([providerId, provider]) => `
+                    <option value="${providerId}">${escapeHtml(provider.label || providerId)}</option>
+                `).join('');
+                providerSelect.value = agentsState?.selected_provider || 'kling_official';
+            }
+            if (roleSelect) {
+                roleSelect.innerHTML = (window._roleCatalog || []).map(role => `
+                    <option value="${role.id}">${escapeHtml(role.label)}</option>
+                `).join('');
+                roleSelect.value = agentsState?.defaults?.agent_role || 'welcome';
+            }
+            if (ttsProviderSelect) {
+                ttsProviderSelect.innerHTML = Object.entries(window._ttsPresets || {}).map(([providerId, provider]) => `
+                    <option value="${providerId}">${escapeHtml(provider.label || providerId)}</option>
+                `).join('');
+                ttsProviderSelect.value = agentsState?.tts?.provider || 'elevenlabs';
+            }
+            document.getElementById('video-mode').value = agentsState?.defaults?.generation_mode || 'photo_to_video';
+            document.getElementById('video-aspect-ratio').value = agentsState?.defaults?.aspect_ratio || '16:9';
+            document.getElementById('video-duration').value = agentsState?.defaults?.duration || 5;
+            document.getElementById('video-language').value = agentsState?.defaults?.language || 'en';
+            document.getElementById('video-company-name').value = 'PHINS';
+            document.getElementById('video-tagline').value = 'Personal Health Insurance & Savings';
+            document.getElementById('video-cta').value = 'Visit phins.ai and request a guided walkthrough.';
+            document.getElementById('tts-voice-id').value = agentsState?.tts?.voice_id || '';
+            document.getElementById('tts-model').value = agentsState?.tts?.model || '';
+            document.getElementById('tts-output-format').value = agentsState?.tts?.output_format || '';
+            renderProviderFields();
+        }
+
+        function renderProviderFields() {
+            const providerId = document.getElementById('video-provider')?.value;
+            const provider = providerId ? agentsState?.providers?.[providerId] : null;
+            if (!provider) return;
+            document.getElementById('provider-base-url').value = provider.base_url || '';
+            document.getElementById('provider-image-path').value = provider.image_to_video_path || '';
+            document.getElementById('provider-avatar-path').value = provider.avatar_path || '';
+            document.getElementById('provider-api-key-env').value = provider.api_key_env || '';
+            document.getElementById('provider-model').value = provider.model || '';
+            document.getElementById('provider-avatar-model').value = provider.avatar_model || '';
+        }
+
+        function renderPacketPreview(packetEnvelope) {
+            const preview = document.getElementById('packet-preview');
+            if (!packetEnvelope?.packet) {
+                preview.textContent = 'No packet generated yet.';
+                return;
+            }
+            const packet = packetEnvelope.packet;
+            preview.textContent = [
+                `Packet ID: ${packet.packet_id || '-'}`,
+                `Role: ${packet.agent_role || '-'}`,
+                `Mode: ${packet.generation_mode || '-'}`,
+                `Campaign: ${packet.campaign_context?.campaign_id || 'none'}`,
+                `Provider: ${packet.provider_request?.provider_label || packet.provider_request?.provider || '-'}`,
+                `Dispatch Ready: ${packet.provider_request?.dispatch_ready ? 'yes' : 'no'}`,
+                '',
+                'Voiceover Script:',
+                packet.script_bundle?.voiceover_script || '-',
+                '',
+                'Prompt:',
+                packet.script_bundle?.prompt || '-',
+                '',
+                'Storyboard:',
+                ...(packet.script_bundle?.storyboard || []).map(item => `- ${item}`)
+            ].join('\n');
+        }
+
+        function renderJobs() {
+            const jobs = Array.isArray(agentsState?.jobs) ? agentsState.jobs : [];
+            const list = document.getElementById('jobs-list');
+            document.getElementById('agents-stat-jobs').textContent = String(jobs.length);
+            if (!jobs.length) {
+                list.innerHTML = '<div class="job-card">No jobs yet.</div>';
+                return;
+            }
+            list.innerHTML = jobs.slice().reverse().map(job => {
+                const packet = job.packet || {};
+                const submission = job.submission || {};
+                const statusClass = submission.success ? 'success' : (submission.submitted ? 'pending' : 'error');
+                return `
+                    <div class="job-card">
+                        <div class="job-head">
+                            <strong>${escapeHtml(packet.script_bundle?.title || packet.agent_role || 'Job')}</strong>
+                            <span class="job-chip ${statusClass}">${escapeHtml(submission.status || (submission.success ? 'submitted' : (submission.submitted ? 'pending' : 'draft')))}</span>
+                        </div>
+                        <div style="font-size:0.8rem;color:rgba(255,255,255,0.82);line-height:1.45;">
+                            <div><strong>Packet:</strong> ${escapeHtml(packet.packet_id || '-')}</div>
+                            <div><strong>Provider Job:</strong> ${escapeHtml(submission.provider_job_id || '-')}</div>
+                            <div><strong>Output URL:</strong> ${escapeHtml(submission.output_url || '-')}</div>
+                        </div>
+                        <div class="mini-actions">
+                            <button type="button" onclick="pollJobStatus('${escapeHtml(packet.packet_id || '')}')">🔄 Refresh Status</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function applyTemplate(templateId) {
+            const template = (window._templateCatalog || []).find(item => item.id === templateId);
+            if (!template) return;
+            document.getElementById('agent-template').value = template.id;
+            document.getElementById('agent-role').value = template.agent_role || 'welcome';
+            document.getElementById('video-mode').value = template.generation_mode || 'photo_to_video';
+            document.getElementById('video-aspect-ratio').value = template.aspect_ratio || '16:9';
+            document.getElementById('video-duration').value = template.duration || 5;
+            document.getElementById('video-language').value = template.language || 'en';
+            document.getElementById('video-cta').value = template.cta || '';
+            document.getElementById('video-custom-instructions').value = template.custom_instructions || '';
+            showToast(`Template loaded: ${template.label}`, 'success');
+        }
+
+        async function loadAgentsDashboard() {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            setStatus('Loading AI Agents dashboard...');
+            try {
+                await loadMediaAssets();
+                const response = await fetch('/api/admin/agents-dashboard', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) throw new Error(`Agents dashboard load failed (${response.status})`);
+                const data = await response.json();
+                agentsState = data.state || {};
+                latestCampaignEnvelope = data.latest_campaign || null;
+                window._roleCatalog = data.role_catalog || [];
+                window._templateCatalog = data.template_catalog || [];
+                window._ttsPresets = data.tts_presets || {};
+                renderTemplateCards(window._templateCatalog);
+                populateControls();
+                renderMeta();
+                latestPacketEnvelope = agentsState.latest_job || null;
+                renderPacketPreview(latestPacketEnvelope);
+                renderJobs();
+                setStatus('Agents dashboard ready.');
+            } catch (error) {
+                setStatus(`Error loading dashboard: ${error.message}`);
+                showToast(`Error loading agents dashboard: ${error.message}`, 'error');
+            }
+        }
+
+        async function saveAgentsSettings() {
+            const token = getToken();
+            if (!token) return;
+            const providerId = document.getElementById('video-provider').value || 'kling_official';
+            const payload = {
+                selected_provider: providerId,
+                defaults: {
+                    generation_mode: document.getElementById('video-mode').value,
+                    agent_role: document.getElementById('agent-role').value,
+                    aspect_ratio: document.getElementById('video-aspect-ratio').value,
+                    duration: Number(document.getElementById('video-duration').value || 5),
+                    language: document.getElementById('video-language').value || 'en'
+                },
+                providers: {
+                    [providerId]: {
+                        base_url: document.getElementById('provider-base-url').value || '',
+                        image_to_video_path: document.getElementById('provider-image-path').value || '',
+                        avatar_path: document.getElementById('provider-avatar-path').value || '',
+                        api_key_env: document.getElementById('provider-api-key-env').value || '',
+                        model: document.getElementById('provider-model').value || '',
+                        avatar_model: document.getElementById('provider-avatar-model').value || ''
+                    }
+                },
+                tts: {
+                    provider: document.getElementById('tts-provider').value || 'elevenlabs',
+                    voice_id: document.getElementById('tts-voice-id').value || '',
+                    model: document.getElementById('tts-model').value || '',
+                    output_format: document.getElementById('tts-output-format').value || '',
+                    api_key_env: agentsState?.tts?.api_key_env || ''
+                }
+            };
+            try {
+                const response = await fetch('/api/admin/media-video-agent', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`Settings save failed (${response.status})`);
+                showToast('✅ Agent settings saved', 'success');
+                await loadAgentsDashboard();
+            } catch (error) {
+                showToast(`Error saving settings: ${error.message}`, 'error');
+            }
+        }
+
+        async function generateAgentPacket() {
+            const token = getToken();
+            if (!token) return;
+            setStatus('Generating signed packet...');
+            try {
+                const response = await fetch('/api/admin/media-video-agent/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        provider: document.getElementById('video-provider').value || 'kling_official',
+                        generation_mode: document.getElementById('video-mode').value || 'photo_to_video',
+                        agent_role: document.getElementById('agent-role').value || 'welcome',
+                        source_image_asset_id: document.getElementById('video-source-image').value || '',
+                        audio_url: document.getElementById('video-audio-url').value || '',
+                        aspect_ratio: document.getElementById('video-aspect-ratio').value || '16:9',
+                        duration: Number(document.getElementById('video-duration').value || 5),
+                        language: document.getElementById('video-language').value || 'en',
+                        company_name: document.getElementById('video-company-name').value || 'PHINS',
+                        tagline: document.getElementById('video-tagline').value || 'Personal Health Insurance & Savings',
+                        custom_instructions: document.getElementById('video-custom-instructions').value || '',
+                        cta: document.getElementById('video-cta').value || 'Visit phins.ai and request a guided walkthrough.'
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || `Packet generation failed (${response.status})`);
+                latestPacketEnvelope = data.generated;
+                renderPacketPreview(latestPacketEnvelope);
+                await loadAgentsDashboard();
+                setStatus('Signed packet generated.');
+                showToast('✅ Signed agent packet created', 'success');
+            } catch (error) {
+                setStatus(`Packet generation failed: ${error.message}`);
+                showToast(`Error generating packet: ${error.message}`, 'error');
+            }
+        }
+
+        async function exportPacket(format) {
+            if (!latestPacketEnvelope?.packet || !latestPacketEnvelope?.integrity?.signature) {
+                showToast('Generate a packet before exporting voiceover scripts.', 'error');
+                return;
+            }
+            const token = getToken();
+            try {
+                const response = await fetch('/api/admin/media-video-agent/export', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        packet: latestPacketEnvelope.packet,
+                        signature: latestPacketEnvelope.integrity.signature
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || `Export failed (${response.status})`);
+                const asset = (data.assets || []).find(item => item.brief_type === (format === 'txt' ? 'voiceover_script_txt' : 'voiceover_script_json'));
+                if (!asset) throw new Error('Requested export asset not found.');
+                const blob = new Blob([asset.content], { type: format === 'txt' ? 'text/plain' : 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = asset.name || `voiceover.${format}`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                showToast(`✅ Voiceover ${format.toUpperCase()} exported`, 'success');
+            } catch (error) {
+                showToast(`Error exporting voiceover: ${error.message}`, 'error');
+            }
+        }
+
+        function exportVoiceoverText() { exportPacket('txt'); }
+        function exportVoiceoverJson() { exportPacket('json'); }
+
+        async function generateTtsAudio() {
+            if (!latestPacketEnvelope?.packet || !latestPacketEnvelope?.integrity?.signature) {
+                showToast('Generate a signed packet before creating TTS audio.', 'error');
+                return;
+            }
+            const token = getToken();
+            setStatus('Generating TTS audio...');
+            try {
+                const response = await fetch('/api/admin/media-video-agent/tts', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        packet: latestPacketEnvelope.packet,
+                        signature: latestPacketEnvelope.integrity.signature
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || `TTS failed (${response.status})`);
+                const wrapper = document.getElementById('tts-audio-preview');
+                const player = document.getElementById('tts-audio-player');
+                player.src = data.audio_data;
+                wrapper.style.display = 'block';
+                setStatus('TTS audio generated.');
+                showToast(`✅ TTS audio generated via ${data.provider}`, 'success');
+            } catch (error) {
+                setStatus(`TTS failed: ${error.message}`);
+                showToast(`Error generating TTS: ${error.message}`, 'error');
+            }
+        }
+
+        async function submitAgentJob() {
+            if (!latestPacketEnvelope?.packet || !latestPacketEnvelope?.integrity?.signature) {
+                showToast('Generate a signed packet before submitting a video job.', 'error');
+                return;
+            }
+            const token = getToken();
+            setStatus('Submitting provider job...');
+            try {
+                const response = await fetch('/api/admin/media-video-agent/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        packet: latestPacketEnvelope.packet,
+                        signature: latestPacketEnvelope.integrity.signature,
+                        create_media_assets: true
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || `Job submission failed (${response.status})`);
+                await loadAgentsDashboard();
+                setStatus(data.message || 'Video job processed.');
+                showToast(data.submission?.success ? '✅ Video job submitted' : 'ℹ️ Job stored without dispatch', data.submission?.success ? 'success' : 'info');
+            } catch (error) {
+                setStatus(`Submission failed: ${error.message}`);
+                showToast(`Error submitting job: ${error.message}`, 'error');
+            }
+        }
+
+        async function pollJobStatus(packetId) {
+            if (!packetId) return;
+            const token = getToken();
+            setStatus('Refreshing provider job status...');
+            try {
+                const response = await fetch('/api/admin/media-video-agent/status', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ packet_id: packetId })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || `Status refresh failed (${response.status})`);
+                await loadAgentsDashboard();
+                setStatus(`Provider status refreshed: ${data.status || data.submission?.status || 'unknown'}`);
+                showToast('✅ Provider status refreshed', 'success');
+            } catch (error) {
+                setStatus(`Status refresh failed: ${error.message}`);
+                showToast(`Error refreshing status: ${error.message}`, 'error');
+            }
+        }
+
+        document.addEventListener('change', (event) => {
+            if (event.target?.id === 'video-provider') {
+                renderProviderFields();
+            }
+            if (event.target?.id === 'agent-template') {
+                applyTemplate(event.target.value);
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', loadAgentsDashboard);
+    </script>
+    <script src="/ui-clarity.js"></script>
+</body>
+</html>

@@ -5249,6 +5249,47 @@ For claims or questions, please contact:
                     'state': video_state,
                     'provider_presets': service.provider_presets(),
                     'role_catalog': service.role_catalog(),
+                    'template_catalog': service.template_catalog(),
+                    'latest_campaign': latest_campaign,
+                    'latest_campaign_verified': bool(campaign_verified),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/agents-dashboard':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                marketing_service = get_marketing_sales_agent_service()
+                marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
+                latest_campaign = marketing_state.get('latest_campaign')
+                campaign_verified = False
+                if isinstance(latest_campaign, dict):
+                    campaign_payload = latest_campaign.get('campaign', {})
+                    integrity_payload = latest_campaign.get('integrity', {})
+                    campaign_verified = marketing_service.verify_campaign_payload(
+                        campaign_payload,
+                        integrity_payload.get('signature', '')
+                    )
+
+                video_state = service.ensure_state(DESIGN_SETTINGS.get('media_video_agent'))
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'state': video_state,
+                    'provider_presets': service.provider_presets(),
+                    'role_catalog': service.role_catalog(),
+                    'template_catalog': service.template_catalog(),
                     'latest_campaign': latest_campaign,
                     'latest_campaign_verified': bool(campaign_verified),
                 }, default=str).encode('utf-8'))
@@ -5262,6 +5303,446 @@ For claims or questions, please contact:
             if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                current_state = DESIGN_SETTINGS.get('media_video_agent')
+                merged_state = service.merge_state_update(
+                    current_state=current_state,
+                    incoming_state=data,
+                    updated_by=(session or {}).get('username', 'admin'),
+                )
+                DESIGN_SETTINGS['media_video_agent'] = merged_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = (session or {}).get('username', 'admin')
+                save_ledger_data()
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Media video agent settings updated',
+                    'state': merged_state,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path in ('/api/admin/media-video-agent/generate', '/api/admin/agents-dashboard/generate'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                marketing_service = get_marketing_sales_agent_service()
+                service = get_media_video_agent_service()
+                current_state = service.ensure_state(DESIGN_SETTINGS.get('media_video_agent'))
+                marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
+                latest_campaign = marketing_state.get('latest_campaign')
+                campaign_verified = False
+                if isinstance(latest_campaign, dict):
+                    campaign_payload = latest_campaign.get('campaign', {})
+                    integrity_payload = latest_campaign.get('integrity', {})
+                    campaign_verified = marketing_service.verify_campaign_payload(
+                        campaign_payload,
+                        integrity_payload.get('signature', '')
+                    )
+
+                template_id = str(data.get('template_id') or '').strip()
+                template_defaults = service.template_defaults(template_id) if template_id else {}
+                generated = service.generate_job(
+                    state=current_state,
+                    media_assets=MEDIA_ASSETS,
+                    latest_campaign=latest_campaign,
+                    campaign_verified=campaign_verified,
+                    provider=data.get('provider') or template_defaults.get('provider') or current_state.get('selected_provider', 'kling_official'),
+                    generation_mode=data.get('generation_mode') or template_defaults.get('generation_mode') or current_state.get('defaults', {}).get('generation_mode', 'photo_to_video'),
+                    agent_role=data.get('agent_role') or template_defaults.get('agent_role') or current_state.get('defaults', {}).get('agent_role', 'welcome'),
+                    source_image_asset_id=data.get('source_image_asset_id', ''),
+                    audio_url=data.get('audio_url', ''),
+                    aspect_ratio=data.get('aspect_ratio') or template_defaults.get('aspect_ratio') or current_state.get('defaults', {}).get('aspect_ratio', '16:9'),
+                    duration=data.get('duration') or template_defaults.get('duration') or current_state.get('defaults', {}).get('duration', 5),
+                    language=data.get('language') or template_defaults.get('language') or current_state.get('defaults', {}).get('language', 'en'),
+                    company_name=data.get('company_name', 'PHINS'),
+                    tagline=data.get('tagline', 'Personal Health Insurance & Savings'),
+                    custom_instructions=data.get('custom_instructions') or template_defaults.get('custom_instructions', ''),
+                    cta=data.get('cta') or template_defaults.get('cta', 'Visit phins.ai and request a guided walkthrough.'),
+                    generated_by=(session or {}).get('username', 'admin'),
+                )
+                prompt_assets = service.build_prompt_assets(generated)
+
+                updated_state = service.store_job(
+                    DESIGN_SETTINGS.get('media_video_agent'),
+                    packet_envelope=generated,
+                    submission={
+                        'success': False,
+                        'submitted': False,
+                        'status': 'draft',
+                        'message': 'Signed packet generated and stored for later dispatch.',
+                    },
+                    generated_media_asset_ids=[],
+                )
+                updated_state['updated_at'] = datetime.now().isoformat()
+                updated_state['updated_by'] = (session or {}).get('username', 'admin')
+                DESIGN_SETTINGS['media_video_agent'] = updated_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = (session or {}).get('username', 'admin')
+                save_ledger_data()
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'generated': generated,
+                    'prompt_assets': prompt_assets,
+                    'template': template_defaults,
+                    'state': updated_state,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path in ('/api/admin/media-video-agent/submit', '/api/admin/agents-dashboard/submit'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            packet = data.get('packet', {})
+            signature = data.get('signature', '')
+            create_media_assets = bool(data.get('create_media_assets', True))
+
+            try:
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                submission = service.submit_job(packet=packet, signature=signature)
+                generated_asset_ids = []
+
+                if create_media_assets:
+                    for asset in service.build_prompt_assets({'packet': packet, 'integrity': {'signature': signature}}):
+                        asset_id = f"media-{uuid.uuid4().hex[:12]}"
+                        content = str(asset.get('content', ''))
+                        asset_format = str(asset.get('format', 'text/plain') or 'text/plain')
+                        encoded_text = base64.b64encode(content.encode('utf-8')).decode('ascii')
+                        data_url = f"data:{asset_format};base64,{encoded_text}"
+                        media_asset = {
+                            'id': asset_id,
+                            'name': asset.get('name', f"{packet.get('packet_id', 'VAG')} Asset"),
+                            'type': 'document',
+                            'format': asset_format,
+                            'size': len(content.encode('utf-8')),
+                            'url': '',
+                            'data': data_url,
+                            'thumbnail': '',
+                            'duration': None,
+                            'source': 'video_agent',
+                            'uploaded_at': datetime.now().isoformat(),
+                            'uploaded_by': (session or {}).get('username', 'admin'),
+                            'metadata': {
+                                'packet_id': packet.get('packet_id', ''),
+                                'brief_type': asset.get('brief_type', 'video_agent_asset'),
+                            }
+                        }
+                        MEDIA_ASSETS[asset_id] = media_asset
+                        generated_asset_ids.append(asset_id)
+
+                updated_state = service.store_job(
+                    DESIGN_SETTINGS.get('media_video_agent'),
+                    packet_envelope={'packet': packet, 'integrity': {'signature': signature}},
+                    submission=submission,
+                    generated_media_asset_ids=generated_asset_ids,
+                )
+                updated_state['updated_at'] = datetime.now().isoformat()
+                updated_state['updated_by'] = (session or {}).get('username', 'admin')
+                DESIGN_SETTINGS['media_video_agent'] = updated_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = (session or {}).get('username', 'admin')
+                save_ledger_data()
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Video/avatar job processed',
+                    'submission': submission,
+                    'created_asset_ids': generated_asset_ids,
+                    'state': updated_state,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path in ('/api/admin/media-video-agent/tts', '/api/admin/agents-dashboard/tts'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                current_state = DESIGN_SETTINGS.get('media_video_agent')
+                incoming_tts = data.get('tts', {})
+                if isinstance(incoming_tts, dict) and incoming_tts:
+                    merged_state = service.merge_state_update(
+                        current_state=current_state,
+                        incoming_state={'tts': incoming_tts},
+                        updated_by=(session or {}).get('username', 'admin'),
+                    )
+                    DESIGN_SETTINGS['media_video_agent'] = merged_state
+                    current_state = merged_state
+
+                packet = data.get('packet', {})
+                signature = data.get('signature', '')
+                tts_result = service.synthesize_tts(
+                    state=service.ensure_state(current_state),
+                    packet=packet,
+                    signature=signature,
+                )
+                save_ledger_data()
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'tts': tts_result,
+                    'state': DESIGN_SETTINGS.get('media_video_agent'),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path in ('/api/admin/media-video-agent/poll', '/api/admin/agents-dashboard/poll'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                packet_id = str(data.get('packet_id') or '').strip()
+                state = service.ensure_state(DESIGN_SETTINGS.get('media_video_agent'))
+                jobs = state.get('jobs', [])
+                target_job = None
+                for job in jobs:
+                    if str((job or {}).get('packet', {}).get('packet_id') or '') == packet_id:
+                        target_job = job
+                        break
+
+                if not target_job:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Stored video agent job not found'}).encode('utf-8'))
+                    return
+
+                polled = service.poll_job_status(state=state, job=target_job)
+                submission = dict(target_job.get('submission', {}))
+                submission.update(polled)
+                updated_state = service.store_job(
+                    DESIGN_SETTINGS.get('media_video_agent'),
+                    packet_envelope={
+                        'packet': target_job.get('packet', {}),
+                        'integrity': target_job.get('integrity', {}),
+                    },
+                    submission=submission,
+                    generated_media_asset_ids=target_job.get('generated_media_asset_ids', []),
+                )
+                updated_state['updated_at'] = datetime.now().isoformat()
+                updated_state['updated_by'] = (session or {}).get('username', 'admin')
+                DESIGN_SETTINGS['media_video_agent'] = updated_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = (session or {}).get('username', 'admin')
+                save_ledger_data()
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'poll': polled,
+                    'state': updated_state,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path in ('/api/admin/media-video-agent/export', '/api/admin/agents-dashboard/export'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                packet = data.get('packet', {})
+                signature = data.get('signature', '')
+                if not isinstance(packet, dict) or not signature:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'packet and signature are required'}).encode('utf-8'))
+                    return
+
+                if not service.verify_payload(packet, signature):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Packet signature verification failed'}).encode('utf-8'))
+                    return
+
+                assets = service.build_prompt_assets({'packet': packet, 'integrity': {'signature': signature}})
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'assets': assets,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path in ('/api/admin/media-video-agent/status', '/api/admin/agents-dashboard/status'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            try:
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                packet_id = str(data.get('packet_id') or '').strip()
+                state = service.ensure_state(DESIGN_SETTINGS.get('media_video_agent'))
+                jobs = state.get('jobs', [])
+                if not packet_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'packet_id is required'}).encode('utf-8'))
+                    return
+
+                job = next(
+                    (
+                        item for item in jobs
+                        if str(((item or {}).get('packet') or {}).get('packet_id') or '').strip() == packet_id
+                    ),
+                    None,
+                )
+                if not isinstance(job, dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Job not found'}).encode('utf-8'))
+                    return
+
+                poll_result = service.poll_job_status(state=state, job=job)
+                if not poll_result.get('success'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps(poll_result, default=str).encode('utf-8'))
+                    return
+
+                updated_job = dict(job)
+                submission_state = dict(updated_job.get('submission') or {})
+                submission_state.update({
+                    'status': poll_result.get('status'),
+                    'output_url': poll_result.get('output_url') or submission_state.get('output_url', ''),
+                    'provider_response': poll_result.get('provider_response', {}),
+                    'polled_at': poll_result.get('polled_at'),
+                    'provider_job_id': poll_result.get('provider_job_id') or submission_state.get('provider_job_id', ''),
+                })
+                updated_job['submission'] = submission_state
+                updated_state = service.store_job(state, packet_envelope={
+                    'packet': updated_job.get('packet', {}),
+                    'integrity': updated_job.get('integrity', {}),
+                }, submission=updated_job.get('submission', {}), generated_media_asset_ids=updated_job.get('generated_media_asset_ids', []))
+                DESIGN_SETTINGS['media_video_agent'] = updated_state
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = session.get('username', 'admin')
+                save_ledger_data()
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'status': poll_result.get('status'),
+                    'submission': submission_state,
+                    'state': updated_state,
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media

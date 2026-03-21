@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import hmac
@@ -82,6 +83,65 @@ class MediaVideoAgentService:
         },
     }
 
+    _PHINS_TEMPLATES: Dict[str, Dict[str, Any]] = {
+        "welcome_video": {
+            "id": "welcome_video",
+            "label": "Welcome Video",
+            "agent_role": "welcome",
+            "generation_mode": "photo_to_video",
+            "aspect_ratio": "16:9",
+            "duration": 6,
+            "language": "en",
+            "cta": "Welcome to PHINS. Visit phins.ai and explore the platform.",
+            "custom_instructions": (
+                "Create a premium brand welcome video with calm camera motion, polished motion graphics, "
+                "and a reassuring executive narrator."
+            ),
+        },
+        "underwriting_agent_demo": {
+            "id": "underwriting_agent_demo",
+            "label": "Underwriting Agent Demo",
+            "agent_role": "underwriting_claims",
+            "generation_mode": "photo_to_video",
+            "aspect_ratio": "16:9",
+            "duration": 8,
+            "language": "en",
+            "cta": "See how PHINS improves underwriting control and speed.",
+            "custom_instructions": (
+                "Focus on underwriting triage, structured evidence, and a disciplined review workflow. "
+                "Use clean enterprise dashboards and precise medical-insurance visuals."
+            ),
+        },
+        "claims_explainer": {
+            "id": "claims_explainer",
+            "label": "Claims Explainer",
+            "agent_role": "underwriting_claims",
+            "generation_mode": "avatar",
+            "aspect_ratio": "9:16",
+            "duration": 7,
+            "language": "en",
+            "cta": "Learn how PHINS keeps claims transparent and trackable.",
+            "custom_instructions": (
+                "Avatar should feel trustworthy and empathetic. Emphasize claim routing, adjudication checkpoints, "
+                "and audit-trail visibility."
+            ),
+        },
+        "marketing_sales_helper_avatar": {
+            "id": "marketing_sales_helper_avatar",
+            "label": "Marketing & Sales Helper Avatar",
+            "agent_role": "marketing_sales_helper",
+            "generation_mode": "avatar",
+            "aspect_ratio": "9:16",
+            "duration": 8,
+            "language": "en",
+            "cta": "Deploy the PHINS AI + BI growth copilot.",
+            "custom_instructions": (
+                "Use the AI + BI Marketing & Sales Agent tone. Keep claims measurable, commercial, and compliant. "
+                "Show sales enablement, campaign discipline, and persona-led targeting."
+            ),
+        },
+    }
+
     _PROVIDER_PRESETS: Dict[str, Dict[str, Any]] = {
         "kling_official": {
             "label": "Kling Official",
@@ -115,11 +175,38 @@ class MediaVideoAgentService:
         },
     }
 
+    _TTS_PRESETS: Dict[str, Dict[str, Any]] = {
+        "elevenlabs": {
+            "label": "ElevenLabs",
+            "base_url": "https://api.elevenlabs.io",
+            "speech_path": "/v1/text-to-speech/{voice_id}",
+            "api_key_env": "ELEVENLABS_API_KEY",
+            "voice_id": "EXAVITQu4vr4xnSDxMaL",
+            "model": "eleven_multilingual_v2",
+            "output_format": "mp3_22050_32",
+        },
+        "openai_tts": {
+            "label": "OpenAI TTS",
+            "base_url": "https://api.openai.com",
+            "speech_path": "/v1/audio/speech",
+            "api_key_env": "OPENAI_API_KEY",
+            "voice_id": "alloy",
+            "model": "gpt-4o-mini-tts",
+            "output_format": "mp3",
+        },
+    }
+
     def __init__(self, secret_key: Optional[str] = None):
         self._secret_key = secret_key or os.getenv("SECRET_KEY", "phins-media-agent-secret")
 
     def provider_presets(self) -> Dict[str, Dict[str, Any]]:
         return copy.deepcopy(self._PROVIDER_PRESETS)
+
+    def tts_presets(self) -> Dict[str, Dict[str, Any]]:
+        return copy.deepcopy(self._TTS_PRESETS)
+
+    def template_catalog(self) -> List[Dict[str, Any]]:
+        return [copy.deepcopy(template) for template in self._PHINS_TEMPLATES.values()]
 
     def role_catalog(self) -> List[Dict[str, str]]:
         return [
@@ -163,6 +250,15 @@ class MediaVideoAgentService:
         if not isinstance(defaults, dict):
             defaults = {}
 
+        tts_state = source.get("tts", {})
+        if not isinstance(tts_state, dict):
+            tts_state = {}
+
+        tts_provider = _safe_text(tts_state.get("provider"), "elevenlabs") or "elevenlabs"
+        tts_preset = copy.deepcopy(self._TTS_PRESETS.get(tts_provider, self._TTS_PRESETS["elevenlabs"]))
+        tts_voice_id = _safe_text(tts_state.get("voice_id"), tts_preset.get("voice_id", ""))
+        tts_model = _safe_text(tts_state.get("model"), tts_preset.get("model", ""))
+
         return {
             "selected_provider": _safe_text(source.get("selected_provider"), "kling_official") or "kling_official",
             "defaults": {
@@ -175,6 +271,13 @@ class MediaVideoAgentService:
                 "use_latest_campaign": bool(defaults.get("use_latest_campaign", True)),
             },
             "providers": providers,
+            "tts": {
+                "provider": tts_provider,
+                "voice_id": tts_voice_id,
+                "model": tts_model,
+                "output_format": _safe_text(tts_state.get("output_format"), tts_preset.get("output_format", "mp3")),
+                "api_key_env": _safe_text(tts_state.get("api_key_env"), tts_preset.get("api_key_env", "")),
+            },
             "jobs": jobs[-40:],
             "latest_job": latest_job or (jobs[-1] if jobs else None),
             "updated_at": _safe_text(source.get("updated_at")),
@@ -223,9 +326,19 @@ class MediaVideoAgentService:
                             values.get(key), merged["providers"][provider_id].get(key, "")
                         )
 
+        tts_incoming = incoming.get("tts", {})
+        if isinstance(tts_incoming, dict):
+            for key in ["provider", "voice_id", "model", "output_format", "api_key_env"]:
+                if key in tts_incoming:
+                    merged["tts"][key] = _safe_text(tts_incoming.get(key), merged["tts"].get(key, ""))
+
         merged["updated_at"] = datetime.now(timezone.utc).isoformat()
         merged["updated_by"] = updated_by or "admin"
         return merged
+
+    def template_defaults(self, template_id: str) -> Dict[str, Any]:
+        template = self._PHINS_TEMPLATES.get(_safe_text(template_id))
+        return copy.deepcopy(template) if template else {}
 
     def _payload_signature(self, payload: Dict[str, Any]) -> str:
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -592,6 +705,29 @@ class MediaVideoAgentService:
                 "brief_type": "video_agent_payload",
                 "format": "application/json",
             },
+            {
+                "name": f"{packet_id} Voiceover Script.txt",
+                "content": _safe_text(script_bundle.get("voiceover_script")),
+                "brief_type": "voiceover_script_txt",
+                "format": "text/plain",
+            },
+            {
+                "name": f"{packet_id} Voiceover Script.json",
+                "content": json.dumps(
+                    {
+                        "packet_id": packet_id,
+                        "title": _safe_text(script_bundle.get("title")),
+                        "voice_style": _safe_text(script_bundle.get("voice_style")),
+                        "language": _safe_text(script_bundle.get("language")),
+                        "voiceover_script": _safe_text(script_bundle.get("voiceover_script")),
+                        "on_screen_text": script_bundle.get("on_screen_text", []),
+                    },
+                    indent=2,
+                    ensure_ascii=True,
+                ),
+                "brief_type": "voiceover_script_json",
+                "format": "application/json",
+            },
         ]
 
     def store_job(
@@ -625,6 +761,162 @@ class MediaVideoAgentService:
         normalized["jobs"] = jobs[-40:]
         normalized["latest_job"] = job_entry
         return normalized
+
+    def synthesize_tts(
+        self,
+        *,
+        state: Dict[str, Any],
+        packet: Dict[str, Any],
+        signature: str,
+    ) -> Dict[str, Any]:
+        if not self.verify_payload(packet, signature):
+            return {
+                "success": False,
+                "error": "Packet signature verification failed.",
+            }
+
+        tts_state = self.ensure_state(state).get("tts", {})
+        provider = _safe_text(tts_state.get("provider"), "elevenlabs") or "elevenlabs"
+        preset = copy.deepcopy(self._TTS_PRESETS.get(provider, self._TTS_PRESETS["elevenlabs"]))
+        api_key_env = _safe_text(tts_state.get("api_key_env"), preset.get("api_key_env", ""))
+        api_key = os.getenv(api_key_env) if api_key_env else ""
+        if not api_key:
+            return {
+                "success": False,
+                "error": f"Missing TTS credential. Set environment variable {api_key_env or 'TTS_API_KEY_ENV'}.",
+            }
+
+        base_url = _safe_text(preset.get("base_url"))
+        speech_path = _safe_text(preset.get("speech_path"))
+        script_bundle = packet.get("script_bundle", {})
+        voiceover_script = _safe_text(script_bundle.get("voiceover_script"))
+        if not voiceover_script:
+            return {
+                "success": False,
+                "error": "No voiceover script available in packet.",
+            }
+
+        request_url = ""
+        headers = {"Content-Type": "application/json"}
+        body: Dict[str, Any]
+        if provider == "elevenlabs":
+            voice_id = _safe_text(tts_state.get("voice_id"), preset.get("voice_id", ""))
+            request_url = urllib.parse.urljoin(
+                base_url.rstrip("/") + "/",
+                speech_path.format(voice_id=voice_id).lstrip("/"),
+            )
+            headers["xi-api-key"] = api_key
+            body = {
+                "text": voiceover_script,
+                "model_id": _safe_text(tts_state.get("model"), preset.get("model", "")),
+            }
+        else:
+            request_url = urllib.parse.urljoin(base_url.rstrip("/") + "/", speech_path.lstrip("/"))
+            headers["Authorization"] = f"Bearer {api_key}"
+            body = {
+                "model": _safe_text(tts_state.get("model"), preset.get("model", "")),
+                "voice": _safe_text(tts_state.get("voice_id"), preset.get("voice_id", "")),
+                "input": voiceover_script,
+                "response_format": _safe_text(tts_state.get("output_format"), preset.get("output_format", "mp3")),
+            }
+
+        request = urllib.request.Request(
+            request_url,
+            data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
+            method="POST",
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                raw = response.read()
+                audio_b64 = base64.b64encode(raw).decode("ascii")
+                mime = "audio/mpeg"
+                return {
+                    "success": True,
+                    "provider": provider,
+                    "voice_id": _safe_text(tts_state.get("voice_id"), preset.get("voice_id", "")),
+                    "format": _safe_text(tts_state.get("output_format"), preset.get("output_format", "mp3")),
+                    "audio_data": f"data:{mime};base64,{audio_b64}",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+        except urllib.error.HTTPError as exc:
+            return {
+                "success": False,
+                "error": exc.read().decode("utf-8", errors="replace") or str(exc),
+                "status_code": exc.code,
+            }
+        except urllib.error.URLError as exc:
+            return {
+                "success": False,
+                "error": str(exc.reason),
+            }
+
+    def poll_job_status(self, *, state: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
+        packet = job.get("packet", {}) if isinstance(job, dict) else {}
+        submission = job.get("submission", {}) if isinstance(job, dict) else {}
+        provider_request = packet.get("provider_request", {}) if isinstance(packet, dict) else {}
+        provider = _safe_text(provider_request.get("provider"))
+        provider_label = _safe_text(provider_request.get("provider_label"), provider)
+        provider_job_id = _safe_text(submission.get("provider_job_id"))
+        if not provider or not provider_job_id:
+            return {
+                "success": False,
+                "error": "Stored job has no provider job ID to poll.",
+            }
+
+        providers = self.ensure_state(state).get("providers", {})
+        provider_config = providers.get(provider, {})
+        api_key_env = _safe_text(provider_config.get("api_key_env"))
+        api_key = os.getenv(api_key_env) if api_key_env else ""
+        base_url = _safe_text(provider_config.get("base_url"))
+        if not api_key or not base_url:
+            return {
+                "success": False,
+                "error": "Provider polling requires base URL and API credentials.",
+            }
+
+        if provider == "kling_official":
+            status_path = f"/v1/videos/{provider_job_id}"
+            headers = {"Authorization": f"Bearer {api_key}"}
+        elif provider == "aimlapi_kling":
+            status_path = f"/v2/video/generations/{provider_job_id}"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Polling is not configured for provider {provider_label}.",
+            }
+
+        request_url = urllib.parse.urljoin(base_url.rstrip("/") + "/", status_path.lstrip("/"))
+        request = urllib.request.Request(request_url, method="GET", headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+                parsed = json.loads(raw) if raw else {}
+                return {
+                    "success": True,
+                    "provider": provider,
+                    "provider_label": provider_label,
+                    "provider_job_id": provider_job_id,
+                    "status": self._extract_status(parsed),
+                    "output_url": self._extract_output_url(parsed),
+                    "provider_response": parsed,
+                    "polled_at": datetime.now(timezone.utc).isoformat(),
+                }
+        except urllib.error.HTTPError as exc:
+            return {
+                "success": False,
+                "status_code": exc.code,
+                "error": exc.read().decode("utf-8", errors="replace") or str(exc),
+            }
+        except urllib.error.URLError as exc:
+            return {
+                "success": False,
+                "error": str(exc.reason),
+            }
 
     def submit_job(self, *, packet: Dict[str, Any], signature: str) -> Dict[str, Any]:
         if not self.verify_payload(packet, signature):
@@ -749,6 +1041,21 @@ class MediaVideoAgentService:
                     value = first.get(key)
                     if value:
                         return _safe_text(value)
+        return ""
+
+    def _extract_status(self, payload: Any) -> str:
+        if not isinstance(payload, dict):
+            return ""
+        for key in ["status", "state"]:
+            value = payload.get(key)
+            if value:
+                return _safe_text(value)
+        data = payload.get("data")
+        if isinstance(data, dict):
+            for key in ["status", "state"]:
+                value = data.get(key)
+                if value:
+                    return _safe_text(value)
         return ""
 
 
