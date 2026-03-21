@@ -1401,17 +1401,6 @@ def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
     threading.Thread(target=_runner, daemon=True).start()
 
 
-def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
-    """Mark a queued or processing video job as cancelled."""
-    job['status'] = 'cancelled'
-    job['provider_status'] = 'cancelled'
-    job['completed_at'] = datetime.now().isoformat()
-    job['message'] = f"Cancelled by {cancelled_by or 'admin'}."
-    job['error'] = None
-    job['progress_pct'] = safe_int(job.get('progress_pct'), 0)
-    return job
-
-
 def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
     """Serialize video generation jobs for a campaign."""
     return [
@@ -17079,21 +17068,24 @@ For claims or questions, please contact:
         if path.startswith('/media-files/'):
             rel = path[len('/media-files/'):].lstrip('/')
             file_path = os.path.join(MEDIA_STORAGE_DIR, rel)
+            allowed_root = MEDIA_STORAGE_DIR
         # Serve static files from web_portal/static
         elif path == '/' or path == '/index.html':
             file_path = os.path.join(ROOT, 'index.html')
+            allowed_root = ROOT
         else:
             rel = path.lstrip('/')
             file_path = os.path.join(ROOT, rel)
+            allowed_root = ROOT
         
         # SECURITY: Prevent path traversal attacks
         # Normalize the path and verify it's still within ROOT
         try:
             file_path = os.path.normpath(file_path)
             abs_file_path = os.path.abspath(file_path)
-            abs_root = os.path.abspath(ROOT)
+            abs_root = os.path.abspath(allowed_root)
             
-            # Check for path traversal - file must be within ROOT directory
+            # Check for path traversal - file must be within the selected root directory
             if not abs_file_path.startswith(abs_root + os.sep) and abs_file_path != abs_root:
                 log_malicious_attempt(client_ip, 'Path Traversal Attempt', {'path': path})
                 self.send_error(403, 'Access Denied')
