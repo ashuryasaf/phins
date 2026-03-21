@@ -5218,6 +5218,51 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        if path == '/api/admin/media-video-agent':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+                from services.media_video_agent_service import get_media_video_agent_service
+
+                service = get_media_video_agent_service()
+                marketing_service = get_marketing_sales_agent_service()
+                marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
+                latest_campaign = marketing_state.get('latest_campaign')
+                campaign_verified = False
+                if isinstance(latest_campaign, dict):
+                    campaign_payload = latest_campaign.get('campaign', {})
+                    integrity_payload = latest_campaign.get('integrity', {})
+                    campaign_verified = marketing_service.verify_campaign_payload(
+                        campaign_payload,
+                        integrity_payload.get('signature', '')
+                    )
+
+                video_state = service.ensure_state(DESIGN_SETTINGS.get('media_video_agent'))
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'state': video_state,
+                    'provider_presets': service.provider_presets(),
+                    'role_catalog': service.role_catalog(),
+                    'latest_campaign': latest_campaign,
+                    'latest_campaign_verified': bool(campaign_verified),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/media-video-agent' and self.command == 'POST':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':
