@@ -1333,6 +1333,9 @@
           <input id="mkt-video-auto-hero" type="checkbox" checked>
           Auto-publish generated video to landing-page hero
         </label>
+        <button onclick="batchGenerateMarketingVideos()" style="background:#26a69a;color:white;border:none;padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
+          🎬 Generate All Blueprints
+        </button>
         <button onclick="loadMarketingVideoJobs({ silent: false })" style="background:rgba(255,255,255,0.14);color:white;border:1px solid rgba(255,255,255,0.25);padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:700;">
           🔄 Refresh Video Jobs
         </button>
@@ -2848,6 +2851,7 @@
     let latestMarketingCampaignPayload = null;
     let latestMarketingVideoJobs = [];
     let latestMarketingMediaAssets = [];
+    let marketingVideoJobsRefreshTimer = null;
 
     function escapeMarketingHtml(value) {
       return String(value || '')
@@ -2978,15 +2982,54 @@
       return `<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:${bg};font-size:0.72rem;">${escapeMarketingHtml(status)}</span>`;
     }
 
+    function renderVideoJobProgress(job) {
+      if (!job) return '';
+      const pct = Math.max(0, Math.min(100, Number(job.progress_pct || 0)));
+      const status = String(job.status || '').toLowerCase();
+      const bar = status === 'failed'
+        ? '#ef5350'
+        : status === 'completed'
+          ? '#4caf50'
+          : '#42a5f5';
+      return `
+        <div style="margin-top:8px;">
+          <div style="height:8px;border-radius:999px;background:rgba(255,255,255,0.12);overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${bar};transition:width 0.3s ease;"></div>
+          </div>
+          <div style="font-size:0.72rem;opacity:0.85;margin-top:4px;">Progress: ${pct}%</div>
+        </div>
+      `;
+    }
+
     function renderVideoJobSummary(job) {
       if (!job) return '';
       const parts = [];
       if (job.provider) parts.push(`Provider: ${escapeMarketingHtml(String(job.provider).toUpperCase())}`);
+      if (job.provider_model) parts.push(`Model: ${escapeMarketingHtml(job.provider_model)}`);
       if (job.message) parts.push(escapeMarketingHtml(job.message));
       if (job.generated_asset_id) {
         parts.push(`<a href="/admin-media.html" style="color:#c5e1ff;text-decoration:none;">Open generated asset</a>`);
       }
-      return `<div style="font-size:0.74rem;opacity:0.9;margin-top:8px;line-height:1.45;">${parts.join(' &middot; ')}</div>`;
+      return `<div style="font-size:0.74rem;opacity:0.9;margin-top:8px;line-height:1.45;">${parts.join(' &middot; ')}</div>${renderVideoJobProgress(job)}`;
+    }
+
+    function hasActiveMarketingVideoJobs() {
+      return latestMarketingVideoJobs.some(job => ['queued', 'processing'].includes(String(job.status || '').toLowerCase()));
+    }
+
+    function startMarketingVideoAutoRefresh() {
+      stopMarketingVideoAutoRefresh();
+      if (!hasActiveMarketingVideoJobs()) return;
+      marketingVideoJobsRefreshTimer = setInterval(() => {
+        loadMarketingVideoJobs({ silent: true });
+      }, 5000);
+    }
+
+    function stopMarketingVideoAutoRefresh() {
+      if (marketingVideoJobsRefreshTimer) {
+        clearInterval(marketingVideoJobsRefreshTimer);
+        marketingVideoJobsRefreshTimer = null;
+      }
     }
 
     async function loadMarketingVideoJobs(options = {}) {
@@ -3010,6 +3053,11 @@
           const completed = latestMarketingVideoJobs.filter(job => job.status === 'completed').length;
           setMarketingVideoJobStatus(`Loaded ${total} video generation job(s); ${completed} completed.`, 'info');
         }
+        if (hasActiveMarketingVideoJobs()) {
+          startMarketingVideoAutoRefresh();
+        } else {
+          stopMarketingVideoAutoRefresh();
+        }
         if (latestMarketingCampaignPayload?.campaign) {
           renderMarketingCampaign(latestMarketingCampaignPayload);
         }
@@ -3019,6 +3067,81 @@
           setMarketingVideoJobStatus(`Failed to load video jobs: ${err.message}`, 'error');
         }
         return [];
+      }
+    }
+
+    async function runMarketingVideoJobControl(action, payload, successMessage) {
+      try {
+        const response = await fetch(`/api/admin/media/video-jobs/${action}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || `${action} failed`);
+        }
+        if (Array.isArray(data.jobs)) {
+          latestMarketingVideoJobs = data.jobs;
+        }
+        if (data.job) {
+          latestMarketingVideoJobs = [data.job, ...latestMarketingVideoJobs.filter(item => item.id !== data.job.id)];
+        }
+        if (latestMarketingCampaignPayload?.campaign) {
+          renderMarketingCampaign(latestMarketingCampaignPayload);
+        }
+        setMarketingVideoJobStatus(successMessage, 'success');
+        return data;
+      } catch (err) {
+        setMarketingVideoJobStatus(`${action} failed: ${err.message}`, 'error');
+        return null;
+      }
+    }
+
+    async function retryMarketingVideoJob(jobId) {
+      const campaignId = getCurrentCampaignId();
+      await runMarketingVideoJobControl('retry', { job_id: jobId, campaign_id: campaignId }, 'Video job retried.');
+    }
+
+    async function cancelMarketingVideoJob(jobId) {
+      const campaignId = getCurrentCampaignId();
+      await runMarketingVideoJobControl('cancel', { job_id: jobId, campaign_id: campaignId }, 'Video job cancelled.');
+    }
+
+    async function batchGenerateMarketingVideos() {
+      const campaignId = getCurrentCampaignId();
+      const campaign = latestMarketingCampaignPayload?.campaign;
+      const blueprintCount = Array.isArray(campaign?.ai_video_blueprints) ? campaign.ai_video_blueprints.length : 0;
+      if (!campaignId || blueprintCount === 0) {
+        setMarketingStatus('Generate a campaign before batch video generation.', 'warning');
+        return;
+      }
+
+      const provider = selectedMarketingVideoProvider();
+      const providerModel = selectedMarketingVideoModel();
+      const referenceImage = selectedMarketingReferenceImage();
+      const pollMode = selectedMarketingPollMode();
+      const autoPublishToHero = selectedMarketingAutoHero();
+      setMarketingVideoJobStatus(`Queueing ${blueprintCount} blueprint videos with ${String(provider).toUpperCase()}...`, 'info');
+      const result = await runMarketingVideoJobControl(
+        'batch',
+        {
+          campaign_id: campaignId,
+          provider,
+          provider_model: providerModel,
+          image_data_url: referenceImage ? (referenceImage.data || referenceImage.url || '') : '',
+          reference_image_asset_id: referenceImage ? referenceImage.id : '',
+          poll_mode: pollMode,
+          auto_publish_to_hero: autoPublishToHero
+        },
+        `Queued ${blueprintCount} video job(s).`
+      );
+      if (result) {
+        startMarketingVideoAutoRefresh();
+        setTimeout(() => loadMarketingVideoJobs({ silent: false }), 7000);
       }
     }
 
@@ -3068,6 +3191,7 @@
         const modeLabel = pollMode === 'webhook' ? 'webhook-first completion' : 'background polling';
         setMarketingVideoJobStatus(`${String(provider).toUpperCase()} job queued for "${blueprint.title || `Blueprint ${index + 1}`}" using ${modeLabel}.`, 'success');
         setMarketingStatus(`Video generation queued with ${String(provider).toUpperCase()}.`, 'success');
+        startMarketingVideoAutoRefresh();
         setTimeout(() => loadMarketingVideoJobs({ silent: false }), 7000);
       } catch (err) {
         setMarketingVideoJobStatus(`Video generation failed to start: ${err.message}`, 'error');
@@ -3148,6 +3272,8 @@
               <button onclick="generateMarketingBlueprintVideo(${index})" style="background:#42a5f5;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Generate with selected provider</button>
               <button onclick="generateMarketingBlueprintVideo(${index}, 'gemini')" style="background:#1976d2;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Veo / Gemini</button>
               <button onclick="generateMarketingBlueprintVideo(${index}, 'kling')" style="background:#7c4dff;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Kling</button>
+              ${job && job.status === 'failed' ? `<button onclick="retryMarketingVideoJob('${job.id}')" style="background:#ffb300;color:#10203a;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Retry</button>` : ''}
+              ${job && ['queued', 'processing'].includes(String(job.status || '').toLowerCase()) ? `<button onclick="cancelMarketingVideoJob('${job.id}')" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Cancel</button>` : ''}
             </div>
             ${renderVideoJobSummary(job)}
           </div>

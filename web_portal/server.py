@@ -695,6 +695,8 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'generated_asset_id': job.get('generated_asset_id'),
         'provider_operation_name': job.get('provider_operation_name', ''),
         'provider_status': job.get('provider_status', ''),
+        'provider_model': job.get('provider_model', ''),
+        'progress_pct': safe_int(job.get('progress_pct'), 0),
     }
     if include_callback:
         payload['callback_path'] = job.get('callback_path', '')
@@ -1134,6 +1136,9 @@ def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, An
     if not isinstance(payload, dict):
         return
     job['provider_status'] = str(payload.get('status') or job.get('provider_status') or '').strip().lower()
+    progress_value = payload.get('progress_pct')
+    if progress_value is not None:
+        job['progress_pct'] = max(0, min(100, safe_int(progress_value, safe_int(job.get('progress_pct'), 0))))
     if payload.get('provider_job_id'):
         job['provider_job_id'] = str(payload.get('provider_job_id'))
     if payload.get('provider_state') is not None:
@@ -1196,6 +1201,9 @@ def create_media_video_job(
 
     requested_at = datetime.now().isoformat()
     job_id = f"mjob-{uuid.uuid4().hex[:12]}"
+    callback_token = secrets.token_urlsafe(18)
+    callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
+    callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
     job = {
         'id': job_id,
         'job_kind': 'video_generation',
@@ -1211,6 +1219,7 @@ def create_media_video_job(
         'provider_model': provider_model or '',
         'language': 'en',
         'status': 'queued',
+        'progress_pct': 5,
         'requested_at': requested_at,
         'requested_by': requested_by or 'admin',
         'completed_at': None,
@@ -1220,9 +1229,35 @@ def create_media_video_job(
         'generated_asset_id': '',
         'download_url': '',
         'auto_publish_to_hero': bool(auto_publish_to_hero),
+        'callback_token': callback_token,
+        'callback_path': callback_path,
+        'callback_url': callback_url,
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
     return job
+
+
+def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> None:
+    """Mark a queued or processing media video job as cancelled."""
+    if not isinstance(job, dict):
+        return
+    if str(job.get('job_kind') or '') != 'video_generation':
+        return
+    if str(job.get('status') or '') in {'completed', 'failed', 'cancelled'}:
+        return
+    job['status'] = 'cancelled'
+    job['provider_status'] = 'cancelled'
+    job['completed_at'] = datetime.now().isoformat()
+    job['error'] = None
+    job['message'] = f"Cancelled by {cancelled_by or 'admin'}."
+
+
+def build_video_job_reference_image_data_url(asset_id: str) -> str:
+    """Resolve a PHINS media image asset into a data/url payload for image-to-video."""
+    asset = MEDIA_ASSETS.get(asset_id)
+    if not asset or asset.get('type') != 'image':
+        return ''
+    return str(asset.get('data') or asset.get('url') or '').strip()
 
 
 def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1236,9 +1271,11 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     status_value = str(poll_result.get('status') or '').strip().lower()
     if status_value == 'processing':
         job['status'] = 'processing'
+        job['progress_pct'] = max(safe_int(job.get('progress_pct'), 5), safe_int(poll_result.get('progress_pct'), 45))
         return None
     if status_value == 'failed':
         job['status'] = 'failed'
+        job['progress_pct'] = safe_int(poll_result.get('progress_pct'), safe_int(job.get('progress_pct'), 0))
         job['completed_at'] = datetime.now().isoformat()
         job['error'] = str(poll_result.get('error') or 'Provider video generation failed')
         return None
@@ -1270,7 +1307,7 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
         'size': safe_int(downloaded.get('size'), 0),
         'url': '',
         'data': str(downloaded.get('data_url') or ''),
-        'thumbnail': '',
+        'thumbnail': str(job.get('thumbnail_url') or ''),
         'duration': safe_int(poll_result.get('duration') or 8, 8),
         'source': 'ai_video_generation',
         'uploaded_at': uploaded_at,
@@ -1287,6 +1324,7 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     MEDIA_ASSETS[asset_id] = asset
     job['generated_asset_id'] = asset_id
     job['status'] = 'completed'
+    job['progress_pct'] = 100
     job['completed_at'] = uploaded_at
     job['error'] = None
     job['message'] = str(poll_result.get('message') or 'Generated video saved to media library.')
@@ -1294,6 +1332,8 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     if job.get('auto_publish_to_hero'):
         DESIGN_SETTINGS['hero_video_id'] = asset_id
         DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
+        DESIGN_SETTINGS['video_poster'] = asset.get('thumbnail', '')
+        DESIGN_SETTINGS['video_poster_id'] = ''
         DESIGN_SETTINGS['updated_at'] = uploaded_at
         DESIGN_SETTINGS['updated_by'] = str(job.get('requested_by') or 'admin')
     return asset
@@ -1340,12 +1380,79 @@ def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
     threading.Thread(target=_runner, daemon=True).start()
 
 
+def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
+    """Mark a queued or processing video job as cancelled."""
+    job['status'] = 'cancelled'
+    job['provider_status'] = 'cancelled'
+    job['completed_at'] = datetime.now().isoformat()
+    job['message'] = f"Cancelled by {cancelled_by or 'admin'}."
+    job['error'] = None
+    job['progress_pct'] = safe_int(job.get('progress_pct'), 0)
+    return job
+
+
 def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
     """Serialize video generation jobs for a campaign."""
     return [
         serialize_media_job(job, include_callback=True)
         for job in list_media_processing_jobs_for_campaign(campaign_id, job_kind='video_generation')
     ]
+
+
+def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_base_url: str = '') -> Dict[str, Any]:
+    """Create a fresh job using the original job's blueprint/provider settings."""
+    campaign_id = str(job.get('campaign_id') or '')
+    blueprint_index = safe_int(job.get('blueprint_index'), -1)
+    if not campaign_id or blueprint_index < 0:
+        raise ValueError('Retry requested for a job without campaign blueprint context')
+
+    marketing_state = marketing_state_dict()
+    latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
+    campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
+    blueprints = campaign_payload.get('ai_video_blueprints') if isinstance(campaign_payload, dict) else []
+    if str(campaign_payload.get('campaign_id') or '') != campaign_id or not isinstance(blueprints, list) or blueprint_index >= len(blueprints):
+        raise ValueError('Current campaign no longer matches the job blueprint context')
+
+    return create_media_video_job(
+        campaign_id=campaign_id,
+        blueprint_index=blueprint_index,
+        blueprint=blueprints[blueprint_index],
+        requested_by=requested_by,
+        provider=str(job.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
+        callback_base_url=callback_base_url,
+        provider_model=str(job.get('provider_model') or ''),
+        image_data_url=str(job.get('image_data_url') or ''),
+        auto_publish_to_hero=bool(job.get('auto_publish_to_hero')),
+    )
+
+
+def generate_video_thumbnail(asset: Dict[str, Any]) -> str:
+    """Generate a lightweight inline SVG thumbnail marker for generated videos."""
+    title = safe_ascii_filename_stem(str(asset.get('name') or 'Generated Video'), fallback='Generated Video').replace('_', ' ')
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'>"
+        "<defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'>"
+        "<stop offset='0%' stop-color='#1e3a8a'/><stop offset='100%' stop-color='#7c3aed'/>"
+        "</linearGradient></defs>"
+        "<rect width='1280' height='720' fill='url(#g)'/>"
+        "<circle cx='640' cy='360' r='110' fill='rgba(255,255,255,0.18)'/>"
+        "<polygon points='610,300 610,420 720,360' fill='white'/>"
+        f"<text x='640' y='600' fill='white' font-size='42' text-anchor='middle' font-family='Arial, sans-serif'>{title[:42]}</text>"
+        "</svg>"
+    )
+    encoded = base64.b64encode(svg.encode('utf-8')).decode('ascii')
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def attach_generated_video_thumbnail(asset: Dict[str, Any]) -> None:
+    """Populate thumbnail and poster fields for generated videos."""
+    thumbnail = generate_video_thumbnail(asset)
+    asset['thumbnail'] = thumbnail
+    metadata = asset.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+        asset['metadata'] = metadata
+    metadata['generated_poster'] = thumbnail
 
 
 def get_media_generation_service():
