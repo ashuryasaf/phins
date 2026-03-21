@@ -1245,6 +1245,57 @@
       box-shadow: 0 14px 34px rgba(13, 71, 161, 0.38);
     }
 
+    .download-section {
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    .download-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .download-card h3 {
+      font-size: 11pt;
+      font-weight: 850;
+      color: var(--blue-dark);
+      margin-bottom: 8px;
+    }
+
+    .download-card p {
+      font-size: 8.8pt;
+      color: var(--text-sub);
+      max-width: 760px;
+      margin: 0 auto 14px;
+    }
+
+    .download-inline-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 20px;
+      background: var(--gradient-hdr);
+      color: #fff;
+      font-family: inherit;
+      font-size: 9pt;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(13, 71, 161, 0.22);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .download-inline-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 34px rgba(13, 71, 161, 0.3);
+    }
+
     @media print {
       @page {
         size: A4;
@@ -1263,6 +1314,7 @@
       }
 
       .download-btn,
+      .download-section,
       .header-actions,
       .scenario-sidebar,
       .export-actions,
@@ -2156,6 +2208,19 @@
           <div class="card-authority">Central Bank of Ireland</div>
           <div class="card-cta">Open Pitch →</div>
         </a>
+      </div>
+    </section>
+
+    <section class="download-section">
+      <div class="download-card">
+        <h3>Download the executive assessment</h3>
+        <p>
+          Save the current PHI Permanent 3+ ADL Executive Business Assessment as a PDF for board review,
+          investor circulation, or offline diligence.
+        </p>
+        <button type="button" class="download-inline-btn" onclick="window.print()">
+          📥 Download Executive Assessment PDF
+        </button>
       </div>
     </section>
   </main>
