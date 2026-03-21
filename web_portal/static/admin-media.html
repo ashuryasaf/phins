@@ -602,6 +602,14 @@
             background: rgba(46, 213, 115, 0.18);
             color: #a8f0c4;
         }
+        .link-button {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            font: inherit;
+        }
         .media-action-btn:disabled {
             opacity: 0.55;
             cursor: not-allowed;
@@ -903,6 +911,7 @@
             <span class="page-title">Media & Design</span>
         </div>
         <div class="header-right">
+            <a href="/video-agents.html" class="btn btn-secondary">🎬 Video Agents</a>
             <a href="/admin.html" class="btn btn-secondary">← Admin</a>
             <button onclick="saveAllSettings()" class="btn btn-primary">💾 Save All</button>
         </div>
@@ -1062,6 +1071,7 @@
                 <h2>🚀 Growth Agent Bridge</h2>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-secondary" onclick="loadGrowthBridgeCampaign()">🔄 Refresh</button>
+                    <a href="/video-agents.html" class="btn btn-secondary">🎬 Open Video Agents</a>
                     <a id="growth-bridge-link" href="/admin.html#growth-agent-section" class="btn btn-primary">⚙️ Open Admin Builder</a>
                 </div>
             </div>
@@ -2065,14 +2075,88 @@
             }
         }
 
-        function downloadLatestSubtitle(assetId) {
-            const media = mediaAssets.find(item => item.id === assetId);
-            const latestTrack = getLatestSubtitleTrack(media);
+        function getDownloadFilenameFromHeaders(response, fallbackFilename) {
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utf8Match && utf8Match[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).replace(/["]/g, '');
+                } catch (e) {
+                    return utf8Match[1].replace(/["]/g, '');
+                }
+            }
+
+            const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+            if (filenameMatch && filenameMatch[1]) {
+                return filenameMatch[1];
+            }
+
+            return fallbackFilename;
+        }
+
+        function buildSubtitleFilename(media, latestTrack) {
+            const baseName = String((media && media.name) || 'subtitle')
+                .replace(/\.[^./\\]+$/, '')
+                .replace(/[^a-z0-9._-]+/gi, '_')
+                .replace(/^_+|_+$/g, '') || 'subtitle';
+            const language = String((latestTrack && latestTrack.language) || 'en')
+                .replace(/[^a-z0-9_-]+/gi, '')
+                .toLowerCase() || 'en';
+            return `${baseName}_${language}.srt`;
+        }
+
+        async function downloadSubtitleTrack(media, latestTrack) {
             if (!latestTrack || !latestTrack.download_url) {
                 showToast('No downloadable subtitle track is available yet.', 'error');
                 return;
             }
-            window.open(latestTrack.download_url, '_blank');
+
+            const token = getToken();
+            if (!token) {
+                showToast('Session expired. Please login again.', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(latestTrack.download_url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    let errorMessage = `Subtitle download failed (${response.status})`;
+                    try {
+                        const data = await response.json();
+                        errorMessage = data.error || errorMessage;
+                    } catch (e) {
+                        const text = await response.text();
+                        if (text) {
+                            errorMessage = text;
+                        }
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const blob = await response.blob();
+                const filename = getDownloadFilenameFromHeaders(
+                    response,
+                    buildSubtitleFilename(media, latestTrack)
+                );
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+            } catch (e) {
+                showToast('Subtitle download failed: ' + e.message, 'error');
+            }
+        }
+
+        async function downloadLatestSubtitle(assetId) {
+            const media = mediaAssets.find(item => item.id === assetId);
+            const latestTrack = getLatestSubtitleTrack(media);
+            await downloadSubtitleTrack(media, latestTrack);
         }
         
         // ==================== UI FUNCTIONS ====================
@@ -2266,7 +2350,7 @@
                     <div class="preview-detail-label">Subtitles</div>
                     <div class="preview-detail-value">
                         ${latestTrack
-                            ? `<a href="${latestTrack.download_url}" target="_blank" style="color:#a8f0c4;text-decoration:none;">${escapeGrowthHtml(latestTrack.label || 'Download SRT')}</a>`
+                            ? `<button type="button" class="link-button" onclick="downloadLatestSubtitle('${media.id}')" style="color:#a8f0c4;text-decoration:none;">${escapeGrowthHtml(latestTrack.label || 'Download SRT')}</button>`
                             : escapeGrowthHtml((media.processing && media.processing.subtitle_status) || 'Not generated')}
                     </div>
                 </div>

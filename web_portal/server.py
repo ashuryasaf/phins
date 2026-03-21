@@ -630,10 +630,23 @@ MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
+DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'gemini')
+MEDIA_STORAGE_DIR = os.environ.get(
+    'PHINS_MEDIA_STORAGE_DIR',
+    os.path.join(tempfile.gettempdir(), 'phins_media_assets'),
+)
+MEDIA_INLINE_MAX_BYTES = safe_int(os.environ.get('PHINS_MEDIA_INLINE_MAX_BYTES', 5 * 1024 * 1024), 5 * 1024 * 1024)
 
 
-def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
-    """Create a compact ASCII-safe filename stem."""
+def _sanitize_ascii_filename_stem(
+    value: str,
+    fallback: str,
+    *,
+    strip_chars: str,
+    collapse_repeated_underscores: bool,
+    max_length: Optional[int] = None,
+) -> str:
+    """Create a compact ASCII-safe filename stem with caller-specific cleanup."""
     value = (value or '').strip()
     if not value:
         return fallback
@@ -645,10 +658,24 @@ def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> st
         elif ch in (' ', '.'):
             safe_chars.append('_')
 
-    cleaned = ''.join(safe_chars).strip('._')
-    while '__' in cleaned:
-        cleaned = cleaned.replace('__', '_')
-    return cleaned[:80] or fallback
+    cleaned = ''.join(safe_chars).strip(strip_chars)
+    if collapse_repeated_underscores:
+        while '__' in cleaned:
+            cleaned = cleaned.replace('__', '_')
+    if max_length is not None:
+        cleaned = cleaned[:max_length]
+    return cleaned or fallback
+
+
+def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
+    """Create a compact ASCII-safe filename stem."""
+    return _sanitize_ascii_filename_stem(
+        value,
+        fallback,
+        strip_chars='._',
+        collapse_repeated_underscores=True,
+        max_length=80,
+    )
 
 
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
@@ -671,6 +698,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
     """Return a safe media job payload for API responses."""
     payload = {
         'id': job.get('id'),
+        'job_kind': job.get('job_kind', 'subtitle'),
         'asset_id': job.get('asset_id'),
         'asset_name': job.get('asset_name'),
         'provider': job.get('provider'),
@@ -683,6 +711,13 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'error': job.get('error'),
         'message': job.get('message', ''),
         'subtitle_track_id': job.get('subtitle_track_id'),
+        'campaign_id': job.get('campaign_id'),
+        'blueprint_index': job.get('blueprint_index'),
+        'generated_asset_id': job.get('generated_asset_id'),
+        'provider_operation_name': job.get('provider_operation_name', ''),
+        'provider_status': job.get('provider_status', ''),
+        'provider_model': job.get('provider_model', ''),
+        'progress_pct': safe_int(job.get('progress_pct'), 0),
     }
     if include_callback:
         payload['callback_path'] = job.get('callback_path', '')
@@ -704,6 +739,79 @@ def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(track, dict)
         ]
     return payload
+
+
+def media_asset_url(asset: Dict[str, Any]) -> str:
+    """Resolve the best available playback/download URL for a media asset."""
+    return str(asset.get('url') or asset.get('data') or '').strip()
+
+
+def get_media_asset_playback_url(asset_id: str) -> str:
+    """Return the current playable URL for a media asset, if any."""
+    asset = MEDIA_ASSETS.get(asset_id)
+    if not asset:
+        return ''
+    return media_asset_url(asset)
+
+
+def ensure_media_storage_dir() -> None:
+    """Create the on-disk media storage directory if it does not already exist."""
+    os.makedirs(MEDIA_STORAGE_DIR, exist_ok=True)
+
+
+def build_internal_media_file_url(asset_id: str, filename: str) -> str:
+    """Build the internal route used to stream a stored media file."""
+    safe_name = safe_ascii_filename_stem(filename or asset_id, fallback=asset_id)
+    return f"/media-files/{asset_id}/{safe_name}"
+
+
+def write_media_binary_payload(asset_id: str, filename: str, payload_bytes: bytes) -> str:
+    """Persist heavy media bytes to disk and return the saved file path."""
+    ensure_media_storage_dir()
+    stem = safe_ascii_filename_stem(filename or asset_id, fallback=asset_id)
+    file_path = os.path.join(MEDIA_STORAGE_DIR, f"{asset_id}-{stem}")
+    with open(file_path, 'wb') as handle:
+        handle.write(payload_bytes)
+    return file_path
+
+
+def decode_media_data_url(data_url: str) -> tuple[bytes, str]:
+    """Decode a data URL into raw bytes and mime type."""
+    value = str(data_url or '').strip()
+    if not value.startswith('data:') or ',' not in value:
+        raise ValueError('Expected a valid data URL payload')
+    header, encoded = value.split(',', 1)
+    mime_type = header[5:].split(';', 1)[0].strip() or 'application/octet-stream'
+    if ';base64' in header:
+        payload_bytes = base64.b64decode(encoded.encode('ascii'))
+    else:
+        payload_bytes = urlparse.unquote_to_bytes(encoded)
+    return payload_bytes, mime_type
+
+
+def persist_media_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
+    """Offload heavy inline media payloads to file storage when appropriate."""
+    if not isinstance(asset, dict):
+        return asset
+    data_url = str(asset.get('data') or '').strip()
+    if not data_url:
+        return asset
+    try:
+        payload_bytes, mime_type = decode_media_data_url(data_url)
+    except Exception:
+        return asset
+    if len(payload_bytes) <= MEDIA_INLINE_MAX_BYTES:
+        return asset
+
+    filename = str(asset.get('name') or asset.get('id') or 'media_asset').strip() or 'media_asset'
+    file_path = write_media_binary_payload(str(asset.get('id') or uuid.uuid4().hex), filename, payload_bytes)
+    asset['data'] = ''
+    asset['url'] = build_internal_media_file_url(str(asset.get('id') or ''), filename)
+    asset['file_path'] = file_path
+    asset['stored_externally'] = True
+    asset['format'] = asset.get('format') or mime_type
+    asset['size'] = safe_int(asset.get('size') or len(payload_bytes), len(payload_bytes))
+    return asset
 
 
 def get_media_subtitle_tracks(asset: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -842,6 +950,30 @@ def find_media_processing_job(job_id: str = '', provider_job_id: str = '') -> Op
             if job.get('provider_job_id') == provider_job_id:
                 return job
     return None
+
+
+def list_media_processing_jobs_for_campaign(campaign_id: str, job_kind: str = '') -> List[Dict[str, Any]]:
+    """Return media processing jobs associated with a campaign."""
+    items: List[Dict[str, Any]] = []
+    for job in MEDIA_PROCESSING_JOBS.values():
+        if not isinstance(job, dict):
+            continue
+        if campaign_id and str(job.get('campaign_id') or '') != campaign_id:
+            continue
+        if job_kind and str(job.get('job_kind') or '') != job_kind:
+            continue
+        items.append(job)
+    items.sort(key=lambda item: item.get('requested_at', ''), reverse=True)
+    return items
+
+
+def marketing_state_dict() -> Dict[str, Any]:
+    """Ensure marketing sales agent state is always a mutable dict."""
+    state = DESIGN_SETTINGS.setdefault('marketing_sales_agent', {})
+    if not isinstance(state, dict):
+        state = {}
+        DESIGN_SETTINGS['marketing_sales_agent'] = state
+    return state
 
 
 def get_media_subtitle_track(asset: Dict[str, Any], track_id: str = '') -> Optional[Dict[str, Any]]:
@@ -1018,6 +1150,322 @@ def verify_media_provider_callback(headers: Any, raw_body: bytes, payload: Dict[
         return hmac.compare_digest(provided_signature, expected_signature)
 
     return False
+
+
+def update_video_generation_job_state(job: Dict[str, Any], payload: Dict[str, Any]) -> None:
+    """Normalize provider job state onto a video generation job record."""
+    if not isinstance(payload, dict):
+        return
+    job['provider_status'] = str(payload.get('status') or job.get('provider_status') or '').strip().lower()
+    progress_value = payload.get('progress_pct')
+    if progress_value is not None:
+        job['progress_pct'] = max(0, min(100, safe_int(progress_value, safe_int(job.get('progress_pct'), 0))))
+    if payload.get('provider_job_id'):
+        job['provider_job_id'] = str(payload.get('provider_job_id'))
+    if payload.get('provider_state') is not None:
+        job['provider_state'] = payload.get('provider_state')
+    if payload.get('download_url'):
+        job['download_url'] = str(payload.get('download_url')).strip()
+    if payload.get('message'):
+        job['message'] = str(payload.get('message'))
+    if payload.get('error'):
+        job['error'] = str(payload.get('error'))
+
+
+def create_media_video_job(
+    *,
+    campaign_id: str,
+    blueprint_index: int,
+    blueprint: Dict[str, Any],
+    requested_by: str,
+    provider: str,
+    callback_base_url: str = '',
+    provider_model: str = '',
+    image_data_url: str = '',
+    auto_publish_to_hero: bool = False,
+) -> Dict[str, Any]:
+    """Create and submit a provider-backed video generation job."""
+    service = get_media_generation_service()
+    prompt_parts = [
+        str(blueprint.get('title') or '').strip(),
+        str(blueprint.get('format') or '').strip(),
+        str(blueprint.get('voiceover_style') or '').strip(),
+    ]
+    storyboard = blueprint.get('storyboard') or []
+    if isinstance(storyboard, list) and storyboard:
+        prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
+    prompt = '. '.join(part for part in prompt_parts if part)
+    if not prompt:
+        prompt = f"Marketing video for campaign {campaign_id}"
+
+    aspect_ratio = '16:9'
+    format_hint = str(blueprint.get('format') or '').lower()
+    if 'vertical' in format_hint or 'short' in format_hint or 'reel' in format_hint:
+        aspect_ratio = '9:16'
+
+    submission = service.submit_video_generation(
+        provider=provider,
+        prompt=prompt,
+        title=str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
+        model=provider_model,
+        aspect_ratio=aspect_ratio,
+        duration_seconds=8,
+        resolution='720p',
+        image_data_url=image_data_url,
+        callback_url=f"{callback_base_url.rstrip('/')}/api/provider/media-processing/callback" if callback_base_url else '',
+        metadata={
+            'campaign_id': campaign_id,
+            'blueprint_index': blueprint_index,
+            'requested_by': requested_by,
+        },
+    )
+
+    requested_at = datetime.now().isoformat()
+    job_id = f"mjob-{uuid.uuid4().hex[:12]}"
+    callback_token = secrets.token_urlsafe(18)
+    callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
+    callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
+    job = {
+        'id': job_id,
+        'job_kind': 'video_generation',
+        'campaign_id': campaign_id,
+        'blueprint_index': blueprint_index,
+        'asset_id': '',
+        'asset_name': str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
+        'provider': provider,
+        'provider_job_id': str(submission.get('provider_job_id') or ''),
+        'provider_operation_name': str((submission.get('provider_state') or {}).get('operation_name') or ''),
+        'provider_status': str(submission.get('status') or 'queued'),
+        'provider_state': submission.get('provider_state') or {},
+        'provider_model': provider_model or '',
+        'language': 'en',
+        'status': 'queued',
+        'progress_pct': 5,
+        'requested_at': requested_at,
+        'requested_by': requested_by or 'admin',
+        'completed_at': None,
+        'error': None,
+        'message': str(submission.get('message') or 'Video generation submitted to provider.'),
+        'subtitle_track_id': None,
+        'generated_asset_id': '',
+        'download_url': '',
+        'auto_publish_to_hero': bool(auto_publish_to_hero),
+        'callback_token': callback_token,
+        'callback_path': callback_path,
+        'callback_url': callback_url,
+    }
+    MEDIA_PROCESSING_JOBS[job_id] = job
+    return job
+
+
+def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
+    """Mark a queued or processing video job as cancelled."""
+    job['status'] = 'cancelled'
+    job['provider_status'] = 'cancelled'
+    job['completed_at'] = datetime.now().isoformat()
+    job['message'] = f"Cancelled by {cancelled_by or 'admin'}."
+    job['error'] = None
+    job['progress_pct'] = safe_int(job.get('progress_pct'), 0)
+    return job
+
+
+def build_video_job_reference_image_data_url(asset_id: str) -> str:
+    """Resolve a PHINS media image asset into a data/url payload for image-to-video."""
+    asset = MEDIA_ASSETS.get(asset_id)
+    if not asset or asset.get('type') != 'image':
+        return ''
+    return str(asset.get('data') or asset.get('url') or '').strip()
+
+
+def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Download a completed provider video and store it as a media asset."""
+    from services.media_generation_service import MediaGenerationError
+
+    if not isinstance(job, dict):
+        return None
+
+    update_video_generation_job_state(job, poll_result)
+    status_value = str(poll_result.get('status') or '').strip().lower()
+    if status_value == 'processing':
+        job['status'] = 'processing'
+        job['progress_pct'] = max(safe_int(job.get('progress_pct'), 5), safe_int(poll_result.get('progress_pct'), 45))
+        return None
+    if status_value == 'failed':
+        job['status'] = 'failed'
+        job['progress_pct'] = safe_int(poll_result.get('progress_pct'), safe_int(job.get('progress_pct'), 0))
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(poll_result.get('error') or 'Provider video generation failed')
+        return None
+
+    download_url = str(poll_result.get('download_url') or '').strip()
+    if not download_url:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = 'Provider completed without a downloadable video URL'
+        return None
+
+    service = get_media_generation_service()
+    try:
+        downloaded = service.download_generated_video(provider=str(job.get('provider') or ''), download_url=download_url)
+    except MediaGenerationError as exc:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(exc)
+        return None
+
+    campaign_id = str(job.get('campaign_id') or 'MKT-UNKNOWN')
+    asset_id = f"media-{uuid.uuid4().hex[:12]}"
+    uploaded_at = datetime.now().isoformat()
+    asset = {
+        'id': asset_id,
+        'name': f"{job.get('asset_name') or campaign_id}.mp4",
+        'type': 'video',
+        'format': str(downloaded.get('content_type') or 'video/mp4'),
+        'size': safe_int(downloaded.get('size'), 0),
+        'url': '',
+        'data': str(downloaded.get('data_url') or ''),
+        'thumbnail': str(job.get('thumbnail_url') or ''),
+        'duration': safe_int(poll_result.get('duration') or 8, 8),
+        'source': 'ai_video_generation',
+        'uploaded_at': uploaded_at,
+        'uploaded_by': str(job.get('requested_by') or 'admin'),
+        'metadata': {
+            'campaign_id': campaign_id,
+            'job_id': job.get('id'),
+            'provider': job.get('provider'),
+            'blueprint_index': job.get('blueprint_index'),
+            'generated_from': 'marketing_video_blueprint',
+        }
+    }
+    asset = persist_media_asset_payload(asset)
+    MEDIA_ASSETS[asset_id] = asset
+    job['generated_asset_id'] = asset_id
+    job['status'] = 'completed'
+    job['progress_pct'] = 100
+    job['completed_at'] = uploaded_at
+    job['error'] = None
+    job['message'] = str(poll_result.get('message') or 'Generated video saved to media library.')
+    job['download_url'] = download_url
+    if job.get('auto_publish_to_hero'):
+        DESIGN_SETTINGS['hero_video_id'] = asset_id
+        DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
+        DESIGN_SETTINGS['video_poster'] = asset.get('thumbnail', '')
+        DESIGN_SETTINGS['video_poster_id'] = ''
+        DESIGN_SETTINGS['updated_at'] = uploaded_at
+        DESIGN_SETTINGS['updated_by'] = str(job.get('requested_by') or 'admin')
+    return asset
+
+
+def poll_and_finalize_media_video_job(job_id: str) -> None:
+    """Poll a provider-backed video generation job and finalize it if ready."""
+    from services.media_generation_service import MediaGenerationError
+
+    job = MEDIA_PROCESSING_JOBS.get(job_id)
+    if not isinstance(job, dict):
+        return
+    if str(job.get('job_kind') or '') != 'video_generation':
+        return
+    if str(job.get('status') or '') in {'completed', 'failed'}:
+        return
+
+    service = get_media_generation_service()
+    try:
+        poll_result = service.poll_video_generation(
+            provider=str(job.get('provider') or ''),
+            provider_job_id=str(job.get('provider_job_id') or ''),
+            provider_state=job.get('provider_state') if isinstance(job.get('provider_state'), dict) else {},
+        )
+        update_video_generation_job_state(job, poll_result)
+        finalize_media_video_job(job, poll_result)
+    except MediaGenerationError as exc:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(exc)
+        job['message'] = str(exc)
+    finally:
+        save_ledger_data()
+
+
+def start_media_job_polling(job_id: str, delay_seconds: int = 5) -> None:
+    """Poll a media generation job in the background once after a short delay."""
+    wait_seconds = max(safe_int(delay_seconds, 5), 1)
+
+    def _runner() -> None:
+        time.sleep(wait_seconds)
+        poll_and_finalize_media_video_job(job_id)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
+def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[str, Any]]:
+    """Serialize video generation jobs for a campaign."""
+    return [
+        serialize_media_job(job, include_callback=True)
+        for job in list_media_processing_jobs_for_campaign(campaign_id, job_kind='video_generation')
+    ]
+
+
+def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_base_url: str = '') -> Dict[str, Any]:
+    """Create a fresh job using the original job's blueprint/provider settings."""
+    campaign_id = str(job.get('campaign_id') or '')
+    blueprint_index = safe_int(job.get('blueprint_index'), -1)
+    if not campaign_id or blueprint_index < 0:
+        raise ValueError('Retry requested for a job without campaign blueprint context')
+
+    marketing_state = marketing_state_dict()
+    latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
+    campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
+    blueprints = campaign_payload.get('ai_video_blueprints') if isinstance(campaign_payload, dict) else []
+    if str(campaign_payload.get('campaign_id') or '') != campaign_id or not isinstance(blueprints, list) or blueprint_index >= len(blueprints):
+        raise ValueError('Current campaign no longer matches the job blueprint context')
+
+    return create_media_video_job(
+        campaign_id=campaign_id,
+        blueprint_index=blueprint_index,
+        blueprint=blueprints[blueprint_index],
+        requested_by=requested_by,
+        provider=str(job.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
+        callback_base_url=callback_base_url,
+        provider_model=str(job.get('provider_model') or ''),
+        image_data_url=str(job.get('image_data_url') or ''),
+        auto_publish_to_hero=bool(job.get('auto_publish_to_hero')),
+    )
+
+
+def generate_video_thumbnail(asset: Dict[str, Any]) -> str:
+    """Generate a lightweight inline SVG thumbnail marker for generated videos."""
+    title = safe_ascii_filename_stem(str(asset.get('name') or 'Generated Video'), fallback='Generated Video').replace('_', ' ')
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'>"
+        "<defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'>"
+        "<stop offset='0%' stop-color='#1e3a8a'/><stop offset='100%' stop-color='#7c3aed'/>"
+        "</linearGradient></defs>"
+        "<rect width='1280' height='720' fill='url(#g)'/>"
+        "<circle cx='640' cy='360' r='110' fill='rgba(255,255,255,0.18)'/>"
+        "<polygon points='610,300 610,420 720,360' fill='white'/>"
+        f"<text x='640' y='600' fill='white' font-size='42' text-anchor='middle' font-family='Arial, sans-serif'>{title[:42]}</text>"
+        "</svg>"
+    )
+    encoded = base64.b64encode(svg.encode('utf-8')).decode('ascii')
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def attach_generated_video_thumbnail(asset: Dict[str, Any]) -> None:
+    """Populate thumbnail and poster fields for generated videos."""
+    thumbnail = generate_video_thumbnail(asset)
+    asset['thumbnail'] = thumbnail
+    metadata = asset.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+        asset['metadata'] = metadata
+    metadata['generated_poster'] = thumbnail
+
+
+def get_media_generation_service():
+    """Return the provider-backed media generation service."""
+    from services.media_generation_service import get_media_generation_service as _get_media_generation_service
+
+    return _get_media_generation_service()
 
 # ========== INVITATION CODES (Registration by Invitation Only) ==========
 # Invitation codes for new user registration
@@ -4897,17 +5345,12 @@ class PortalHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _safe_download_filename(value: str, fallback: str = 'report_summary') -> str:
         """Create a filesystem-safe ASCII filename stem."""
-        value = (value or '').strip()
-        if not value:
-            return fallback
-        safe_chars = []
-        for ch in value:
-            if ord(ch) < 128 and (ch.isalnum() or ch in ('-', '_')):
-                safe_chars.append(ch)
-            elif ch in (' ', '.'):
-                safe_chars.append('_')
-        safe = ''.join(safe_chars).strip('_')
-        return safe or fallback
+        return _sanitize_ascii_filename_stem(
+            value,
+            fallback,
+            strip_chars='_',
+            collapse_repeated_underscores=False,
+        )
 
     def _build_report_summary_csv_bytes(self, summary: Dict[str, Any]) -> bytes:
         """Build CSV bytes for downloadable report summary."""
@@ -5615,6 +6058,27 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        if path == '/api/admin/media/video-jobs':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            campaign_id = str(qs.get('campaign_id', [''])[0]).strip()
+            if not campaign_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+
+            jobs = video_generation_jobs_for_campaign_response(campaign_id)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'campaign_id': campaign_id,
+                'jobs': jobs,
+            }).encode('utf-8'))
+            return
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':
@@ -16597,21 +17061,27 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
+        if path.startswith('/media-files/'):
+            rel = path[len('/media-files/'):].lstrip('/')
+            file_path = os.path.join(MEDIA_STORAGE_DIR, rel)
+            allowed_root = MEDIA_STORAGE_DIR
         # Serve static files from web_portal/static
-        if path == '/' or path == '/index.html':
+        elif path == '/' or path == '/index.html':
             file_path = os.path.join(ROOT, 'index.html')
+            allowed_root = ROOT
         else:
             rel = path.lstrip('/')
             file_path = os.path.join(ROOT, rel)
+            allowed_root = ROOT
         
         # SECURITY: Prevent path traversal attacks
         # Normalize the path and verify it's still within ROOT
         try:
             file_path = os.path.normpath(file_path)
             abs_file_path = os.path.abspath(file_path)
-            abs_root = os.path.abspath(ROOT)
+            abs_root = os.path.abspath(allowed_root)
             
-            # Check for path traversal - file must be within ROOT directory
+            # Check for path traversal - file must be within the selected root directory
             if not abs_file_path.startswith(abs_root + os.sep) and abs_file_path != abs_root:
                 log_malicious_attempt(client_ip, 'Path Traversal Attempt', {'path': path})
                 self.send_error(403, 'Access Denied')
@@ -17188,6 +17658,76 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
         
+        # ========== MEDIA GENERATION JOBS ==========
+        if path == '/api/admin/media/video-jobs':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            campaign_id = str(data.get('campaign_id') or '').strip()
+            blueprint_index = safe_int(data.get('blueprint_index'), -1)
+            provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
+            if not campaign_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+            if blueprint_index < 0:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'blueprint_index is required'}).encode('utf-8'))
+                return
+
+            marketing_state = marketing_state_dict()
+            latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
+            campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
+            if str(campaign_payload.get('campaign_id') or '') != campaign_id:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Campaign not found or not loaded as latest campaign'}).encode('utf-8'))
+                return
+
+            blueprints = campaign_payload.get('ai_video_blueprints')
+            if not isinstance(blueprints, list) or blueprint_index >= len(blueprints):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Video blueprint not found'}).encode('utf-8'))
+                return
+
+            try:
+                job = create_media_video_job(
+                    campaign_id=campaign_id,
+                    blueprint_index=blueprint_index,
+                    blueprint=blueprints[blueprint_index],
+                    requested_by=(session or {}).get('username', 'admin'),
+                    provider=provider,
+                    image_data_url=str(data.get('image_data_url') or ''),
+                )
+                save_ledger_data()
+                start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
+                self._set_json_headers(202)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Video generation job queued',
+                    'job': serialize_media_job(job, include_callback=True),
+                    'jobs': video_generation_jobs_for_campaign_response(campaign_id),
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+
         # ========== MEDIA ASSETS API - Subtitle Jobs ==========
         if path.startswith('/api/provider/media-processing/callback'):
             length = int(self.headers.get('Content-Length', 0))
@@ -17219,6 +17759,25 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid callback token'}).encode('utf-8'))
                 return
 
+            job_kind = str(job.get('job_kind') or 'subtitle')
+            if job_kind == 'video_generation':
+                asset = finalize_media_video_job(job, {
+                    'status': str(data.get('status') or data.get('state') or 'completed'),
+                    'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
+                    'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
+                    'duration': data.get('duration'),
+                    'message': data.get('message') or 'Provider webhook completed the generated video.',
+                    'provider_state': data,
+                    'error': data.get('error'),
+                })
+                save_ledger_data()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'job': serialize_media_job(job),
+                    'generated_video_asset': serialize_media_asset(asset) if asset else None,
+                }).encode('utf-8'))
+                return
             asset, track = complete_media_subtitle_job(job, data)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({

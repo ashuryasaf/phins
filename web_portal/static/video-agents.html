@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHINS Video Agents</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(180deg, #0d1b3d 0%, #14336b 45%, #1b4d9b 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .page-shell {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: white;
+        }
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+            font-size: 1.3rem;
+        }
+        .brand-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+        .brand-subtitle {
+            font-size: 0.85rem;
+            opacity: 0.78;
+        }
+        .top-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .btn {
+            border: none;
+            border-radius: 9px;
+            padding: 9px 14px;
+            cursor: pointer;
+            font-weight: 700;
+            text-decoration: none;
+            color: white;
+            font-size: 0.82rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.18);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #26a69a 0%, #2e7d32 100%);
+        }
+        .hero-card,
+        .panel,
+        .pipeline-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            box-shadow: 0 12px 28px rgba(3, 16, 48, 0.28);
+        }
+        .hero-card {
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .hero-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+        .hero-copy {
+            opacity: 0.85;
+            line-height: 1.55;
+            max-width: 900px;
+        }
+        .hero-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+        .tag {
+            background: rgba(255,255,255,0.12);
+            border-radius: 999px;
+            padding: 7px 11px;
+            font-size: 0.76rem;
+        }
+        .grid-two {
+            display: grid;
+            grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
+            gap: 16px;
+            align-items: start;
+        }
+        .panel {
+            padding: 16px;
+        }
+        .panel h2 {
+            font-size: 1.02rem;
+            margin-bottom: 12px;
+        }
+        .status-box {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.10);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .field label {
+            font-size: 0.78rem;
+            opacity: 0.8;
+        }
+        .field input,
+        .field select,
+        .field textarea {
+            width: 100%;
+            border-radius: 9px;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.10);
+            color: white;
+            padding: 9px 10px;
+            font-size: 0.84rem;
+        }
+        .field select option {
+            color: white;
+            background: #173f8a;
+        }
+        .field textarea {
+            min-height: 92px;
+            resize: vertical;
+        }
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.82rem;
+        }
+        .pipeline-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .pipeline-card {
+            padding: 14px;
+        }
+        .pipeline-card h3 {
+            font-size: 0.92rem;
+            margin-bottom: 6px;
+        }
+        .pipeline-card p {
+            font-size: 0.8rem;
+            line-height: 1.45;
+            opacity: 0.84;
+        }
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .kpi {
+            padding: 12px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .kpi-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+        }
+        .kpi-label {
+            font-size: 0.75rem;
+            opacity: 0.74;
+            margin-top: 3px;
+        }
+        .job-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .job-card {
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        .job-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .job-title {
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+        .job-meta {
+            font-size: 0.78rem;
+            opacity: 0.82;
+            margin-top: 4px;
+            line-height: 1.45;
+        }
+        .job-badge {
+            padding: 4px 9px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: rgba(255,255,255,0.14);
+            text-transform: capitalize;
+            white-space: nowrap;
+        }
+        .job-progress {
+            margin-top: 10px;
+        }
+        .job-progress-bar {
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.12);
+            overflow: hidden;
+        }
+        .job-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #42a5f5 0%, #66bb6a 100%);
+        }
+        .job-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .small-btn {
+            border: none;
+            border-radius: 8px;
+            padding: 7px 11px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: white;
+            background: rgba(255,255,255,0.12);
+        }
+        .small-btn.retry { background: #ffb300; color: #14213d; }
+        .small-btn.cancel { background: #ef5350; }
+        .small-btn.open { background: #26a69a; }
+        .empty {
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px dashed rgba(255,255,255,0.18);
+            opacity: 0.78;
+            text-align: center;
+        }
+        @media (max-width: 960px) {
+            .grid-two { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <div class="topbar">
+            <a href="/admin.html" class="brand">
+                <div class="brand-icon">🎬</div>
+                <div>
+                    <div class="brand-title">PHINS Video Agents</div>
+                    <div class="brand-subtitle">Pipeline-native video generation for intros, regulatory presentations, and insurance process assistance.</div>
+                </div>
+            </a>
+            <div class="top-actions">
+                <a href="/admin.html" class="btn btn-secondary">← Admin</a>
+                <a href="/admin-media.html" class="btn btn-secondary">📁 Media Dashboard</a>
+                <button class="btn btn-primary" onclick="refreshVideoAgentsDashboard()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <section class="hero-card">
+            <div class="hero-title">Dedicated Video Agents Pipeline</div>
+            <div class="hero-copy">
+                Use PHINS-native video agents to generate introduction videos, regulatory and board-ready presentations,
+                and assistance-agent explainers for application, underwriting, claims, billing, and other insurance workflows.
+                All outputs stay connected to the media dashboard and preserve campaign/media integrity.
+            </div>
+            <div class="hero-tags">
+                <span class="tag">Introductions</span>
+                <span class="tag">Regulatory Presentations</span>
+                <span class="tag">Application Assistant</span>
+                <span class="tag">Underwriting Assistant</span>
+                <span class="tag">Claims Assistant</span>
+                <span class="tag">Media-connected</span>
+            </div>
+        </section>
+
+        <div class="grid-two">
+            <section class="panel">
+                <h2>⚙️ Agent Controls</h2>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="va-campaign-id">Campaign ID</label>
+                        <input id="va-campaign-id" type="text" placeholder="MKT-..." />
+                    </div>
+                    <div class="field">
+                        <label for="va-pipeline">Pipeline Template</label>
+                        <select id="va-pipeline">
+                            <option value="introductions">Introductions</option>
+                            <option value="regulatory_presentations">Regulatory Presentations</option>
+                            <option value="application_assistant">Application Assistant</option>
+                            <option value="underwriting_assistant">Underwriting Assistant</option>
+                            <option value="claims_assistant">Claims Assistant</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="va-provider">Provider</label>
+                        <select id="va-provider">
+                            <option value="gemini">Gemini / Veo</option>
+                            <option value="kling">Kling</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="va-model">Model</label>
+                        <select id="va-model">
+                            <option value="">Provider default</option>
+                            <option value="veo-3.1-generate-preview">Veo 3.1 Preview</option>
+                            <option value="veo-3-fast-preview">Veo 3 Fast</option>
+                            <option value="kling-v2.6-pro">Kling 2.6 Pro</option>
+                            <option value="kling-v2.6-std">Kling 2.6 Std</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="va-reference-image">Reference Image (PHINS media)</label>
+                        <select id="va-reference-image">
+                            <option value="">None (text-to-video)</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="va-completion-mode">Completion Mode</label>
+                        <select id="va-completion-mode">
+                            <option value="webhook">Webhook first</option>
+                            <option value="poll">Background polling</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field" style="margin-top: 10px;">
+                    <label for="va-prompt-override">Prompt / Notes Override</label>
+                    <textarea id="va-prompt-override" placeholder="Optional narrative or compliance guidance for the video agent pipeline."></textarea>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;">
+                    <label class="checkbox-row">
+                        <input id="va-auto-hero" type="checkbox" checked />
+                        Auto-publish to landing-page hero
+                    </label>
+                    <label class="checkbox-row">
+                        <input id="va-live-refresh" type="checkbox" checked />
+                        Live job refresh
+                    </label>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
+                    <button class="btn btn-success" onclick="queueVideoAgentBatch()">🎬 Generate All Pipeline Videos</button>
+                    <button class="btn btn-secondary" onclick="refreshVideoAgentJobs(false)">📡 Refresh Jobs</button>
+                </div>
+                <div id="va-status" class="status-box">Load the latest marketing campaign or enter a campaign ID to start.</div>
+            </section>
+
+            <section class="panel">
+                <h2>🧠 Pipeline Templates</h2>
+                <div class="pipeline-grid">
+                    <div class="pipeline-card">
+                        <h3>Introductions</h3>
+                        <p>Welcome videos for customers, partners, onboarding flows, and first-touch policy guidance.</p>
+                    </div>
+                    <div class="pipeline-card">
+                        <h3>Regulatory Presentations</h3>
+                        <p>Board, regulator, compliance, and product-governance explainers with traceable media outputs.</p>
+                    </div>
+                    <div class="pipeline-card">
+                        <h3>Application Assistant</h3>
+                        <p>Guide applicants through data capture, supporting documents, and pre-underwriting expectations.</p>
+                    </div>
+                    <div class="pipeline-card">
+                        <h3>Underwriting Assistant</h3>
+                        <p>Explain evidence requirements, next steps, and case status with a consistent video narrative.</p>
+                    </div>
+                    <div class="pipeline-card">
+                        <h3>Claims Assistant</h3>
+                        <p>Walk claimants through document collection, ADL review, claim stages, and payout checkpoints.</p>
+                    </div>
+                </div>
+                <div class="kpi-row">
+                    <div class="kpi"><div class="kpi-value" id="va-kpi-jobs">0</div><div class="kpi-label">Video Jobs</div></div>
+                    <div class="kpi"><div class="kpi-value" id="va-kpi-active">0</div><div class="kpi-label">Active</div></div>
+                    <div class="kpi"><div class="kpi-value" id="va-kpi-completed">0</div><div class="kpi-label">Completed</div></div>
+                    <div class="kpi"><div class="kpi-value" id="va-kpi-failed">0</div><div class="kpi-label">Failed / Cancelled</div></div>
+                </div>
+                <div id="va-job-list" class="job-list">
+                    <div class="empty">No video-agent jobs loaded yet.</div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('phins_token');
+        let videoAgentCampaign = null;
+        let videoAgentJobs = [];
+        let videoAgentMediaAssets = [];
+        let videoAgentRefreshTimer = null;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setStatus(message, tone = 'info') {
+            const el = document.getElementById('va-status');
+            if (!el) return;
+            const backgrounds = {
+                info: 'rgba(255,255,255,0.10)',
+                success: 'rgba(76,175,80,0.18)',
+                warning: 'rgba(255,193,7,0.18)',
+                error: 'rgba(239,83,80,0.18)'
+            };
+            el.textContent = message;
+            el.style.background = backgrounds[tone] || backgrounds.info;
+        }
+
+        function selectedCampaignId() {
+            return (document.getElementById('va-campaign-id')?.value || '').trim();
+        }
+
+        function selectedReferenceImage() {
+            const imageId = (document.getElementById('va-reference-image')?.value || '').trim();
+            return videoAgentMediaAssets.find(asset => asset.id === imageId) || null;
+        }
+
+        function hasActiveJobs() {
+            return videoAgentJobs.some(job => ['queued', 'processing'].includes(String(job.status || '').toLowerCase()));
+        }
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            if (!document.getElementById('va-live-refresh')?.checked || !hasActiveJobs()) return;
+            videoAgentRefreshTimer = setInterval(() => refreshVideoAgentJobs(true), 5000);
+        }
+
+        function stopAutoRefresh() {
+            if (videoAgentRefreshTimer) {
+                clearInterval(videoAgentRefreshTimer);
+                videoAgentRefreshTimer = null;
+            }
+        }
+
+        async function fetchJson(url, options = {}) {
+            const headers = Object.assign({}, options.headers || {}, {
+                'Authorization': `Bearer ${token}`
+            });
+            const response = await fetch(url, { ...options, headers });
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (err) {}
+            if (!response.ok) {
+                throw new Error(data.error || `Request failed (${response.status})`);
+            }
+            return data;
+        }
+
+        async function loadLatestCampaign() {
+            const data = await fetchJson('/api/admin/marketing-sales-agent/latest');
+            videoAgentCampaign = data.latest_campaign || null;
+            const campaignId = videoAgentCampaign?.campaign?.campaign_id || '';
+            if (campaignId) {
+                document.getElementById('va-campaign-id').value = campaignId;
+            }
+            return videoAgentCampaign;
+        }
+
+        async function loadMediaImages() {
+            const data = await fetchJson('/api/media');
+            videoAgentMediaAssets = Array.isArray(data.assets) ? data.assets : [];
+            const images = videoAgentMediaAssets.filter(asset => asset.type === 'image');
+            const select = document.getElementById('va-reference-image');
+            const currentValue = select.value || '';
+            select.innerHTML = '<option value=\"\">None (text-to-video)</option>' +
+                images.map(asset => `<option value=\"${asset.id}\">${escapeHtml(asset.name || asset.id)}</option>`).join('');
+            if (currentValue && images.some(asset => asset.id === currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        function renderJobCard(job) {
+            const status = String(job.status || '').toLowerCase();
+            const badgeColor = status === 'completed'
+                ? 'rgba(76,175,80,0.24)'
+                : status === 'failed' || status === 'cancelled'
+                    ? 'rgba(239,83,80,0.24)'
+                    : 'rgba(66,165,245,0.24)';
+            const progress = Math.max(0, Math.min(100, Number(job.progress_pct || 0)));
+            return `
+                <div class="job-card">
+                    <div class="job-head">
+                        <div>
+                            <div class="job-title">${escapeHtml(job.asset_name || 'Generated video')}</div>
+                            <div class="job-meta">
+                                Campaign ${escapeHtml(job.campaign_id || '')} · Blueprint ${Number(job.blueprint_index || 0) + 1}
+                                <br>Provider ${escapeHtml(String(job.provider || '').toUpperCase())}${job.provider_model ? ` · ${escapeHtml(job.provider_model)}` : ''}
+                            </div>
+                        </div>
+                        <span class="job-badge" style="background:${badgeColor};">${escapeHtml(status || 'queued')}</span>
+                    </div>
+                    <div class="job-progress">
+                        <div class="job-progress-bar">
+                            <div class="job-progress-fill" style="width:${progress}%;"></div>
+                        </div>
+                        <div class="job-meta" style="margin-top:6px;">${progress}% · ${escapeHtml(job.message || '')}</div>
+                    </div>
+                    <div class="job-actions">
+                        ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
+                        ${status === 'failed' ? `<button class="small-btn retry" onclick="retryVideoAgentJob('${job.id}')">Retry</button>` : ''}
+                        ${['queued', 'processing'].includes(status) ? `<button class="small-btn cancel" onclick="cancelVideoAgentJob('${job.id}')">Cancel</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderJobs() {
+            const list = document.getElementById('va-job-list');
+            const total = videoAgentJobs.length;
+            const active = videoAgentJobs.filter(job => ['queued', 'processing'].includes(String(job.status || '').toLowerCase())).length;
+            const completed = videoAgentJobs.filter(job => String(job.status || '').toLowerCase() === 'completed').length;
+            const failed = videoAgentJobs.filter(job => ['failed', 'cancelled'].includes(String(job.status || '').toLowerCase())).length;
+
+            document.getElementById('va-kpi-jobs').textContent = String(total);
+            document.getElementById('va-kpi-active').textContent = String(active);
+            document.getElementById('va-kpi-completed').textContent = String(completed);
+            document.getElementById('va-kpi-failed').textContent = String(failed);
+
+            if (!total) {
+                list.innerHTML = '<div class="empty">No video-agent jobs loaded yet.</div>';
+            } else {
+                list.innerHTML = videoAgentJobs.map(renderJobCard).join('');
+            }
+            if (hasActiveJobs()) startAutoRefresh(); else stopAutoRefresh();
+        }
+
+        async function refreshVideoAgentJobs(silent = false) {
+            const campaignId = selectedCampaignId();
+            if (!campaignId) {
+                videoAgentJobs = [];
+                renderJobs();
+                return [];
+            }
+            try {
+                const data = await fetchJson(`/api/admin/media/video-jobs?campaign_id=${encodeURIComponent(campaignId)}`);
+                videoAgentJobs = Array.isArray(data.jobs) ? data.jobs : [];
+                renderJobs();
+                if (!silent) setStatus(`Loaded ${videoAgentJobs.length} video-agent job(s).`, 'info');
+                return videoAgentJobs;
+            } catch (err) {
+                if (!silent) setStatus(`Failed to load video jobs: ${err.message}`, 'error');
+                return [];
+            }
+        }
+
+        async function runJobAction(action, payload, successMessage) {
+            try {
+                await fetchJson(`/api/admin/media/video-jobs/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                await refreshVideoAgentJobs(true);
+                setStatus(successMessage, 'success');
+            } catch (err) {
+                setStatus(`${action} failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function retryVideoAgentJob(jobId) {
+            await runJobAction('retry', { job_id: jobId, campaign_id: selectedCampaignId() }, 'Video-agent job retried.');
+        }
+
+        async function cancelVideoAgentJob(jobId) {
+            await runJobAction('cancel', { job_id: jobId, campaign_id: selectedCampaignId() }, 'Video-agent job cancelled.');
+        }
+
+        function buildPipelinePrompt(pipelineType) {
+            const overrides = {
+                introductions: 'Create a polished introduction video for first-touch onboarding and trust-building.',
+                regulatory_presentations: 'Create a clear regulatory and board presentation explainer with compliance tone.',
+                application_assistant: 'Create an application-assistant video explaining submission steps and document readiness.',
+                underwriting_assistant: 'Create an underwriting-assistant explainer covering evidence requirements and risk review steps.',
+                claims_assistant: 'Create a claims-assistant explainer covering documentation, assessment, and payout checkpoints.'
+            };
+            return overrides[pipelineType] || '';
+        }
+
+        async function queueVideoAgentBatch() {
+            const campaignId = selectedCampaignId();
+            const provider = (document.getElementById('va-provider')?.value || 'gemini').trim();
+            const providerModel = (document.getElementById('va-model')?.value || '').trim();
+            const referenceImage = selectedReferenceImage();
+            const pollMode = (document.getElementById('va-completion-mode')?.value || 'webhook').trim();
+            const autoHero = Boolean(document.getElementById('va-auto-hero')?.checked);
+            const promptOverride = (document.getElementById('va-prompt-override')?.value || '').trim();
+            try {
+                await fetchJson('/api/admin/media/video-jobs/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        campaign_id: campaignId,
+                        provider,
+                        provider_model: providerModel,
+                        image_data_url: referenceImage ? (referenceImage.data || referenceImage.url || '') : '',
+                        reference_image_asset_id: referenceImage ? referenceImage.id : '',
+                        poll_mode: pollMode,
+                        auto_publish_to_hero: autoHero,
+                        pipeline_type: document.getElementById('va-pipeline')?.value || 'introductions',
+                        prompt_override: promptOverride || buildPipelinePrompt(document.getElementById('va-pipeline')?.value || 'introductions')
+                    })
+                });
+                await refreshVideoAgentJobs(true);
+                setStatus('Queued video-agent batch generation.', 'success');
+            } catch (err) {
+                setStatus(`Batch generation failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function refreshVideoAgentsDashboard() {
+            try {
+                await loadLatestCampaign();
+                await loadMediaImages();
+                await refreshVideoAgentJobs(true);
+                setStatus('Video Agents dashboard refreshed.', 'success');
+            } catch (err) {
+                setStatus(`Refresh failed: ${err.message}`, 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            await refreshVideoAgentsDashboard();
+        });
+    </script>
+</body>
+</html>
