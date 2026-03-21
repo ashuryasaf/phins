@@ -79,6 +79,18 @@ def _inject_session(token, username="admin", role="admin", customer_id=""):
         portal.USERS[username] = {"role": role, "username": username}
 
 
+def test_safe_ascii_filename_stem_reuses_shared_sanitizer_rules():
+    assert portal.safe_ascii_filename_stem("  demo.. clip  ") == "demo_clip"
+    assert portal.safe_ascii_filename_stem("x" * 120) == "x" * 80
+    assert portal.safe_ascii_filename_stem("....", fallback="asset") == "asset"
+
+
+def test_safe_download_filename_preserves_report_wrapper_behavior():
+    assert portal.PortalHandler._safe_download_filename(" report..summary ") == "report__summary"
+    assert portal.PortalHandler._safe_download_filename("__report__", fallback="fallback") == "report"
+    assert portal.PortalHandler._safe_download_filename("...", fallback="fallback") == "fallback"
+
+
 class _StubMediaGenerationService:
     def __init__(self):
         self.submissions = []
