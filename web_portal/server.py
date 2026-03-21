@@ -627,6 +627,397 @@ DESIGN_SETTINGS: Dict[str, Any] = {
 # Managed via Admin Media Dashboard (/admin-media.html)
 # Indexed by asset_id -> {id, name, type, format, size, url, data, thumbnail, source, uploaded_at, uploaded_by}
 MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
+MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
+MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
+DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
+
+
+def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> str:
+    """Create a compact ASCII-safe filename stem."""
+    value = (value or '').strip()
+    if not value:
+        return fallback
+
+    safe_chars = []
+    for ch in value:
+        if ord(ch) < 128 and (ch.isalnum() or ch in ('-', '_')):
+            safe_chars.append(ch)
+        elif ch in (' ', '.'):
+            safe_chars.append('_')
+
+    cleaned = ''.join(safe_chars).strip('._')
+    while '__' in cleaned:
+        cleaned = cleaned.replace('__', '_')
+    return cleaned[:80] or fallback
+
+
+def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
+    """Return subtitle track metadata without embedded subtitle content."""
+    return {
+        'id': track.get('id'),
+        'language': track.get('language', 'en'),
+        'format': track.get('format', 'srt'),
+        'label': track.get('label', 'Subtitles'),
+        'status': track.get('status', 'completed'),
+        'provider': track.get('provider', ''),
+        'job_id': track.get('job_id', ''),
+        'download_url': track.get('download_url', ''),
+        'created_at': track.get('created_at'),
+        'size': track.get('size', 0),
+    }
+
+
+def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> Dict[str, Any]:
+    """Return a safe media job payload for API responses."""
+    payload = {
+        'id': job.get('id'),
+        'asset_id': job.get('asset_id'),
+        'asset_name': job.get('asset_name'),
+        'provider': job.get('provider'),
+        'provider_job_id': job.get('provider_job_id'),
+        'language': job.get('language', 'en'),
+        'status': job.get('status', 'queued'),
+        'requested_at': job.get('requested_at'),
+        'requested_by': job.get('requested_by'),
+        'completed_at': job.get('completed_at'),
+        'error': job.get('error'),
+        'message': job.get('message', ''),
+        'subtitle_track_id': job.get('subtitle_track_id'),
+    }
+    if include_callback:
+        payload['callback_path'] = job.get('callback_path', '')
+        payload['callback_url'] = job.get('callback_url', '')
+    return payload
+
+
+def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip internal processing secrets and subtitle payloads from media responses."""
+    payload = dict(asset)
+    processing = asset.get('processing')
+    if isinstance(processing, dict):
+        payload['processing'] = dict(processing)
+    subtitles = asset.get('subtitles')
+    if isinstance(subtitles, list):
+        payload['subtitles'] = [
+            serialize_media_subtitle_track(track)
+            for track in subtitles
+            if isinstance(track, dict)
+        ]
+    return payload
+
+
+def get_media_subtitle_tracks(asset: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Ensure subtitle tracks are always stored as a list on the media asset."""
+    tracks = asset.get('subtitles')
+    if not isinstance(tracks, list):
+        tracks = []
+        asset['subtitles'] = tracks
+    return tracks
+
+
+def update_media_processing_state(asset: Dict[str, Any], job: Dict[str, Any], message: str = '') -> None:
+    """Sync the current subtitle-processing summary onto the media asset."""
+    asset['processing'] = {
+        'subtitle_job_id': job.get('id'),
+        'subtitle_status': job.get('status', 'queued'),
+        'provider': job.get('provider', DEFAULT_MEDIA_SUBTITLE_PROVIDER),
+        'provider_job_id': job.get('provider_job_id', ''),
+        'language': job.get('language', 'en'),
+        'message': message or job.get('message', ''),
+        'updated_at': datetime.now().isoformat(),
+        'completed_at': job.get('completed_at'),
+        'subtitle_track_id': job.get('subtitle_track_id'),
+    }
+
+
+def chunk_transcript_words(text: str, words_per_chunk: int = 12) -> List[str]:
+    """Break transcript text into subtitle-sized chunks."""
+    words = [word for word in str(text or '').replace('\r', ' ').replace('\n', ' ').split() if word]
+    if not words:
+        return []
+    return [
+        ' '.join(words[index:index + words_per_chunk])
+        for index in range(0, len(words), words_per_chunk)
+    ]
+
+
+def normalize_subtitle_segments(
+    segments: Any,
+    transcript_text: str = '',
+    duration: Any = None,
+) -> List[Dict[str, Any]]:
+    """Normalize provider subtitle segments into SRT-friendly entries."""
+    normalized: List[Dict[str, Any]] = []
+    if isinstance(segments, list):
+        last_end = 0.0
+        for index, segment in enumerate(segments):
+            if not isinstance(segment, dict):
+                continue
+            text = str(
+                segment.get('text')
+                or segment.get('transcript')
+                or segment.get('caption')
+                or ''
+            ).strip()
+            if not text:
+                continue
+            start = safe_float(segment.get('start'), last_end if index else float(index * 3))
+            end = safe_float(
+                segment.get('end'),
+                start + max(safe_float(segment.get('duration'), 3.0), 1.5),
+            )
+            if end <= start:
+                end = start + 1.5
+            normalized.append({
+                'start': round(start, 3),
+                'end': round(end, 3),
+                'text': text,
+            })
+            last_end = end
+        if normalized:
+            return normalized
+
+    chunks = chunk_transcript_words(transcript_text)
+    if not chunks:
+        fallback_text = str(transcript_text or '').strip() or 'Subtitle transcript pending provider delivery.'
+        chunks = chunk_transcript_words(fallback_text, words_per_chunk=8) or [fallback_text]
+
+    total_duration = safe_float(duration, 0.0)
+    chunk_span = max(total_duration / max(len(chunks), 1), 2.0) if total_duration > 0 else 3.0
+    cursor = 0.0
+    normalized = []
+    for index, chunk in enumerate(chunks):
+        end = cursor + chunk_span
+        if total_duration > 0 and index == len(chunks) - 1:
+            end = max(total_duration, cursor + 1.5)
+        normalized.append({
+            'start': round(cursor, 3),
+            'end': round(max(end, cursor + 1.5), 3),
+            'text': chunk,
+        })
+        cursor = end
+    return normalized
+
+
+def format_srt_timestamp(seconds: Any) -> str:
+    """Convert seconds into SRT hh:mm:ss,mmm format."""
+    total_ms = max(int(round(safe_float(seconds, 0.0) * 1000)), 0)
+    hours, remainder = divmod(total_ms, 3600000)
+    minutes, remainder = divmod(remainder, 60000)
+    secs, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+
+
+def generate_srt_content(segments: List[Dict[str, Any]]) -> str:
+    """Render normalized subtitle segments into an SRT document."""
+    lines: List[str] = []
+    for index, segment in enumerate(segments, start=1):
+        lines.append(str(index))
+        lines.append(
+            f"{format_srt_timestamp(segment.get('start'))} --> "
+            f"{format_srt_timestamp(segment.get('end'))}"
+        )
+        lines.append(str(segment.get('text') or '').strip() or '...')
+        lines.append('')
+    return '\n'.join(lines).strip() + '\n'
+
+
+def upsert_media_subtitle_track(asset: Dict[str, Any], track: Dict[str, Any]) -> Dict[str, Any]:
+    """Insert or replace a subtitle track on a media asset."""
+    tracks = get_media_subtitle_tracks(asset)
+    for index, existing in enumerate(tracks):
+        if isinstance(existing, dict) and existing.get('id') == track.get('id'):
+            tracks[index] = track
+            return track
+    tracks.insert(0, track)
+    return track
+
+
+def find_media_processing_job(job_id: str = '', provider_job_id: str = '') -> Optional[Dict[str, Any]]:
+    """Look up a media processing job by internal or provider job id."""
+    if job_id and job_id in MEDIA_PROCESSING_JOBS:
+        return MEDIA_PROCESSING_JOBS[job_id]
+    if provider_job_id:
+        for job in MEDIA_PROCESSING_JOBS.values():
+            if job.get('provider_job_id') == provider_job_id:
+                return job
+    return None
+
+
+def get_media_subtitle_track(asset: Dict[str, Any], track_id: str = '') -> Optional[Dict[str, Any]]:
+    """Return the requested subtitle track, or the most recent one if no id is provided."""
+    tracks = get_media_subtitle_tracks(asset)
+    if track_id:
+        for track in tracks:
+            if isinstance(track, dict) and track.get('id') == track_id:
+                return track
+        return None
+    return tracks[0] if tracks else None
+
+
+def build_media_subtitle_download_url(asset_id: str, track_id: str) -> str:
+    """Return the authenticated download route for an SRT track."""
+    return f"/api/media/{asset_id}/download/srt?track_id={track_id}"
+
+
+def create_media_subtitle_job(
+    asset: Dict[str, Any],
+    requested_by: str,
+    language: str,
+    provider: str,
+    callback_base_url: str = '',
+) -> Dict[str, Any]:
+    """Create a queued subtitle job for a video asset."""
+    job_id = f"mjob-{uuid.uuid4().hex[:12]}"
+    provider_job_id = f"prov-{uuid.uuid4().hex[:12]}"
+    callback_token = secrets.token_urlsafe(18)
+    callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
+    callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
+    requested_at = datetime.now().isoformat()
+    job = {
+        'id': job_id,
+        'asset_id': asset.get('id'),
+        'asset_name': asset.get('name', 'Untitled Video'),
+        'provider': provider or DEFAULT_MEDIA_SUBTITLE_PROVIDER,
+        'provider_job_id': provider_job_id,
+        'callback_token': callback_token,
+        'callback_path': callback_path,
+        'callback_url': callback_url,
+        'language': language or 'en',
+        'status': 'queued',
+        'requested_at': requested_at,
+        'requested_by': requested_by or 'admin',
+        'completed_at': None,
+        'error': None,
+        'message': 'Queued with provider. Awaiting completion webhook.',
+        'subtitle_track_id': None,
+    }
+    MEDIA_PROCESSING_JOBS[job_id] = job
+    update_media_processing_state(asset, job, job['message'])
+    return job
+
+
+def build_media_subtitle_track(
+    asset: Dict[str, Any],
+    job: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a stored subtitle track from provider payload or transcript text."""
+    language = str(payload.get('language') or job.get('language') or 'en').strip().lower() or 'en'
+    transcript_text = str(
+        payload.get('transcript')
+        or payload.get('transcript_text')
+        or payload.get('text')
+        or payload.get('full_text')
+        or ''
+    ).strip()
+    normalized_segments = normalize_subtitle_segments(
+        payload.get('segments') or payload.get('subtitles') or payload.get('captions'),
+        transcript_text=transcript_text,
+        duration=payload.get('duration') or asset.get('duration'),
+    )
+    srt_content = str(payload.get('srt') or payload.get('subtitle_content') or '').strip()
+    if not srt_content:
+        srt_content = generate_srt_content(normalized_segments)
+    if not srt_content.endswith('\n'):
+        srt_content += '\n'
+
+    track_id = str(job.get('subtitle_track_id') or f"sub-{uuid.uuid4().hex[:12]}")
+    filename_stem = safe_ascii_filename_stem(
+        f"{asset.get('name') or asset.get('id') or 'video'}_{language}",
+        fallback='subtitle_track',
+    )
+    created_at = datetime.now().isoformat()
+    return {
+        'id': track_id,
+        'language': language,
+        'format': 'srt',
+        'label': str(payload.get('label') or f"{language.upper()} Subtitles"),
+        'status': 'completed',
+        'provider': job.get('provider', DEFAULT_MEDIA_SUBTITLE_PROVIDER),
+        'job_id': job.get('id'),
+        'download_url': build_media_subtitle_download_url(asset.get('id', ''), track_id),
+        'filename': f"{filename_stem}.srt",
+        'size': len(srt_content.encode('utf-8')),
+        'created_at': created_at,
+        'content': srt_content,
+        'segments': normalized_segments,
+        'transcript_text': transcript_text,
+    }
+
+
+def complete_media_subtitle_job(job: Dict[str, Any], payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Finalize a queued subtitle job from a provider webhook payload."""
+    asset_id = str(job.get('asset_id') or '')
+    asset = MEDIA_ASSETS.get(asset_id)
+    if not asset:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = 'Media asset missing during callback finalization'
+        job['message'] = 'Provider callback received after media asset was removed.'
+        save_ledger_data()
+        return None, None
+
+    provider_job_id = str(payload.get('provider_job_id') or '').strip()
+    if provider_job_id:
+        job['provider_job_id'] = provider_job_id
+
+    status_value = str(payload.get('status') or payload.get('state') or 'completed').strip().lower()
+    if status_value in {'failed', 'error', 'cancelled'}:
+        job['status'] = 'failed'
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(payload.get('error') or payload.get('message') or 'Provider reported failure')
+        job['message'] = job['error']
+        update_media_processing_state(asset, job, job['message'])
+        save_ledger_data()
+        return asset, None
+
+    track = build_media_subtitle_track(asset, job, payload)
+    upsert_media_subtitle_track(asset, track)
+    job['status'] = 'completed'
+    job['completed_at'] = datetime.now().isoformat()
+    job['error'] = None
+    job['message'] = str(payload.get('message') or 'Subtitle track completed and ready for download.')
+    job['subtitle_track_id'] = track.get('id')
+    update_media_processing_state(asset, job, job['message'])
+    save_ledger_data()
+    return asset, track
+
+
+def verify_media_provider_callback(headers: Any, raw_body: bytes, payload: Dict[str, Any]) -> bool:
+    """Accept either shared-secret or HMAC-signed provider callbacks."""
+    provided_secret = (
+        headers.get('X-Media-Webhook-Secret')
+        or headers.get('X-Webhook-Secret')
+        or payload.get('webhook_secret')
+        or payload.get('secret')
+    )
+    if provided_secret and secrets.compare_digest(str(provided_secret), str(MEDIA_PROVIDER_WEBHOOK_SECRET)):
+        return True
+
+    auth_header = str(headers.get('Authorization') or '')
+    if auth_header.startswith('Bearer '):
+        bearer_secret = auth_header.split(' ', 1)[1].strip()
+        if bearer_secret and secrets.compare_digest(bearer_secret, str(MEDIA_PROVIDER_WEBHOOK_SECRET)):
+            return True
+
+    provided_signature = str(
+        headers.get('X-Media-Signature')
+        or headers.get('X-Webhook-Signature')
+        or payload.get('signature')
+        or ''
+    ).strip()
+    if provided_signature:
+        if provided_signature.lower().startswith('sha256='):
+            provided_signature = provided_signature.split('=', 1)[1].strip()
+        expected_signature = hmac.new(
+            str(MEDIA_PROVIDER_WEBHOOK_SECRET).encode('utf-8'),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(provided_signature, expected_signature)
+
+    return False
 
 # ========== INVITATION CODES (Registration by Invitation Only) ==========
 # Invitation codes for new user registration
@@ -1514,6 +1905,7 @@ def save_ledger_data():
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
                 'media_assets': MEDIA_ASSETS,
+                'media_processing_jobs': MEDIA_PROCESSING_JOBS,
                 'design_settings': DESIGN_SETTINGS,
                 # v1.7 additions - Invitation Codes and Registered Customers
                 'invitation_codes': INVITATION_CODES,
@@ -1809,10 +2201,14 @@ def load_ledger_data():
         # Load Media Assets and Design Settings (v1.6+)
         if data.get('version', '1.0') >= '1.6':
             loaded_media = data.get('media_assets', {})
+            loaded_media_jobs = data.get('media_processing_jobs', {})
             loaded_design = data.get('design_settings', {})
             if loaded_media:
                 MEDIA_ASSETS.update(loaded_media)
                 print(f"  - Media Assets: {len(MEDIA_ASSETS)} assets loaded from persistence")
+            if loaded_media_jobs:
+                MEDIA_PROCESSING_JOBS.update(loaded_media_jobs)
+                print(f"  - Media Processing Jobs: {len(MEDIA_PROCESSING_JOBS)} jobs loaded from persistence")
             if loaded_design:
                 DESIGN_SETTINGS.update(loaded_design)
                 print(f"  - Design Settings: Loaded (video: {'✓' if DESIGN_SETTINGS.get('hero_video_id') or DESIGN_SETTINGS.get('video_url') else '✗'})")
@@ -5266,23 +5662,63 @@ For claims or questions, please contact:
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
                 return
-            
-            # Check if requesting specific asset
-            if path.startswith('/api/media/') and len(path.split('/')) > 3:
-                asset_id = path.split('/')[3]
+
+            path_parts = path.split('/')
+            if len(path_parts) >= 6 and path_parts[4] == 'download' and path_parts[5] == 'srt':
+                asset_id = path_parts[3]
+                asset = MEDIA_ASSETS.get(asset_id)
+                if not asset:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                    return
+
+                track = get_media_subtitle_track(asset, qs.get('track_id', [''])[0])
+                if not track:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Subtitle track not found'}).encode('utf-8'))
+                    return
+
+                srt_content = str(track.get('content') or '').encode('utf-8')
+                filename = track.get('filename') or f'{self._safe_download_filename(asset.get("name", ""), "subtitle_track")}.srt'
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/x-subrip; charset=utf-8')
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('Content-Length', str(len(srt_content)))
+                self.end_headers()
+                self.wfile.write(srt_content)
+                return
+
+            if len(path_parts) >= 5 and path_parts[4] == 'subtitles':
+                asset_id = path_parts[3]
+                asset = MEDIA_ASSETS.get(asset_id)
+                if not asset:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                    return
+
+                job_id = str((asset.get('processing') or {}).get('subtitle_job_id') or '')
+                job = find_media_processing_job(job_id=job_id)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'asset': serialize_media_asset(asset),
+                    'subtitle_job': serialize_media_job(job, include_callback=True) if job else None,
+                    'tracks': serialize_media_asset(asset).get('subtitles', []),
+                }).encode('utf-8'))
+                return
+
+            if path.startswith('/api/media/') and len(path_parts) > 3:
+                asset_id = path_parts[3]
                 if asset_id in MEDIA_ASSETS:
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps(MEDIA_ASSETS[asset_id]).encode('utf-8'))
+                    self.wfile.write(json.dumps(serialize_media_asset(MEDIA_ASSETS[asset_id])).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
                 return
-            
-            # Return all media assets
-            assets_list = list(MEDIA_ASSETS.values())
-            # Sort by upload date (newest first)
+
+            assets_list = [serialize_media_asset(asset) for asset in MEDIA_ASSETS.values()]
             assets_list.sort(key=lambda x: x.get('uploaded_at', ''), reverse=True)
-            
+
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'assets': assets_list,
@@ -16752,6 +17188,104 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
         
+        # ========== MEDIA ASSETS API - Subtitle Jobs ==========
+        if path.startswith('/api/provider/media-processing/callback'):
+            length = int(self.headers.get('Content-Length', 0))
+            raw_body = self.rfile.read(length) if length else b'{}'
+            try:
+                data = json.loads(raw_body.decode('utf-8') or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            if not verify_media_provider_callback(self.headers, raw_body, data):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Invalid media provider signature'}).encode('utf-8'))
+                return
+
+            job_id = str(data.get('job_id') or urlparse.parse_qs(parsed.query).get('job_id', [''])[0]).strip()
+            provider_job_id = str(data.get('provider_job_id') or '').strip()
+            job = find_media_processing_job(job_id=job_id, provider_job_id=provider_job_id)
+            if not job:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Media processing job not found'}).encode('utf-8'))
+                return
+
+            callback_token = str(urlparse.parse_qs(parsed.query).get('token', [''])[0]).strip()
+            expected_token = str(job.get('callback_token') or '').strip()
+            if expected_token and not secrets.compare_digest(callback_token, expected_token):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Invalid callback token'}).encode('utf-8'))
+                return
+
+            asset, track = complete_media_subtitle_job(job, data)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'job': serialize_media_job(job),
+                'asset': serialize_media_asset(asset) if asset else None,
+                'track': serialize_media_subtitle_track(track) if track else None,
+            }).encode('utf-8'))
+            return
+
+        if path.startswith('/api/media/') and path.endswith('/subtitles'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
+                return
+
+            parts = path.split('/')
+            if len(parts) < 5:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                return
+
+            asset_id = parts[3]
+            asset = MEDIA_ASSETS.get(asset_id)
+            if not asset:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                return
+            if asset.get('type') != 'video':
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Subtitle generation is only available for video assets'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            language = str(data.get('language') or 'en').strip().lower() or 'en'
+            provider = str(data.get('provider') or DEFAULT_MEDIA_SUBTITLE_PROVIDER).strip().lower() or DEFAULT_MEDIA_SUBTITLE_PROVIDER
+            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            job = create_media_subtitle_job(
+                asset,
+                requested_by=(session or {}).get('username', 'admin'),
+                language=language,
+                provider=provider,
+                callback_base_url=callback_base_url,
+            )
+            save_ledger_data()
+
+            self._set_json_headers(202)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'message': 'Subtitle job queued',
+                'asset': serialize_media_asset(asset),
+                'subtitle_job': serialize_media_job(job, include_callback=True),
+            }).encode('utf-8'))
+            return
+
         # ========== MEDIA ASSETS API - POST/DELETE ==========
         # POST /api/media - Create new media asset
         # Roles: admin, media (media_ad user has 'media' role - restricted to media dashboard only)
@@ -16802,7 +17336,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'message': 'Media asset created',
-                    'asset': asset
+                    'asset': serialize_media_asset(asset)
                 }).encode('utf-8'))
                 return
                 
@@ -32748,6 +33282,10 @@ For claims or questions, please contact:
                 if asset_id in MEDIA_ASSETS:
                     # Remove the asset
                     deleted = MEDIA_ASSETS.pop(asset_id)
+                    processing = deleted.get('processing') or {}
+                    subtitle_job_id = str(processing.get('subtitle_job_id') or '').strip()
+                    if subtitle_job_id:
+                        MEDIA_PROCESSING_JOBS.pop(subtitle_job_id, None)
                     
                     # Clear any references in design settings
                     for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
