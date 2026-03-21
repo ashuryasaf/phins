@@ -9,6 +9,7 @@ Focused coverage for:
 """
 
 import json
+import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -58,6 +59,18 @@ def _download(url, token=None):
     req = Request(url, headers=headers)
     with urlopen(req) as resp:
         return resp.status, resp.read().decode("utf-8"), dict(resp.headers)
+
+
+def _download_raw(url, token=None):
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(url, headers=headers)
+    try:
+        with urlopen(req) as resp:
+            return resp.status, resp.read(), dict(resp.headers)
+    except HTTPError as exc:
+        return exc.code, exc.read(), dict(exc.headers)
 
 
 def _init_port(base):
@@ -397,4 +410,44 @@ def test_marketing_video_generation_job_creates_media_asset():
         assert final_job["generated_asset_id"] == generated_asset_id
     finally:
         portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
+def test_media_files_route_requires_media_admin_authentication():
+    port = 8294
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    asset_id = "media-auth-check"
+    filename = "sample.bin"
+    payload = b"protected-media-bytes"
+    media_dir = os.path.join(portal.MEDIA_STORAGE_DIR, asset_id)
+    os.makedirs(media_dir, exist_ok=True)
+    file_path = os.path.join(media_dir, filename)
+    with open(file_path, "wb") as handle:
+        handle.write(payload)
+
+    token = "phins_test_media_admin_token_files"
+    _inject_session(token, "media_admin_files", "media")
+
+    try:
+        status, body, _ = _download_raw(base + f"/media-files/{asset_id}/{filename}")
+        assert status == 403
+        assert b"Media admin access required" in body
+
+        status, body, _ = _download_raw(base + f"/media-files/{asset_id}/{filename}", token=token)
+        assert status == 200
+        assert body == payload
+    finally:
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            pass
+        try:
+            os.rmdir(media_dir)
+        except OSError:
+            pass
         srv.stop()

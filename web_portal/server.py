@@ -17066,6 +17066,10 @@ For claims or questions, please contact:
             return
 
         if path.startswith('/media-files/'):
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
+                return
             rel = path[len('/media-files/'):].lstrip('/')
             file_path = os.path.join(MEDIA_STORAGE_DIR, rel)
             allowed_root = MEDIA_STORAGE_DIR
