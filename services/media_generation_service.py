@@ -9,6 +9,8 @@ completed files.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -36,6 +38,8 @@ class MediaGenerationService:
         self._gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         self._gemini_model = os.environ.get("PHINS_GEMINI_VIDEO_MODEL", "veo-3.1-generate-preview").strip()
         self._kling_api_key = os.environ.get("KLING_API_KEY", "").strip()
+        self._kling_access_key = os.environ.get("KLING_ACCESS_KEY", "").strip()
+        self._kling_secret_key = os.environ.get("KLING_SECRET_KEY", "").strip()
         self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingai.com").strip().rstrip("/")
         self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
         self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
@@ -50,10 +54,11 @@ class MediaGenerationService:
                 "models": list(self.DEFAULT_PROVIDER_MODELS["gemini"]),
             },
             "kling": {
-                "enabled": bool(self._kling_api_key),
+                "enabled": bool(self._kling_api_key or (self._kling_access_key and self._kling_secret_key)),
                 "label": "Kling",
                 "base_url": self._kling_base_url,
                 "models": list(self.DEFAULT_PROVIDER_MODELS["kling"]),
+                "auth_mode": self._kling_auth_mode(),
             },
         }
 
@@ -132,7 +137,7 @@ class MediaGenerationService:
         if provider_name == "gemini":
             headers = {"x-goog-api-key": self._gemini_api_key}
         elif provider_name == "kling":
-            headers = {"Authorization": f"Bearer {self._kling_api_key}"}
+            headers = self._kling_auth_headers()
         else:
             raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
@@ -284,8 +289,8 @@ class MediaGenerationService:
         callback_url: str,
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if not self._kling_api_key:
-            raise MediaGenerationError("KLING_API_KEY is not configured")
+        if not (self._kling_api_key or (self._kling_access_key and self._kling_secret_key)):
+            raise MediaGenerationError("KLING_API_KEY or KLING_ACCESS_KEY/KLING_SECRET_KEY is not configured")
 
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
         body: Dict[str, Any] = {
@@ -316,7 +321,7 @@ class MediaGenerationService:
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._kling_api_key}",
+                **self._kling_auth_headers(),
             },
             method="POST",
         )
@@ -352,15 +357,15 @@ class MediaGenerationService:
         provider_job_id: str,
         provider_state: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if not self._kling_api_key:
-            raise MediaGenerationError("KLING_API_KEY is not configured")
+        if not (self._kling_api_key or (self._kling_access_key and self._kling_secret_key)):
+            raise MediaGenerationError("KLING_API_KEY or KLING_ACCESS_KEY/KLING_SECRET_KEY is not configured")
         if not provider_job_id:
             raise MediaGenerationError("Kling provider job id is required")
 
         status_url = str(provider_state.get("status_url") or self._build_kling_status_url(provider_job_id)).strip()
         request = urllib.request.Request(
             status_url,
-            headers={"Authorization": f"Bearer {self._kling_api_key}"},
+            headers=self._kling_auth_headers(),
             method="GET",
         )
         with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
@@ -421,6 +426,41 @@ class MediaGenerationService:
 
     def _build_kling_status_url(self, provider_job_id: str) -> str:
         return f"{self._kling_base_url}/v1/videos/{urllib.parse.quote(provider_job_id, safe='')}"
+
+    def _kling_auth_mode(self) -> str:
+        if self._kling_api_key:
+            return "api_key"
+        if self._kling_access_key and self._kling_secret_key:
+            return "access_key_secret_key"
+        return "missing"
+
+    def _kling_auth_headers(self) -> Dict[str, str]:
+        if self._kling_api_key:
+            return {"Authorization": f"Bearer {self._kling_api_key}"}
+        if self._kling_access_key and self._kling_secret_key:
+            now = int(time.time())
+            header = {"alg": "HS256", "typ": "JWT"}
+            payload = {
+                "iss": self._kling_access_key,
+                "exp": now + 1800,
+                "nbf": max(0, now - 5),
+            }
+            token = self._encode_jwt_hs256(header, payload, self._kling_secret_key)
+            return {"Authorization": f"Bearer {token}"}
+        raise MediaGenerationError("KLING_API_KEY or KLING_ACCESS_KEY/KLING_SECRET_KEY is not configured")
+
+    @staticmethod
+    def _encode_jwt_hs256(header: Dict[str, Any], payload: Dict[str, Any], secret: str) -> str:
+        """Encode a compact HS256 JWT without external dependencies."""
+        def _b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+        header_segment = _b64url(json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+        payload_segment = _b64url(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+        signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
+        signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        signature_segment = _b64url(signature)
+        return f"{header_segment}.{payload_segment}.{signature_segment}"
 
     @staticmethod
     def _parse_data_url(data_url: str) -> Optional[Dict[str, str]]:

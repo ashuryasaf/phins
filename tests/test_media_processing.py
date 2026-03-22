@@ -692,3 +692,71 @@ def test_generated_marketing_campaign_is_stored_as_latest_draft_for_reload_and_b
     finally:
         portal.get_media_generation_service = original_factory
         srv.stop()
+
+
+def test_marketing_campaigns_endpoint_lists_generated_and_published_records():
+    port = 8300
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_campaign_listing"
+    _inject_session(token, "media_admin_campaign_listing", "admin")
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "generated_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-DRAFT-001",
+                    "generated_at": datetime.now().isoformat(),
+                    "scope": {"objective": "growth"},
+                    "ai_video_blueprints": [{"title": "Draft Blueprint"}],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "draft"},
+                "assets_created": [],
+                "status": "generated",
+                "generated_at": datetime.now().isoformat(),
+                "generated_by": "admin",
+            },
+            "latest_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-PUBLISHED-001",
+                    "generated_at": datetime.now().isoformat(),
+                    "scope": {"objective": "retention"},
+                    "ai_video_blueprints": [{"title": "Published Blueprint"}],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "published"},
+                "assets_created": [],
+                "status": "published",
+                "published_at": datetime.now().isoformat(),
+                "published_by": "admin",
+            },
+            "published_campaigns": [
+                {
+                    "campaign_id": "MKT-PUBLISHED-001",
+                    "published_at": datetime.now().isoformat(),
+                    "published_by": "admin",
+                    "vertical": "insurance",
+                    "objective": "retention",
+                    "assets_created": 0,
+                    "integrity_signature": "published",
+                }
+            ],
+            "social_connections": {},
+        }
+
+        status, response = _json_request(
+            base + "/api/admin/marketing-sales-agent/campaigns",
+            token=token,
+        )
+        assert status == 200
+        assert response["success"] is True
+        campaigns = response["campaigns"]
+        ids = [item["campaign"]["campaign_id"] for item in campaigns]
+        assert ids == ["MKT-PUBLISHED-001", "MKT-DRAFT-001"]
+        assert campaigns[0]["is_published"] is True
+        assert campaigns[1]["is_generated_draft"] is True
+    finally:
+        srv.stop()

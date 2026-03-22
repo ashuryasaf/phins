@@ -998,6 +998,43 @@ def get_current_marketing_campaign_record() -> Dict[str, Any]:
     return {}
 
 
+def list_marketing_campaign_records() -> List[Dict[str, Any]]:
+    """Return all stored marketing campaign records with published entries first."""
+    marketing_state = marketing_state_dict()
+    records: List[Dict[str, Any]] = []
+    seen_campaign_ids: set[str] = set()
+
+    latest_campaign = marketing_state.get('latest_campaign')
+    if isinstance(latest_campaign, dict) and isinstance(latest_campaign.get('campaign'), dict):
+        records.append(latest_campaign)
+        campaign_id = str((latest_campaign.get('campaign') or {}).get('campaign_id') or '').strip()
+        if campaign_id:
+            seen_campaign_ids.add(campaign_id)
+
+    generated_campaign = marketing_state.get('generated_campaign')
+    if isinstance(generated_campaign, dict) and isinstance(generated_campaign.get('campaign'), dict):
+        campaign_id = str((generated_campaign.get('campaign') or {}).get('campaign_id') or '').strip()
+        if campaign_id and campaign_id not in seen_campaign_ids:
+            records.append(generated_campaign)
+            seen_campaign_ids.add(campaign_id)
+
+    published_campaigns = marketing_state.get('published_campaigns', [])
+    if isinstance(published_campaigns, list):
+        for entry in reversed(published_campaigns):
+            if not isinstance(entry, dict):
+                continue
+            campaign_payload = entry.get('campaign')
+            if not isinstance(campaign_payload, dict):
+                continue
+            campaign_id = str(campaign_payload.get('campaign_id') or '').strip()
+            if not campaign_id or campaign_id in seen_campaign_ids:
+                continue
+            records.append(entry)
+            seen_campaign_ids.add(campaign_id)
+
+    return records
+
+
 def store_generated_marketing_campaign(*, generated: Dict[str, Any], generated_by: str) -> Dict[str, Any]:
     """Persist the latest generated marketing campaign as a validated draft."""
     marketing_state = marketing_state_dict()
@@ -6181,6 +6218,42 @@ For claims or questions, please contact:
                     'latest_campaign': latest_copy,
                     'published_count': len(marketing_state.get('published_campaigns', [])),
                     'social_connections': marketing_state.get('social_connections', {}),
+                }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/marketing-sales-agent/campaigns':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            try:
+                from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+                service = get_marketing_sales_agent_service()
+                marketing_state = marketing_state_dict()
+                items = []
+                latest_ref = marketing_state.get('latest_campaign')
+                generated_ref = marketing_state.get('generated_campaign')
+                for record in list_marketing_campaign_records():
+                    record_copy = marketing_campaign_record_for_response(record)
+                    campaign_payload = record_copy.get('campaign', {})
+                    integrity_payload = record_copy.get('integrity', {})
+                    signature = integrity_payload.get('signature', '')
+                    record_copy['integrity']['verified'] = service.verify_campaign_payload(campaign_payload, signature)
+                    record_copy['is_published'] = record is latest_ref
+                    record_copy['is_generated_draft'] = record is generated_ref
+                    items.append(record_copy)
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'campaigns': items,
+                    'count': len(items),
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -17524,7 +17597,24 @@ For claims or questions, please contact:
                     'status': 'published',
                 }
                 marketing_state['generated_campaign'] = marketing_state['latest_campaign']
+                published_entry = marketing_campaign_record_for_response(marketing_state['latest_campaign'])
+                published_entry['campaign'] = dict(campaign_payload)
+                published_entry['integrity'] = dict(integrity_payload)
+                published_entry['published_at'] = published_at
+                published_entry['published_by'] = publisher
+                published_entry['assets_created'] = created_assets
+                published_entry['status'] = 'published'
+                published_entry['summary'] = summary_entry
                 marketing_state['published_campaigns'] = published_campaigns
+                existing_records = marketing_state.get('published_campaign_records', [])
+                if not isinstance(existing_records, list):
+                    existing_records = []
+                existing_records = [
+                    item for item in existing_records
+                    if isinstance(item, dict) and str((item.get('campaign') or {}).get('campaign_id') or '') != campaign_id
+                ]
+                existing_records.append(published_entry)
+                marketing_state['published_campaign_records'] = existing_records[-30:]
                 marketing_state['social_connections'] = social_connections
                 marketing_state['updated_at'] = published_at
                 marketing_state['updated_by'] = publisher

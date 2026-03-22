@@ -332,8 +332,10 @@
                 <h2>⚙️ Agent Controls</h2>
                 <div class="form-grid">
                     <div class="field">
-                        <label for="va-campaign-id">Campaign ID</label>
-                        <input id="va-campaign-id" type="text" placeholder="MKT-..." />
+                        <label for="va-campaign-id">Campaign</label>
+                        <select id="va-campaign-id">
+                            <option value="">Select a stored campaign...</option>
+                        </select>
                     </div>
                     <div class="field">
                         <label for="va-pipeline">Pipeline Template</label>
@@ -437,6 +439,7 @@
     <script>
         const token = localStorage.getItem('phins_token');
         let videoAgentCampaign = null;
+        let videoAgentCampaigns = [];
         let videoAgentJobs = [];
         let videoAgentMediaAssets = [];
         let videoAgentRefreshTimer = null;
@@ -504,10 +507,51 @@
             return data;
         }
 
+        function renderCampaignOptions(selectedId = '') {
+            const select = document.getElementById('va-campaign-id');
+            if (!select) return;
+
+            const options = ['<option value="">Select a stored campaign...</option>'];
+            for (const record of videoAgentCampaigns) {
+                const campaign = record?.campaign || {};
+                const campaignId = String(campaign.campaign_id || '').trim();
+                if (!campaignId) continue;
+                const status = record?.is_published ? 'published' : 'draft';
+                const objective = String(campaign?.scope?.objective || '').trim();
+                const label = [campaignId, objective ? `(${objective})` : '', `[${status}]`].filter(Boolean).join(' ');
+                const selected = campaignId === selectedId ? ' selected' : '';
+                options.push(`<option value="${escapeHtml(campaignId)}"${selected}>${escapeHtml(label)}</option>`);
+            }
+            select.innerHTML = options.join('');
+        }
+
+        async function loadCampaigns() {
+            const data = await fetchJson('/api/admin/marketing-sales-agent/campaigns');
+            videoAgentCampaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
+            const currentId = selectedCampaignId();
+            if (!videoAgentCampaign && videoAgentCampaigns.length) {
+                videoAgentCampaign = videoAgentCampaigns[0];
+            }
+            const selectedId = currentId || videoAgentCampaign?.campaign?.campaign_id || '';
+            renderCampaignOptions(selectedId);
+            if (selectedId) {
+                document.getElementById('va-campaign-id').value = selectedId;
+            }
+            return videoAgentCampaigns;
+        }
+
         async function loadLatestCampaign() {
+            await loadCampaigns();
+            const selectedId = selectedCampaignId();
+            const selectedRecord = videoAgentCampaigns.find(item => String(item?.campaign?.campaign_id || '') === selectedId);
+            if (selectedRecord) {
+                videoAgentCampaign = selectedRecord;
+                return videoAgentCampaign;
+            }
             const data = await fetchJson('/api/admin/marketing-sales-agent/latest');
             videoAgentCampaign = data.latest_campaign || null;
             const campaignId = videoAgentCampaign?.campaign?.campaign_id || '';
+            renderCampaignOptions(campaignId);
             if (campaignId) {
                 document.getElementById('va-campaign-id').value = campaignId;
             }
