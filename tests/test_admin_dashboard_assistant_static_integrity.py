@@ -41,3 +41,13 @@ def test_admin_dashboard_assistant_includes_workflow_state_hooks():
     assert "saveAdminAssistantWorkflowState" in content
     assert "executeAdminAssistantWorkflow" in content
     assert "current_step_index" in content
+
+
+def test_admin_dashboard_assistant_uses_structured_action_results():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    assert "function buildAssistantActionResult" in content
+    assert "return buildAssistantActionResult({" in content
+    assert "const result = await executeAdminAssistantAction(step.id);" in content
+    assert "window.alert = (message) =>" not in content
+    assert "window.confirm = (message) =>" not in content

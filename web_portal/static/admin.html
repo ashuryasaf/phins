@@ -2654,7 +2654,13 @@
     
     // Approve all pending underwriting applications
     async function approveAllPending() {
-      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
+      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) {
+        return buildAssistantActionResult({
+          success: true,
+          cancelled: true,
+          message: 'Bulk approval was cancelled before execution.',
+        });
+      }
       
       try {
         const response = await fetch('/api/underwriting', {
@@ -2663,7 +2669,11 @@
         
         if (!response.ok) {
           alert('Failed to load applications');
-          return;
+          return buildAssistantActionResult({
+            success: false,
+            message: 'Failed to load underwriting applications.',
+            error: `HTTP ${response.status}`,
+          });
         }
         
         const data = await response.json();
@@ -2672,7 +2682,10 @@
         
         if (pending.length === 0) {
           alert('No pending applications to approve');
-          return;
+          return buildAssistantActionResult({
+            success: true,
+            message: 'There were no pending underwriting applications to approve.',
+          });
         }
         
         let approved = 0;
@@ -2699,14 +2712,30 @@
           }
         }
         
-        alert(`✅ Bulk Approval Complete!\n\n${approved} applications approved\n${failed} failed\n\nPolicies activated and billing generated.`);
+        const message = `✅ Bulk Approval Complete!\n\n${approved} applications approved\n${failed} failed\n\nPolicies activated and billing generated.`;
+        alert(message);
         
         // Refresh data
         loadUnderwritingApplications();
         loadDashboardStats();
         loadCustomerList();
+        return buildAssistantActionResult({
+          success: failed === 0,
+          issues_found: failed,
+          message,
+          details: {
+            approved,
+            failed,
+            total_pending: pending.length,
+          },
+        });
       } catch (err) {
         alert('Failed to approve all: ' + err.message);
+        return buildAssistantActionResult({
+          success: false,
+          message: 'Bulk approval failed.',
+          error: err.message,
+        });
       }
     }
     
@@ -2743,7 +2772,11 @@
         if (!response.ok) {
           document.body.removeChild(linkingDiv);
           alert('Failed to load customers');
-          return;
+          return buildAssistantActionResult({
+            success: false,
+            message: 'Failed to load customers for validation.',
+            error: `HTTP ${response.status}`,
+          });
         }
         
         const data = await response.json();
@@ -2752,7 +2785,10 @@
         if (customers.length === 0) {
           document.body.removeChild(linkingDiv);
           alert('No customers to validate');
-          return;
+          return buildAssistantActionResult({
+            success: true,
+            message: 'There were no customers available to validate.',
+          });
         }
         
         let results = {
@@ -2841,8 +2877,25 @@
             processAllPipelines();
           }
         }
+        return buildAssistantActionResult({
+          success: results.needsAction === 0,
+          issues_found: results.needsAction,
+          message,
+          details: {
+            total: results.total,
+            valid: results.valid,
+            needs_action: results.needsAction,
+            errors: results.errors,
+            link_results: linkResults,
+          },
+        });
       } catch (err) {
         alert('Failed to validate all customers: ' + err.message);
+        return buildAssistantActionResult({
+          success: false,
+          message: 'Customer validation failed.',
+          error: err.message,
+        });
       }
     }
     
@@ -2879,6 +2932,24 @@
         btn.style.opacity = loading ? '0.6' : '1';
       }
     }
+
+    function buildAssistantActionResult({
+      success = true,
+      cancelled = false,
+      issues_found = 0,
+      message = '',
+      error = '',
+      details = null
+    } = {}) {
+      return {
+        success: Boolean(success),
+        cancelled: Boolean(cancelled),
+        issues_found: Number(issues_found) || 0,
+        message: String(message || ''),
+        error: error ? String(error) : '',
+        details: details && typeof details === 'object' ? details : null,
+      };
+    }
     
     // Refresh all data
     async function refreshAllData() {
@@ -2897,9 +2968,18 @@
         ]);
         showProgress(false);
         document.getElementById('pipeline-status').innerHTML = '<span style="color: #10b981;">✓ Data refreshed</span>';
+        return buildAssistantActionResult({
+          success: true,
+          message: 'Dashboard data refreshed successfully.',
+        });
       } catch (err) {
         showProgress(false);
         document.getElementById('pipeline-status').innerHTML = '<span style="color: #dc3545;">⚠ Refresh failed</span>';
+        return buildAssistantActionResult({
+          success: false,
+          message: 'Dashboard refresh failed.',
+          error: err.message,
+        });
       } finally {
         setButtonLoading('btn-refresh-all', false);
       }
@@ -2907,7 +2987,13 @@
     
     // Process all pipelines
     async function processAllPipelines() {
-      if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
+      if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) {
+        return buildAssistantActionResult({
+          success: true,
+          cancelled: true,
+          message: 'Pipeline processing was cancelled before execution.',
+        });
+      }
       
       setButtonLoading('btn-process-pipelines', true);
       showProgress(true, 'Loading customers...');
@@ -2927,7 +3013,10 @@
         if (customers.length === 0) {
           showProgress(false);
           alert('No customers found to process');
-          return;
+          return buildAssistantActionResult({
+            success: true,
+            message: 'No customers were available for pipeline processing.',
+          });
         }
         
         let processed = 0;
@@ -2971,9 +3060,25 @@
         
         // Refresh data
         await refreshAllData();
+        return buildAssistantActionResult({
+          success: errors.length === 0,
+          issues_found: errors.length,
+          message,
+          details: {
+            processed,
+            total_customers: customers.length,
+            actions_total: actionsTotal,
+            errors,
+          },
+        });
       } catch (err) {
         showProgress(false);
         alert('Failed to process pipelines: ' + err.message);
+        return buildAssistantActionResult({
+          success: false,
+          message: 'Pipeline processing failed.',
+          error: err.message,
+        });
       } finally {
         setButtonLoading('btn-process-pipelines', false);
       }
@@ -2981,7 +3086,13 @@
     
     // Allocate all customer savings
     async function allocateAllSavings() {
-      if (!confirm('💰 Allocate savings for ALL customers?\n\nThis will use AI to distribute available funds across:\n- Health Wallet\n- Investment Portfolio\n- Algo Trading\n\nContinue?')) return;
+      if (!confirm('💰 Allocate savings for ALL customers?\n\nThis will use AI to distribute available funds across:\n- Health Wallet\n- Investment Portfolio\n- Algo Trading\n\nContinue?')) {
+        return buildAssistantActionResult({
+          success: true,
+          cancelled: true,
+          message: 'Savings allocation was cancelled before execution.',
+        });
+      }
       
       setButtonLoading('btn-allocate-savings', true);
       showProgress(true, 'Loading customers...');
@@ -3001,7 +3112,10 @@
         if (customers.length === 0) {
           showProgress(false);
           alert('No customers found');
-          return;
+          return buildAssistantActionResult({
+            success: true,
+            message: 'No customers were available for savings allocation.',
+          });
         }
         
         let allocated = 0;
@@ -3051,9 +3165,24 @@
         
         // Refresh data
         await refreshAllData();
+        return buildAssistantActionResult({
+          success: true,
+          issues_found: skipped,
+          message,
+          details: {
+            allocated_customers: allocated,
+            skipped_customers: skipped,
+            total_amount: totalAmount,
+          },
+        });
       } catch (err) {
         showProgress(false);
         alert('Failed to allocate savings: ' + err.message);
+        return buildAssistantActionResult({
+          success: false,
+          message: 'Savings allocation failed.',
+          error: err.message,
+        });
       } finally {
         setButtonLoading('btn-allocate-savings', false);
       }
@@ -3061,7 +3190,13 @@
     
     // Generate missing billing records
     async function generateMissingBilling() {
-      if (!confirm('📄 Generate missing billing records?\n\nThis will create billing records for any active policies that don\'t have one.\n\nContinue?')) return;
+      if (!confirm('📄 Generate missing billing records?\n\nThis will create billing records for any active policies that don\'t have one.\n\nContinue?')) {
+        return buildAssistantActionResult({
+          success: true,
+          cancelled: true,
+          message: 'Billing generation was cancelled before execution.',
+        });
+      }
       
       setButtonLoading('btn-generate-bills', true);
       showProgress(true, 'Loading policies...');
@@ -3102,7 +3237,10 @@
         if (needsBilling.length === 0) {
           showProgress(false);
           alert('✓ All active policies have billing records');
-          return;
+          return buildAssistantActionResult({
+            success: true,
+            message: 'All active policies already have billing records.',
+          });
         }
         
         updateProgress(2, 3, `Generating ${needsBilling.length} billing records...`);
@@ -3151,9 +3289,24 @@
         
         // Refresh data
         await refreshAllData();
+        return buildAssistantActionResult({
+          success: errors === 0,
+          issues_found: errors,
+          message,
+          details: {
+            customers_processed: customersToProcess.length,
+            generated_records: generated,
+            errors,
+          },
+        });
       } catch (err) {
         showProgress(false);
         alert('Failed to generate billing: ' + err.message);
+        return buildAssistantActionResult({
+          success: false,
+          message: 'Billing generation failed.',
+          error: err.message,
+        });
       } finally {
         setButtonLoading('btn-generate-bills', false);
       }
