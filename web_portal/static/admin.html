@@ -461,6 +461,126 @@
       color: white;
       box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
     }
+    .assistant-inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
+    }
+    .assistant-action-note {
+      width: 100%;
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.68);
+      line-height: 1.45;
+    }
+    .assistant-response-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #bfdbfe;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .assistant-metrics-list {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: rgba(255, 255, 255, 0.84);
+      line-height: 1.6;
+    }
+    .assistant-capabilities {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .assistant-capability {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.44);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .assistant-capability strong {
+      display: block;
+      margin-bottom: 4px;
+      color: white;
+      font-size: 0.9rem;
+    }
+    .assistant-capability span {
+      display: block;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .assistant-chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .assistant-workflow-card {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.36);
+      border: 1px solid rgba(147, 197, 253, 0.16);
+    }
+    .assistant-workflow-list {
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .assistant-workflow-step {
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: rgba(30, 41, 59, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .assistant-workflow-step.active {
+      border-color: rgba(96, 165, 250, 0.6);
+      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18);
+    }
+    .assistant-workflow-step.completed {
+      border-color: rgba(34, 197, 94, 0.35);
+    }
+    .assistant-workflow-step.skipped {
+      border-color: rgba(251, 191, 36, 0.35);
+    }
+    .assistant-workflow-step.failed {
+      border-color: rgba(248, 113, 113, 0.35);
+    }
+    .assistant-workflow-step-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .assistant-workflow-step-title {
+      color: white;
+      font-weight: 700;
+      font-size: 0.92rem;
+    }
+    .assistant-workflow-step-status {
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #bfdbfe;
+    }
+    .assistant-workflow-step p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+    .assistant-workflow-step small {
+      display: block;
+      margin-top: 6px;
+      color: rgba(255, 255, 255, 0.58);
+      line-height: 1.4;
+    }
     .assistant-chip-list,
     .assistant-capability-list {
       display: flex;
@@ -6932,6 +7052,8 @@ Welcome to PHINS Portal! 🛡️`;
       showToast('⬇️ QR Code opened - right-click to save');
     }
 
+    const ADMIN_ASSISTANT_STORAGE_KEY = 'phins_admin_assistant_workflow';
+
     const adminAssistantActionHandlers = {
       refresh_all_data: () => refreshAllData(),
       validate_all_customers: () => validateAllCustomers(),
@@ -6944,6 +7066,156 @@ Welcome to PHINS Portal! 🛡️`;
       execute_bulk_billing: () => executeBillAll(),
       cleanup_demo_data: () => cleanupDemoData(),
     };
+
+    let adminAssistantWorkflowState = null;
+
+    function cloneAdminAssistantWorkflow(workflow) {
+      if (!workflow) return null;
+      try {
+        return JSON.parse(JSON.stringify(workflow));
+      } catch (err) {
+        console.error('Failed to clone admin assistant workflow:', err);
+        return null;
+      }
+    }
+
+    function saveAdminAssistantWorkflowState() {
+      if (!adminAssistantWorkflowState) {
+        localStorage.removeItem(ADMIN_ASSISTANT_STORAGE_KEY);
+        return;
+      }
+      localStorage.setItem(ADMIN_ASSISTANT_STORAGE_KEY, JSON.stringify(adminAssistantWorkflowState));
+    }
+
+    function loadAdminAssistantWorkflowState() {
+      const raw = localStorage.getItem(ADMIN_ASSISTANT_STORAGE_KEY);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        console.error('Failed to parse stored admin assistant workflow:', err);
+        localStorage.removeItem(ADMIN_ASSISTANT_STORAGE_KEY);
+        return null;
+      }
+    }
+
+    function clearAdminAssistantWorkflowState() {
+      adminAssistantWorkflowState = null;
+      saveAdminAssistantWorkflowState();
+      renderAdminAssistantWorkflow(null);
+    }
+
+    function initializeAdminAssistantWorkflow(workflow) {
+      adminAssistantWorkflowState = cloneAdminAssistantWorkflow(workflow);
+      if (!adminAssistantWorkflowState) {
+        clearAdminAssistantWorkflowState();
+        return;
+      }
+      adminAssistantWorkflowState.steps = Array.isArray(adminAssistantWorkflowState.steps)
+        ? adminAssistantWorkflowState.steps.map((step) => ({
+            status: 'pending',
+            last_result: null,
+            ...step,
+          }))
+        : [];
+      adminAssistantWorkflowState.current_step_index = 0;
+      adminAssistantWorkflowState.history = [];
+      adminAssistantWorkflowState.last_updated_at = new Date().toISOString();
+      saveAdminAssistantWorkflowState();
+      renderAdminAssistantWorkflow(adminAssistantWorkflowState);
+    }
+
+    function updateAdminAssistantWorkflowState(mutator) {
+      if (!adminAssistantWorkflowState || typeof mutator !== 'function') return;
+      mutator(adminAssistantWorkflowState);
+      adminAssistantWorkflowState.last_updated_at = new Date().toISOString();
+      saveAdminAssistantWorkflowState();
+      renderAdminAssistantWorkflow(adminAssistantWorkflowState);
+    }
+
+    function getAdminAssistantPreviousStep(index) {
+      if (!adminAssistantWorkflowState || !Array.isArray(adminAssistantWorkflowState.steps)) return null;
+      if (index <= 0) return null;
+      return adminAssistantWorkflowState.steps[index - 1] || null;
+    }
+
+    function adminAssistantConditionSatisfied(step, index) {
+      const condition = step?.condition;
+      if (!condition) return true;
+      if (condition.type !== 'requires_previous_issues') return true;
+      const previousStep = getAdminAssistantPreviousStep(index);
+      const previousResult = previousStep?.last_result || {};
+      const issuesFound = Number(previousResult.issues_found || 0);
+      return issuesFound > 0;
+    }
+
+    function adminAssistantConditionStatusLabel(step, index) {
+      if (!step?.condition) return '';
+      return adminAssistantConditionSatisfied(step, index)
+        ? `${step.condition.label} - met`
+        : `${step.condition.label} - waiting`;
+    }
+
+    function renderAdminAssistantWorkflow(workflow) {
+      const container = document.getElementById('admin-assistant-workflow');
+      const header = document.getElementById('admin-assistant-workflow-title');
+      const meta = document.getElementById('admin-assistant-workflow-meta');
+      const controls = document.getElementById('admin-assistant-workflow-controls');
+      if (!container || !header || !meta || !controls) {
+        return;
+      }
+
+      container.innerHTML = '';
+      controls.innerHTML = '';
+
+      if (!workflow || !Array.isArray(workflow.steps) || workflow.steps.length === 0) {
+        header.textContent = 'No active workflow';
+        meta.textContent = 'Ask for a multi-step workflow to plan and track chained admin actions.';
+        return;
+      }
+
+      header.textContent = workflow.label || 'Assistant workflow';
+      const completed = workflow.steps.filter((step) => step.status === 'completed').length;
+      const current = Math.min((workflow.current_step_index || 0) + 1, workflow.steps.length);
+      meta.textContent = `${completed}/${workflow.steps.length} steps completed${workflow.completed_at ? ' - finished' : ` - current step ${current}`}`;
+
+      workflow.steps.forEach((step, index) => {
+        const card = document.createElement('div');
+        card.className = `assistant-workflow-step assistant-workflow-step-${step.status || 'pending'}`;
+        const conditionLabel = adminAssistantConditionStatusLabel(step, index);
+        const resultText = step.last_result?.message
+          || step.last_result?.error
+          || '';
+        card.innerHTML = `
+          <div class="assistant-workflow-step-header">
+            <span class="assistant-workflow-step-index">Step ${index + 1}</span>
+            <span class="assistant-workflow-step-status">${(step.status || 'pending').replace('_', ' ')}</span>
+          </div>
+          <div class="assistant-workflow-step-label">${step.label || step.id}</div>
+          <div class="assistant-workflow-step-description">${step.description || ''}</div>
+          ${conditionLabel ? `<div class="assistant-workflow-step-condition">${conditionLabel}</div>` : ''}
+          ${resultText ? `<div class="assistant-workflow-step-result">${resultText}</div>` : ''}
+        `;
+        container.appendChild(card);
+      });
+
+      const hasRemainingWork = workflow.steps.some((step) => !['completed', 'skipped'].includes(step.status));
+      if (hasRemainingWork) {
+        const continueBtn = document.createElement('button');
+        continueBtn.type = 'button';
+        continueBtn.className = 'assistant-secondary-btn';
+        continueBtn.textContent = 'Continue workflow';
+        continueBtn.addEventListener('click', () => executeAdminAssistantWorkflow());
+        controls.appendChild(continueBtn);
+      }
+
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'assistant-secondary-btn';
+      clearBtn.textContent = workflow.completed_at ? 'Clear completed workflow' : 'Clear workflow';
+      clearBtn.addEventListener('click', () => clearAdminAssistantWorkflowState());
+      controls.appendChild(clearBtn);
+    }
 
     function setAdminAssistantBusy(isBusy) {
       const submitBtn = document.getElementById('admin-assistant-submit');
@@ -6996,16 +7268,156 @@ Welcome to PHINS Portal! 🛡️`;
     async function executeAdminAssistantAction(actionId) {
       const handler = adminAssistantActionHandlers[actionId];
       if (!handler) {
-        alert('This assistant action is not wired to the dashboard yet.');
-        return;
+        return {
+          success: false,
+          cancelled: false,
+          issues_found: 0,
+          message: 'This assistant action is not wired to the dashboard yet.',
+        };
       }
+
+      const originalAlert = window.alert;
+      const originalConfirm = window.confirm;
+      const originalPrompt = window.prompt;
+      const originalOpen = window.open;
+      const alertMessages = [];
+      const confirmMessages = [];
+      const promptMessages = [];
+      const openedUrls = [];
+      let cancelled = false;
+      let issuesFound = 0;
+
+      window.alert = (message) => {
+        const text = String(message || '').trim();
+        alertMessages.push(text);
+        originalAlert.call(window, message);
+      };
+      window.confirm = (message) => {
+        const text = String(message || '').trim();
+        confirmMessages.push(text);
+        const result = originalConfirm.call(window, message);
+        if (!result) {
+          cancelled = true;
+        }
+        return result;
+      };
+      window.prompt = (message, defaultValue) => {
+        const text = String(message || '').trim();
+        promptMessages.push(text);
+        const result = originalPrompt.call(window, message, defaultValue);
+        if (result === null) {
+          cancelled = true;
+        }
+        return result;
+      };
+      window.open = (...args) => {
+        openedUrls.push(args[0] || '');
+        return originalOpen.apply(window, args);
+      };
 
       try {
         await handler();
+        const combinedMessages = [...alertMessages, ...confirmMessages, ...promptMessages]
+          .filter(Boolean)
+          .join('\n\n');
+        const lowerMessages = combinedMessages.toLowerCase();
+        if (lowerMessages.includes('needs action')) {
+          issuesFound += 1;
+        }
+        const issueMatches = combinedMessages.match(/needs action:\s*(\d+)/i);
+        if (issueMatches) {
+          issuesFound = Number(issueMatches[1]) || issuesFound;
+        }
+        const validIssueMatches = combinedMessages.match(/issues found:\s*(\d+)/i);
+        if (validIssueMatches) {
+          issuesFound = Number(validIssueMatches[1]) || issuesFound;
+        }
+        return {
+          success: true,
+          cancelled,
+          issues_found: issuesFound,
+          message: alertMessages[alertMessages.length - 1]
+            || (cancelled ? 'Action was cancelled.' : 'Dashboard action completed.'),
+          prompts_seen: promptMessages.length,
+          confirms_seen: confirmMessages.length,
+          opened_urls: openedUrls,
+        };
       } catch (err) {
         console.error('Admin assistant action failed:', err);
-        alert('Assistant action failed: ' + err.message);
+        originalAlert.call(window, 'Assistant action failed: ' + err.message);
+        return {
+          success: false,
+          cancelled,
+          issues_found: issuesFound,
+          message: 'Assistant action failed: ' + err.message,
+          error: err.message,
+        };
+      } finally {
+        window.alert = originalAlert;
+        window.confirm = originalConfirm;
+        window.prompt = originalPrompt;
+        window.open = originalOpen;
       }
+    }
+
+    async function executeAdminAssistantWorkflow() {
+      if (!adminAssistantWorkflowState || !Array.isArray(adminAssistantWorkflowState.steps)) {
+        return;
+      }
+
+      for (let index = 0; index < adminAssistantWorkflowState.steps.length; index += 1) {
+        const step = adminAssistantWorkflowState.steps[index];
+        if (!step || ['completed', 'skipped'].includes(step.status)) {
+          continue;
+        }
+
+        updateAdminAssistantWorkflowState((workflow) => {
+          workflow.current_step_index = index;
+        });
+
+        if (!adminAssistantConditionSatisfied(step, index)) {
+          updateAdminAssistantWorkflowState((workflow) => {
+            workflow.steps[index].status = 'skipped';
+            workflow.steps[index].last_result = {
+              success: true,
+              issues_found: 0,
+              message: adminAssistantConditionStatusLabel(step, index),
+            };
+            workflow.history.push({
+              step_id: workflow.steps[index].id,
+              status: 'skipped',
+              timestamp: new Date().toISOString(),
+              message: workflow.steps[index].last_result.message,
+            });
+          });
+          continue;
+        }
+
+        updateAdminAssistantWorkflowState((workflow) => {
+          workflow.steps[index].status = 'in_progress';
+          workflow.steps[index].last_result = null;
+        });
+
+        const result = await executeAdminAssistantAction(step.id);
+        updateAdminAssistantWorkflowState((workflow) => {
+          workflow.steps[index].status = result.success ? (result.cancelled ? 'cancelled' : 'completed') : 'failed';
+          workflow.steps[index].last_result = result;
+          workflow.history.push({
+            step_id: workflow.steps[index].id,
+            status: workflow.steps[index].status,
+            timestamp: new Date().toISOString(),
+            message: result.message,
+          });
+        });
+
+        if (!result.success || result.cancelled) {
+          return;
+        }
+      }
+
+      updateAdminAssistantWorkflowState((workflow) => {
+        workflow.completed_at = new Date().toISOString();
+      });
     }
 
     function renderAdminAssistantResponse(data) {
@@ -7042,6 +7454,24 @@ Welcome to PHINS Portal! 🛡️`;
           note.textContent = 'This action uses the dashboard’s existing confirmation and validation flow.';
           actionsEl.appendChild(note);
         }
+      }
+
+      if (data.workflow && Array.isArray(data.workflow.steps) && data.workflow.steps.length > 0) {
+        initializeAdminAssistantWorkflow(data.workflow);
+
+        const workflowButton = document.createElement('button');
+        workflowButton.type = 'button';
+        workflowButton.className = 'assistant-action-btn';
+        workflowButton.textContent = data.workflow.button_text || 'Start workflow';
+        workflowButton.addEventListener('click', () => executeAdminAssistantWorkflow());
+        actionsEl.appendChild(workflowButton);
+
+        const workflowNote = document.createElement('div');
+        workflowNote.className = 'assistant-action-note';
+        workflowNote.textContent = 'Workflow steps are tracked locally in this admin session and continue one step at a time.';
+        actionsEl.appendChild(workflowNote);
+      } else if (!data.action) {
+        renderAdminAssistantWorkflow(adminAssistantWorkflowState);
       }
 
       renderAdminAssistantCapabilities(data.capabilities || []);
@@ -7087,6 +7517,8 @@ Welcome to PHINS Portal! 🛡️`;
     document.addEventListener('DOMContentLoaded', () => {
       const assistantInput = document.getElementById('admin-assistant-input');
       const assistantSubmit = document.getElementById('admin-assistant-submit');
+      adminAssistantWorkflowState = loadAdminAssistantWorkflowState();
+      renderAdminAssistantWorkflow(adminAssistantWorkflowState);
 
       if (assistantSubmit) {
         assistantSubmit.addEventListener('click', () => askAdminAssistant());

@@ -88,6 +88,72 @@ def test_admin_assistant_returns_action_for_bulk_pipeline_request():
         srv.stop()
 
 
+def test_admin_assistant_returns_multi_step_workflow_plan():
+    port = 8295
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    portal._ensure_test_port_state(port)
+
+    token = "phins_test_admin_assistant_workflow_token"
+    _inject_session(token, "admin", "admin")
+
+    try:
+        status, payload = _json_request(
+            base + "/api/admin/assistant",
+            method="POST",
+            token=token,
+            payload={"query": "show AI insights, then run reconciliation"},
+        )
+
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["intent"] == "workflow"
+        assert payload["workflow"]["current_step_index"] == 0
+        assert [step["action"]["id"] for step in payload["workflow"]["steps"]] == [
+            "load_ai_insights",
+            "reconcile_balance_sheet",
+        ]
+        assert payload["workflow"]["steps"][0]["status"] == "pending"
+        assert payload["workflow"]["steps"][1]["status"] == "pending"
+    finally:
+        srv.stop()
+
+
+def test_admin_assistant_returns_conditional_workflow_plan():
+    port = 8296
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    portal._ensure_test_port_state(port)
+
+    token = "phins_test_admin_assistant_conditional_token"
+    _inject_session(token, "admin", "admin")
+
+    try:
+        status, payload = _json_request(
+            base + "/api/admin/assistant",
+            method="POST",
+            token=token,
+            payload={"query": "validate all customers, then process pipelines if issues are found"},
+        )
+
+        assert status == 200
+        assert payload["success"] is True
+        assert payload["intent"] == "workflow"
+        steps = payload["workflow"]["steps"]
+        assert [step["action"]["id"] for step in steps] == [
+            "validate_all_customers",
+            "process_all_pipelines",
+        ]
+        assert steps[1]["condition"]["type"] == "requires_previous_issues"
+        assert "issues are found" in steps[1]["condition"]["source"]
+    finally:
+        srv.stop()
+
+
 def test_admin_assistant_requires_admin_role():
     port = 8294
     srv = ServerThread(port)

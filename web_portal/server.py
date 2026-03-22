@@ -4565,6 +4565,51 @@ def _normalize_admin_assistant_query(query: Any) -> str:
     return ' '.join(str(query or '').strip().lower().split())
 
 
+def _split_admin_assistant_workflow_query(query: str) -> List[str]:
+    """Split a multi-step workflow query into ordered segments."""
+    normalized = _normalize_admin_assistant_query(query)
+    if not normalized:
+        return []
+
+    separators = (
+        ' then ',
+        ' and then ',
+        ', then ',
+    )
+    segments = [normalized]
+    for separator in separators:
+        if separator in normalized:
+            segments = [part.strip(' ,.') for part in normalized.split(separator) if part.strip(' ,.')]
+            if segments:
+                break
+    return segments
+
+
+def _extract_admin_assistant_condition(segment: str) -> Tuple[str, Optional[Dict[str, str]]]:
+    """Extract optional conditional execution metadata from a workflow segment."""
+    normalized = _normalize_admin_assistant_query(segment)
+    condition_markers = (
+        ' if ',
+        ' if there are ',
+        ' if there is ',
+        ' when ',
+    )
+    for marker in condition_markers:
+        if marker not in normalized:
+            continue
+        action_text, condition_text = normalized.split(marker, 1)
+        action_text = action_text.strip(' ,.')
+        condition_text = condition_text.strip(' ,.')
+        if not action_text or not condition_text:
+            continue
+        return action_text, {
+            'type': 'requires_previous_issues',
+            'label': f'Only run if {condition_text}',
+            'source': condition_text,
+        }
+    return normalized, None
+
+
 def _admin_dashboard_snapshot() -> Dict[str, Any]:
     """Build a concise snapshot of key admin dashboard metrics."""
     total_customers = len(CUSTOMERS)
@@ -4655,6 +4700,42 @@ def _match_admin_assistant_action(query: str) -> Dict[str, Any] | None:
     return best_action if best_score > 0 else None
 
 
+def _build_admin_assistant_workflow(query: str) -> Optional[Dict[str, Any]]:
+    """Build a structured workflow plan from a multi-step admin request."""
+    segments = _split_admin_assistant_workflow_query(query)
+    if len(segments) < 2:
+        return None
+
+    steps: List[Dict[str, Any]] = []
+    for index, raw_segment in enumerate(segments):
+        action_query, condition = _extract_admin_assistant_condition(raw_segment)
+        matched_action = _match_admin_assistant_action(action_query)
+        if not matched_action:
+            return None
+        step: Dict[str, Any] = {
+            'id': matched_action['id'],
+            'label': matched_action['label'],
+            'description': matched_action['description'],
+            'requires_confirmation': matched_action['requires_confirmation'],
+            'status': 'pending' if index > 0 else 'ready',
+            'step_index': index,
+        }
+        if condition:
+            step['condition'] = condition
+        steps.append(step)
+
+    workflow_label = 'Assistant workflow'
+    if steps:
+        workflow_label = ' -> '.join(step['label'] for step in steps)
+
+    return {
+        'workflow_id': f"admin-wf-{uuid.uuid4().hex[:12]}",
+        'label': workflow_label,
+        'current_step_index': 0,
+        'steps': steps,
+    }
+
+
 def build_admin_assistant_response(query: Any) -> Dict[str, Any]:
     """Build a deterministic admin dashboard assistant response."""
     normalized = _normalize_admin_assistant_query(query)
@@ -4691,6 +4772,22 @@ def build_admin_assistant_response(query: Any) -> Dict[str, Any]:
                 'operation you want to run.'
             ),
             'summary_lines': _admin_assistant_summary_lines(snapshot),
+            'capabilities': capabilities,
+            'suggested_prompts': suggested_prompts,
+            'timestamp': snapshot['timestamp'],
+        }
+
+    workflow = _build_admin_assistant_workflow(normalized)
+    if workflow:
+        return {
+            'success': True,
+            'intent': 'workflow',
+            'message': (
+                'I planned a multi-step admin workflow from your request. '
+                'Run the workflow to execute each existing dashboard action in order.'
+            ),
+            'summary_lines': _admin_assistant_summary_lines(snapshot),
+            'workflow': workflow,
             'capabilities': capabilities,
             'suggested_prompts': suggested_prompts,
             'timestamp': snapshot['timestamp'],
