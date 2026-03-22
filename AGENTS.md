@@ -58,7 +58,8 @@ explicitly says otherwise.
 |- scripts/                           # Operational and one-off scripts
 |- tests/                             # Main pytest suite
 |- test_*.py                          # Additional root-level integration tests
-`- docs/                              # Design and implementation docs
+`- docs/
+   `- platform_data_architecture.md   # Platform data and event architecture
 ```
 
 ## 3) Architecture Notes
@@ -67,6 +68,8 @@ explicitly says otherwise.
    - `web_portal/server.py` is the main HTTP entry point.
    - This is **not** a Flask/FastAPI app; it is built on
      `http.server.BaseHTTPRequestHandler`.
+   - Tests start `portal.PortalHandler` under `ThreadingHTTPServer`, so changes
+     to handler initialization and port assumptions can ripple into many suites.
    - `web_portal/api_extensions.py` provides extension dispatch used by the main
      server for some GET/POST/PUT paths.
 
@@ -105,6 +108,7 @@ Case-insensitive status and defensive numeric conversion helpers already exist i
 ```python
 status_eq(item, "approved", "paid")
 status_in(item, ["pending", "under_review"])
+get_status_lower(item)
 safe_float(value, default=0.0)
 safe_int(value, default=0)
 ```
@@ -154,6 +158,12 @@ Run the server:
 
 ```bash
 python3 web_portal/server.py
+```
+
+Run the server's lightweight self-check:
+
+```bash
+python3 web_portal/server.py --test
 ```
 
 Run with SQLite persistence:
@@ -289,10 +299,12 @@ Useful root-level integration tests include:
 ### Test Environment Notes
 
 - `conftest.py` defaults HTTP tests to in-memory portal storage:
+  - `TEST_BASE_URL=http://localhost:8000`
   - `USE_DATABASE=false`
   - `USE_SQLITE=true`
   - `PHINS_TEST_MODE=true`
 - It also starts an embedded server on port `8000`.
+- Each test resets the in-memory portal dictionaries to avoid fixed-ID/email collisions.
 - Be careful when changing startup, port binding, or state-reset behavior.
 
 ## 9) Security and Reliability Rules
@@ -345,11 +357,13 @@ Start with:
 
 - `README.md`
 - `DEPLOYMENT.md`
+- `DATABASE_SETUP.md`
 - `SECURITY.md`
 - `DATABASE_IMPLEMENTATION_SUMMARY.md`
 - `AI_ARCHITECTURE.md`
 - `RAILWAY_DEPLOYMENT.md`
 - `RAILWAY_POSTGRES_FIX.md`
+- `docs/platform_data_architecture.md`
 - Other `RAILWAY_*.md` files in the repo root when deployment work is involved
 
 ## 13) Practical Operating Rules
@@ -402,4 +416,4 @@ git push -u origin <branch-name>
 
 ---
 
-Last updated: March 20, 2026
+Last updated: March 22, 2026
