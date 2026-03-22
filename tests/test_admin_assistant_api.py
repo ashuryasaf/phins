@@ -115,7 +115,7 @@ def test_admin_assistant_returns_multi_step_workflow_plan():
             "load_ai_insights",
             "reconcile_balance_sheet",
         ]
-        assert payload["workflow"]["steps"][0]["status"] == "pending"
+        assert payload["workflow"]["steps"][0]["status"] == "ready"
         assert payload["workflow"]["steps"][1]["status"] == "pending"
     finally:
         srv.stop()

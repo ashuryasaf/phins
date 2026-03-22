@@ -36,7 +36,8 @@ def test_admin_dashboard_assistant_includes_workflow_state_hooks():
     content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
     assert "id=\"admin-assistant-workflow\"" in content
-    assert "PHINS_ADMIN_ASSISTANT_WORKFLOW_KEY" in content
-    assert "persistAdminAssistantWorkflow" in content
+    assert "ADMIN_ASSISTANT_STORAGE_KEY" in content
+    assert "loadAdminAssistantWorkflowState" in content
+    assert "saveAdminAssistantWorkflowState" in content
     assert "executeAdminAssistantWorkflow" in content
     assert "current_step_index" in content

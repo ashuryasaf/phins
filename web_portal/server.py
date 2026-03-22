@@ -4525,6 +4525,7 @@ ADMIN_ASSISTANT_ACTIONS: List[Dict[str, Any]] = [
         'description': 'Run balance-sheet reconciliation and optionally auto-correct discrepancies.',
         'keywords': (
             'reconcile balance sheet',
+            'run reconciliation',
             'reconcile reserves',
             'balance sheet reconciliation',
             'verify balance sheet',
@@ -4719,6 +4720,13 @@ def _build_admin_assistant_workflow(query: str) -> Optional[Dict[str, Any]]:
             'requires_confirmation': matched_action['requires_confirmation'],
             'status': 'pending' if index > 0 else 'ready',
             'step_index': index,
+            'action': {
+                'id': matched_action['id'],
+                'label': matched_action['label'],
+                'description': matched_action['description'],
+                'requires_confirmation': matched_action['requires_confirmation'],
+                'button_text': 'Run action',
+            },
         }
         if condition:
             step['condition'] = condition
@@ -4742,6 +4750,7 @@ def build_admin_assistant_response(query: Any) -> Dict[str, Any]:
     snapshot = _admin_dashboard_snapshot()
     capabilities = _admin_assistant_capabilities()
     suggested_prompts = _admin_assistant_suggested_prompts()
+    workflow = _build_admin_assistant_workflow(normalized)
 
     help_phrases = (
         'help',
@@ -4777,7 +4786,6 @@ def build_admin_assistant_response(query: Any) -> Dict[str, Any]:
             'timestamp': snapshot['timestamp'],
         }
 
-    workflow = _build_admin_assistant_workflow(normalized)
     if workflow:
         return {
             'success': True,
