@@ -86,6 +86,7 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
         "POLICIES",
         "CLAIMS",
         "CUSTOMERS",
+        "REGISTERED_CUSTOMERS",
         "UNDERWRITING_APPLICATIONS",
         "SESSIONS",
         "BILLING",
