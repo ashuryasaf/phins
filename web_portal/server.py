@@ -976,6 +976,51 @@ def marketing_state_dict() -> Dict[str, Any]:
     return state
 
 
+def marketing_campaign_record_for_response(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a response-safe marketing campaign record copy."""
+    payload = dict(record) if isinstance(record, dict) else {}
+    payload['campaign'] = dict(payload.get('campaign') or {})
+    payload['integrity'] = dict(payload.get('integrity') or {})
+    payload['assets_created'] = list(payload.get('assets_created') or [])
+    return payload
+
+
+def get_current_marketing_campaign_record() -> Dict[str, Any]:
+    """Return the latest published campaign, or the latest validated draft if no publish exists yet."""
+    marketing_state = marketing_state_dict()
+    latest_campaign = marketing_state.get('latest_campaign')
+    if isinstance(latest_campaign, dict) and isinstance(latest_campaign.get('campaign'), dict):
+        return latest_campaign
+
+    generated_draft = marketing_state.get('generated_campaign')
+    if isinstance(generated_draft, dict) and isinstance(generated_draft.get('campaign'), dict):
+        return generated_draft
+    return {}
+
+
+def store_generated_marketing_campaign(*, generated: Dict[str, Any], generated_by: str) -> Dict[str, Any]:
+    """Persist the latest generated marketing campaign as a validated draft."""
+    marketing_state = marketing_state_dict()
+    campaign_payload = dict(generated.get('campaign') or {})
+    integrity_payload = dict(generated.get('integrity') or {})
+    generated_at = datetime.now().isoformat()
+    draft_record = {
+        'campaign': campaign_payload,
+        'integrity': integrity_payload,
+        'assets_created': [],
+        'generated_at': generated_at,
+        'generated_by': generated_by or 'admin',
+        'status': 'generated',
+    }
+    marketing_state['generated_campaign'] = draft_record
+    marketing_state['updated_at'] = generated_at
+    marketing_state['updated_by'] = generated_by or 'admin'
+    DESIGN_SETTINGS['marketing_sales_agent'] = marketing_state
+    DESIGN_SETTINGS['updated_at'] = generated_at
+    DESIGN_SETTINGS['updated_by'] = generated_by or 'admin'
+    return draft_record
+
+
 def get_media_subtitle_track(asset: Dict[str, Any], track_id: str = '') -> Optional[Dict[str, Any]]:
     """Return the requested subtitle track, or the most recent one if no id is provided."""
     tracks = get_media_subtitle_tracks(asset)
@@ -1424,10 +1469,9 @@ def resolve_media_video_job_image_data_url(payload: Dict[str, Any]) -> str:
 
 
 def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
-    """Return latest published campaign video blueprints for the requested campaign."""
-    marketing_state = marketing_state_dict()
-    latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
-    campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
+    """Return stored campaign video blueprints for the requested campaign."""
+    campaign_record = get_current_marketing_campaign_record()
+    campaign_payload = campaign_record.get('campaign') if isinstance(campaign_record, dict) else {}
     if str(campaign_payload.get('campaign_id') or '') != campaign_id:
         return {}, [], 'Campaign not found or not loaded as latest campaign'
 
@@ -6084,11 +6128,16 @@ For claims or questions, please contact:
                     social_networks=social_networks,
                     generated_by=(session or {}).get('username', 'admin'),
                 )
+                generated_record = store_generated_marketing_campaign(
+                    generated=campaign_data,
+                    generated_by=(session or {}).get('username', 'admin'),
+                )
+                save_ledger_data()
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'generated': campaign_data,
+                    'generated': marketing_campaign_record_for_response(generated_record),
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -6102,11 +6151,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
 
-            marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
-            latest_campaign = marketing_state.get('latest_campaign')
+            marketing_state = marketing_state_dict()
+            latest_campaign = get_current_marketing_campaign_record()
             if not latest_campaign:
                 self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'No published campaign found'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'No generated or published campaign found'}).encode('utf-8'))
                 return
 
             try:
@@ -6118,9 +6167,11 @@ For claims or questions, please contact:
                 signature = integrity_payload.get('signature', '')
                 verified = service.verify_campaign_payload(campaign_payload, signature)
 
-                latest_copy = dict(latest_campaign)
+                latest_copy = marketing_campaign_record_for_response(latest_campaign)
                 latest_copy['integrity'] = dict(integrity_payload)
                 latest_copy['integrity']['verified'] = bool(verified)
+                latest_copy['is_published'] = latest_campaign is marketing_state.get('latest_campaign')
+                latest_copy['is_generated_draft'] = latest_campaign is marketing_state.get('generated_campaign')
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -17468,7 +17519,9 @@ For claims or questions, please contact:
                     'published_at': published_at,
                     'published_by': publisher,
                     'assets_created': created_assets,
+                    'status': 'published',
                 }
+                marketing_state['generated_campaign'] = marketing_state['latest_campaign']
                 marketing_state['published_campaigns'] = published_campaigns
                 marketing_state['social_connections'] = social_connections
                 marketing_state['updated_at'] = published_at

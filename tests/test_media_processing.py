@@ -625,3 +625,70 @@ def test_media_video_provider_status_endpoint_reports_missing_credentials():
         assert "configured" in providers["kling"]["status"] or "not configured" in providers["kling"]["status_detail"].lower()
     finally:
         srv.stop()
+
+
+def test_generated_marketing_campaign_is_stored_as_latest_draft_for_reload_and_batch():
+    port = 8297
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_generated_draft"
+    _inject_session(token, "media_admin_generated_draft", "admin")
+
+    stub_service = _StubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub_service
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "published_campaigns": [],
+            "social_connections": {},
+        }
+
+        status, generate_resp = _json_request(
+            base + "/api/admin/marketing-sales-agent?vertical=insurance&objective=growth&persona=families&region=global&budget_tier=balanced&networks=linkedin,youtube",
+            token=token,
+        )
+        assert status == 200
+        generated = generate_resp["generated"]
+        campaign_id = generated["campaign"]["campaign_id"]
+        assert campaign_id
+        assert generated["status"] == "generated"
+
+        marketing_state = portal.DESIGN_SETTINGS["marketing_sales_agent"]
+        assert marketing_state["generated_campaign"]["campaign"]["campaign_id"] == campaign_id
+        assert "latest_campaign" not in marketing_state
+
+        status, latest_resp = _json_request(
+            base + "/api/admin/marketing-sales-agent/latest",
+            token=token,
+        )
+        assert status == 200
+        latest_campaign = latest_resp["latest_campaign"]
+        assert latest_campaign["campaign"]["campaign_id"] == campaign_id
+        assert latest_campaign["is_generated_draft"] is True
+        assert latest_campaign["is_published"] is False
+        assert latest_campaign["integrity"]["verified"] is True
+
+        status, batch_resp = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": campaign_id,
+                "provider": "gemini",
+                "provider_model": "veo-3-fast-preview",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+            },
+        )
+        assert status == 202
+        assert batch_resp["campaign_id"] == campaign_id
+        assert batch_resp["queued_jobs"]
+        assert stub_service.submissions
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
