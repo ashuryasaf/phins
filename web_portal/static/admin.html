@@ -1298,6 +1298,9 @@
       <div id="mkt-video-job-status" style="display:none; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.82rem; line-height: 1.45;">
         No provider video jobs yet.
       </div>
+      <div id="mkt-video-provider-status" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.82rem; line-height: 1.45;">
+        Checking AI video engine connections...
+      </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:16px;">
         <div>
           <label for="mkt-video-provider" style="font-size: 0.78rem; opacity: 0.82;">Default Video Provider</label>
@@ -2853,6 +2856,7 @@
     let latestMarketingCampaignPayload = null;
     let latestMarketingVideoJobs = [];
     let latestMarketingMediaAssets = [];
+    let latestMarketingVideoProviders = {};
     let marketingVideoJobsRefreshTimer = null;
 
     function escapeMarketingHtml(value) {
@@ -2908,6 +2912,29 @@
       el.style.background = colors[tone] || colors.info;
     }
 
+    function setMarketingVideoProviderStatus(message, tone = 'info') {
+      const el = document.getElementById('mkt-video-provider-status');
+      if (!el) return;
+      el.textContent = message;
+      const colors = {
+        info: 'rgba(255,255,255,0.08)',
+        success: 'rgba(76,175,80,0.20)',
+        warning: 'rgba(255,193,7,0.20)',
+        error: 'rgba(244,67,54,0.20)'
+      };
+      el.style.background = colors[tone] || colors.info;
+    }
+
+    function currentMarketingCampaignRequestContext() {
+      if (!latestMarketingCampaignPayload?.campaign) {
+        return {};
+      }
+      return {
+        campaign_payload: latestMarketingCampaignPayload.campaign,
+        campaign_integrity: latestMarketingCampaignPayload.integrity || {}
+      };
+    }
+
     function getCurrentCampaignId() {
       return latestMarketingCampaignPayload?.campaign?.campaign_id || '';
     }
@@ -2936,6 +2963,52 @@
       const imageId = selectedMarketingReferenceImageId();
       if (!imageId) return null;
       return latestMarketingMediaAssets.find(asset => asset.id === imageId) || null;
+    }
+
+    function selectedMarketingProviderConfig() {
+      const provider = selectedMarketingVideoProvider().trim().toLowerCase();
+      const config = latestMarketingVideoProviders[provider];
+      return config && typeof config === 'object' ? config : null;
+    }
+
+    async function loadMarketingVideoProviders() {
+      try {
+        const response = await fetch('/api/admin/media/video-providers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          throw new Error(`provider status failed (${response.status})`);
+        }
+        const data = await response.json();
+        latestMarketingVideoProviders = data?.providers && typeof data.providers === 'object'
+          ? data.providers
+          : {};
+        const providerEntries = Object.entries(latestMarketingVideoProviders);
+        if (!providerEntries.length) {
+          setMarketingVideoProviderStatus('No AI video providers reported by the server.', 'warning');
+          return latestMarketingVideoProviders;
+        }
+
+        const configured = providerEntries.filter(([, cfg]) => cfg && cfg.enabled);
+        const summary = providerEntries
+          .map(([name, cfg]) => {
+            const label = cfg?.label || name;
+            const detail = cfg?.status_detail || (cfg?.enabled ? 'Configured' : 'Not configured');
+            return `${label}: ${detail}`;
+          })
+          .join(' | ');
+        setMarketingVideoProviderStatus(
+          configured.length
+            ? `AI engine status — ${summary}`
+            : `No AI video engine credentials configured. ${summary}`,
+          configured.length ? 'success' : 'warning'
+        );
+        return latestMarketingVideoProviders;
+      } catch (err) {
+        latestMarketingVideoProviders = {};
+        setMarketingVideoProviderStatus(`Failed to load AI engine status: ${err.message}`, 'error');
+        return {};
+      }
     }
 
     async function loadMarketingMediaAssets() {

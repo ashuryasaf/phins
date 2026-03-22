@@ -522,3 +522,106 @@ def test_marketing_video_generation_batch_route_accepts_dashboard_payload():
     finally:
         portal.get_media_generation_service = original_factory
         srv.stop()
+
+
+def test_marketing_video_generation_batch_route_accepts_verified_preview_campaign_payload():
+    port = 8295
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_preview_batch"
+    _inject_session(token, "media_admin_preview_batch", "admin")
+
+    stub_service = _StubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub_service
+
+    try:
+        from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+        svc = get_marketing_sales_agent_service()
+        generated = svc.generate_campaign(
+            customers=portal.CUSTOMERS,
+            policies=portal.POLICIES,
+            billing=portal.BILLING,
+            claims=portal.CLAIMS,
+            health_wallets=portal.HEALTH_WALLETS,
+            investment_accounts=portal.INVESTMENT_ACCOUNTS,
+            transaction_ledger=portal.TRANSACTION_LEDGER,
+            vertical="insurance",
+            objective="growth",
+            persona="families",
+            region="global",
+            budget_tier="balanced",
+            social_networks=["linkedin", "youtube"],
+            generated_by="media_admin_preview_batch",
+        )
+        campaign = generated["campaign"]
+        campaign_id = campaign["campaign_id"]
+        assert campaign_id
+
+        # Simulate the admin dashboard preview state: generated campaign exists client-side
+        # but has not been published into DESIGN_SETTINGS['marketing_sales_agent']['latest_campaign'] yet.
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "published_campaigns": [],
+            "social_connections": {},
+        }
+
+        status, batch_resp = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": campaign_id,
+                "provider": "gemini",
+                "provider_model": "veo-3-fast-preview",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": True,
+                "campaign_payload": campaign,
+                "campaign_integrity": generated["integrity"],
+            },
+        )
+        assert status == 202
+        assert batch_resp["campaign_id"] == campaign_id
+        assert len(batch_resp["queued_jobs"]) == len(campaign["ai_video_blueprints"])
+        assert len(stub_service.submissions) == len(campaign["ai_video_blueprints"])
+
+        first_job = batch_resp["queued_jobs"][0]
+        stored_job = portal.MEDIA_PROCESSING_JOBS[first_job["id"]]
+        assert stored_job["blueprint_snapshot"]["title"] == campaign["ai_video_blueprints"][0]["title"]
+        assert stored_job["auto_publish_to_hero"] is True
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
+def test_media_video_provider_status_endpoint_reports_missing_credentials():
+    port = 8296
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_provider_status"
+    _inject_session(token, "media_admin_provider_status", "admin")
+
+    try:
+        status, response = _json_request(
+            base + "/api/admin/media/video-providers",
+            token=token,
+        )
+        assert status == 200
+        assert response["success"] is True
+        providers = response["providers"]
+        assert "gemini" in providers
+        assert "kling" in providers
+        assert providers["gemini"]["status"] in {"configured", "missing_credentials"}
+        assert providers["kling"]["status"] in {"configured", "missing_credentials"}
+        assert "configured" in providers["gemini"]["status"] or "not configured" in providers["gemini"]["status_detail"].lower()
+        assert "configured" in providers["kling"]["status"] or "not configured" in providers["kling"]["status_detail"].lower()
+    finally:
+        srv.stop()

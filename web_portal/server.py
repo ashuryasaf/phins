@@ -1233,6 +1233,7 @@ def create_media_video_job(
         'job_kind': 'video_generation',
         'campaign_id': campaign_id,
         'blueprint_index': blueprint_index,
+        'blueprint_snapshot': dict(blueprint) if isinstance(blueprint, dict) else {},
         'asset_id': '',
         'asset_name': str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
         'provider': provider,
@@ -1436,6 +1437,48 @@ def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], 
     return campaign_payload, blueprints, ''
 
 
+def request_campaign_video_blueprints(campaign_id: str, request_payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
+    """Validate and return a signed preview campaign payload from the request body."""
+    campaign_payload = request_payload.get('campaign_payload')
+    if not isinstance(campaign_payload, dict):
+        return {}, [], 'Campaign not found or not loaded as latest campaign'
+    if str(campaign_payload.get('campaign_id') or '').strip() != campaign_id:
+        return {}, [], 'Campaign payload does not match requested campaign_id'
+
+    integrity_payload = request_payload.get('campaign_integrity')
+    if not isinstance(integrity_payload, dict):
+        return {}, [], 'Campaign integrity is required for unpublished campaign video generation'
+
+    signature = str(integrity_payload.get('signature') or '').strip()
+    if not signature:
+        return {}, [], 'Campaign integrity signature is required for unpublished campaign video generation'
+
+    from services.marketing_sales_agent_service import get_marketing_sales_agent_service
+
+    service = get_marketing_sales_agent_service()
+    if not service.verify_campaign_payload(campaign_payload, signature):
+        return {}, [], 'Campaign payload failed integrity verification'
+
+    blueprints = campaign_payload.get('ai_video_blueprints')
+    if not isinstance(blueprints, list) or not blueprints:
+        return campaign_payload, [], 'Video blueprint not found'
+    return campaign_payload, blueprints, ''
+
+
+def resolve_media_video_job_blueprints(campaign_id: str, request_payload: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
+    """Resolve video blueprints from the published campaign or a verified preview payload."""
+    campaign_payload, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+    if not error:
+        return campaign_payload, blueprints, ''
+
+    if not isinstance(request_payload, dict):
+        return {}, [], error
+    if not isinstance(request_payload.get('campaign_payload'), dict):
+        return {}, [], error
+
+    return request_campaign_video_blueprints(campaign_id, request_payload)
+
+
 def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_base_url: str = '') -> Dict[str, Any]:
     """Create a fresh job using the original job's blueprint/provider settings."""
     campaign_id = str(job.get('campaign_id') or '')
@@ -1443,14 +1486,18 @@ def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_ba
     if not campaign_id or blueprint_index < 0:
         raise ValueError('Retry requested for a job without campaign blueprint context')
 
-    campaign_payload, blueprints, error = latest_campaign_video_blueprints(campaign_id)
-    if error or blueprint_index >= len(blueprints):
-        raise ValueError('Current campaign no longer matches the job blueprint context')
+    _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+    if not error and blueprint_index < len(blueprints):
+        blueprint = blueprints[blueprint_index]
+    else:
+        blueprint = job.get('blueprint_snapshot') if isinstance(job.get('blueprint_snapshot'), dict) else {}
+        if not blueprint:
+            raise ValueError('Current campaign no longer matches the job blueprint context')
 
     return create_media_video_job(
         campaign_id=campaign_id,
         blueprint_index=blueprint_index,
-        blueprint=blueprints[blueprint_index],
+        blueprint=blueprint,
         requested_by=requested_by,
         provider=str(job.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
         callback_base_url=callback_base_url,
@@ -6082,6 +6129,40 @@ For claims or questions, please contact:
                     'published_count': len(marketing_state.get('published_campaigns', [])),
                     'social_connections': marketing_state.get('social_connections', {}),
                 }, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/media/video-providers':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            try:
+                provider_config = get_media_generation_service().supported_provider_config()
+                providers = {}
+                for provider_name, config in provider_config.items():
+                    payload = dict(config) if isinstance(config, dict) else {}
+                    enabled = bool(payload.get('enabled'))
+                    if provider_name == 'gemini':
+                        status_detail = 'GEMINI_API_KEY configured' if enabled else 'GEMINI_API_KEY not configured'
+                    elif provider_name == 'kling':
+                        status_detail = 'KLING_API_KEY configured' if enabled else 'KLING_API_KEY not configured'
+                    else:
+                        status_detail = 'Configured' if enabled else 'Not configured'
+                    payload['status'] = 'configured' if enabled else 'missing_credentials'
+                    payload['status_detail'] = status_detail
+                    providers[provider_name] = payload
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'providers': providers,
+                    'configured_providers': [name for name, cfg in providers.items() if cfg.get('enabled')],
+                }).encode('utf-8'))
                 return
             except Exception as e:
                 self._set_json_headers(500)
@@ -17720,7 +17801,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
                 return
 
-            _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+            _, blueprints, error = resolve_media_video_job_blueprints(campaign_id, data)
             if error:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
@@ -17797,7 +17878,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'blueprint_index is required'}).encode('utf-8'))
                 return
 
-            _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+            _, blueprints, error = resolve_media_video_job_blueprints(campaign_id, data)
             if error or blueprint_index >= len(blueprints):
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'Video blueprint not found' if not error else error}).encode('utf-8'))
