@@ -1472,6 +1472,8 @@ def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], 
     """Return stored campaign video blueprints for the requested campaign."""
     campaign_record = get_current_marketing_campaign_record()
     campaign_payload = campaign_record.get('campaign') if isinstance(campaign_record, dict) else {}
+    if not isinstance(campaign_payload, dict):
+        campaign_payload = {}
     if str(campaign_payload.get('campaign_id') or '') != campaign_id:
         return {}, [], 'Campaign not found or not loaded as latest campaign'
 
