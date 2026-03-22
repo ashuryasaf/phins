@@ -1,0 +1,733 @@
+{
+  "saved_at": "2026-03-22T19:41:37.903795",
+  "version": "2.0",
+  "health_wallets": {},
+  "medical_purchases": {},
+  "nft_ledger": {},
+  "customer_allocations": {},
+  "investment_accounts": {},
+  "transaction_ledger": {},
+  "billing": {},
+  "policies": {},
+  "customers": {},
+  "underwriting_applications": {},
+  "algo_trading_balances": {},
+  "trading_bots": {},
+  "phins_balance_sheet": {
+    "account_id": "PHINS-MAIN-001",
+    "name": "PHINS General Reserves",
+    "created_at": null,
+    "last_updated": null,
+    "claims_reserve": 3500000.0,
+    "operating_reserve": 0.0,
+    "supplier_reserve": 0.0,
+    "investment_reserve": 0.0,
+    "total_revenue": 0.0,
+    "revenue_breakdown": {
+      "premium_income": 0.0,
+      "management_fees": 0.0,
+      "underwriting_fees": 0.0,
+      "investment_earnings": 0.0,
+      "late_fees": 0.0,
+      "other_income": 0.0
+    },
+    "total_expenses": 0.0,
+    "expense_breakdown": {
+      "claims_paid": 0.0,
+      "supplier_payments": 0.0,
+      "operating_costs": 0.0,
+      "commissions": 0.0,
+      "reinsurance": 0.0,
+      "other_expenses": 0.0
+    },
+    "transactions": [],
+    "audit_log": []
+  },
+  "claims": {},
+  "claim_files": {},
+  "underwriting_files": {},
+  "media_assets": {
+    "media-1ba7f4fe3bce": {
+      "id": "media-1ba7f4fe3bce",
+      "name": "demo-video.mp4",
+      "type": "video",
+      "format": "video/mp4",
+      "size": 2048,
+      "url": "https://cdn.example.com/demo-video.mp4",
+      "data": "",
+      "thumbnail": "",
+      "duration": 18,
+      "source": "url",
+      "uploaded_at": "2026-03-22T19:41:29.139043",
+      "uploaded_by": "media_admin",
+      "processing": {
+        "subtitle_job_id": "mjob-035c5a7f86c0",
+        "subtitle_status": "completed",
+        "provider": "bridge",
+        "provider_job_id": "prov-db6897909202",
+        "language": "en",
+        "message": "Provider finished subtitle generation",
+        "updated_at": "2026-03-22T19:41:29.141634",
+        "completed_at": "2026-03-22T19:41:29.141631",
+        "subtitle_track_id": "sub-ce406e842f46"
+      },
+      "subtitles": [
+        {
+          "id": "sub-ce406e842f46",
+          "language": "en",
+          "format": "srt",
+          "label": "EN Subtitles",
+          "status": "completed",
+          "provider": "bridge",
+          "job_id": "mjob-035c5a7f86c0",
+          "download_url": "/api/media/media-1ba7f4fe3bce/download/srt?track_id=sub-ce406e842f46",
+          "filename": "demo-video_mp4_en.srt",
+          "size": 154,
+          "created_at": "2026-03-22T19:41:29.141622",
+          "content": "1\n00:00:00,000 --> 00:00:02,500\nWelcome to PHINS\n\n2\n00:00:02,500 --> 00:00:05,000\nmedia processing subtitles\n\n3\n00:00:05,000 --> 00:00:07,000\nfor admins.\n",
+          "segments": [
+            {
+              "start": 0.0,
+              "end": 2.5,
+              "text": "Welcome to PHINS"
+            },
+            {
+              "start": 2.5,
+              "end": 5.0,
+              "text": "media processing subtitles"
+            },
+            {
+              "start": 5.0,
+              "end": 7.0,
+              "text": "for admins."
+            }
+          ],
+          "transcript_text": "Welcome to PHINS media processing subtitles for admins."
+        }
+      ]
+    },
+    "media-d4d2c58f0a40": {
+      "id": "media-d4d2c58f0a40",
+      "name": "secured-video.mp4",
+      "type": "video",
+      "format": "video/mp4",
+      "size": 1024,
+      "url": "https://cdn.example.com/secured-video.mp4",
+      "data": "",
+      "thumbnail": "",
+      "duration": null,
+      "source": "url",
+      "uploaded_at": "2026-03-22T19:41:29.947597",
+      "uploaded_by": "media_admin_invalid",
+      "processing": {
+        "subtitle_job_id": "mjob-d4e4f5c8cd7b",
+        "subtitle_status": "queued",
+        "provider": "bridge",
+        "provider_job_id": "prov-fb5b3e00614e",
+        "language": "en",
+        "message": "Queued with provider. Awaiting completion webhook.",
+        "updated_at": "2026-03-22T19:41:29.948881",
+        "completed_at": null,
+        "subtitle_track_id": null
+      }
+    },
+    "media-50da565f525b": {
+      "id": "media-50da565f525b",
+      "name": "Family Coverage Hero.mp4",
+      "type": "video",
+      "format": "video/mp4",
+      "size": 16,
+      "url": "",
+      "data": "data:video/mp4;base64,c3R1Yi12aWRlby1ieXRlcw==",
+      "thumbnail": "",
+      "duration": 8,
+      "source": "ai_video_generation",
+      "uploaded_at": "2026-03-22T19:41:32.561346",
+      "uploaded_by": "media_admin_generation",
+      "metadata": {
+        "campaign_id": "MKT-TEST-VIDEO",
+        "job_id": "mjob-dcf61afdfef0",
+        "provider": "gemini",
+        "blueprint_index": 0,
+        "generated_from": "marketing_video_blueprint"
+      }
+    },
+    "media-ffd5c20f94ad": {
+      "id": "media-ffd5c20f94ad",
+      "name": "reference-frame.png",
+      "type": "image",
+      "format": "image/png",
+      "size": 128,
+      "url": "",
+      "data": "data:image/png;base64,c3R1Yi1pbWFnZS1ieXRlcw==",
+      "thumbnail": "",
+      "duration": null,
+      "source": "upload",
+      "uploaded_at": "2026-03-22T19:41:33.423663",
+      "uploaded_by": "media_admin_batch"
+    },
+    "media-9e69e4737f4d": {
+      "id": "media-9e69e4737f4d",
+      "name": "Welcome Families.mp4",
+      "type": "video",
+      "format": "video/mp4",
+      "size": 16,
+      "url": "",
+      "data": "data:video/mp4;base64,c3R1Yi12aWRlby1ieXRlcw==",
+      "thumbnail": "",
+      "duration": 8,
+      "source": "ai_video_generation",
+      "uploaded_at": "2026-03-22T19:41:34.425736",
+      "uploaded_by": "media_admin_batch",
+      "metadata": {
+        "campaign_id": "MKT-TEST-BATCH",
+        "job_id": "mjob-b11a16e108a2",
+        "provider": "gemini",
+        "blueprint_index": 0,
+        "generated_from": "marketing_video_blueprint"
+      }
+    },
+    "media-bf45f1347d98": {
+      "id": "media-bf45f1347d98",
+      "name": "Claims Walkthrough.mp4",
+      "type": "video",
+      "format": "video/mp4",
+      "size": 16,
+      "url": "",
+      "data": "data:video/mp4;base64,c3R1Yi12aWRlby1ieXRlcw==",
+      "thumbnail": "",
+      "duration": 8,
+      "source": "ai_video_generation",
+      "uploaded_at": "2026-03-22T19:41:34.425905",
+      "uploaded_by": "media_admin_batch",
+      "metadata": {
+        "campaign_id": "MKT-TEST-BATCH",
+        "job_id": "mjob-ae1b96d5228e",
+        "provider": "gemini",
+        "blueprint_index": 1,
+        "generated_from": "marketing_video_blueprint"
+      }
+    }
+  },
+  "media_processing_jobs": {
+    "mjob-035c5a7f86c0": {
+      "id": "mjob-035c5a7f86c0",
+      "asset_id": "media-1ba7f4fe3bce",
+      "asset_name": "demo-video.mp4",
+      "provider": "bridge",
+      "provider_job_id": "prov-db6897909202",
+      "callback_token": "ruZWUevdPXl4n4uSCOWPbpu0",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-035c5a7f86c0&token=ruZWUevdPXl4n4uSCOWPbpu0",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-035c5a7f86c0&token=ruZWUevdPXl4n4uSCOWPbpu0",
+      "language": "en",
+      "status": "completed",
+      "requested_at": "2026-03-22T19:41:29.140391",
+      "requested_by": "media_admin",
+      "completed_at": "2026-03-22T19:41:29.141631",
+      "error": null,
+      "message": "Provider finished subtitle generation",
+      "subtitle_track_id": "sub-ce406e842f46"
+    },
+    "mjob-d4e4f5c8cd7b": {
+      "id": "mjob-d4e4f5c8cd7b",
+      "asset_id": "media-d4d2c58f0a40",
+      "asset_name": "secured-video.mp4",
+      "provider": "bridge",
+      "provider_job_id": "prov-fb5b3e00614e",
+      "callback_token": "iZKD3HV0v3SzSC-zYAh64-Kb",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-d4e4f5c8cd7b&token=iZKD3HV0v3SzSC-zYAh64-Kb",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-d4e4f5c8cd7b&token=iZKD3HV0v3SzSC-zYAh64-Kb",
+      "language": "en",
+      "status": "queued",
+      "requested_at": "2026-03-22T19:41:29.948874",
+      "requested_by": "media_admin_invalid",
+      "completed_at": null,
+      "error": null,
+      "message": "Queued with provider. Awaiting completion webhook.",
+      "subtitle_track_id": null
+    },
+    "mjob-dcf61afdfef0": {
+      "id": "mjob-dcf61afdfef0",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-TEST-VIDEO",
+      "blueprint_index": 0,
+      "blueprint_snapshot": {
+        "title": "Family Coverage Hero",
+        "format": "Short vertical explainer",
+        "voiceover_style": "Warm and trustworthy",
+        "storyboard": [
+          "A family reviews policy options on a tablet.",
+          "A quick claims support moment builds confidence."
+        ]
+      },
+      "asset_id": "",
+      "asset_name": "Family Coverage Hero",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "completed",
+      "provider_state": {
+        "done": true
+      },
+      "provider_model": "",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "completed",
+      "progress_pct": 100,
+      "requested_at": "2026-03-22T19:41:31.560170",
+      "requested_by": "media_admin_generation",
+      "completed_at": "2026-03-22T19:41:32.561346",
+      "error": null,
+      "message": "Stub provider completed the video.",
+      "subtitle_track_id": null,
+      "generated_asset_id": "media-50da565f525b",
+      "download_url": "https://cdn.example.com/generated/stub-video.mp4",
+      "auto_publish_to_hero": false,
+      "callback_token": "bhLDNHy3M-Ld27YRDnd6QxmL",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-dcf61afdfef0&token=bhLDNHy3M-Ld27YRDnd6QxmL",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-dcf61afdfef0&token=bhLDNHy3M-Ld27YRDnd6QxmL"
+    },
+    "mjob-b11a16e108a2": {
+      "id": "mjob-b11a16e108a2",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-TEST-BATCH",
+      "blueprint_index": 0,
+      "blueprint_snapshot": {
+        "title": "Welcome Families",
+        "format": "Short vertical explainer",
+        "voiceover_style": "Warm and trustworthy",
+        "storyboard": [
+          "Open on a family reviewing benefits on a mobile phone.",
+          "Show advisor support and claims help in a fast montage."
+        ]
+      },
+      "asset_id": "",
+      "asset_name": "Welcome Families",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "completed",
+      "provider_state": {
+        "done": true
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "data:image/png;base64,c3R1Yi1pbWFnZS1ieXRlcw==",
+      "prompt_override": "Keep the narration claims-focused and compliance-safe.",
+      "language": "en",
+      "status": "completed",
+      "progress_pct": 100,
+      "requested_at": "2026-03-22T19:41:33.425175",
+      "requested_by": "media_admin_batch",
+      "completed_at": "2026-03-22T19:41:34.425736",
+      "error": null,
+      "message": "Stub provider completed the video.",
+      "subtitle_track_id": null,
+      "generated_asset_id": "media-9e69e4737f4d",
+      "download_url": "https://cdn.example.com/generated/stub-video.mp4",
+      "auto_publish_to_hero": true,
+      "callback_token": "KXJp4v-PEiI1wFOVNZQbdKz6",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-b11a16e108a2&token=KXJp4v-PEiI1wFOVNZQbdKz6",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-b11a16e108a2&token=KXJp4v-PEiI1wFOVNZQbdKz6"
+    },
+    "mjob-ae1b96d5228e": {
+      "id": "mjob-ae1b96d5228e",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-TEST-BATCH",
+      "blueprint_index": 1,
+      "blueprint_snapshot": {
+        "title": "Claims Walkthrough",
+        "format": "Interview + motion graphics",
+        "voiceover_style": "Clear and compliant",
+        "storyboard": [
+          "Explain documents needed for a claim.",
+          "Show payout checkpoints and policyholder follow-up."
+        ]
+      },
+      "asset_id": "",
+      "asset_name": "Claims Walkthrough",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "completed",
+      "provider_state": {
+        "done": true
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "data:image/png;base64,c3R1Yi1pbWFnZS1ieXRlcw==",
+      "prompt_override": "Keep the narration claims-focused and compliance-safe.",
+      "language": "en",
+      "status": "completed",
+      "progress_pct": 100,
+      "requested_at": "2026-03-22T19:41:33.425485",
+      "requested_by": "media_admin_batch",
+      "completed_at": "2026-03-22T19:41:34.425905",
+      "error": null,
+      "message": "Stub provider completed the video.",
+      "subtitle_track_id": null,
+      "generated_asset_id": "media-bf45f1347d98",
+      "download_url": "https://cdn.example.com/generated/stub-video.mp4",
+      "auto_publish_to_hero": false,
+      "callback_token": "PgGBt7PH7s2Yw2Bp7INBokq2",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-ae1b96d5228e&token=PgGBt7PH7s2Yw2Bp7INBokq2",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-ae1b96d5228e&token=PgGBt7PH7s2Yw2Bp7INBokq2"
+    },
+    "mjob-26381a6394cd": {
+      "id": "mjob-26381a6394cd",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-20260322194135",
+      "blueprint_index": 0,
+      "blueprint_snapshot": {
+        "title": "Insurance AI Explainer (45s)",
+        "format": "Vertical short video",
+        "storyboard": [
+          "Hook: one painful customer scenario",
+          "Reveal: PHINS AI+BI recommendation moment",
+          "Outcome: quantified improvement",
+          "CTA: book advisor call"
+        ],
+        "voiceover_style": "Confident, plain-language, evidence-based"
+      },
+      "asset_id": "",
+      "asset_name": "Insurance AI Explainer (45s)",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "queued",
+      "provider_state": {
+        "operation_name": "operations/stub-provider-job-1"
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "failed",
+      "progress_pct": 5,
+      "requested_at": "2026-03-22T19:41:35.288704",
+      "requested_by": "media_admin_preview_batch",
+      "completed_at": "2026-03-22T19:41:36.289106",
+      "error": "GEMINI_API_KEY is not configured",
+      "message": "GEMINI_API_KEY is not configured",
+      "subtitle_track_id": null,
+      "generated_asset_id": "",
+      "download_url": "",
+      "auto_publish_to_hero": true,
+      "callback_token": "udKAhgJItsOJaH911p8oF19U",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-26381a6394cd&token=udKAhgJItsOJaH911p8oF19U",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-26381a6394cd&token=udKAhgJItsOJaH911p8oF19U"
+    },
+    "mjob-23446fdb4482": {
+      "id": "mjob-23446fdb4482",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-20260322194135",
+      "blueprint_index": 1,
+      "blueprint_snapshot": {
+        "title": "Families Testimonial Narrative (60s)",
+        "format": "Interview + motion graphics",
+        "storyboard": [
+          "Before state and friction",
+          "Onboarding and guidance",
+          "Results in premium/wallet/investment metrics",
+          "CTA for matching profile"
+        ],
+        "voiceover_style": "Human, empathetic, trustworthy"
+      },
+      "asset_id": "",
+      "asset_name": "Families Testimonial Narrative (60s)",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "queued",
+      "provider_state": {
+        "operation_name": "operations/stub-provider-job-1"
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "failed",
+      "progress_pct": 5,
+      "requested_at": "2026-03-22T19:41:35.288998",
+      "requested_by": "media_admin_preview_batch",
+      "completed_at": "2026-03-22T19:41:36.291466",
+      "error": "GEMINI_API_KEY is not configured",
+      "message": "GEMINI_API_KEY is not configured",
+      "subtitle_track_id": null,
+      "generated_asset_id": "",
+      "download_url": "",
+      "auto_publish_to_hero": false,
+      "callback_token": "vx7xGgsVxXrzi1adB9VIV0QC",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-23446fdb4482&token=vx7xGgsVxXrzi1adB9VIV0QC",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-23446fdb4482&token=vx7xGgsVxXrzi1adB9VIV0QC"
+    },
+    "mjob-a0f0de0ade45": {
+      "id": "mjob-a0f0de0ade45",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-20260322194135",
+      "blueprint_index": 2,
+      "blueprint_snapshot": {
+        "title": "Advisor Playbook Teaser (30s)",
+        "format": "Social ad cutdown",
+        "storyboard": [
+          "Fast montage of insights dashboard",
+          "Three bullet outcomes",
+          "Offer and urgency trigger"
+        ],
+        "voiceover_style": "High-energy sales enablement"
+      },
+      "asset_id": "",
+      "asset_name": "Advisor Playbook Teaser (30s)",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "queued",
+      "provider_state": {
+        "operation_name": "operations/stub-provider-job-1"
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "failed",
+      "progress_pct": 5,
+      "requested_at": "2026-03-22T19:41:35.289266",
+      "requested_by": "media_admin_preview_batch",
+      "completed_at": "2026-03-22T19:41:36.290751",
+      "error": "GEMINI_API_KEY is not configured",
+      "message": "GEMINI_API_KEY is not configured",
+      "subtitle_track_id": null,
+      "generated_asset_id": "",
+      "download_url": "",
+      "auto_publish_to_hero": false,
+      "callback_token": "TFQwx7_03ZKoT3lFzRaIo4Mb",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-a0f0de0ade45&token=TFQwx7_03ZKoT3lFzRaIo4Mb",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-a0f0de0ade45&token=TFQwx7_03ZKoT3lFzRaIo4Mb"
+    },
+    "mjob-7fb796c2a50c": {
+      "id": "mjob-7fb796c2a50c",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-20260322194136",
+      "blueprint_index": 0,
+      "blueprint_snapshot": {
+        "title": "Insurance AI Explainer (45s)",
+        "format": "Vertical short video",
+        "storyboard": [
+          "Hook: one painful customer scenario",
+          "Reveal: PHINS AI+BI recommendation moment",
+          "Outcome: quantified improvement",
+          "CTA: book advisor call"
+        ],
+        "voiceover_style": "Confident, plain-language, evidence-based"
+      },
+      "asset_id": "",
+      "asset_name": "Insurance AI Explainer (45s)",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "queued",
+      "provider_state": {
+        "operation_name": "operations/stub-provider-job-1"
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "failed",
+      "progress_pct": 5,
+      "requested_at": "2026-03-22T19:41:36.900897",
+      "requested_by": "media_admin_generated_draft",
+      "completed_at": "2026-03-22T19:41:37.901325",
+      "error": "GEMINI_API_KEY is not configured",
+      "message": "GEMINI_API_KEY is not configured",
+      "subtitle_track_id": null,
+      "generated_asset_id": "",
+      "download_url": "",
+      "auto_publish_to_hero": false,
+      "callback_token": "kzdnqb7RdVRuBzaU5so1xCOq",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-7fb796c2a50c&token=kzdnqb7RdVRuBzaU5so1xCOq",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-7fb796c2a50c&token=kzdnqb7RdVRuBzaU5so1xCOq"
+    },
+    "mjob-16c77a25fc53": {
+      "id": "mjob-16c77a25fc53",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-20260322194136",
+      "blueprint_index": 1,
+      "blueprint_snapshot": {
+        "title": "Families Testimonial Narrative (60s)",
+        "format": "Interview + motion graphics",
+        "storyboard": [
+          "Before state and friction",
+          "Onboarding and guidance",
+          "Results in premium/wallet/investment metrics",
+          "CTA for matching profile"
+        ],
+        "voiceover_style": "Human, empathetic, trustworthy"
+      },
+      "asset_id": "",
+      "asset_name": "Families Testimonial Narrative (60s)",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "queued",
+      "provider_state": {
+        "operation_name": "operations/stub-provider-job-1"
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "failed",
+      "progress_pct": 5,
+      "requested_at": "2026-03-22T19:41:36.901227",
+      "requested_by": "media_admin_generated_draft",
+      "completed_at": "2026-03-22T19:41:37.902846",
+      "error": "GEMINI_API_KEY is not configured",
+      "message": "GEMINI_API_KEY is not configured",
+      "subtitle_track_id": null,
+      "generated_asset_id": "",
+      "download_url": "",
+      "auto_publish_to_hero": false,
+      "callback_token": "hbJfSHZcpKph1Nqo7FTYxmOC",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-16c77a25fc53&token=hbJfSHZcpKph1Nqo7FTYxmOC",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-16c77a25fc53&token=hbJfSHZcpKph1Nqo7FTYxmOC"
+    },
+    "mjob-d83d3215a91d": {
+      "id": "mjob-d83d3215a91d",
+      "job_kind": "video_generation",
+      "campaign_id": "MKT-20260322194136",
+      "blueprint_index": 2,
+      "blueprint_snapshot": {
+        "title": "Advisor Playbook Teaser (30s)",
+        "format": "Social ad cutdown",
+        "storyboard": [
+          "Fast montage of insights dashboard",
+          "Three bullet outcomes",
+          "Offer and urgency trigger"
+        ],
+        "voiceover_style": "High-energy sales enablement"
+      },
+      "asset_id": "",
+      "asset_name": "Advisor Playbook Teaser (30s)",
+      "provider": "gemini",
+      "provider_job_id": "stub-provider-job-1",
+      "provider_operation_name": "operations/stub-provider-job-1",
+      "provider_status": "queued",
+      "provider_state": {
+        "operation_name": "operations/stub-provider-job-1"
+      },
+      "provider_model": "veo-3-fast-preview",
+      "image_data_url": "",
+      "prompt_override": "",
+      "language": "en",
+      "status": "failed",
+      "progress_pct": 5,
+      "requested_at": "2026-03-22T19:41:36.901502",
+      "requested_by": "media_admin_generated_draft",
+      "completed_at": "2026-03-22T19:41:37.902096",
+      "error": "GEMINI_API_KEY is not configured",
+      "message": "GEMINI_API_KEY is not configured",
+      "subtitle_track_id": null,
+      "generated_asset_id": "",
+      "download_url": "",
+      "auto_publish_to_hero": false,
+      "callback_token": "wxIhelbMhCS1kcDXWjiuuq4r",
+      "callback_path": "/api/provider/media-processing/callback?job_id=mjob-d83d3215a91d&token=wxIhelbMhCS1kcDXWjiuuq4r",
+      "callback_url": "/api/provider/media-processing/callback?job_id=mjob-d83d3215a91d&token=wxIhelbMhCS1kcDXWjiuuq4r"
+    }
+  },
+  "design_settings": {
+    "video_url": "data:video/mp4;base64,c3R1Yi12aWRlby1ieXRlcw==",
+    "video_poster": "",
+    "tagline": "Comprehensive Protection for Your Future",
+    "primary_color": "#0d47a1",
+    "accent_color": "#ff6b35",
+    "show_video": true,
+    "show_contact": true,
+    "show_quote_form": false,
+    "show_products": false,
+    "show_underwriting": false,
+    "hero_video_id": "media-9e69e4737f4d",
+    "hero_background_id": "",
+    "video_poster_id": "",
+    "promo_banner_id": "",
+    "updated_at": "2026-03-22T19:41:36.898367",
+    "updated_by": "media_admin_generated_draft",
+    "marketing_sales_agent": {
+      "generated_campaign": {
+        "campaign": {
+          "campaign_id": "MKT-DRAFT-001",
+          "generated_at": "2026-03-22T19:41:37.706127",
+          "scope": {
+            "objective": "growth"
+          },
+          "ai_video_blueprints": [
+            {
+              "title": "Draft Blueprint"
+            }
+          ]
+        },
+        "integrity": {
+          "verified": true,
+          "algorithm": "hmac-sha256",
+          "signature": "draft"
+        },
+        "assets_created": [],
+        "status": "generated",
+        "generated_at": "2026-03-22T19:41:37.706131",
+        "generated_by": "admin"
+      },
+      "latest_campaign": {
+        "campaign": {
+          "campaign_id": "MKT-PUBLISHED-001",
+          "generated_at": "2026-03-22T19:41:37.706132",
+          "scope": {
+            "objective": "retention"
+          },
+          "ai_video_blueprints": [
+            {
+              "title": "Published Blueprint"
+            }
+          ]
+        },
+        "integrity": {
+          "verified": true,
+          "algorithm": "hmac-sha256",
+          "signature": "published"
+        },
+        "assets_created": [],
+        "status": "published",
+        "published_at": "2026-03-22T19:41:37.706134",
+        "published_by": "admin"
+      },
+      "published_campaigns": [
+        {
+          "campaign_id": "MKT-PUBLISHED-001",
+          "published_at": "2026-03-22T19:41:37.706135",
+          "published_by": "admin",
+          "vertical": "insurance",
+          "objective": "retention",
+          "assets_created": 0,
+          "integrity_signature": "published"
+        }
+      ],
+      "social_connections": {}
+    }
+  },
+  "invitation_codes": {
+    "TESTCODE2026": {
+      "code": "TESTCODE2026",
+      "created_at": "2026-03-22T19:41:28.226149",
+      "created_by": "system",
+      "expires_at": null,
+      "max_uses": 999999,
+      "used_count": 0,
+      "used_by": [],
+      "status": "active",
+      "notes": "Test mode invitation code - automatically created"
+    }
+  },
+  "registered_customers": {},
+  "customer_invitations": {},
+  "customer_referral_stats": {},
+  "policy_documents": {}
+}

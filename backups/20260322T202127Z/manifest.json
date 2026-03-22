@@ -1,0 +1,111 @@
+{
+  "backup_root": "/workspace/backups/20260322T202127Z",
+  "backup_version": "3.0",
+  "created_at": "2026-03-22T20:21:29.091609+00:00",
+  "database_outputs": [],
+  "downloadable_archive": "platform_backup_20260322T202127Z.tar.gz",
+  "files": [
+    {
+      "path": "metadata/git_commit.txt",
+      "sha256": "c4b3cbfcefbe7dd62170553bdba7282db086e56a945bba1072aa7b9dd79c5508",
+      "size": 41
+    },
+    {
+      "path": "metadata/git_diff_staged.patch",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "path": "metadata/git_diff_unstaged.patch",
+      "sha256": "665712aac91246a96877652997f370f1f9467ff8c2a278e3eac34df668a88338",
+      "size": 7036
+    },
+    {
+      "path": "metadata/git_log_20.txt",
+      "sha256": "75002a38b8b58fe16d5e49c7191073e8b9001cc64b853bf3e03594ff21d800d3",
+      "size": 1249
+    },
+    {
+      "path": "metadata/git_status.txt",
+      "sha256": "b86c788480475c640628bba2c82e53842fd41d5cd66b6b50adde9cf30b116cc7",
+      "size": 666
+    },
+    {
+      "path": "metadata/git_status_porcelain.txt",
+      "sha256": "3a37378a13e01ef9d6e9dc1a4cf5bc6847f11c8359bc998839014f620269f75d",
+      "size": 210
+    },
+    {
+      "path": "metadata/system_info.txt",
+      "sha256": "ca35bdec3372f7688ab5b5875637faa01423f08e0dbca547b96dc4de1f2f7379",
+      "size": 292
+    },
+    {
+      "path": "platform_backup_20260322T202127Z.tar.gz",
+      "sha256": "09e50bb45ac1651b4722369546d7a18a6000f5d1be1cc4e961c2bbeebf80a64f",
+      "size": 3624783
+    },
+    {
+      "path": "repo_snapshot.tar.gz",
+      "sha256": "030dac1cf99feb36c8e5ff0b35cbcfc7d7aa68f3f8c132e65789db6dd8f431c0",
+      "size": 3615388
+    },
+    {
+      "path": "runtime_data/dynamic_customers.json",
+      "sha256": "aa2a1b740b016873ed2f3fd70ea1147505a77610d0a09761add15654bc87d270",
+      "size": 7539
+    },
+    {
+      "path": "runtime_data/invitation_codes.json",
+      "sha256": "0ed34ca4e149d4250ec195872b646d0810978ac27970ce4c2efcebe3c6420bea",
+      "size": 1820
+    },
+    {
+      "path": "runtime_data/phins_ledger_data.json",
+      "sha256": "38e9033857f59ba5d6bc0a6e34bc4e1082046100234ed0fbf2673d0a3993513a",
+      "size": 26891
+    },
+    {
+      "path": "uploads/uploads/.gitignore",
+      "sha256": "2260ed9824b785451da14c5849722f78b431667703e93153d6b0c7eed976e2f2",
+      "size": 48
+    }
+  ],
+  "git": {
+    "git_commit.txt": {
+      "exit_code": 0
+    },
+    "git_diff_staged.patch": {
+      "exit_code": 0
+    },
+    "git_diff_unstaged.patch": {
+      "exit_code": 0
+    },
+    "git_log_20.txt": {
+      "exit_code": 0
+    },
+    "git_status.txt": {
+      "exit_code": 0
+    },
+    "git_status_porcelain.txt": {
+      "exit_code": 0
+    }
+  },
+  "notes": [
+    "Created repository snapshot archive",
+    "media_storage_dir not found: /tmp/phins_media_assets",
+    "DATABASE_URL not set; skipped Postgres dump",
+    "Created downloadable backup archive"
+  ],
+  "repo_snapshot": "repo_snapshot.tar.gz",
+  "runtime_copy_summary": {
+    "directories": [
+      "uploads"
+    ],
+    "files": [
+      "phins_ledger_data.json",
+      "dynamic_customers.json",
+      "invitation_codes.json"
+    ]
+  }
+}

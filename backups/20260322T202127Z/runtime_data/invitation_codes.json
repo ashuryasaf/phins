@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "saved_at": "2026-03-04T17:59:56.042074",
+  "admin_codes": {
+    "TESTCODE2026": {
+      "code": "TESTCODE2026",
+      "created_at": "2026-03-04T17:59:49.142771",
+      "created_by": "system",
+      "expires_at": null,
+      "max_uses": 999999,
+      "used_count": 3,
+      "used_by": [
+        {
+          "email": "ledger_test_customer@example.com",
+          "customer_id": "CUST-59854",
+          "used_at": "2026-03-04T17:59:54.157770"
+        },
+        {
+          "email": "newcustomer@example.com",
+          "customer_id": "CUST-11724",
+          "used_at": "2026-03-04T17:59:54.846757"
+        },
+        {
+          "email": "legacyotp@example.com",
+          "customer_id": "CUST-15423",
+          "used_at": "2026-03-04T17:59:55.144378"
+        }
+      ],
+      "status": "active",
+      "notes": "Test mode invitation code - automatically created"
+    },
+    "FLOWOTP2026A": {
+      "code": "FLOWOTP2026A",
+      "status": "used",
+      "used_count": 1,
+      "max_uses": 1,
+      "created_by": "admin",
+      "created_at": "2026-01-01T00:00:00",
+      "expires_at": "2099-12-31T23:59:59",
+      "used_by": [
+        {
+          "email": "invitation-flow-primary@example.com",
+          "customer_id": "CUST-92509",
+          "used_at": "2026-03-04T17:59:55.912898"
+        }
+      ]
+    },
+    "FLOWOTP2026B": {
+      "code": "FLOWOTP2026B",
+      "status": "used",
+      "used_count": 1,
+      "max_uses": 1,
+      "created_by": "admin",
+      "created_at": "2026-01-01T00:00:00",
+      "expires_at": "2099-12-31T23:59:59",
+      "used_by": [
+        {
+          "email": "invitation-flow-secondary@example.com",
+          "customer_id": "CUST-24835",
+          "used_at": "2026-03-04T17:59:56.010513"
+        }
+      ]
+    }
+  },
+  "customer_codes": {},
+  "referral_stats": {}
+}

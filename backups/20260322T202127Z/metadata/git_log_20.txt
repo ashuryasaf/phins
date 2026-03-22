@@ -1,0 +1,20 @@
+f0f0f21 Expand Kling auth and video agent campaign access
+d943c65 Harden stored marketing campaign resolution
+95c292f Persist generated marketing campaigns for batch video flows
+a1797dc Document AI video provider env variables
+dccf389 Fix marketing video batch preview campaign flow
+b0fa2bc Add batch video jobs regression coverage
+79264b4 Deduplicate filename stem sanitizers (#199)
+e0f6141 Add media subtitle webhook processing (#198)
+f4cb953 Merge pull request #195 from ashuryasaf/cursor/health-disability-insurance-assessment-ffd6
+a364098 Merge pull request #197 from ashuryasaf/cursor/pitch-dashboard-chart-rendering-5813
+ea1fd22 Fix scatter chart container class styles
+d7133f5 Merge pull request #196 from ashuryasaf/cursor/href-url-escaping-6c16
+754f015 Merge pull request #194 from ashuryasaf/cursor/pending-todo-item-32a1
+fb50f67 Merge pull request #192 from ashuryasaf/cursor/agents-markdown-file-81b3
+78cd491 Fix pitch dashboard investor chart class mismatches
+03dde21 Add investor visuals and scenario exports
+ac8217f Escape source URLs in href attributes
+31e6794 Resolve policy-linked customer ownership checks (#193)
+cb0280d Add executive disability market assessment dashboard
+a3f62f4 Honor notification request scheduling in queue

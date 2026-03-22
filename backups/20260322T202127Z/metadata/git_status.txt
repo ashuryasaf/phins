@@ -1,0 +1,18 @@
+On branch cursor/batch-route-regression-test-7c46
+Your branch is up to date with 'origin/cursor/batch-route-regression-test-7c46'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   BACKUP.md
+	modified:   scripts/backup_platform.sh
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	backups/20260322T201955Z/
+	backups/20260322T202052Z/
+	backups/20260322T202127Z/
+	scripts/create_full_platform_backup.py
+	tests/test_full_platform_backup.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
