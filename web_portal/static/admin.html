@@ -7433,95 +7433,29 @@ Welcome to PHINS Portal! 🛡️`;
     async function executeAdminAssistantAction(actionId) {
       const handler = adminAssistantActionHandlers[actionId];
       if (!handler) {
-        return {
+        return buildAssistantActionResult({
           success: false,
-          cancelled: false,
-          issues_found: 0,
           message: 'This assistant action is not wired to the dashboard yet.',
-        };
+        });
       }
 
-      const originalAlert = window.alert;
-      const originalConfirm = window.confirm;
-      const originalPrompt = window.prompt;
-      const originalOpen = window.open;
-      const alertMessages = [];
-      const confirmMessages = [];
-      const promptMessages = [];
-      const openedUrls = [];
-      let cancelled = false;
-      let issuesFound = 0;
-
-      window.alert = (message) => {
-        const text = String(message || '').trim();
-        alertMessages.push(text);
-        originalAlert.call(window, message);
-      };
-      window.confirm = (message) => {
-        const text = String(message || '').trim();
-        confirmMessages.push(text);
-        const result = originalConfirm.call(window, message);
-        if (!result) {
-          cancelled = true;
-        }
-        return result;
-      };
-      window.prompt = (message, defaultValue) => {
-        const text = String(message || '').trim();
-        promptMessages.push(text);
-        const result = originalPrompt.call(window, message, defaultValue);
-        if (result === null) {
-          cancelled = true;
-        }
-        return result;
-      };
-      window.open = (...args) => {
-        openedUrls.push(args[0] || '');
-        return originalOpen.apply(window, args);
-      };
-
       try {
-        await handler();
-        const combinedMessages = [...alertMessages, ...confirmMessages, ...promptMessages]
-          .filter(Boolean)
-          .join('\n\n');
-        const lowerMessages = combinedMessages.toLowerCase();
-        if (lowerMessages.includes('needs action')) {
-          issuesFound += 1;
+        const result = await handler();
+        if (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'success')) {
+          return buildAssistantActionResult(result);
         }
-        const issueMatches = combinedMessages.match(/needs action:\s*(\d+)/i);
-        if (issueMatches) {
-          issuesFound = Number(issueMatches[1]) || issuesFound;
-        }
-        const validIssueMatches = combinedMessages.match(/issues found:\s*(\d+)/i);
-        if (validIssueMatches) {
-          issuesFound = Number(validIssueMatches[1]) || issuesFound;
-        }
-        return {
+        return buildAssistantActionResult({
           success: true,
-          cancelled,
-          issues_found: issuesFound,
-          message: alertMessages[alertMessages.length - 1]
-            || (cancelled ? 'Action was cancelled.' : 'Dashboard action completed.'),
-          prompts_seen: promptMessages.length,
-          confirms_seen: confirmMessages.length,
-          opened_urls: openedUrls,
-        };
+          message: 'Dashboard action completed.',
+        });
       } catch (err) {
         console.error('Admin assistant action failed:', err);
-        originalAlert.call(window, 'Assistant action failed: ' + err.message);
-        return {
+        alert('Assistant action failed: ' + err.message);
+        return buildAssistantActionResult({
           success: false,
-          cancelled,
-          issues_found: issuesFound,
-          message: 'Assistant action failed: ' + err.message,
+          message: 'Assistant action failed.',
           error: err.message,
-        };
-      } finally {
-        window.alert = originalAlert;
-        window.confirm = originalConfirm;
-        window.prompt = originalPrompt;
-        window.open = originalOpen;
+        });
       }
     }
 
