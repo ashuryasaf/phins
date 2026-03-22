@@ -634,6 +634,8 @@ def create_notification_service(
 | **MessageBird** | `MESSAGEBIRD_API_KEY` |
 | **hCaptcha** | `HCAPTCHA_SECRET`, `HCAPTCHA_SITE_KEY` |
 | **reCAPTCHA** | `RECAPTCHA_SECRET`, `RECAPTCHA_SITE_KEY` |
+| **Gemini / Veo** | `GEMINI_API_KEY` |
+| **Kling** | `KLING_API_KEY` |
 
 ---
 

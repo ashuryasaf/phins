@@ -74,6 +74,8 @@ The PHINS platform uses **environment variables** for all sensitive credentials.
 | `PHINS_UPLOAD_DIR` | File upload directory | `/workspace/uploads` |
 | `WEBHOOK_SIGNING_SECRET` | Webhook signature secret | Auto-generated |
 | `SESSION_SECRET_KEY` | Session signing key | Auto-generated |
+| `GEMINI_API_KEY` | Gemini / Veo video generation API key | Not configured |
+| `KLING_API_KEY` | Kling video generation API key | Not configured |
 
 ---
 
