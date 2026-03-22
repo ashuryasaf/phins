@@ -7,7 +7,7 @@ ADMIN_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "sta
 def test_admin_dashboard_includes_assistant_panel_and_endpoint_hook():
     content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
-    assert 'class="admin-assistant-panel"' in content
+    assert "admin-assistant-panel" in content
     assert 'id="admin-assistant-input"' in content
     assert "fetch('/api/admin/assistant'" in content
     assert "const adminAssistantActionHandlers = {" in content

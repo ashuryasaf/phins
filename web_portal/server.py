@@ -4458,10 +4458,12 @@ ADMIN_ASSISTANT_ACTIONS: List[Dict[str, Any]] = [
         'description': 'Advance every customer through the next pipeline stages automatically.',
         'keywords': (
             'process all pipelines',
+            'process all customer pipelines',
             'process pipelines',
             'run pipelines',
             'advance pipelines',
             'advance customer pipeline',
+            'customer pipelines',
             'pipeline automation',
         ),
         'requires_confirmation': True,

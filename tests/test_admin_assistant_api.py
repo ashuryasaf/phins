@@ -65,7 +65,7 @@ def test_admin_assistant_returns_action_for_bulk_pipeline_request():
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
-    _init_port(base)
+    portal._ensure_test_port_state(port)
 
     token = "phins_test_admin_assistant_token"
     _inject_session(token, "admin", "admin")
@@ -94,7 +94,7 @@ def test_admin_assistant_requires_admin_role():
     srv.start()
     time.sleep(0.3)
     base = f"http://127.0.0.1:{port}"
-    _init_port(base)
+    portal._ensure_test_port_state(port)
 
     token = "phins_test_non_admin_assistant_token"
     _inject_session(token, "customer@example.com", "customer")

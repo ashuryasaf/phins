@@ -543,6 +543,46 @@
       <p class="muted-text">Comprehensive system management and oversight</p>
     </div>
 
+    <section class="admin-assistant-panel" aria-label="Admin dashboard assistant">
+      <div class="admin-assistant-header">
+        <div>
+          <h3>Admin AI Assistant</h3>
+          <p>Use natural language to summarize the dashboard and launch the main admin workflows.</p>
+        </div>
+        <div class="admin-assistant-status">Admin-only workflow assistant</div>
+      </div>
+      <div class="admin-assistant-body">
+        <div class="admin-assistant-main">
+          <div class="admin-assistant-form">
+            <label for="admin-assistant-input" style="font-weight: 600;">Ask the assistant</label>
+            <textarea
+              id="admin-assistant-input"
+              placeholder="Examples: Give me a dashboard summary, validate all customers, process all pipelines, show AI insights"
+            ></textarea>
+            <div class="admin-assistant-actions">
+              <button type="button" id="admin-assistant-submit" class="assistant-primary-btn">Ask Assistant</button>
+              <span style="font-size: 0.82rem; color: rgba(255,255,255,0.7);">Press Ctrl/Cmd + Enter to send</span>
+            </div>
+          </div>
+
+          <div class="assistant-response" id="admin-assistant-response">
+            <div class="assistant-response-label">Assistant response</div>
+            <div id="admin-assistant-message">Loading dashboard summary...</div>
+            <ul id="admin-assistant-metrics" class="assistant-metrics-list"></ul>
+            <div id="admin-assistant-actions" class="assistant-inline-actions"></div>
+          </div>
+        </div>
+
+        <aside class="admin-assistant-side">
+          <div class="assistant-response-label">Suggested prompts</div>
+          <div id="admin-assistant-prompts" class="assistant-chip-group"></div>
+
+          <div class="assistant-response-label" style="margin-top: 18px;">Main dashboard actions</div>
+          <div id="admin-assistant-capabilities" class="assistant-capabilities"></div>
+        </aside>
+      </div>
+    </section>
+
     <!-- System Statistics - Row 1 -->
     <div class="dashboard-stats">
       <div class="stat-box stat-box-blue">
