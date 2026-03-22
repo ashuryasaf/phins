@@ -218,7 +218,27 @@ def _configured_email_provider_types() -> List[str]:
     for provider in provider_types:
         if provider not in unique:
             unique.append(provider)
+
     return unique
+
+
+def _resolve_session_email(session: Dict[str, Any]) -> str:
+    """Resolve the user's email from session or customer records."""
+    email = str(session.get('email') or '').strip()
+    if email:
+        return email
+
+    customer_id = str(session.get('customer_id') or '').strip()
+    if not customer_id:
+        return ''
+
+    try:
+        from web_portal.server import CUSTOMERS, REGISTERED_CUSTOMERS
+    except Exception:
+        return ''
+
+    customer = CUSTOMERS.get(customer_id) or REGISTERED_CUSTOMERS.get(customer_id) or {}
+    return str(customer.get('email') or '').strip()
 
 
 def _runtime_environment_name() -> str:
@@ -2147,15 +2167,7 @@ def handle_foundation_invitations_list(session: Dict) -> Tuple[int, Dict]:
     
     service = get_foundation_service()
     
-    # Get user email from session
-    email = session.get('email', '')
-    if not email:
-        # Try to get from customer record
-        customer_id = session.get('customer_id')
-        if customer_id:
-            # Would need to look up customer email here
-            email = ''
-    
+    email = _resolve_session_email(session)
     invitations = service.get_pending_invitations(email) if email else []
     
     return 200, {
