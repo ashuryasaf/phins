@@ -396,3 +396,129 @@ def test_marketing_video_generation_job_creates_media_asset():
     finally:
         portal.get_media_generation_service = original_factory
         srv.stop()
+
+
+def test_marketing_video_generation_batch_route_accepts_dashboard_payload():
+    port = 8294
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_batch"
+    _inject_session(token, "media_admin_batch", "admin")
+
+    stub_service = _StubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub_service
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "latest_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-TEST-BATCH",
+                    "generated_at": datetime.now().isoformat(),
+                    "ai_video_blueprints": [
+                        {
+                            "title": "Welcome Families",
+                            "format": "Short vertical explainer",
+                            "voiceover_style": "Warm and trustworthy",
+                            "storyboard": [
+                                "Open on a family reviewing benefits on a mobile phone.",
+                                "Show advisor support and claims help in a fast montage.",
+                            ],
+                        },
+                        {
+                            "title": "Claims Walkthrough",
+                            "format": "Interview + motion graphics",
+                            "voiceover_style": "Clear and compliant",
+                            "storyboard": [
+                                "Explain documents needed for a claim.",
+                                "Show payout checkpoints and policyholder follow-up.",
+                            ],
+                        },
+                    ],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "stub"},
+                "assets_created": [],
+            },
+            "published_campaigns": [],
+            "social_connections": {},
+        }
+
+        status, image_resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={
+                "name": "reference-frame.png",
+                "type": "image",
+                "format": "image/png",
+                "size": 128,
+                "data": "data:image/png;base64,c3R1Yi1pbWFnZS1ieXRlcw==",
+                "source": "upload",
+            },
+        )
+        assert status == 201
+        reference_image_id = image_resp["asset"]["id"]
+
+        status, batch_resp = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": "MKT-TEST-BATCH",
+                "provider": "gemini",
+                "provider_model": "veo-3-fast-preview",
+                "reference_image_asset_id": reference_image_id,
+                "poll_mode": "webhook",
+                "auto_publish_to_hero": True,
+                "pipeline_type": "claims_assistant",
+                "prompt_override": "Keep the narration claims-focused and compliance-safe.",
+            },
+        )
+        assert status == 202
+        assert batch_resp["campaign_id"] == "MKT-TEST-BATCH"
+        assert len(batch_resp["queued_jobs"]) == 2
+        assert len(batch_resp["jobs"]) == 2
+        assert stub_service.submissions
+
+        queued_jobs = batch_resp["queued_jobs"]
+        assert queued_jobs[0]["provider"] == "gemini"
+        assert queued_jobs[0]["provider_model"] == "veo-3-fast-preview"
+        assert queued_jobs[0]["callback_path"].startswith("/api/provider/media-processing/callback?")
+
+        assert len(stub_service.submissions) == 2
+        for submission in stub_service.submissions:
+            assert submission["provider"] == "gemini"
+            assert submission["model"] == "veo-3-fast-preview"
+            assert submission["image_data_url"] == "data:image/png;base64,c3R1Yi1pbWFnZS1ieXRlcw=="
+            assert "Keep the narration claims-focused and compliance-safe." in submission["prompt"]
+
+        assert portal.MEDIA_PROCESSING_JOBS[queued_jobs[0]["id"]]["auto_publish_to_hero"] is True
+        assert portal.MEDIA_PROCESSING_JOBS[queued_jobs[1]["id"]]["auto_publish_to_hero"] is False
+
+        completed_jobs = []
+        for _ in range(20):
+            time.sleep(0.15)
+            status, jobs_resp = _json_request(
+                base + "/api/admin/media/video-jobs?campaign_id=MKT-TEST-BATCH",
+                token=token,
+            )
+            assert status == 200
+            completed_jobs = jobs_resp["jobs"]
+            if len(completed_jobs) == 2 and all(job.get("status") == "completed" for job in completed_jobs):
+                break
+
+        assert len(completed_jobs) == 2
+        assert all(job["status"] == "completed" for job in completed_jobs)
+        assert all(job["generated_asset_id"] for job in completed_jobs)
+        assert len(stub_service.polls) == 2
+        assert len(stub_service.downloads) == 2
+        assert portal.DESIGN_SETTINGS["hero_video_id"] in {
+            job["generated_asset_id"] for job in completed_jobs
+        }
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()

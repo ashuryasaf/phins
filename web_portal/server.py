@@ -1183,10 +1183,13 @@ def create_media_video_job(
     provider_model: str = '',
     image_data_url: str = '',
     auto_publish_to_hero: bool = False,
+    prompt_override: str = '',
 ) -> Dict[str, Any]:
     """Create and submit a provider-backed video generation job."""
     service = get_media_generation_service()
+    prompt_override = str(prompt_override or '').strip()
     prompt_parts = [
+        prompt_override,
         str(blueprint.get('title') or '').strip(),
         str(blueprint.get('format') or '').strip(),
         str(blueprint.get('voiceover_style') or '').strip(),
@@ -1238,6 +1241,8 @@ def create_media_video_job(
         'provider_status': str(submission.get('status') or 'queued'),
         'provider_state': submission.get('provider_state') or {},
         'provider_model': provider_model or '',
+        'image_data_url': image_data_url or '',
+        'prompt_override': prompt_override,
         'language': 'en',
         'status': 'queued',
         'progress_pct': 5,
@@ -1405,6 +1410,32 @@ def video_generation_jobs_for_campaign_response(campaign_id: str) -> List[Dict[s
     ]
 
 
+def resolve_media_video_job_image_data_url(payload: Dict[str, Any]) -> str:
+    """Resolve the request's explicit or referenced image payload for video generation."""
+    image_data_url = str(payload.get('image_data_url') or '').strip()
+    if image_data_url:
+        return image_data_url
+
+    reference_image_asset_id = str(payload.get('reference_image_asset_id') or '').strip()
+    if not reference_image_asset_id:
+        return ''
+    return build_video_job_reference_image_data_url(reference_image_asset_id)
+
+
+def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
+    """Return latest published campaign video blueprints for the requested campaign."""
+    marketing_state = marketing_state_dict()
+    latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
+    campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
+    if str(campaign_payload.get('campaign_id') or '') != campaign_id:
+        return {}, [], 'Campaign not found or not loaded as latest campaign'
+
+    blueprints = campaign_payload.get('ai_video_blueprints')
+    if not isinstance(blueprints, list) or not blueprints:
+        return campaign_payload, [], 'Video blueprint not found'
+    return campaign_payload, blueprints, ''
+
+
 def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_base_url: str = '') -> Dict[str, Any]:
     """Create a fresh job using the original job's blueprint/provider settings."""
     campaign_id = str(job.get('campaign_id') or '')
@@ -1412,11 +1443,8 @@ def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_ba
     if not campaign_id or blueprint_index < 0:
         raise ValueError('Retry requested for a job without campaign blueprint context')
 
-    marketing_state = marketing_state_dict()
-    latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
-    campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
-    blueprints = campaign_payload.get('ai_video_blueprints') if isinstance(campaign_payload, dict) else []
-    if str(campaign_payload.get('campaign_id') or '') != campaign_id or not isinstance(blueprints, list) or blueprint_index >= len(blueprints):
+    campaign_payload, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+    if error or blueprint_index >= len(blueprints):
         raise ValueError('Current campaign no longer matches the job blueprint context')
 
     return create_media_video_job(
@@ -1429,6 +1457,7 @@ def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_ba
         provider_model=str(job.get('provider_model') or ''),
         image_data_url=str(job.get('image_data_url') or ''),
         auto_publish_to_hero=bool(job.get('auto_publish_to_hero')),
+        prompt_override=str(job.get('prompt_override') or ''),
     )
 
 
@@ -17659,6 +17688,78 @@ For claims or questions, please contact:
                 return
         
         # ========== MEDIA GENERATION JOBS ==========
+        if path == '/api/admin/media/video-jobs/batch':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            campaign_id = str(data.get('campaign_id') or '').strip()
+            provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
+            provider_model = str(data.get('provider_model') or '').strip()
+            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            image_data_url = resolve_media_video_job_image_data_url(data)
+            auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
+            prompt_override = str(data.get('prompt_override') or '').strip()
+            if not campaign_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+
+            _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+            if error:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+
+            try:
+                queued_jobs = []
+                for blueprint_index, blueprint in enumerate(blueprints):
+                    # Keep batch auto-publish deterministic by reserving it for the first queued hero candidate.
+                    job = create_media_video_job(
+                        campaign_id=campaign_id,
+                        blueprint_index=blueprint_index,
+                        blueprint=blueprint,
+                        requested_by=(session or {}).get('username', 'admin'),
+                        provider=provider,
+                        callback_base_url=callback_base_url,
+                        provider_model=provider_model,
+                        image_data_url=image_data_url,
+                        auto_publish_to_hero=auto_publish_to_hero and blueprint_index == 0,
+                        prompt_override=prompt_override,
+                    )
+                    queued_jobs.append(job)
+                    if poll_mode != 'webhook' or not callback_base_url:
+                        start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
+                save_ledger_data()
+                self._set_json_headers(202)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'Queued {len(queued_jobs)} video generation jobs',
+                    'campaign_id': campaign_id,
+                    'queued_jobs': [serialize_media_job(job, include_callback=True) for job in queued_jobs],
+                    'jobs': video_generation_jobs_for_campaign_response(campaign_id),
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+
         if path == '/api/admin/media/video-jobs':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -17681,6 +17782,12 @@ For claims or questions, please contact:
             campaign_id = str(data.get('campaign_id') or '').strip()
             blueprint_index = safe_int(data.get('blueprint_index'), -1)
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
+            provider_model = str(data.get('provider_model') or '').strip()
+            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            image_data_url = resolve_media_video_job_image_data_url(data)
+            auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
+            prompt_override = str(data.get('prompt_override') or '').strip()
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
@@ -17690,18 +17797,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'blueprint_index is required'}).encode('utf-8'))
                 return
 
-            marketing_state = marketing_state_dict()
-            latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
-            campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
-            if str(campaign_payload.get('campaign_id') or '') != campaign_id:
+            _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
+            if error or blueprint_index >= len(blueprints):
                 self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'Campaign not found or not loaded as latest campaign'}).encode('utf-8'))
-                return
-
-            blueprints = campaign_payload.get('ai_video_blueprints')
-            if not isinstance(blueprints, list) or blueprint_index >= len(blueprints):
-                self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'Video blueprint not found'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Video blueprint not found' if not error else error}).encode('utf-8'))
                 return
 
             try:
@@ -17711,10 +17810,15 @@ For claims or questions, please contact:
                     blueprint=blueprints[blueprint_index],
                     requested_by=(session or {}).get('username', 'admin'),
                     provider=provider,
-                    image_data_url=str(data.get('image_data_url') or ''),
+                    callback_base_url=callback_base_url,
+                    provider_model=provider_model,
+                    image_data_url=image_data_url,
+                    auto_publish_to_hero=auto_publish_to_hero,
+                    prompt_override=prompt_override,
                 )
                 save_ledger_data()
-                start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
+                if poll_mode != 'webhook' or not callback_base_url:
+                    start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
                 self._set_json_headers(202)
                 self.wfile.write(json.dumps({
                     'success': True,
