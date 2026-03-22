@@ -300,6 +300,205 @@
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
     }
+
+    /* Admin assistant panel */
+    .admin-assistant-panel {
+      margin: 20px 0 24px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+      color: white;
+      border-radius: 16px;
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+    }
+    .admin-assistant-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .admin-assistant-header h3 {
+      margin: 0;
+      font-size: 1.15rem;
+      color: white;
+    }
+    .admin-assistant-header p {
+      margin: 4px 0 0;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 0.92rem;
+    }
+    .admin-assistant-status {
+      font-size: 0.82rem;
+      color: #bfdbfe;
+      white-space: nowrap;
+    }
+    .admin-assistant-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      padding: 18px 20px 20px;
+    }
+    .admin-assistant-main,
+    .admin-assistant-side {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+    }
+    .admin-assistant-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .admin-assistant-form textarea {
+      width: 100%;
+      min-height: 108px;
+      resize: vertical;
+      border-radius: 12px;
+      border: 1px solid rgba(191, 219, 254, 0.28);
+      background: rgba(15, 23, 42, 0.55);
+      color: white;
+      padding: 14px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .admin-assistant-form textarea::placeholder {
+      color: rgba(255, 255, 255, 0.52);
+    }
+    .admin-assistant-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .assistant-primary-btn,
+    .assistant-secondary-btn,
+    .assistant-chip,
+    .assistant-action-btn {
+      border: none;
+      cursor: pointer;
+      border-radius: 999px;
+      font-weight: 600;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+    .assistant-primary-btn:hover,
+    .assistant-secondary-btn:hover,
+    .assistant-chip:hover,
+    .assistant-action-btn:hover {
+      transform: translateY(-1px);
+    }
+    .assistant-primary-btn {
+      padding: 10px 18px;
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: white;
+      box-shadow: 0 10px 24px rgba(34, 197, 94, 0.22);
+    }
+    .assistant-secondary-btn {
+      padding: 10px 16px;
+      background: rgba(255, 255, 255, 0.14);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .assistant-primary-btn:disabled,
+    .assistant-secondary-btn:disabled,
+    .assistant-action-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+      transform: none;
+    }
+    .assistant-response {
+      margin-top: 16px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.48);
+      border: 1px solid rgba(191, 219, 254, 0.16);
+      padding: 16px;
+    }
+    .assistant-response.hidden {
+      display: none;
+    }
+    .assistant-response-title {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      color: #bfdbfe;
+      letter-spacing: 0.01em;
+    }
+    .assistant-response-message {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.92);
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .assistant-response-summary {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: rgba(255, 255, 255, 0.84);
+      line-height: 1.6;
+    }
+    .assistant-action-card {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.72);
+      border: 1px solid rgba(147, 197, 253, 0.2);
+    }
+    .assistant-action-card h4 {
+      margin: 0 0 6px;
+      color: white;
+      font-size: 0.98rem;
+    }
+    .assistant-action-card p {
+      margin: 0 0 12px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .assistant-action-btn {
+      padding: 9px 15px;
+      background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
+      color: white;
+      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+    }
+    .assistant-chip-list,
+    .assistant-capability-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .assistant-chip {
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+      font-size: 0.85rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .assistant-capability-item {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.44);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .assistant-capability-item strong {
+      display: block;
+      margin-bottom: 4px;
+      color: white;
+      font-size: 0.9rem;
+    }
+    .assistant-capability-item span {
+      display: block;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    @media screen and (max-width: 1080px) {
+      .admin-assistant-body {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
@@ -6692,6 +6891,177 @@ Welcome to PHINS Portal! 🛡️`;
       window.open(qrImg.src, '_blank');
       showToast('⬇️ QR Code opened - right-click to save');
     }
+
+    const adminAssistantActionHandlers = {
+      refresh_all_data: () => refreshAllData(),
+      validate_all_customers: () => validateAllCustomers(),
+      process_all_pipelines: () => processAllPipelines(),
+      allocate_all_savings: () => allocateAllSavings(),
+      generate_missing_billing: () => generateMissingBilling(),
+      approve_all_pending: () => approveAllPending(),
+      load_ai_insights: () => loadAIInsights(),
+      reconcile_balance_sheet: () => reconcileBalanceSheet(),
+      execute_bulk_billing: () => executeBillAll(),
+      cleanup_demo_data: () => cleanupDemoData(),
+    };
+
+    function setAdminAssistantBusy(isBusy) {
+      const submitBtn = document.getElementById('admin-assistant-submit');
+      const textarea = document.getElementById('admin-assistant-input');
+      if (submitBtn) {
+        submitBtn.disabled = isBusy;
+        submitBtn.textContent = isBusy ? 'Thinking...' : 'Ask Assistant';
+      }
+      if (textarea) {
+        textarea.disabled = isBusy;
+      }
+    }
+
+    function renderAdminAssistantPrompts(prompts = []) {
+      const container = document.getElementById('admin-assistant-prompts');
+      if (!container) return;
+      container.innerHTML = '';
+      prompts.forEach((prompt) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'assistant-chip';
+        button.textContent = prompt;
+        button.addEventListener('click', () => {
+          const input = document.getElementById('admin-assistant-input');
+          if (input) {
+            input.value = prompt;
+            input.focus();
+          }
+          askAdminAssistant(prompt);
+        });
+        container.appendChild(button);
+      });
+    }
+
+    function renderAdminAssistantCapabilities(capabilities = []) {
+      const container = document.getElementById('admin-assistant-capabilities');
+      if (!container) return;
+      container.innerHTML = '';
+      capabilities.forEach((capability) => {
+        const item = document.createElement('div');
+        item.className = 'assistant-capability';
+        item.innerHTML = `
+          <strong>${capability.label}</strong>
+          <span>${capability.description}</span>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    async function executeAdminAssistantAction(actionId) {
+      const handler = adminAssistantActionHandlers[actionId];
+      if (!handler) {
+        alert('This assistant action is not wired to the dashboard yet.');
+        return;
+      }
+
+      try {
+        await handler();
+      } catch (err) {
+        console.error('Admin assistant action failed:', err);
+        alert('Assistant action failed: ' + err.message);
+      }
+    }
+
+    function renderAdminAssistantResponse(data) {
+      const messageEl = document.getElementById('admin-assistant-message');
+      const metricsEl = document.getElementById('admin-assistant-metrics');
+      const actionsEl = document.getElementById('admin-assistant-actions');
+
+      if (!messageEl || !metricsEl || !actionsEl) {
+        return;
+      }
+
+      messageEl.textContent = data.message || 'No assistant response available.';
+
+      metricsEl.innerHTML = '';
+      (data.summary_lines || []).forEach((line) => {
+        const li = document.createElement('li');
+        li.textContent = line;
+        metricsEl.appendChild(li);
+      });
+
+      actionsEl.innerHTML = '';
+      if (data.action) {
+        const actionButton = document.createElement('button');
+        actionButton.type = 'button';
+        actionButton.className = 'assistant-action-btn';
+        actionButton.textContent = data.action.label || 'Run action';
+        actionButton.title = data.action.description || '';
+        actionButton.addEventListener('click', () => executeAdminAssistantAction(data.action.id));
+        actionsEl.appendChild(actionButton);
+
+        if (data.action.requires_confirmation) {
+          const note = document.createElement('div');
+          note.className = 'assistant-action-note';
+          note.textContent = 'This action uses the dashboard’s existing confirmation and validation flow.';
+          actionsEl.appendChild(note);
+        }
+      }
+
+      renderAdminAssistantCapabilities(data.capabilities || []);
+      renderAdminAssistantPrompts(data.suggested_prompts || []);
+    }
+
+    async function askAdminAssistant(forcedQuery) {
+      const input = document.getElementById('admin-assistant-input');
+      const query = String(forcedQuery || (input ? input.value : '') || '').trim();
+      if (!query) {
+        return;
+      }
+
+      setAdminAssistantBusy(true);
+
+      try {
+        const response = await fetch('/api/admin/assistant', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ query })
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Request failed with status ${response.status}`);
+        }
+
+        renderAdminAssistantResponse(data);
+      } catch (err) {
+        console.error('Admin assistant request failed:', err);
+        const messageEl = document.getElementById('admin-assistant-message');
+        if (messageEl) {
+          messageEl.textContent = 'Assistant request failed: ' + err.message;
+        }
+      } finally {
+        setAdminAssistantBusy(false);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const assistantInput = document.getElementById('admin-assistant-input');
+      const assistantSubmit = document.getElementById('admin-assistant-submit');
+
+      if (assistantSubmit) {
+        assistantSubmit.addEventListener('click', () => askAdminAssistant());
+      }
+
+      if (assistantInput) {
+        assistantInput.addEventListener('keydown', (event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            askAdminAssistant();
+          }
+        });
+      }
+
+      askAdminAssistant('Give me a dashboard summary');
+    });
     
   </script>
   <script src="/ui-clarity.js"></script>

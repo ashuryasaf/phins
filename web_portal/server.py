@@ -4422,6 +4422,325 @@ def get_effective_role(session: dict[str, str] | None) -> str:
     return (user.get('role') or session.get('role') or '').lower()
 
 
+ADMIN_ASSISTANT_ACTIONS: List[Dict[str, Any]] = [
+    {
+        'id': 'refresh_all_data',
+        'label': 'Refresh all dashboard data',
+        'description': 'Reload KPI cards, customers, underwriting, policies, claims, billing, and pipeline metrics.',
+        'keywords': (
+            'refresh all',
+            'refresh dashboard',
+            'refresh data',
+            'reload dashboard',
+            'reload data',
+            'update dashboard',
+            'sync dashboard',
+        ),
+        'requires_confirmation': False,
+    },
+    {
+        'id': 'validate_all_customers',
+        'label': 'Validate all customers',
+        'description': 'Link customers to applications and validate every customer pipeline for integrity issues.',
+        'keywords': (
+            'validate all customers',
+            'validate customers',
+            'customer validation',
+            'validate pipeline',
+            'validate pipelines',
+            'check customer integrity',
+        ),
+        'requires_confirmation': False,
+    },
+    {
+        'id': 'process_all_pipelines',
+        'label': 'Process all pipelines',
+        'description': 'Advance every customer through the next pipeline stages automatically.',
+        'keywords': (
+            'process all pipelines',
+            'process pipelines',
+            'run pipelines',
+            'advance pipelines',
+            'advance customer pipeline',
+            'pipeline automation',
+        ),
+        'requires_confirmation': True,
+    },
+    {
+        'id': 'allocate_all_savings',
+        'label': 'Allocate all savings',
+        'description': 'Run AI-assisted savings allocation for all customers across wallet and investment channels.',
+        'keywords': (
+            'allocate savings',
+            'allocate all savings',
+            'run savings allocation',
+            'fund allocation',
+            'rebalance savings',
+        ),
+        'requires_confirmation': True,
+    },
+    {
+        'id': 'generate_missing_billing',
+        'label': 'Generate missing billing',
+        'description': 'Create missing billing records for active policies that do not yet have bills.',
+        'keywords': (
+            'generate missing billing',
+            'generate billing',
+            'create billing records',
+            'missing bills',
+            'billing records',
+        ),
+        'requires_confirmation': True,
+    },
+    {
+        'id': 'approve_all_pending',
+        'label': 'Approve all pending applications',
+        'description': 'Approve all pending underwriting applications and trigger policy activation plus billing.',
+        'keywords': (
+            'approve all pending',
+            'approve pending applications',
+            'bulk approve applications',
+            'approve underwriting',
+        ),
+        'requires_confirmation': True,
+    },
+    {
+        'id': 'load_ai_insights',
+        'label': 'Open AI financial insights',
+        'description': 'Load the balance-sheet AI insights panel for recommendations, integrity, and projections.',
+        'keywords': (
+            'ai insights',
+            'financial insights',
+            'show ai insights',
+            'show recommendations',
+            'ai analysis',
+        ),
+        'requires_confirmation': False,
+    },
+    {
+        'id': 'reconcile_balance_sheet',
+        'label': 'Reconcile balance sheet',
+        'description': 'Run balance-sheet reconciliation and optionally auto-correct discrepancies.',
+        'keywords': (
+            'reconcile balance sheet',
+            'reconcile reserves',
+            'balance sheet reconciliation',
+            'verify balance sheet',
+        ),
+        'requires_confirmation': True,
+    },
+    {
+        'id': 'execute_bulk_billing',
+        'label': 'Bill all active policies',
+        'description': 'Generate bills for all active policies that are ready for systematic billing.',
+        'keywords': (
+            'bill all policies',
+            'bulk billing',
+            'run billing',
+            'bill policies',
+            'systematic billing',
+        ),
+        'requires_confirmation': True,
+    },
+    {
+        'id': 'cleanup_demo_data',
+        'label': 'Clean demo data',
+        'description': 'Remove demo and test data while preserving legitimate customer records.',
+        'keywords': (
+            'cleanup demo data',
+            'clean demo data',
+            'remove demo data',
+            'purge test data',
+            'cleanup sandbox data',
+        ),
+        'requires_confirmation': True,
+    },
+]
+
+
+def _normalize_admin_assistant_query(query: Any) -> str:
+    """Normalize a free-form admin assistant query for intent matching."""
+    return ' '.join(str(query or '').strip().lower().split())
+
+
+def _admin_dashboard_snapshot() -> Dict[str, Any]:
+    """Build a concise snapshot of key admin dashboard metrics."""
+    total_customers = len(CUSTOMERS)
+    active_policies = len([p for p in POLICIES.values() if status_eq(p, 'active')])
+    pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')])
+    pending_claims = len([c for c in CLAIMS.values() if status_in(c, ['pending', 'under_review', 'medical_assessment'])])
+    outstanding_balance = sum(
+        safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0))
+        for b in BILLING.values()
+        if status_in(b, ['outstanding', 'pending', 'overdue'])
+    )
+    active_wallets = len([w for w in HEALTH_WALLETS.values() if safe_float(w.get('balance', 0)) > 0])
+
+    return {
+        'total_customers': total_customers,
+        'active_policies': active_policies,
+        'pending_applications': pending_applications,
+        'pending_claims': pending_claims,
+        'outstanding_balance': round(outstanding_balance, 2),
+        'active_wallets': active_wallets,
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def _admin_assistant_summary_lines(snapshot: Dict[str, Any]) -> List[str]:
+    """Convert an admin dashboard snapshot into human-readable bullets."""
+    return [
+        f"Customers: {snapshot['total_customers']}",
+        f"Active policies: {snapshot['active_policies']}",
+        f"Pending applications: {snapshot['pending_applications']}",
+        f"Pending claims: {snapshot['pending_claims']}",
+        f"Outstanding balance: ${snapshot['outstanding_balance']:,.2f}",
+        f"Active wallets: {snapshot['active_wallets']}",
+    ]
+
+
+def _admin_assistant_capabilities() -> List[Dict[str, Any]]:
+    """Return supported admin assistant actions for the UI."""
+    return [
+        {
+            'id': action['id'],
+            'label': action['label'],
+            'description': action['description'],
+            'requires_confirmation': action['requires_confirmation'],
+        }
+        for action in ADMIN_ASSISTANT_ACTIONS
+    ]
+
+
+def _admin_assistant_suggested_prompts() -> List[str]:
+    """Provide starter prompts for the admin assistant UI."""
+    return [
+        'Give me a dashboard summary',
+        'Refresh all dashboard data',
+        'Validate all customers',
+        'Process all customer pipelines',
+        'Allocate all savings',
+        'Show AI financial insights',
+    ]
+
+
+def _match_admin_assistant_action(query: str) -> Dict[str, Any] | None:
+    """Match a free-form query to the closest supported admin action."""
+    normalized = _normalize_admin_assistant_query(query)
+    if not normalized:
+        return None
+
+    tokens = set(normalized.split())
+    best_action = None
+    best_score = 0
+
+    for action in ADMIN_ASSISTANT_ACTIONS:
+        score = 0
+        for phrase in action['keywords']:
+            normalized_phrase = _normalize_admin_assistant_query(phrase)
+            if not normalized_phrase:
+                continue
+            if ' ' in normalized_phrase:
+                if normalized_phrase in normalized:
+                    score += max(3, len(normalized_phrase.split()))
+            elif normalized_phrase in tokens or normalized_phrase in normalized:
+                score += 1
+
+        if score > best_score:
+            best_score = score
+            best_action = action
+
+    return best_action if best_score > 0 else None
+
+
+def build_admin_assistant_response(query: Any) -> Dict[str, Any]:
+    """Build a deterministic admin dashboard assistant response."""
+    normalized = _normalize_admin_assistant_query(query)
+    snapshot = _admin_dashboard_snapshot()
+    capabilities = _admin_assistant_capabilities()
+    suggested_prompts = _admin_assistant_suggested_prompts()
+
+    help_phrases = (
+        'help',
+        'what can you do',
+        'capabilities',
+        'available actions',
+        'main functions',
+        'how can you help',
+    )
+    summary_phrases = (
+        'summary',
+        'status',
+        'overview',
+        'snapshot',
+        'dashboard stats',
+        'current stats',
+        'current state',
+        'show metrics',
+    )
+
+    if not normalized or any(phrase in normalized for phrase in help_phrases):
+        return {
+            'success': True,
+            'intent': 'help',
+            'message': (
+                'I can help you run the main admin dashboard workflows and summarize the '
+                'current platform state. Ask for a dashboard summary or tell me which '
+                'operation you want to run.'
+            ),
+            'summary_lines': _admin_assistant_summary_lines(snapshot),
+            'capabilities': capabilities,
+            'suggested_prompts': suggested_prompts,
+            'timestamp': snapshot['timestamp'],
+        }
+
+    matched_action = _match_admin_assistant_action(normalized)
+    if matched_action:
+        return {
+            'success': True,
+            'intent': 'action',
+            'message': (
+                f"I matched your request to '{matched_action['label']}'. "
+                'Use the run action button to execute the existing dashboard workflow.'
+            ),
+            'summary_lines': _admin_assistant_summary_lines(snapshot),
+            'action': {
+                'id': matched_action['id'],
+                'label': matched_action['label'],
+                'description': matched_action['description'],
+                'requires_confirmation': matched_action['requires_confirmation'],
+                'button_text': 'Run action',
+            },
+            'capabilities': capabilities,
+            'suggested_prompts': suggested_prompts,
+            'timestamp': snapshot['timestamp'],
+        }
+
+    if any(phrase in normalized for phrase in summary_phrases):
+        return {
+            'success': True,
+            'intent': 'summary',
+            'message': 'Here is the latest admin dashboard snapshot based on the current in-memory platform state.',
+            'summary_lines': _admin_assistant_summary_lines(snapshot),
+            'capabilities': capabilities,
+            'suggested_prompts': suggested_prompts,
+            'timestamp': snapshot['timestamp'],
+        }
+
+    return {
+        'success': True,
+        'intent': 'guidance',
+        'message': (
+            'I do not have a direct dashboard action for that request yet. '
+            'Try one of the supported admin operations below.'
+        ),
+        'summary_lines': _admin_assistant_summary_lines(snapshot),
+        'capabilities': capabilities,
+        'suggested_prompts': suggested_prompts,
+        'timestamp': snapshot['timestamp'],
+    }
+
+
 def authorize_customer_data(session: dict[str, str] | None, 
                             requested_customer_id: str | None,
                             resource_type: str = 'data') -> tuple[bool, str | None, str | None]:
@@ -17831,6 +18150,33 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
+
+        # ========== ADMIN DASHBOARD ASSISTANT ==========
+        if path == '/api/admin/assistant':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            response_data = build_admin_assistant_response(data.get('query'))
+            response_data['requested_by'] = (session or {}).get('username', 'admin')
+
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(response_data).encode('utf-8'))
+            return
 
         # ========== MEDIA ASSETS API - Subtitle Jobs ==========
         if path.startswith('/api/provider/media-processing/callback'):

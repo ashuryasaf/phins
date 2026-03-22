@@ -1,0 +1,32 @@
+from pathlib import Path
+
+
+ADMIN_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "admin.html"
+
+
+def test_admin_dashboard_includes_assistant_panel_and_endpoint_hook():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    assert 'class="admin-assistant-panel"' in content
+    assert 'id="admin-assistant-input"' in content
+    assert "fetch('/api/admin/assistant'" in content
+    assert "const adminAssistantActionHandlers = {" in content
+    assert "askAdminAssistant('Give me a dashboard summary')" in content
+
+
+def test_admin_dashboard_assistant_maps_main_dashboard_actions():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    for function_name in (
+        "refreshAllData",
+        "validateAllCustomers",
+        "processAllPipelines",
+        "allocateAllSavings",
+        "generateMissingBilling",
+        "approveAllPending",
+        "loadAIInsights",
+        "reconcileBalanceSheet",
+        "executeBillAll",
+        "cleanupDemoData",
+    ):
+        assert f"{function_name}()" in content
