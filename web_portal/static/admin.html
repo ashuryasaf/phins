@@ -2126,6 +2126,7 @@
         label: '🧹 Clean Demo Data',
         confirm: '⚠️ Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
         fn: async () => { await cleanupDemoData(); },
+        cancelOnFalse: true,
         integrity: 'guarded'
       },
       refresh_customers: { label: '👥 Refresh Customers', fn: async () => { await loadCustomerList(); }, integrity: 'safe' },
@@ -2141,6 +2142,7 @@
         label: '✅ Approve All Pending',
         confirm: '⚠️ Approve all pending underwriting applications?\n\nThis changes policy/application states.',
         fn: async () => { await approveAllPending(); },
+        cancelOnFalse: true,
         integrity: 'guarded'
       },
       validate_all_customers: { label: '🔍 Validate All Customers', fn: async () => { await validateAllCustomers(); }, integrity: 'safe' },
@@ -2155,6 +2157,7 @@
         label: '⚡ Bill All Policies',
         confirm: '⚠️ Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
         fn: async () => { await executeBillAll(); },
+        cancelOnFalse: true,
         integrity: 'guarded'
       },
       refresh_marketplace: { label: '🛒 Refresh Marketplace', fn: async () => { await loadMarketplaceData(); }, integrity: 'safe' },
@@ -2307,7 +2310,11 @@
         if (typeof action.fn !== 'function') {
           throw new Error('Action handler missing');
         }
-        await action.fn();
+        const actionResult = await action.fn();
+        if (action.cancelOnFalse && actionResult === false) {
+          adminAssistantSetStatus('warning', '⏸️ Action cancelled');
+          return;
+        }
         adminAssistantState.recentActions.unshift({
           actionId: resolvedActionId,
           timestamp: new Date().toISOString()
@@ -2400,9 +2407,14 @@
 
       recognition.onresult = (event) => {
         let transcript = '';
+        let hasFinalResult = false;
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           transcript += event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            hasFinalResult = true;
+          }
         }
+        if (!hasFinalResult) return;
         showAdminAssistantVoiceFeedback(transcript);
       };
 
@@ -3030,7 +3042,7 @@
     
     // Approve all pending underwriting applications
     async function approveAllPending() {
-      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
+      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return false;
       
       try {
         const response = await fetch('/api/underwriting', {
@@ -4332,7 +4344,7 @@
         'Continue with systematic billing?'
       );
       
-      if (!confirmed) return;
+      if (!confirmed) return false;
       
       // Show processing indicator
       const processingDiv = document.createElement('div');
@@ -4520,7 +4532,7 @@
         'Continue with cleanup?'
       );
       
-      if (!confirmed) return;
+      if (!confirmed) return false;
       
       try {
         const response = await fetch('/api/admin/cleanup-demo-data', {
