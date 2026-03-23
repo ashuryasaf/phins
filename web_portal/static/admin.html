@@ -305,6 +305,16 @@
         box-shadow: 0 0 18px 8px rgba(225, 190, 231, 0.2);
       }
     }
+    @keyframes pulse-recording {
+      0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+      }
+    }
     
     /* Bill All button hover effect */
     .btn-bill-all:hover {
@@ -367,6 +377,34 @@
       background: rgba(255,255,255,0.25);
       transform: translateY(-1px);
     }
+    .admin-ai-quick-btn {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 8px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.2s ease;
+    }
+    .admin-ai-quick-btn:hover {
+      background: rgba(255,255,255,0.3) !important;
+      transform: translateY(-2px);
+    }
+    .admin-ai-more-toggle {
+      background: rgba(255,255,255,0.1);
+      border: 1px dashed rgba(255,255,255,0.4);
+      color: rgba(255,255,255,0.95);
+      padding: 6px 14px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s ease;
+      width: 100%;
+    }
+    .admin-ai-more-toggle:hover {
+      background: rgba(255,255,255,0.18);
+    }
     .admin-ai-status-chip {
       background: rgba(255,255,255,0.16);
       border: 1px solid rgba(255,255,255,0.28);
@@ -395,6 +433,7 @@
       #admin-ai-assistant-panel { padding: 16px; }
       .admin-ai-tab-btn { font-size: 0.72rem; padding: 6px 10px; }
       .admin-ai-action-btn { width: 100%; justify-content: center; display: inline-flex; }
+      .admin-ai-quick-btn { padding: 6px 10px; font-size: 0.74rem; }
     }
   </style>
 </head>
@@ -447,23 +486,26 @@
           <div style="width:46px;height:46px;background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
           <div>
             <h2 style="margin:0;color:white;font-size:1.3rem;font-weight:700;">PHINS admin AI Assistant</h2>
-            <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.84);font-size:0.84rem;">Comprehensive system co-pilot for all admin divisions</p>
+            <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.84);font-size:0.84rem;">Ask me anything about the admin dashboard (voice or text)</p>
             <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.72);font-size:0.74rem;">Design adapted from customer PHINS AI Assistant for style integrity</p>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
-          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Assistant Help">❓</button>
-          <button onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize Assistant">➖</button>
+          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
+          <button onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize">➖</button>
         </div>
       </div>
 
       <div id="admin-ai-help-panel" style="display:none;background:rgba(255,255,255,0.12);border-radius:12px;padding:14px;margin-bottom:12px;">
-        <h4 style="margin:0 0 8px 0;">💬 Try admin commands:</h4>
+        <h4 style="margin:0 0 8px 0;">💬 Try asking (voice or text):</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:0.84rem;">
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Refresh customers”<br>• “Open underwriting”<br>• “Load claims pipeline”</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Show balance sheet”<br>• “Reconcile reserves”<br>• “Run platform analytics”</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Load invitation codes”<br>• “Open marketplace”<br>• “Refresh growth campaign”</div>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.22);font-size:0.8rem;opacity:0.92;">
+          💡 <strong>Tip:</strong> Press 🎤 and speak naturally. Voice, text, and quick-action buttons all use the same AI/BI dispatcher.
         </div>
         <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions stay confirmation-gated to preserve data integrity.</p>
       </div>
@@ -477,9 +519,24 @@
             style="width:100%;padding:14px 16px;border-radius:12px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.95);font-size:0.95rem;outline:none;"
             onkeypress="if(event.key==='Enter') adminAssistantProcessQuery()"
           >
+          <button
+            id="admin-ai-voice-btn"
+            onclick="startAdminAssistantVoiceInput()"
+            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);border:none;width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:white;"
+            title="Voice Input"
+          >🎤</button>
         </div>
         <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border:none;color:#4a148c;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">⚡ Ask</button>
         <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">🔄 Refresh Tab</button>
+      </div>
+
+      <div id="admin-ai-voice-recording-indicator" style="display:none;background:rgba(244,67,54,0.2);border:2px solid #f44336;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center;color:white;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
+          <div style="width:14px;height:14px;background:#f44336;border-radius:50%;animation:pulse-recording 1s infinite;"></div>
+          <span style="font-weight:600;">🎤 Listening... Speak now</span>
+          <button onclick="stopAdminAssistantVoiceInput()" style="background:#f44336;border:none;color:white;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:0.85rem;">Stop</button>
+        </div>
+        <p id="admin-ai-voice-transcript" style="margin:8px 0 0 0;font-style:italic;opacity:0.9;"></p>
       </div>
 
       <div class="admin-ai-tab-bar" id="admin-ai-tab-bar">
@@ -498,9 +555,41 @@
         <button class="admin-ai-tab-btn" data-tab="growth" onclick="adminAssistantSwitchTab('growth')">🚀 Growth/Media</button>
       </div>
 
+      <div id="admin-ai-quick-actions" style="margin-bottom:12px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <button onclick="adminAssistantQuickAction('refresh_overview')" class="admin-ai-quick-btn">🏠 Refresh Overview</button>
+          <button onclick="adminAssistantQuickAction('refresh_financials')" class="admin-ai-quick-btn">🏦 Refresh Financials</button>
+          <button onclick="adminAssistantQuickAction('refresh_customers')" class="admin-ai-quick-btn">👥 Refresh Customers</button>
+          <button onclick="adminAssistantQuickAction('refresh_underwriting')" class="admin-ai-quick-btn">🔍 Refresh Underwriting</button>
+          <button onclick="adminAssistantQuickAction('refresh_claims')" class="admin-ai-quick-btn">📝 Refresh Claims</button>
+          <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(123,31,162,0.36) 0%, rgba(25,118,210,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">🤖📊 AI + BI Insights</button>
+          <button onclick="adminAssistantQuickAction('refresh_analytics')" class="admin-ai-quick-btn">📊 Refresh Analytics</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <button onclick="adminAssistantQuickAction('validate_all_customer_pipelines')" class="admin-ai-quick-btn">🧪 Validate Pipelines</button>
+          <button onclick="adminAssistantQuickAction('activate_approved_policies')" class="admin-ai-quick-btn">✅ Activate Policies</button>
+          <button onclick="adminAssistantQuickAction('process_all_claims')" class="admin-ai-quick-btn">⚡ Process Claims</button>
+          <button onclick="adminAssistantQuickAction('refresh_marketplace')" class="admin-ai-quick-btn">🛒 Refresh Marketplace</button>
+          <button onclick="adminAssistantQuickAction('refresh_invitations')" class="admin-ai-quick-btn">🎟️ Refresh Invitations</button>
+          <button onclick="adminAssistantQuickAction('refresh_growth_media')" class="admin-ai-quick-btn">🚀 Refresh Growth</button>
+        </div>
+        <div id="admin-ai-more-actions" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <button onclick="adminAssistantQuickAction('refresh_billing')" class="admin-ai-quick-btn">💰 Refresh Billing</button>
+          <button onclick="adminAssistantQuickAction('refresh_transactions')" class="admin-ai-quick-btn">🧾 Refresh Transactions</button>
+          <button onclick="adminAssistantQuickAction('load_invitation_stats')" class="admin-ai-quick-btn">📈 Invitation Stats</button>
+          <button onclick="adminAssistantQuickAction('refresh_reinsurance')" class="admin-ai-quick-btn">🤝 Refresh Reinsurance</button>
+          <button onclick="adminAssistantQuickAction('refresh_legal')" class="admin-ai-quick-btn">⚖️ Refresh Legal</button>
+          <button onclick="adminAssistantQuickAction('refresh_video_jobs')" class="admin-ai-quick-btn">🎬 Refresh Video Jobs</button>
+          <button onclick="adminAssistantQuickAction('reconcile_balance_sheet')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.28);">✅ Reconcile</button>
+          <button onclick="adminAssistantQuickAction('bill_all_policies')" class="admin-ai-quick-btn" style="background:rgba(255,152,0,0.28);">⚠️ Bill All</button>
+          <button onclick="adminAssistantQuickAction('cleanup_demo_data')" class="admin-ai-quick-btn" style="background:rgba(244,67,54,0.28);">🧹 Clean Demo Data</button>
+        </div>
+        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">⬇️ Show More Actions</button>
+      </div>
+
       <div id="admin-ai-response-area" style="background:white;border-radius:14px;padding:18px;color:#263238;">
         <div style="font-size:1.05rem;font-weight:700;margin-bottom:8px;">Admin assistant is ready</div>
-        <div style="color:#546e7a;font-size:0.92rem;">Use tabs or natural language to run existing dashboard functions with built-in integrity safeguards.</div>
+        <div style="color:#546e7a;font-size:0.92rem;">Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards.</div>
       </div>
     </div>
 
@@ -1921,7 +2010,9 @@
 
     const adminAssistantState = {
       activeTab: 'overview',
-      recentActions: []
+      recentActions: [],
+      recognition: null,
+      isListening: false
     };
 
     const ADMIN_ASSISTANT_TABS = {
@@ -2024,6 +2115,7 @@
       refresh_financials: { label: '🏦 Refresh Financials', fn: async () => { await loadBalanceSheet(); }, integrity: 'safe' },
       load_ai_financial_insights: { label: '🤖 Load AI Financial Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
       refresh_ai_insights: { label: '🤖 Refresh AI Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
+      run_ai_bi_insights: { label: '🤖📊 Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
       reconcile_balance_sheet: {
         label: '✅ Reconcile Balance Sheet',
         confirm: '⚠️ Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
@@ -2077,10 +2169,36 @@
       refresh_active_tab: { label: '🔄 Refresh Active Tab', dynamic: true, integrity: 'safe' }
     };
 
+    const adminAssistantQuickActions = {
+      refresh_overview: 'overview',
+      refresh_financials: 'financials',
+      refresh_customers: 'customers',
+      refresh_underwriting: 'underwriting',
+      refresh_claims: 'claims',
+      run_ai_bi_insights: 'analytics',
+      refresh_analytics: 'analytics',
+      validate_all_customer_pipelines: 'customers',
+      activate_approved_policies: 'policies',
+      process_all_claims: 'claims',
+      refresh_marketplace: 'marketplace',
+      refresh_invitations: 'invitations',
+      refresh_growth_media: 'growth',
+      refresh_billing: 'billing',
+      refresh_transactions: 'billing',
+      load_invitation_stats: 'invitations',
+      refresh_reinsurance: 'reinsurance',
+      refresh_legal: 'legal',
+      refresh_video_jobs: 'growth',
+      reconcile_balance_sheet: 'financials',
+      bill_all_policies: 'billing',
+      cleanup_demo_data: 'financials'
+    };
+
     function initAdminAssistant() {
       const panel = document.getElementById('admin-ai-assistant-panel');
       if (!panel) return;
       adminAssistantSwitchTab('overview');
+      initAdminAssistantVoiceRecognition();
       adminAssistantSetStatus('ready', '🟣 Ready');
     }
 
@@ -2095,6 +2213,15 @@
       if (!panel) return;
       const minimized = panel.dataset.minimized === 'true';
       panel.dataset.minimized = minimized ? 'false' : 'true';
+    }
+
+    function toggleAdminAssistantMoreActions() {
+      const moreActions = document.getElementById('admin-ai-more-actions');
+      const toggle = document.getElementById('admin-ai-more-toggle');
+      if (!moreActions || !toggle) return;
+      const isVisible = moreActions.style.display === 'flex';
+      moreActions.style.display = isVisible ? 'none' : 'flex';
+      toggle.textContent = isVisible ? '⬇️ Show More Actions' : '⬆️ Show Less Actions';
     }
 
     function adminAssistantSwitchTab(tabId) {
@@ -2148,6 +2275,14 @@
       adminAssistantSetStatus('success', `✅ Opened ${tab.title} section`);
     }
 
+    async function adminAssistantQuickAction(actionId) {
+      const targetTab = adminAssistantQuickActions[actionId];
+      if (targetTab) {
+        adminAssistantSwitchTab(targetTab);
+      }
+      await adminAssistantRunAction(actionId);
+    }
+
     async function adminAssistantRunAction(actionId) {
       const tab = ADMIN_ASSISTANT_TABS[adminAssistantState.activeTab];
       let resolvedActionId = actionId;
@@ -2187,27 +2322,28 @@
       }
     }
 
-    async function adminAssistantProcessQuery() {
-      const input = document.getElementById('admin-ai-query-input');
-      if (!input) return;
-      const query = (input.value || '').trim().toLowerCase();
-      if (!query) {
-        adminAssistantSetStatus('warning', '⚠️ Enter a command');
-        return;
-      }
+    function adminAssistantActionFromQuery(query) {
+      const normalized = (query || '').toLowerCase();
+      if (!normalized) return null;
 
       const actionKeywords = [
+        { test: ['ai bi', 'bi insights', 'ai insights', 'business intelligence'], action: 'run_ai_bi_insights' },
         { test: ['reconcile', 'reconciliation'], action: 'reconcile_balance_sheet' },
         { test: ['cleanup', 'clean demo', 'demo data'], action: 'cleanup_demo_data' },
         { test: ['bill all', 'mass bill', 'billing run'], action: 'bill_all_policies' },
         { test: ['invitation stats', 'referral stats'], action: 'load_invitation_stats' },
         { test: ['video jobs', 'media jobs'], action: 'refresh_video_jobs' },
-        { test: ['refresh all', 'reload all'], action: 'refresh_all_core' }
+        { test: ['refresh all', 'reload all'], action: 'refresh_all_core' },
+        { test: ['refresh billing', 'load billing'], action: 'refresh_billing' },
+        { test: ['refresh transactions', 'load transactions'], action: 'refresh_transactions' },
+        { test: ['validate pipelines', 'validate customers'], action: 'validate_all_customer_pipelines' },
+        { test: ['process claims', 'run claims'], action: 'process_all_claims' },
+        { test: ['approve policies', 'activate policies'], action: 'activate_approved_policies' }
       ];
+
       for (const item of actionKeywords) {
-        if (item.test.some(keyword => query.includes(keyword))) {
-          await adminAssistantRunAction(item.action);
-          return;
+        if (item.test.some(keyword => normalized.includes(keyword))) {
+          return { actionId: item.action };
         }
       }
 
@@ -2228,18 +2364,135 @@
       ];
 
       for (const item of tabKeywords) {
-        if (item.test.some(keyword => query.includes(keyword))) {
-          adminAssistantSwitchTab(item.tab);
-          if (query.includes('refresh') || query.includes('load')) {
-            await adminAssistantRunAction('refresh_active_tab');
-          } else {
-            adminAssistantNavigateToTabSection();
-          }
-          return;
+        if (item.test.some(keyword => normalized.includes(keyword))) {
+          const shouldRefresh = normalized.includes('refresh') || normalized.includes('load') || normalized.includes('run');
+          return { tabId: item.tab, actionId: shouldRefresh ? 'refresh_active_tab' : null };
         }
       }
 
-      adminAssistantSetStatus('warning', '🤖 Try: "refresh customers", "show analytics", "reconcile balance sheet"');
+      return null;
+    }
+
+    function initAdminAssistantVoiceRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const voiceBtn = document.getElementById('admin-ai-voice-btn');
+
+      if (!SpeechRecognition) {
+        if (voiceBtn) {
+          voiceBtn.style.opacity = '0.6';
+          voiceBtn.title = 'Voice input is not supported in this browser';
+        }
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      adminAssistantState.recognition = recognition;
+
+      recognition.onstart = () => {
+        adminAssistantState.isListening = true;
+        const indicator = document.getElementById('admin-ai-voice-recording-indicator');
+        if (indicator) indicator.style.display = 'block';
+        adminAssistantSetStatus('ready', '🎙️ Listening...');
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          transcript += event.results[i][0].transcript;
+        }
+        showAdminAssistantVoiceFeedback(transcript);
+      };
+
+      recognition.onend = () => {
+        adminAssistantState.isListening = false;
+        const indicator = document.getElementById('admin-ai-voice-recording-indicator');
+        if (indicator) indicator.style.display = 'none';
+      };
+
+      recognition.onerror = (event) => {
+        const indicator = document.getElementById('admin-ai-voice-recording-indicator');
+        if (indicator) indicator.style.display = 'none';
+        adminAssistantState.isListening = false;
+        adminAssistantSetStatus('warning', `⚠️ Voice error: ${event.error}`);
+      };
+    }
+
+    function startAdminAssistantVoiceInput() {
+      const recognition = adminAssistantState.recognition;
+      if (!recognition) {
+        adminAssistantSetStatus('warning', '⚠️ Voice commands are not supported in this browser');
+        return;
+      }
+      if (adminAssistantState.isListening) {
+        stopAdminAssistantVoiceInput();
+        return;
+      }
+      try {
+        recognition.start();
+      } catch (err) {
+        adminAssistantSetStatus('warning', '⚠️ Voice recognition could not start');
+      }
+    }
+
+    function stopAdminAssistantVoiceInput() {
+      const recognition = adminAssistantState.recognition;
+      if (!recognition) return;
+      recognition.stop();
+      adminAssistantState.isListening = false;
+      const indicator = document.getElementById('admin-ai-voice-recording-indicator');
+      if (indicator) indicator.style.display = 'none';
+    }
+
+    function preprocessAdminAssistantVoiceInput(transcript) {
+      if (!transcript) return '';
+      return transcript
+        .replace(/\bphins\b/gi, '')
+        .replace(/\bassistant\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function showAdminAssistantVoiceFeedback(transcript) {
+      const cleaned = preprocessAdminAssistantVoiceInput(transcript);
+      const transcriptNode = document.getElementById('admin-ai-voice-transcript');
+      if (transcriptNode) {
+        transcriptNode.textContent = cleaned ? `Heard: "${cleaned}"` : '';
+      }
+      if (!cleaned) return;
+      const input = document.getElementById('admin-ai-query-input');
+      if (input) input.value = cleaned;
+      adminAssistantProcessQuery();
+    }
+
+    async function adminAssistantProcessQuery() {
+      const input = document.getElementById('admin-ai-query-input');
+      if (!input) return;
+      const query = (input.value || '').trim().toLowerCase();
+      if (!query) {
+        adminAssistantSetStatus('warning', '⚠️ Enter a command');
+        return;
+      }
+
+      const resolved = adminAssistantActionFromQuery(query);
+      if (resolved?.tabId) {
+        adminAssistantSwitchTab(resolved.tabId);
+        if (resolved.actionId) {
+          await adminAssistantRunAction(resolved.actionId);
+        } else {
+          adminAssistantNavigateToTabSection();
+        }
+        return;
+      }
+
+      if (resolved?.actionId) {
+        await adminAssistantRunAction(resolved.actionId);
+        return;
+      }
+
+      adminAssistantSetStatus('warning', '🤖 Try voice/text/button: "refresh customers", "show analytics", "reconcile balance sheet"');
     }
 
     function adminAssistantSetStatus(kind, text) {
