@@ -24,3 +24,19 @@ def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
     assert 'Voice Quick Actions' in content
     assert "startFloatingVoiceInput" in content
     assert "dispatchFloatingQuery" in content
+
+
+def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
+    content = _fetch("/ui-clarity.js")
+    assert "PHINS admin AI Assistant" in content
+    assert "run_actuary_portfolio_simulation" in content
+    assert "open actuary dashboard" in content
+    assert "/underwriter-dashboard.html" in content
+    assert "/claims-adjuster-dashboard.html" in content
+    assert "/accountant-dashboard.html" in content
+    assert "/actuary-dashboard.html" in content
+    assert "/admin-media.html" in content
+    assert "/admin-foundations.html" in content
+    assert '/risk-reports-dashboard.html' in content
+    assert 'id: "admin_logout"' in content
+    assert "Logout now?" in content

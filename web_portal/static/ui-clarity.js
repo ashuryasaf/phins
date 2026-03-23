@@ -19,6 +19,8 @@
   const VQA_TOGGLE_ID = "phins-vqa-toggle";
   const VQA_PANEL_ID = "phins-vqa-panel";
   const VQA_VOICE_BTN_ID = "phins-vqa-voice-btn";
+  const VQA_PENDING_ACTION_KEY = "phins_vqa_pending_admin_action";
+  const VQA_PENDING_ACTION_TTL_MS = 2 * 60 * 1000;
 
   let floatingRecognition = null;
   let floatingListening = false;
@@ -73,6 +75,24 @@
     return ["admin", "underwriter", "claims_adjuster", "accountant", "actuary"].includes(role);
   }
 
+  function isStaffPath(pathname) {
+    const p = String(pathname || "").toLowerCase();
+    return [
+      "/admin",
+      "/underwriter-dashboard",
+      "/claims-adjuster-dashboard",
+      "/accountant-dashboard",
+      "/actuary-dashboard",
+      "/admin-supplier-dashboard",
+      "/admin-media",
+      "/admin-foundations",
+      "/risk-dashboard",
+      "/risk-reports-dashboard",
+      "/video-agents",
+      "/pitch-dashboard",
+    ].some((prefix) => p.includes(prefix));
+  }
+
   function detectContext() {
     const role = getSessionRole();
     const path = (window.location.pathname || "").toLowerCase();
@@ -83,7 +103,7 @@
       typeof window.processAIQuery === "function" ||
       typeof window.quickAIAction === "function";
 
-    if (hasAdminAssistant || path.includes("/admin") || isAdminRole(role)) {
+    if (hasAdminAssistant || isStaffPath(path) || isAdminRole(role)) {
       return "admin";
     }
     if (hasCustomerAssistant || path.includes("/dashboard")) {
@@ -99,14 +119,69 @@
     statusNode.dataset.kind = kind;
   }
 
+  function getAdminAssistantBranding() {
+    const isAdminContext = detectContext() === "admin";
+    if (isAdminContext) {
+      return {
+        toggleLabel: "Admin AI Mic",
+        title: "PHINS admin AI Assistant",
+        placeholder: "Voice or type admin command...",
+      };
+    }
+    return {
+      toggleLabel: "Voice Quick Actions",
+      title: "Voice Quick Actions",
+      placeholder: "Type action...",
+    };
+  }
+
+  function getSessionToken() {
+    return localStorage.getItem("phins_token") || "";
+  }
+
+  function setPendingAdminAction(actionId) {
+    try {
+      const payload = { actionId, createdAt: Date.now() };
+      sessionStorage.setItem(VQA_PENDING_ACTION_KEY, JSON.stringify(payload));
+    } catch {
+      // no-op
+    }
+  }
+
+  function consumePendingAdminAction() {
+    try {
+      const raw = sessionStorage.getItem(VQA_PENDING_ACTION_KEY);
+      if (!raw) return null;
+      sessionStorage.removeItem(VQA_PENDING_ACTION_KEY);
+      const parsed = JSON.parse(raw);
+      if (!parsed?.actionId || !parsed?.createdAt) return null;
+      if (Date.now() - Number(parsed.createdAt) > VQA_PENDING_ACTION_TTL_MS) return null;
+      return parsed.actionId;
+    } catch {
+      return null;
+    }
+  }
+
   function getFloatingActionsForContext(context) {
     const role = getSessionRole();
     const actions = {
       admin: [
-        { id: "admin_overview", label: "Overview", query: "refresh overview", requiresAdmin: true, url: "/admin.html" },
-        { id: "admin_customers", label: "Customers", query: "refresh customers", requiresAdmin: true, url: "/admin.html" },
+        { id: "admin_overview", label: "Admin", query: "refresh overview", requiresAdmin: true, url: "/admin.html" },
+        { id: "admin_underwriting", label: "Underwriter", query: "open underwriter dashboard", requiresAdmin: true, url: "/underwriter-dashboard.html" },
+        { id: "admin_claims", label: "Claims", query: "open claims adjuster dashboard", requiresAdmin: true, url: "/claims-adjuster-dashboard.html" },
+        { id: "admin_billing", label: "Billing", query: "open billing dashboard", requiresAdmin: true, url: "/billing.html" },
+        { id: "admin_accounting", label: "Accountant", query: "open accountant dashboard", requiresAdmin: true, url: "/accountant-dashboard.html" },
+        { id: "admin_actuary", label: "Actuary", query: "open actuary dashboard", requiresAdmin: true, url: "/actuary-dashboard.html" },
+        { id: "admin_portfolio_simulation", label: "Actuary Sim", query: "run portfolio simulation", requiresAdmin: true, url: "/actuary-dashboard.html" },
+        { id: "admin_investments", label: "Investments", query: "open savings portfolio dashboard", requiresAdmin: true, url: "/savings-portfolio.html" },
         { id: "admin_ai_bi", label: "AI + BI", query: "run ai bi insights", requiresAdmin: true, url: "/admin.html" },
-        { id: "admin_billing", label: "Billing", query: "refresh billing", requiresAdmin: true, url: "/admin.html" },
+        { id: "admin_media", label: "Media", query: "open admin media dashboard", requiresAdmin: true, url: "/admin-media.html" },
+        { id: "admin_foundations", label: "Foundations", query: "open admin foundations dashboard", requiresAdmin: true, url: "/admin-foundations.html" },
+        { id: "admin_video_agents", label: "Video Agents", query: "open video agents dashboard", requiresAdmin: true, url: "/video-agents.html" },
+        { id: "admin_pitch", label: "Pitch", query: "open pitch dashboard", requiresAdmin: true, url: "/pitch-dashboard.html" },
+        { id: "admin_risk", label: "Risk", query: "open risk dashboard", requiresAdmin: true, url: "/risk-dashboard.html" },
+        { id: "admin_reports", label: "Reports", query: "open risk reports dashboard", requiresAdmin: true, url: "/risk-reports-dashboard.html" },
+        { id: "admin_logout", label: "Logout", query: "logout", requiresAdmin: true, url: "/" },
       ],
       customer: [
         { id: "cust_policies", label: "Policies", query: "show me my policies", url: "/dashboard.html" },
@@ -298,6 +373,29 @@
   }
 
   function routeQueryToPageAssistant(query) {
+    const normalized = String(query || "").toLowerCase();
+
+    if (normalized.includes("run portfolio simulation") && typeof window.runSimulation === "function") {
+      callIfFunction(window.runSimulation);
+      setFloatingStatus("Running actuary portfolio simulation.", "info");
+      return true;
+    }
+    if ((normalized.includes("automation") || normalized.includes("actuary automation")) && typeof window.calculateAutomation === "function") {
+      callIfFunction(window.calculateAutomation);
+      setFloatingStatus("Running actuary automation metrics.", "info");
+      return true;
+    }
+
+    if ((normalized === "logout" || normalized.includes("sign out") || normalized.includes("log out")) && typeof window.logout === "function") {
+      const proceed = window.confirm("Logout now?");
+      if (!proceed) {
+        setFloatingStatus("Logout cancelled.", "warning");
+        return true;
+      }
+      callIfFunction(window.logout);
+      return true;
+    }
+
     const adminInput = document.getElementById("admin-ai-query-input");
     if (adminInput && typeof window.adminAssistantProcessQuery === "function") {
       adminInput.value = query;
@@ -320,6 +418,88 @@
   function fallbackNavigateForQuery(query) {
     const q = String(query || "").toLowerCase();
     if (!q) return false;
+    const role = getSessionRole();
+    const adminOnlyCommand =
+      q.includes("admin") ||
+      q.includes("underwriter") ||
+      q.includes("claims adjuster") ||
+      q.includes("accountant") ||
+      q.includes("actuary") ||
+      q.includes("reconcile") ||
+      q.includes("ai bi") ||
+      q.includes("risk reports") ||
+      q.includes("video agents") ||
+      q.includes("pitch dashboard") ||
+      q.includes("portfolio simulation");
+
+    if (adminOnlyCommand && !isAdminRole(role)) {
+      setFloatingStatus("Admin role required for this command.", "warning");
+      return true;
+    }
+
+    if (q.includes("logout") || q.includes("sign out") || q.includes("log out")) {
+      const proceed = window.confirm("Logout now?");
+      if (!proceed) return true;
+      try {
+        sessionStorage.clear();
+        localStorage.removeItem("phins_token");
+      } catch {
+        // no-op
+      }
+      window.location.href = "/";
+      return true;
+    }
+
+    if (q.includes("run portfolio simulation") || q.includes("portfolio simulation")) {
+      setPendingAdminAction("run_actuary_portfolio_simulation");
+      window.location.href = "/actuary-dashboard.html";
+      return true;
+    }
+
+    if (q.includes("open actuary") || q.includes("actuary dashboard")) {
+      window.location.href = "/actuary-dashboard.html";
+      return true;
+    }
+    if (q.includes("underwriter dashboard")) {
+      window.location.href = "/underwriter-dashboard.html";
+      return true;
+    }
+    if (q.includes("claims adjuster") || q.includes("claims dashboard")) {
+      window.location.href = "/claims-adjuster-dashboard.html";
+      return true;
+    }
+    if (q.includes("accountant dashboard")) {
+      window.location.href = "/accountant-dashboard.html";
+      return true;
+    }
+    if (q.includes("supplier dashboard")) {
+      window.location.href = "/admin-supplier-dashboard.html";
+      return true;
+    }
+    if (q.includes("media dashboard")) {
+      window.location.href = "/admin-media.html";
+      return true;
+    }
+    if (q.includes("foundations dashboard")) {
+      window.location.href = "/admin-foundations.html";
+      return true;
+    }
+    if (q.includes("risk reports")) {
+      window.location.href = "/risk-reports-dashboard.html";
+      return true;
+    }
+    if (q.includes("savings portfolio") || q.includes("investments dashboard")) {
+      window.location.href = "/savings-portfolio.html";
+      return true;
+    }
+    if (q.includes("video agents")) {
+      window.location.href = "/video-agents.html";
+      return true;
+    }
+    if (q.includes("pitch dashboard")) {
+      window.location.href = "/pitch-dashboard.html";
+      return true;
+    }
 
     if (q.includes("admin") || q.includes("underwriting") || q.includes("reconcile") || q.includes("ai bi")) {
       window.location.href = "/admin.html";
@@ -371,6 +551,35 @@
       return;
     }
 
+    if (action.id === "admin_portfolio_simulation") {
+      if (typeof window.runSimulation === "function") {
+        setFloatingStatus("Running actuary portfolio simulation.", "info");
+        callIfFunction(window.runSimulation);
+        return;
+      }
+      setPendingAdminAction("run_actuary_portfolio_simulation");
+    }
+
+    if (action.id === "admin_logout") {
+      const proceed = window.confirm("Logout now?");
+      if (!proceed) {
+        setFloatingStatus("Logout cancelled.", "warning");
+        return;
+      }
+      if (typeof window.logout === "function") {
+        callIfFunction(window.logout);
+        return;
+      }
+      try {
+        sessionStorage.clear();
+        localStorage.removeItem("phins_token");
+      } catch {
+        // no-op
+      }
+      window.location.href = "/";
+      return;
+    }
+
     if (action.url && window.location.pathname !== action.url) {
       setFloatingStatus("Opening relevant dashboard for this action.", "info");
       window.location.href = action.url;
@@ -400,7 +609,7 @@
       const voiceBtn = document.getElementById(VQA_VOICE_BTN_ID);
       if (voiceBtn) {
         voiceBtn.dataset.listening = "true";
-        voiceBtn.textContent = "Stop";
+        voiceBtn.textContent = "⏹";
       }
       setFloatingStatus("Listening for voice command...", "info");
     };
@@ -427,7 +636,7 @@
       const voiceBtn = document.getElementById(VQA_VOICE_BTN_ID);
       if (voiceBtn) {
         voiceBtn.dataset.listening = "false";
-        voiceBtn.textContent = "Voice";
+        voiceBtn.textContent = "🎤";
       }
       setFloatingStatus(`Voice error: ${event.error}`, "error");
     };
@@ -437,7 +646,7 @@
       const voiceBtn = document.getElementById(VQA_VOICE_BTN_ID);
       if (voiceBtn) {
         voiceBtn.dataset.listening = "false";
-        voiceBtn.textContent = "Voice";
+        voiceBtn.textContent = "🎤";
       }
     };
 
@@ -492,22 +701,23 @@
 
     ensureFloatingStyles();
 
+    const branding = getAdminAssistantBranding();
     const container = document.createElement("div");
     container.id = FLOATING_BAR_ID;
     container.className = "phins-vqa";
     container.innerHTML = `
-      <button type="button" id="${VQA_TOGGLE_ID}" aria-label="Open voice quick actions">Voice Quick Actions</button>
+      <button type="button" id="${VQA_TOGGLE_ID}" aria-label="Open voice quick actions">🎤 ${branding.toggleLabel}</button>
       <div id="${VQA_PANEL_ID}">
         <div class="phins-vqa-header">
-          <div class="phins-vqa-title">Voice Quick Actions</div>
+          <div class="phins-vqa-title">${branding.title}</div>
           <button type="button" class="phins-vqa-min" id="phins-vqa-minimize" aria-label="Minimize voice quick actions">−</button>
         </div>
         <div class="phins-vqa-row">
-          <input id="${VQA_INPUT_ID}" type="text" placeholder="Type action..." />
+          <input id="${VQA_INPUT_ID}" type="text" placeholder="${branding.placeholder}" />
           <button type="button" class="phins-vqa-ask" id="phins-vqa-ask-btn">Ask</button>
-          <button type="button" id="${VQA_VOICE_BTN_ID}" data-listening="false">Voice</button>
+          <button type="button" id="${VQA_VOICE_BTN_ID}" data-listening="false">🎤</button>
         </div>
-        <div id="${VQA_STATUS_ID}" data-kind="info">Ready for quick actions.</div>
+        <div id="${VQA_STATUS_ID}" data-kind="info">${detectContext() === "admin" ? "PHINS admin AI Assistant ready." : "Ready for quick actions."}</div>
         <div id="${VQA_ACTIONS_ID}" class="phins-vqa-actions"></div>
       </div>
     `;
@@ -534,10 +744,24 @@
     renderFloatingActions();
   }
 
+  function runPendingAdminActionIfAny() {
+    const actionId = consumePendingAdminAction();
+    if (!actionId) return;
+
+    if (actionId === "run_actuary_portfolio_simulation" && typeof window.runSimulation === "function") {
+      setFloatingStatus("Executing pending actuary portfolio simulation.", "info");
+      callIfFunction(window.runSimulation);
+      return;
+    }
+
+    setFloatingStatus("Pending action could not run on this page.", "warning");
+  }
+
   function start() {
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
     ensureFloatingBar();
+    runPendingAdminActionIfAny();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
