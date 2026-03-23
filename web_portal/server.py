@@ -2394,7 +2394,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '2.0',
+                'version': '2.1',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -2426,7 +2426,9 @@ def save_ledger_data():
                 'customer_invitations': CUSTOMER_INVITATIONS,
                 'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
                 # v1.9 additions - General Policy Documents
-                'policy_documents': POLICY_DOCUMENTS
+                'policy_documents': POLICY_DOCUMENTS,
+                # v2.1 additions - Admin assistant workflow execution state
+                'admin_assistant_workflows': ADMIN_ASSISTANT_WORKFLOWS,
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -2646,6 +2648,7 @@ def load_ledger_data():
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     global POLICY_DOCUMENTS
+    global ADMIN_ASSISTANT_WORKFLOWS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -2758,6 +2761,12 @@ def load_ledger_data():
             hydrated = hydrate_document_customer_links()
             if hydrated:
                 print(f"  - Policy Documents: hydrated owner links for {hydrated} legacy document(s)")
+        
+        # Load Admin Assistant Workflows (v2.1+)
+        loaded_admin_workflows = data.get('admin_assistant_workflows', {})
+        if loaded_admin_workflows:
+            ADMIN_ASSISTANT_WORKFLOWS.update(loaded_admin_workflows)
+            print(f"  - Admin Assistant Workflows: {len(ADMIN_ASSISTANT_WORKFLOWS)} workflows loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")

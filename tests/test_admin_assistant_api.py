@@ -3,6 +3,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from http.server import HTTPServer
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -177,6 +178,75 @@ def test_admin_assistant_requires_admin_role():
         assert payload == {"error": "Admin access required"}
     finally:
         srv.stop()
+
+
+def test_admin_assistant_workflow_state_persists_via_ledger_file(tmp_path):
+    persistence_file = tmp_path / "assistant_workflow_persistence.json"
+
+    original_persistence_enabled = portal.PERSISTENCE_ENABLED
+    original_persistence_file = portal.LEDGER_PERSISTENCE_FILE
+    original_workflows = dict(portal.ADMIN_ASSISTANT_WORKFLOWS)
+
+    try:
+        portal.PERSISTENCE_ENABLED = True
+        portal.LEDGER_PERSISTENCE_FILE = str(persistence_file)
+        portal.ADMIN_ASSISTANT_WORKFLOWS.clear()
+
+        workflow_payload = {
+            "workflow_id": "admin-wf-persisted",
+            "label": "Show AI insights -> Reconcile balance sheet",
+            "current_step_index": 1,
+            "steps": [
+                {
+                    "id": "load_ai_insights",
+                    "label": "Open AI financial insights",
+                    "description": "Load insights",
+                    "status": "completed",
+                    "step_index": 0,
+                    "action": {
+                        "id": "load_ai_insights",
+                        "label": "Open AI financial insights",
+                        "description": "Load insights",
+                        "requires_confirmation": False,
+                        "button_text": "Run action",
+                    },
+                },
+                {
+                    "id": "reconcile_balance_sheet",
+                    "label": "Reconcile balance sheet",
+                    "description": "Reconcile reserves",
+                    "status": "ready",
+                    "step_index": 1,
+                    "action": {
+                        "id": "reconcile_balance_sheet",
+                        "label": "Reconcile balance sheet",
+                        "description": "Reconcile reserves",
+                        "requires_confirmation": True,
+                        "button_text": "Run action",
+                    },
+                },
+            ],
+        }
+
+        portal.save_admin_assistant_workflow_state("admin", workflow_payload)
+        portal.save_ledger_data()
+
+        raw = json.loads(Path(portal.LEDGER_PERSISTENCE_FILE).read_text(encoding="utf-8"))
+        assert raw["admin_assistant_workflows"]["admin"]["workflow_id"] == "admin-wf-persisted"
+
+        portal.ADMIN_ASSISTANT_WORKFLOWS.clear()
+        assert portal.get_admin_assistant_workflow_state("admin") is None
+
+        assert portal.load_ledger_data() is True
+        restored = portal.get_admin_assistant_workflow_state("admin")
+        assert restored is not None
+        assert restored["workflow_id"] == "admin-wf-persisted"
+        assert restored["steps"][1]["id"] == "reconcile_balance_sheet"
+    finally:
+        portal.PERSISTENCE_ENABLED = original_persistence_enabled
+        portal.LEDGER_PERSISTENCE_FILE = original_persistence_file
+        portal.ADMIN_ASSISTANT_WORKFLOWS.clear()
+        portal.ADMIN_ASSISTANT_WORKFLOWS.update(original_workflows)
 
 
 def test_admin_assistant_persists_and_clears_workflow_state():
