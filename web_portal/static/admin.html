@@ -294,11 +294,107 @@
         opacity: 0;
       }
     }
+
+    @keyframes pulse-ai {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(225, 190, 231, 0.35);
+      }
+      50% {
+        transform: scale(1.04);
+        box-shadow: 0 0 18px 8px rgba(225, 190, 231, 0.2);
+      }
+    }
     
     /* Bill All button hover effect */
     .btn-bill-all:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    }
+
+    /* ==================== ADMIN AI ASSISTANT (Customer-style) ==================== */
+    #admin-ai-assistant-panel {
+      background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 50%, #9c27b0 100%);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 12px 40px rgba(74, 20, 140, 0.35);
+      color: white;
+    }
+    #admin-ai-assistant-panel[data-minimized="true"] {
+      max-height: 88px;
+      overflow: hidden;
+    }
+    .admin-ai-tab-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .admin-ai-tab-btn {
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 7px 12px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s ease;
+    }
+    .admin-ai-tab-btn:hover {
+      background: rgba(255,255,255,0.24);
+      transform: translateY(-1px);
+    }
+    .admin-ai-tab-btn.active {
+      background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);
+      color: #4a148c;
+      border-color: transparent;
+      font-weight: 700;
+      box-shadow: 0 6px 20px rgba(225, 190, 231, 0.45);
+    }
+    .admin-ai-action-btn {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .admin-ai-action-btn:hover {
+      background: rgba(255,255,255,0.25);
+      transform: translateY(-1px);
+    }
+    .admin-ai-status-chip {
+      background: rgba(255,255,255,0.16);
+      border: 1px solid rgba(255,255,255,0.28);
+      color: rgba(255,255,255,0.95);
+      border-radius: 14px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .admin-ai-status-chip.success {
+      background: rgba(76,175,80,0.25);
+      border-color: rgba(76,175,80,0.45);
+    }
+    .admin-ai-status-chip.warning {
+      background: rgba(255,193,7,0.25);
+      border-color: rgba(255,193,7,0.5);
+    }
+    .admin-ai-status-chip.error {
+      background: rgba(244,67,54,0.22);
+      border-color: rgba(244,67,54,0.5);
+    }
+    @media (max-width: 768px) {
+      #admin-ai-assistant-panel { padding: 16px; }
+      .admin-ai-tab-btn { font-size: 0.72rem; padding: 6px 10px; }
+      .admin-ai-action-btn { width: 100%; justify-content: center; display: inline-flex; }
     }
   </style>
 </head>
@@ -342,6 +438,70 @@
     <div class="welcome-section">
       <h1>Admin Dashboard</h1>
       <p class="muted-text">Comprehensive system management and oversight</p>
+    </div>
+
+    <!-- ==================== PHINS ADMIN AI ASSISTANT ==================== -->
+    <div id="admin-ai-assistant-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:46px;height:46px;background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
+          <div>
+            <h2 style="margin:0;color:white;font-size:1.3rem;font-weight:700;">PHINS admin AI Assistant</h2>
+            <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.84);font-size:0.84rem;">Comprehensive system co-pilot for all admin divisions</p>
+            <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.72);font-size:0.74rem;">Design adapted from customer PHINS AI Assistant for style integrity</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
+          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Assistant Help">❓</button>
+          <button onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize Assistant">➖</button>
+        </div>
+      </div>
+
+      <div id="admin-ai-help-panel" style="display:none;background:rgba(255,255,255,0.12);border-radius:12px;padding:14px;margin-bottom:12px;">
+        <h4 style="margin:0 0 8px 0;">💬 Try admin commands:</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:0.84rem;">
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Refresh customers”<br>• “Open underwriting”<br>• “Load claims pipeline”</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Show balance sheet”<br>• “Reconcile reserves”<br>• “Run platform analytics”</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Load invitation codes”<br>• “Open marketplace”<br>• “Refresh growth campaign”</div>
+        </div>
+        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions stay confirmation-gated to preserve data integrity.</p>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+        <div style="flex:1;position:relative;min-width:260px;">
+          <input
+            id="admin-ai-query-input"
+            type="text"
+            placeholder="Ask admin assistant... e.g. 'refresh underwriting' or 'show platform analytics'"
+            style="width:100%;padding:14px 16px;border-radius:12px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.95);font-size:0.95rem;outline:none;"
+            onkeypress="if(event.key==='Enter') adminAssistantProcessQuery()"
+          >
+        </div>
+        <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border:none;color:#4a148c;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">⚡ Ask</button>
+        <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">🔄 Refresh Tab</button>
+      </div>
+
+      <div class="admin-ai-tab-bar" id="admin-ai-tab-bar">
+        <button class="admin-ai-tab-btn active" data-tab="overview" onclick="adminAssistantSwitchTab('overview')">🏠 Overview</button>
+        <button class="admin-ai-tab-btn" data-tab="financials" onclick="adminAssistantSwitchTab('financials')">🏦 Financials</button>
+        <button class="admin-ai-tab-btn" data-tab="customers" onclick="adminAssistantSwitchTab('customers')">👥 Customers</button>
+        <button class="admin-ai-tab-btn" data-tab="policies" onclick="adminAssistantSwitchTab('policies')">📋 Policies</button>
+        <button class="admin-ai-tab-btn" data-tab="underwriting" onclick="adminAssistantSwitchTab('underwriting')">🔍 Underwriting</button>
+        <button class="admin-ai-tab-btn" data-tab="claims" onclick="adminAssistantSwitchTab('claims')">📝 Claims</button>
+        <button class="admin-ai-tab-btn" data-tab="billing" onclick="adminAssistantSwitchTab('billing')">💰 Billing</button>
+        <button class="admin-ai-tab-btn" data-tab="marketplace" onclick="adminAssistantSwitchTab('marketplace')">🛒 Marketplace</button>
+        <button class="admin-ai-tab-btn" data-tab="analytics" onclick="adminAssistantSwitchTab('analytics')">📊 Analytics</button>
+        <button class="admin-ai-tab-btn" data-tab="invitations" onclick="adminAssistantSwitchTab('invitations')">🎟️ Invitations</button>
+        <button class="admin-ai-tab-btn" data-tab="reinsurance" onclick="adminAssistantSwitchTab('reinsurance')">🤝 Reinsurance</button>
+        <button class="admin-ai-tab-btn" data-tab="legal" onclick="adminAssistantSwitchTab('legal')">⚖️ Legal</button>
+        <button class="admin-ai-tab-btn" data-tab="growth" onclick="adminAssistantSwitchTab('growth')">🚀 Growth/Media</button>
+      </div>
+
+      <div id="admin-ai-response-area" style="background:white;border-radius:14px;padding:18px;color:#263238;">
+        <div style="font-size:1.05rem;font-weight:700;margin-bottom:8px;">Admin assistant is ready</div>
+        <div style="color:#546e7a;font-size:0.92rem;">Use tabs or natural language to run existing dashboard functions with built-in integrity safeguards.</div>
+      </div>
     </div>
 
     <!-- System Statistics - Row 1 -->
@@ -984,7 +1144,7 @@
     </section>
 
     <!-- Reinsurance Division -->
-    <section class="section-content">
+    <section id="reinsurance" class="section-content">
       <div class="section-header">
         <h2>🤝 Reinsurance Division — Partner Management</h2>
       </div>
@@ -1011,7 +1171,7 @@
     </section>
 
     <!-- Legal Division -->
-    <section class="section-content">
+    <section id="legal" class="section-content">
       <div class="section-header">
         <h2>⚖️ Legal Division — Compliance & Disputes</h2>
       </div>
@@ -1744,6 +1904,7 @@
     
     // Initialize dashboard with dynamic data
     document.addEventListener('DOMContentLoaded', () => {
+      initAdminAssistant();
       loadDashboardStats();
       loadBalanceSheet();  // Load PHINS Balance Sheet
       loadCustomerList();
@@ -1757,6 +1918,339 @@
       loadReinsuranceData();
       loadLegalData();
     });
+
+    const adminAssistantState = {
+      activeTab: 'overview',
+      recentActions: []
+    };
+
+    const ADMIN_ASSISTANT_TABS = {
+      overview: {
+        title: 'Overview',
+        description: 'Unified system snapshot across all issued admin tabs.',
+        sectionId: null,
+        defaultAction: 'refresh_overview',
+        actions: ['refresh_overview', 'refresh_all_core']
+      },
+      financials: {
+        title: 'Financials',
+        description: 'Balance sheet, reserves, reconciliation and AI financial insights.',
+        sectionId: 'balance-sheet-section',
+        defaultAction: 'refresh_financials',
+        actions: ['refresh_financials', 'load_ai_financial_insights', 'reconcile_balance_sheet', 'cleanup_demo_data']
+      },
+      customers: {
+        title: 'Customers',
+        description: 'Customer records, pipeline validations, wallets and ledger sync.',
+        sectionId: 'customers',
+        defaultAction: 'refresh_customers',
+        actions: ['refresh_customers', 'validate_all_customer_pipelines', 'activate_all_wallets', 'sync_customer_ledgers']
+      },
+      policies: {
+        title: 'Policies',
+        description: 'Sales division policy operations, premium generation and reports.',
+        sectionId: 'policies',
+        defaultAction: 'refresh_policies',
+        actions: ['refresh_policies', 'activate_approved_policies', 'generate_premiums', 'generate_policy_report']
+      },
+      underwriting: {
+        title: 'Underwriting',
+        description: 'Risk assessments, pending approvals and pipeline processing.',
+        sectionId: 'underwriting',
+        defaultAction: 'refresh_underwriting',
+        actions: ['refresh_underwriting', 'approve_all_pending_underwriting', 'validate_all_customers', 'process_all_pipelines']
+      },
+      claims: {
+        title: 'Claims',
+        description: 'ADL claims processing, validation, and claims intelligence.',
+        sectionId: 'claims',
+        defaultAction: 'refresh_claims',
+        actions: ['refresh_claims', 'process_all_claims', 'validate_adl_assessments', 'generate_claims_report']
+      },
+      billing: {
+        title: 'Billing',
+        description: 'Accounting transactions, revenue view, and bill-all operations.',
+        sectionId: 'billing',
+        defaultAction: 'refresh_billing',
+        actions: ['refresh_billing', 'refresh_transactions', 'bill_all_policies']
+      },
+      marketplace: {
+        title: 'Marketplace',
+        description: 'Medical services/products marketplace, NFT integrity and approvals.',
+        sectionId: 'marketplace',
+        defaultAction: 'refresh_marketplace',
+        actions: ['refresh_marketplace']
+      },
+      analytics: {
+        title: 'Analytics',
+        description: 'Platform ledger analytics, BI insights, and predictive metrics.',
+        sectionId: 'platform-analytics',
+        defaultAction: 'refresh_analytics',
+        actions: ['refresh_analytics', 'refresh_ai_insights']
+      },
+      invitations: {
+        title: 'Invitations',
+        description: 'Invitation code lifecycle, referral visibility and registration metrics.',
+        sectionId: 'invitation-management',
+        defaultAction: 'refresh_invitations',
+        actions: ['refresh_invitations', 'load_invitation_stats']
+      },
+      reinsurance: {
+        title: 'Reinsurance',
+        description: 'Partner and cession management in the reinsurance division.',
+        sectionId: 'reinsurance',
+        defaultAction: 'refresh_reinsurance',
+        actions: ['refresh_reinsurance']
+      },
+      legal: {
+        title: 'Legal',
+        description: 'Compliance posture, open disputes and legal dashboard metrics.',
+        sectionId: 'legal',
+        defaultAction: 'refresh_legal',
+        actions: ['refresh_legal']
+      },
+      growth: {
+        title: 'Growth/Media',
+        description: 'Marketing AI campaign outputs and media/video orchestration.',
+        sectionId: 'growth-agent-section',
+        defaultAction: 'refresh_growth_media',
+        actions: ['refresh_growth_media', 'refresh_marketing_media', 'refresh_video_jobs']
+      }
+    };
+
+    const ADMIN_ASSISTANT_ACTIONS = {
+      refresh_overview: { label: '🔄 Refresh Overview', fn: async () => { await loadDashboardStats(); await loadPipelineStats(); }, integrity: 'safe' },
+      refresh_all_core: { label: '🧭 Refresh Core Dashboard', fn: async () => { await refreshAllData(); }, integrity: 'safe' },
+      refresh_financials: { label: '🏦 Refresh Financials', fn: async () => { await loadBalanceSheet(); }, integrity: 'safe' },
+      load_ai_financial_insights: { label: '🤖 Load AI Financial Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
+      refresh_ai_insights: { label: '🤖 Refresh AI Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
+      reconcile_balance_sheet: {
+        label: '✅ Reconcile Balance Sheet',
+        confirm: '⚠️ Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
+        fn: async () => { await reconcileBalanceSheet(); },
+        integrity: 'guarded'
+      },
+      cleanup_demo_data: {
+        label: '🧹 Clean Demo Data',
+        confirm: '⚠️ Clean demo/test data now?\n\nThis is a high-impact operation. Continue only if intended.',
+        fn: async () => { await cleanupDemoData(); },
+        integrity: 'guarded'
+      },
+      refresh_customers: { label: '👥 Refresh Customers', fn: async () => { await loadCustomerList(); }, integrity: 'safe' },
+      validate_all_customer_pipelines: { label: '🔍 Validate Customer Pipelines', fn: async () => { await validateAllCustomerPipelines(); }, integrity: 'safe' },
+      activate_all_wallets: { label: '💳 Activate Wallets', fn: async () => { await activateAllWallets(); }, integrity: 'safe' },
+      sync_customer_ledgers: { label: '📒 Sync Customer Ledgers', fn: async () => { await syncCustomerLedgers(); }, integrity: 'safe' },
+      refresh_policies: { label: '📋 Refresh Policies', fn: async () => { await loadPolicies(); }, integrity: 'safe' },
+      activate_approved_policies: { label: '✅ Activate Approved Policies', fn: async () => { await activateAllPendingPolicies(); }, integrity: 'safe' },
+      generate_premiums: { label: '💰 Generate Premiums', fn: async () => { await generateAllPremiums(); }, integrity: 'safe' },
+      generate_policy_report: { label: '📊 Generate Policy Report', fn: async () => { await generatePolicyReport(); }, integrity: 'safe' },
+      refresh_underwriting: { label: '🔍 Refresh Underwriting', fn: async () => { await loadUnderwritingApplications(); }, integrity: 'safe' },
+      approve_all_pending_underwriting: {
+        label: '✅ Approve All Pending',
+        confirm: '⚠️ Approve all pending underwriting applications?\n\nThis changes policy/application states.',
+        fn: async () => { await approveAllPending(); },
+        integrity: 'guarded'
+      },
+      validate_all_customers: { label: '🔍 Validate All Customers', fn: async () => { await validateAllCustomers(); }, integrity: 'safe' },
+      process_all_pipelines: { label: '⚡ Process All Pipelines', fn: async () => { await processAllPipelines(); }, integrity: 'safe' },
+      refresh_claims: { label: '📝 Refresh Claims', fn: async () => { await loadClaims(); }, integrity: 'safe' },
+      process_all_claims: { label: '✅ Process All Claims', fn: async () => { await processAllClaims(); }, integrity: 'safe' },
+      validate_adl_assessments: { label: '🧪 Validate ADL Assessments', fn: async () => { await validateADLAssessments(); }, integrity: 'safe' },
+      generate_claims_report: { label: '📊 Generate Claims Report', fn: async () => { await generateClaimsReport(); }, integrity: 'safe' },
+      refresh_billing: { label: '💰 Refresh Billing', fn: async () => { await loadBillingData(); }, integrity: 'safe' },
+      refresh_transactions: { label: '🧾 Refresh Transactions', fn: async () => { await loadTransactions(); }, integrity: 'safe' },
+      bill_all_policies: {
+        label: '⚡ Bill All Policies',
+        confirm: '⚠️ Execute bill-all for eligible active policies?\n\nThis creates billing records and should be run intentionally.',
+        fn: async () => { await executeBillAll(); },
+        integrity: 'guarded'
+      },
+      refresh_marketplace: { label: '🛒 Refresh Marketplace', fn: async () => { await loadMarketplaceData(); }, integrity: 'safe' },
+      refresh_analytics: { label: '📊 Refresh Platform Analytics', fn: async () => { await loadPlatformAnalytics(); }, integrity: 'safe' },
+      refresh_invitations: { label: '🎟️ Refresh Invitation Codes', fn: async () => { await loadInvitationCodes(); }, integrity: 'safe' },
+      load_invitation_stats: { label: '📈 Load Invitation Stats', fn: async () => { await loadInvitationStats(); }, integrity: 'safe' },
+      refresh_reinsurance: { label: '🤝 Refresh Reinsurance', fn: async () => { await loadReinsuranceData(); }, integrity: 'safe' },
+      refresh_legal: { label: '⚖️ Refresh Legal', fn: async () => { await loadLegalData(); }, integrity: 'safe' },
+      refresh_growth_media: { label: '🚀 Refresh Growth Campaign', fn: async () => { await loadLatestMarketingCampaign(); }, integrity: 'safe' },
+      refresh_marketing_media: { label: '🗂️ Refresh Media Assets', fn: async () => { await loadMarketingMediaAssets(); }, integrity: 'safe' },
+      refresh_video_jobs: { label: '🎬 Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); }, integrity: 'safe' },
+      refresh_active_tab: { label: '🔄 Refresh Active Tab', dynamic: true, integrity: 'safe' }
+    };
+
+    function initAdminAssistant() {
+      const panel = document.getElementById('admin-ai-assistant-panel');
+      if (!panel) return;
+      adminAssistantSwitchTab('overview');
+      adminAssistantSetStatus('ready', '🟣 Ready');
+    }
+
+    function toggleAdminAIHelp() {
+      const panel = document.getElementById('admin-ai-help-panel');
+      if (!panel) return;
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function toggleAdminAIPanel() {
+      const panel = document.getElementById('admin-ai-assistant-panel');
+      if (!panel) return;
+      const minimized = panel.dataset.minimized === 'true';
+      panel.dataset.minimized = minimized ? 'false' : 'true';
+    }
+
+    function adminAssistantSwitchTab(tabId) {
+      if (!ADMIN_ASSISTANT_TABS[tabId]) return;
+      adminAssistantState.activeTab = tabId;
+      document.querySelectorAll('.admin-ai-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabId);
+      });
+      adminAssistantRenderTabCard();
+    }
+
+    function adminAssistantRenderTabCard() {
+      const tab = ADMIN_ASSISTANT_TABS[adminAssistantState.activeTab];
+      const area = document.getElementById('admin-ai-response-area');
+      if (!tab || !area) return;
+
+      const actionButtons = tab.actions
+        .map(actionId => {
+          const action = ADMIN_ASSISTANT_ACTIONS[actionId];
+          if (!action) return '';
+          return `<button class="admin-ai-action-btn" onclick="adminAssistantRunAction('${actionId}')">${action.label}</button>`;
+        })
+        .join('');
+
+      area.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:1.02rem;font-weight:700;margin-bottom:4px;">${tab.title}</div>
+            <div style="font-size:0.9rem;color:#546e7a;">${tab.description}</div>
+          </div>
+          <button class="admin-ai-action-btn" onclick="adminAssistantNavigateToTabSection()">📍 Open Section</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          ${actionButtons || '<span style="color:#546e7a;font-size:0.86rem;">No actions configured for this tab.</span>'}
+        </div>
+      `;
+    }
+
+    function adminAssistantNavigateToTabSection() {
+      const tab = ADMIN_ASSISTANT_TABS[adminAssistantState.activeTab];
+      if (!tab || !tab.sectionId) {
+        adminAssistantSetStatus('warning', '⚠️ No direct section for this tab');
+        return;
+      }
+      const target = document.getElementById(tab.sectionId);
+      if (!target) {
+        adminAssistantSetStatus('warning', '⚠️ Section not found in DOM');
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      adminAssistantSetStatus('success', `✅ Opened ${tab.title} section`);
+    }
+
+    async function adminAssistantRunAction(actionId) {
+      const tab = ADMIN_ASSISTANT_TABS[adminAssistantState.activeTab];
+      let resolvedActionId = actionId;
+      if (actionId === 'refresh_active_tab') {
+        resolvedActionId = tab?.defaultAction || 'refresh_overview';
+      }
+
+      const action = ADMIN_ASSISTANT_ACTIONS[resolvedActionId];
+      if (!action) {
+        adminAssistantSetStatus('error', '❌ Action unavailable');
+        return;
+      }
+
+      if (action.confirm && !confirm(action.confirm)) {
+        adminAssistantSetStatus('warning', '⏸️ Action cancelled');
+        return;
+      }
+
+      adminAssistantSetStatus('ready', `⏳ Running: ${action.label}`);
+
+      try {
+        if (typeof action.fn !== 'function') {
+          throw new Error('Action handler missing');
+        }
+        await action.fn();
+        adminAssistantState.recentActions.unshift({
+          actionId: resolvedActionId,
+          timestamp: new Date().toISOString()
+        });
+        if (adminAssistantState.recentActions.length > 6) {
+          adminAssistantState.recentActions = adminAssistantState.recentActions.slice(0, 6);
+        }
+        adminAssistantSetStatus('success', `✅ Completed: ${action.label}`);
+      } catch (err) {
+        console.error('[Admin AI Assistant] action failed:', resolvedActionId, err);
+        adminAssistantSetStatus('error', `❌ Failed: ${action.label}`);
+      }
+    }
+
+    async function adminAssistantProcessQuery() {
+      const input = document.getElementById('admin-ai-query-input');
+      if (!input) return;
+      const query = (input.value || '').trim().toLowerCase();
+      if (!query) {
+        adminAssistantSetStatus('warning', '⚠️ Enter a command');
+        return;
+      }
+
+      const actionKeywords = [
+        { test: ['reconcile', 'reconciliation'], action: 'reconcile_balance_sheet' },
+        { test: ['cleanup', 'clean demo', 'demo data'], action: 'cleanup_demo_data' },
+        { test: ['bill all', 'mass bill', 'billing run'], action: 'bill_all_policies' },
+        { test: ['invitation stats', 'referral stats'], action: 'load_invitation_stats' },
+        { test: ['video jobs', 'media jobs'], action: 'refresh_video_jobs' },
+        { test: ['refresh all', 'reload all'], action: 'refresh_all_core' }
+      ];
+      for (const item of actionKeywords) {
+        if (item.test.some(keyword => query.includes(keyword))) {
+          await adminAssistantRunAction(item.action);
+          return;
+        }
+      }
+
+      const tabKeywords = [
+        { test: ['overview', 'dashboard'], tab: 'overview' },
+        { test: ['financial', 'balance sheet', 'reserve'], tab: 'financials' },
+        { test: ['customer', 'customers'], tab: 'customers' },
+        { test: ['policy', 'policies'], tab: 'policies' },
+        { test: ['underwriting', 'underwriter'], tab: 'underwriting' },
+        { test: ['claim', 'claims'], tab: 'claims' },
+        { test: ['billing', 'accounting', 'transaction'], tab: 'billing' },
+        { test: ['marketplace', 'nft'], tab: 'marketplace' },
+        { test: ['analytics', 'bi', 'ledger analytics'], tab: 'analytics' },
+        { test: ['invitation', 'referral code'], tab: 'invitations' },
+        { test: ['reinsurance', 'partner'], tab: 'reinsurance' },
+        { test: ['legal', 'compliance'], tab: 'legal' },
+        { test: ['growth', 'marketing', 'media'], tab: 'growth' }
+      ];
+
+      for (const item of tabKeywords) {
+        if (item.test.some(keyword => query.includes(keyword))) {
+          adminAssistantSwitchTab(item.tab);
+          if (query.includes('refresh') || query.includes('load')) {
+            await adminAssistantRunAction('refresh_active_tab');
+          } else {
+            adminAssistantNavigateToTabSection();
+          }
+          return;
+        }
+      }
+
+      adminAssistantSetStatus('warning', '🤖 Try: "refresh customers", "show analytics", "reconcile balance sheet"');
+    }
+
+    function adminAssistantSetStatus(kind, text) {
+      const chip = document.getElementById('admin-ai-status-chip');
+      if (!chip) return;
+      chip.classList.remove('success', 'warning', 'error');
+      if (kind === 'success') chip.classList.add('success');
+      if (kind === 'warning') chip.classList.add('warning');
+      if (kind === 'error') chip.classList.add('error');
+      chip.textContent = text;
+    }
     
     // Customer data storage
     let allCustomers = [];
