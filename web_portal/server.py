@@ -1517,6 +1517,40 @@ CUSTOMER_INVITATIONS: Dict[str, Dict[str, Any]] = {}
 CUSTOMER_REFERRAL_STATS: Dict[str, Dict[str, Any]] = {}
 ADMIN_ASSISTANT_WORKFLOWS: Dict[str, Dict[str, Any]] = {}
 
+
+def _normalize_admin_workflow_owner(username: Any) -> str:
+    """Normalize workflow owner key for admin assistant state."""
+    return str(username or 'admin').strip().lower() or 'admin'
+
+
+def get_admin_assistant_workflow_state(username: Any) -> Optional[Dict[str, Any]]:
+    """Return a deep-copied workflow state for the admin user, if any."""
+    owner = _normalize_admin_workflow_owner(username)
+    with STATE_LOCK:
+        workflow = ADMIN_ASSISTANT_WORKFLOWS.get(owner)
+        if not isinstance(workflow, dict):
+            return None
+        return json.loads(json.dumps(workflow))
+
+
+def save_admin_assistant_workflow_state(username: Any, workflow_state: Dict[str, Any]) -> str:
+    """Persist a deep-copied admin assistant workflow state for the user."""
+    owner = _normalize_admin_workflow_owner(username)
+    workflow_copy = json.loads(json.dumps(workflow_state or {}))
+    workflow_id = str(workflow_copy.get('workflow_id') or f"admin-wf-{uuid.uuid4().hex[:12]}")
+    workflow_copy['workflow_id'] = workflow_id
+    workflow_copy['updated_at'] = datetime.now().isoformat()
+    with STATE_LOCK:
+        ADMIN_ASSISTANT_WORKFLOWS[owner] = workflow_copy
+    return workflow_id
+
+
+def clear_admin_assistant_workflow_state(username: Any) -> bool:
+    """Clear persisted admin assistant workflow state for the user."""
+    owner = _normalize_admin_workflow_owner(username)
+    with STATE_LOCK:
+        return ADMIN_ASSISTANT_WORKFLOWS.pop(owner, None) is not None
+
 # Maximum invitations per customer
 MAX_CUSTOMER_INVITATIONS = 10
 
@@ -18282,14 +18316,21 @@ For claims or questions, please contact:
             username = str((session or {}).get('username') or 'admin').strip() or 'admin'
             action = str(data.get('action') or '').strip().lower()
 
-            if action == 'load_state':
+            if action == 'load_state' or (
+                not action
+                and 'workflow_state' not in data
+                and not data.get('query')
+                and not data.get('clear_workflow')
+            ):
+                stored_workflow = get_admin_assistant_workflow_state(username)
                 response_data = {
                     'success': True,
-                    'intent': 'state',
+                    'intent': 'workflow_state_loaded',
                     'message': 'Loaded stored admin assistant workflow state.',
-                    'workflow_state': get_admin_assistant_workflow_state(username),
+                    'workflow_state': stored_workflow,
+                    'workflow': stored_workflow,
                 }
-            elif action == 'save_state':
+            elif action == 'save_state' or 'workflow_state' in data:
                 raw_workflow_state = data.get('workflow_state')
                 if not isinstance(raw_workflow_state, dict):
                     self._set_json_headers(400)
@@ -18297,21 +18338,24 @@ For claims or questions, please contact:
                     return
 
                 workflow_id = save_admin_assistant_workflow_state(username, raw_workflow_state)
+                stored_workflow = get_admin_assistant_workflow_state(username)
                 response_data = {
                     'success': True,
-                    'intent': 'state',
+                    'intent': 'workflow_state_saved',
                     'message': 'Saved admin assistant workflow state.',
-                    'workflow_state': get_admin_assistant_workflow_state(username),
+                    'workflow_state': stored_workflow,
+                    'workflow': stored_workflow,
                     'workflow_id': workflow_id,
                 }
-            elif action == 'clear_state':
+            elif action == 'clear_state' or data.get('clear_workflow'):
                 cleared = clear_admin_assistant_workflow_state(username)
                 response_data = {
                     'success': True,
-                    'intent': 'state',
+                    'intent': 'workflow_state_cleared',
                     'message': 'Cleared stored admin assistant workflow state.',
                     'cleared': cleared,
                     'workflow_state': None,
+                    'workflow': None,
                 }
             else:
                 response_data = build_admin_assistant_response(data.get('query'))

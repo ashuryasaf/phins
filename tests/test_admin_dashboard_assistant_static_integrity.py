@@ -39,8 +39,8 @@ def test_admin_dashboard_assistant_includes_workflow_state_hooks():
     assert "ADMIN_ASSISTANT_STORAGE_KEY" in content
     assert "loadAdminAssistantWorkflowState" in content
     assert "saveAdminAssistantWorkflowState" in content
-    assert "syncAdminAssistantWorkflowState" in content
-    assert "loadAdminAssistantWorkflowFromBackend" in content
+    assert "postAdminAssistantState" in content
+    assert "queueAdminAssistantWorkflowSync" in content
     assert "executeAdminAssistantWorkflow" in content
     assert "current_step_index" in content
 
