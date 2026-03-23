@@ -1515,6 +1515,7 @@ CUSTOMER_INVITATIONS: Dict[str, Dict[str, Any]] = {}
 # Referral tracking - maps customer_id to their referral stats
 # {customer_id: {codes_generated: int, successful_referrals: int, codes: [], referred_customers: [], rewards: []}}
 CUSTOMER_REFERRAL_STATS: Dict[str, Dict[str, Any]] = {}
+ADMIN_ASSISTANT_WORKFLOWS: Dict[str, Dict[str, Any]] = {}
 
 # Maximum invitations per customer
 MAX_CUSTOMER_INVITATIONS = 10
@@ -18278,8 +18279,49 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
                 return
 
-            response_data = build_admin_assistant_response(data.get('query'))
-            response_data['requested_by'] = (session or {}).get('username', 'admin')
+            username = str((session or {}).get('username') or 'admin').strip() or 'admin'
+            action = str(data.get('action') or '').strip().lower()
+
+            if action == 'load_state':
+                response_data = {
+                    'success': True,
+                    'intent': 'state',
+                    'message': 'Loaded stored admin assistant workflow state.',
+                    'workflow_state': get_admin_assistant_workflow_state(username),
+                }
+            elif action == 'save_state':
+                raw_workflow_state = data.get('workflow_state')
+                if not isinstance(raw_workflow_state, dict):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'workflow_state must be an object'}).encode('utf-8'))
+                    return
+
+                workflow_id = save_admin_assistant_workflow_state(username, raw_workflow_state)
+                response_data = {
+                    'success': True,
+                    'intent': 'state',
+                    'message': 'Saved admin assistant workflow state.',
+                    'workflow_state': get_admin_assistant_workflow_state(username),
+                    'workflow_id': workflow_id,
+                }
+            elif action == 'clear_state':
+                cleared = clear_admin_assistant_workflow_state(username)
+                response_data = {
+                    'success': True,
+                    'intent': 'state',
+                    'message': 'Cleared stored admin assistant workflow state.',
+                    'cleared': cleared,
+                    'workflow_state': None,
+                }
+            else:
+                response_data = build_admin_assistant_response(data.get('query'))
+                if response_data.get('intent') == 'workflow':
+                    workflow = response_data.get('workflow')
+                    if isinstance(workflow, dict):
+                        save_admin_assistant_workflow_state(username, workflow)
+                        response_data['workflow_state'] = get_admin_assistant_workflow_state(username)
+
+            response_data['requested_by'] = username
 
             self._set_json_headers(200)
             self.wfile.write(json.dumps(response_data).encode('utf-8'))

@@ -7218,6 +7218,7 @@ Welcome to PHINS Portal! 🛡️`;
     }
 
     const ADMIN_ASSISTANT_STORAGE_KEY = 'phins_admin_assistant_workflow';
+    const ADMIN_ASSISTANT_SYNC_DEBOUNCE_MS = 150;
 
     const adminAssistantActionHandlers = {
       refresh_all_data: () => refreshAllData(),
@@ -7233,6 +7234,23 @@ Welcome to PHINS Portal! 🛡️`;
     };
 
     let adminAssistantWorkflowState = null;
+    let adminAssistantWorkflowSyncTimer = null;
+
+    async function postAdminAssistantState(payload = {}) {
+      const response = await fetch('/api/admin/assistant', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed with status ${response.status}`);
+      }
+      return data;
+    }
 
     function cloneAdminAssistantWorkflow(workflow) {
       if (!workflow) return null;
@@ -7252,6 +7270,25 @@ Welcome to PHINS Portal! 🛡️`;
       localStorage.setItem(ADMIN_ASSISTANT_STORAGE_KEY, JSON.stringify(adminAssistantWorkflowState));
     }
 
+    function queueAdminAssistantWorkflowSync() {
+      if (adminAssistantWorkflowSyncTimer) {
+        clearTimeout(adminAssistantWorkflowSyncTimer);
+      }
+      adminAssistantWorkflowSyncTimer = setTimeout(async () => {
+        adminAssistantWorkflowSyncTimer = null;
+        if (!adminAssistantWorkflowState) {
+          return;
+        }
+        try {
+          await postAdminAssistantState({
+            workflow_state: adminAssistantWorkflowState
+          });
+        } catch (err) {
+          console.error('Failed to sync admin assistant workflow state:', err);
+        }
+      }, ADMIN_ASSISTANT_SYNC_DEBOUNCE_MS);
+    }
+
     function loadAdminAssistantWorkflowState() {
       const raw = localStorage.getItem(ADMIN_ASSISTANT_STORAGE_KEY);
       if (!raw) return null;
@@ -7264,10 +7301,21 @@ Welcome to PHINS Portal! 🛡️`;
       }
     }
 
-    function clearAdminAssistantWorkflowState() {
+    async function clearAdminAssistantWorkflowState() {
       adminAssistantWorkflowState = null;
       saveAdminAssistantWorkflowState();
       renderAdminAssistantWorkflow(null);
+      if (adminAssistantWorkflowSyncTimer) {
+        clearTimeout(adminAssistantWorkflowSyncTimer);
+        adminAssistantWorkflowSyncTimer = null;
+      }
+      try {
+        await postAdminAssistantState({
+          clear_workflow: true
+        });
+      } catch (err) {
+        console.error('Failed to clear admin assistant workflow state on server:', err);
+      }
     }
 
     function initializeAdminAssistantWorkflow(workflow) {
@@ -7287,6 +7335,7 @@ Welcome to PHINS Portal! 🛡️`;
       adminAssistantWorkflowState.history = [];
       adminAssistantWorkflowState.last_updated_at = new Date().toISOString();
       saveAdminAssistantWorkflowState();
+      queueAdminAssistantWorkflowSync();
       renderAdminAssistantWorkflow(adminAssistantWorkflowState);
     }
 
@@ -7295,6 +7344,7 @@ Welcome to PHINS Portal! 🛡️`;
       mutator(adminAssistantWorkflowState);
       adminAssistantWorkflowState.last_updated_at = new Date().toISOString();
       saveAdminAssistantWorkflowState();
+      queueAdminAssistantWorkflowSync();
       renderAdminAssistantWorkflow(adminAssistantWorkflowState);
     }
 
@@ -7378,7 +7428,9 @@ Welcome to PHINS Portal! 🛡️`;
       clearBtn.type = 'button';
       clearBtn.className = 'assistant-secondary-btn';
       clearBtn.textContent = workflow.completed_at ? 'Clear completed workflow' : 'Clear workflow';
-      clearBtn.addEventListener('click', () => clearAdminAssistantWorkflowState());
+      clearBtn.addEventListener('click', () => {
+        clearAdminAssistantWorkflowState();
+      });
       controls.appendChild(clearBtn);
     }
 
@@ -7587,20 +7639,10 @@ Welcome to PHINS Portal! 🛡️`;
       setAdminAssistantBusy(true);
 
       try {
-        const response = await fetch('/api/admin/assistant', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ query })
+        const data = await postAdminAssistantState({
+          query,
+          workflow_state: adminAssistantWorkflowState
         });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.error || `Request failed with status ${response.status}`);
-        }
-
         renderAdminAssistantResponse(data);
       } catch (err) {
         console.error('Admin assistant request failed:', err);
@@ -7613,11 +7655,29 @@ Welcome to PHINS Portal! 🛡️`;
       }
     }
 
+    async function bootstrapAdminAssistantState() {
+      try {
+        const data = await postAdminAssistantState({
+          load_workflow: true
+        });
+        if (data.workflow_state) {
+          adminAssistantWorkflowState = cloneAdminAssistantWorkflow(data.workflow_state);
+          saveAdminAssistantWorkflowState();
+          renderAdminAssistantWorkflow(adminAssistantWorkflowState);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to load admin assistant workflow state from server:', err);
+      }
+
+      adminAssistantWorkflowState = loadAdminAssistantWorkflowState();
+      renderAdminAssistantWorkflow(adminAssistantWorkflowState);
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       const assistantInput = document.getElementById('admin-assistant-input');
       const assistantSubmit = document.getElementById('admin-assistant-submit');
-      adminAssistantWorkflowState = loadAdminAssistantWorkflowState();
-      renderAdminAssistantWorkflow(adminAssistantWorkflowState);
+      bootstrapAdminAssistantState();
 
       if (assistantSubmit) {
         assistantSubmit.addEventListener('click', () => askAdminAssistant());
