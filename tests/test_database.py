@@ -19,7 +19,7 @@ os.environ['SQLITE_PATH'] = '/tmp/test_phins_pytest.db'
 
 def test_database_models():
     """Test that database models can be imported and instantiated"""
-    from database.models import Customer, Policy, Claim, User
+    from database.models import Customer, Policy, Claim, User, AdminAssistantWorkflow
     
     # Test Customer model
     customer = Customer(
@@ -48,6 +48,15 @@ def test_database_models():
         claimed_amount=5000.0
     )
     assert claim.claimed_amount == 5000.0
+
+    # Test AdminAssistantWorkflow model
+    workflow = AdminAssistantWorkflow(
+        owner='admin',
+        workflow_id='admin-wf-test',
+        workflow_state='{"steps":[]}'
+    )
+    assert workflow.owner == 'admin'
+    assert workflow.workflow_id == 'admin-wf-test'
 
 
 def test_database_initialization():

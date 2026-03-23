@@ -1526,6 +1526,22 @@ def _normalize_admin_workflow_owner(username: Any) -> str:
 def get_admin_assistant_workflow_state(username: Any) -> Optional[Dict[str, Any]]:
     """Return a deep-copied workflow state for the admin user, if any."""
     owner = _normalize_admin_workflow_owner(username)
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                workflow = db.admin_assistant_workflows.get_by_owner(owner)
+                if workflow:
+                    try:
+                        payload = json.loads(workflow.workflow_state or '{}')
+                    except Exception:
+                        payload = {}
+                    if isinstance(payload, dict):
+                        payload.setdefault('workflow_id', workflow.workflow_id)
+                        return payload
+                    return None
+        except Exception as e:
+            print(f"[ADMIN-ASSISTANT] Database workflow lookup failed for {owner}: {e}")
     with STATE_LOCK:
         workflow = ADMIN_ASSISTANT_WORKFLOWS.get(owner)
         if not isinstance(workflow, dict):
@@ -1540,6 +1556,14 @@ def save_admin_assistant_workflow_state(username: Any, workflow_state: Dict[str,
     workflow_id = str(workflow_copy.get('workflow_id') or f"admin-wf-{uuid.uuid4().hex[:12]}")
     workflow_copy['workflow_id'] = workflow_id
     workflow_copy['updated_at'] = datetime.now().isoformat()
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                db.admin_assistant_workflows.save_state(owner, workflow_copy)
+                return workflow_id
+        except Exception as e:
+            print(f"[ADMIN-ASSISTANT] Database workflow save failed for {owner}: {e}")
     with STATE_LOCK:
         ADMIN_ASSISTANT_WORKFLOWS[owner] = workflow_copy
     return workflow_id
@@ -1548,8 +1572,18 @@ def save_admin_assistant_workflow_state(username: Any, workflow_state: Dict[str,
 def clear_admin_assistant_workflow_state(username: Any) -> bool:
     """Clear persisted admin assistant workflow state for the user."""
     owner = _normalize_admin_workflow_owner(username)
+    cleared = False
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                deleted = db.admin_assistant_workflows.delete_by_owner(owner)
+                cleared = bool(deleted)
+        except Exception as e:
+            print(f"[ADMIN-ASSISTANT] Database workflow clear failed for {owner}: {e}")
     with STATE_LOCK:
-        return ADMIN_ASSISTANT_WORKFLOWS.pop(owner, None) is not None
+        in_memory_cleared = ADMIN_ASSISTANT_WORKFLOWS.pop(owner, None) is not None
+    return cleared or in_memory_cleared
 
 # Maximum invitations per customer
 MAX_CUSTOMER_INVITATIONS = 10
@@ -2427,8 +2461,6 @@ def save_ledger_data():
                 'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
                 # v1.9 additions - General Policy Documents
                 'policy_documents': POLICY_DOCUMENTS,
-                # v2.1 additions - Admin assistant workflow execution state
-                'admin_assistant_workflows': ADMIN_ASSISTANT_WORKFLOWS,
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -2761,12 +2793,6 @@ def load_ledger_data():
             hydrated = hydrate_document_customer_links()
             if hydrated:
                 print(f"  - Policy Documents: hydrated owner links for {hydrated} legacy document(s)")
-        
-        # Load Admin Assistant Workflows (v2.1+)
-        loaded_admin_workflows = data.get('admin_assistant_workflows', {})
-        if loaded_admin_workflows:
-            ADMIN_ASSISTANT_WORKFLOWS.update(loaded_admin_workflows)
-            print(f"  - Admin Assistant Workflows: {len(ADMIN_ASSISTANT_WORKFLOWS)} workflows loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")

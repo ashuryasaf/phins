@@ -13,6 +13,7 @@ from .underwriting_repository import UnderwritingRepository
 from .billing_repository import BillingRepository
 from .user_repository import UserRepository
 from .session_repository import SessionRepository
+from .admin_assistant_workflow_repository import AdminAssistantWorkflowRepository
 from .audit_repository import AuditRepository
 from .platform_ledger_repository import PlatformLedgerRepository
 from .actuarial_repository import ActuarialRepository
@@ -27,6 +28,7 @@ __all__ = [
     'BillingRepository',
     'UserRepository',
     'SessionRepository',
+    'AdminAssistantWorkflowRepository',
     'AuditRepository',
     'PlatformLedgerRepository',
     'ActuarialRepository',

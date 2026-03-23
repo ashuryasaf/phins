@@ -27,6 +27,7 @@ from database.repositories import (
     PlatformLedgerRepository,
     ActuarialRepository,
     TokenRepository,
+    AdminAssistantWorkflowRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class DatabaseManager:
         self._platform_ledger = None
         self._actuarial = None
         self._tokens = None
+        self._admin_assistant_workflows = None
     
     def _ensure_session(self) -> Session:
         """
@@ -97,6 +99,7 @@ class DatabaseManager:
         self._platform_ledger = None
         self._actuarial = None
         self._tokens = None
+        self._admin_assistant_workflows = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -174,6 +177,13 @@ class DatabaseManager:
         if self._tokens is None:
             self._tokens = TokenRepository(self._ensure_session())
         return self._tokens
+
+    @property
+    def admin_assistant_workflows(self) -> AdminAssistantWorkflowRepository:
+        """Get admin assistant workflow repository"""
+        if self._admin_assistant_workflows is None:
+            self._admin_assistant_workflows = AdminAssistantWorkflowRepository(self._ensure_session())
+        return self._admin_assistant_workflows
     
     def commit(self):
         """Commit current transaction"""

@@ -180,17 +180,16 @@ def test_admin_assistant_requires_admin_role():
         srv.stop()
 
 
-def test_admin_assistant_workflow_state_persists_via_ledger_file(tmp_path):
-    persistence_file = tmp_path / "assistant_workflow_persistence.json"
-
-    original_persistence_enabled = portal.PERSISTENCE_ENABLED
-    original_persistence_file = portal.LEDGER_PERSISTENCE_FILE
-    original_workflows = dict(portal.ADMIN_ASSISTANT_WORKFLOWS)
+def test_admin_assistant_workflow_state_persists_via_database():
+    from database import init_database
+    from database.manager import DatabaseManager
+    original_use_database = portal.USE_DATABASE
+    original_database_enabled = getattr(portal, 'database_enabled', False)
 
     try:
-        portal.PERSISTENCE_ENABLED = True
-        portal.LEDGER_PERSISTENCE_FILE = str(persistence_file)
-        portal.ADMIN_ASSISTANT_WORKFLOWS.clear()
+        init_database()
+        portal.USE_DATABASE = True
+        portal.database_enabled = True
 
         workflow_payload = {
             "workflow_id": "admin-wf-persisted",
@@ -228,25 +227,25 @@ def test_admin_assistant_workflow_state_persists_via_ledger_file(tmp_path):
             ],
         }
 
-        portal.save_admin_assistant_workflow_state("admin", workflow_payload)
-        portal.save_ledger_data()
+        workflow_id = portal.save_admin_assistant_workflow_state("admin", workflow_payload)
+        assert workflow_id == "admin-wf-persisted"
 
-        raw = json.loads(Path(portal.LEDGER_PERSISTENCE_FILE).read_text(encoding="utf-8"))
-        assert raw["admin_assistant_workflows"]["admin"]["workflow_id"] == "admin-wf-persisted"
-
-        portal.ADMIN_ASSISTANT_WORKFLOWS.clear()
-        assert portal.get_admin_assistant_workflow_state("admin") is None
-
-        assert portal.load_ledger_data() is True
         restored = portal.get_admin_assistant_workflow_state("admin")
         assert restored is not None
         assert restored["workflow_id"] == "admin-wf-persisted"
         assert restored["steps"][1]["id"] == "reconcile_balance_sheet"
+
+        with DatabaseManager() as db:
+            record = db.admin_assistant_workflows.get_by_owner("admin")
+            assert record is not None
+            assert record.workflow_id == "admin-wf-persisted"
+            assert record.to_dict()["workflow_state"]["current_step_index"] == 1
+
+        assert portal.clear_admin_assistant_workflow_state("admin") is True
+        assert portal.get_admin_assistant_workflow_state("admin") is None
     finally:
-        portal.PERSISTENCE_ENABLED = original_persistence_enabled
-        portal.LEDGER_PERSISTENCE_FILE = original_persistence_file
-        portal.ADMIN_ASSISTANT_WORKFLOWS.clear()
-        portal.ADMIN_ASSISTANT_WORKFLOWS.update(original_workflows)
+        portal.USE_DATABASE = original_use_database
+        portal.database_enabled = original_database_enabled
 
 
 def test_admin_assistant_persists_and_clears_workflow_state():

@@ -528,6 +528,33 @@ class Session(Base):
         }
 
 
+class AdminAssistantWorkflow(Base):
+    """Persisted workflow state for admin assistant execution."""
+    __tablename__ = 'admin_assistant_workflows'
+
+    owner = Column(String(100), primary_key=True)
+    workflow_id = Column(String(64), index=True)
+    workflow_state = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        """Convert model to dictionary with decoded workflow state."""
+        state = {}
+        if self.workflow_state:
+            try:
+                state = json.loads(self.workflow_state)
+            except Exception:
+                state = {}
+        return {
+            'owner': self.owner,
+            'workflow_id': self.workflow_id,
+            'workflow_state': state,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+        }
+
+
 class AuditLog(Base):
     """Audit log table for tracking all actions"""
     __tablename__ = 'audit_logs'
