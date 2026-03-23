@@ -12,6 +12,7 @@ def test_admin_ai_assistant_panel_present_with_customer_style_attribution():
     assert "PHINS admin AI Assistant" in content
     assert "Ask me anything about the admin dashboard (voice or text)" in content
     assert "Design adapted from customer PHINS AI Assistant for style integrity" in content
+    assert "💬 Try asking (voice or text):" in content
     assert 'id="admin-ai-query-input"' in content
     assert 'id="admin-ai-response-area"' in content
 
@@ -71,6 +72,7 @@ def test_admin_ai_assistant_tabs_and_wiring_cover_core_admin_domains():
     for function_name in [
         "loadDashboardStats",
         "loadBalanceSheet",
+        "loadAIInsights",
         "loadCustomerList",
         "loadPolicies",
         "loadUnderwritingApplications",
@@ -108,12 +110,15 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
     assert 'id="admin-ai-voice-btn"' in content
     assert 'id="admin-ai-voice-recording-indicator"' in content
     assert 'id="admin-ai-voice-transcript"' in content
-    assert "🎤 Listening... speak your admin command" in content
+    assert "🎤 Listening... Speak now" in content
 
     assert 'id="admin-ai-quick-actions"' in content
     assert 'id="admin-ai-more-actions"' in content
     assert 'id="admin-ai-more-toggle"' in content
     assert "⬇️ Show More Actions" in content
+    assert "🤖📊 AI + BI Insights" in content
 
     # Ensure customer-assistant parity language for multi-input orchestration is present.
     assert "Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards." in content
+    assert "title=\"Help\"" in content
+    assert "title=\"Minimize\"" in content

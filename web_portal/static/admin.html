@@ -492,17 +492,20 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
-          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Assistant Help">❓</button>
-          <button onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize Assistant">➖</button>
+          <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
+          <button onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize">➖</button>
         </div>
       </div>
 
       <div id="admin-ai-help-panel" style="display:none;background:rgba(255,255,255,0.12);border-radius:12px;padding:14px;margin-bottom:12px;">
-        <h4 style="margin:0 0 8px 0;">💬 Try admin commands:</h4>
+        <h4 style="margin:0 0 8px 0;">💬 Try asking (voice or text):</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:0.84rem;">
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Refresh customers”<br>• “Open underwriting”<br>• “Load claims pipeline”</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Show balance sheet”<br>• “Reconcile reserves”<br>• “Run platform analytics”</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Load invitation codes”<br>• “Open marketplace”<br>• “Refresh growth campaign”</div>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.22);font-size:0.8rem;opacity:0.92;">
+          💡 <strong>Tip:</strong> Press 🎤 and speak naturally. Voice, text, and quick-action buttons all use the same AI/BI dispatcher.
         </div>
         <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions stay confirmation-gated to preserve data integrity.</p>
       </div>
@@ -530,7 +533,7 @@
       <div id="admin-ai-voice-recording-indicator" style="display:none;background:rgba(244,67,54,0.2);border:2px solid #f44336;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center;color:white;">
         <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
           <div style="width:14px;height:14px;background:#f44336;border-radius:50%;animation:pulse-recording 1s infinite;"></div>
-          <span style="font-weight:600;">🎤 Listening... speak your admin command</span>
+          <span style="font-weight:600;">🎤 Listening... Speak now</span>
           <button onclick="stopAdminAssistantVoiceInput()" style="background:#f44336;border:none;color:white;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:0.85rem;">Stop</button>
         </div>
         <p id="admin-ai-voice-transcript" style="margin:8px 0 0 0;font-style:italic;opacity:0.9;"></p>
@@ -559,6 +562,7 @@
           <button onclick="adminAssistantQuickAction('refresh_customers')" class="admin-ai-quick-btn">👥 Refresh Customers</button>
           <button onclick="adminAssistantQuickAction('refresh_underwriting')" class="admin-ai-quick-btn">🔍 Refresh Underwriting</button>
           <button onclick="adminAssistantQuickAction('refresh_claims')" class="admin-ai-quick-btn">📝 Refresh Claims</button>
+          <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(123,31,162,0.36) 0%, rgba(25,118,210,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">🤖📊 AI + BI Insights</button>
           <button onclick="adminAssistantQuickAction('refresh_analytics')" class="admin-ai-quick-btn">📊 Refresh Analytics</button>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
@@ -2111,6 +2115,7 @@
       refresh_financials: { label: '🏦 Refresh Financials', fn: async () => { await loadBalanceSheet(); }, integrity: 'safe' },
       load_ai_financial_insights: { label: '🤖 Load AI Financial Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
       refresh_ai_insights: { label: '🤖 Refresh AI Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
+      run_ai_bi_insights: { label: '🤖📊 Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
       reconcile_balance_sheet: {
         label: '✅ Reconcile Balance Sheet',
         confirm: '⚠️ Reconcile balance sheet now?\n\nThis verifies financial integrity across reserves and ledgers.',
@@ -2170,6 +2175,7 @@
       refresh_customers: 'customers',
       refresh_underwriting: 'underwriting',
       refresh_claims: 'claims',
+      run_ai_bi_insights: 'analytics',
       refresh_analytics: 'analytics',
       validate_all_customer_pipelines: 'customers',
       activate_approved_policies: 'policies',
@@ -2321,6 +2327,7 @@
       if (!normalized) return null;
 
       const actionKeywords = [
+        { test: ['ai bi', 'bi insights', 'ai insights', 'business intelligence'], action: 'run_ai_bi_insights' },
         { test: ['reconcile', 'reconciliation'], action: 'reconcile_balance_sheet' },
         { test: ['cleanup', 'clean demo', 'demo data'], action: 'cleanup_demo_data' },
         { test: ['bill all', 'mass bill', 'billing run'], action: 'bill_all_policies' },
