@@ -68,3 +68,6 @@ def test_ui_clarity_observer_avoids_character_data_loop():
     assert "characterData: true" not in content
     assert "childList: true" in content
     assert "subtree: true" in content
+    assert 'const VQA_FEATURE_FLAG_KEY = "phins_feature_voice_assistant";' in content
+    assert "function isVoiceAssistantFeatureEnabled()" in content
+    assert "if (!isVoiceAssistantFeatureEnabled()) {" in content

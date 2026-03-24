@@ -19,6 +19,7 @@
   const VQA_TOGGLE_ID = "phins-vqa-toggle";
   const VQA_PANEL_ID = "phins-vqa-panel";
   const VQA_VOICE_BTN_ID = "phins-vqa-voice-btn";
+  const VQA_FEATURE_FLAG_KEY = "phins_feature_voice_assistant";
   const VQA_PENDING_ACTION_KEY = "phins_vqa_pending_admin_action";
   const VQA_PENDING_ACTION_TTL_MS = 2 * 60 * 1000;
 
@@ -169,6 +170,29 @@
       return false;
     }
     return hasCredentialedSession();
+  }
+
+  function isVoiceAssistantFeatureEnabled() {
+    if (window.PHINS_ENABLE_VOICE_ASSISTANT === true) {
+      return true;
+    }
+
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      const queryFlag = params.get("voice_ai");
+      if (queryFlag === "1" || queryFlag === "true") {
+        return true;
+      }
+    } catch {
+      // no-op
+    }
+
+    try {
+      const stored = String(localStorage.getItem(VQA_FEATURE_FLAG_KEY) || "").toLowerCase();
+      return stored === "1" || stored === "true" || stored === "enabled";
+    } catch {
+      return false;
+    }
   }
 
   function setPendingAdminAction(actionId) {
@@ -801,39 +825,28 @@
 
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
-    ensureFloatingBar();
-    runPendingAdminActionIfAny();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        const targetElement =
-          mutation.target?.nodeType === Node.TEXT_NODE
-            ? mutation.target.parentElement
-            : mutation.target;
-        if (targetElement && targetElement.closest && targetElement.closest(`#${FLOATING_BAR_ID}`)) {
-          continue;
-        }
-
+        if (mutation.type !== "childList") continue;
         for (const node of mutation.addedNodes) {
-          if (node.nodeType !== Node.ELEMENT_NODE) {
-            continue;
-          }
-          if (node.closest && node.closest(`#${FLOATING_BAR_ID}`)) {
-            continue;
-          }
-          if (node.matches && node.matches(TARGET_SELECTOR)) {
-            cleanLeadingEmoji(node);
-          }
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
           runCleanup(node);
         }
       }
-      renderFloatingActions();
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true,
     });
+
+    if (!isVoiceAssistantFeatureEnabled()) {
+      return;
+    }
+
+    ensureFloatingBar();
+    runPendingAdminActionIfAny();
   }
 
   if (document.readyState === "loading") {
