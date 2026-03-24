@@ -14,14 +14,12 @@ def test_ui_clarity_script_injected_on_customer_dashboard_html():
 
 def test_ui_clarity_script_injected_on_login_html():
     content = _fetch("/login.html")
-    assert '<script src="/ui-clarity.js"></script>' in content
-    assert content.count('<script src="/ui-clarity.js"></script>') == 1
+    assert '<script src="/ui-clarity.js"></script>' not in content
 
 
 def test_ui_clarity_script_injected_on_landing_root_html():
     content = _fetch("/")
-    assert '<script src="/ui-clarity.js"></script>' in content
-    assert content.count('<script src="/ui-clarity.js"></script>') == 1
+    assert '<script src="/ui-clarity.js"></script>' not in content
 
 
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
