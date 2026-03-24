@@ -17,7 +17,7 @@ def test_customer_assistant_minimize_keeps_query_input_available():
     assert '#ai-assistant-panel[data-minimized="true"] #ai-response-area' in content
     assert '#ai-assistant-panel[data-minimized="true"] #ai-query-row' in content
     assert "function toggleAIPanel()" in content
-    assert "toggleButton.textContent = '➕';" in content
+    assert "toggleButton.textContent = '🎤➕';" in content
     assert "toggleButton.textContent = '➖';" in content
     assert "stopVoiceInput()" in content
 
@@ -34,6 +34,6 @@ def test_admin_assistant_minimize_keeps_query_input_available():
     assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area' in content
     assert '#admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row' in content
     assert "function toggleAdminAIPanel()" in content
-    assert "toggleButton.textContent = '➕';" in content
+    assert "toggleButton.textContent = '🎤➕';" in content
     assert "toggleButton.textContent = '➖';" in content
     assert "stopAdminAssistantVoiceInput()" in content
