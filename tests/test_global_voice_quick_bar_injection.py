@@ -60,3 +60,11 @@ def test_ui_clarity_skips_floating_bar_on_public_paths():
     assert "return;" in content
     assert 'document.body.classList.add("ux-compact-dashboard");' in content
     assert "const shouldEnableAssistant = shouldEnableFloatingAssistant();" in content
+
+
+def test_ui_clarity_observer_avoids_character_data_loop():
+    content = _fetch("/ui-clarity.js")
+    assert "const observer = new MutationObserver((mutations) => {" in content
+    assert "characterData: true" not in content
+    assert "childList: true" in content
+    assert "subtree: true" in content
