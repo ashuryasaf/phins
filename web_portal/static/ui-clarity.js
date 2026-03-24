@@ -790,13 +790,15 @@
   }
 
   function start() {
-    document.body.classList.add("ux-compact-dashboard");
     const shouldEnableAssistant = shouldEnableFloatingAssistant();
-    runCleanup(document);
-    if (shouldEnableAssistant) {
-      ensureFloatingBar();
-      runPendingAdminActionIfAny();
+    if (!shouldEnableAssistant) {
+      return;
     }
+
+    document.body.classList.add("ux-compact-dashboard");
+    runCleanup(document);
+    ensureFloatingBar();
+    runPendingAdminActionIfAny();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -816,9 +818,7 @@
           runCleanup(node);
         }
       }
-      if (shouldEnableAssistant) {
-        renderFloatingActions();
-      }
+      renderFloatingActions();
     });
 
     observer.observe(document.body, {

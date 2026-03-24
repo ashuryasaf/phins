@@ -54,4 +54,7 @@ def test_ui_clarity_skips_floating_bar_on_public_paths():
     assert "function isPublicNoAssistantPath(pathname)" in content
     assert "function shouldEnableFloatingAssistant()" in content
     assert 'return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";' in content
+    assert "if (!shouldEnableAssistant) {" in content
+    assert "return;" in content
+    assert 'document.body.classList.add("ux-compact-dashboard");' in content
     assert "const shouldEnableAssistant = shouldEnableFloatingAssistant();" in content
