@@ -30,8 +30,18 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       z-index: 9999;
       transition: opacity 0.5s ease, visibility 0.5s ease;
+      pointer-events: auto;
+      /* Failsafe: if scripts fail to run, splash auto-hides so page remains usable. */
+      animation: splash-auto-hide 0.6s ease 5s forwards;
     }
-    #splash-screen.hidden { opacity: 0; visibility: hidden; }
+    #splash-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    @keyframes splash-auto-hide {
+      to {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+    }
     .splash-logo {
       width: 120px; height: 120px;
       background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
@@ -444,13 +454,28 @@
   </footer>
   
   <script>
+    let splashHidden = false;
+
     // Hide splash screen
     function hideSplashScreen() {
+      if (splashHidden) return;
+      splashHidden = true;
       const splash = document.getElementById('splash-screen');
       if (splash) {
         splash.classList.add('hidden');
         setTimeout(() => splash.remove(), 500);
       }
+    }
+
+    // Emergency fallback: never leave splash overlay active
+    function forceHideSplashScreen() {
+      const splash = document.getElementById('splash-screen');
+      if (!splash) return;
+      splash.classList.add('hidden');
+      splash.style.display = 'none';
+      setTimeout(() => {
+        if (splash.parentNode) splash.parentNode.removeChild(splash);
+      }, 50);
     }
     
     // Load video from admin settings
@@ -498,10 +523,14 @@
     window.addEventListener('DOMContentLoaded', function() {
       // Hide splash after 1.5s
       setTimeout(hideSplashScreen, 1500);
+      // Hard fallback in case timers/animations are throttled
+      setTimeout(forceHideSplashScreen, 3000);
       
       // Load video settings
       loadVideoSettings();
     });
+
+    window.addEventListener('load', forceHideSplashScreen, { once: true });
     
     // Smooth scroll for anchor links
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
