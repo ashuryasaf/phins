@@ -40,3 +40,12 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     assert '/risk-reports-dashboard.html' in content
     assert 'id: "admin_logout"' in content
     assert "Logout now?" in content
+
+
+def test_ui_clarity_observer_avoids_floating_self_render_loop():
+    content = _fetch("/ui-clarity.js")
+    assert "if (actionsNode.dataset.context === context)" in content
+    assert "actionsNode.dataset.context = context;" in content
+    assert "targetElement && targetElement.closest && targetElement.closest(`#${FLOATING_BAR_ID}`)" in content
+    assert "node.closest && node.closest(`#${FLOATING_BAR_ID}`)" in content
+    assert "characterData: true" not in content
