@@ -20,6 +20,10 @@ def test_ui_clarity_script_injected_on_login_html():
 def test_ui_clarity_script_injected_on_landing_root_html():
     content = _fetch("/")
     assert '<script src="/ui-clarity.js"></script>' not in content
+    assert "id=\"splash-screen\"" in content
+    assert "function hideSplashScreen()" in content
+    assert "window.addEventListener('load', forceHideSplashScreen, { once: true });" in content
+    assert "setTimeout(hideSplashScreen, 1500);" in content
 
 
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
