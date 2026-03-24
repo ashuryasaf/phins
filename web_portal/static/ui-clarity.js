@@ -377,6 +377,10 @@
     const actionsNode = document.getElementById(VQA_ACTIONS_ID);
     if (!actionsNode) return;
     const context = detectContext();
+    if (actionsNode.dataset.context === context) {
+      return;
+    }
+    actionsNode.dataset.context = context;
     const actions = getFloatingActionsForContext(context);
     actionsNode.innerHTML = "";
 
@@ -802,14 +806,19 @@
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type === "characterData" && mutation.target.parentElement) {
-          const parent = mutation.target.parentElement;
-          if (parent.matches && parent.matches(TARGET_SELECTOR)) {
-            cleanLeadingEmoji(parent);
-          }
+        const targetElement =
+          mutation.target?.nodeType === Node.TEXT_NODE
+            ? mutation.target.parentElement
+            : mutation.target;
+        if (targetElement && targetElement.closest && targetElement.closest(`#${FLOATING_BAR_ID}`)) {
+          continue;
         }
+
         for (const node of mutation.addedNodes) {
           if (node.nodeType !== Node.ELEMENT_NODE) {
+            continue;
+          }
+          if (node.closest && node.closest(`#${FLOATING_BAR_ID}`)) {
             continue;
           }
           if (node.matches && node.matches(TARGET_SELECTOR)) {
@@ -824,7 +833,6 @@
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
     });
   }
 
