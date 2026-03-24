@@ -18,6 +18,12 @@ def test_ui_clarity_script_injected_on_login_html():
     assert content.count('<script src="/ui-clarity.js"></script>') == 1
 
 
+def test_ui_clarity_script_injected_on_landing_root_html():
+    content = _fetch("/")
+    assert '<script src="/ui-clarity.js"></script>' in content
+    assert content.count('<script src="/ui-clarity.js"></script>') == 1
+
+
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
     content = _fetch("/ui-clarity.js")
     assert 'const FLOATING_BAR_ID = "phins-vqa-bar";' in content
@@ -40,3 +46,12 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     assert '/risk-reports-dashboard.html' in content
     assert 'id: "admin_logout"' in content
     assert "Logout now?" in content
+
+
+def test_ui_clarity_skips_floating_bar_on_public_paths():
+    content = _fetch("/ui-clarity.js")
+    assert "function hasCredentialedSession()" in content
+    assert "function isPublicNoAssistantPath(pathname)" in content
+    assert "function shouldEnableFloatingAssistant()" in content
+    assert 'return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";' in content
+    assert "const shouldEnableAssistant = shouldEnableFloatingAssistant();" in content
