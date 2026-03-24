@@ -565,7 +565,7 @@
         </div>
         <div style="display: flex; gap: 8px;">
           <button onclick="toggleAIHelp()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Help">❓</button>
-          <button onclick="toggleAIPanel()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Minimize">➖</button>
+          <button id="ai-panel-minimize-btn" onclick="toggleAIPanel()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Minimize">➖</button>
         </div>
       </div>
       
@@ -616,7 +616,7 @@
       </div>
       
       <!-- Query Input -->
-      <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+      <div id="ai-query-row" style="display: flex; gap: 10px; margin-bottom: 16px;">
         <div style="flex: 1; position: relative;">
           <input type="text" id="ai-query-input" 
                  placeholder="Ask me anything... e.g., 'Show my billing report' or 'How much do I save monthly?'" 
@@ -702,6 +702,18 @@
       .ai-quick-btn:hover {
         background: rgba(255,255,255,0.3) !important;
         transform: translateY(-2px);
+      }
+      #ai-assistant-panel[data-minimized="true"] {
+        padding: 18px;
+      }
+      #ai-assistant-panel[data-minimized="true"] #ai-help-panel,
+      #ai-assistant-panel[data-minimized="true"] #voice-recording-indicator,
+      #ai-assistant-panel[data-minimized="true"] #ai-quick-actions,
+      #ai-assistant-panel[data-minimized="true"] #ai-response-area {
+        display: none !important;
+      }
+      #ai-assistant-panel[data-minimized="true"] #ai-query-row {
+        margin-bottom: 0 !important;
       }
       #ai-query-input::placeholder {
         color: #666;
@@ -1993,15 +2005,24 @@
     // Toggle AI panel (minimize/expand)
     function toggleAIPanel() {
       const panel = document.getElementById('ai-assistant-panel');
+      const toggleButton = document.getElementById('ai-panel-minimize-btn');
       const isMinimized = panel.dataset.minimized === 'true';
       
       if (isMinimized) {
-        panel.style.maxHeight = 'none';
         panel.dataset.minimized = 'false';
+        if (toggleButton) {
+          toggleButton.textContent = '➖';
+          toggleButton.title = 'Minimize';
+        }
       } else {
-        panel.style.maxHeight = '80px';
-        panel.style.overflow = 'hidden';
+        if (typeof stopVoiceInput === 'function') {
+          stopVoiceInput();
+        }
         panel.dataset.minimized = 'true';
+        if (toggleButton) {
+          toggleButton.textContent = '🎤➕';
+          toggleButton.title = 'Expand';
+        }
       }
     }
     

@@ -17122,8 +17122,21 @@ For claims or questions, please contact:
         if os.path.isfile(file_path):
             try:
                 self._set_file_headers(file_path)
-                with open(file_path, 'rb') as fh:
-                    self.wfile.write(fh.read())
+                if file_path.endswith('.html'):
+                    with open(file_path, 'r', encoding='utf-8') as fh:
+                        html_content = fh.read()
+                    # Inject shared UI clarity/voice quick-actions script on all HTML pages.
+                    # Avoid duplicate insertion if page already includes the script.
+                    if 'ui-clarity.js' not in html_content.lower():
+                        inject_tag = '<script src="/ui-clarity.js"></script>'
+                        if '</body>' in html_content:
+                            html_content = html_content.replace('</body>', f'  {inject_tag}\n</body>', 1)
+                        else:
+                            html_content = f'{html_content}\n{inject_tag}\n'
+                    self.wfile.write(html_content.encode('utf-8'))
+                else:
+                    with open(file_path, 'rb') as fh:
+                        self.wfile.write(fh.read())
             except Exception as e:
                 self.send_error(500, str(e))
         else:
