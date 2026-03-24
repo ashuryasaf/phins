@@ -2249,15 +2249,6 @@
       toggle.textContent = isVisible ? '⬇️ Show More Actions' : '⬆️ Show Less Actions';
     }
 
-    function toggleAdminAssistantMoreActions() {
-      const moreActions = document.getElementById('admin-ai-more-actions');
-      const toggle = document.getElementById('admin-ai-more-toggle');
-      if (!moreActions || !toggle) return;
-      const isVisible = moreActions.style.display === 'flex';
-      moreActions.style.display = isVisible ? 'none' : 'flex';
-      toggle.textContent = isVisible ? '⬇️ Show More Actions' : '⬆️ Show Less Actions';
-    }
-
     function adminAssistantSwitchTab(tabId) {
       if (!ADMIN_ASSISTANT_TABS[tabId]) return;
       adminAssistantState.activeTab = tabId;

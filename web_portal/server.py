@@ -17126,11 +17126,8 @@ For claims or questions, please contact:
                     with open(file_path, 'r', encoding='utf-8') as fh:
                         html_content = fh.read()
                     # Inject shared UI clarity/voice quick-actions script on all HTML pages.
-                    # Public entry/login pages stay untouched to avoid pre-login UI/runtime impact.
                     # Avoid duplicate insertion if page already includes the script.
-                    normalized_path = str(path or '').lower()
-                    is_public_entry_page = normalized_path in ('', '/', '/index.html', '/login', '/login.html')
-                    if (not is_public_entry_page) and 'ui-clarity.js' not in html_content.lower():
+                    if 'ui-clarity.js' not in html_content.lower():
                         inject_tag = '<script src="/ui-clarity.js"></script>'
                         if '</body>' in html_content:
                             html_content = html_content.replace('</body>', f'  {inject_tag}\n</body>', 1)

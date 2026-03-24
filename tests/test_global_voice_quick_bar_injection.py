@@ -14,16 +14,8 @@ def test_ui_clarity_script_injected_on_customer_dashboard_html():
 
 def test_ui_clarity_script_injected_on_login_html():
     content = _fetch("/login.html")
-    assert '<script src="/ui-clarity.js"></script>' not in content
-
-
-def test_ui_clarity_script_injected_on_landing_root_html():
-    content = _fetch("/")
-    assert '<script src="/ui-clarity.js"></script>' not in content
-    assert "id=\"splash-screen\"" in content
-    assert "function hideSplashScreen()" in content
-    assert "window.addEventListener('load', forceHideSplashScreen, { once: true });" in content
-    assert "setTimeout(hideSplashScreen, 1500);" in content
+    assert '<script src="/ui-clarity.js"></script>' in content
+    assert content.count('<script src="/ui-clarity.js"></script>') == 1
 
 
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
@@ -48,26 +40,3 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     assert '/risk-reports-dashboard.html' in content
     assert 'id: "admin_logout"' in content
     assert "Logout now?" in content
-
-
-def test_ui_clarity_skips_floating_bar_on_public_paths():
-    content = _fetch("/ui-clarity.js")
-    assert "function hasCredentialedSession()" in content
-    assert "function isPublicNoAssistantPath(pathname)" in content
-    assert "function shouldEnableFloatingAssistant()" in content
-    assert 'return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";' in content
-    assert "if (!shouldEnableAssistant) {" in content
-    assert "return;" in content
-    assert 'document.body.classList.add("ux-compact-dashboard");' in content
-    assert "const shouldEnableAssistant = shouldEnableFloatingAssistant();" in content
-
-
-def test_ui_clarity_observer_avoids_character_data_loop():
-    content = _fetch("/ui-clarity.js")
-    assert "const observer = new MutationObserver((mutations) => {" in content
-    assert "characterData: true" not in content
-    assert "childList: true" in content
-    assert "subtree: true" in content
-    assert 'const VQA_FEATURE_FLAG_KEY = "phins_feature_voice_assistant";' in content
-    assert "function isVoiceAssistantFeatureEnabled()" in content
-    assert "if (!isVoiceAssistantFeatureEnabled()) {" in content

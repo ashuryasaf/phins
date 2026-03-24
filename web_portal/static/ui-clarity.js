@@ -19,7 +19,6 @@
   const VQA_TOGGLE_ID = "phins-vqa-toggle";
   const VQA_PANEL_ID = "phins-vqa-panel";
   const VQA_VOICE_BTN_ID = "phins-vqa-voice-btn";
-  const VQA_FEATURE_FLAG_KEY = "phins_feature_voice_assistant";
   const VQA_PENDING_ACTION_KEY = "phins_vqa_pending_admin_action";
   const VQA_PENDING_ACTION_TTL_MS = 2 * 60 * 1000;
 
@@ -138,61 +137,6 @@
 
   function getSessionToken() {
     return localStorage.getItem("phins_token") || "";
-  }
-
-  function hasCredentialedSession() {
-    const token = getSessionToken();
-    if (String(token || "").trim()) {
-      return true;
-    }
-
-    try {
-      const raw = localStorage.getItem("session");
-      if (!raw) return false;
-      const session = JSON.parse(raw);
-      return Boolean(
-        session &&
-        (session.user_id || session.userId || session.email || session.user_email || session.role)
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  function isPublicNoAssistantPath(pathname) {
-    const p = String(pathname || "").toLowerCase();
-    return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";
-  }
-
-  function shouldEnableFloatingAssistant() {
-    const path = window.location.pathname || "";
-    if (isPublicNoAssistantPath(path)) {
-      return false;
-    }
-    return hasCredentialedSession();
-  }
-
-  function isVoiceAssistantFeatureEnabled() {
-    if (window.PHINS_ENABLE_VOICE_ASSISTANT === true) {
-      return true;
-    }
-
-    try {
-      const params = new URLSearchParams(window.location.search || "");
-      const queryFlag = params.get("voice_ai");
-      if (queryFlag === "1" || queryFlag === "true") {
-        return true;
-      }
-    } catch {
-      // no-op
-    }
-
-    try {
-      const stored = String(localStorage.getItem(VQA_FEATURE_FLAG_KEY) || "").toLowerCase();
-      return stored === "1" || stored === "true" || stored === "enabled";
-    } catch {
-      return false;
-    }
   }
 
   function setPendingAdminAction(actionId) {
@@ -401,10 +345,6 @@
     const actionsNode = document.getElementById(VQA_ACTIONS_ID);
     if (!actionsNode) return;
     const context = detectContext();
-    if (actionsNode.dataset.context === context) {
-      return;
-    }
-    actionsNode.dataset.context = context;
     const actions = getFloatingActionsForContext(context);
     actionsNode.innerHTML = "";
 
@@ -818,35 +758,37 @@
   }
 
   function start() {
-    const shouldEnableAssistant = shouldEnableFloatingAssistant();
-    if (!shouldEnableAssistant) {
-      return;
-    }
-
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
+    ensureFloatingBar();
+    runPendingAdminActionIfAny();
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type !== "childList") continue;
+        if (mutation.type === "characterData" && mutation.target.parentElement) {
+          const parent = mutation.target.parentElement;
+          if (parent.matches && parent.matches(TARGET_SELECTOR)) {
+            cleanLeadingEmoji(parent);
+          }
+        }
         for (const node of mutation.addedNodes) {
-          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (node.nodeType !== Node.ELEMENT_NODE) {
+            continue;
+          }
+          if (node.matches && node.matches(TARGET_SELECTOR)) {
+            cleanLeadingEmoji(node);
+          }
           runCleanup(node);
         }
       }
+      renderFloatingActions();
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
-
-    if (!isVoiceAssistantFeatureEnabled()) {
-      return;
-    }
-
-    ensureFloatingBar();
-    runPendingAdminActionIfAny();
   }
 
   if (document.readyState === "loading") {
