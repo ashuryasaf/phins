@@ -332,8 +332,17 @@
       color: white;
     }
     #admin-ai-assistant-panel[data-minimized="true"] {
-      max-height: 88px;
-      overflow: hidden;
+      padding: 18px;
+    }
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-help-panel,
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-voice-recording-indicator,
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-tab-bar,
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-quick-actions,
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area {
+      display: none !important;
+    }
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
+      margin-bottom: 0 !important;
     }
     .admin-ai-tab-bar {
       display: flex;
@@ -493,7 +502,7 @@
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
-          <button onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize">➖</button>
+          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize">➖</button>
         </div>
       </div>
 
@@ -510,7 +519,7 @@
         <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions stay confirmation-gated to preserve data integrity.</p>
       </div>
 
-      <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <div id="admin-ai-query-row" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="flex:1;position:relative;min-width:260px;">
           <input
             id="admin-ai-query-input"
@@ -2210,9 +2219,25 @@
 
     function toggleAdminAIPanel() {
       const panel = document.getElementById('admin-ai-assistant-panel');
+      const toggleButton = document.getElementById('admin-ai-panel-minimize-btn');
       if (!panel) return;
       const minimized = panel.dataset.minimized === 'true';
       panel.dataset.minimized = minimized ? 'false' : 'true';
+      if (minimized) {
+        if (toggleButton) {
+          toggleButton.textContent = '➖';
+          toggleButton.title = 'Minimize';
+        }
+        return;
+      }
+
+      if (typeof stopAdminAssistantVoiceInput === 'function') {
+        stopAdminAssistantVoiceInput();
+      }
+      if (toggleButton) {
+        toggleButton.textContent = '➕';
+        toggleButton.title = 'Expand';
+      }
     }
 
     function toggleAdminAssistantMoreActions() {
