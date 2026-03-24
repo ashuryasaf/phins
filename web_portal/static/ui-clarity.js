@@ -139,6 +139,38 @@
     return localStorage.getItem("phins_token") || "";
   }
 
+  function hasCredentialedSession() {
+    const token = getSessionToken();
+    if (String(token || "").trim()) {
+      return true;
+    }
+
+    try {
+      const raw = localStorage.getItem("session");
+      if (!raw) return false;
+      const session = JSON.parse(raw);
+      return Boolean(
+        session &&
+        (session.user_id || session.userId || session.email || session.user_email || session.role)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function isPublicNoAssistantPath(pathname) {
+    const p = String(pathname || "").toLowerCase();
+    return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";
+  }
+
+  function shouldEnableFloatingAssistant() {
+    const path = window.location.pathname || "";
+    if (isPublicNoAssistantPath(path)) {
+      return false;
+    }
+    return hasCredentialedSession();
+  }
+
   function setPendingAdminAction(actionId) {
     try {
       const payload = { actionId, createdAt: Date.now() };
@@ -759,9 +791,12 @@
 
   function start() {
     document.body.classList.add("ux-compact-dashboard");
+    const shouldEnableAssistant = shouldEnableFloatingAssistant();
     runCleanup(document);
-    ensureFloatingBar();
-    runPendingAdminActionIfAny();
+    if (shouldEnableAssistant) {
+      ensureFloatingBar();
+      runPendingAdminActionIfAny();
+    }
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -781,7 +816,9 @@
           runCleanup(node);
         }
       }
-      renderFloatingActions();
+      if (shouldEnableAssistant) {
+        renderFloatingActions();
+      }
     });
 
     observer.observe(document.body, {
