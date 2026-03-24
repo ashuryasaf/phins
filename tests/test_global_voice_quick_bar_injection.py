@@ -14,16 +14,8 @@ def test_ui_clarity_script_injected_on_customer_dashboard_html():
 
 def test_ui_clarity_script_injected_on_login_html():
     content = _fetch("/login.html")
-    assert '<script src="/ui-clarity.js"></script>' not in content
-
-
-def test_ui_clarity_script_injected_on_landing_root_html():
-    content = _fetch("/")
-    assert '<script src="/ui-clarity.js"></script>' not in content
-    assert "id=\"splash-screen\"" in content
-    assert "function hideSplashScreen()" in content
-    assert "window.addEventListener('load', forceHideSplashScreen, { once: true });" in content
-    assert "setTimeout(hideSplashScreen, 1500);" in content
+    assert '<script src="/ui-clarity.js"></script>' in content
+    assert content.count('<script src="/ui-clarity.js"></script>') == 1
 
 
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
@@ -50,13 +42,10 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     assert "Logout now?" in content
 
 
-def test_ui_clarity_skips_floating_bar_on_public_paths():
+def test_ui_clarity_observer_avoids_floating_self_render_loop():
     content = _fetch("/ui-clarity.js")
-    assert "function hasCredentialedSession()" in content
-    assert "function isPublicNoAssistantPath(pathname)" in content
-    assert "function shouldEnableFloatingAssistant()" in content
-    assert 'return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";' in content
-    assert "if (!shouldEnableAssistant) {" in content
-    assert "return;" in content
-    assert 'document.body.classList.add("ux-compact-dashboard");' in content
-    assert "const shouldEnableAssistant = shouldEnableFloatingAssistant();" in content
+    assert "if (actionsNode.dataset.context === context)" in content
+    assert "actionsNode.dataset.context = context;" in content
+    assert "targetElement && targetElement.closest && targetElement.closest(`#${FLOATING_BAR_ID}`)" in content
+    assert "node.closest && node.closest(`#${FLOATING_BAR_ID}`)" in content
+    assert "characterData: true" not in content

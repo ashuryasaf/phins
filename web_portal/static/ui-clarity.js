@@ -139,38 +139,6 @@
     return localStorage.getItem("phins_token") || "";
   }
 
-  function hasCredentialedSession() {
-    const token = getSessionToken();
-    if (String(token || "").trim()) {
-      return true;
-    }
-
-    try {
-      const raw = localStorage.getItem("session");
-      if (!raw) return false;
-      const session = JSON.parse(raw);
-      return Boolean(
-        session &&
-        (session.user_id || session.userId || session.email || session.user_email || session.role)
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  function isPublicNoAssistantPath(pathname) {
-    const p = String(pathname || "").toLowerCase();
-    return p === "/" || p === "" || p === "/index.html" || p === "/login" || p === "/login.html";
-  }
-
-  function shouldEnableFloatingAssistant() {
-    const path = window.location.pathname || "";
-    if (isPublicNoAssistantPath(path)) {
-      return false;
-    }
-    return hasCredentialedSession();
-  }
-
   function setPendingAdminAction(actionId) {
     try {
       const payload = { actionId, createdAt: Date.now() };
@@ -377,6 +345,10 @@
     const actionsNode = document.getElementById(VQA_ACTIONS_ID);
     if (!actionsNode) return;
     const context = detectContext();
+    if (actionsNode.dataset.context === context) {
+      return;
+    }
+    actionsNode.dataset.context = context;
     const actions = getFloatingActionsForContext(context);
     actionsNode.innerHTML = "";
 
@@ -790,11 +762,6 @@
   }
 
   function start() {
-    const shouldEnableAssistant = shouldEnableFloatingAssistant();
-    if (!shouldEnableAssistant) {
-      return;
-    }
-
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
     ensureFloatingBar();
@@ -802,14 +769,18 @@
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type === "characterData" && mutation.target.parentElement) {
-          const parent = mutation.target.parentElement;
-          if (parent.matches && parent.matches(TARGET_SELECTOR)) {
-            cleanLeadingEmoji(parent);
-          }
+        const targetElement =
+          mutation.target?.nodeType === Node.TEXT_NODE
+            ? mutation.target.parentElement
+            : mutation.target;
+        if (targetElement && targetElement.closest && targetElement.closest(`#${FLOATING_BAR_ID}`)) {
+          continue;
         }
         for (const node of mutation.addedNodes) {
           if (node.nodeType !== Node.ELEMENT_NODE) {
+            continue;
+          }
+          if (node.closest && node.closest(`#${FLOATING_BAR_ID}`)) {
             continue;
           }
           if (node.matches && node.matches(TARGET_SELECTOR)) {
@@ -824,7 +795,6 @@
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
     });
   }
 
