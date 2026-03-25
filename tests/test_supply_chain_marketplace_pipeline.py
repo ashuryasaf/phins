@@ -369,3 +369,331 @@ def test_supplier_orders_endpoint_returns_supply_chain_orders_with_expected_fiel
     finally:
         srv.stop()
 
+
+def test_marketplace_order_parity_across_customer_admin_and_settlement_views():
+    _reset_supply_chain_state()
+
+    port = 8163
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "parity test invitation",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        invitation_code = (invitation.get("invitation") or {}).get("code")
+        assert invitation_code
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": invitation_code,
+                "company_name": "Parity Pharmacy",
+                "contact_email": "parity-pharmacy@example.com",
+                "contact_name": "Parity Contact",
+                "supplier_type": "pharmacy",
+                "password": "ParityPass123!",
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for parity test"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "parity-pharmacy@example.com", "password": "ParityPass123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Parity Refill Pack",
+                "description": "Cross-dashboard parity coverage",
+                "item_type": "product",
+                "category": "medication",
+                "price": 42.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        customer_id = "CUST-PARITY-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "Parity Customer",
+                "email": "parity-customer@example.com",
+            }
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 200.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        purchase_result, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": customer_id,
+                "offer_id": offer_id,
+                "product_id": offer_id,
+                "product_name": "Parity Refill Pack",
+                "amount": 42.0,
+                "quantity": 2,
+                "payment_method": "health_wallet",
+                "category": "medication",
+                "allow_credit_fallback": False,
+            },
+        )
+        assert status == 200
+        assert purchase_result.get("success") is True
+
+        supplier_orders, status = _get(f"{base}/api/supplier/orders", token=supplier_token)
+        assert status == 200
+        supplier_items = supplier_orders.get("items", [])
+        assert len(supplier_items) == 1
+        order = supplier_items[0]
+        assert order.get("customer_name") == "Parity Customer"
+        assert order.get("supplier_name") == "Parity Pharmacy"
+        assert order.get("platform_fee", 0) > 0
+        assert order.get("supplier_payout", 0) > 0
+
+        customer_history, status = _get(
+            f"{base}/api/health-wallet/purchases?customer_id={customer_id}",
+            token=admin_token,
+        )
+        assert status == 200
+        purchases = customer_history.get("purchases", [])
+        assert len(purchases) == 1
+        purchase = purchases[0]
+        assert purchase.get("order_id") == order.get("id")
+        assert purchase.get("supplier_name") == "Parity Pharmacy"
+        assert purchase.get("provider_name") == "Parity Pharmacy"
+        assert purchase.get("customer_name") == "Parity Customer"
+        assert purchase.get("wallet_paid", 0) > 0
+        assert purchase.get("platform_fee", 0) > 0
+        assert purchase.get("supplier_payout", 0) > 0
+        assert purchase.get("can_cancel") is False
+        assert purchase.get("can_refund") is False
+
+        admin_orders, status = _get(f"{base}/api/admin/suppliers/orders", token=admin_token)
+        assert status == 200
+        admin_items = admin_orders.get("items", [])
+        assert len(admin_items) == 1
+        admin_order = admin_items[0]
+        assert admin_order.get("customer_name") == "Parity Customer"
+        assert admin_order.get("supplier_name") == "Parity Pharmacy"
+        assert admin_order.get("platform_fee", 0) > 0
+        assert admin_order.get("supplier_payout", 0) > 0
+
+        settlements, status = _get(f"{base}/api/supply-chain/settlements", token=supplier_token)
+        assert status == 200
+        assert settlements.get("supplier_id") == supplier_id
+        assert settlements.get("pending_orders") == 1
+        assert settlements.get("pending_amount", 0) > 0
+
+        stats, status = _get(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/statistics",
+            token=supplier_token,
+        )
+        assert status == 200
+        assert stats.get("company_name") == "Parity Pharmacy"
+        assert stats.get("pending_settlement", 0) > 0
+
+        pnl, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/pnl",
+            {},
+            token=supplier_token,
+        )
+        assert status == 200
+        assert pnl.get("success") is True
+        assert pnl.get("supplier_name") == "Parity Pharmacy"
+        assert pnl.get("report", {}).get("pending_settlement", 0) > 0
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+
+
+def test_marketplace_cancel_and_refund_endpoints_update_customer_and_admin_views():
+    _reset_supply_chain_state()
+
+    port = 8164
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "cancel refund parity",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        invitation_code = (invitation.get("invitation") or {}).get("code")
+        assert invitation_code
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": invitation_code,
+                "company_name": "Refund Pharmacy",
+                "contact_email": "refund-pharmacy@example.com",
+                "contact_name": "Refund Contact",
+                "supplier_type": "pharmacy",
+                "password": "RefundPass123!",
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for refund test"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "refund-pharmacy@example.com", "password": "RefundPass123!"},
+        )
+        assert status == 200
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Refundable Refill Pack",
+                "description": "Refund flow coverage",
+                "item_type": "product",
+                "category": "medication",
+                "price": 30.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+            },
+            token=supplier_login["token"],
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        customer_id = "CUST-REFUND-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "Refund Customer",
+                "email": "refund-customer@example.com",
+            }
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 200.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        purchase_result, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": customer_id,
+                "offer_id": offer_id,
+                "product_id": offer_id,
+                "product_name": "Refundable Refill Pack",
+                "amount": 30.0,
+                "quantity": 1,
+                "payment_method": "health_wallet",
+                "category": "medication",
+                "allow_credit_fallback": False,
+            },
+        )
+        assert status == 200
+        assert purchase_result.get("success") is True
+        purchase_id = purchase_result.get("purchase", {}).get("id")
+        assert purchase_id
+
+        history_before, status = _get(
+            f"{base}/api/health-wallet/purchases?customer_id={customer_id}",
+            token=admin_token,
+        )
+        assert status == 200
+        before_rows = history_before.get("purchases", [])
+        assert len(before_rows) == 1
+        assert before_rows[0].get("status") == "completed"
+
+        refund_result, status = _post(
+            f"{base}/api/marketplace/orders/refund",
+            {"purchase_id": purchase_id, "customer_id": customer_id},
+            token=admin_token,
+        )
+        assert status == 200
+        assert refund_result.get("success") is True
+
+        history_after, status = _get(
+            f"{base}/api/health-wallet/purchases?customer_id={customer_id}",
+            token=admin_token,
+        )
+        assert status == 200
+        after_rows = history_after.get("purchases", [])
+        assert len(after_rows) == 1
+        assert after_rows[0].get("status") == "refunded"
+        assert after_rows[0].get("refunded_amount", 0) > 0
+        assert after_rows[0].get("can_refund") is False
+
+        admin_orders, status = _get(f"{base}/api/admin/suppliers/orders", token=admin_token)
+        assert status == 200
+        admin_items = admin_orders.get("items", [])
+        assert len(admin_items) == 1
+        assert admin_items[0].get("status") == "refunded"
+        assert admin_items[0].get("customer_name") == "Refund Customer"
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+

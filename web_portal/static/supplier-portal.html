@@ -320,6 +320,34 @@
     .profile-item .value {
       font-weight: 500;
     }
+    .settlement-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .settlement-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .settlement-card .label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .settlement-card .value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .settlement-card .value.success {
+      color: #10b981;
+    }
+    .settlement-card .value.warning {
+      color: #f59e0b;
+    }
     @media (max-width: 1024px) {
       .dashboard-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -387,6 +415,7 @@
     <div class="tabs">
       <div class="tab active" data-tab="offers">My Offers</div>
       <div class="tab" data-tab="orders">Orders</div>
+      <div class="tab" data-tab="settlements">Settlements</div>
       <div class="tab" data-tab="profile">Profile</div>
     </div>
 
@@ -431,6 +460,68 @@
               <tr><td colspan="9" class="muted-text">Loading...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Settlements -->
+    <div class="tab-content" id="tab-settlements">
+      <div class="settlement-summary">
+        <div class="settlement-card">
+          <div class="label">Pending Payout</div>
+          <div class="value warning" id="settlement-pending-amount">$0.00</div>
+        </div>
+        <div class="settlement-card">
+          <div class="label">Orders Awaiting Settlement</div>
+          <div class="value" id="settlement-pending-orders">0</div>
+        </div>
+        <div class="settlement-card">
+          <div class="label">Gross Sales (30d)</div>
+          <div class="value" id="settlement-gross-sales">$0.00</div>
+        </div>
+        <div class="settlement-card">
+          <div class="label">Net Payout (30d)</div>
+          <div class="value success" id="settlement-net-payout">$0.00</div>
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <h3>Pending Settlement Orders</h3>
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Completed</th>
+                <th>Payout</th>
+              </tr>
+            </thead>
+            <tbody id="settlement-orders-body">
+              <tr><td colspan="3" class="muted-text">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <h3>Supplier P&amp;L Snapshot</h3>
+        <div class="profile-grid" id="settlement-pnl-grid">
+          <div class="profile-item">
+            <div class="label">Gross Sales</div>
+            <div class="value">$0.00</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Refunds</div>
+            <div class="value">$0.00</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Platform Commission</div>
+            <div class="value">$0.00</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Net Payout</div>
+            <div class="value">$0.00</div>
+          </div>
         </div>
       </div>
     </div>
@@ -655,7 +746,79 @@
       if (status === 'processing') {
         return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'completed')">Complete</button>`;
       }
+      if (status === 'confirmed') {
+        return `<div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'processing')">Start</button><button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button></div>`;
+      }
+      if (status === 'pending') {
+        return `<div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'confirmed')">Confirm</button><button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button></div>`;
+      }
       return '<span class="muted-text">No actions</span>';
+    }
+
+    async function loadSettlementData() {
+      try {
+        const [settlementData, profileData] = await Promise.all([
+          apiGet('/api/supply-chain/settlements'),
+          apiGet(`/api/supply-chain/suppliers/${encodeURIComponent(currentSupplier?.supplier_id || currentSupplier?.username || '')}/pnl`)
+        ]);
+
+        document.getElementById('settlement-pending-amount').textContent = formatCurrency(settlementData.pending_amount || 0);
+        document.getElementById('settlement-pending-orders').textContent = settlementData.pending_orders || 0;
+
+        const pendingOrders = settlementData.orders || [];
+        const pendingBody = document.getElementById('settlement-orders-body');
+        if (!pendingOrders.length) {
+          pendingBody.innerHTML = '<tr><td colspan="3" class="muted-text">No pending settlements</td></tr>';
+        } else {
+          pendingBody.innerHTML = pendingOrders.map(order => `
+            <tr>
+              <td>${esc(order.order_id || 'N/A')}</td>
+              <td>${formatDate(order.completed_date)}</td>
+              <td>${formatCurrency(order.amount)}</td>
+            </tr>
+          `).join('');
+        }
+
+        const report = (profileData && profileData.report) || {};
+        document.getElementById('settlement-gross-sales').textContent = formatCurrency(report.gross_sales || 0);
+        document.getElementById('settlement-net-payout').textContent = formatCurrency(report.net_payout || 0);
+        document.getElementById('settlement-pnl-grid').innerHTML = `
+          <div class="profile-item">
+            <div class="label">Gross Sales</div>
+            <div class="value">${formatCurrency(report.gross_sales || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Refunds</div>
+            <div class="value">${formatCurrency(report.refunds || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Platform Commission</div>
+            <div class="value">${formatCurrency(report.platform_commission || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Net Payout</div>
+            <div class="value">${formatCurrency(report.net_payout || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Pending Settlement</div>
+            <div class="value">${formatCurrency(report.pending_settlement || settlementData.pending_amount || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Settled Amount</div>
+            <div class="value">${formatCurrency(report.settled_amount || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Completed Orders</div>
+            <div class="value">${esc(report.completed_orders || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Cancelled Orders</div>
+            <div class="value">${esc(report.cancelled_orders || 0)}</div>
+          </div>
+        `;
+      } catch (e) {
+        document.getElementById('settlement-orders-body').innerHTML = `<tr><td colspan="3" class="text-danger">Failed: ${esc(e.message)}</td></tr>`;
+      }
     }
 
     function formatSupplierType(type) {
@@ -869,7 +1032,7 @@
         tbody.innerHTML = items.map(order => `
           <tr>
             <td>${esc(order.id)}</td>
-            <td>${formatDate(order.created_date)}</td>
+            <td>${formatDate(order.order_date || order.created_date || order.timestamp)}</td>
             <td>${esc(formatCustomerLabel(order))}</td>
             <td>${esc(formatOrderItem(order))}</td>
             <td>${order.quantity || 1}</td>
@@ -883,6 +1046,20 @@
         `).join('');
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="9" class="text-danger">Failed: ${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    async function cancelOrder(orderId) {
+      if (!confirm(`Cancel order ${orderId}?`)) return;
+      try {
+        await apiPost('/api/supplier/orders/update-status', {
+          order_id: orderId,
+          status: 'cancelled',
+          notes: 'Cancelled by supplier portal'
+        });
+        await Promise.all([refreshOrders(), loadSettlementOverview(), loadSupplierPerformance()]);
+      } catch (e) {
+        alert('Failed to cancel order: ' + e.message);
       }
     }
 
@@ -1044,9 +1221,10 @@
       try {
         await apiPost('/api/supplier/orders/update-status', { 
           transaction_id: orderId, 
-          status 
+          status,
+          notes: `Updated from supplier portal to ${status}`
         });
-        refreshOrders();
+        await Promise.all([refreshOrders(), loadSettlementData()]);
       } catch (e) {
         alert('Failed to update order: ' + e.message);
       }
@@ -1059,7 +1237,8 @@
         await Promise.all([
           loadSupplierInfo(),
           loadOffers(),
-          refreshOrders()
+          refreshOrders(),
+          loadSettlementData()
         ]);
       }
     });
