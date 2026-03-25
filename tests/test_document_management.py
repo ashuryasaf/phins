@@ -325,8 +325,65 @@ def test_document_view_owner_can_access():
     assert view_resp.get('success') is True
     assert view_resp.get('data') == sample_data
     assert view_resp.get('name') == 'myfile.txt'
+    assert view_resp.get('storage') in {'external_file', 'inline_base64'}
 
     srv.stop()
+
+
+def test_document_upload_externalizes_large_payload_and_analysis_reads_from_file():
+    """Larger uploaded documents should persist externally and remain analyzable."""
+    port = 8231
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-large-doc-token'
+    _inject_session(token, 'custLargeDoc', 'customer', 'CUST-LARGE-DOC')
+
+    original_max_size = portal.MAX_POLICY_DOCUMENT_SIZE_BYTES
+    original_inline_limit = portal.MEDIA_INLINE_MAX_BYTES
+    original_upload_dir = portal.UPLOAD_STORAGE_DIR
+    portal.MAX_POLICY_DOCUMENT_SIZE_BYTES = 1024
+    portal.MEDIA_INLINE_MAX_BYTES = 32
+    try:
+        content = b"MEDICAL REPORT\nterminal illness noted in attached document\n"
+        sample_data = base64.b64encode(content).decode()
+        status, up_resp = _post(base + '/api/documents/upload', {
+            'files': [{
+                'name': 'large_medical.txt',
+                'type': 'text/plain',
+                'size': len(content),
+                'data': sample_data
+            }],
+            'entity_type': 'underwriting',
+            'document_type': 'medical',
+            'description': 'large medical document'
+        }, token)
+        assert status == 201, f"Expected 201, got {status}: {up_resp}"
+
+        doc_id = up_resp['uploaded'][0]['id']
+        doc = portal.POLICY_DOCUMENTS[doc_id]
+        assert doc.get('stored_externally') is True
+        assert doc.get('file_path')
+        assert doc.get('data') in ('', None)
+
+        status_view, view_resp = _get(base + f'/api/documents/view?id={doc_id}', token)
+        assert status_view == 200, f"Expected 200, got {status_view}: {view_resp}"
+        assert view_resp.get('data') == sample_data
+        assert view_resp.get('storage') == 'external_file'
+
+        status_analyze, analyze_resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+        assert status_analyze == 200, f"Expected 200, got {status_analyze}: {analyze_resp}"
+        analysis = analyze_resp.get('analysis', {})
+        assert analysis.get('analysis_mode') == 'rule_based_ai'
+        assert analysis.get('risk_level') in {'low', 'medium', 'high', 'very_high'}
+    finally:
+        portal.MAX_POLICY_DOCUMENT_SIZE_BYTES = original_max_size
+        portal.MEDIA_INLINE_MAX_BYTES = original_inline_limit
+        portal.UPLOAD_STORAGE_DIR = original_upload_dir
+        srv.stop()
 
 
 def test_document_view_other_customer_denied():

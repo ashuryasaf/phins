@@ -636,6 +636,201 @@ MEDIA_STORAGE_DIR = os.environ.get(
     os.path.join(tempfile.gettempdir(), 'phins_media_assets'),
 )
 MEDIA_INLINE_MAX_BYTES = safe_int(os.environ.get('PHINS_MEDIA_INLINE_MAX_BYTES', 5 * 1024 * 1024), 5 * 1024 * 1024)
+UPLOAD_STORAGE_DIR = os.environ.get(
+    'PHINS_UPLOAD_STORAGE_DIR',
+    os.path.join(tempfile.gettempdir(), 'phins_uploaded_assets'),
+)
+GENERAL_MAX_REQUEST_SIZE = safe_int(
+    os.environ.get('PHINS_MAX_REQUEST_SIZE_BYTES', 10 * 1024 * 1024),
+    10 * 1024 * 1024,
+)
+LARGE_UPLOAD_MAX_REQUEST_SIZE = safe_int(
+    os.environ.get('PHINS_LARGE_UPLOAD_MAX_REQUEST_SIZE_BYTES', 100 * 1024 * 1024),
+    100 * 1024 * 1024,
+)
+RAW_UPLOAD_MAX_REQUEST_SIZE = safe_int(
+    os.environ.get('PHINS_RAW_UPLOAD_MAX_REQUEST_SIZE_BYTES', 5 * 1024 * 1024 * 1024),
+    5 * 1024 * 1024 * 1024,
+)
+MAX_POLICY_DOCUMENT_SIZE_BYTES = safe_int(
+    os.environ.get('PHINS_MAX_POLICY_DOCUMENT_SIZE_BYTES', 100 * 1024 * 1024),
+    100 * 1024 * 1024,
+)
+
+
+def ensure_upload_storage_dir() -> None:
+    """Create the on-disk upload storage directory if it does not already exist."""
+    os.makedirs(UPLOAD_STORAGE_DIR, exist_ok=True)
+
+
+def build_internal_upload_file_url(file_id: str, filename: str) -> str:
+    """Build the internal route used to stream a stored uploaded file."""
+    safe_name = safe_ascii_filename_stem(filename or file_id, fallback=file_id)
+    return f"/uploaded-files/{file_id}/{safe_name}"
+
+
+def write_uploaded_binary_payload(file_id: str, filename: str, payload_bytes: bytes) -> str:
+    """Persist uploaded bytes to disk and return the saved file path."""
+    ensure_upload_storage_dir()
+    stem = safe_ascii_filename_stem(filename or file_id, fallback=file_id)
+    file_path = os.path.join(UPLOAD_STORAGE_DIR, f"{file_id}-{stem}")
+    with open(file_path, 'wb') as handle:
+        handle.write(payload_bytes)
+    return file_path
+
+
+def _guess_text_mime(mime_type: str, filename: str) -> bool:
+    """Best-effort check whether a file is text-like and safe to decode."""
+    normalized_mime = str(mime_type or '').lower()
+    lower_name = str(filename or '').lower()
+    return (
+        normalized_mime.startswith('text/')
+        or normalized_mime in {
+            'application/json',
+            'application/xml',
+            'text/xml',
+            'application/csv',
+            'text/csv',
+        }
+        or lower_name.endswith(('.txt', '.csv', '.json', '.xml', '.md', '.log'))
+    )
+
+
+def read_uploaded_file_bytes(file_info: Dict[str, Any]) -> bytes:
+    """Read uploaded bytes from external storage or legacy inline base64."""
+    file_path = str(file_info.get('file_path') or '').strip()
+    if file_path:
+        with open(file_path, 'rb') as handle:
+            return handle.read()
+
+    raw_data = str(file_info.get('data') or '').strip()
+    if not raw_data:
+        return b''
+    return base64.b64decode(raw_data)
+
+
+def build_uploaded_file_record(
+    *,
+    file_id: str,
+    file_name: str,
+    mime_type: str,
+    payload_bytes: bytes,
+    owner_customer_id: str = '',
+    description: str = '',
+    **extra_fields: Any,
+) -> Dict[str, Any]:
+    """Persist uploaded bytes externally and return lightweight metadata."""
+    checksum = hashlib.sha256(payload_bytes).hexdigest()
+    file_path = write_uploaded_binary_payload(file_id, file_name, payload_bytes)
+    record: Dict[str, Any] = {
+        'id': file_id,
+        'name': file_name,
+        'type': mime_type or 'application/octet-stream',
+        'size': len(payload_bytes),
+        'uploaded_at': datetime.now().isoformat(),
+        'sha256': checksum,
+        'file_path': file_path,
+        'stored_externally': True,
+        'url': build_internal_upload_file_url(file_id, file_name),
+        'has_data': False,
+    }
+    if owner_customer_id:
+        record['uploaded_by_customer'] = owner_customer_id
+    if description:
+        record['description'] = description
+    record.update(extra_fields)
+    return record
+
+
+def ensure_inline_data_for_record(file_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Hydrate a record with inline base64 data for response compatibility."""
+    if not isinstance(file_info, dict):
+        return {}
+    if file_info.get('data'):
+        return dict(file_info)
+
+    payload = dict(file_info)
+    raw_bytes = read_uploaded_file_bytes(file_info)
+    if raw_bytes:
+        payload['data'] = base64.b64encode(raw_bytes).decode('ascii')
+    return payload
+
+
+def create_uploaded_file_analysis(file_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate lightweight analysis metadata for any stored uploaded file."""
+    mime_type = str(file_info.get('type') or file_info.get('mime_type') or 'application/octet-stream')
+    filename = str(file_info.get('name') or file_info.get('filename') or '')
+    extension = ('.' + filename.rsplit('.', 1)[-1].lower()) if '.' in filename else ''
+    size_bytes = safe_int(file_info.get('size'), 0)
+    category = 'document'
+    if mime_type.startswith('video/') or extension in {'.mp4', '.mov', '.avi', '.mkv', '.webm'}:
+        category = 'video'
+    elif mime_type.startswith('audio/') or extension in {'.mp3', '.wav', '.m4a', '.ogg'}:
+        category = 'audio'
+    elif mime_type.startswith('image/') or extension in {'.png', '.jpg', '.jpeg', '.gif', '.webp'}:
+        category = 'image'
+
+    preview_text = ''
+    preview_length = 0
+    if _guess_text_mime(mime_type, filename):
+        try:
+            raw_bytes = read_uploaded_file_bytes(file_info)
+            preview_text = raw_bytes[:4096].decode('utf-8', errors='ignore')
+            preview_length = len(preview_text)
+        except Exception:
+            preview_text = ''
+            preview_length = 0
+
+    analysis = {
+        'category': category,
+        'mime_type': mime_type,
+        'extension': extension,
+        'size_bytes': size_bytes,
+        'size_mb': round(size_bytes / (1024 * 1024), 3) if size_bytes else 0.0,
+        'storage': 'external_file' if file_info.get('file_path') else 'inline_base64',
+        'sha256': str(file_info.get('sha256') or ''),
+        'supports_text_analysis': bool(preview_text),
+        'text_preview': preview_text[:1000],
+        'text_preview_length': preview_length,
+        'analyzed_at': datetime.now().isoformat(),
+    }
+    return analysis
+
+
+def externalize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist uploaded media bytes externally and attach analysis metadata."""
+    if not isinstance(asset, dict):
+        return asset
+    data_url = str(asset.get('data') or '').strip()
+    if not data_url:
+        asset['file_analysis'] = create_uploaded_file_analysis(asset)
+        return asset
+    try:
+        payload_bytes, mime_type = decode_media_data_url(data_url)
+    except Exception:
+        asset['file_analysis'] = create_uploaded_file_analysis(asset)
+        return asset
+
+    filename = str(asset.get('name') or asset.get('id') or 'media_asset').strip() or 'media_asset'
+    file_id = str(asset.get('id') or uuid.uuid4().hex)
+    file_record = build_uploaded_file_record(
+        file_id=file_id,
+        file_name=filename,
+        mime_type=str(asset.get('format') or mime_type or 'application/octet-stream'),
+        payload_bytes=payload_bytes,
+        owner_customer_id='',
+        description=str(asset.get('description') or ''),
+    )
+    asset['data'] = ''
+    asset['url'] = file_record.get('url', asset.get('url', ''))
+    asset['file_path'] = file_record.get('file_path', '')
+    asset['stored_externally'] = True
+    asset['size'] = file_record.get('size', len(payload_bytes))
+    asset['sha256'] = file_record.get('sha256', '')
+    asset['has_data'] = False
+    asset['format'] = asset.get('format') or file_record.get('type', mime_type)
+    asset['file_analysis'] = create_uploaded_file_analysis({**asset, **file_record})
+    return asset
 
 
 def _sanitize_ascii_filename_stem(
@@ -738,6 +933,12 @@ def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
             for track in subtitles
             if isinstance(track, dict)
         ]
+    if 'stored_externally' in asset:
+        payload['stored_externally'] = bool(asset.get('stored_externally'))
+    if 'file_path' in asset:
+        payload['file_path'] = asset.get('file_path')
+    if isinstance(asset.get('file_analysis'), dict):
+        payload['file_analysis'] = dict(asset.get('file_analysis') or {})
     return payload
 
 
@@ -795,22 +996,40 @@ def persist_media_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
         return asset
     data_url = str(asset.get('data') or '').strip()
     if not data_url:
+        asset['file_analysis'] = create_uploaded_file_analysis(asset)
         return asset
     try:
         payload_bytes, mime_type = decode_media_data_url(data_url)
     except Exception:
+        asset['file_analysis'] = create_uploaded_file_analysis(asset)
         return asset
     if len(payload_bytes) <= MEDIA_INLINE_MAX_BYTES:
+        asset['file_analysis'] = create_uploaded_file_analysis({
+            **asset,
+            'type': asset.get('format') or mime_type,
+            'size': safe_int(asset.get('size') or len(payload_bytes), len(payload_bytes)),
+        })
         return asset
 
     filename = str(asset.get('name') or asset.get('id') or 'media_asset').strip() or 'media_asset'
-    file_path = write_media_binary_payload(str(asset.get('id') or uuid.uuid4().hex), filename, payload_bytes)
+    file_id = str(asset.get('id') or uuid.uuid4().hex)
+    file_record = build_uploaded_file_record(
+        file_id=file_id,
+        file_name=filename,
+        mime_type=str(asset.get('format') or mime_type or 'application/octet-stream'),
+        payload_bytes=payload_bytes,
+        owner_customer_id='',
+        description=str(asset.get('description') or ''),
+    )
     asset['data'] = ''
-    asset['url'] = build_internal_media_file_url(str(asset.get('id') or ''), filename)
-    asset['file_path'] = file_path
+    asset['url'] = file_record.get('url', asset.get('url', ''))
+    asset['file_path'] = file_record.get('file_path', '')
     asset['stored_externally'] = True
-    asset['format'] = asset.get('format') or mime_type
-    asset['size'] = safe_int(asset.get('size') or len(payload_bytes), len(payload_bytes))
+    asset['size'] = file_record.get('size', len(payload_bytes))
+    asset['sha256'] = file_record.get('sha256', '')
+    asset['has_data'] = False
+    asset['format'] = asset.get('format') or file_record.get('type', mime_type)
+    asset['file_analysis'] = create_uploaded_file_analysis({**asset, **file_record})
     return asset
 
 
@@ -3900,7 +4119,7 @@ def is_trusted_ip(ip: str) -> bool:
     if PHINS_TEST_MODE:
         return False
     return any(ip.startswith(prefix) for prefix in TRUSTED_IP_PREFIXES)
-MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB max request size
+MAX_REQUEST_SIZE = GENERAL_MAX_REQUEST_SIZE
 SESSION_TIMEOUT = 3600  # 1 hour session timeout
 CONNECTION_TIMEOUT = 30  # 30 seconds connection timeout
 MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
@@ -3913,6 +4132,26 @@ STATE_LOCK = threading.RLock()
 # In pytest, many tests start separate HTTP servers on different ports but share this module's globals.
 # We isolate those servers by clearing in-memory state once per port.
 _TEST_PORTS_INITIALIZED: set[int] = set()
+
+LARGE_UPLOAD_PATH_PREFIXES = (
+    '/api/documents/upload',
+    '/api/media',
+    '/api/claims/create',
+    '/api/submit-quote',
+)
+RAW_UPLOAD_PATH_PREFIXES = (
+    '/api/uploads/raw',
+)
+
+
+def get_max_request_size_for_path(path: str) -> int:
+    """Resolve request-size cap based on the target route."""
+    normalized = str(path or '').split('?', 1)[0]
+    if any(normalized.startswith(prefix) for prefix in RAW_UPLOAD_PATH_PREFIXES):
+        return RAW_UPLOAD_MAX_REQUEST_SIZE
+    if any(normalized.startswith(prefix) for prefix in LARGE_UPLOAD_PATH_PREFIXES):
+        return LARGE_UPLOAD_MAX_REQUEST_SIZE
+    return GENERAL_MAX_REQUEST_SIZE
 
 def _ensure_test_port_state(server_port: int) -> None:
     if not PHINS_TEST_MODE or not server_port:
@@ -4511,7 +4750,10 @@ ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
     '.mp3', '.wav', '.m4a', '.aac', '.ogg',
 }
 
-MAX_POLICY_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024  # 25MB
+MAX_POLICY_DOCUMENT_SIZE_BYTES = safe_int(
+    os.environ.get('PHINS_MAX_POLICY_DOCUMENT_SIZE_BYTES', 100 * 1024 * 1024),
+    100 * 1024 * 1024,
+)
 
 
 def get_session_customer_id(session: dict[str, str] | None) -> str:
@@ -4599,7 +4841,9 @@ def store_policy_document(
     if not raw_bytes:
         raise ValueError('Document content cannot be empty')
     if len(raw_bytes) > MAX_POLICY_DOCUMENT_SIZE_BYTES:
-        raise ValueError('File exceeds maximum allowed size (25MB)')
+        raise ValueError(
+            f'File exceeds maximum allowed size ({int(MAX_POLICY_DOCUMENT_SIZE_BYTES // (1024 * 1024))}MB)'
+        )
 
     ext = '.' + file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else ''
     if ext and ext not in ALLOWED_POLICY_DOCUMENT_EXTENSIONS:
@@ -4614,8 +4858,6 @@ def store_policy_document(
         'name': file_name,
         'type': mime_type or 'application/octet-stream',
         'size': len(raw_bytes),
-        'data': file_data_b64,
-        'data_encoding': 'base64',
         'sha256': checksum,
         'entity_type': (entity_type or 'general'),
         'entity_id': entity_id or '',
@@ -4624,7 +4866,27 @@ def store_policy_document(
         'uploaded_at': uploaded_at,
         'uploaded_by': uploaded_by or 'system',
         'uploaded_by_customer': owner_customer_id or '',
+        'data': file_data_b64,
+        'data_encoding': 'base64',
+        'has_data': True,
     }
+    externalize_threshold = min(MEDIA_INLINE_MAX_BYTES, MAX_POLICY_DOCUMENT_SIZE_BYTES)
+    if len(raw_bytes) > externalize_threshold:
+        file_record = build_uploaded_file_record(
+            file_id=doc_id,
+            file_name=file_name,
+            mime_type=mime_type or 'application/octet-stream',
+            payload_bytes=raw_bytes,
+            owner_customer_id=owner_customer_id,
+            description=description or '',
+            uploaded_by=uploaded_by or 'system',
+        )
+        doc.update(file_record)
+        doc['data'] = ''
+        doc['data_encoding'] = 'external_file'
+        doc['has_data'] = False
+
+    doc['file_analysis'] = create_uploaded_file_analysis(doc)
     POLICY_DOCUMENTS[doc_id] = doc
     return doc
 
@@ -10067,24 +10329,24 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                     return
 
-                if not doc.get('data'):
-                    self._set_json_headers(404)
-                    self.wfile.write(json.dumps({'error': 'File data not available'}).encode('utf-8'))
-                    return
-
+                inline_doc = ensure_inline_data_for_record(doc)
+                storage_info = create_uploaded_file_analysis(inline_doc)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'id': doc.get('id'),
-                    'name': doc.get('name'),
-                    'type': doc.get('type'),
-                    'size': doc.get('size'),
-                    'data': doc.get('data'),  # Base64 encoded content
-                    'document_type': doc.get('document_type', 'general'),
-                    'entity_type': doc.get('entity_type'),
-                    'entity_id': doc.get('entity_id'),
-                    'uploaded_at': doc.get('uploaded_at'),
-                    'uploaded_by': doc.get('uploaded_by')
+                    'id': inline_doc.get('id'),
+                    'name': inline_doc.get('name'),
+                    'type': inline_doc.get('type'),
+                    'size': inline_doc.get('size'),
+                    'data': inline_doc.get('data'),  # Base64 encoded content
+                    'document_type': inline_doc.get('document_type', 'general'),
+                    'entity_type': inline_doc.get('entity_type'),
+                    'entity_id': inline_doc.get('entity_id'),
+                    'uploaded_at': inline_doc.get('uploaded_at'),
+                    'uploaded_by': inline_doc.get('uploaded_by'),
+                    'storage': storage_info.get('storage'),
+                    'stored_externally': bool(inline_doc.get('stored_externally')),
+                    'file_analysis': inline_doc.get('file_analysis') or storage_info,
                 }).encode('utf-8'))
                 return
             except Exception as e:
@@ -17101,6 +17363,78 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
+        if path.startswith('/uploaded-files/'):
+            rel = path[len('/uploaded-files/'):].lstrip('/')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self.send_response(401)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+
+            try:
+                requested_id = rel.split('/', 1)[0]
+            except Exception:
+                requested_id = ''
+            if not requested_id:
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            file_record: Optional[Dict[str, Any]] = None
+            for store in (POLICY_DOCUMENTS, CLAIM_FILES, UNDERWRITING_FILES):
+                candidate = store.get(requested_id)
+                if isinstance(candidate, dict):
+                    file_record = candidate
+                    break
+
+            if not file_record:
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            eff_role = get_effective_role(session)
+            is_admin = is_document_admin_role(eff_role) or eff_role in {'media'}
+            session_customer_id = get_session_customer_id(session)
+            owner_customer_id = (
+                str(file_record.get('uploaded_by_customer') or '').strip()
+                or resolve_document_owner_customer_id(file_record)
+            )
+            if not is_admin and owner_customer_id and owner_customer_id != session_customer_id:
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+
+            file_path = str(file_record.get('file_path') or '').strip()
+            if not file_path or not os.path.exists(file_path):
+                self.send_response(404)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Stored file not found'}).encode('utf-8'))
+                return
+
+            mime_type = str(file_record.get('type') or 'application/octet-stream').strip() or 'application/octet-stream'
+            file_size = os.path.getsize(file_path)
+            self.send_response(200)
+            self.send_header('Content-Type', mime_type)
+            self.send_header('Content-Length', str(file_size))
+            self.send_header(
+                'Content-Disposition',
+                f'inline; filename="{self._safe_download_filename(str(file_record.get("name") or requested_id))}"'
+            )
+            self.end_headers()
+            with open(file_path, 'rb') as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            return
+
         if path.startswith('/media-files/'):
             rel = path[len('/media-files/'):].lstrip('/')
             file_path = os.path.join(MEDIA_STORAGE_DIR, rel)
@@ -17201,6 +17535,49 @@ For claims or questions, please contact:
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         
+        if path == '/api/uploads/raw':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+
+            file_name = str(
+                self.headers.get('X-Upload-Filename')
+                or self.headers.get('X-File-Name')
+                or 'upload.bin'
+            ).strip() or 'upload.bin'
+            mime_type = str(self.headers.get('Content-Type') or 'application/octet-stream').strip()
+            owner_customer_id = get_session_customer_id(session) or ''
+            file_id = f"UPLOAD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
+            payload_bytes = self.rfile.read(content_length) if content_length else b''
+            if not payload_bytes:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'No upload payload provided'}).encode('utf-8'))
+                return
+
+            uploaded_file = build_uploaded_file_record(
+                file_id=file_id,
+                file_name=file_name,
+                mime_type=mime_type,
+                payload_bytes=payload_bytes,
+                owner_customer_id=owner_customer_id,
+                description='raw_upload',
+                uploaded_by=(session or {}).get('username', 'user'),
+            )
+            uploaded_file['file_analysis'] = create_uploaded_file_analysis(uploaded_file)
+            POLICY_DOCUMENTS[file_id] = dict(uploaded_file)
+            save_ledger_data()
+
+            self._set_json_headers(201)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'uploaded_file': uploaded_file,
+            }).encode('utf-8'))
+            return
+
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
             self.handle_quote_submission()
@@ -18005,13 +18382,14 @@ For claims or questions, please contact:
                     'format': data.get('format', ''),
                     'size': data.get('size', 0),
                     'url': data.get('url', ''),
-                    'data': data.get('data', ''),  # base64 for uploaded files
+                    'data': data.get('data', ''),  # legacy inline base64 for uploaded files
                     'thumbnail': data.get('thumbnail', ''),
                     'duration': data.get('duration'),
                     'source': data.get('source', 'upload'),  # upload, url
                     'uploaded_at': datetime.now().isoformat(),
                     'uploaded_by': session.get('username', 'admin')
                 }
+                asset = persist_media_asset_payload(asset)
                 
                 # Store asset
                 MEDIA_ASSETS[asset_id] = asset
@@ -24188,15 +24566,35 @@ For claims or questions, please contact:
                         }
                         files_metadata.append(file_meta)
                         
-                        # Store full file data in UNDERWRITING_FILES
-                        UNDERWRITING_FILES[file_id] = {
-                            **file_meta,
-                            'application_id': uw_id,
-                            'customer_id': customer_id,
-                            'data': file_info.get('data'),  # Base64 encoded
-                            'note': file_info.get('note', ''),
-                            'error': file_info.get('error', '')
-                        }
+                        payload_b64 = str(file_info.get('data') or '').strip()
+                        payload_bytes = base64.b64decode(payload_b64) if payload_b64 else b''
+                        if payload_bytes:
+                            UNDERWRITING_FILES[file_id] = build_uploaded_file_record(
+                                file_id=file_id,
+                                file_name=file_meta['name'],
+                                mime_type=file_meta['type'],
+                                payload_bytes=payload_bytes,
+                                owner_customer_id=customer_id,
+                                description=str(file_info.get('note') or ''),
+                                application_id=uw_id,
+                                customer_id=customer_id,
+                                error=str(file_info.get('error') or ''),
+                                file_analysis=create_uploaded_file_analysis({
+                                    **file_meta,
+                                    'type': file_meta['type'],
+                                    'name': file_meta['name'],
+                                    'size': len(payload_bytes),
+                                }),
+                            )
+                        else:
+                            UNDERWRITING_FILES[file_id] = {
+                                **file_meta,
+                                'application_id': uw_id,
+                                'customer_id': customer_id,
+                                'data': payload_b64,
+                                'note': file_info.get('note', ''),
+                                'error': file_info.get('error', '')
+                            }
                         print(f"   📄 Stored UW file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
                 
                 submitted_at = datetime.now().isoformat()
@@ -25314,14 +25712,32 @@ For claims or questions, please contact:
                         }
                         files_metadata.append(file_meta)
                         
-                        # Store full file data including base64 in CLAIM_FILES for persistence
-                        CLAIM_FILES[file_id] = {
-                            **file_meta,
-                            'claim_id': claim_id,
-                            'data': file_info.get('data'),  # Base64 encoded file content
-                            'note': file_info.get('note', ''),
-                            'error': file_info.get('error', '')
-                        }
+                        payload_b64 = str(file_info.get('data') or '').strip()
+                        payload_bytes = base64.b64decode(payload_b64) if payload_b64 else b''
+                        if payload_bytes:
+                            CLAIM_FILES[file_id] = build_uploaded_file_record(
+                                file_id=file_id,
+                                file_name=file_meta['name'],
+                                mime_type=file_meta['type'],
+                                payload_bytes=payload_bytes,
+                                description=str(file_info.get('note') or ''),
+                                claim_id=claim_id,
+                                file_analysis=create_uploaded_file_analysis({
+                                    **file_meta,
+                                    'type': file_meta['type'],
+                                    'name': file_meta['name'],
+                                    'size': len(payload_bytes),
+                                }),
+                                error=str(file_info.get('error') or ''),
+                            )
+                        else:
+                            CLAIM_FILES[file_id] = {
+                                **file_meta,
+                                'claim_id': claim_id,
+                                'data': payload_b64,
+                                'note': file_info.get('note', ''),
+                                'error': file_info.get('error', '')
+                            }
                         print(f"   📄 Stored file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
                 
                 claim = {

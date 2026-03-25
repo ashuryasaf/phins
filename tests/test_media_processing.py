@@ -207,6 +207,44 @@ def test_media_subtitle_job_lifecycle_and_download():
         srv.stop()
 
 
+def test_media_upload_persists_large_inline_payload_to_file_storage():
+    port = 8295
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_large_upload_token"
+    _inject_session(token, "media_admin_large", "admin")
+
+    original_inline_limit = portal.MEDIA_INLINE_MAX_BYTES
+    portal.MEDIA_INLINE_MAX_BYTES = 16
+    try:
+        status, create_resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={
+                "name": "uploaded-video.mp4",
+                "type": "video",
+                "format": "video/mp4",
+                "data": "data:video/mp4;base64," + ("a" * 160),
+                "source": "upload",
+            },
+        )
+        assert status == 201, create_resp
+        asset = create_resp["asset"]
+        assert asset["stored_externally"] is True
+        assert asset["file_path"]
+        assert asset["url"].startswith("/uploaded-files/")
+        assert asset["file_analysis"]["category"] == "video"
+        assert asset["file_analysis"]["storage"] == "external_file"
+    finally:
+        portal.MEDIA_INLINE_MAX_BYTES = original_inline_limit
+        srv.stop()
+
+
 def test_media_provider_callback_rejects_invalid_secret():
     port = 8291
     srv = ServerThread(port)
