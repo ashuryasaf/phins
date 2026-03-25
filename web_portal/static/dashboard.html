@@ -625,8 +625,9 @@
                  onfocus="this.style.borderColor='#e1bee7'; this.style.boxShadow='0 0 20px rgba(225, 190, 231, 0.5)';"
                  onblur="this.style.borderColor='rgba(255,255,255,0.3)'; this.style.boxShadow='none';">
           <button onclick="startVoiceInput()" id="voice-btn" 
-                  style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: all 0.3s;"
-                  title="Voice Input">🎤</button>
+                  style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: not-allowed; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: all 0.3s; opacity: 0.55;"
+                  title="Voice input available after login validation"
+                  disabled>🎤</button>
         </div>
         <button onclick="processAIQuery()" 
                 style="background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%); border: none; color: #4a148c; padding: 16px 24px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 1rem; transition: all 0.3s; box-shadow: 0 4px 15px rgba(225, 190, 231, 0.4);"
@@ -1951,6 +1952,7 @@
     // Show voice confirmation feedback
     function showVoiceFeedback(transcript) {
       const voiceBtn = document.getElementById('voice-btn');
+      if (!voiceBtn) return;
       voiceBtn.style.background = 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)';
       voiceBtn.innerHTML = '✓';
       setTimeout(() => {
@@ -1961,6 +1963,11 @@
     
     // Start voice input
     function startVoiceInput() {
+      const voiceBtn = document.getElementById('voice-btn');
+      if (voiceBtn?.disabled) {
+        showAIError('Voice input becomes available after your session is validated.');
+        return;
+      }
       if (!recognition) {
         initVoiceRecognition();
       }
@@ -1988,14 +1995,28 @@
     function stopVoiceInput() {
       isListening = false;
       document.getElementById('voice-recording-indicator').style.display = 'none';
-      document.getElementById('voice-btn').style.background = 'linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%)';
-      document.getElementById('voice-btn').innerHTML = '🎤';
+      const voiceBtn = document.getElementById('voice-btn');
+      if (voiceBtn) {
+        voiceBtn.style.background = 'linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%)';
+        voiceBtn.innerHTML = '🎤';
+      }
       
       if (recognition) {
         try {
           recognition.stop();
         } catch (e) {}
       }
+    }
+
+    function setVoiceButtonEnabled(enabled) {
+      const voiceBtn = document.getElementById('voice-btn');
+      if (!voiceBtn) return;
+      voiceBtn.disabled = !enabled;
+      voiceBtn.style.opacity = enabled ? '1' : '0.55';
+      voiceBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+      voiceBtn.title = enabled
+        ? 'Voice Input'
+        : 'Voice input available after login validation';
     }
     
     // Toggle AI help panel

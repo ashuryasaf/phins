@@ -531,8 +531,9 @@
           <button
             id="admin-ai-voice-btn"
             onclick="startAdminAssistantVoiceInput()"
-            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);border:none;width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:white;"
-            title="Voice Input"
+            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);border:none;width:36px;height:36px;border-radius:50%;cursor:not-allowed;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:white;opacity:0.5;"
+            title="Voice input available after login validation"
+            disabled
           >🎤</button>
         </div>
         <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border:none;color:#4a148c;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">⚡ Ask</button>
@@ -2415,6 +2416,12 @@
       recognition.interimResults = true;
       recognition.lang = 'en-US';
       adminAssistantState.recognition = recognition;
+      if (voiceBtn) {
+        voiceBtn.disabled = false;
+        voiceBtn.style.opacity = '1';
+        voiceBtn.style.cursor = 'pointer';
+        voiceBtn.title = 'Voice Input';
+      }
 
       recognition.onstart = () => {
         adminAssistantState.isListening = true;
@@ -2446,6 +2453,11 @@
     }
 
     function startAdminAssistantVoiceInput() {
+      const voiceBtn = document.getElementById('admin-ai-voice-btn');
+      if (voiceBtn && voiceBtn.disabled) {
+        adminAssistantSetStatus('warning', '⚠️ Voice commands are available after login validation completes');
+        return;
+      }
       const recognition = adminAssistantState.recognition;
       if (!recognition) {
         adminAssistantSetStatus('warning', '⚠️ Voice commands are not supported in this browser');
