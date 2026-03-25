@@ -3228,13 +3228,6 @@ def _aws_identity_configured() -> bool:
 
 def _detect_configured_api_email_provider() -> Optional[str]:
     """Return the best configured API email provider, if any."""
-    active_notifications_key = _env_or_default(
-        'ACTIVE_NOTIFICATIONS_API_KEY',
-        NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY
-    ) or _env_or_default('PINGRAM_API_KEY') or _env_or_default('NOTIFICATIONAPI_API_KEY')
-    if active_notifications_key:
-        return 'active_notifications'
-
     if _env_or_default('SENDGRID_API_KEY', NotificationConfig.SENDGRID_API_KEY):
         return 'sendgrid'
 
@@ -3246,6 +3239,13 @@ def _detect_configured_api_email_provider() -> Optional[str]:
 
     if _env_or_default('RESEND_API_KEY', NotificationConfig.RESEND_API_KEY):
         return 'resend'
+
+    active_notifications_key = _env_or_default(
+        'ACTIVE_NOTIFICATIONS_API_KEY',
+        NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY
+    ) or _env_or_default('PINGRAM_API_KEY') or _env_or_default('NOTIFICATIONAPI_API_KEY')
+    if active_notifications_key:
+        return 'active_notifications'
 
     if _aws_identity_configured():
         return 'ses'

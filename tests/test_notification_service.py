@@ -644,6 +644,32 @@ class TestNotificationService:
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, ActiveNotificationsEmailProvider)
 
+    def test_factory_prefers_established_provider_before_active_notifications(self, monkeypatch):
+        """SendGrid should keep precedence when both providers are configured."""
+        monkeypatch.delenv('EMAIL_PROVIDER', raising=False)
+        monkeypatch.delenv('MAILGUN_API_KEY', raising=False)
+        monkeypatch.delenv('MAILGUN_DOMAIN', raising=False)
+        monkeypatch.delenv('RESEND_API_KEY', raising=False)
+        monkeypatch.delenv('AWS_ACCESS_KEY_ID', raising=False)
+        monkeypatch.delenv('AWS_PROFILE', raising=False)
+        monkeypatch.delenv('AWS_WEB_IDENTITY_TOKEN_FILE', raising=False)
+        monkeypatch.delenv('AWS_CONTAINER_CREDENTIALS_RELATIVE_URI', raising=False)
+        monkeypatch.delenv('AWS_CONTAINER_CREDENTIALS_FULL_URI', raising=False)
+        monkeypatch.setenv('SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setenv('ACTIVE_NOTIFICATIONS_API_KEY', 'pingram_sk_test')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+        monkeypatch.setattr(NotificationConfig, 'RESEND_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'ACTIVE_NOTIFICATIONS_API_KEY', 'pingram_sk_test')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, SendGridEmailProvider)
+
     def test_factory_normalizes_active_notifications_alias(self, monkeypatch):
         """Provider aliases should map to Active Notifications."""
         monkeypatch.setenv('EMAIL_PROVIDER', 'pingram')

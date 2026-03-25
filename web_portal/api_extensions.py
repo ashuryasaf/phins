@@ -324,11 +324,10 @@ def _create_notification_service_for_provider(
         MailgunEmailProvider,
         ResendEmailProvider,
         ActiveNotificationsEmailProvider,
-        should_use_mock_notifications,
     )
 
     if use_mock_notifications or not provider_type:
-        return create_notification_service(use_mock=should_use_mock_notifications())
+        return create_notification_service(use_mock=use_mock_notifications)
 
     normalized = _normalize_email_provider_type(provider_type)
     if normalized not in _EMAIL_PROVIDER_TYPES:

@@ -88,6 +88,34 @@ def test_send_otp_email_returns_combined_errors_when_all_providers_fail(monkeypa
     assert "sendgrid:" in error
 
 
+def test_create_notification_service_for_provider_respects_mock_parameter(monkeypatch):
+    captured = []
+
+    class _SentinelService:
+        pass
+
+    sentinel = _SentinelService()
+
+    def _fake_create_notification_service(*, use_mock, email_provider=None):
+        captured.append((use_mock, email_provider))
+        return sentinel
+
+    monkeypatch.setattr(
+        "services.notification_service.create_notification_service",
+        _fake_create_notification_service,
+    )
+    monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
+    monkeypatch.setenv("PHINS_TEST_MODE", "0")
+
+    service = api_extensions._create_notification_service_for_provider(
+        use_mock_notifications=True,
+        provider_type=None,
+    )
+
+    assert service is sentinel
+    assert captured == [(True, None)]
+
+
 def test_handle_otp_request_uses_demo_fallback_for_non_production_registration(monkeypatch):
     monkeypatch.setattr(api_extensions, "OTP_SERVICE_AVAILABLE", True)
     monkeypatch.setattr(api_extensions, "EXPOSE_DEMO_OTP", False)
