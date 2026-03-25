@@ -2,7 +2,8 @@
 
 This file is the working guide for AI agents contributing to the PHINS codebase.
 Keep changes narrow, verify behavior with targeted tests, and prefer existing
-patterns over new abstractions.
+patterns over new abstractions. Treat this document as repo-specific operating
+context, not as permission to ignore direct user instructions.
 
 ## 1) Project Summary
 
@@ -62,6 +63,16 @@ explicitly says otherwise.
    `- platform_data_architecture.md   # Platform data and event architecture
 ```
 
+Notes:
+
+- The repository contains many additional docs, reports, and implementation
+  summaries beyond the paths above; use the map as a starting point, not a full
+  inventory.
+- There are both `tests/test_*.py` files and root-level `test_*.py` files.
+- Some functionality exists in large, multi-purpose modules, especially
+  `web_portal/server.py`, so inspect nearby code before introducing new helpers
+  or abstractions.
+
 ## 3) Architecture Notes
 
 1. **Transport/API layer**
@@ -95,6 +106,7 @@ explicitly says otherwise.
 5. **Testing harness**
    - Root `conftest.py` starts an embedded server on `http://localhost:8000`
      during pytest runs and sets default test environment variables.
+   - The embedded server binds to `127.0.0.1:8000`.
    - Read it before changing server startup assumptions, ports, or storage mode
      behavior in tests.
 
@@ -120,11 +132,23 @@ string normalization or unsafe numeric casting.
 
 - `database/manager.py` exposes repository properties such as `customers`,
   `policies`, `claims`, `billing`, `audit`, `platform_ledger`, `actuarial`,
-  and `tokens`.
+  `tokens`, `sessions`, and `underwriting`.
 - `DatabaseManager.session_scope()` is the preferred pattern for grouped
   transactional work.
 - `database/repositories/base.py` auto-commits write operations. Keep that in
   mind when composing multiple repository calls.
+
+### Before Adding New Code
+
+Before creating new modules, helpers, or tests:
+
+1. Search for an existing implementation or adjacent pattern first.
+2. Check whether the behavior already exists in `services/`, `database/`, or
+   `web_portal/server.py`.
+3. Prefer extending an existing test module that covers the same workflow rather
+   than creating a near-duplicate test file.
+4. Preserve backward compatibility for default in-memory flows unless the task
+   explicitly requires a behavior change.
 
 ### API Shape
 
@@ -182,6 +206,13 @@ python3 check_database_connection.py
 bash quick_smoke_test.sh
 ```
 
+Useful git checks:
+
+```bash
+git status --short
+git diff -- AGENTS.md
+```
+
 Targeted pytest examples:
 
 ```bash
@@ -231,6 +262,8 @@ Common ID prefixes:
   together.
 - For large `server.py` edits, inspect nearby patterns first; many behaviors are
   implemented in-place rather than through a clean controller split.
+- Prefer the least disruptive change that matches existing conventions in the
+  touched area.
 
 ## 7) Standard Agent Workflows
 
@@ -274,6 +307,12 @@ Before merging non-trivial changes:
 3. Verify no regressions in auth, billing, underwriting, data isolation, or
    dashboard integrity when those areas are touched.
 
+For docs-only changes:
+
+- Verify the referenced files, commands, and paths still exist.
+- Tests are usually not required, but you should still review the rendered diff
+  for formatting or factual regressions.
+
 High-value test modules include:
 
 - `tests/test_api_integration.py`
@@ -303,7 +342,7 @@ Useful root-level integration tests include:
   - `USE_DATABASE=false`
   - `USE_SQLITE=true`
   - `PHINS_TEST_MODE=true`
-- It also starts an embedded server on port `8000`.
+- It also starts an embedded server on `127.0.0.1:8000`.
 - Each test resets the in-memory portal dictionaries to avoid fixed-ID/email collisions.
 - Be careful when changing startup, port binding, or state-reset behavior.
 
@@ -347,6 +386,7 @@ confirm the route wiring before making behavior assumptions.
 - [ ] Changes are scoped to the requested task.
 - [ ] Nearby existing patterns were inspected before editing.
 - [ ] Relevant tests or validations were run, or the task is docs-only.
+- [ ] Referenced files/commands/paths were verified if docs were changed.
 - [ ] Docs/comments were updated if behavior changed.
 - [ ] No secrets or environment-specific credentials were introduced.
 - [ ] Error handling, validation, and backward compatibility were considered.
@@ -383,7 +423,19 @@ Use these guardrails during implementation work:
    files for your task.
 10. If the request is ambiguous, choose the least disruptive implementation path.
 
-## 14) Quick Start Workflow (Per Task)
+## 14) AGENTS.md Maintenance Rules
+
+When updating this file in future tasks:
+
+1. Prefer corrections and targeted additions over broad rewrites.
+2. Validate claims about file locations, commands, ports, and environment
+   variables against the current repository.
+3. Keep instructions specific to this repo; avoid generic agent-policy prose
+   unless it changes how contributors should work in PHINS.
+4. If a section becomes stale, fix or remove it rather than preserving outdated
+   guidance for completeness.
+
+## 15) Quick Start Workflow (Per Task)
 
 Use this sequence for most tasks:
 
@@ -396,7 +448,7 @@ Use this sequence for most tasks:
 7. Update docs/comments only where behavior or assumptions changed.
 8. Commit with a clear message describing scope and intent.
 
-## 15) Cloud Agent Git Workflow (Required)
+## 16) Cloud Agent Git Workflow (Required)
 
 When running in cloud agent mode:
 
@@ -416,4 +468,4 @@ git push -u origin <branch-name>
 
 ---
 
-Last updated: March 22, 2026
+Last updated: March 25, 2026
