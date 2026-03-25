@@ -12,6 +12,9 @@ marketplace that connects:
 - external insurers and claims clearing networks
 - BI and AI assessment pipelines
 
+For the execution-ready build plan derived from this target state, see
+`docs/health_marketplace_implementation_spec.md`.
+
 It is grounded in the current repository shape:
 
 - customer experience in `web_portal/static/dashboard.html`
