@@ -177,10 +177,21 @@ Important test harness facts from `conftest.py`:
 - `PHINS_TEST_MODE=true`
 - tests reset in-memory portal dictionaries between cases
 
+## 9) Common Pitfalls
+
+- Fixing only the database path can leave in-memory HTTP flows inconsistent; if
+  a feature exists in both modes, check both code paths before finishing.
+- Repository or schema changes can require matching updates in
+  `database/data_access.py`, seeds, or migration helpers.
+- Handler initialization, port assumptions, or shared module state can break many
+  tests because pytest starts a real embedded `PortalHandler` server.
+- Route changes may need updates in both `web_portal/server.py` and
+  `web_portal/api_extensions.py`; verify actual wiring rather than assuming.
+
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
 
-## 9) Security and Reliability
+## 10) Security and Reliability
 
 - Avoid exposing PII, tokens, secrets, or sensitive logs.
 - Use defensive numeric conversion and status normalization helpers where
@@ -189,7 +200,7 @@ referenced files, commands, paths, and ports still exist.
 - Use audit-oriented patterns for sensitive operations if the surrounding code
   already does so.
 
-## 10) Minimal Task Workflow
+## 11) Minimal Task Workflow
 
 1. Identify the touched layer: API, service, engine, repository, or deployment.
 2. Inspect nearby code for the existing pattern.
@@ -200,7 +211,7 @@ referenced files, commands, paths, and ports still exist.
 7. Stage only intended files.
 8. Commit with a clear message.
 
-## 11) AGENTS.md Maintenance
+## 12) AGENTS.md Maintenance
 
 If you update this file again:
 
