@@ -631,14 +631,15 @@ MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
 DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'gemini')
+_SERVER_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MEDIA_STORAGE_DIR = os.environ.get(
     'PHINS_MEDIA_STORAGE_DIR',
-    os.path.join(tempfile.gettempdir(), 'phins_media_assets'),
+    os.path.join(_SERVER_PROJECT_ROOT, 'data', 'media'),
 )
 MEDIA_INLINE_MAX_BYTES = safe_int(os.environ.get('PHINS_MEDIA_INLINE_MAX_BYTES', 5 * 1024 * 1024), 5 * 1024 * 1024)
 UPLOAD_STORAGE_DIR = os.environ.get(
     'PHINS_UPLOAD_STORAGE_DIR',
-    os.path.join(tempfile.gettempdir(), 'phins_uploaded_assets'),
+    os.path.join(_SERVER_PROJECT_ROOT, 'data', 'uploads'),
 )
 GENERAL_MAX_REQUEST_SIZE = safe_int(
     os.environ.get('PHINS_MAX_REQUEST_SIZE_BYTES', 10 * 1024 * 1024),
@@ -2540,7 +2541,7 @@ def record_fee_revenue(
 # Path for persistent storage file
 LEDGER_PERSISTENCE_FILE = os.environ.get(
     'LEDGER_PERSISTENCE_FILE',
-    os.path.join(tempfile.gettempdir(), 'phins_ledger_data.json'),
+    os.path.join(_SERVER_PROJECT_ROOT, 'data', 'phins_ledger_data.json'),
 )
 PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
 

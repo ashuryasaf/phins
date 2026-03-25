@@ -13,6 +13,8 @@ Ensures data survives and persists correctly:
 import threading
 import time
 import json
+import base64
+from datetime import datetime, timedelta
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 
@@ -49,6 +51,30 @@ def _get(url, token=None):
     req = Request(url, headers=headers)
     with urlopen(req) as resp:
         return resp.read().decode('utf-8')
+
+
+def _init_port(base):
+    """Trigger per-port in-memory initialization before injecting sessions."""
+    try:
+        _get(base + "/api/health")
+    except Exception:
+        pass
+
+
+def _inject_session(token, username="admin", role="admin", customer_id=""):
+    portal.SESSIONS[token] = {
+        "username": username,
+        "role": role,
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    portal.USERS[username] = {
+        "role": role,
+        "username": username,
+        "customer_id": customer_id,
+        "name": username,
+        "email": username if "@" in username else f"{username}@example.com",
+    }
 
 
 def test_policy_persistence():
@@ -372,6 +398,84 @@ def test_billing_persistence():
             assert bill['status'] == 'partial'
     
     srv.stop()
+
+
+def test_uploaded_document_external_storage_survives_reload():
+    """Externally stored uploaded documents should survive metadata reloads."""
+    port = 8106
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    try:
+        _get(base + "/api/documents/list")
+    except Exception:
+        pass
+    token = "phins_test-persist-doc-token"
+    _inject_session(token, "persist_doc_user", "customer", "CUST-PERSIST-DOC")
+
+    original_inline_limit = portal.MEDIA_INLINE_MAX_BYTES
+    portal.MEDIA_INLINE_MAX_BYTES = 16
+    try:
+        content = b"Persistence medical document for restart validation"
+        payload = base64.b64encode(content).decode("ascii")
+        data = json.dumps({
+            "files": [{
+                "name": "persist_doc.txt",
+                "type": "text/plain",
+                "size": len(content),
+                "data": payload,
+            }],
+            "entity_type": "customer",
+            "entity_id": "CUST-PERSIST-DOC",
+            "document_type": "medical",
+            "description": "restart persistence check",
+        }).encode("utf-8")
+        req = Request(
+            base + "/api/documents/upload",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        with urlopen(req) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+
+        doc_id = result["uploaded"][0]["id"]
+        doc = portal.POLICY_DOCUMENTS[doc_id]
+        assert doc.get("stored_externally") is True
+        assert doc.get("file_path")
+
+        saved_doc = dict(doc)
+        saved_users = dict(portal.USERS)
+        saved_sessions = dict(portal.SESSIONS)
+
+        portal.POLICY_DOCUMENTS.clear()
+        portal.USERS.clear()
+        portal.SESSIONS.clear()
+        portal.USERS.update(saved_users)
+        portal.SESSIONS.update(saved_sessions)
+        portal.load_ledger_data()
+
+        restored = portal.POLICY_DOCUMENTS.get(doc_id)
+        assert restored is not None
+        assert restored.get("stored_externally") is True
+        assert restored.get("file_path") == saved_doc.get("file_path")
+        assert restored.get("sha256") == saved_doc.get("sha256")
+
+        view_req = Request(
+            base + f"/api/documents/view?id={doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urlopen(view_req) as resp:
+            viewed = json.loads(resp.read().decode("utf-8"))
+        assert viewed["data"] == payload
+        assert viewed["storage"] == "external_file"
+    finally:
+        portal.MEDIA_INLINE_MAX_BYTES = original_inline_limit
+        srv.stop()
 
 
 def test_data_relationships():

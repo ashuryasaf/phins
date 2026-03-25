@@ -12,12 +12,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import services.contribution_payment_service as contribution_payment_service
 import services.foundation_persistence_service as foundation_persistence_service
 import services.ledger_backup_service as ledger_backup_service
+import web_portal.server as portal_server
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestStoragePathDefaults:
+    def test_portal_upload_storage_defaults_are_project_relative(self):
+        assert portal_server.UPLOAD_STORAGE_DIR == str(PROJECT_ROOT / "data" / "uploads")
+        assert portal_server.MEDIA_STORAGE_DIR == str(PROJECT_ROOT / "data" / "media")
+        assert portal_server.LEDGER_PERSISTENCE_FILE == str(PROJECT_ROOT / "data" / "phins_ledger_data.json")
+
     def test_document_upload_default_is_project_relative(self, monkeypatch):
         created_dirs = []
         expected_dir = str(PROJECT_ROOT / "uploads" / "contributions")
