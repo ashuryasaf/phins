@@ -2,10 +2,14 @@ import pytest
 
 from services.customer_communication_agent import CustomerCommunicationAgent
 from services.notification_service import (
+    MockEmailProvider,
+    MockSMSProvider,
     NotificationChannel,
+    NotificationService,
     OTPRequest,
     VerificationType,
     create_notification_service,
+    reset_notification_service,
     reset_global_rate_limiter,
 )
 
@@ -13,8 +17,10 @@ from services.notification_service import (
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     reset_global_rate_limiter()
+    reset_notification_service()
     yield
     reset_global_rate_limiter()
+    reset_notification_service()
 
 
 def _sample_policies():
@@ -181,3 +187,14 @@ def test_send_welcome_package_with_invalid_otp_fails():
 
     assert result["success"] is False
     assert result["code"] in {"INVALID_CODE", "NO_ACTIVE_OTP", "OTP_VALIDATION_FAILED"}
+
+
+def test_agent_without_injected_service_uses_shared_notification_service(monkeypatch):
+    monkeypatch.delenv("PHINS_TEST_MODE", raising=False)
+    monkeypatch.delenv("PHINS_USE_MOCK_NOTIFICATIONS", raising=False)
+
+    agent = CustomerCommunicationAgent()
+
+    assert isinstance(agent._notification_service, NotificationService)
+    assert not isinstance(agent._notification_service._email_provider, MockEmailProvider)
+    assert not isinstance(agent._notification_service._sms_provider, MockSMSProvider)

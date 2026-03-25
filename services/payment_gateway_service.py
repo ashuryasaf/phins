@@ -10,7 +10,10 @@ IMPORTANT: For production use, replace sandbox credentials with live credentials
 and ensure PCI DSS compliance for card handling.
 """
 
+from __future__ import annotations
+
 import json
+import os
 import uuid
 import hashlib
 import hmac
@@ -25,6 +28,23 @@ import urllib.parse
 import urllib.error
 
 from security.network import validated_urlopen
+
+
+_TRUTHY_VALUES = {"1", "true", "yes", "y", "on"}
+
+
+def should_use_payment_test_mode() -> bool:
+    """Resolve payment sandbox mode from environment, defaulting to non-production."""
+    explicit = os.environ.get("PHINS_PAYMENT_TEST_MODE")
+    if explicit is not None:
+        return str(explicit).strip().lower() in _TRUTHY_VALUES
+
+    environment = str(
+        os.environ.get("PHINS_ENV")
+        or os.environ.get("ENVIRONMENT")
+        or "development"
+    ).strip().lower()
+    return environment not in {"prod", "production", "live"}
 
 
 class PaymentMethod(Enum):
@@ -864,16 +884,17 @@ class UnifiedPaymentGateway:
 _payment_gateway: Optional[UnifiedPaymentGateway] = None
 
 
-def get_payment_gateway(test_mode: bool = True,
+def get_payment_gateway(test_mode: Optional[bool] = None,
                         paypal_client_id: str = None,
                         paypal_secret: str = None,
                         stripe_api_key: str = None,
                         market_data_service=None) -> UnifiedPaymentGateway:
     """Get or create the payment gateway singleton"""
     global _payment_gateway
+    resolved_test_mode = should_use_payment_test_mode() if test_mode is None else bool(test_mode)
     if _payment_gateway is None:
         _payment_gateway = UnifiedPaymentGateway(
-            test_mode=test_mode,
+            test_mode=resolved_test_mode,
             paypal_client_id=paypal_client_id,
             paypal_secret=paypal_secret,
             stripe_api_key=stripe_api_key,

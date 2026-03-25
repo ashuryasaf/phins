@@ -20,7 +20,7 @@ from services.notification_service import (
     NotificationPriority,
     NotificationRequest,
     VerificationType,
-    create_notification_service,
+    get_notification_service,
 )
 
 
@@ -96,7 +96,7 @@ class CustomerCommunicationAgent:
     """
 
     def __init__(self, notification_service=None):
-        self._notification_service = notification_service or create_notification_service(use_mock=True)
+        self._notification_service = notification_service or get_notification_service()
 
     def build_diversified_executive_report(
         self,
