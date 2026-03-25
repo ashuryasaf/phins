@@ -17,6 +17,17 @@ Default behavior often uses in-memory data structures. Preserve backward
 compatibility for in-memory/demo flows unless the task explicitly requires
 different behavior.
 
+Preferred file-by-task:
+
+| Task | Start here |
+|---|---|
+| API route/response change | `web_portal/server.py`, `web_portal/api_extensions.py` |
+| Business rule/workflow | `services/`, then route/engine caller |
+| Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/` |
+| Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
+| Test harness/debugging | `conftest.py`, affected `tests/test_*.py`, root `test_*.py` |
+| Deployment/config | `DEPLOYMENT.md`, `railway.json`, `render.yaml`, `vercel.json`, `Dockerfile` |
+
 ## 2) High-Value Paths
 
 ```text
