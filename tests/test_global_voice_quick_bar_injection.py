@@ -53,21 +53,45 @@ def test_ui_clarity_asset_contains_supplier_voice_actions_and_hierarchy():
     assert 'id: "supplier_new_offer"' in content
     assert 'id: "supplier_logout"' in content
     assert "/supplier-portal.html" in content
+    assert "/supplier-portal.html?tab=orders" in content
+    assert "/supplier-portal.html?tab=settlements" in content
+    assert "/supplier-portal.html?tab=offers" in content
+    assert "/supplier-portal.html?tab=profile" in content
     assert "Opening supplier offer form." in content
     assert "Refreshing supplier dashboard." in content
     assert "Refreshing supplier settlements." in content
     assert "Refreshing supplier orders." in content
     assert "Refreshing supplier offers." in content
+    assert "supplier dispute" in content
+    assert "supplier refund" in content
+    assert "supplier settlement status" in content
 
 
 def test_ui_clarity_asset_requires_authenticated_session_before_render():
     content = _fetch("/ui-clarity.js")
-    assert "async function fetchValidatedSession()" in content
-    assert "if (!token) return null;" in content
+    assert "async function resolveFloatingAuth()" in content
+    assert "if (!token) {" in content
     assert "const response = await fetch(\"/api/session/validate\"" in content
     assert "floatingAuthAllowed = [\"customer\", \"supplier\"].includes(role) || isAdminRole(role);" in content
-    assert "if (!floatingAuthAllowed) {" in content
+    assert "if (authAllowed) {" in content
+    assert "removeFloatingBar();" in content
     assert "ensureFloatingBar();" in content
+
+
+def test_customer_dashboard_voice_button_starts_disabled_until_session_validates():
+    content = _fetch("/dashboard.html")
+    assert 'id="voice-btn"' in content
+    assert "Voice input available after login validation" in content
+    assert "voiceBtn.disabled = false;" in content
+    assert "voiceBtn.disabled = true;" in content
+
+
+def test_admin_dashboard_voice_button_starts_disabled_until_session_validates():
+    content = _fetch("/admin.html")
+    assert 'id="admin-ai-voice-btn"' in content
+    assert "Voice input available after login validation" in content
+    assert "voiceBtn.disabled = false;" in content
+    assert "voiceBtn.disabled = true;" in content
 
 
 def test_ui_clarity_observer_avoids_floating_self_render_loop():

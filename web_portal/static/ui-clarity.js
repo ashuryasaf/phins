@@ -85,6 +85,11 @@
     return role === "supplier";
   }
 
+  function buildSupplierPortalUrl(tabId) {
+    const safeTab = String(tabId || "").trim();
+    return safeTab ? `/supplier-portal.html?tab=${encodeURIComponent(safeTab)}` : "/supplier-portal.html";
+  }
+
   function isStaffPath(pathname) {
     const p = String(pathname || "").toLowerCase();
     return [
@@ -208,12 +213,12 @@
         { id: "admin_logout", label: "Logout", query: "logout", requiresAdmin: true, url: "/" },
       ],
       supplier: [
-        { id: "supplier_orders", label: "Orders", query: "show supplier orders", requiresSupplier: true, url: "/supplier-portal.html" },
-        { id: "supplier_settlements", label: "Settlements", query: "show supplier settlements", requiresSupplier: true, url: "/supplier-portal.html" },
-        { id: "supplier_offers", label: "Offers", query: "show supplier offers", requiresSupplier: true, url: "/supplier-portal.html" },
-        { id: "supplier_profile", label: "Profile", query: "show supplier profile", requiresSupplier: true, url: "/supplier-portal.html" },
-        { id: "supplier_new_offer", label: "New Offer", query: "create new supplier offer", requiresSupplier: true, url: "/supplier-portal.html" },
-        { id: "supplier_refresh", label: "Refresh", query: "refresh supplier dashboard", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_orders", label: "Orders", query: "show supplier orders", requiresSupplier: true, url: buildSupplierPortalUrl("orders") },
+        { id: "supplier_settlements", label: "Settlements", query: "show supplier settlements", requiresSupplier: true, url: buildSupplierPortalUrl("settlements") },
+        { id: "supplier_offers", label: "Offers", query: "show supplier offers", requiresSupplier: true, url: buildSupplierPortalUrl("offers") },
+        { id: "supplier_profile", label: "Profile", query: "show supplier profile", requiresSupplier: true, url: buildSupplierPortalUrl("profile") },
+        { id: "supplier_new_offer", label: "New Offer", query: "create new supplier offer", requiresSupplier: true, url: buildSupplierPortalUrl("offers") },
+        { id: "supplier_refresh", label: "Refresh", query: "refresh supplier dashboard", requiresSupplier: true, url: buildSupplierPortalUrl("orders") },
         { id: "supplier_logout", label: "Logout", query: "logout", requiresSupplier: true, url: "/" },
       ],
       customer: [
@@ -458,6 +463,62 @@
         setFloatingStatus("Opening supplier offer form.", "info");
         return true;
       }
+      if ((normalized.includes("show supplier settlements") || normalized.includes("open settlements")) &&
+          typeof window.selectSupplierPortalTab === "function") {
+        callIfFunction(() => window.selectSupplierPortalTab("settlements"));
+        if (typeof window.loadSettlementData === "function") {
+          callIfFunction(window.loadSettlementData);
+        }
+        setFloatingStatus("Opening supplier settlements.", "info");
+        return true;
+      }
+      if ((normalized.includes("show supplier orders") || normalized.includes("open orders")) &&
+          typeof window.selectSupplierPortalTab === "function") {
+        callIfFunction(() => window.selectSupplierPortalTab("orders"));
+        callIfFunction(window.refreshOrders);
+        setFloatingStatus("Opening supplier orders.", "info");
+        return true;
+      }
+      if ((normalized.includes("show supplier offers") || normalized.includes("open offers")) &&
+          typeof window.selectSupplierPortalTab === "function") {
+        callIfFunction(() => window.selectSupplierPortalTab("offers"));
+        callIfFunction(window.loadOffers);
+        setFloatingStatus("Opening supplier offers.", "info");
+        return true;
+      }
+      if ((normalized.includes("show supplier profile") || normalized.includes("open profile")) &&
+          typeof window.selectSupplierPortalTab === "function") {
+        callIfFunction(() => window.selectSupplierPortalTab("profile"));
+        setFloatingStatus("Opening supplier profile.", "info");
+        return true;
+      }
+      if ((normalized.includes("settlement status") || normalized.includes("show settlement status")) &&
+          typeof window.loadSettlementOverview === "function") {
+        if (typeof window.selectSupplierPortalTab === "function") {
+          callIfFunction(() => window.selectSupplierPortalTab("settlements"));
+        }
+        callIfFunction(window.loadSettlementOverview);
+        setFloatingStatus("Refreshing settlement status.", "info");
+        return true;
+      }
+      if ((normalized.includes("refund status") || normalized.includes("show refunds")) &&
+          typeof window.loadSupplierPerformance === "function") {
+        if (typeof window.selectSupplierPortalTab === "function") {
+          callIfFunction(() => window.selectSupplierPortalTab("settlements"));
+        }
+        callIfFunction(window.loadSupplierPerformance);
+        setFloatingStatus("Refreshing supplier refund and performance data.", "info");
+        return true;
+      }
+      if ((normalized.includes("dispute") || normalized.includes("show disputes")) &&
+          typeof window.loadSupplierPerformance === "function") {
+        if (typeof window.selectSupplierPortalTab === "function") {
+          callIfFunction(() => window.selectSupplierPortalTab("settlements"));
+        }
+        callIfFunction(window.loadSupplierPerformance);
+        setFloatingStatus("Refreshing supplier dispute data.", "info");
+        return true;
+      }
       if ((normalized.includes("refresh supplier") || normalized.includes("refresh dashboard")) &&
           typeof window.refreshOrders === "function" &&
           typeof window.loadOffers === "function") {
@@ -525,19 +586,31 @@
     }
 
     if (q.includes("supplier settlement") || q.includes("supplier settlements")) {
-      window.location.href = "/supplier-portal.html";
+      window.location.href = buildSupplierPortalUrl("settlements");
+      return true;
+    }
+    if (q.includes("settlement status")) {
+      window.location.href = buildSupplierPortalUrl("settlements");
       return true;
     }
     if (q.includes("supplier offers") || q.includes("my offers")) {
-      window.location.href = "/supplier-portal.html";
+      window.location.href = buildSupplierPortalUrl("offers");
       return true;
     }
     if (q.includes("supplier orders") || q.includes("my supplier orders")) {
-      window.location.href = "/supplier-portal.html";
+      window.location.href = buildSupplierPortalUrl("orders");
       return true;
     }
     if (q.includes("supplier profile")) {
-      window.location.href = "/supplier-portal.html";
+      window.location.href = buildSupplierPortalUrl("profile");
+      return true;
+    }
+    if (q.includes("supplier dispute") || q.includes("supplier disputes")) {
+      window.location.href = buildSupplierPortalUrl("settlements");
+      return true;
+    }
+    if (q.includes("supplier refund") || q.includes("supplier refunds")) {
+      window.location.href = buildSupplierPortalUrl("settlements");
       return true;
     }
     if (q.includes("supplier login")) {
@@ -762,6 +835,10 @@
   }
 
   function startFloatingVoiceInput() {
+    if (!floatingAuthAllowed) {
+      setFloatingStatus("Login required before using voice quick actions.", "warning");
+      return;
+    }
     const recognition = ensureFloatingVoiceRecognition();
     if (!recognition) {
       if (typeof window.startAdminAssistantVoiceInput === "function") {
@@ -814,6 +891,22 @@
     }
     if (document.getElementById(FLOATING_BAR_ID)) {
       renderFloatingActions();
+      const panel = document.getElementById(VQA_PANEL_ID);
+      const status = document.getElementById(VQA_STATUS_ID);
+      const branding = getAdminAssistantBranding();
+      const titleNode = panel?.querySelector(".phins-vqa-title");
+      const input = document.getElementById(VQA_INPUT_ID);
+      const toggle = document.getElementById(VQA_TOGGLE_ID);
+      if (titleNode) titleNode.textContent = branding.title;
+      if (input) input.placeholder = branding.placeholder;
+      if (toggle) toggle.textContent = `🎤 ${branding.toggleLabel}`;
+      if (status) {
+        status.textContent = detectContext() === "admin"
+          ? "PHINS admin AI Assistant ready."
+          : detectContext() === "supplier"
+            ? "Supplier voice quick actions ready."
+            : "Ready for quick actions.";
+      }
       return;
     }
 
