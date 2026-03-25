@@ -42,6 +42,34 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     assert "Logout now?" in content
 
 
+def test_ui_clarity_asset_contains_supplier_voice_actions_and_hierarchy():
+    content = _fetch("/ui-clarity.js")
+    assert 'return "supplier";' in content
+    assert "Supplier Voice Quick Actions" in content
+    assert 'id: "supplier_orders"' in content
+    assert 'id: "supplier_settlements"' in content
+    assert 'id: "supplier_offers"' in content
+    assert 'id: "supplier_profile"' in content
+    assert 'id: "supplier_new_offer"' in content
+    assert 'id: "supplier_logout"' in content
+    assert "/supplier-portal.html" in content
+    assert "Opening supplier offer form." in content
+    assert "Refreshing supplier dashboard." in content
+    assert "Refreshing supplier settlements." in content
+    assert "Refreshing supplier orders." in content
+    assert "Refreshing supplier offers." in content
+
+
+def test_ui_clarity_asset_requires_authenticated_session_before_render():
+    content = _fetch("/ui-clarity.js")
+    assert "async function fetchValidatedSession()" in content
+    assert "if (!token) return null;" in content
+    assert "const response = await fetch(\"/api/session/validate\"" in content
+    assert "floatingAuthAllowed = [\"customer\", \"supplier\"].includes(role) || isAdminRole(role);" in content
+    assert "if (!floatingAuthAllowed) {" in content
+    assert "ensureFloatingBar();" in content
+
+
 def test_ui_clarity_observer_avoids_floating_self_render_loop():
     content = _fetch("/ui-clarity.js")
     assert "if (actionsNode.dataset.context === context)" in content
