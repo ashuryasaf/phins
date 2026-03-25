@@ -231,3 +231,141 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
     finally:
         srv.stop()
 
+
+def test_supplier_orders_endpoint_returns_supply_chain_orders_with_expected_fields():
+    _reset_supply_chain_state()
+
+    port = 8162
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        inv, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "supplier orders endpoint test",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        invitation_code = (inv.get("invitation") or {}).get("code")
+        assert invitation_code
+
+        reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": invitation_code,
+                "company_name": "Visible Orders Pharmacy",
+                "contact_email": "visible-orders@example.com",
+                "contact_name": "Visible Orders Contact",
+                "supplier_type": "pharmacy",
+                "password": "VisibleOrders123!",
+            },
+        )
+        assert status == 201
+        supplier_id = reg.get("supplier_id")
+        assert supplier_id
+
+        approved, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for supplier order endpoint test"},
+            token=admin_token,
+        )
+        assert status == 200
+        assert approved.get("status") == "approved"
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "visible-orders@example.com", "password": "VisibleOrders123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Supplier Orders Medication Kit",
+                "description": "Order visibility regression coverage",
+                "item_type": "product",
+                "category": "medication",
+                "price": 55.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": "CUST-SUP-ORD-001", "amount": 250.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        purchase, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": "CUST-SUP-ORD-001",
+                "offer_id": offer_id,
+                "product_id": offer_id,
+                "product_name": "Supplier Orders Medication Kit",
+                "amount": 55.0,
+                "quantity": 2,
+                "payment_method": "health_wallet",
+                "category": "medication",
+                "allow_credit_fallback": False,
+            },
+        )
+        assert status == 200
+        assert purchase.get("success") is True
+
+        supplier_orders, status = _get(f"{base}/api/supplier/orders", token=supplier_token)
+        assert status == 200
+        items = supplier_orders.get("items", [])
+        assert len(items) == 1
+
+        order = items[0]
+        assert order.get("supplier_id") == supplier_id
+        assert order.get("customer_id") == "CUST-SUP-ORD-001"
+        assert order.get("offer_id") == offer_id
+        assert order.get("item_name") == "Supplier Orders Medication Kit"
+        assert order.get("quantity") == 2
+        assert order.get("total_amount", 0) > 0
+        assert order.get("supplier_payout", 0) > 0
+        assert order.get("created_date")
+        assert order.get("status") == "completed"
+        assert order.get("payment_status") == "paid"
+
+        confirm_result, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {
+                "transaction_id": order["id"],
+                "status": "completed",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        assert confirm_result.get("success") is True
+        assert confirm_result.get("order", {}).get("id") == order["id"]
+        assert confirm_result.get("order", {}).get("status") == "completed"
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+

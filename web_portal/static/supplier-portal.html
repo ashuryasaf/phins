@@ -635,6 +635,29 @@
       return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(amount || 0);
     }
 
+    function formatCustomerLabel(order) {
+      return order.customer_name || order.customer_display_name || order.customer_id || 'N/A';
+    }
+
+    function formatOrderItem(order) {
+      return order.item_name || order.product_name || order.offer_name || 'N/A';
+    }
+
+    function getOrderActions(order) {
+      const status = String(order.status || '').toLowerCase();
+      const orderId = esc(order.id);
+      if (status === 'pending') {
+        return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'confirmed')">Confirm</button>`;
+      }
+      if (status === 'confirmed') {
+        return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'processing')">Start</button>`;
+      }
+      if (status === 'processing') {
+        return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'completed')">Complete</button>`;
+      }
+      return '<span class="muted-text">No actions</span>';
+    }
+
     function formatSupplierType(type) {
       return (type || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
@@ -847,23 +870,15 @@
           <tr>
             <td>${esc(order.id)}</td>
             <td>${formatDate(order.created_date)}</td>
-            <td>${esc(order.customer_id)}</td>
-            <td>${esc(order.item_name)}</td>
+            <td>${esc(formatCustomerLabel(order))}</td>
+            <td>${esc(formatOrderItem(order))}</td>
             <td>${order.quantity || 1}</td>
-            <td>${formatCurrency(order.total_amount)}</td>
-            <td>${formatCurrency(order.supplier_payout)}</td>
+            <td>${formatCurrency(order.total_amount, order.currency || 'USD')}</td>
+            <td>${formatCurrency(order.supplier_payout, order.currency || 'USD')}</td>
             <td>
-              <span class="order-status ${order.status}">${(order.status || '').toUpperCase()}</span>
+              <span class="order-status ${esc(order.status || 'unknown')}">${esc((order.status || '').toUpperCase() || 'UNKNOWN')}</span>
             </td>
-            <td>
-              ${order.status === 'pending' ? `
-                <button class="btn-sm btn-edit" onclick="updateOrderStatus('${esc(order.id)}', 'confirmed')">Confirm</button>
-              ` : order.status === 'confirmed' ? `
-                <button class="btn-sm btn-edit" onclick="updateOrderStatus('${esc(order.id)}', 'processing')">Start</button>
-              ` : order.status === 'processing' ? `
-                <button class="btn-sm btn-edit" onclick="updateOrderStatus('${esc(order.id)}', 'completed')">Complete</button>
-              ` : ''}
-            </td>
+            <td>${getOrderActions(order)}</td>
           </tr>
         `).join('');
       } catch (e) {
