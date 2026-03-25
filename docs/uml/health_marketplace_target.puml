@@ -1,0 +1,516 @@
+@startuml phins_health_marketplace_context
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+
+title PHINS - Target Global Health Marketplace Context
+
+actor Customer
+actor "PHINS Admin" as Admin
+actor Supplier
+actor "External Supplier Network" as SupplierNetwork
+actor "External Insurer / Payer" as Payer
+actor "Payment Service Provider" as PSP
+actor "Bank / Treasury Rail" as Bank
+actor "Courier / Logistics" as Courier
+actor "AI / BI Consumers" as Analytics
+
+rectangle "PHINS Marketplace Operating Core" {
+  [Customer Dashboard\nweb_portal/static/dashboard.html] as CustomerUI
+  [Supplier Portal\nweb_portal/static/supplier-portal.html] as SupplierUI
+  [Admin Dashboards\nadmin.html + admin-supplier-dashboard.html] as AdminUI
+
+  [Marketplace API] as MarketplaceAPI
+  [Coverage & Eligibility Service] as Eligibility
+  [Wallet, Payments & Ledger Service] as Wallet
+  [Claims & Payer Clearing Service] as Claims
+  [Supplier Connectivity Hub] as SupplierHub
+  [Settlement & Revenue Service] as Settlement
+  [Integrity & Reconciliation Service] as Integrity
+  [Outbox / Event Bus] as Bus
+  [Operational Database] as OLTP
+  [Lakehouse / Feature Store] as Lake
+}
+
+Customer --> CustomerUI
+Supplier --> SupplierUI
+Admin --> AdminUI
+
+CustomerUI --> MarketplaceAPI
+CustomerUI --> Eligibility
+CustomerUI --> Wallet
+CustomerUI --> Claims
+
+SupplierUI --> MarketplaceAPI
+SupplierUI --> SupplierHub
+SupplierUI --> Settlement
+
+AdminUI --> MarketplaceAPI
+AdminUI --> Settlement
+AdminUI --> Integrity
+AdminUI --> Claims
+
+MarketplaceAPI --> Eligibility
+MarketplaceAPI --> Wallet
+MarketplaceAPI --> SupplierHub
+MarketplaceAPI --> Settlement
+MarketplaceAPI --> OLTP
+
+Eligibility --> Payer : eligibility / pre-auth
+Claims --> Payer : claims / remittance / appeals
+Wallet --> PSP : card / alternative payments
+Settlement --> Bank : supplier payouts / treasury
+SupplierHub --> SupplierNetwork : catalog / inventory / order sync
+SupplierHub --> Courier : fulfillment / tracking
+
+MarketplaceAPI --> Bus
+Eligibility --> Bus
+Wallet --> Bus
+Claims --> Bus
+SupplierHub --> Bus
+Settlement --> Bus
+Integrity --> Bus
+
+Bus --> Lake
+Lake --> Analytics
+Integrity --> OLTP
+Settlement --> OLTP
+Claims --> OLTP
+Wallet --> OLTP
+SupplierHub --> OLTP
+@enduml
+
+@startuml phins_health_marketplace_components
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+
+title PHINS - Target Component Architecture (Health Wallet Marketplace + Payer Recovery)
+
+package "Experience Layer" {
+  [Customer Dashboard]
+  [Supplier Portal]
+  [Admin Dashboards]
+  [Actuarial / Accounting Dashboards]
+}
+
+package "API & Access Layer" {
+  [Portal Handler / API Gateway]
+  [AuthN / AuthZ]
+  [Consent & Tenant Guard]
+}
+
+package "Marketplace Domain" {
+  [Catalog Normalization Service]
+  [Search / Quote / Ranking Service]
+  [Cart & Order Orchestrator]
+  [Delivery / Scheduling Service]
+}
+
+package "Insurance & Payer Domain" {
+  [Coverage Eligibility Service]
+  [Pre-Authorization Service]
+  [Claim-as-a-Service]
+  [Remittance / Recovery Service]
+}
+
+package "Finance Domain" {
+  [Wallet Account Service]
+  [Payment Intent Service]
+  [Double-Entry Ledger Service]
+  [Markup / Revenue Recognition Service]
+  [Supplier Settlement Service]
+  [Refund / Chargeback Service]
+}
+
+package "Connectivity Domain" {
+  [Supplier Connector Framework]
+  [Payer Connector Framework]
+  [PSP Connector Framework]
+}
+
+package "Control Plane" {
+  [Audit Service]
+  [Platform Event Ledger]
+  [Idempotency Store]
+  [Transactional Outbox]
+  [Reconciliation Jobs]
+  [Data Contract Validator]
+}
+
+database "Postgres OLTP" as DB
+queue "Event Bus" as Q
+database "Lakehouse / Warehouse" as LH
+component "Feature Store" as FS
+component "AI / BI Services" as BI
+
+[Customer Dashboard] --> [Portal Handler / API Gateway]
+[Supplier Portal] --> [Portal Handler / API Gateway]
+[Admin Dashboards] --> [Portal Handler / API Gateway]
+[Actuarial / Accounting Dashboards] --> [Portal Handler / API Gateway]
+
+[Portal Handler / API Gateway] --> [AuthN / AuthZ]
+[Portal Handler / API Gateway] --> [Consent & Tenant Guard]
+[Portal Handler / API Gateway] --> [Catalog Normalization Service]
+[Portal Handler / API Gateway] --> [Search / Quote / Ranking Service]
+[Portal Handler / API Gateway] --> [Cart & Order Orchestrator]
+[Portal Handler / API Gateway] --> [Coverage Eligibility Service]
+[Portal Handler / API Gateway] --> [Pre-Authorization Service]
+[Portal Handler / API Gateway] --> [Claim-as-a-Service]
+[Portal Handler / API Gateway] --> [Wallet Account Service]
+[Portal Handler / API Gateway] --> [Payment Intent Service]
+[Portal Handler / API Gateway] --> [Supplier Settlement Service]
+[Portal Handler / API Gateway] --> [Refund / Chargeback Service]
+
+[Cart & Order Orchestrator] --> [Delivery / Scheduling Service]
+[Cart & Order Orchestrator] --> [Wallet Account Service]
+[Cart & Order Orchestrator] --> [Markup / Revenue Recognition Service]
+[Cart & Order Orchestrator] --> [Supplier Connector Framework]
+
+[Coverage Eligibility Service] --> [Payer Connector Framework]
+[Pre-Authorization Service] --> [Payer Connector Framework]
+[Claim-as-a-Service] --> [Payer Connector Framework]
+[Remittance / Recovery Service] --> [Payer Connector Framework]
+
+[Payment Intent Service] --> [PSP Connector Framework]
+[Supplier Settlement Service] --> [PSP Connector Framework]
+[Supplier Settlement Service] --> [Supplier Connector Framework]
+
+[Wallet Account Service] --> [Double-Entry Ledger Service]
+[Markup / Revenue Recognition Service] --> [Double-Entry Ledger Service]
+[Refund / Chargeback Service] --> [Double-Entry Ledger Service]
+[Remittance / Recovery Service] --> [Double-Entry Ledger Service]
+[Supplier Settlement Service] --> [Double-Entry Ledger Service]
+
+[Double-Entry Ledger Service] --> [Audit Service]
+[Claim-as-a-Service] --> [Audit Service]
+[Supplier Connector Framework] --> [Audit Service]
+[Payer Connector Framework] --> [Audit Service]
+
+[Cart & Order Orchestrator] --> [Idempotency Store]
+[Payment Intent Service] --> [Idempotency Store]
+[Supplier Settlement Service] --> [Idempotency Store]
+[Remittance / Recovery Service] --> [Idempotency Store]
+
+[Cart & Order Orchestrator] --> [Transactional Outbox]
+[Wallet Account Service] --> [Transactional Outbox]
+[Claim-as-a-Service] --> [Transactional Outbox]
+[Supplier Settlement Service] --> [Transactional Outbox]
+[Remittance / Recovery Service] --> [Transactional Outbox]
+
+[Transactional Outbox] --> Q
+[Platform Event Ledger] --> DB
+[Audit Service] --> DB
+[Catalog Normalization Service] --> DB
+[Search / Quote / Ranking Service] --> DB
+[Cart & Order Orchestrator] --> DB
+[Coverage Eligibility Service] --> DB
+[Pre-Authorization Service] --> DB
+[Claim-as-a-Service] --> DB
+[Remittance / Recovery Service] --> DB
+[Wallet Account Service] --> DB
+[Payment Intent Service] --> DB
+[Double-Entry Ledger Service] --> DB
+[Markup / Revenue Recognition Service] --> DB
+[Supplier Settlement Service] --> DB
+[Refund / Chargeback Service] --> DB
+[Supplier Connector Framework] --> DB
+[Payer Connector Framework] --> DB
+[PSP Connector Framework] --> DB
+
+[Reconciliation Jobs] --> DB
+[Reconciliation Jobs] --> Q
+[Data Contract Validator] --> DB
+[Data Contract Validator] --> Q
+[Platform Event Ledger] --> Q
+
+Q --> LH
+LH --> BI
+LH --> FS
+FS --> BI
+@enduml
+
+@startuml phins_health_marketplace_domain
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title PHINS - Target Domain Model (Wallet-safe Marketplace + External Payers)
+
+class Customer {
+  +id
+  +segment
+  +risk_profile_id
+}
+
+class Supplier {
+  +id
+  +supplier_type
+  +status
+  +commission_rate
+  +settlement_frequency
+}
+
+class SupplierConnector {
+  +id
+  +supplier_id
+  +mode: portal|api|edi|aggregator
+  +status
+}
+
+class Offer {
+  +id
+  +supplier_id
+  +category
+  +base_price
+  +coverage_eligible
+}
+
+class Quote {
+  +id
+  +customer_id
+  +pricing_version
+  +markup_amount
+  +coverage_applied_amount
+  +expires_at
+}
+
+class Order {
+  +id
+  +customer_id
+  +supplier_id
+  +status
+  +gross_sales_amount
+  +supplier_cost_amount
+  +markup_amount
+}
+
+class OrderItem {
+  +id
+  +order_id
+  +offer_id
+  +qty
+  +unit_price
+}
+
+class WalletAccount {
+  +id
+  +customer_id
+  +wallet_type
+  +available_balance
+  +held_balance
+}
+
+class WalletHold {
+  +id
+  +wallet_account_id
+  +order_id
+  +amount
+  +status
+}
+
+class PaymentIntent {
+  +id
+  +order_id
+  +funding_strategy
+  +status
+  +idempotency_key
+}
+
+class LedgerEntry {
+  +id
+  +account_code
+  +direction
+  +amount
+  +reference_type
+  +reference_id
+}
+
+class SupplierSettlement {
+  +id
+  +supplier_id
+  +order_id
+  +gross_amount
+  +net_payout
+  +holdback_amount
+  +status
+}
+
+class ExternalPayer {
+  +id
+  +payer_type
+  +network_scope
+}
+
+class EligibilityCheck {
+  +id
+  +customer_id
+  +payer_id
+  +coverage_percent
+  +decision
+}
+
+class PreAuthorization {
+  +id
+  +order_id
+  +payer_id
+  +status
+  +approved_amount
+}
+
+class MarketplaceClaim {
+  +id
+  +order_id
+  +payer_id
+  +status
+  +claimed_amount
+}
+
+class PayerReceivable {
+  +id
+  +claim_id
+  +expected_amount
+  +open_amount
+  +status
+}
+
+class RemittanceAdvice {
+  +id
+  +payer_id
+  +claim_id
+  +paid_amount
+  +denied_amount
+}
+
+class Refund {
+  +id
+  +order_id
+  +funding_source
+  +amount
+  +status
+}
+
+class PricingExplanation {
+  +id
+  +quote_id
+  +markup_percent
+  +coverage_logic
+  +model_version
+}
+
+class ReconciliationRun {
+  +id
+  +run_type
+  +status
+  +variance_amount
+}
+
+Customer "1" -- "0..*" Quote
+Customer "1" -- "0..*" Order
+Customer "1" -- "0..*" WalletAccount
+Supplier "1" -- "0..*" SupplierConnector
+Supplier "1" -- "0..*" Offer
+Supplier "1" -- "0..*" SupplierSettlement
+Quote "1" -- "1..*" Offer : ranked inputs
+Quote "1" -- "1" PricingExplanation
+Order "1" -- "1..*" OrderItem
+OrderItem "*" --> "1" Offer
+Order "1" -- "0..1" WalletHold
+Order "1" -- "0..*" PaymentIntent
+Order "1" -- "0..*" LedgerEntry
+Order "1" -- "0..*" SupplierSettlement
+Order "1" -- "0..1" MarketplaceClaim
+Order "1" -- "0..*" Refund
+WalletAccount "1" -- "0..*" WalletHold
+WalletAccount "1" -- "0..*" LedgerEntry
+ExternalPayer "1" -- "0..*" EligibilityCheck
+ExternalPayer "1" -- "0..*" PreAuthorization
+ExternalPayer "1" -- "0..*" MarketplaceClaim
+MarketplaceClaim "1" -- "0..1" PayerReceivable
+MarketplaceClaim "1" -- "0..*" RemittanceAdvice
+RemittanceAdvice ..> LedgerEntry : clears receivable / credits wallet
+ReconciliationRun ..> WalletAccount
+ReconciliationRun ..> SupplierSettlement
+ReconciliationRun ..> PayerReceivable
+@enduml
+
+@startuml phins_health_marketplace_sequence
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title Sequence - Coverage-aware Purchase, Supplier Settlement, and Insurer Reimbursement
+
+actor Customer
+participant "Dashboard" as UI
+participant "Marketplace API" as M
+participant "Eligibility Service" as E
+participant "Quote / Ranking" as Q
+participant "Wallet & Ledger" as W
+participant "Order Orchestrator" as O
+participant "Supplier Hub" as S
+participant "Settlement Service" as ST
+participant "Claims / Payer Clearing" as C
+participant "External Insurer" as P
+
+Customer -> UI : Search consultation / pharmacy / supplies
+UI -> M : search(criteria)
+M -> E : checkCoverage(customer, items)
+E -> P : eligibility + pre-auth inquiry
+P --> E : covered amount / rules / auth status
+M -> Q : rankOffers(criteria, coverage, SLA, markup policy)
+Q --> M : ranked offers + pricing explanation
+M --> UI : best offer + alternates + customer payable
+
+Customer -> UI : confirm order
+UI -> O : createOrder(selected_offer)
+O -> W : createPaymentIntent(order, funding_strategy)
+O -> W : createHold(wallet_amount, idempotency_key)
+W --> O : hold_id + pending ledger entries
+O -> S : placeOrder(order)
+S --> O : accepted / scheduled
+O -> W : captureHold(hold_id)
+W --> O : posted ledger entries\n(customer spend, supplier payable, markup revenue)
+O -> ST : createSettlement(order)
+ST --> O : settlement pending
+O --> UI : order confirmed + receipt
+
+alt external insurer reimbursement required
+  O -> C : openMarketplaceClaim(order, payer_context)
+  C -> P : submit claim packet
+  P --> C : adjudication / remittance
+  C -> W : post recovery credit or close receivable
+  C -> ST : adjust PHINS receivable / customer refund if needed
+  C --> UI : reimbursement status updated
+end
+
+ST -> S : settlement remittance / payout advice
+ST --> UI : supplier payout visible in supplier portal
+@enduml
+
+@startuml phins_marketplace_account_state
+skinparam monochrome false
+skinparam shadowing false
+
+title State Machine - Marketplace Financial Lifecycle
+
+[*] --> QUOTED
+QUOTED --> AUTHORIZED : wallet hold / card auth / payer pre-auth
+AUTHORIZED --> CAPTURED : supplier accepts and PHINS captures funds
+CAPTURED --> FULFILLED : service delivered / shipment completed
+FULFILLED --> SETTLEMENT_PENDING : supplier payout calculated
+SETTLEMENT_PENDING --> SETTLED : payout executed
+SETTLED --> REIMBURSED : payer remittance received
+
+AUTHORIZED --> RELEASED : customer cancel before capture
+CAPTURED --> REFUND_PENDING : cancellation / failure / denial / return
+REFUND_PENDING --> REFUNDED : compensating entries posted
+REIMBURSED --> ADJUSTED : remittance short-pay / denial / appeal outcome
+
+RELEASED --> [*]
+REFUNDED --> [*]
+ADJUSTED --> [*]
+SETTLED --> [*]
+@enduml
