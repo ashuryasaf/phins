@@ -7,7 +7,7 @@ stored alongside raw database dumps for easier browsing and restore planning.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 import json
 import os
@@ -23,7 +23,7 @@ from database.config import DatabaseConfig
 
 
 def _utc_now() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _workspace_root() -> Path:
