@@ -18,6 +18,13 @@ def test_ui_clarity_script_injected_on_login_html():
     assert content.count('<script src="/ui-clarity.js"></script>') == 1
 
 
+def test_supplier_portal_supports_query_param_tab_activation():
+    content = _fetch("/supplier-portal.html")
+    assert "function selectSupplierPortalTab(tabId)" in content
+    assert "const requestedTab = new URLSearchParams(window.location.search).get('tab');" in content
+    assert "selectSupplierPortalTab(requestedTab || 'offers');" in content
+
+
 def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
     content = _fetch("/ui-clarity.js")
     assert 'const FLOATING_BAR_ID = "phins-vqa-bar";' in content
