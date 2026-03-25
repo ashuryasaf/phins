@@ -379,6 +379,9 @@ class SupplyChainEcosystemService:
         
         # Settlement tracking
         self.pending_settlements: Dict[str, List] = {}  # supplier_id -> pending payouts
+        self.settlement_history: List[Dict[str, Any]] = []
+        self.connector_retry_queue: List[Dict[str, Any]] = []
+        self.connector_audit_log: List[Dict[str, Any]] = []
         
         # Ledger chain tracking
         self.ledger_chain: List[str] = []  # List of entry hashes in order
@@ -1743,6 +1746,18 @@ class SupplyChainEcosystemService:
         
         # Clear pending
         self.pending_settlements[supplier_id] = []
+
+        settlement_record = {
+            "settlement_id": settlement_id,
+            "supplier_id": supplier_id,
+            "amount": total_amount,
+            "orders_settled": len(order_ids),
+            "order_ids": order_ids,
+            "processed_by": processed_by,
+            "processed_at": now.isoformat(),
+            "status": "processed",
+        }
+        self.settlement_history.append(settlement_record)
         
         # Record settlement
         self._record_ledger_entry(
@@ -1766,6 +1781,63 @@ class SupplyChainEcosystemService:
             "orders_settled": len(order_ids),
             "message": f"Settlement of ${total_amount:,.2f} processed"
         }
+
+    def get_settlement_history(self, supplier_id: str = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return processed settlement history, optionally scoped to a supplier."""
+        records = list(self.settlement_history)
+        if supplier_id:
+            records = [r for r in records if r.get("supplier_id") == supplier_id]
+        records.sort(key=lambda x: x.get("processed_at", ""), reverse=True)
+        return records[:max(1, limit)]
+
+    def queue_connector_retry(
+        self,
+        supplier_id: str,
+        connector_type: str,
+        reason: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Queue an external connector retry for supplier sync/ops visibility."""
+        now = datetime.now(timezone.utc).isoformat()
+        retry_id = f"RETRY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}"
+        record = {
+            "retry_id": retry_id,
+            "supplier_id": supplier_id,
+            "connector_type": connector_type,
+            "reason": reason,
+            "payload": payload or {},
+            "status": "queued",
+            "attempt_count": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.connector_retry_queue.append(record)
+        self.connector_audit_log.append({
+            "event_id": f"AUD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}",
+            "supplier_id": supplier_id,
+            "connector_type": connector_type,
+            "event_type": "retry_queued",
+            "reason": reason,
+            "timestamp": now,
+            "payload": payload or {},
+        })
+        return record
+
+    def get_connector_retry_queue(self, supplier_id: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Return queued connector retries."""
+        items = list(self.connector_retry_queue)
+        if supplier_id:
+            items = [item for item in items if item.get("supplier_id") == supplier_id]
+        items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return items[:max(1, limit)]
+
+    def get_connector_audit_log(self, supplier_id: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Return connector audit history."""
+        items = list(self.connector_audit_log)
+        if supplier_id:
+            items = [item for item in items if item.get("supplier_id") == supplier_id]
+        items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return items[:max(1, limit)]
     
     # =========================================================================
     # SUPPLIER P&L AND REPORTS

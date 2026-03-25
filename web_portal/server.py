@@ -421,6 +421,119 @@ def list_normalized_supply_chain_orders(
     return rows
 
 
+def summarize_supplier_sync_status(supplier_id: Optional[str] = None) -> Dict[str, Any]:
+    """Summarize supplier sync and ledger/settlement health for admin views."""
+    if not supply_chain_enabled or not supply_chain_service:
+        return {
+            'success': False,
+            'error': 'Supply chain service unavailable',
+        }
+
+    with STATE_LOCK:
+        suppliers = dict(SUPPLIERS)
+        offers = dict(SUPPLIER_OFFERS)
+        pending_settlements = dict(getattr(supply_chain_service, 'pending_settlements', {}))
+
+    retry_queue = list(getattr(supply_chain_service, 'connector_retry_queue', []))
+    audit_log = list(getattr(supply_chain_service, 'connector_audit_log', []))
+    settlement_history = list(getattr(supply_chain_service, 'settlement_history', []))
+
+    supplier_ids = [supplier_id] if supplier_id else sorted(suppliers.keys())
+    supplier_rows: List[Dict[str, Any]] = []
+    for sid in supplier_ids:
+        supplier = suppliers.get(sid, {})
+        if not supplier:
+            continue
+        supplier_orders = list_normalized_supply_chain_orders(supplier_id=sid)
+        supplier_offers = [o for o in offers.values() if o.get('supplier_id') == sid]
+        supplier_retries = [item for item in retry_queue if item.get('supplier_id') == sid]
+        supplier_audit = [item for item in audit_log if item.get('supplier_id') == sid]
+        supplier_settlements = [item for item in settlement_history if item.get('supplier_id') == sid]
+        supplier_pending = pending_settlements.get(sid, [])
+
+        supplier_rows.append({
+            'supplier_id': sid,
+            'supplier_name': get_supplier_display_name(sid),
+            'connector_mode': supplier.get('connector_mode') or 'portal',
+            'connector_status': supplier.get('connector_status') or ('active' if supplier.get('portal_active') else 'inactive'),
+            'offers_count': len(supplier_offers),
+            'orders_count': len(supplier_orders),
+            'pending_orders': len([o for o in supplier_orders if get_status_lower(o) in {'pending', 'confirmed', 'processing', 'in_transit', 'delivered'}]),
+            'cancelled_orders': len([o for o in supplier_orders if get_status_lower(o) == 'cancelled']),
+            'refunded_orders': len([o for o in supplier_orders if get_status_lower(o) == 'refunded']),
+            'disputed_orders': len([o for o in supplier_orders if get_status_lower(o) == 'disputed']),
+            'pending_settlement_amount': round(sum(safe_float(p.get('amount'), 0.0) for p in supplier_pending), 2),
+            'processed_settlements': len(supplier_settlements),
+            'queued_retries': len(supplier_retries),
+            'audit_events': len(supplier_audit),
+            'last_catalog_sync_at': supplier.get('last_catalog_sync_at'),
+            'last_order_sync_at': supplier.get('last_order_sync_at'),
+        })
+
+    return {
+        'success': True,
+        'suppliers': supplier_rows,
+        'queued_retries': len(retry_queue),
+        'audit_events': len(audit_log),
+        'processed_settlements': len(settlement_history),
+        'pending_settlement_suppliers': sum(1 for items in pending_settlements.values() if items),
+    }
+
+
+def record_marketplace_margin_revenue(
+    *,
+    order_id: str,
+    customer_id: Optional[str],
+    supplier_id: Optional[str],
+    management_fee: float,
+    profit_margin_amount: float,
+    expense_loading_amount: float,
+    actor: str = 'marketplace_system',
+) -> Optional[Dict[str, Any]]:
+    """Record marketplace management-fee revenue on the PHINS balance sheet."""
+    total_margin = round(
+        max(safe_float(management_fee), 0.0)
+        + max(safe_float(profit_margin_amount), 0.0)
+        + max(safe_float(expense_loading_amount), 0.0),
+        2,
+    )
+    if total_margin <= 0:
+        return None
+    return record_fee_revenue(
+        fee_type='management',
+        amount=total_margin,
+        description=f"Marketplace management fees for order {order_id}",
+        customer_id=customer_id,
+        actor=actor,
+    )
+
+
+def record_marketplace_supplier_expense(
+    *,
+    order_id: str,
+    customer_id: Optional[str],
+    supplier_id: Optional[str],
+    supplier_payout: float,
+    actor: str = 'marketplace_system',
+) -> Optional[Dict[str, Any]]:
+    """Record supplier payout expense on the PHINS balance sheet."""
+    payout = round(max(safe_float(supplier_payout), 0.0), 2)
+    if payout <= 0:
+        return None
+    return record_balance_sheet_transaction(
+        tx_type='expense',
+        category='supplier_payments',
+        amount=payout,
+        description=f"Marketplace supplier payout for order {order_id}",
+        actor=actor,
+        customer_id=customer_id,
+        metadata={
+            'order_id': order_id,
+            'supplier_id': supplier_id,
+        },
+    )
+
+
 def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
     """Summarize supplier sync and ledger/settlement health for admin views."""
     if not supply_chain_enabled or not supply_chain_service:

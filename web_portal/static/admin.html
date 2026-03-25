@@ -5419,7 +5419,7 @@
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">Loading...</td></tr>';
       
       try {
-        let endpoint = '/api/marketplace/admin/transactions';
+        let endpoint = '/api/admin/suppliers/orders';
         let body = { limit: 20 };
         
         if (filter === 'pending') {
@@ -5442,11 +5442,11 @@
           if (filter === 'pending') {
             displayPendingApprovals(data.pending_approvals || []);
           } else {
-            let transactions = data.transactions || [];
+            let transactions = data.items || data.transactions || [];
             if (filter === 'services') {
-              transactions = transactions.filter(t => t.item_type === 'service');
+              transactions = transactions.filter(t => (t.item_type || t.order_type) === 'service');
             } else if (filter === 'products') {
-              transactions = transactions.filter(t => t.item_type === 'product');
+              transactions = transactions.filter(t => (t.item_type || t.order_type) === 'product');
             }
             displayMarketplaceTable(transactions);
           }
@@ -5470,29 +5470,28 @@
       }
       
       tbody.innerHTML = transactions.slice(0, 10).map(txn => {
-        const statusClass = txn.status === 'completed' ? 'badge-active' :
-                           txn.status === 'approved' ? 'badge-success' :
-                           txn.status === 'pending' ? 'badge-pending' : 'badge-danger';
-        const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+        const status = String(txn.status || '').toLowerCase();
+        const statusClass = status === 'completed' ? 'badge-active' :
+                           status === 'approved' ? 'badge-success' :
+                           status === 'pending' ? 'badge-pending' :
+                           status === 'refunded' ? 'badge-warning' : 'badge-danger';
+        const typeIcon = (txn.item_type || txn.order_type) === 'service' ? '🩺' : '📦';
         
         return `
           <tr>
-            <td><small>${txn.transaction_id}</small></td>
-            <td>${txn.customer_id}</td>
-            <td>${typeIcon} ${txn.item_type || 'N/A'}</td>
+            <td><small>${txn.id || txn.transaction_id || 'N/A'}</small></td>
+            <td>${txn.customer_name || txn.customer_id || 'N/A'}</td>
+            <td>${typeIcon} ${txn.item_type || txn.order_type || 'N/A'}</td>
             <td>${txn.item_name || 'N/A'}</td>
             <td>$${Number(txn.total_amount || 0).toFixed(2)}</td>
-            <td style="color:#28a745;">$${Number(txn.insurance_covered || 0).toFixed(2)}</td>
+            <td style="color:#28a745;">$${Number(txn.insurance_covered || txn.payer_responsibility_amount || 0).toFixed(2)}</td>
             <td><small>${txn.nft_token_id || 'N/A'}</small></td>
             <td><span class="badge ${statusClass}">${txn.status || 'Unknown'}</span></td>
             <td>
               <div style="display: flex; gap: 6px;">
-                ${txn.status === 'pending' || txn.status === 'pending_approval' ? `
-                  <button class="action-btn approve" title="Approve Transaction" onclick="approveMarketplaceTxn('${txn.transaction_id}')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  </button>
-                  <button class="action-btn reject" title="Reject Transaction" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                ${(status === 'pending' || status === 'confirmed' || status === 'processing') ? `
+                  <button class="action-btn approve" title="Resolve Dispute / Return" onclick="rejectMarketplaceTxn('${txn.id || txn.transaction_id}', 'Admin review / dispute resolution')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
                   </button>
                 ` : `
                   <button class="action-btn info" title="View NFT" onclick="viewNFT('${txn.nft_token_id}')">
@@ -5519,24 +5518,21 @@
       tbody.innerHTML = approvals.map(item => {
         const txn = item.transaction || {};
         const nft = item.nft || {};
-        const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+        const typeIcon = (txn.item_type || txn.order_type) === 'service' ? '🩺' : '📦';
         
         return `
           <tr style="background:#fff3cd;">
-            <td><small>${txn.transaction_id || 'N/A'}</small></td>
-            <td>${txn.customer_id || 'N/A'}</td>
-            <td>${typeIcon} ${txn.item_type || 'N/A'}</td>
+            <td><small>${txn.id || txn.transaction_id || 'N/A'}</small></td>
+            <td>${txn.customer_name || txn.customer_id || 'N/A'}</td>
+            <td>${typeIcon} ${txn.item_type || txn.order_type || 'N/A'}</td>
             <td>${txn.item_name || 'N/A'} ${item.requires_prescription ? '⚠️' : ''}</td>
             <td>$${Number(txn.total_amount || 0).toFixed(2)}</td>
-            <td style="color:#28a745;">$${Number(txn.insurance_covered || 0).toFixed(2)}</td>
+            <td style="color:#28a745;">$${Number(txn.insurance_covered || txn.payer_responsibility_amount || 0).toFixed(2)}</td>
             <td><small>${nft.token_id || 'N/A'}</small></td>
             <td><span class="badge badge-pending">PENDING</span></td>
             <td>
               <div style="display: flex; gap: 6px;">
-                <button class="action-btn approve" title="Approve" onclick="approveMarketplaceTxn('${txn.transaction_id}')">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </button>
-                <button class="action-btn reject" title="Reject" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">
+                <button class="action-btn reject" title="Reject / Dispute" onclick="rejectMarketplaceTxn('${txn.id || txn.transaction_id}', 'Rejected from admin marketplace queue')">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
               </div>
@@ -5553,50 +5549,28 @@
     
     // Approve marketplace transaction
     async function approveMarketplaceTxn(transactionId) {
-      if (!confirm('Approve this transaction?')) return;
-      
-      try {
-        const response = await fetch('/api/marketplace/admin/approve', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ transaction_id: transactionId })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          alert(`✅ Transaction approved!`);
-          loadMarketplaceData();
-        } else {
-          alert(`❌ Failed: ${result.error}`);
-        }
-      } catch (err) {
-        alert(`❌ Error: ${err.message}`);
-      }
+      alert('Approval is no longer handled on the legacy marketplace queue. Use supplier/order lifecycle actions in the normalized marketplace flows.');
     }
     
     // Reject marketplace transaction
-    async function rejectMarketplaceTxn(transactionId) {
-      const reason = prompt('Enter rejection reason:');
+    async function rejectMarketplaceTxn(transactionId, defaultReason = '') {
+      const reason = prompt('Enter dispute / return / rejection reason:', defaultReason || '');
       if (!reason) return;
       
       try {
-        const response = await fetch('/api/marketplace/admin/reject', {
+        const response = await fetch('/api/marketplace/orders/refund', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ transaction_id: transactionId, reason: reason })
+          body: JSON.stringify({ order_id: transactionId, reason: reason })
         });
         
         const result = await response.json();
         
         if (result.success) {
-          alert('Transaction rejected.');
+          alert(result.message || 'Marketplace dispute/refund processed.');
           loadMarketplaceData();
         } else {
           alert(`❌ Failed: ${result.error}`);
