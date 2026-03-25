@@ -29,7 +29,8 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             PHINS_BALANCE_SHEET, BILLING, CLAIMS, 
             initialize_balance_sheet, record_premium_revenue,
             process_claim_payment_to_wallet, HEALTH_WALLETS,
-            TRANSACTION_LEDGER, calculate_cumulative_premium_income
+            TRANSACTION_LEDGER, calculate_cumulative_premium_income,
+            record_fee_revenue, record_balance_sheet_transaction
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -41,6 +42,8 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.record_premium_revenue = record_premium_revenue
         self.process_claim_payment_to_wallet = process_claim_payment_to_wallet
         self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
+        self.record_fee_revenue = record_fee_revenue
+        self.record_balance_sheet_transaction = record_balance_sheet_transaction
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -224,6 +227,54 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         print(f"  Total Revenue: ${total_revenue:,.2f}")
         print(f"  Total Expenses: ${total_expenses:,.2f}")
         print(f"  Net Income: ${expected_net:,.2f}")
+
+    def test_marketplace_management_fee_and_supplier_expense_recording(self):
+        """Marketplace margin should book management fee revenue and supplier payout expense separately."""
+        self.initialize_balance_sheet()
+
+        initial_management_fees = self.PHINS_BALANCE_SHEET['revenue_breakdown']['management_fees']
+        initial_supplier_payments = self.PHINS_BALANCE_SHEET['expense_breakdown']['supplier_payments']
+        initial_total_revenue = self.PHINS_BALANCE_SHEET['total_revenue']
+        initial_total_expenses = self.PHINS_BALANCE_SHEET['total_expenses']
+
+        management_fee = 18.50
+        supplier_payout = 101.25
+
+        fee_tx = self.record_fee_revenue(
+            fee_type='management',
+            amount=management_fee,
+            description='Marketplace management fee for order ORD-MKT-001',
+            customer_id='TEST-CUST-MKT-001',
+            actor='marketplace_settlement_test'
+        )
+        expense_tx = self.record_balance_sheet_transaction(
+            tx_type='expense',
+            category='supplier_payments',
+            amount=supplier_payout,
+            description='Supplier payout for order ORD-MKT-001',
+            actor='marketplace_settlement_test',
+            customer_id='TEST-CUST-MKT-001',
+            metadata={'order_id': 'ORD-MKT-001', 'supplier_id': 'SUP-MKT-001'}
+        )
+
+        self.assertIsNotNone(fee_tx)
+        self.assertIsNotNone(expense_tx)
+        self.assertEqual(
+            self.PHINS_BALANCE_SHEET['revenue_breakdown']['management_fees'],
+            initial_management_fees + management_fee,
+        )
+        self.assertEqual(
+            self.PHINS_BALANCE_SHEET['expense_breakdown']['supplier_payments'],
+            initial_supplier_payments + supplier_payout,
+        )
+        self.assertEqual(
+            self.PHINS_BALANCE_SHEET['total_revenue'],
+            initial_total_revenue + management_fee,
+        )
+        self.assertEqual(
+            self.PHINS_BALANCE_SHEET['total_expenses'],
+            initial_total_expenses + supplier_payout,
+        )
 
 
 def run_balance_sheet_integrity_test():
