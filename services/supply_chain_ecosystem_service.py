@@ -1594,6 +1594,114 @@ class SupplyChainEcosystemService:
             "order": order,
             "message": f"Order {order_id} completed"
         }
+
+    def update_order_status(
+        self,
+        order_id: str,
+        status: str,
+        updated_by: str,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Update an order status with simple lifecycle validation."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        normalized_status = str(status or "").strip().lower()
+        if not normalized_status:
+            raise ValueError("status is required")
+
+        order = self.orders[order_id]
+        current_status = str(order.get("status") or "").strip().lower()
+
+        if current_status == normalized_status:
+            return {
+                "success": True,
+                "order": order,
+                "message": f"Order {order_id} already {normalized_status}"
+            }
+
+        # Completing an order should continue to flow through the settlement logic.
+        if normalized_status == OrderStatus.COMPLETED.value:
+            if current_status == OrderStatus.COMPLETED.value:
+                return {
+                    "success": True,
+                    "order": order,
+                    "message": f"Order {order_id} already {normalized_status}"
+                }
+            return self.complete_order(order_id, completed_by=updated_by)
+
+        allowed_transitions = {
+            OrderStatus.PENDING.value: {
+                OrderStatus.CONFIRMED.value,
+                OrderStatus.CANCELLED.value,
+            },
+            OrderStatus.CONFIRMED.value: {
+                OrderStatus.PROCESSING.value,
+                OrderStatus.CANCELLED.value,
+            },
+            OrderStatus.PROCESSING.value: {
+                OrderStatus.IN_TRANSIT.value,
+                OrderStatus.DELIVERED.value,
+                OrderStatus.CANCELLED.value,
+            },
+            OrderStatus.IN_TRANSIT.value: {
+                OrderStatus.DELIVERED.value,
+                OrderStatus.CANCELLED.value,
+            },
+            OrderStatus.DELIVERED.value: {
+                OrderStatus.COMPLETED.value,
+            },
+        }
+
+        if normalized_status not in {
+            OrderStatus.PENDING.value,
+            OrderStatus.CONFIRMED.value,
+            OrderStatus.PROCESSING.value,
+            OrderStatus.IN_TRANSIT.value,
+            OrderStatus.DELIVERED.value,
+            OrderStatus.CANCELLED.value,
+            OrderStatus.REFUNDED.value,
+            OrderStatus.DISPUTED.value,
+        }:
+            raise ValueError(f"Unsupported order status: {normalized_status}")
+
+        allowed_next = allowed_transitions.get(current_status, set())
+        if normalized_status not in allowed_next:
+            raise ValueError(
+                f"Invalid status transition from {current_status or 'unknown'} to {normalized_status}"
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+        order["status"] = normalized_status
+        order["updated_date"] = now
+        if normalized_status == OrderStatus.DELIVERED.value:
+            order["actual_delivery"] = now
+        elif normalized_status == OrderStatus.CANCELLED.value:
+            order["cancelled_by"] = updated_by
+            order["cancelled_date"] = now
+
+        self._record_ledger_entry(
+            entry_type="order_status_updated",
+            supplier_id=order["supplier_id"],
+            customer_id=order.get("customer_id"),
+            order_id=order_id,
+            amount=order.get("total_amount", 0.0),
+            commission=order.get("commission", 0.0),
+            supplier_payout=order.get("supplier_payout", 0.0),
+            description=f"Order status updated to {normalized_status}",
+            metadata={
+                "updated_by": updated_by,
+                "previous_status": current_status,
+                "new_status": normalized_status,
+                "notes": notes,
+            }
+        )
+
+        return {
+            "success": True,
+            "order": order,
+            "message": f"Order {order_id} updated to {normalized_status}"
+        }
     
     # =========================================================================
     # SETTLEMENT AND PAYOUTS

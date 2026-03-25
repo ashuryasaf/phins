@@ -8150,15 +8150,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
-        # Supplier: list "orders" (mapped to marketplace transactions for now)
+        # Supplier: list marketplace orders
         if path == '/api/supplier/orders':
             if not require_role(session, ['admin', 'supplier']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
-                return
-            if not marketplace_enabled or not marketplace:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Marketplace service unavailable'}).encode('utf-8'))
                 return
 
             limit_raw = qs.get('limit', ['50'])[0]
@@ -8166,25 +8162,62 @@ For claims or questions, please contact:
                 limit = max(1, min(200, int(limit_raw)))
             except Exception:
                 limit = 50
+            status_filter = (qs.get('status', [None])[0] or '').strip().lower() or None
 
             role = get_effective_role(session)
             requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
-            supplier_id = (session or {}).get('username') if role == 'supplier' else (requested_supplier_id or None)
+            supplier_id = (
+                (session or {}).get('supplier_id') or (session or {}).get('username')
+            ) if role == 'supplier' else (requested_supplier_id or None)
 
-            txs = marketplace.get_all_transactions(limit=200)
-            # Best-effort mapping: treat provider_id as supplier_id when present
             items = []
-            for t in txs:
-                inferred_supplier = t.get('provider_id') or t.get('provider') or None
-                if supplier_id and inferred_supplier and inferred_supplier != supplier_id:
-                    continue
-                if supplier_id and not inferred_supplier:
-                    continue
-                t2 = dict(t)
-                t2['supplier_id'] = inferred_supplier
-                items.append(t2)
+
+            if supply_chain_enabled and supply_chain_service:
+                with STATE_LOCK:
+                    orders = list(getattr(supply_chain_service, 'orders', {}).values())
+                    customer_names = {
+                        cid: (cust.get('name') or cust.get('first_name') or cust.get('email') or cid)
+                        for cid, cust in CUSTOMERS.items()
+                    }
+
+                for order in orders:
+                    if supplier_id and order.get('supplier_id') != supplier_id:
+                        continue
+                    if status_filter and get_status_lower(order) != status_filter:
+                        continue
+
+                    order_row = dict(order)
+                    order_row['customer_name'] = customer_names.get(
+                        order.get('customer_id'),
+                        order.get('customer_id')
+                    )
+                    order_row['order_date'] = order.get('created_date')
+                    items.append(order_row)
+
+                items = sorted(
+                    items,
+                    key=lambda row: row.get('created_date') or '',
+                    reverse=True,
+                )
+            elif marketplace_enabled and marketplace:
+                txs = marketplace.get_all_transactions(limit=200)
+                for t in txs:
+                    inferred_supplier = t.get('provider_id') or t.get('provider') or None
+                    if supplier_id and inferred_supplier and inferred_supplier != supplier_id:
+                        continue
+                    if supplier_id and not inferred_supplier:
+                        continue
+                    if status_filter and (str(t.get('status') or '').strip().lower() != status_filter):
+                        continue
+                    t2 = dict(t)
+                    t2['supplier_id'] = inferred_supplier
+                    items.append(t2)
+
             self._set_json_headers()
-            self.wfile.write(json.dumps({'items': items[:limit]}).encode('utf-8'))
+            self.wfile.write(json.dumps({
+                'items': items[:limit],
+                'total': len(items)
+            }).encode('utf-8'))
             return
 
         # ============ ADMIN SUPPLIER MANAGEMENT ENDPOINTS ============
@@ -20933,7 +20966,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Failed to delete offer', 'details': str(e)}).encode('utf-8'))
             return
 
-        # Supplier: update order status (mapped to marketplace transaction status)
+        # Supplier: update order status
         if path == '/api/supplier/orders/update-status':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -20942,13 +20975,9 @@ For claims or questions, please contact:
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
                 return
-            if not marketplace_enabled or not marketplace:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Marketplace service unavailable'}).encode('utf-8'))
-                return
             try:
                 payload = json.loads(body or '{}')
-                transaction_id = str(payload.get('transaction_id') or '').strip()
+                transaction_id = str(payload.get('transaction_id') or payload.get('order_id') or '').strip()
                 status = str(payload.get('status') or '').strip().lower()
                 notes = str(payload.get('notes') or '').strip() or None
                 if not transaction_id or not status:
@@ -20956,18 +20985,45 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Missing transaction_id or status'}).encode('utf-8'))
                     return
                 role = get_effective_role(session)
-                # SECURITY: suppliers can only update their own transactions.
-                # Marketplace stores transactions as ServiceTransaction objects in `marketplace.transactions`.
-                if role == 'supplier':
-                    supplier_id = (session or {}).get('username')
-                    tx_obj = getattr(marketplace, 'transactions', {}).get(transaction_id)
-                    provider_id = getattr(tx_obj, 'provider_id', None) if tx_obj else None
-                    if (not supplier_id) or (not provider_id) or (provider_id != supplier_id):
+                actor = (session or {}).get('username') if session else 'unknown'
+
+                if supply_chain_enabled and supply_chain_service:
+                    supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                    order = getattr(supply_chain_service, 'orders', {}).get(transaction_id)
+                    if not order:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Order not found'}).encode('utf-8'))
+                        return
+
+                    if role == 'supplier' and order.get('supplier_id') != supplier_id:
                         self._set_json_headers(403)
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
-                actor = (session or {}).get('username') if session else 'unknown'
-                result = marketplace.update_transaction_status(transaction_id, status, notes)
+
+                    result = supply_chain_service.update_order_status(
+                        order_id=transaction_id,
+                        status=status,
+                        updated_by=actor,
+                        notes=notes,
+                    )
+                else:
+                    if not marketplace_enabled or not marketplace:
+                        self._set_json_headers(503)
+                        self.wfile.write(json.dumps({'error': 'Marketplace service unavailable'}).encode('utf-8'))
+                        return
+
+                    # SECURITY: suppliers can only update their own transactions.
+                    if role == 'supplier':
+                        supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                        tx_obj = getattr(marketplace, 'transactions', {}).get(transaction_id)
+                        provider_id = getattr(tx_obj, 'provider_id', None) if tx_obj else None
+                        if (not supplier_id) or (not provider_id) or (provider_id != supplier_id):
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                            return
+
+                    result = marketplace.update_transaction_status(transaction_id, status, notes)
+
                 if audit and result.get('success'):
                     try:
                         audit.log(actor, 'update_status', 'supplier_order', transaction_id, {'status': status})
