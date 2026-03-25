@@ -978,14 +978,16 @@
               <th style="color: white;">Category</th>
               <th style="color: white;">Provider</th>
               <th style="color: white;">Amount</th>
+              <th style="color: white;">Refunded</th>
               <th style="color: white;">NFT Token</th>
               <th style="color: white;">Ledger</th>
               <th style="color: white;">Status</th>
+              <th style="color: white;">Actions</th>
             </tr>
           </thead>
           <tbody id="purchase-history-table">
             <tr>
-              <td colspan="8" style="text-align: center; color: #666; padding: 40px;">Loading purchase history...</td>
+              <td colspan="10" style="text-align: center; color: #666; padding: 40px;">Loading purchase history...</td>
             </tr>
           </tbody>
         </table>
@@ -6398,7 +6400,7 @@
       if (!purchases || purchases.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="8" style="text-align: center; color: #666; padding: 40px;">
+            <td colspan="10" style="text-align: center; color: #666; padding: 40px;">
               <div style="font-size: 2rem; margin-bottom: 8px;">🛒</div>
               No medical purchases yet. Use your Health Wallet to purchase medical products and services.
             </td>
@@ -6408,10 +6410,15 @@
       }
       
       tbody.innerHTML = purchases.map(p => {
-        const date = new Date(p.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const time = new Date(p.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        const statusColor = p.status === 'completed' ? '#28a745' : p.status === 'pending' ? '#ffc107' : '#dc3545';
-        const statusIcon = p.status === 'completed' ? '✅' : p.status === 'pending' ? '⏳' : '❌';
+        const purchaseTimestamp = p.timestamp || p.order_date || p.created_date;
+        const date = purchaseTimestamp ? new Date(purchaseTimestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
+        const time = purchaseTimestamp ? new Date(purchaseTimestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+        const status = String(p.status || 'pending').toLowerCase();
+        const statusColor = status === 'completed' ? '#28a745' : status === 'pending' ? '#ffc107' : status === 'cancelled' || status === 'refunded' ? '#dc3545' : '#1565c0';
+        const statusIcon = status === 'completed' ? '✅' : status === 'pending' ? '⏳' : status === 'cancelled' ? '❌' : status === 'refunded' ? '↩️' : 'ℹ️';
+        const refundedAmount = Number(p.refunded_amount || 0);
+        const canCancel = status === 'pending' || status === 'confirmed';
+        const canRefund = status === 'completed' && refundedAmount < Number(p.amount || 0);
         
         // NFT badge with ledger link indicator
         const hasNft = !!p.nft_token_id;
@@ -6431,14 +6438,62 @@
             </td>
             <td style="font-weight: 500;">${p.product_name || p.product_id}</td>
             <td><span style="background: #e3f2fd; color: #1565c0; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">${p.category || 'General'}</span></td>
-            <td>${p.provider || '-'}</td>
-            <td style="font-weight: 600; color: #dc3545;">-$${p.amount.toFixed(2)}</td>
+            <td>${p.provider_name || p.provider || '-'}</td>
+            <td style="font-weight: 600; color: #dc3545;">-$${Number(p.amount || 0).toFixed(2)}</td>
+            <td style="font-weight: 600; color: ${refundedAmount > 0 ? '#2e7d32' : '#78909c'};">$${refundedAmount.toFixed(2)}</td>
             <td>${nftBadge}</td>
             <td><span style="font-size: 0.75rem; color: ${ledgerColor};">${ledgerStatus}</span></td>
-            <td><span style="color: ${statusColor};">${statusIcon} ${p.status.charAt(0).toUpperCase() + p.status.slice(1)}</span></td>
+            <td><span style="color: ${statusColor};">${statusIcon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span></td>
+            <td>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                ${canCancel ? `<button onclick="cancelMarketplacePurchase('${p.id}')" class="btn" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Cancel</button>` : ''}
+                ${canRefund ? `<button onclick="refundMarketplacePurchase('${p.id}')" class="btn" style="background:#43a047;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Refund</button>` : ''}
+                ${!canCancel && !canRefund ? '<span style="font-size:0.8rem;color:#78909c;">No actions</span>' : ''}
+              </div>
+            </td>
           </tr>
         `;
       }).join('');
+    }
+
+    async function cancelMarketplacePurchase(purchaseId) {
+      if (!confirm('Cancel this marketplace order?')) return;
+      try {
+        const response = await fetch('/api/marketplace/orders/cancel', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ purchase_id: purchaseId, customer_id: customerId })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        showNotification(data.message || 'Order cancelled', 'success');
+        loadPurchaseHistory();
+      } catch (err) {
+        showNotification(`❌ Cancel failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function refundMarketplacePurchase(purchaseId) {
+      if (!confirm('Refund this marketplace order?')) return;
+      try {
+        const response = await fetch('/api/marketplace/orders/refund', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ purchase_id: purchaseId, customer_id: customerId })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        showNotification(data.message || 'Refund processed', 'success');
+        loadPurchaseHistory();
+      } catch (err) {
+        showNotification(`❌ Refund failed: ${err.message}`, 'error');
+      }
     }
     
     // Validate a single purchase on all ledgers

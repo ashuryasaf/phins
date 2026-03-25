@@ -768,6 +768,23 @@
       return '$' + (parseFloat(amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function formatOrderPartyLabel(row, primaryKey, fallbackKey) {
+      return row[primaryKey] || row[fallbackKey] || 'N/A';
+    }
+
+    function getTransactionStatusBadge(status) {
+      const normalized = String(status || '').toLowerCase();
+      const cssClass = normalized === 'completed' || normalized === 'settled'
+        ? 'approved'
+        : normalized === 'pending'
+          ? 'pending'
+          : normalized === 'cancelled' || normalized === 'refunded'
+            ? 'rejected'
+            : '';
+      const label = normalized ? normalized.toUpperCase() : 'UNKNOWN';
+      return `<span class="status-badge ${cssClass}">${esc(label)}</span>`;
+    }
+
     function formatSupplierType(type) {
       return (type || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
@@ -958,15 +975,13 @@
           return `
             <tr>
               <td>${esc(o.id)}</td>
-              <td>${formatDate(o.created_date)}</td>
-              <td>${esc(o.supplier_id)}</td>
-              <td>${esc(o.customer_id)}</td>
-              <td>${esc(o.item_name)}</td>
+              <td>${formatDate(o.order_date || o.created_date)}</td>
+              <td>${esc(formatOrderPartyLabel(o, 'supplier_name', 'supplier_id'))}</td>
+              <td>${esc(formatOrderPartyLabel(o, 'customer_name', 'customer_id'))}</td>
+              <td>${esc(o.item_name || o.product_name || 'N/A')}</td>
               <td>${formatCurrency(o.total_amount)}</td>
               <td>${formatCurrency(o.platform_fee)}</td>
-              <td>
-                <span class="status-badge ${o.status === 'completed' ? 'approved' : o.status === 'pending' ? 'pending' : ''}">${(o.status || '').toUpperCase()}</span>
-              </td>
+              <td>${getTransactionStatusBadge(o.status)}</td>
             </tr>
           `;
         }).join('');

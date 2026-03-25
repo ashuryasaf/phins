@@ -314,6 +314,193 @@ def build_purchase_pricing_plan(base_amount: float, payload: Dict[str, Any] = No
     }
 
 
+def get_customer_display_name(customer_id: Any) -> str:
+    """Resolve the best available customer display name."""
+    cid = str(customer_id or '').strip()
+    if not cid:
+        return 'Unknown Customer'
+    customer = CUSTOMERS.get(cid) or REGISTERED_CUSTOMERS.get(cid) or {}
+    name = (
+        customer.get('name')
+        or customer.get('full_name')
+        or ' '.join(
+            part for part in [customer.get('first_name'), customer.get('last_name')] if part
+        ).strip()
+        or customer.get('email')
+        or cid
+    )
+    return str(name).strip() or cid
+
+
+def get_supplier_display_name(supplier_id: Any) -> str:
+    """Resolve the best available supplier display name."""
+    sid = str(supplier_id or '').strip()
+    if not sid:
+        return 'PHINS Marketplace'
+    supplier = SUPPLIERS.get(sid) or {}
+    name = (
+        supplier.get('company_name')
+        or supplier.get('contact_name')
+        or supplier.get('contact_email')
+        or sid
+    )
+    return str(name).strip() or sid
+
+
+def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize supply-chain orders for supplier, customer, and admin dashboards."""
+    row = dict(order or {})
+    supplier_id = row.get('supplier_id')
+    customer_id = row.get('customer_id')
+    created_date = row.get('created_date') or row.get('timestamp')
+    pricing_plan = row.get('pricing_plan') if isinstance(row.get('pricing_plan'), dict) else {}
+    total_amount = safe_float(row.get('total_amount'), 0.0)
+    supplier_payout = safe_float(row.get('supplier_payout'), 0.0)
+    platform_fee = safe_float(row.get('commission'), safe_float(row.get('platform_fee'), 0.0))
+    wallet_paid = safe_float(row.get('wallet_deduction'), 0.0)
+    external_paid = safe_float(row.get('external_payment_amount'), 0.0)
+
+    row['currency'] = row.get('currency') or 'USD'
+    row['supplier_id'] = supplier_id
+    row['supplier_name'] = get_supplier_display_name(supplier_id)
+    row['customer_id'] = customer_id
+    row['customer_name'] = get_customer_display_name(customer_id)
+    row['order_date'] = created_date
+    row['timestamp'] = row.get('timestamp') or created_date
+    row['product_name'] = row.get('product_name') or row.get('item_name')
+    row['item_name'] = row.get('item_name') or row.get('product_name') or row.get('offer_name')
+    row['provider'] = row.get('provider') or row['supplier_name']
+    row['provider_name'] = row.get('provider_name') or row['supplier_name']
+    row['platform_fee'] = round(platform_fee, 2)
+    row['supplier_payout'] = round(supplier_payout, 2)
+    row['total_amount'] = round(total_amount, 2)
+    row['wallet_paid'] = round(wallet_paid, 2)
+    row['wallet_deduction'] = round(wallet_paid, 2)
+    row['external_payment_amount'] = round(external_paid, 2)
+    row['payment_status'] = row.get('payment_status') or ('paid' if total_amount > 0 else 'pending')
+    row['status'] = row.get('status') or 'pending'
+    row['pricing_plan'] = pricing_plan
+    row['profit_margin_amount'] = safe_float(
+        row.get('profit_margin_amount'),
+        pricing_plan.get('profit_margin_amount', 0.0),
+    )
+    row['insurance_covered'] = round(
+        safe_float(row.get('covered_amount'), 0.0) + safe_float(row.get('payer_responsibility_amount'), 0.0),
+        2,
+    )
+    row['wallet_refunded_amount'] = round(safe_float(row.get('wallet_refunded_amount'), 0.0), 2)
+    row['external_refunded_amount'] = round(safe_float(row.get('external_refunded_amount'), 0.0), 2)
+    row['refunded_amount'] = round(
+        safe_float(row.get('refunded_amount'), 0.0)
+        or (safe_float(row.get('wallet_refunded_amount'), 0.0) + safe_float(row.get('external_refunded_amount'), 0.0)),
+        2,
+    )
+    return row
+
+
+def list_normalized_supply_chain_orders(
+    supplier_id: Optional[str] = None,
+    customer_id: Optional[str] = None,
+    status_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return normalized supply-chain orders filtered for dashboard/API consumers."""
+    if not supply_chain_enabled or not supply_chain_service:
+        return []
+    with STATE_LOCK:
+        orders = list(getattr(supply_chain_service, 'orders', {}).values())
+    rows: List[Dict[str, Any]] = []
+    for order in orders:
+        if supplier_id and order.get('supplier_id') != supplier_id:
+            continue
+        if customer_id and order.get('customer_id') != customer_id:
+            continue
+        if status_filter and get_status_lower(order) != status_filter:
+            continue
+        rows.append(normalize_supply_chain_order_row(order))
+    rows.sort(key=lambda row: row.get('created_date') or row.get('timestamp') or '', reverse=True)
+    return rows
+
+
+def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
+    """Summarize supplier sync and ledger/settlement health for admin views."""
+    if not supply_chain_enabled or not supply_chain_service:
+        return {
+            'success': False,
+            'error': 'Supply chain service unavailable',
+            'supplier_count': 0,
+            'offers_missing_supplier': 0,
+            'orders_missing_offer': 0,
+            'orders_missing_customer_name': 0,
+            'orders_missing_supplier_name': 0,
+            'pending_settlement_suppliers': 0,
+            'pending_settlement_amount': 0.0,
+            'integrity_score': 0,
+            'issues': [],
+        }
+
+    issues: List[str] = []
+    with STATE_LOCK:
+        suppliers = dict(SUPPLIERS)
+        offers = dict(SUPPLIER_OFFERS)
+        orders = dict(getattr(supply_chain_service, 'orders', {}))
+        pending_settlements = dict(getattr(supply_chain_service, 'pending_settlements', {}))
+
+    offers_missing_supplier = sum(
+        1 for offer in offers.values()
+        if not offer.get('supplier_id') or offer.get('supplier_id') not in suppliers
+    )
+    orders_missing_offer = sum(
+        1 for order in orders.values()
+        if order.get('offer_id') and order.get('offer_id') not in offers
+    )
+
+    normalized_orders = [normalize_supply_chain_order_row(order) for order in orders.values()]
+    orders_missing_customer_name = sum(
+        1 for order in normalized_orders
+        if order.get('customer_name') in {'Unknown Customer', order.get('customer_id')}
+    )
+    orders_missing_supplier_name = sum(
+        1 for order in normalized_orders
+        if order.get('supplier_name') in {'PHINS Marketplace', order.get('supplier_id')}
+    )
+
+    pending_settlement_amount = round(sum(
+        safe_float(item.get('amount'), 0.0)
+        for items in pending_settlements.values()
+        for item in items
+    ), 2)
+    pending_settlement_suppliers = sum(1 for items in pending_settlements.values() if items)
+
+    integrity = supply_chain_service.verify_ledger_integrity()
+    integrity_score = safe_int(integrity.get('integrity_score'), 0)
+
+    if offers_missing_supplier:
+        issues.append(f'{offers_missing_supplier} offers missing supplier linkage')
+    if orders_missing_offer:
+        issues.append(f'{orders_missing_offer} orders reference missing offers')
+    if orders_missing_customer_name:
+        issues.append(f'{orders_missing_customer_name} orders missing resolved customer names')
+    if orders_missing_supplier_name:
+        issues.append(f'{orders_missing_supplier_name} orders missing resolved supplier names')
+    if integrity.get('issues'):
+        issues.append(f"{len(integrity.get('issues', []))} supply-chain ledger integrity issues")
+
+    return {
+        'success': True,
+        'supplier_count': len(suppliers),
+        'offer_count': len(offers),
+        'order_count': len(orders),
+        'offers_missing_supplier': offers_missing_supplier,
+        'orders_missing_offer': orders_missing_offer,
+        'orders_missing_customer_name': orders_missing_customer_name,
+        'orders_missing_supplier_name': orders_missing_supplier_name,
+        'pending_settlement_suppliers': pending_settlement_suppliers,
+        'pending_settlement_amount': pending_settlement_amount,
+        'integrity_score': integrity_score,
+        'issues': issues,
+    }
+
+
 # Import billing engine
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -8490,6 +8677,139 @@ For claims or questions, please contact:
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps(settlements, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier settlement history/overview
+        if path == '/api/supply-chain/settlements/history':
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                role = get_effective_role(session)
+                supplier_id = None
+                if role == 'supplier':
+                    supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                else:
+                    supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
+
+                if not supplier_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'supplier_id required'}).encode('utf-8'))
+                    return
+
+                pending = supply_chain_service.get_pending_settlements(supplier_id)
+                pnl = supply_chain_service.generate_supplier_pnl(supplier_id)
+                stats = supply_chain_service.get_supplier_statistics(supplier_id)
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'pending': pending,
+                    'pnl': pnl,
+                    'statistics': stats,
+                }, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier sync/reconciliation health
+        if path == '/api/supplier/sync-status':
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            try:
+                role = get_effective_role(session)
+                supplier_id = (
+                    (session or {}).get('supplier_id') or (session or {}).get('username')
+                ) if role == 'supplier' else ((qs.get('supplier_id', [None])[0] or '').strip() or None)
+
+                if not supplier_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'supplier_id required'}).encode('utf-8'))
+                    return
+
+                with STATE_LOCK:
+                    supplier = SUPPLIERS.get(supplier_id, {})
+                    supplier_offers = [o for o in SUPPLIER_OFFERS.values() if o.get('supplier_id') == supplier_id]
+                    supplier_orders = list_normalized_supply_chain_orders(supplier_id=supplier_id)
+
+                cancelled_orders = [o for o in supplier_orders if get_status_lower(o) == 'cancelled']
+                refunded_orders = [o for o in supplier_orders if get_status_lower(o) == 'refunded']
+                pending_orders = [o for o in supplier_orders if get_status_lower(o) in {'pending', 'confirmed', 'processing', 'in_transit', 'delivered'}]
+                integrity = supply_chain_service.verify_ledger_integrity() if supply_chain_enabled and supply_chain_service else {}
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'supplier_id': supplier_id,
+                    'connector_mode': supplier.get('connector_mode') or 'portal',
+                    'connector_status': supplier.get('connector_status') or ('active' if supplier.get('portal_active') else 'inactive'),
+                    'offers_count': len(supplier_offers),
+                    'orders_count': len(supplier_orders),
+                    'pending_orders': len(pending_orders),
+                    'cancelled_orders': len(cancelled_orders),
+                    'refunded_orders': len(refunded_orders),
+                    'last_catalog_sync_at': supplier.get('last_catalog_sync_at'),
+                    'last_order_sync_at': supplier.get('last_order_sync_at'),
+                    'integrity_score': integrity.get('integrity_score'),
+                    'ledger_entries': integrity.get('total_entries'),
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier performance snapshot
+        if path == '/api/supplier/performance':
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                role = get_effective_role(session)
+                supplier_id = (
+                    (session or {}).get('supplier_id') or (session or {}).get('username')
+                ) if role == 'supplier' else ((qs.get('supplier_id', [None])[0] or '').strip() or None)
+
+                if not supplier_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'supplier_id required'}).encode('utf-8'))
+                    return
+
+                stats = supply_chain_service.get_supplier_statistics(supplier_id)
+                pnl = supply_chain_service.generate_supplier_pnl(supplier_id)
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'statistics': stats,
+                    'pnl': pnl,
+                }, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
