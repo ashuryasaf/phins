@@ -113,7 +113,7 @@ PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 't
 EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
     '1', 'true', 'yes', 'y'
 )
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications'}
 _EMAIL_PROVIDER_ALIASES = {
     'send_grid': 'sendgrid',
     'sendgrid_api': 'sendgrid',
@@ -127,6 +127,12 @@ _EMAIL_PROVIDER_ALIASES = {
     'mailgun_api': 'mailgun',
     'resend_api': 'resend',
     'resendapi': 'resend',
+    'active_notifications': 'active_notifications',
+    'active-notifications': 'active_notifications',
+    'activenotifications': 'active_notifications',
+    'pingram': 'active_notifications',
+    'notificationapi': 'active_notifications',
+    'notification_api': 'active_notifications',
 }
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
@@ -208,6 +214,12 @@ def _configured_email_provider_types() -> List[str]:
         provider_types.append('mailgun')
     if _env_or_notification_default('RESEND_API_KEY'):
         provider_types.append('resend')
+    if (
+        _env_or_notification_default('ACTIVE_NOTIFICATIONS_API_KEY')
+        or _env_or_notification_default('PINGRAM_API_KEY')
+        or _env_or_notification_default('NOTIFICATIONAPI_API_KEY')
+    ):
+        provider_types.append('active_notifications')
     if _aws_identity_configured():
         provider_types.append('ses')
 
@@ -311,10 +323,12 @@ def _create_notification_service_for_provider(
         AWSSESEmailProvider,
         MailgunEmailProvider,
         ResendEmailProvider,
+        ActiveNotificationsEmailProvider,
+        should_use_mock_notifications,
     )
 
     if use_mock_notifications or not provider_type:
-        return create_notification_service(use_mock=use_mock_notifications)
+        return create_notification_service(use_mock=should_use_mock_notifications())
 
     normalized = _normalize_email_provider_type(provider_type)
     if normalized not in _EMAIL_PROVIDER_TYPES:
@@ -328,6 +342,8 @@ def _create_notification_service_for_provider(
         provider = MailgunEmailProvider()
     elif normalized == 'resend':
         provider = ResendEmailProvider()
+    elif normalized == 'active_notifications':
+        provider = ActiveNotificationsEmailProvider()
     else:
         provider = SMTPEmailProvider()
 
@@ -387,9 +403,9 @@ def _send_otp_email(
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
 
-    use_mock_notifications = PHINS_TEST_MODE or str(
-        os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
-    ).lower() in ('1', 'true', 'yes', 'y')
+    from services.notification_service import should_use_mock_notifications
+
+    use_mock_notifications = should_use_mock_notifications()
 
     attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
     if not use_mock_notifications:

@@ -3812,8 +3812,13 @@ def _init_billing_credit_service():
         from services.billing_credit_service import init_billing_credit_service
         notification_svc = None
         try:
-            from services.notification_service import create_notification_service
-            notification_svc = create_notification_service(use_mock=True)
+            from services.notification_service import (
+                create_notification_service,
+                should_use_mock_notifications,
+            )
+            notification_svc = create_notification_service(
+                use_mock=should_use_mock_notifications()
+            )
         except ImportError:
             pass
         
@@ -14848,9 +14853,15 @@ For claims or questions, please contact:
                 return
             
             try:
-                from services.notification_service import create_notification_service, NotificationChannel
+                from services.notification_service import (
+                    create_notification_service,
+                    NotificationChannel,
+                    should_use_mock_notifications,
+                )
                 
-                notification_service = create_notification_service()
+                notification_service = create_notification_service(
+                    use_mock=should_use_mock_notifications()
+                )
                 
                 # Get query params
                 customer_id = qs.get('customer_id', [''])[0] or session.get('customer_id')
@@ -19430,12 +19441,13 @@ For claims or questions, please contact:
                 welcome_whatsapp_sent = False
                 welcome_report_summary = None
                 try:
-                    from services.notification_service import create_notification_service
+                    from services.notification_service import (
+                        create_notification_service,
+                        should_use_mock_notifications,
+                    )
                     from services.customer_communication_agent import get_customer_communication_agent
 
-                    use_mock_notifications = PHINS_TEST_MODE or str(
-                        os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
-                    ).lower() in ('1', 'true', 'yes', 'y')
+                    use_mock_notifications = should_use_mock_notifications()
 
                     notification_service = create_notification_service(use_mock=use_mock_notifications)
                     communication_agent = get_customer_communication_agent(
