@@ -1,7 +1,13 @@
 import pytest
 
 from services.community_messaging_service import CommunityMessagingService
-from services.notification_service import create_notification_service, reset_global_rate_limiter
+from services.notification_service import (
+    MockEmailProvider,
+    create_notification_service,
+    get_notification_service,
+    reset_global_rate_limiter,
+    reset_notification_service,
+)
 
 
 class _StubFoundationService:
@@ -52,8 +58,10 @@ class _StubFoundationService:
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     reset_global_rate_limiter()
+    reset_notification_service()
     yield
     reset_global_rate_limiter()
+    reset_notification_service()
 
 
 @pytest.fixture
@@ -172,3 +180,16 @@ def test_non_member_access_is_rejected(messaging_service):
     )
     assert list_result["success"] is False
     assert list_result["error_code"] == "UNAUTHORIZED"
+
+
+def test_default_service_uses_shared_notification_runtime(monkeypatch):
+    monkeypatch.delenv("PHINS_TEST_MODE", raising=False)
+    monkeypatch.delenv("PHINS_USE_MOCK_NOTIFICATIONS", raising=False)
+
+    service = CommunityMessagingService(
+        foundation_service=_StubFoundationService(),
+        notification_service=None,
+    )
+
+    assert service._notification_service is get_notification_service()
+    assert not isinstance(service._notification_service._email_provider, MockEmailProvider)

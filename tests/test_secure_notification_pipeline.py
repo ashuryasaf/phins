@@ -16,6 +16,8 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
 
+from services.notification_service import MockEmailProvider
+
 
 class TestSecureNotificationPipeline:
     """Test secure notification pipeline functionality"""
@@ -112,6 +114,24 @@ class TestSecureNotificationPipeline:
         
         assert result.success is False
         assert 'email' in result.error_message.lower() or result.error_code == 'VALIDATION_ERROR'
+
+    def test_pipeline_defaults_to_live_mode_outside_test_flags(self, monkeypatch):
+        """Default factory should not silently force mocks outside explicit test flags."""
+        from services.secure_notification_pipeline import (
+            create_secure_notification_pipeline,
+            MockWhatsAppProvider,
+        )
+        from services.notification_service import reset_notification_service
+
+        monkeypatch.delenv('PHINS_TEST_MODE', raising=False)
+        monkeypatch.delenv('PHINS_USE_MOCK_NOTIFICATIONS', raising=False)
+        reset_notification_service()
+
+        pipeline = create_secure_notification_pipeline(
+            whatsapp_provider=MockWhatsAppProvider()
+        )
+
+        assert not isinstance(pipeline._notification_service._email_provider, MockEmailProvider)
     
     def test_verify_operation_success(self, pipeline, sample_operation_request):
         """Test verifying an operation with correct OTP"""

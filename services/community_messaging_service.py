@@ -18,7 +18,7 @@ from services.notification_service import (
     NotificationChannel,
     NotificationPriority,
     NotificationRequest,
-    create_notification_service,
+    get_notification_service,
 )
 
 
@@ -44,7 +44,7 @@ class CommunityMessagingService:
 
     def __init__(self, foundation_service=None, notification_service=None):
         self._foundation_service = foundation_service or get_foundation_service()
-        self._notification_service = notification_service or create_notification_service(use_mock=True)
+        self._notification_service = notification_service or get_notification_service()
 
         self._threads: Dict[str, Dict[str, Any]] = {}
         self._messages: Dict[str, Dict[str, Any]] = {}

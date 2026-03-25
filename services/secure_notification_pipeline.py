@@ -1654,13 +1654,14 @@ def create_secure_notification_pipeline(
     whatsapp_provider: Optional[WhatsAppProvider] = None,
     data_integrity_service=None,
     pipeline_integrity_service=None,
-    use_mock: bool = True
+    use_mock: Optional[bool] = None
 ) -> SecureNotificationPipeline:
     """
     Factory function to create SecureNotificationPipeline with all dependencies.
     """
     if not notification_service:
-        notification_service = create_notification_service(use_mock=use_mock)
+        resolved_use_mock = should_use_mock_notifications() if use_mock is None else bool(use_mock)
+        notification_service = create_notification_service(use_mock=resolved_use_mock)
     
     return SecureNotificationPipeline(
         notification_service=notification_service,

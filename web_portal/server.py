@@ -26768,8 +26768,15 @@ For claims or questions, please contact:
         # ========== PAYMENT GATEWAY API (PayPal, Stripe, Crypto) ==========
         # Import payment gateway service
         try:
-            from services.payment_gateway_service import get_payment_gateway, PaymentResult
-            payment_gateway = get_payment_gateway(test_mode=True, market_data_service=_market_data)
+            from services.payment_gateway_service import (
+                get_payment_gateway,
+                PaymentResult,
+                should_use_payment_test_mode,
+            )
+            payment_gateway = get_payment_gateway(
+                test_mode=should_use_payment_test_mode(),
+                market_data_service=_market_data
+            )
             payment_gateway_enabled = True
         except ImportError:
             payment_gateway_enabled = False
