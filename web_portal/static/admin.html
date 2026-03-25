@@ -2351,6 +2351,55 @@
       const normalized = (query || '').toLowerCase();
       if (!normalized) return null;
 
+      if (normalized === 'logout' || normalized.includes('sign out') || normalized.includes('log out')) {
+        return { navigate: '/' };
+      }
+      if (normalized === 'admin' || normalized.includes('admin dashboard')) {
+        return { navigate: '/admin.html' };
+      }
+      if (normalized.includes('video agents')) {
+        return { navigate: '/video-agents.html' };
+      }
+      if (normalized.includes('foundation')) {
+        return { navigate: '/admin-foundations.html' };
+      }
+      if (normalized.includes('media dashboard') || normalized === 'media') {
+        return { navigate: '/admin-media.html' };
+      }
+      if (normalized.includes('pitch dashboard') || normalized === 'pitch') {
+        return { navigate: '/pitch-dashboard.html' };
+      }
+      if (normalized.includes('risk reports') || normalized === 'reports' || normalized.includes('ai reports')) {
+        return { navigate: '/risk-reports-dashboard.html' };
+      }
+      if (normalized.includes('risk dashboard') || normalized === 'risk') {
+        return { navigate: '/risk-dashboard.html' };
+      }
+      if (normalized.includes('investments') || normalized.includes('investment dashboard')) {
+        return { navigate: '/savings-portfolio.html' };
+      }
+      if (normalized.includes('billing dashboard') || normalized === 'billing') {
+        return { navigate: '/billing.html' };
+      }
+      if (normalized.includes('claims dashboard') || normalized === 'claims') {
+        return { navigate: '/claims-adjuster-dashboard.html' };
+      }
+      if (normalized.includes('underwriter dashboard') || normalized === 'underwriter') {
+        return { navigate: '/underwriter-dashboard.html' };
+      }
+      if (normalized.includes('accountant dashboard') || normalized === 'accountant') {
+        return { navigate: '/accountant-dashboard.html' };
+      }
+      if (normalized.includes('actuary sim')) {
+        return { navigate: '/actuary-dashboard.html', actionId: 'refresh_active_tab', tabId: 'financials' };
+      }
+      if (normalized === 'actuary' || normalized.includes('actuary dashboard')) {
+        return { navigate: '/actuary-dashboard.html' };
+      }
+      if (normalized.includes('ai + bi') || normalized === 'ai bi') {
+        return { actionId: 'run_ai_bi_insights' };
+      }
+
       const actionKeywords = [
         { test: ['ai bi', 'bi insights', 'ai insights', 'business intelligence'], action: 'run_ai_bi_insights' },
         { test: ['reconcile', 'reconciliation'], action: 'reconcile_balance_sheet' },
@@ -2502,6 +2551,24 @@
       }
 
       const resolved = adminAssistantActionFromQuery(query);
+      if (resolved?.navigate) {
+        if (resolved?.tabId) {
+          adminAssistantSwitchTab(resolved.tabId);
+        }
+        if (resolved?.actionId) {
+          try {
+            sessionStorage.setItem('phins_vqa_pending_admin_action', JSON.stringify({
+              actionId: resolved.actionId,
+              createdAt: Date.now()
+            }));
+          } catch (_) {
+            // no-op
+          }
+        }
+        adminAssistantSetStatus('ready', '⏳ Opening relevant dashboard');
+        window.location.href = resolved.navigate;
+        return;
+      }
       if (resolved?.tabId) {
         adminAssistantSwitchTab(resolved.tabId);
         if (resolved.actionId) {

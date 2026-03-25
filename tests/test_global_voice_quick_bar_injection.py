@@ -30,16 +30,40 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     content = _fetch("/ui-clarity.js")
     assert "PHINS admin AI Assistant" in content
     assert "run_actuary_portfolio_simulation" in content
+    assert 'label: "Admin"' in content
+    assert 'label: "Underwriter"' in content
+    assert 'label: "Claims"' in content
+    assert 'label: "Billing"' in content
+    assert 'label: "Accountant"' in content
+    assert 'label: "Actuary"' in content
+    assert 'label: "Actuary Sim"' in content
+    assert 'label: "Investments"' in content
+    assert 'label: "AI + BI"' in content
+    assert 'label: "Media"' in content
+    assert 'label: "Foundations"' in content
+    assert 'label: "Video Agents"' in content
+    assert 'label: "Pitch"' in content
+    assert 'label: "Risk"' in content
+    assert 'label: "Reports"' in content
+    assert 'label: "Logout"' in content
     assert "open actuary dashboard" in content
     assert "/underwriter-dashboard.html" in content
     assert "/claims-adjuster-dashboard.html" in content
     assert "/accountant-dashboard.html" in content
     assert "/actuary-dashboard.html" in content
+    assert "/billing.html" in content
+    assert "/savings-portfolio.html" in content
     assert "/admin-media.html" in content
     assert "/admin-foundations.html" in content
+    assert "/video-agents.html" in content
+    assert "/pitch-dashboard.html" in content
+    assert "/risk-dashboard.html" in content
     assert '/risk-reports-dashboard.html' in content
     assert 'id: "admin_logout"' in content
     assert "Logout now?" in content
+    assert '"/billing.html"' in content
+    assert '"/savings-portfolio.html"' in content
+    assert '"/admin-foundations.html"' in content
 
 
 def test_ui_clarity_observer_avoids_floating_self_render_loop():
@@ -49,3 +73,9 @@ def test_ui_clarity_observer_avoids_floating_self_render_loop():
     assert "targetElement && targetElement.closest && targetElement.closest(`#${FLOATING_BAR_ID}`)" in content
     assert "node.closest && node.closest(`#${FLOATING_BAR_ID}`)" in content
     assert "characterData: true" not in content
+
+
+def test_ui_clarity_staff_paths_cover_billing_and_foundation_contexts():
+    content = _fetch("/ui-clarity.js")
+    assert '"/billing.html"' in content
+    assert '"/admin-foundations.html"' in content

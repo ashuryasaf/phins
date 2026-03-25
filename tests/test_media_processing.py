@@ -245,6 +245,43 @@ def test_media_upload_persists_large_inline_payload_to_file_storage():
         srv.stop()
 
 
+def test_binary_media_upload_endpoint_creates_valid_video_asset():
+    port = 8296
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_binary_upload_token"
+    _inject_session(token, "media_admin_binary", "admin")
+
+    payload = b"\x00\x00\x00\x18ftypmp42" + (b"video-payload-" * 256)
+    req = Request(
+        base + "/api/media/upload",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "video/mp4",
+            "X-Upload-Filename": "binary-upload.mp4",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(req) as resp:
+            assert resp.status == 201
+            body = json.loads(resp.read().decode("utf-8"))
+    finally:
+        srv.stop()
+
+    asset = body["asset"]
+    assert asset["type"] == "video"
+    assert asset["stored_externally"] is True
+    assert asset["url"].startswith("/uploaded-files/")
+    assert asset["file_analysis"]["category"] == "video"
+
+
 def test_media_provider_callback_rejects_invalid_secret():
     port = 8291
     srv = ServerThread(port)

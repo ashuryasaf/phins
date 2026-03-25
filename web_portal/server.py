@@ -17579,6 +17579,76 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
 
+        if path == '/api/media/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
+                return
+
+            file_name = str(
+                self.headers.get('X-Upload-Filename')
+                or self.headers.get('X-File-Name')
+                or 'upload.bin'
+            ).strip() or 'upload.bin'
+            mime_type = str(self.headers.get('Content-Type') or 'application/octet-stream').strip()
+            media_type = str(self.headers.get('X-Media-Type') or '').strip().lower()
+            if media_type not in {'video', 'image', 'document'}:
+                if mime_type.startswith('video/'):
+                    media_type = 'video'
+                elif mime_type.startswith('image/'):
+                    media_type = 'image'
+                else:
+                    media_type = 'document'
+
+            payload_bytes = self.rfile.read(content_length) if content_length else b''
+            if not payload_bytes:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'No upload payload provided'}).encode('utf-8'))
+                return
+
+            asset_id = f"media-{uuid.uuid4().hex[:12]}"
+            uploaded_file = build_uploaded_file_record(
+                file_id=asset_id,
+                file_name=file_name,
+                mime_type=mime_type,
+                payload_bytes=payload_bytes,
+                owner_customer_id='',
+                description='media_upload',
+                uploaded_by=(session or {}).get('username', 'admin'),
+            )
+            asset = {
+                'id': asset_id,
+                'name': file_name,
+                'type': media_type,
+                'format': mime_type,
+                'size': len(payload_bytes),
+                'url': uploaded_file.get('url', ''),
+                'data': '',
+                'thumbnail': '',
+                'duration': None,
+                'source': 'upload',
+                'uploaded_at': uploaded_file.get('uploaded_at'),
+                'uploaded_by': (session or {}).get('username', 'admin'),
+                'file_path': uploaded_file.get('file_path', ''),
+                'stored_externally': True,
+                'has_data': False,
+                'sha256': uploaded_file.get('sha256', ''),
+                'file_analysis': create_uploaded_file_analysis(uploaded_file),
+            }
+            MEDIA_ASSETS[asset_id] = asset
+            save_ledger_data()
+
+            self._set_json_headers(201)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'message': 'Media asset uploaded',
+                'asset': serialize_media_asset(asset),
+            }).encode('utf-8'))
+            return
+
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
             self.handle_quote_submission()

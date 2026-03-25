@@ -81,6 +81,7 @@
       "/admin",
       "/underwriter-dashboard",
       "/claims-adjuster-dashboard",
+      "/billing",
       "/accountant-dashboard",
       "/actuary-dashboard",
       "/admin-supplier-dashboard",

@@ -1840,43 +1840,25 @@
             progressText.textContent = 'Preparing upload...';
             
             try {
-                // For now, use base64 encoding for smaller files
-                // For large files (>5MB), we'll simulate cloud upload
                 if (file.size > 5 * 1024 * 1024) {
-                    // Simulate chunked upload for large files
                     await simulateChunkedUpload(file, (progress) => {
                         progressBar.style.width = progress + '%';
                         progressText.textContent = `Uploading... ${progress}%`;
                     });
                 }
-                
-                // Convert to base64 for storage (for demo - in production use cloud storage)
-                const base64 = await fileToBase64(file);
-                
-                // Determine media type
-                let mediaType = 'document';
-                if (file.type.startsWith('video/')) mediaType = 'video';
-                else if (file.type.startsWith('image/')) mediaType = 'image';
-                
-                // Upload to server
+
                 progressText.textContent = 'Saving to library...';
                 progressBar.style.width = '90%';
-                
                 const token = getToken();
-                const response = await fetch('/api/media', {
+
+                const response = await fetch('/api/media/upload', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': file.type || 'application/octet-stream',
+                        'X-Upload-Filename': file.name
                     },
-                    body: JSON.stringify({
-                        name: file.name,
-                        type: mediaType,
-                        format: file.type,
-                        size: file.size,
-                        data: base64,
-                        source: 'upload'
-                    })
+                    body: file
                 });
                 
                 if (response.ok) {
@@ -2454,15 +2436,6 @@
         }
         
         // ==================== UTILITIES ====================
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
-        }
-        
         async function simulateChunkedUpload(file, onProgress) {
             const chunkSize = 1024 * 1024; // 1MB chunks
             const totalChunks = Math.ceil(file.size / chunkSize);
