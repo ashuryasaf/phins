@@ -21,6 +21,7 @@ import os
 import re
 import json
 import hmac
+import html
 import secrets
 import hashlib
 import logging
@@ -66,13 +67,63 @@ class NotificationConfig:
     EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', 'support@phins.ai')
     
     # Email provider selection
-    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp')  # smtp, sendgrid, ses, mailgun, resend
+    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp')  # smtp, sendgrid, ses, mailgun, resend, active_notifications
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
     AWS_SES_REGION = os.environ.get('AWS_SES_REGION', 'us-east-1')
     MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY', '')
     MAILGUN_DOMAIN = os.environ.get('MAILGUN_DOMAIN', '')
     RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
     RESEND_API_BASE_URL = os.environ.get('RESEND_API_BASE_URL', 'https://api.resend.com')
+    ACTIVE_NOTIFICATIONS_CUSTOMER_ID = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_CUSTOMER_ID',
+        os.environ.get('PINGRAM_CLIENT_ID', os.environ.get('NOTIFICATIONAPI_CLIENT_ID', ''))
+    )
+    ACTIVE_NOTIFICATIONS_API_KEY = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_API_KEY',
+        os.environ.get('PINGRAM_API_KEY', os.environ.get('NOTIFICATIONAPI_API_KEY', ''))
+    )
+    ACTIVE_NOTIFICATIONS_BASE_URL = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_BASE_URL',
+        os.environ.get(
+            'PINGRAM_BASE_URL',
+            os.environ.get('NOTIFICATIONAPI_BASE_URL', 'https://api.pingram.io')
+        )
+    )
+    ACTIVE_NOTIFICATIONS_SEND_PATH = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_SEND_PATH',
+        os.environ.get(
+            'PINGRAM_SEND_PATH',
+            os.environ.get('NOTIFICATIONAPI_SEND_PATH', '/sender')
+        )
+    )
+    ACTIVE_NOTIFICATIONS_NOTIFICATION_TYPE = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_NOTIFICATION_TYPE',
+        os.environ.get(
+            'PINGRAM_NOTIFICATION_TYPE',
+            os.environ.get('NOTIFICATIONAPI_NOTIFICATION_TYPE', 'phins_transactional_email')
+        )
+    )
+    ACTIVE_NOTIFICATIONS_AUTH_HEADER = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_AUTH_HEADER',
+        os.environ.get(
+            'PINGRAM_AUTH_HEADER',
+            os.environ.get('NOTIFICATIONAPI_AUTH_HEADER', 'Authorization')
+        )
+    )
+    ACTIVE_NOTIFICATIONS_AUTH_SCHEME = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_AUTH_SCHEME',
+        os.environ.get(
+            'PINGRAM_AUTH_SCHEME',
+            os.environ.get('NOTIFICATIONAPI_AUTH_SCHEME', 'Bearer')
+        )
+    )
+    ACTIVE_NOTIFICATIONS_CLIENT_ID_HEADER = os.environ.get(
+        'ACTIVE_NOTIFICATIONS_CLIENT_ID_HEADER',
+        os.environ.get(
+            'PINGRAM_CLIENT_ID_HEADER',
+            os.environ.get('NOTIFICATIONAPI_CLIENT_ID_HEADER', '')
+        )
+    )
     
     # ========== SMS Configuration ==========
     SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio')  # twilio, sns, vonage, messagebird
@@ -713,8 +764,14 @@ _EMAIL_PROVIDER_NAME_ALIASES = {
     'mailgun_api': 'mailgun',
     'resend_api': 'resend',
     'resendapi': 'resend',
+    'active_notifications': 'active_notifications',
+    'active-notifications': 'active_notifications',
+    'activenotifications': 'active_notifications',
+    'pingram': 'active_notifications',
+    'notificationapi': 'active_notifications',
+    'notification_api': 'active_notifications',
 }
-_SUPPORTED_EMAIL_PROVIDERS = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+_SUPPORTED_EMAIL_PROVIDERS = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications'}
 _DEFAULT_NOTIFICATION_FROM_ADDRESS = 'noreply@phins.ai'
 _DEFAULT_NOTIFICATION_FROM_NAME = 'PHINS Insurance'
 _PROVIDER_FROM_ADDRESS_ENV_VARS = {
@@ -728,6 +785,12 @@ _PROVIDER_FROM_ADDRESS_ENV_VARS = {
     'ses': ('SES_FROM_ADDRESS', 'AWS_SES_FROM_ADDRESS', 'AWS_SES_FROM_EMAIL'),
     'mailgun': ('MAILGUN_FROM_ADDRESS', 'MAILGUN_FROM_EMAIL'),
     'resend': ('RESEND_FROM_ADDRESS', 'RESEND_FROM_EMAIL'),
+    'active_notifications': (
+        'ACTIVE_NOTIFICATIONS_FROM_ADDRESS',
+        'ACTIVE_NOTIFICATIONS_FROM_EMAIL',
+        'PINGRAM_FROM_ADDRESS',
+        'PINGRAM_FROM_EMAIL',
+    ),
 }
 _PROVIDER_FROM_NAME_ENV_VARS = {
     'smtp': ('SMTP_FROM_NAME',),
@@ -735,6 +798,10 @@ _PROVIDER_FROM_NAME_ENV_VARS = {
     'ses': ('SES_FROM_NAME', 'AWS_SES_FROM_NAME'),
     'mailgun': ('MAILGUN_FROM_NAME',),
     'resend': ('RESEND_FROM_NAME',),
+    'active_notifications': (
+        'ACTIVE_NOTIFICATIONS_FROM_NAME',
+        'PINGRAM_FROM_NAME',
+    ),
 }
 _GLOBAL_FROM_ADDRESS_ENV_VARS = (
     'NOTIFICATION_FROM_ADDRESS',
@@ -926,6 +993,12 @@ def _resolve_reply_to_address(reply_to: Optional[str]) -> Optional[str]:
 
     normalized_reply_to, _ = _coerce_email_address(reply_to_candidate)
     return normalized_reply_to
+
+
+def _plain_text_to_html(body: str) -> str:
+    """Render plain text as a minimal HTML body for API-only providers."""
+    escaped = html.escape(str(body or ''))
+    return f"<div>{escaped.replace(chr(10), '<br/>')}</div>"
 
 
 class SMTPEmailProvider(EmailProvider):
@@ -1333,6 +1406,160 @@ class ResendEmailProvider(EmailProvider):
 
         except Exception as e:
             logger.error(f"Resend send error: {str(e)}")
+            return False, None, str(e)
+
+
+class ActiveNotificationsEmailProvider(EmailProvider):
+    """Active Notifications / Pingram API email provider."""
+
+    def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+        from_address: Optional[str] = None,
+        from_name: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Send email via Active Notifications compatible sender API."""
+        try:
+            import urllib.request
+            import urllib.error
+
+            api_key = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_API_KEY',
+                    'PINGRAM_API_KEY',
+                    'NOTIFICATIONAPI_API_KEY',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY or '').strip()
+            )
+            if not api_key:
+                logger.warning("Active Notifications API key not configured, falling back to mock")
+                return MockEmailProvider().send(
+                    to, subject, body, html_body, from_address, from_name
+                )
+
+            customer_id = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_CUSTOMER_ID',
+                    'PINGRAM_CLIENT_ID',
+                    'NOTIFICATIONAPI_CLIENT_ID',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_CUSTOMER_ID or '').strip()
+            )
+            base_url = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_BASE_URL',
+                    'PINGRAM_BASE_URL',
+                    'NOTIFICATIONAPI_BASE_URL',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_BASE_URL or '').strip()
+                or 'https://api.pingram.io'
+            ).rstrip('/')
+            send_path = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_SEND_PATH',
+                    'PINGRAM_SEND_PATH',
+                    'NOTIFICATIONAPI_SEND_PATH',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_SEND_PATH or '').strip()
+                or '/sender'
+            )
+            notification_type = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_NOTIFICATION_TYPE',
+                    'PINGRAM_NOTIFICATION_TYPE',
+                    'NOTIFICATIONAPI_NOTIFICATION_TYPE',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_NOTIFICATION_TYPE or '').strip()
+                or 'phins_transactional_email'
+            )
+            auth_header = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_AUTH_HEADER',
+                    'PINGRAM_AUTH_HEADER',
+                    'NOTIFICATIONAPI_AUTH_HEADER',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_AUTH_HEADER or '').strip()
+                or 'Authorization'
+            )
+            auth_scheme = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_AUTH_SCHEME',
+                    'PINGRAM_AUTH_SCHEME',
+                    'NOTIFICATIONAPI_AUTH_SCHEME',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_AUTH_SCHEME or '').strip()
+                or 'Bearer'
+            )
+            client_id_header = (
+                _first_non_empty_env(
+                    'ACTIVE_NOTIFICATIONS_CLIENT_ID_HEADER',
+                    'PINGRAM_CLIENT_ID_HEADER',
+                    'NOTIFICATIONAPI_CLIENT_ID_HEADER',
+                )
+                or str(NotificationConfig.ACTIVE_NOTIFICATIONS_CLIENT_ID_HEADER or '').strip()
+            )
+
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='active_notifications',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
+
+            payload: Dict[str, Any] = {
+                "type": notification_type,
+                "to": {
+                    "id": to,
+                    "email": to,
+                },
+                "forceChannels": ["EMAIL"],
+                "email": {
+                    "subject": subject,
+                    "html": html_body or _plain_text_to_html(body),
+                    "senderName": from_display,
+                    "senderEmail": from_addr,
+                },
+            }
+            if reply_to_address or attachments:
+                payload["options"] = {"email": {}}
+                if reply_to_address:
+                    payload["options"]["email"]["replyToAddresses"] = [reply_to_address]
+                if attachments:
+                    payload["options"]["email"]["attachments"] = attachments
+
+            data = json.dumps(payload).encode('utf-8')
+            request_url = f"{base_url}/{send_path.lstrip('/')}"
+            req = urllib.request.Request(request_url, data=data, method='POST')
+            auth_value = api_key if not auth_scheme else f"{auth_scheme} {api_key}"
+            req.add_header(auth_header, auth_value)
+            req.add_header('Content-Type', 'application/json')
+            if customer_id and client_id_header:
+                req.add_header(client_id_header, customer_id)
+
+            try:
+                with validated_urlopen(req, timeout=30, allowed_schemes=('https',)) as response:
+                    if response.status not in [200, 201, 202]:
+                        return False, None, f"Unexpected status: {response.status}"
+                    result = json.loads(response.read().decode('utf-8') or '{}')
+                    message_id = (
+                        result.get('trackingId')
+                        or result.get('id')
+                        or result.get('messageId')
+                        or generate_id('AN')
+                    )
+                    return True, message_id, None
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode() if e.fp else str(e)
+                logger.error(f"Active Notifications API error: {e.code} - {error_body}")
+                return False, None, f"Active Notifications error: {e.code}"
+
+        except Exception as e:
+            logger.error(f"Active Notifications send error: {str(e)}")
             return False, None, str(e)
 
 
@@ -2947,7 +3174,7 @@ class ClientVerificationService:
 # FACTORY FUNCTION
 # ============================================================================
 
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend', 'active_notifications'}
 _SMTP_PLACEHOLDER_HOSTS = {
     '',
     'localhost',
@@ -3001,6 +3228,13 @@ def _aws_identity_configured() -> bool:
 
 def _detect_configured_api_email_provider() -> Optional[str]:
     """Return the best configured API email provider, if any."""
+    active_notifications_key = _env_or_default(
+        'ACTIVE_NOTIFICATIONS_API_KEY',
+        NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY
+    ) or _env_or_default('PINGRAM_API_KEY') or _env_or_default('NOTIFICATIONAPI_API_KEY')
+    if active_notifications_key:
+        return 'active_notifications'
+
     if _env_or_default('SENDGRID_API_KEY', NotificationConfig.SENDGRID_API_KEY):
         return 'sendgrid'
 
@@ -3074,7 +3308,21 @@ def _build_email_provider(provider_type: str) -> EmailProvider:
         return MailgunEmailProvider()
     if provider_type == 'resend':
         return ResendEmailProvider()
+    if provider_type == 'active_notifications':
+        return ActiveNotificationsEmailProvider()
     return SMTPEmailProvider()
+
+
+_MOCK_NOTIFICATION_TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
+_notification_service_instances: Dict[bool, NotificationService] = {}
+
+
+def should_use_mock_notifications() -> bool:
+    """Decide whether notification delivery should use mock providers."""
+    return any(
+        str(os.environ.get(env_name, '')).strip().lower() in _MOCK_NOTIFICATION_TRUTHY_VALUES
+        for env_name in ('PHINS_TEST_MODE', 'PHINS_USE_MOCK_NOTIFICATIONS')
+    )
 
 
 def create_notification_service(
@@ -3099,6 +3347,7 @@ def create_notification_service(
         - 'ses': AWS Simple Email Service
         - 'mailgun': Mailgun API
         - 'resend': Resend API
+        - 'active_notifications': Active Notifications / Pingram sender API
     
     SMS providers (set via SMS_PROVIDER env var):
         - 'twilio' (default): Twilio SMS API
@@ -3147,6 +3396,26 @@ def create_notification_service(
     )
 
 
+def get_notification_service(use_mock: Optional[bool] = None) -> NotificationService:
+    """
+    Get a cached NotificationService instance for shared server-side history/state.
+
+    When `use_mock` is omitted, runtime environment flags decide between live and
+    mock delivery so production routes do not silently default to mocks.
+    """
+    resolved_use_mock = should_use_mock_notifications() if use_mock is None else bool(use_mock)
+    if resolved_use_mock not in _notification_service_instances:
+        _notification_service_instances[resolved_use_mock] = create_notification_service(
+            use_mock=resolved_use_mock
+        )
+    return _notification_service_instances[resolved_use_mock]
+
+
+def reset_notification_service():
+    """Reset cached notification service instances (mainly for testing)."""
+    _notification_service_instances.clear()
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -3182,6 +3451,7 @@ __all__ = [
     'AWSSESEmailProvider',
     'MailgunEmailProvider',
     'ResendEmailProvider',
+    'ActiveNotificationsEmailProvider',
     
     # SMS Providers
     'SMSProvider',
@@ -3198,6 +3468,9 @@ __all__ = [
     
     # Factory
     'create_notification_service',
+    'get_notification_service',
+    'reset_notification_service',
+    'should_use_mock_notifications',
     
     # Helper functions
     'generate_id',

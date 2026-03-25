@@ -38,8 +38,12 @@ from services.notification_service import (
     SendGridEmailProvider,
     AWSSESEmailProvider,
     ResendEmailProvider,
+    ActiveNotificationsEmailProvider,
     MockSMSProvider,
     create_notification_service,
+    get_notification_service,
+    reset_notification_service,
+    should_use_mock_notifications,
     generate_id,
     generate_otp,
     hash_identifier,
@@ -58,8 +62,10 @@ from services.notification_service import (
 def reset_rate_limiter():
     """Reset global rate limiter before each test to ensure test isolation"""
     reset_global_rate_limiter()
+    reset_notification_service()
     yield
     reset_global_rate_limiter()
+    reset_notification_service()
 
 
 # ============================================================================
@@ -612,6 +618,67 @@ class TestNotificationService:
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, ResendEmailProvider)
 
+    def test_factory_auto_selects_active_notifications_when_available(self, monkeypatch):
+        """Auto-select Active Notifications when SMTP is placeholder and API key exists."""
+        monkeypatch.delenv('EMAIL_PROVIDER', raising=False)
+        monkeypatch.delenv('SENDGRID_API_KEY', raising=False)
+        monkeypatch.delenv('MAILGUN_API_KEY', raising=False)
+        monkeypatch.delenv('MAILGUN_DOMAIN', raising=False)
+        monkeypatch.delenv('RESEND_API_KEY', raising=False)
+        monkeypatch.delenv('AWS_ACCESS_KEY_ID', raising=False)
+        monkeypatch.delenv('AWS_PROFILE', raising=False)
+        monkeypatch.delenv('AWS_WEB_IDENTITY_TOKEN_FILE', raising=False)
+        monkeypatch.delenv('AWS_CONTAINER_CREDENTIALS_RELATIVE_URI', raising=False)
+        monkeypatch.delenv('AWS_CONTAINER_CREDENTIALS_FULL_URI', raising=False)
+        monkeypatch.setenv('ACTIVE_NOTIFICATIONS_API_KEY', 'pingram_sk_test')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+        monkeypatch.setattr(NotificationConfig, 'RESEND_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'ACTIVE_NOTIFICATIONS_API_KEY', 'pingram_sk_test')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, ActiveNotificationsEmailProvider)
+
+    def test_factory_normalizes_active_notifications_alias(self, monkeypatch):
+        """Provider aliases should map to Active Notifications."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'pingram')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'pingram')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, ActiveNotificationsEmailProvider)
+
+    def test_should_use_mock_notifications_prefers_runtime_flags(self, monkeypatch):
+        """Runtime flags should toggle mock notification mode."""
+        monkeypatch.delenv('PHINS_TEST_MODE', raising=False)
+        monkeypatch.delenv('PHINS_USE_MOCK_NOTIFICATIONS', raising=False)
+        assert should_use_mock_notifications() is False
+
+        monkeypatch.setenv('PHINS_USE_MOCK_NOTIFICATIONS', 'true')
+        assert should_use_mock_notifications() is True
+
+        monkeypatch.delenv('PHINS_USE_MOCK_NOTIFICATIONS', raising=False)
+        monkeypatch.setenv('PHINS_TEST_MODE', '1')
+        assert should_use_mock_notifications() is True
+
+    def test_get_notification_service_caches_by_mode(self, monkeypatch):
+        """Shared notification service cache should reuse per-mode instances."""
+        monkeypatch.delenv('PHINS_TEST_MODE', raising=False)
+        monkeypatch.delenv('PHINS_USE_MOCK_NOTIFICATIONS', raising=False)
+
+        live_a = get_notification_service(use_mock=False)
+        live_b = get_notification_service(use_mock=False)
+        mock_a = get_notification_service(use_mock=True)
+        mock_b = get_notification_service(use_mock=True)
+
+        assert live_a is live_b
+        assert mock_a is mock_b
+        assert live_a is not mock_a
+
     def test_smtp_provider_uses_smtp_username_as_sender_when_from_not_explicit(self, monkeypatch):
         """SMTP should fall back to SMTP_USERNAME sender when EMAIL_FROM_ADDRESS is unset."""
         sent_messages = []
@@ -869,6 +936,22 @@ class TestNotificationService:
         
         # Check history
         history = service.get_history(customer_id="CUST123")
+        assert len(history) == 1
+        assert history[0]['channel'] == 'email'
+
+    def test_cached_notification_service_preserves_history(self):
+        """Cached notification service should preserve in-memory history between lookups."""
+        service = get_notification_service(use_mock=True)
+
+        service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient="test@example.com",
+            content="Test",
+            customer_id="CUST999"
+        ))
+
+        same_service = get_notification_service(use_mock=True)
+        history = same_service.get_history(customer_id="CUST999")
         assert len(history) == 1
         assert history[0]['channel'] == 'email'
     

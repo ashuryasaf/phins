@@ -68,6 +68,7 @@ try:
         VerificationType,
         OTPStatus,
         create_notification_service,
+        should_use_mock_notifications,
         generate_id,
         hash_identifier,
         validate_email,
@@ -79,6 +80,7 @@ except ImportError:
     # Define fallbacks if notification service not available
     NotificationService = None
     create_notification_service = lambda **kwargs: None
+    should_use_mock_notifications = lambda: True
 
 
 logger = logging.getLogger('phins.secure_notification_pipeline')
@@ -565,7 +567,9 @@ class SecureNotificationPipeline:
         pipeline_integrity_service=None
     ):
         # Core notification service
-        self._notification_service = notification_service or create_notification_service(use_mock=True)
+        self._notification_service = notification_service or create_notification_service(
+            use_mock=should_use_mock_notifications()
+        )
         
         # WhatsApp provider
         if whatsapp_provider:
