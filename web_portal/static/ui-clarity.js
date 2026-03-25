@@ -24,6 +24,9 @@
 
   let floatingRecognition = null;
   let floatingListening = false;
+  let floatingAuthResolved = false;
+  let floatingAuthAllowed = false;
+  let floatingSessionRole = "";
 
   function cleanLeadingEmoji(element) {
     if (!element) {
@@ -61,6 +64,9 @@
   }
 
   function getSessionRole() {
+    if (floatingSessionRole) {
+      return floatingSessionRole;
+    }
     try {
       const raw = localStorage.getItem("session");
       if (!raw) return "";
@@ -73,6 +79,10 @@
 
   function isAdminRole(role) {
     return ["admin", "underwriter", "claims_adjuster", "accountant", "actuary"].includes(role);
+  }
+
+  function isSupplierRole(role) {
+    return role === "supplier";
   }
 
   function isStaffPath(pathname) {
@@ -102,9 +112,16 @@
     const hasCustomerAssistant =
       typeof window.processAIQuery === "function" ||
       typeof window.quickAIAction === "function";
+    const hasSupplierSession =
+      typeof window.currentSupplier === "object" ||
+      path.includes("/supplier-portal") ||
+      path.includes("/supplier-dashboard");
 
     if (hasAdminAssistant || isStaffPath(path) || isAdminRole(role)) {
       return "admin";
+    }
+    if (hasSupplierSession || isSupplierRole(role)) {
+      return "supplier";
     }
     if (hasCustomerAssistant || path.includes("/dashboard")) {
       return "customer";
@@ -126,6 +143,13 @@
         toggleLabel: "Admin AI Mic",
         title: "PHINS admin AI Assistant",
         placeholder: "Voice or type admin command...",
+      };
+    }
+    if (detectContext() === "supplier") {
+      return {
+        toggleLabel: "Supplier AI Mic",
+        title: "Supplier Voice Quick Actions",
+        placeholder: "Voice or type supplier command...",
       };
     }
     return {
@@ -183,6 +207,15 @@
         { id: "admin_reports", label: "Reports", query: "open risk reports dashboard", requiresAdmin: true, url: "/risk-reports-dashboard.html" },
         { id: "admin_logout", label: "Logout", query: "logout", requiresAdmin: true, url: "/" },
       ],
+      supplier: [
+        { id: "supplier_orders", label: "Orders", query: "show supplier orders", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_settlements", label: "Settlements", query: "show supplier settlements", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_offers", label: "Offers", query: "show supplier offers", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_profile", label: "Profile", query: "show supplier profile", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_new_offer", label: "New Offer", query: "create new supplier offer", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_refresh", label: "Refresh", query: "refresh supplier dashboard", requiresSupplier: true, url: "/supplier-portal.html" },
+        { id: "supplier_logout", label: "Logout", query: "logout", requiresSupplier: true, url: "/" },
+      ],
       customer: [
         { id: "cust_policies", label: "Policies", query: "show me my policies", url: "/dashboard.html" },
         { id: "cust_billing", label: "Billing", query: "show me all my billings", url: "/dashboard.html" },
@@ -201,6 +234,9 @@
     return selected.filter((action) => {
       if (!action.requiresAdmin) return true;
       return isAdminRole(role);
+    }).filter((action) => {
+      if (!action.requiresSupplier) return true;
+      return isSupplierRole(role);
     });
   }
 
@@ -416,6 +452,40 @@
       return true;
     }
 
+    if (detectContext() === "supplier") {
+      if ((normalized.includes("new offer") || normalized.includes("create offer")) && typeof window.openOfferModal === "function") {
+        callIfFunction(() => window.openOfferModal());
+        setFloatingStatus("Opening supplier offer form.", "info");
+        return true;
+      }
+      if ((normalized.includes("refresh supplier") || normalized.includes("refresh dashboard")) &&
+          typeof window.refreshOrders === "function" &&
+          typeof window.loadOffers === "function") {
+        callIfFunction(window.refreshOrders);
+        callIfFunction(window.loadOffers);
+        if (typeof window.loadSettlementData === "function") {
+          callIfFunction(window.loadSettlementData);
+        }
+        setFloatingStatus("Refreshing supplier dashboard.", "info");
+        return true;
+      }
+      if (normalized.includes("settlement") && typeof window.loadSettlementData === "function") {
+        callIfFunction(window.loadSettlementData);
+        setFloatingStatus("Refreshing supplier settlements.", "info");
+        return true;
+      }
+      if (normalized.includes("orders") && typeof window.refreshOrders === "function") {
+        callIfFunction(window.refreshOrders);
+        setFloatingStatus("Refreshing supplier orders.", "info");
+        return true;
+      }
+      if (normalized.includes("offer") && typeof window.loadOffers === "function") {
+        callIfFunction(window.loadOffers);
+        setFloatingStatus("Refreshing supplier offers.", "info");
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -451,6 +521,35 @@
         // no-op
       }
       window.location.href = "/";
+      return true;
+    }
+
+    if (q.includes("supplier settlement") || q.includes("supplier settlements")) {
+      window.location.href = "/supplier-portal.html";
+      return true;
+    }
+    if (q.includes("supplier offers") || q.includes("my offers")) {
+      window.location.href = "/supplier-portal.html";
+      return true;
+    }
+    if (q.includes("supplier orders") || q.includes("my supplier orders")) {
+      window.location.href = "/supplier-portal.html";
+      return true;
+    }
+    if (q.includes("supplier profile")) {
+      window.location.href = "/supplier-portal.html";
+      return true;
+    }
+    if (q.includes("supplier login")) {
+      window.location.href = "/supplier-login.html";
+      return true;
+    }
+    if (q.includes("supplier register")) {
+      window.location.href = "/supplier-register.html";
+      return true;
+    }
+    if (q.includes("supplier portal")) {
+      window.location.href = "/supplier-portal.html";
       return true;
     }
 
@@ -548,6 +647,10 @@
     const role = getSessionRole();
     if (action.requiresAdmin && !isAdminRole(role)) {
       setFloatingStatus("Admin role required for this quick action.", "warning");
+      return;
+    }
+    if (action.requiresSupplier && !isSupplierRole(role)) {
+      setFloatingStatus("Supplier role required for this quick action.", "warning");
       return;
     }
 
@@ -697,7 +800,18 @@
     floatingListening = false;
   }
 
+  function removeFloatingBar() {
+    const existing = document.getElementById(FLOATING_BAR_ID);
+    if (existing) {
+      existing.remove();
+    }
+  }
+
   function ensureFloatingBar() {
+    if (!floatingAuthAllowed) {
+      removeFloatingBar();
+      return;
+    }
     if (document.getElementById(FLOATING_BAR_ID)) {
       renderFloatingActions();
       return;
@@ -748,6 +862,59 @@
     renderFloatingActions();
   }
 
+  async function resolveFloatingAuth() {
+    if (floatingAuthResolved) {
+      return floatingAuthAllowed;
+    }
+    floatingAuthResolved = true;
+
+    const token = getSessionToken();
+    if (!token) {
+      floatingAuthAllowed = false;
+      floatingSessionRole = "";
+      return false;
+    }
+
+    try {
+      const response = await fetch("/api/session/validate", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        floatingAuthAllowed = false;
+        floatingSessionRole = "";
+        return false;
+      }
+      const session = await response.json().catch(() => ({}));
+      const role = String(session?.role || "").toLowerCase();
+      if (!role) {
+        floatingAuthAllowed = false;
+        floatingSessionRole = "";
+        return false;
+      }
+
+      floatingSessionRole = role;
+      floatingAuthAllowed = ["customer", "supplier"].includes(role) || isAdminRole(role);
+
+      try {
+        localStorage.setItem("session", JSON.stringify({
+          role,
+          username: session?.username || "",
+          customer_id: session?.customer_id || null,
+          supplier_id: session?.supplier_id || null,
+        }));
+      } catch {
+        // no-op
+      }
+      return floatingAuthAllowed;
+    } catch {
+      floatingAuthAllowed = false;
+      floatingSessionRole = "";
+      return false;
+    }
+  }
+
   function runPendingAdminActionIfAny() {
     const actionId = consumePendingAdminAction();
     if (!actionId) return;
@@ -761,11 +928,17 @@
     setFloatingStatus("Pending action could not run on this page.", "warning");
   }
 
-  function start() {
+  async function start() {
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
-    ensureFloatingBar();
-    runPendingAdminActionIfAny();
+
+    const authAllowed = await resolveFloatingAuth();
+    if (authAllowed) {
+      ensureFloatingBar();
+      runPendingAdminActionIfAny();
+    } else {
+      removeFloatingBar();
+    }
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -789,7 +962,9 @@
           runCleanup(node);
         }
       }
-      renderFloatingActions();
+      if (floatingAuthAllowed) {
+        renderFloatingActions();
+      }
     });
 
     observer.observe(document.body, {
