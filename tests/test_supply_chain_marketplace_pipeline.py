@@ -235,6 +235,239 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
         srv.stop()
 
 
+def test_all_approved_supplier_offers_propagate_to_wallet_marketplace_and_ledgers():
+    _reset_supply_chain_state()
+
+    port = 8160
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        supplier_specs = [
+            {
+                "company_name": "North Pharmacy",
+                "contact_email": "north-pharmacy@example.com",
+                "contact_name": "North Contact",
+                "supplier_type": "pharmacy",
+                "offer_name": "North Cold Relief Kit",
+                "offer_category": "medication",
+                "wallets": ["health"],
+            },
+            {
+                "company_name": "Home Care Mobile",
+                "contact_email": "home-care@example.com",
+                "contact_name": "Home Care Contact",
+                "supplier_type": "clinic",
+                "offer_name": "Home Care Visit",
+                "offer_category": "home_care",
+                "wallets": ["health", "general"],
+            },
+        ]
+
+        created = []
+        for spec in supplier_specs:
+            invitation, status = _post(
+                f"{base}/api/supply-chain/invitations",
+                {
+                    "supplier_type": spec["supplier_type"],
+                    "max_uses": 1,
+                    "expires_days": 30,
+                    "notes": f"propagation test for {spec['company_name']}",
+                },
+                token=admin_token,
+            )
+            assert status == 201
+            invitation_code = (invitation.get("invitation") or {}).get("code")
+            assert invitation_code
+
+            registration, status = _post(
+                f"{base}/api/supply-chain/register",
+                {
+                    "invitation_code": invitation_code,
+                    "company_name": spec["company_name"],
+                    "contact_email": spec["contact_email"],
+                    "contact_name": spec["contact_name"],
+                    "supplier_type": spec["supplier_type"],
+                    "password": "SupplierPass123!",
+                },
+            )
+            assert status == 201
+            supplier_id = registration.get("supplier_id")
+            assert supplier_id
+
+            _, status = _post(
+                f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+                {"notes": f"Approved {spec['company_name']}"},
+                token=admin_token,
+            )
+            assert status == 200
+
+            supplier_login, status = _post(
+                f"{base}/api/supplier/login",
+                {"email": spec["contact_email"], "password": "SupplierPass123!"},
+            )
+            assert status == 200
+            supplier_token = supplier_login["token"]
+
+            offer_result, status = _post(
+                f"{base}/api/supplier/offers/upsert",
+                {
+                    "name": spec["offer_name"],
+                    "description": f"Offer from {spec['company_name']}",
+                    "item_type": "service" if spec["supplier_type"] == "clinic" else "product",
+                    "category": spec["offer_category"],
+                    "price": 45.0 if spec["supplier_type"] == "pharmacy" else 95.0,
+                    "currency": "USD",
+                    "wallet_compatible": spec["wallets"],
+                },
+                token=supplier_token,
+            )
+            assert status in (200, 201)
+            offer_id = offer_result.get("id")
+            assert offer_id
+
+            created.append({
+                "supplier_id": supplier_id,
+                "supplier_name": spec["company_name"],
+                "offer_id": offer_id,
+                "offer_name": spec["offer_name"],
+                "wallets": spec["wallets"],
+            })
+
+        # Add a supplier that is not approved and ensure its offer never surfaces.
+        blocked_invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "blocked supplier",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        blocked_code = (blocked_invitation.get("invitation") or {}).get("code")
+        blocked_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": blocked_code,
+                "company_name": "Blocked Supplier",
+                "contact_email": "blocked-supplier@example.com",
+                "contact_name": "Blocked Contact",
+                "supplier_type": "pharmacy",
+                "password": "SupplierPass123!",
+            },
+        )
+        assert status == 201
+        blocked_supplier_id = blocked_reg.get("supplier_id")
+        assert blocked_supplier_id
+
+        # Fund the customer wallet once.
+        customer_id = "CUST-PROP-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "Propagation Customer",
+                "email": "propagation-customer@example.com",
+            }
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 500.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        offerings, status = _get(f"{base}/api/marketplace/offerings?wallet=health", token=admin_token)
+        assert status == 200
+        listing_items = offerings.get("items", [])
+        listed_ids = {item.get("id") for item in listing_items}
+
+        for item in created:
+            assert item["offer_id"] in listed_ids
+            listing = next(entry for entry in listing_items if entry.get("id") == item["offer_id"])
+            assert listing.get("supplier_name") == item["supplier_name"]
+            assert listing.get("offer_approved_on") or listing.get("supplier_approved_on")
+            assert "health" in [w.lower() for w in (listing.get("wallet_compatible") or [])]
+
+        assert all(entry.get("supplier_name") != "Blocked Supplier" for entry in listing_items)
+
+        purchases_made = []
+        for idx, item in enumerate(created, start=1):
+            purchase_result, status = _post(
+                f"{base}/api/health-wallet/purchase",
+                {
+                    "customer_id": customer_id,
+                    "offer_id": item["offer_id"],
+                    "product_id": item["offer_id"],
+                    "product_name": item["offer_name"],
+                    "amount": 45.0 if "Cold Relief" in item["offer_name"] else 95.0,
+                    "quantity": 1,
+                    "payment_method": "health_wallet",
+                    "category": "medication" if idx == 1 else "home_care",
+                    "allow_credit_fallback": False,
+                },
+                token=admin_token,
+            )
+            assert status == 200
+            assert purchase_result.get("success") is True
+            purchases_made.append(purchase_result.get("purchase", {}))
+
+        purchase_history, status = _get(
+            f"{base}/api/health-wallet/purchases?customer_id={customer_id}",
+            token=admin_token,
+        )
+        assert status == 200
+        history_rows = purchase_history.get("purchases", [])
+        history_offer_ids = {row.get("offer_id") or row.get("product_id") for row in history_rows}
+        assert {item["offer_id"] for item in created}.issubset(history_offer_ids)
+        for row in history_rows[: len(created)]:
+            assert row.get("ledger_tx_id")
+            assert row.get("nft_token_id")
+            assert row.get("supplier_name")
+            assert row.get("provider_name")
+
+        admin_orders, status = _get(f"{base}/api/admin/suppliers/orders", token=admin_token)
+        assert status == 200
+        admin_items = admin_orders.get("items", [])
+        admin_offer_ids = {row.get("offer_id") for row in admin_items}
+        assert {item["offer_id"] for item in created}.issubset(admin_offer_ids)
+
+        ledger_entries, status = _get(f"{base}/api/ledger?customer_id={customer_id}", token=admin_token)
+        assert status == 200
+        ledger_rows = ledger_entries.get("ledger_entries", [])
+        ledger_offer_ids = {
+            (entry.get("metadata") or {}).get("offer_id")
+            for entry in ledger_rows
+            if isinstance(entry.get("metadata"), dict)
+        }
+        assert {item["offer_id"] for item in created}.issubset(ledger_offer_ids)
+
+        nft_entries, status = _get(f"{base}/api/nft-ledger?customer_id={customer_id}", token=admin_token)
+        assert status == 200
+        nft_rows = nft_entries.get("ledger", [])
+        nft_asset_ids = {row.get("asset_id") for row in nft_rows}
+        purchased_order_ids = {purchase.get("order_id") for purchase in purchases_made if purchase.get("order_id")}
+        assert purchased_order_ids.issubset(nft_asset_ids)
+
+        integrity, status = _get(f"{base}/api/supply-chain/ledger/verify", token=admin_token)
+        assert status == 200
+        assert integrity.get("integrity_score", 0) >= 99
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+
+
 def test_supplier_orders_endpoint_returns_supply_chain_orders_with_expected_fields():
     _reset_supply_chain_state()
 
