@@ -1901,10 +1901,9 @@ class SupplyChainEcosystemService:
         gross_sales = sum(o.get("total_amount", 0) for o in completed)
         refunds = sum(o.get("total_amount", 0) for o in refunded)
         commission = sum(o.get("commission", 0) for o in completed)
-        processing_fees = sum(float(o.get("payment_processing_fee", 0) or 0) for o in completed)
-        net_payout = (
-            sum(float(o.get("supplier_payout", 0) or 0) for o in completed)
-            - sum(float(o.get("supplier_payout", 0) or 0) for o in refunded)
+        processing_fees = round(
+            sum(float(o.get("payment_processing_fee", 0) or 0) for o in completed),
+            2
         )
         pending_settlement = sum(float(p.get("amount", 0) or 0) for p in self.pending_settlements.get(supplier_id, []))
         settled_amount = sum(
@@ -1921,7 +1920,6 @@ class SupplyChainEcosystemService:
             refunds=refunds,
             platform_commission=commission,
             payment_processing_fees=processing_fees,
-            net_payout=net_payout,
             pending_settlement=pending_settlement,
             settled_amount=settled_amount,
             total_orders=len(orders),
@@ -1932,10 +1930,10 @@ class SupplyChainEcosystemService:
             dispute_rate_pct=(supplier.get("dispute_count", 0) / max(1, len(completed))) * 100
         )
         report.calculate_totals()
-        report.payment_processing_fees = round(report.payment_processing_fees, 2)
+        report.total_deductions = round(report.total_deductions, 2)
         report.pending_settlement = round(report.pending_settlement, 2)
         report.settled_amount = round(report.settled_amount, 2)
-        report.net_payout = round(net_payout, 2)
+        report.net_payout = round(report.net_payout, 2)
         
         if len(completed) > 0:
             report.commission_rate_avg = commission / gross_sales * 100 if gross_sales > 0 else 0
