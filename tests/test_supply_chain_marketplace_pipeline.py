@@ -51,6 +51,7 @@ def _reset_supply_chain_state():
     with portal.STATE_LOCK:
         portal.SUPPLIERS.clear()
         portal.SUPPLIER_OFFERS.clear()
+        portal.SUPPLIER_ORDERS.clear()
         portal.SUPPLIER_INVITATIONS.clear()
         portal.SUPPLY_CHAIN_LEDGER.clear()
         portal.HEALTH_WALLETS.clear()
@@ -58,7 +59,9 @@ def _reset_supply_chain_state():
         portal.TRANSACTION_LEDGER.clear()
         portal.NFT_LEDGER.clear()
     if getattr(portal, "supply_chain_service", None):
+        portal.supply_chain_service.orders.clear()
         portal.supply_chain_service.pending_settlements.clear()
+        portal.supply_chain_service.settlement_history.clear()
         portal.supply_chain_service.ledger_chain.clear()
 
 

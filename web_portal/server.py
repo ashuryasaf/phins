@@ -8473,31 +8473,9 @@ For claims or questions, please contact:
             items = []
 
             if supply_chain_enabled and supply_chain_service:
-                with STATE_LOCK:
-                    orders = list(getattr(supply_chain_service, 'orders', {}).values())
-                    customer_names = {
-                        cid: (cust.get('name') or cust.get('first_name') or cust.get('email') or cid)
-                        for cid, cust in CUSTOMERS.items()
-                    }
-
-                for order in orders:
-                    if supplier_id and order.get('supplier_id') != supplier_id:
-                        continue
-                    if status_filter and get_status_lower(order) != status_filter:
-                        continue
-
-                    order_row = dict(order)
-                    order_row['customer_name'] = customer_names.get(
-                        order.get('customer_id'),
-                        order.get('customer_id')
-                    )
-                    order_row['order_date'] = order.get('created_date')
-                    items.append(order_row)
-
-                items = sorted(
-                    items,
-                    key=lambda row: row.get('created_date') or '',
-                    reverse=True,
+                items = list_normalized_supply_chain_orders(
+                    supplier_id=supplier_id,
+                    status_filter=status_filter,
                 )
             elif marketplace_enabled and marketplace:
                 txs = marketplace.get_all_transactions(limit=200)
@@ -28395,23 +28373,31 @@ For claims or questions, please contact:
                     purchase = {
                         'id': purchase_id,
                         'customer_id': customer_id,
+                        'customer_name': get_customer_display_name(customer_id),
                         'order_id': order.get('id'),
                         'offer_id': product_id,
                         'supplier_id': supplier_id,
+                        'supplier_name': order.get('supplier_name') or supplier_offer.get('supplier_name') or get_supplier_display_name(supplier_id),
                         'product_id': product_id,
                         'product_name': order.get('item_name') or product_name or supplier_offer.get('name'),
                         'category': normalize_marketplace_category(
                             order.get('order_type') or supplier_offer.get('category') or category
                         ),
-                        'provider': provider or supplier_offer.get('supplier_name') or 'PHINS Marketplace',
+                        'provider': provider or order.get('supplier_name') or get_supplier_display_name(supplier_id),
+                        'provider_name': order.get('supplier_name') or supplier_offer.get('supplier_name') or get_supplier_display_name(supplier_id),
                         'quantity': quantity,
                         'amount': final_amount,
                         'status': 'completed' if order.get('payment_status') == 'paid' else 'pending',
                         'timestamp': datetime.now().isoformat(),
                         'payment_method': payment_method,
+                        'wallet_paid': wallet_deduction,
                         'wallet_deduction': wallet_deduction,
                         'external_payment_amount': external_payment_amount,
                         'external_payment_method': external_payment_method,
+                        'platform_fee': safe_float(order.get('platform_fee'), safe_float(order.get('commission'), 0.0)),
+                        'supplier_payout': safe_float(order.get('supplier_payout'), 0.0),
+                        'can_cancel': False,
+                        'can_refund': False,
                         'pricing_plan': pricing_plan,
                         'nft_token_id': ledger_tx.get('nft_token_id'),
                         'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
@@ -28489,6 +28475,7 @@ For claims or questions, please contact:
                 purchase = {
                     'id': purchase_id,
                     'customer_id': customer_id,
+                    'customer_name': get_customer_display_name(customer_id),
                     'product_id': product_id,
                     'product_name': product_name,
                     'category': normalize_marketplace_category(category) or category,
@@ -28579,6 +28566,84 @@ For claims or questions, please contact:
         
         # ========== END HEALTH WALLET API ==========
         
+        if path == '/api/marketplace/orders/refund':
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                if not require_role(session, ['admin', 'accountant']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                    return
+
+                data = json.loads(body or '{}')
+                purchase_id = str(data.get('purchase_id') or '').strip()
+                order_id = str(data.get('order_id') or '').strip()
+                customer_id = str(data.get('customer_id') or '').strip() or None
+                reason = str(data.get('reason') or 'Refund processed by admin').strip()
+
+                purchase = None
+                if purchase_id:
+                    purchase = MEDICAL_PURCHASES.get(purchase_id)
+                if not purchase and order_id:
+                    purchase = next(
+                        (p for p in MEDICAL_PURCHASES.values() if str(p.get('order_id') or '').strip() == order_id),
+                        None,
+                    )
+                if not purchase and customer_id:
+                    purchase = next(
+                        (
+                            p for p in MEDICAL_PURCHASES.values()
+                            if p.get('customer_id') == customer_id and (
+                                not order_id or str(p.get('order_id') or '').strip() == order_id
+                            )
+                        ),
+                        None,
+                    )
+
+                if not purchase:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Purchase not found'}).encode('utf-8'))
+                    return
+
+                refund_amount = round(safe_float(purchase.get('amount'), 0.0), 2)
+                linked_order_id = str(purchase.get('order_id') or order_id or '').strip()
+                purchase['status'] = 'refunded'
+                purchase['refunded_amount'] = refund_amount
+                purchase['wallet_refunded_amount'] = round(safe_float(purchase.get('wallet_deduction'), 0.0), 2)
+                purchase['external_refunded_amount'] = round(safe_float(purchase.get('external_payment_amount'), 0.0), 2)
+                purchase['refund_reason'] = reason
+                purchase['refund_date'] = datetime.now().isoformat()
+                purchase['can_refund'] = False
+                purchase['can_cancel'] = False
+
+                if linked_order_id and supply_chain_enabled and supply_chain_service:
+                    order = getattr(supply_chain_service, 'orders', {}).get(linked_order_id)
+                    if order:
+                        try:
+                            supply_chain_service.update_order_status(
+                                order_id=linked_order_id,
+                                status='refunded',
+                                updated_by=(session or {}).get('username', 'admin'),
+                                notes=reason,
+                            )
+                        except Exception:
+                            order['status'] = 'refunded'
+                            order['updated_date'] = datetime.now().isoformat()
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'purchase_id': purchase.get('id') or purchase_id,
+                    'order_id': linked_order_id or None,
+                    'refunded_amount': refund_amount,
+                    'message': 'Marketplace refund processed successfully',
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # ========== MARKETPLACE API (Services, Products, NFT Tokens) ==========
         if marketplace_enabled and marketplace:
             
