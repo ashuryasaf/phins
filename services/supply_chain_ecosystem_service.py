@@ -407,6 +407,356 @@ class SupplyChainEcosystemService:
             return default
 
     @staticmethod
+    def _safe_text(value: Any) -> Optional[str]:
+        """Return a stripped text value or None."""
+        text = str(value or "").strip()
+        return text or None
+
+    @staticmethod
+    def _coerce_location(value: Any) -> Optional[Dict[str, Any]]:
+        """Normalize a location payload into a predictable dict."""
+        if not isinstance(value, dict):
+            return None
+        latitude = SupplyChainEcosystemService._safe_float(value.get("latitude"), None)
+        longitude = SupplyChainEcosystemService._safe_float(value.get("longitude"), None)
+        if latitude is None or longitude is None:
+            return None
+        return {
+            "latitude": round(latitude, 6),
+            "longitude": round(longitude, 6),
+            "address": SupplyChainEcosystemService._safe_text(value.get("address")),
+            "city": SupplyChainEcosystemService._safe_text(value.get("city")),
+            "state": SupplyChainEcosystemService._safe_text(value.get("state")),
+            "country": SupplyChainEcosystemService._safe_text(value.get("country")),
+            "postal_code": SupplyChainEcosystemService._safe_text(value.get("postal_code")),
+        }
+
+    @staticmethod
+    def _build_location_from_fields(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Build a normalized location from flat payload fields."""
+        payload = payload or {}
+        return SupplyChainEcosystemService._coerce_location({
+            "latitude": payload.get("latitude"),
+            "longitude": payload.get("longitude"),
+            "address": payload.get("address"),
+            "city": payload.get("city"),
+            "state": payload.get("state"),
+            "country": payload.get("country"),
+            "postal_code": payload.get("postal_code"),
+        })
+
+    @staticmethod
+    def _distance_km(origin: Optional[Dict[str, Any]], destination: Optional[Dict[str, Any]]) -> Optional[float]:
+        """Approximate geodesic distance using the haversine formula."""
+        if not origin or not destination:
+            return None
+        lat1 = SupplyChainEcosystemService._safe_float(origin.get("latitude"), None)
+        lon1 = SupplyChainEcosystemService._safe_float(origin.get("longitude"), None)
+        lat2 = SupplyChainEcosystemService._safe_float(destination.get("latitude"), None)
+        lon2 = SupplyChainEcosystemService._safe_float(destination.get("longitude"), None)
+        if None in {lat1, lon1, lat2, lon2}:
+            return None
+        from math import asin, cos, radians, sin, sqrt
+
+        radius_km = 6371.0
+        d_lat = radians(lat2 - lat1)
+        d_lon = radians(lon2 - lon1)
+        a = (
+            sin(d_lat / 2) ** 2
+            + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+        )
+        c = 2 * asin(min(1.0, sqrt(a)))
+        return round(radius_km * c, 2)
+
+    def _build_delivery_plan(
+        self,
+        *,
+        supplier: Dict[str, Any],
+        offer: Dict[str, Any],
+        order_payload: Dict[str, Any],
+        quantity: int,
+    ) -> Dict[str, Any]:
+        """Create location-aware delivery options and an AI-style recommended method."""
+        supplier_location = self._build_location_from_fields(supplier)
+        requested_location = self._coerce_location(order_payload.get("delivery_location"))
+        if not requested_location:
+            requested_location = self._build_location_from_fields(order_payload.get("delivery_address"))
+        if not requested_location:
+            requested_location = self._build_location_from_fields(order_payload)
+
+        delivery_config = offer.get("delivery_config") if isinstance(offer.get("delivery_config"), dict) else {}
+        item_type = str(offer.get("item_type") or "product").strip().lower()
+        default_mode = str(delivery_config.get("mode") or ("on_site" if item_type == "service" else "delivery")).strip().lower()
+        service_radius_km = max(
+            1.0,
+            self._safe_float(
+                delivery_config.get("service_radius_km", supplier.get("service_radius_km", 50)),
+                50.0,
+            ),
+        )
+        distance_km = self._distance_km(supplier_location, requested_location)
+
+        possible_methods: List[Dict[str, Any]] = []
+
+        def add_method(method_id: str, label: str, *, available: bool, reason: Optional[str], eta_days: int, fee: float, validation_type: str) -> None:
+            possible_methods.append({
+                "method": method_id,
+                "label": label,
+                "available": available,
+                "reason": reason,
+                "eta_days": max(0, eta_days),
+                "fee": round(max(0.0, fee), 2),
+                "validation_type": validation_type,
+            })
+
+        base_eta = max(0, self._safe_int(delivery_config.get("eta_days"), 0))
+        base_fee = round(max(0.0, self._safe_float(delivery_config.get("fee"), 0.0)), 2)
+
+        if item_type == "service":
+            on_site_available = (
+                default_mode in {"on_site", "digital", "pickup", "delivery"}
+                and (distance_km is None or distance_km <= service_radius_km)
+            )
+            add_method(
+                "on_site_visit",
+                "On-site visit",
+                available=on_site_available,
+                reason=None if on_site_available else f"Service address is outside supplier radius ({service_radius_km:.0f} km)",
+                eta_days=max(0, base_eta),
+                fee=base_fee,
+                validation_type="geo_checkin",
+            )
+            add_method(
+                "telehealth_video",
+                "Telehealth / video session",
+                available=True,
+                reason=None,
+                eta_days=0,
+                fee=0.0,
+                validation_type="digital_attestation",
+            )
+        else:
+            delivery_available = distance_km is None or distance_km <= service_radius_km
+            add_method(
+                "courier_delivery",
+                "Courier delivery",
+                available=delivery_available,
+                reason=None if delivery_available else f"Destination is outside supplier delivery radius ({service_radius_km:.0f} km)",
+                eta_days=max(1, base_eta or 1),
+                fee=base_fee,
+                validation_type="pod_and_geo",
+            )
+            add_method(
+                "pickup_counter",
+                "Pickup / collection",
+                available=True,
+                reason=None,
+                eta_days=0,
+                fee=0.0,
+                validation_type="pickup_code",
+            )
+
+        same_day_available = (
+            distance_km is not None
+            and distance_km <= min(service_radius_km, 15.0)
+            and quantity <= 3
+        )
+        add_method(
+            "same_day_priority",
+            "Same-day priority",
+            available=same_day_available,
+            reason=None if same_day_available else "Available for nearby small orders only",
+            eta_days=0,
+            fee=round(base_fee + 12.0, 2),
+            validation_type="photo_and_geo",
+        )
+
+        requested_method = str(
+            order_payload.get("delivery_method")
+            or order_payload.get("delivery_mode")
+            or default_mode
+        ).strip().lower()
+
+        recommended = next((m for m in possible_methods if m["method"] == requested_method and m["available"]), None)
+        if not recommended:
+            if item_type == "service":
+                preferred_order = ["on_site_visit", "telehealth_video", "same_day_priority"]
+            else:
+                preferred_order = ["courier_delivery", "same_day_priority", "pickup_counter"]
+            for method_id in preferred_order:
+                recommended = next((m for m in possible_methods if m["method"] == method_id and m["available"]), None)
+                if recommended:
+                    break
+        if not recommended and possible_methods:
+            recommended = possible_methods[0]
+
+        recommended = dict(recommended or {})
+        recommended["ai_reasoning"] = (
+            f"Recommended {recommended.get('label', 'delivery method')} based on "
+            f"{'distance ' + str(distance_km) + ' km, ' if distance_km is not None else ''}"
+            f"{item_type} fulfillment constraints and supplier coverage."
+        ) if recommended else "No viable delivery recommendation available."
+
+        return {
+            "supplier_location": supplier_location,
+            "requested_location": requested_location,
+            "distance_km": distance_km,
+            "service_radius_km": round(service_radius_km, 2),
+            "possible_methods": possible_methods,
+            "recommended_method": recommended,
+        }
+
+    def recommend_delivery_options(
+        self,
+        *,
+        supplier_id: str,
+        offer_id: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Return location-aware delivery recommendations before checkout."""
+        supplier = self.suppliers.get(supplier_id)
+        if not supplier:
+            raise ValueError(f"Supplier {supplier_id} not found")
+        offer = self.offers.get(offer_id)
+        if not offer:
+            raise ValueError(f"Offer {offer_id} not found")
+        if offer.get("supplier_id") != supplier_id:
+            raise ValueError("Offer does not belong to requested supplier")
+
+        payload = data or {}
+        quantity = max(1, self._safe_int(payload.get("quantity"), 1))
+        delivery_plan = self._build_delivery_plan(
+            supplier=supplier,
+            offer=offer,
+            order_payload=payload,
+            quantity=quantity,
+        )
+        return {
+            "success": True,
+            "supplier_id": supplier_id,
+            "offer_id": offer_id,
+            "delivery_plan": delivery_plan,
+        }
+
+    def validate_delivery_completion(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Validate proof of delivery/service completion and mark order delivered."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        payload = data or {}
+        order = self.orders[order_id]
+        current_status = str(order.get("status") or "").strip().lower()
+        if current_status not in {
+            OrderStatus.CONFIRMED.value,
+            OrderStatus.PROCESSING.value,
+            OrderStatus.IN_TRANSIT.value,
+            OrderStatus.DELIVERED.value,
+        }:
+            raise ValueError(f"Order {order_id} is not in a deliverable status")
+
+        delivery_plan = order.get("delivery_plan") if isinstance(order.get("delivery_plan"), dict) else {}
+        recommended_method = delivery_plan.get("recommended_method") if isinstance(delivery_plan.get("recommended_method"), dict) else {}
+        validation_type = str(
+            payload.get("validation_type")
+            or recommended_method.get("validation_type")
+            or "delivery_confirmation"
+        ).strip().lower()
+
+        proof = {
+            "validation_type": validation_type,
+            "confirmed_by": self._safe_text(payload.get("confirmed_by")) or actor,
+            "recipient_name": self._safe_text(payload.get("recipient_name")),
+            "pickup_code": self._safe_text(payload.get("pickup_code")),
+            "service_pin": self._safe_text(payload.get("service_pin")),
+            "photo_url": self._safe_text(payload.get("photo_url")),
+            "customer_acknowledged": bool(payload.get("customer_acknowledged", False)),
+            "notes": self._safe_text(payload.get("notes")),
+            "delivery_location": self._coerce_location(payload.get("delivery_location"))
+            or self._build_location_from_fields(payload),
+        }
+
+        valid = False
+        reasons: List[str] = []
+        if validation_type == "pickup_code":
+            expected = self._safe_text(order.get("delivery_validation_code"))
+            provided = proof.get("pickup_code")
+            valid = bool(expected and provided and expected == provided)
+            if not valid:
+                reasons.append("Pickup code does not match")
+        elif validation_type == "digital_attestation":
+            valid = bool(proof.get("customer_acknowledged") or proof.get("service_pin"))
+            if not valid:
+                reasons.append("Digital services require customer acknowledgement or service PIN")
+        elif validation_type in {"pod_and_geo", "photo_and_geo", "geo_checkin"}:
+            order_location = self._coerce_location(order.get("delivery_location")) or self._build_location_from_fields(order.get("delivery_address"))
+            proof_location = proof.get("delivery_location")
+            distance_km = self._distance_km(order_location, proof_location)
+            max_distance_km = 1.5 if validation_type != "geo_checkin" else 0.5
+            geo_valid = distance_km is not None and distance_km <= max_distance_km
+            if not geo_valid:
+                reasons.append("Delivery proof location is outside the allowed validation radius")
+            if validation_type == "photo_and_geo" and not proof.get("photo_url"):
+                reasons.append("Photo proof is required for this delivery method")
+            valid = geo_valid and (validation_type != "photo_and_geo" or bool(proof.get("photo_url")))
+            proof["distance_from_destination_km"] = distance_km
+        else:
+            valid = bool(proof.get("customer_acknowledged") or proof.get("recipient_name") or proof.get("photo_url"))
+            if not valid:
+                reasons.append("Missing delivery confirmation proof")
+
+        if not valid:
+            raise ValueError("; ".join(reasons) or "Delivery validation failed")
+
+        now = datetime.now(timezone.utc).isoformat()
+        order["actual_delivery"] = now
+        order["updated_date"] = now
+        order["delivery_validation"] = {
+            "validated": True,
+            "validated_at": now,
+            "validated_by": actor,
+            "method": validation_type,
+            "proof": proof,
+        }
+
+        self._record_ledger_entry(
+            entry_type="delivery_validated",
+            supplier_id=order["supplier_id"],
+            customer_id=order.get("customer_id"),
+            order_id=order_id,
+            amount=order.get("total_amount", 0.0),
+            commission=order.get("commission", 0.0),
+            supplier_payout=order.get("supplier_payout", 0.0),
+            description=f"Delivery validated for order {order_id}",
+            metadata={
+                "validated_by": actor,
+                "validation_type": validation_type,
+                "proof_summary": {
+                    "recipient_name": proof.get("recipient_name"),
+                    "photo_url": proof.get("photo_url"),
+                    "pickup_code": bool(proof.get("pickup_code")),
+                    "customer_acknowledged": proof.get("customer_acknowledged"),
+                },
+            }
+        )
+
+        # Successful proof validation finalizes fulfillment and moves the order into settlement flow.
+        completion_result = self.complete_order(order_id, completed_by=actor)
+        completion_result.get("order", {}).setdefault("delivery_validation", order["delivery_validation"])
+
+        return {
+            "success": True,
+            "order": completion_result.get("order", order),
+            "validation": completion_result.get("order", order).get("delivery_validation", order["delivery_validation"]),
+            "message": f"Delivery validated for order {order_id}",
+        }
+
+    @staticmethod
     def _normalize_percentage(value: Any, default_value: float) -> float:
         """
         Normalize percentages supplied as either decimal (0.1) or percent (10).
@@ -1343,8 +1693,24 @@ class SupplyChainEcosystemService:
 
         delivery_config = offer.get("delivery_config") if isinstance(offer.get("delivery_config"), dict) else {}
         billing_config = offer.get("billing_config") if isinstance(offer.get("billing_config"), dict) else {}
-        delivery_eta_days = self._safe_int(delivery_config.get("eta_days"), 0)
+        delivery_plan = self._build_delivery_plan(
+            supplier=supplier,
+            offer=offer,
+            order_payload=data,
+            quantity=quantity,
+        )
+        recommended_method = delivery_plan.get("recommended_method") if isinstance(delivery_plan.get("recommended_method"), dict) else {}
+        delivery_eta_days = self._safe_int(
+            recommended_method.get("eta_days", delivery_config.get("eta_days")),
+            0,
+        )
         estimated_delivery = (now + timedelta(days=delivery_eta_days)).isoformat() if delivery_eta_days > 0 else None
+        delivery_method = self._safe_text(
+            data.get("delivery_method")
+            or recommended_method.get("method")
+            or delivery_config.get("mode")
+        )
+        delivery_validation_code = f"DLV-{secrets.token_hex(3).upper()}"
 
         order = {
             "id": order_id,
@@ -1382,6 +1748,9 @@ class SupplyChainEcosystemService:
             "delivery_address": data.get("delivery_address"),
             "delivery_notes": data.get("delivery_notes"),
             "delivery_config": delivery_config,
+            "delivery_plan": delivery_plan,
+            "delivery_method": delivery_method,
+            "delivery_validation_code": delivery_validation_code,
             "billing_config": billing_config,
             "billing_terms": billing_config.get("billing_terms") or data.get("billing_terms"),
             "scheduled_date": data.get("scheduled_date"),
