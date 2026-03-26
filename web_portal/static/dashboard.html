@@ -882,6 +882,9 @@
         <button onclick="showTransferModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
           🔄 Transfer Funds
         </button>
+        <button onclick="openHealthWalletAISearch()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #00897b 0%, #26a69a 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.2);">
+          🤖 AI Search Offers
+        </button>
       </div>
     </section>
 
@@ -894,6 +897,46 @@
       
       <div id="product-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px;">
         <!-- Products loaded dynamically -->
+      </div>
+    </section>
+
+    <!-- AI Supplier Offer Search -->
+    <section id="health-wallet-ai-search" class="section-content" style="display: none; background: linear-gradient(135deg, #f3fbfa 0%, #d7f3ef 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(0, 137, 123, 0.16);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h2 style="margin: 0; color: #00695c;">🤖 AI Search: Products, Services & Supplier Offers</h2>
+          <p style="margin: 6px 0 0 0; color: #4e6a67; font-size: 0.92rem;">
+            Search all available offers from registered suppliers and purchase through the same wallet, billing, ledger, and marketplace integrity pipeline.
+          </p>
+        </div>
+        <button onclick="closeHealthWalletAISearch()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #00695c;">✕</button>
+      </div>
+
+      <div style="margin-top: 20px; display:grid; grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr)); gap: 12px;">
+        <input id="health-ai-search-query" type="text" placeholder="Search consultation, pharmacy, equipment, home care, supplier name..." style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
+        <select id="health-ai-search-item-type" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
+          <option value="">All Types</option>
+          <option value="service">Services</option>
+          <option value="product">Products</option>
+        </select>
+        <select id="health-ai-search-supplier-type" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
+          <option value="">All Supplier Types</option>
+          <option value="pharmacy">Pharmacy</option>
+          <option value="clinic">Clinic</option>
+          <option value="hospital">Hospital</option>
+          <option value="equipment">Equipment</option>
+          <option value="wellness">Wellness</option>
+          <option value="delivery">Delivery</option>
+        </select>
+        <button onclick="runHealthWalletAISearch()" style="background: linear-gradient(135deg, #00897b 0%, #26a69a 100%); color: white; border: none; padding: 14px 18px; border-radius: 10px; cursor: pointer; font-weight: 700;">🔎 Search</button>
+      </div>
+
+      <div id="health-ai-search-recommendation" style="margin-top: 16px; background: rgba(255,255,255,0.85); border: 1px solid rgba(0, 137, 123, 0.12); border-radius: 12px; padding: 16px; color: #255550;">
+        AI recommendation will appear here after search.
+      </div>
+
+      <div id="health-ai-search-results" style="margin-top: 20px; display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+        <div style="grid-column:1/-1; text-align:center; color:#607d8b; padding: 32px 0;">Use AI Search to discover offers from approved suppliers.</div>
       </div>
     </section>
 
@@ -4839,6 +4882,7 @@
     // ========== SHOPPING CART SYSTEM ==========
     let shoppingCart = [];
     let marketplaceOfferIndex = {};
+    let healthWalletAISearchResults = [];
     
     // HTML escape helper function
     function escapeHtml(text) {
@@ -4846,6 +4890,125 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    function openHealthWalletAISearch() {
+      const section = document.getElementById('health-wallet-ai-search');
+      if (!section) return;
+      section.style.display = 'block';
+      section.scrollIntoView({ behavior: 'smooth' });
+      const queryInput = document.getElementById('health-ai-search-query');
+      if (queryInput) queryInput.focus();
+    }
+
+    function closeHealthWalletAISearch() {
+      const section = document.getElementById('health-wallet-ai-search');
+      if (section) section.style.display = 'none';
+    }
+
+    function scoreHealthWalletOffer(offer, queryTerms) {
+      if (!queryTerms.length) return 0;
+      const haystack = [
+        offer.name,
+        offer.description,
+        offer.category,
+        offer.normalized_category,
+        offer.supplier_name,
+        offer.supplier_type,
+        offer.item_type
+      ].map(v => String(v || '').toLowerCase()).join(' ');
+      let score = 0;
+      queryTerms.forEach(term => {
+        if (!term) return;
+        if (haystack.includes(term)) score += 3;
+        if (String(offer.name || '').toLowerCase().includes(term)) score += 4;
+        if (String(offer.supplier_name || '').toLowerCase().includes(term)) score += 2;
+        if (String(offer.normalized_category || offer.category || '').toLowerCase().includes(term)) score += 2;
+      });
+      if (String(offer.item_type || '').toLowerCase() === 'service') score += queryTerms.includes('service') ? 2 : 0;
+      if (String(offer.item_type || '').toLowerCase() === 'product') score += queryTerms.includes('product') ? 2 : 0;
+      return score;
+    }
+
+    function renderHealthWalletAISearchResults(results, query, recommendationText) {
+      const recommendationEl = document.getElementById('health-ai-search-recommendation');
+      const resultsEl = document.getElementById('health-ai-search-results');
+      if (!recommendationEl || !resultsEl) return;
+
+      recommendationEl.innerHTML = recommendationText || 'AI recommendation will appear here after search.';
+      if (!results.length) {
+        resultsEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#607d8b; padding: 32px 0;">No supplier offers matched this AI search yet. Try a broader product, service, category, or supplier name.</div>';
+        return;
+      }
+
+      marketplaceOfferIndex = {
+        ...marketplaceOfferIndex,
+        ...Object.fromEntries(results.map(item => [item.id, item]))
+      };
+
+      resultsEl.innerHTML = results.map(offer => `
+        <div style="background:white; border-radius:14px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border:1px solid rgba(0, 137, 123, 0.12);">
+          <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+            <div>
+              <div style="font-size:0.78rem; color:#00897b; font-weight:700; text-transform:uppercase; margin-bottom:6px;">${escapeHtml(offer.item_type || 'offer')}</div>
+              <h3 style="margin:0 0 8px 0; color:#1f2937; font-size:1rem;">${escapeHtml(offer.name)}</h3>
+            </div>
+            <div style="font-size:1.15rem; font-weight:800; color:#2e7d32;">$${Number(offer.price || 0).toFixed(2)}</div>
+          </div>
+          <div style="color:#546e7a; font-size:0.9rem; margin-bottom:10px;">${escapeHtml(offer.description || 'Approved supplier offer')}</div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <span style="background:#e0f2f1; color:#00695c; padding:4px 10px; border-radius:999px; font-size:0.78rem;">🏢 ${escapeHtml(offer.supplier_name || 'Approved Supplier')}</span>
+            <span style="background:#e3f2fd; color:#0d47a1; padding:4px 10px; border-radius:999px; font-size:0.78rem;">📁 ${escapeHtml(offer.normalized_category || offer.category || 'general')}</span>
+            <span style="background:#f3e5f5; color:#6a1b9a; padding:4px 10px; border-radius:999px; font-size:0.78rem;">💳 ${(offer.wallet_compatible || []).map(w => escapeHtml(w)).join(', ') || 'health'}</span>
+          </div>
+          ${offer.delivery_config?.mode ? `<div style="font-size:0.82rem; color:#607d8b; margin-bottom:10px;">🚚 ${escapeHtml(String(offer.delivery_config.mode).replace(/_/g, ' '))}${Number.isFinite(Number(offer.delivery_config.eta_days)) ? ` • ${Number(offer.delivery_config.eta_days)} day(s)` : ''}</div>` : ''}
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button onclick="purchaseProduct('${offer.id}', '${escapeHtml(offer.name).replace(/'/g, "\\'")}', ${Number(offer.price || 0)}, '${escapeHtml(offer.normalized_category || offer.category || 'general').replace(/'/g, "\\'")}', marketplaceOfferIndex['${offer.id}'])" style="background:linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color:white; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:700;">⚡ Buy with Wallet</button>
+            <button onclick="showMedicalCategory('${escapeHtml(offer.normalized_category || offer.category || 'pharmacy').replace(/'/g, "\\'")}')" style="background:#f5f5f5; color:#37474f; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600;">🛒 Open Category</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function runHealthWalletAISearch() {
+      const query = (document.getElementById('health-ai-search-query')?.value || '').trim();
+      const itemType = (document.getElementById('health-ai-search-item-type')?.value || '').trim();
+      const supplierType = (document.getElementById('health-ai-search-supplier-type')?.value || '').trim();
+      const recommendationEl = document.getElementById('health-ai-search-recommendation');
+      const resultsEl = document.getElementById('health-ai-search-results');
+      if (!recommendationEl || !resultsEl) return;
+
+      recommendationEl.innerHTML = '🔄 Searching approved supplier offers through the health wallet marketplace...';
+      resultsEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#607d8b; padding: 32px 0;">Loading approved supplier offers...</div>';
+
+      try {
+        const params = new URLSearchParams();
+        params.set('wallet', 'health');
+        if (query) params.set('search', query);
+        if (itemType) params.set('type', itemType);
+        if (supplierType) params.set('supplier_type', supplierType);
+
+        const response = await fetch(`/api/marketplace/offerings?${params.toString()}`);
+        const data = await response.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        const queryTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
+        const scored = items.map(item => ({
+          ...item,
+          aiScore: scoreHealthWalletOffer(item, queryTerms)
+        })).sort((a, b) => (b.aiScore - a.aiScore) || (Number(b.supplier_rating || 0) - Number(a.supplier_rating || 0)) || (Number(a.price || 0) - Number(b.price || 0)));
+
+        healthWalletAISearchResults = scored;
+        const top = scored[0];
+        const recommendation = top
+          ? `✨ <strong>AI Recommendation:</strong> Start with <strong>${escapeHtml(top.name)}</strong> from <strong>${escapeHtml(top.supplier_name || 'approved supplier')}</strong> because it best matches ${query ? `“${escapeHtml(query)}”` : 'your current filters'}, is wallet-compatible, and stays inside the PHINS purchase + ledger pipeline.`
+          : '⚠️ <strong>AI Recommendation:</strong> No matching supplier offers were found right now. Try broader search terms or remove a filter.';
+
+        renderHealthWalletAISearchResults(scored, query, recommendation);
+      } catch (err) {
+        console.error('AI search failed:', err);
+        recommendationEl.innerHTML = '⚠️ <strong>AI Recommendation:</strong> Marketplace search is temporarily unavailable.';
+        resultsEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#c62828; padding: 32px 0;">Unable to search approved supplier offers right now.</div>';
+      }
     }
     
     function addToCart(productId, productName, price, category = 'general', supplierId = null) {

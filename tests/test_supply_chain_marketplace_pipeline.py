@@ -1566,3 +1566,149 @@ def test_admin_marketplace_integrity_report_lists_supplier_offer_purchase_and_vi
     finally:
         srv.stop()
 
+
+def test_dashboard_health_wallet_ai_search_flow_uses_supplier_offers_and_preserves_ledgers():
+    _reset_supply_chain_state()
+
+    port = 8168
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "clinic",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "dashboard ai search wallet flow",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        invitation_code = (invitation.get("invitation") or {}).get("code")
+        assert invitation_code
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": invitation_code,
+                "company_name": "Searchable Care Clinic",
+                "contact_email": "search-clinic@example.com",
+                "contact_name": "Search Clinic Contact",
+                "supplier_type": "clinic",
+                "password": "SearchClinic123!",
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for dashboard ai search flow"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "search-clinic@example.com", "password": "SearchClinic123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "AI Search Physiotherapy Session",
+                "description": "Therapy service searchable from dashboard AI wallet tools",
+                "item_type": "service",
+                "category": "consultation",
+                "price": 95.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        customer_id = "CUST-AI-SEARCH-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "AI Search Customer",
+                "email": "ai-search-customer@example.com",
+            }
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 200.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        offerings, status = _get(
+            f"{base}/api/marketplace/offerings?search=physiotherapy&wallet=health&type=service",
+            token=admin_token,
+        )
+        assert status == 200
+        assert offerings.get("success") is True
+        matching_offer = next(item for item in offerings.get("items", []) if item.get("id") == offer_id)
+        assert matching_offer.get("supplier_id") == supplier_id
+        assert matching_offer.get("supplier_name") == "Searchable Care Clinic"
+        assert "health" in [str(w).lower() for w in (matching_offer.get("wallet_compatible") or [])]
+
+        purchase_result, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": customer_id,
+                "offer_id": offer_id,
+                "product_id": offer_id,
+                "product_name": "AI Search Physiotherapy Session",
+                "amount": 95.0,
+                "quantity": 1,
+                "payment_method": "health_wallet",
+                "category": "consultation",
+                "provider": "Searchable Care Clinic",
+                "allow_credit_fallback": False,
+            },
+            token=admin_token,
+        )
+        assert status == 200
+        assert purchase_result.get("success") is True
+        order = purchase_result.get("order", {})
+        purchase = purchase_result.get("purchase", {})
+        assert order.get("offer_id") == offer_id
+        assert order.get("supplier_id") == supplier_id
+        assert purchase.get("supplier_name") == "Searchable Care Clinic"
+        assert purchase.get("provider_name") == "Searchable Care Clinic"
+        assert purchase.get("ledger_tx_id")
+        assert purchase.get("nft_token_id")
+
+        purchase_history, status = _get(
+            f"{base}/api/health-wallet/purchases?customer_id={customer_id}",
+            token=admin_token,
+        )
+        assert status == 200
+        history_row = next(item for item in purchase_history.get("purchases", []) if item.get("order_id") == order.get("id"))
+        assert history_row.get("supplier_id") == supplier_id
+        assert history_row.get("ledger_tx_id")
+        assert history_row.get("nft_token_id")
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+

@@ -142,6 +142,28 @@ def test_supplier_portal_settlements_page_contains_live_pnl_hooks():
     srv.stop()
 
 
+def test_dashboard_health_wallet_contains_ai_search_supplier_offer_hooks():
+    """Smoke test the customer dashboard health wallet AI search hooks."""
+    port = 8098
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    req = Request(base + "/dashboard.html")
+    with urlopen(req) as resp:
+        body = resp.read().decode("utf-8")
+        assert "🤖 AI Search Offers" in body
+        assert 'id="health-wallet-ai-search"' in body
+        assert 'id="health-ai-search-query"' in body
+        assert 'id="health-ai-search-results"' in body
+        assert "openHealthWalletAISearch" in body
+        assert "runHealthWalletAISearch" in body
+        assert "runHealthWalletAISearch" in body
+
+    srv.stop()
+
+
 def test_404_error_handling():
     """Test 404 errors are handled properly"""
     port = 8084
