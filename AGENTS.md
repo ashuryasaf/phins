@@ -2,31 +2,38 @@
 
 Use this file as concise, repo-specific guidance for PHINS contributions.
 Keep changes narrow, follow existing patterns, and let direct user instructions
-take priority over this document.
+override this document.
 
 ## 1) Quick Mental Model
 
-PHINS is a Python insurance platform with:
+PHINS is a Python platform built around:
 
-- a lightweight HTTP portal in `web_portal/server.py`
-- service-layer business logic in `services/`
-- optional SQLite/PostgreSQL persistence in `database/`
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py`
+- optional extension routing in `web_portal/api_extensions.py`
+- service-layer logic in `services/`
+- database access in `database/`
 - both `tests/test_*.py` and root-level `test_*.py` suites
 
-Default behavior often uses in-memory data structures. Preserve backward
-compatibility for in-memory/demo flows unless the task explicitly requires
-different behavior.
+Runtime defaults are important:
+
+- `web_portal/server.py` defaults to `USE_DATABASE=true`
+- pytest config in `conftest.py` sets `USE_DATABASE=false`,
+  `USE_SQLITE=true`, `PHINS_TEST_MODE=true`, and starts an embedded server on
+  `127.0.0.1:8000`
+- many features still have in-memory/demo behavior, so preserve compatibility
+  with both database-backed and in-memory flows unless the task explicitly says
+  otherwise
 
 Preferred file-by-task:
 
 | Task | Start here |
 |---|---|
-| API route/response change | `web_portal/server.py`, `web_portal/api_extensions.py` |
-| Business rule/workflow | `services/`, then route/engine caller |
-| Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/` |
+| API route/response change | `web_portal/server.py`, then `web_portal/api_extensions.py` |
+| Business rule/workflow | `services/`, then the route or engine that calls it |
+| Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
 | Test harness/debugging | `conftest.py`, affected `tests/test_*.py`, root `test_*.py` |
-| Deployment/config | `DEPLOYMENT.md`, `railway.json`, `render.yaml`, `vercel.json`, `Dockerfile` |
+| Deployment/config | `DEPLOYMENT.md`, `RAILWAY_*.md`, `railway.json`, `render.yaml`, `Dockerfile` |
 
 ## 2) High-Value Paths
 
@@ -35,16 +42,16 @@ Preferred file-by-task:
 |- AGENTS.md
 |- README.md
 |- DEPLOYMENT.md
-|- SECURITY.md
 |- conftest.py
-|- phins_system.py
 |- billing_engine.py
 |- accounting_engine.py
 |- validate_system.py
+|- check_database_connection.py
 |- web_portal/server.py
 |- web_portal/api_extensions.py
 |- web_portal/static/
 |- services/
+|- database/config.py
 |- database/manager.py
 |- database/models.py
 |- database/repositories/
@@ -53,8 +60,8 @@ Preferred file-by-task:
 ```
 
 Start with adjacent code before adding helpers, modules, or abstractions.
-`web_portal/server.py` is large and multi-purpose; many patterns are implemented
-in place rather than behind clean controller boundaries.
+`web_portal/server.py` is large and multi-purpose; many patterns are still
+implemented inline rather than behind controller-style boundaries.
 
 ## 3) Hard Rules
 
@@ -86,6 +93,8 @@ Database patterns:
 - Prefer `DatabaseManager.session_scope()` for grouped transactional work.
 - Repository writes may auto-commit; read surrounding code before composing
   multiple repository operations.
+- `database/config.py` resolves `DATABASE_URL` first, then SQLite settings such
+  as `USE_SQLITE` and `SQLITE_PATH`.
 
 Common ID prefixes:
 
@@ -101,18 +110,21 @@ When changing or adding an API endpoint:
 
 1. Inspect the surrounding route in `web_portal/server.py` first.
 2. Check whether the endpoint belongs in `server.py` or `web_portal/api_extensions.py`.
-3. Reuse service-layer logic from `services/` instead of embedding new business
+3. Verify the extension is actually wired; `server.py` imports extension
+   dispatchers conditionally and can run without them.
+4. Reuse service-layer logic from `services/` instead of embedding new business
    rules directly in the handler.
-4. Validate request payloads and preserve response shape conventions.
-5. Confirm whether related dashboard, billing, underwriting, or ledger behavior
+5. Validate request payloads and preserve response shape conventions.
+6. Confirm whether related dashboard, billing, underwriting, or ledger behavior
    depends on the same data.
-6. Add success and failure-path tests.
+7. Add success and failure-path tests.
 
 Watch-outs:
 
 - This is **not** Flask or FastAPI; it uses `BaseHTTPRequestHandler`.
-- Do not assume auxiliary API modules are wired; verify route registration first.
-- Changes to handler setup or port assumptions can break many tests.
+- Changes to handler initialization, port assumptions, or shared module state can
+  break many tests.
+- Some routes have parallel in-memory and database-backed logic paths.
 
 ## 6) Database Task Playbook
 
@@ -123,16 +135,16 @@ When changing persistence or schema behavior:
 2. Update related models, repositories, and dict-compatibility code together if
    the schema affects both DB and in-memory flows.
 3. Review seeds, initialization, and migration helpers when schema changes.
-4. Preserve compatibility with the default in-memory fallback unless the task
-   explicitly removes it.
+4. Preserve compatibility with the in-memory fallback unless the task explicitly
+   removes it.
 5. Run database-focused tests plus at least one broader workflow check.
 
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `database/manager.py` exposes repositories including customers, policies,
-  claims, underwriting, billing, users, sessions, audit, platform ledger,
-  actuarial, and tokens.
+- `DatabaseManager` exposes repositories for customers, policies, claims,
+  underwriting, billing, users, sessions, audit, platform ledger, actuarial,
+  and tokens.
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -140,11 +152,10 @@ Key facts:
 
 When working on deployment or environment configuration:
 
-1. Read `DEPLOYMENT.md` and any relevant `RAILWAY_*.md` files first.
+1. Read `DEPLOYMENT.md` and any relevant `RAILWAY_*.md` file first.
 2. Verify the actual deployment files before editing assumptions:
    - `railway.json`
    - `render.yaml`
-   - `vercel.json`
    - `Dockerfile`
 3. Confirm how the app starts in production before changing commands or ports.
 4. Keep startup behavior compatible with `python3 web_portal/server.py` unless
@@ -160,6 +171,12 @@ Environment variables commonly used:
 - `ENABLE_LEDGER_PERSISTENCE`
 - `PORT`
 - `PHINS_TEST_MODE`
+
+Operational notes:
+
+- `web_portal/server.py` defaults `PORT` to `8000`
+- when `PORT` is provided, `HOST` is set to `0.0.0.0`; otherwise local runs use
+  `127.0.0.1`
 
 ## 8) Testing Playbook
 
@@ -186,21 +203,21 @@ Important test harness facts from `conftest.py`:
 - `USE_DATABASE=false`
 - `USE_SQLITE=true`
 - `PHINS_TEST_MODE=true`
-- tests reset in-memory portal dictionaries between cases
+- tests reset in-memory portal state between cases
+
+Docs-only changes usually do not need tests, but they do require verifying that
+referenced files, commands, paths, and ports still exist.
 
 ## 9) Common Pitfalls
 
 - Fixing only the database path can leave in-memory HTTP flows inconsistent; if
   a feature exists in both modes, check both code paths before finishing.
-- Repository or schema changes can require matching updates in
-  `database/data_access.py`, seeds, or migration helpers.
-- Handler initialization, port assumptions, or shared module state can break many
-  tests because pytest starts a real embedded `PortalHandler` server.
+- Repository or schema changes can require matching updates in seeds,
+  initialization, or migration helpers.
 - Route changes may need updates in both `web_portal/server.py` and
   `web_portal/api_extensions.py`; verify actual wiring rather than assuming.
-
-Docs-only changes usually do not need tests, but they do require verifying that
-referenced files, commands, paths, and ports still exist.
+- Handler initialization, port assumptions, or shared module state can break many
+  tests because pytest starts a real embedded `PortalHandler` server.
 
 ## 10) Security and Reliability
 
@@ -233,4 +250,4 @@ If you update this file again:
 
 ---
 
-Last updated: March 25, 2026
+Last updated: March 26, 2026
