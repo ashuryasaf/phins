@@ -8657,15 +8657,37 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
             
-            if not supplier_service_enabled:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
-                return
-            
             try:
-                result = supplier_service.get_orders()
+                status_filter = (qs.get('status', [None])[0] or '').strip().lower() or None
+                page = max(1, safe_int(qs.get('page', ['1'])[0], 1))
+                page_size = max(1, min(500, safe_int(
+                    qs.get('page_size', [qs.get('limit', ['100'])[0]])[0],
+                    100,
+                )))
+
+                if supply_chain_enabled and supply_chain_service:
+                    items = list_normalized_supply_chain_orders(status_filter=status_filter)
+                    total = len(items)
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    result = {
+                        'items': items[start:end],
+                        'page': page,
+                        'page_size': page_size,
+                        'total': total,
+                    }
+                elif supplier_service_enabled:
+                    result = supplier_service.get_orders(
+                        status=status_filter,
+                        page=page,
+                        page_size=page_size,
+                    )
+                else:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                    return
                 self._set_json_headers()
-                self.wfile.write(json.dumps(result).encode('utf-8'))
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -8920,6 +8942,49 @@ For claims or questions, please contact:
                     'statistics': stats,
                     'pnl': pnl,
                 }, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier P&L / statistics (read-only GET contract for supplier portal and tests)
+        if path.startswith('/api/supply-chain/suppliers/') and (
+            path.endswith('/pnl') or path.endswith('/statistics')
+        ):
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                supplier_id = path.split('/')[4]
+                role = get_effective_role(session)
+                session_supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+
+                if role == 'supplier' and supplier_id != session_supplier_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+
+                if path.endswith('/pnl'):
+                    result = supply_chain_service.generate_supplier_pnl(
+                        supplier_id=supplier_id,
+                        period_start=(qs.get('period_start', [None])[0] or None),
+                        period_end=(qs.get('period_end', [None])[0] or None),
+                    )
+                else:
+                    result = supply_chain_service.get_supplier_statistics(supplier_id)
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -21813,9 +21878,9 @@ For claims or questions, please contact:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
-            if not session:
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
                 return
             
             if not supply_chain_enabled or not supply_chain_service:
@@ -21826,6 +21891,12 @@ For claims or questions, please contact:
             try:
                 supplier_id = path.split('/')[4]
                 data = json.loads(body or '{}')
+                role = get_effective_role(session)
+                session_supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                if role == 'supplier' and supplier_id != session_supplier_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
                 
                 result = supply_chain_service.generate_supplier_pnl(
                     supplier_id=supplier_id,
@@ -21848,9 +21919,9 @@ For claims or questions, please contact:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
-            if not session:
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
                 return
             
             if not supply_chain_enabled or not supply_chain_service:
@@ -21860,6 +21931,12 @@ For claims or questions, please contact:
             
             try:
                 supplier_id = path.split('/')[4]
+                role = get_effective_role(session)
+                session_supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                if role == 'supplier' and supplier_id != session_supplier_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
                 result = supply_chain_service.get_supplier_statistics(supplier_id)
                 
                 self._set_json_headers(200)

@@ -1843,6 +1843,32 @@ class SupplyChainEcosystemService:
     # SUPPLIER P&L AND REPORTS
     # =========================================================================
     
+    def _order_reporting_date(self, order: Dict[str, Any]) -> str:
+        """Resolve the most relevant lifecycle timestamp for reporting windows."""
+        status = str(order.get("status") or "").strip().lower()
+        if status == OrderStatus.COMPLETED.value:
+            return (
+                order.get("completed_date")
+                or order.get("updated_date")
+                or order.get("created_date")
+                or ""
+            )
+        if status == OrderStatus.CANCELLED.value:
+            return (
+                order.get("cancelled_date")
+                or order.get("updated_date")
+                or order.get("created_date")
+                or ""
+            )
+        if status == OrderStatus.REFUNDED.value:
+            return (
+                order.get("updated_date")
+                or order.get("completed_date")
+                or order.get("created_date")
+                or ""
+            )
+        return order.get("updated_date") or order.get("created_date") or ""
+
     def generate_supplier_pnl(self, supplier_id: str, 
                              period_start: str = None,
                              period_end: str = None) -> Dict[str, Any]:
@@ -1857,11 +1883,15 @@ class SupplyChainEcosystemService:
         if not period_start:
             period_start = (now - timedelta(days=30)).isoformat()
         
-        # Get supplier orders in period
-        orders = [o for o in self.orders.values() 
-                  if o.get("supplier_id") == supplier_id
-                  and o.get("created_date", "") >= period_start
-                  and o.get("created_date", "") <= period_end]
+        def in_reporting_period(order: Dict[str, Any]) -> bool:
+            event_date = self._order_reporting_date(order)
+            return period_start <= event_date <= period_end
+        
+        # Use lifecycle event dates so supplier settlements and P&L report on the same activity window.
+        orders = [
+            o for o in self.orders.values()
+            if o.get("supplier_id") == supplier_id and in_reporting_period(o)
+        ]
         
         # Calculate metrics
         completed = [o for o in orders if o.get("status") == OrderStatus.COMPLETED.value]
@@ -1871,7 +1901,17 @@ class SupplyChainEcosystemService:
         gross_sales = sum(o.get("total_amount", 0) for o in completed)
         refunds = sum(o.get("total_amount", 0) for o in refunded)
         commission = sum(o.get("commission", 0) for o in completed)
-        processing_fees = gross_sales * 0.025  # 2.5% payment processing
+        processing_fees = sum(float(o.get("payment_processing_fee", 0) or 0) for o in completed)
+        net_payout = (
+            sum(float(o.get("supplier_payout", 0) or 0) for o in completed)
+            - sum(float(o.get("supplier_payout", 0) or 0) for o in refunded)
+        )
+        pending_settlement = sum(float(p.get("amount", 0) or 0) for p in self.pending_settlements.get(supplier_id, []))
+        settled_amount = sum(
+            float(record.get("amount", 0) or 0)
+            for record in self.settlement_history
+            if record.get("supplier_id") == supplier_id
+        )
         
         report = SupplierPnLReport(
             supplier_id=supplier_id,
@@ -1881,6 +1921,9 @@ class SupplyChainEcosystemService:
             refunds=refunds,
             platform_commission=commission,
             payment_processing_fees=processing_fees,
+            net_payout=net_payout,
+            pending_settlement=pending_settlement,
+            settled_amount=settled_amount,
             total_orders=len(orders),
             completed_orders=len(completed),
             cancelled_orders=len(cancelled),
@@ -1889,6 +1932,10 @@ class SupplyChainEcosystemService:
             dispute_rate_pct=(supplier.get("dispute_count", 0) / max(1, len(completed))) * 100
         )
         report.calculate_totals()
+        report.payment_processing_fees = round(report.payment_processing_fees, 2)
+        report.pending_settlement = round(report.pending_settlement, 2)
+        report.settled_amount = round(report.settled_amount, 2)
+        report.net_payout = round(net_payout, 2)
         
         if len(completed) > 0:
             report.commission_rate_avg = commission / gross_sales * 100 if gross_sales > 0 else 0
@@ -1922,7 +1969,7 @@ class SupplyChainEcosystemService:
         
         # Time-based analysis (last 30 days)
         thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        recent_orders = [o for o in all_orders if o.get("created_date", "") >= thirty_days_ago]
+        recent_orders = [o for o in all_orders if self._order_reporting_date(o) >= thirty_days_ago]
         
         # Order status breakdown
         status_breakdown = {}
@@ -1934,7 +1981,7 @@ class SupplyChainEcosystemService:
         revenue_by_month = {}
         for order in all_orders:
             if order.get("status") == OrderStatus.COMPLETED.value:
-                month = order.get("created_date", "")[:7]
+                month = self._order_reporting_date(order)[:7]
                 revenue_by_month[month] = revenue_by_month.get(month, 0) + order.get("supplier_payout", 0)
         
         return {

@@ -530,15 +530,43 @@ def test_marketplace_order_parity_across_customer_admin_and_settlement_views():
         assert stats.get("company_name") == "Parity Pharmacy"
         assert stats.get("pending_settlement", 0) > 0
 
-        pnl, status = _post(
+        pnl, status = _get(
             f"{base}/api/supply-chain/suppliers/{supplier_id}/pnl",
-            {},
             token=supplier_token,
         )
         assert status == 200
         assert pnl.get("success") is True
         assert pnl.get("supplier_name") == "Parity Pharmacy"
-        assert pnl.get("report", {}).get("pending_settlement", 0) > 0
+        assert pnl.get("report", {}).get("gross_sales", 0) == admin_order.get("total_amount", 0)
+        assert pnl.get("report", {}).get("net_payout", 0) == admin_order.get("supplier_payout", 0)
+        assert pnl.get("report", {}).get("pending_settlement", 0) == settlements.get("pending_amount", 0)
+
+        performance, status = _get(f"{base}/api/supplier/performance", token=supplier_token)
+        assert status == 200
+        assert performance.get("success") is True
+        assert performance.get("pnl", {}).get("report", {}).get("pending_settlement", 0) == settlements.get("pending_amount", 0)
+
+        settlement_run, status = _post(
+            f"{base}/api/supply-chain/settlements/{supplier_id}/process",
+            {},
+            token=admin_token,
+        )
+        assert status == 200
+        assert settlement_run.get("success") is True
+        assert settlement_run.get("amount", 0) == admin_order.get("supplier_payout", 0)
+
+        settlements_after, status = _get(f"{base}/api/supply-chain/settlements", token=supplier_token)
+        assert status == 200
+        assert settlements_after.get("pending_orders") == 0
+        assert settlements_after.get("pending_amount", 0) == 0
+
+        pnl_after, status = _get(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/pnl",
+            token=supplier_token,
+        )
+        assert status == 200
+        assert pnl_after.get("report", {}).get("pending_settlement", 0) == 0
+        assert pnl_after.get("report", {}).get("settled_amount", 0) == settlement_run.get("amount", 0)
 
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")
