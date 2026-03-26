@@ -757,9 +757,10 @@
 
     async function loadSettlementData() {
       try {
+        const supplierId = currentSupplier?.supplier_id || currentSupplier?.username || '';
         const [settlementData, profileData] = await Promise.all([
           apiGet('/api/supply-chain/settlements'),
-          apiGet(`/api/supply-chain/suppliers/${encodeURIComponent(currentSupplier?.supplier_id || currentSupplier?.username || '')}/pnl`)
+          apiGet(`/api/supplier/performance${supplierId ? `?supplier_id=${encodeURIComponent(supplierId)}` : ''}`)
         ]);
 
         document.getElementById('settlement-pending-amount').textContent = formatCurrency(settlementData.pending_amount || 0);
@@ -779,7 +780,7 @@
           `).join('');
         }
 
-        const report = (profileData && profileData.report) || {};
+        const report = (profileData && profileData.pnl && profileData.pnl.report) || {};
         document.getElementById('settlement-gross-sales').textContent = formatCurrency(report.gross_sales || 0);
         document.getElementById('settlement-net-payout').textContent = formatCurrency(report.net_payout || 0);
         document.getElementById('settlement-pnl-grid').innerHTML = `
@@ -1084,7 +1085,7 @@
           status: 'cancelled',
           notes: 'Cancelled by supplier portal'
         });
-        await Promise.all([refreshOrders(), loadSettlementOverview(), loadSupplierPerformance()]);
+        await Promise.all([refreshOrders(), loadSettlementData()]);
       } catch (e) {
         alert('Failed to cancel order: ' + e.message);
       }

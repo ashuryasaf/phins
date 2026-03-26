@@ -51,6 +51,7 @@ def _reset_supply_chain_state():
     with portal.STATE_LOCK:
         portal.SUPPLIERS.clear()
         portal.SUPPLIER_OFFERS.clear()
+        portal.SUPPLIER_ORDERS.clear()
         portal.SUPPLIER_INVITATIONS.clear()
         portal.SUPPLY_CHAIN_LEDGER.clear()
         portal.HEALTH_WALLETS.clear()
@@ -58,7 +59,9 @@ def _reset_supply_chain_state():
         portal.TRANSACTION_LEDGER.clear()
         portal.NFT_LEDGER.clear()
     if getattr(portal, "supply_chain_service", None):
+        portal.supply_chain_service.orders.clear()
         portal.supply_chain_service.pending_settlements.clear()
+        portal.supply_chain_service.settlement_history.clear()
         portal.supply_chain_service.ledger_chain.clear()
 
 
@@ -530,15 +533,43 @@ def test_marketplace_order_parity_across_customer_admin_and_settlement_views():
         assert stats.get("company_name") == "Parity Pharmacy"
         assert stats.get("pending_settlement", 0) > 0
 
-        pnl, status = _post(
+        pnl, status = _get(
             f"{base}/api/supply-chain/suppliers/{supplier_id}/pnl",
-            {},
             token=supplier_token,
         )
         assert status == 200
         assert pnl.get("success") is True
         assert pnl.get("supplier_name") == "Parity Pharmacy"
-        assert pnl.get("report", {}).get("pending_settlement", 0) > 0
+        assert pnl.get("report", {}).get("gross_sales", 0) == admin_order.get("total_amount", 0)
+        assert pnl.get("report", {}).get("net_payout", 0) == admin_order.get("supplier_payout", 0)
+        assert pnl.get("report", {}).get("pending_settlement", 0) == settlements.get("pending_amount", 0)
+
+        performance, status = _get(f"{base}/api/supplier/performance", token=supplier_token)
+        assert status == 200
+        assert performance.get("success") is True
+        assert performance.get("pnl", {}).get("report", {}).get("pending_settlement", 0) == settlements.get("pending_amount", 0)
+
+        settlement_run, status = _post(
+            f"{base}/api/supply-chain/settlements/{supplier_id}/process",
+            {},
+            token=admin_token,
+        )
+        assert status == 200
+        assert settlement_run.get("success") is True
+        assert settlement_run.get("amount", 0) == admin_order.get("supplier_payout", 0)
+
+        settlements_after, status = _get(f"{base}/api/supply-chain/settlements", token=supplier_token)
+        assert status == 200
+        assert settlements_after.get("pending_orders") == 0
+        assert settlements_after.get("pending_amount", 0) == 0
+
+        pnl_after, status = _get(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/pnl",
+            token=supplier_token,
+        )
+        assert status == 200
+        assert pnl_after.get("report", {}).get("pending_settlement", 0) == 0
+        assert pnl_after.get("report", {}).get("settled_amount", 0) == settlement_run.get("amount", 0)
 
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")
@@ -690,6 +721,205 @@ def test_marketplace_cancel_and_refund_endpoints_update_customer_and_admin_views
         assert len(admin_items) == 1
         assert admin_items[0].get("status") == "refunded"
         assert admin_items[0].get("customer_name") == "Refund Customer"
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+
+
+def test_location_aware_delivery_options_and_validation_flow():
+    _reset_supply_chain_state()
+
+    port = 8165
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "clinic",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "delivery validation flow",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        invitation_code = (invitation.get("invitation") or {}).get("code")
+        assert invitation_code
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": invitation_code,
+                "company_name": "Geo Care Clinic",
+                "contact_email": "geo-care@example.com",
+                "contact_name": "Geo Care",
+                "supplier_type": "clinic",
+                "password": "GeoCare123!",
+                "address": "1 Supplier Way",
+                "city": "Tel Aviv",
+                "country": "Israel",
+                "latitude": 32.0853,
+                "longitude": 34.7818,
+                "service_radius_km": 25,
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for delivery validation test"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "geo-care@example.com", "password": "GeoCare123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "At-Home Nurse Visit",
+                "description": "Location-aware care visit",
+                "item_type": "service",
+                "category": "home_care",
+                "price": 120.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+                "delivery_config": {
+                    "mode": "on_site",
+                    "eta_days": 0,
+                    "fee": 10.0,
+                    "service_radius_km": 30,
+                },
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": "CUST-GEO-001", "amount": 500.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        options, status = _post(
+            f"{base}/api/supply-chain/orders/delivery-options",
+            {
+                "supplier_id": supplier_id,
+                "offer_id": offer_id,
+                "quantity": 1,
+                "delivery_location": {
+                    "latitude": 32.0900,
+                    "longitude": 34.7900,
+                    "address": "99 Patient Street",
+                    "city": "Tel Aviv",
+                    "country": "Israel",
+                },
+            },
+            token=admin_token,
+        )
+        assert status == 200
+        plan = options.get("delivery_plan", {})
+        assert plan.get("distance_km", 999) < 25
+        assert plan.get("recommended_method", {}).get("method") == "on_site_visit"
+        assert any(method.get("method") == "telehealth_video" for method in plan.get("possible_methods", []))
+
+        order_result, status = _post(
+            f"{base}/api/supply-chain/orders",
+            {
+                "customer_id": "CUST-GEO-001",
+                "supplier_id": supplier_id,
+                "offer_id": offer_id,
+                "quantity": 1,
+                "payment_method": "health_wallet",
+                "delivery_location": {
+                    "latitude": 32.0900,
+                    "longitude": 34.7900,
+                    "address": "99 Patient Street",
+                    "city": "Tel Aviv",
+                    "country": "Israel",
+                },
+                "delivery_address": {
+                    "latitude": 32.0900,
+                    "longitude": 34.7900,
+                    "address": "99 Patient Street",
+                    "city": "Tel Aviv",
+                    "country": "Israel",
+                },
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        order = order_result.get("order", {})
+        order_id = order.get("id")
+        assert order_id
+        assert order.get("delivery_plan", {}).get("recommended_method", {}).get("method") == "on_site_visit"
+        validation_code = order.get("delivery_validation_code")
+        assert validation_code
+
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "confirmed"},
+            token=supplier_token,
+        )
+        assert status == 200
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "processing"},
+            token=supplier_token,
+        )
+        assert status == 200
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "delivered"},
+            token=supplier_token,
+        )
+        assert status == 200
+
+        validation, status = _post(
+            f"{base}/api/supply-chain/orders/{order_id}/delivery-validation",
+            {
+                "delivery_method": "on_site_visit",
+                "validation_code": validation_code,
+                "proof_type": "geo_checkin",
+                "proof_url": "https://example.com/proof/geo-checkin",
+                "delivery_location": {
+                    "latitude": 32.0900,
+                    "longitude": 34.7900,
+                    "address": "99 Patient Street",
+                    "city": "Tel Aviv",
+                    "country": "Israel",
+                },
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        assert validation.get("success") is True
+        assert validation.get("order", {}).get("status") == "completed"
+        assert validation.get("validation", {}).get("validated") is True
+        assert validation.get("validation", {}).get("method") == "geo_checkin"
 
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")

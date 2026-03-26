@@ -1319,7 +1319,7 @@
         <div class="stat-box" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
           <div class="stat-icon">⏳</div>
           <div class="stat-value" id="mp-pending">0</div>
-          <div class="stat-label">Pending Approvals</div>
+          <div class="stat-label">Open Orders</div>
         </div>
         <div class="stat-box" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);">
           <div class="stat-icon">🔗</div>
@@ -1363,38 +1363,12 @@
       <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
         <div class="card" style="background: white;">
           <h3>🩺 Top Service Categories</h3>
-          <div id="top-services">
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
-              <span>Medical Consultations</span>
-              <span style="font-weight: bold;">$0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
-              <span>Home Care</span>
-              <span style="font-weight: bold;">$0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-              <span>Physical Therapy</span>
-              <span style="font-weight: bold;">$0</span>
-            </div>
-          </div>
+          <div id="top-services"><div class="muted-text">Loading live marketplace categories...</div></div>
         </div>
         
         <div class="card" style="background: white;">
           <h3>📦 Top Product Categories</h3>
-          <div id="top-products">
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
-              <span>Medications</span>
-              <span style="font-weight: bold;">$0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
-              <span>Prosthetics</span>
-              <span style="font-weight: bold;">$0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-              <span>Mobility Devices</span>
-              <span style="font-weight: bold;">$0</span>
-            </div>
-          </div>
+          <div id="top-products"><div class="muted-text">Loading live marketplace categories...</div></div>
         </div>
         
         <div class="card" style="background: white;">
@@ -5392,8 +5366,90 @@
     
     // ========== MARKETPLACE FUNCTIONS ==========
     
+    let marketplaceTransactionsCache = [];
+
+    function formatMarketplaceText(value, fallback = 'N/A') {
+      const text = String(value == null ? '' : value).trim();
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;') || fallback;
+    }
+
+    function getMarketplaceCategory(txn) {
+      return txn.category || txn.offer_category || txn.item_category || 'Uncategorized';
+    }
+
+    function renderMarketplaceCategorySummary(containerId, transactions, itemType) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      const totals = new Map();
+      (transactions || []).forEach(txn => {
+        const txnType = String(txn.item_type || txn.order_type || '').toLowerCase();
+        if (txnType !== itemType) return;
+        const key = getMarketplaceCategory(txn);
+        totals.set(key, (totals.get(key) || 0) + Number(txn.total_amount || 0));
+      });
+
+      const rows = Array.from(totals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+      if (!rows.length) {
+        container.innerHTML = '<div class="muted-text">No live category transactions yet.</div>';
+        return;
+      }
+
+      container.innerHTML = rows.map(([label, amount], index) => `
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; ${index < rows.length - 1 ? 'border-bottom: 1px solid #eee;' : ''}">
+          <span>${formatMarketplaceText(label, 'Uncategorized')}</span>
+          <span style="font-weight: bold;">${formatCurrency(amount, 2)}</span>
+        </div>
+      `).join('');
+    }
+
+    function updateMarketplaceDerivedCards(transactions) {
+      renderMarketplaceCategorySummary('top-services', transactions, 'service');
+      renderMarketplaceCategorySummary('top-products', transactions, 'product');
+    }
+
+    async function fetchMarketplaceTransactions(pageSize = 500) {
+      const items = [];
+      let page = 1;
+      let total = Infinity;
+
+      while (items.length < total) {
+        const response = await fetch(
+          `/api/admin/suppliers/orders?page=${encodeURIComponent(page)}&page_size=${encodeURIComponent(pageSize)}`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        const pageItems = data.items || data.transactions || [];
+        total = Number(data.total || pageItems.length || 0);
+        items.push(...pageItems);
+        if (!pageItems.length || pageItems.length < pageSize) break;
+        page += 1;
+      }
+
+      return items;
+    }
+
     // Load marketplace data
     async function loadMarketplaceData() {
+      try {
+        marketplaceTransactionsCache = await fetchMarketplaceTransactions();
+        updateMarketplaceDerivedCards(marketplaceTransactionsCache);
+      } catch (err) {
+        console.error('Failed to load marketplace transactions:', err);
+        marketplaceTransactionsCache = [];
+        updateMarketplaceDerivedCards([]);
+      }
       await loadMarketplaceStats();
       await loadMarketplaceTable('all');
     }
@@ -5401,23 +5457,24 @@
     // Load marketplace statistics
     async function loadMarketplaceStats() {
       try {
-        const response = await fetch('/api/marketplace/stats', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          const stats = data.stats || {};
-          
-          document.getElementById('mp-total-volume').textContent = `$${(stats.total_volume || 0).toLocaleString()}`;
-          document.getElementById('mp-insurance-covered').textContent = `$${(stats.insurance_covered_total || 0).toLocaleString()}`;
-          document.getElementById('mp-pending').textContent = stats.pending_approvals || 0;
-          document.getElementById('mp-nfts').textContent = stats.total_nfts_issued || 0;
+        if (!marketplaceTransactionsCache.length) {
+          marketplaceTransactionsCache = await fetchMarketplaceTransactions();
         }
+
+        const totalVolume = marketplaceTransactionsCache.reduce((sum, txn) => sum + Number(txn.total_amount || 0), 0);
+        const insuranceCovered = marketplaceTransactionsCache.reduce(
+          (sum, txn) => sum + Number(txn.insurance_covered || txn.payer_responsibility_amount || 0),
+          0
+        );
+        const openOrders = marketplaceTransactionsCache.filter(txn =>
+          ['pending', 'confirmed', 'processing', 'in_transit', 'delivered'].includes(String(txn.status || '').toLowerCase())
+        ).length;
+        const nftIssued = marketplaceTransactionsCache.filter(txn => String(txn.nft_token_id || '').trim()).length;
+
+        document.getElementById('mp-total-volume').textContent = formatCurrency(totalVolume, 2);
+        document.getElementById('mp-insurance-covered').textContent = formatCurrency(insuranceCovered, 2);
+        document.getElementById('mp-pending').textContent = openOrders;
+        document.getElementById('mp-nfts').textContent = nftIssued;
       } catch (err) {
         console.error('Failed to load marketplace stats:', err);
       }
@@ -5431,40 +5488,21 @@
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">Loading...</td></tr>';
       
       try {
-        let endpoint = '/api/admin/suppliers/orders';
-        let body = { limit: 20 };
-        
-        if (filter === 'pending') {
-          endpoint = '/api/marketplace/admin/pending-approvals';
-          body = {};
+        if (!marketplaceTransactionsCache.length) {
+          marketplaceTransactionsCache = await fetchMarketplaceTransactions();
+          updateMarketplaceDerivedCards(marketplaceTransactionsCache);
         }
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(body)
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          
-          if (filter === 'pending') {
-            displayPendingApprovals(data.pending_approvals || []);
-          } else {
-            let transactions = data.items || data.transactions || [];
-            if (filter === 'services') {
-              transactions = transactions.filter(t => (t.item_type || t.order_type) === 'service');
-            } else if (filter === 'products') {
-              transactions = transactions.filter(t => (t.item_type || t.order_type) === 'product');
-            }
-            displayMarketplaceTable(transactions);
-          }
-        } else {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">No data available</td></tr>';
+
+        let transactions = [...marketplaceTransactionsCache];
+        if (filter === 'services') {
+          transactions = transactions.filter(t => String(t.item_type || t.order_type || '').toLowerCase() === 'service');
+        } else if (filter === 'products') {
+          transactions = transactions.filter(t => String(t.item_type || t.order_type || '').toLowerCase() === 'product');
+        } else if (filter === 'pending') {
+          transactions = transactions.filter(t => ['pending', 'confirmed', 'processing', 'in_transit', 'delivered'].includes(String(t.status || '').toLowerCase()));
         }
+
+        displayMarketplaceTable(transactions);
       } catch (err) {
         console.error('Failed to load marketplace table:', err);
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#dc3545;">Error loading data</td></tr>';
@@ -5485,68 +5523,31 @@
         const status = String(txn.status || '').toLowerCase();
         const statusClass = status === 'completed' ? 'badge-active' :
                            status === 'approved' ? 'badge-success' :
-                           status === 'pending' ? 'badge-pending' :
+                           (status === 'pending' || status === 'confirmed' || status === 'processing' || status === 'in_transit' || status === 'delivered') ? 'badge-pending' :
                            status === 'refunded' ? 'badge-warning' : 'badge-danger';
         const typeIcon = (txn.item_type || txn.order_type) === 'service' ? '🩺' : '📦';
         
         return `
           <tr>
-            <td><small>${txn.id || txn.transaction_id || 'N/A'}</small></td>
-            <td>${txn.customer_name || txn.customer_id || 'N/A'}</td>
-            <td>${typeIcon} ${txn.item_type || txn.order_type || 'N/A'}</td>
-            <td>${txn.item_name || 'N/A'}</td>
+            <td><small>${formatMarketplaceText(txn.id || txn.transaction_id || 'N/A')}</small></td>
+            <td>${formatMarketplaceText(txn.customer_name || txn.customer_id || 'N/A')}</td>
+            <td>${typeIcon} ${formatMarketplaceText(txn.item_type || txn.order_type || 'N/A')}</td>
+            <td>${formatMarketplaceText(txn.item_name || 'N/A')}</td>
             <td>$${Number(txn.total_amount || 0).toFixed(2)}</td>
             <td style="color:#28a745;">$${Number(txn.insurance_covered || txn.payer_responsibility_amount || 0).toFixed(2)}</td>
-            <td><small>${txn.nft_token_id || 'N/A'}</small></td>
-            <td><span class="badge ${statusClass}">${txn.status || 'Unknown'}</span></td>
+            <td><small>${formatMarketplaceText(txn.nft_token_id || 'N/A')}</small></td>
+            <td><span class="badge ${statusClass}">${formatMarketplaceText(txn.status || 'Unknown')}</span></td>
             <td>
               <div style="display: flex; gap: 6px;">
-                ${(status === 'pending' || status === 'confirmed' || status === 'processing') ? `
-                  <button class="action-btn approve" title="Resolve Dispute / Return" onclick="rejectMarketplaceTxn('${txn.id || txn.transaction_id}', 'Admin review / dispute resolution')">
+                ${(status === 'pending' || status === 'confirmed' || status === 'processing' || status === 'in_transit' || status === 'delivered') ? `
+                  <button class="action-btn approve" title="Resolve Dispute / Return" onclick="rejectMarketplaceTxn('${formatMarketplaceText(txn.id || txn.transaction_id || '', '')}', 'Admin review / dispute resolution')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
                   </button>
                 ` : `
-                  <button class="action-btn info" title="View NFT" onclick="viewNFT('${txn.nft_token_id}')">
+                  <button class="action-btn info" title="View NFT" onclick="viewNFT('${formatMarketplaceText(txn.nft_token_id || '', '')}')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                   </button>
                 `}
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-    
-    // Display pending approvals
-    function displayPendingApprovals(approvals) {
-      const tbody = document.getElementById('marketplace-table');
-      if (!tbody) return;
-      
-      if (approvals.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#28a745;">✅ No pending approvals</td></tr>';
-        return;
-      }
-      
-      tbody.innerHTML = approvals.map(item => {
-        const txn = item.transaction || {};
-        const nft = item.nft || {};
-        const typeIcon = (txn.item_type || txn.order_type) === 'service' ? '🩺' : '📦';
-        
-        return `
-          <tr style="background:#fff3cd;">
-            <td><small>${txn.id || txn.transaction_id || 'N/A'}</small></td>
-            <td>${txn.customer_name || txn.customer_id || 'N/A'}</td>
-            <td>${typeIcon} ${txn.item_type || txn.order_type || 'N/A'}</td>
-            <td>${txn.item_name || 'N/A'} ${item.requires_prescription ? '⚠️' : ''}</td>
-            <td>$${Number(txn.total_amount || 0).toFixed(2)}</td>
-            <td style="color:#28a745;">$${Number(txn.insurance_covered || txn.payer_responsibility_amount || 0).toFixed(2)}</td>
-            <td><small>${nft.token_id || 'N/A'}</small></td>
-            <td><span class="badge badge-pending">PENDING</span></td>
-            <td>
-              <div style="display: flex; gap: 6px;">
-                <button class="action-btn reject" title="Reject / Dispute" onclick="rejectMarketplaceTxn('${txn.id || txn.transaction_id}', 'Rejected from admin marketplace queue')">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
               </div>
             </td>
           </tr>

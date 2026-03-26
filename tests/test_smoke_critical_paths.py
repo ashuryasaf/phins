@@ -98,6 +98,46 @@ def test_api_returns_json():
     srv.stop()
 
 
+def test_admin_marketplace_page_contains_live_transaction_hooks():
+    """Smoke test the admin marketplace page over HTTP."""
+    port = 8096
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    req = Request(base + "/admin.html")
+    with urlopen(req) as resp:
+        body = resp.read().decode("utf-8")
+        assert "Recent Service & Product Transactions" in body
+        assert 'id="marketplace-table"' in body
+        assert "fetchMarketplaceTransactions" in body
+        assert 'id="top-services"' in body
+        assert 'id="top-products"' in body
+
+    srv.stop()
+
+
+def test_supplier_portal_settlements_page_contains_live_pnl_hooks():
+    """Smoke test the supplier portal page over HTTP."""
+    port = 8097
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    req = Request(base + "/supplier-portal.html")
+    with urlopen(req) as resp:
+        body = resp.read().decode("utf-8")
+        assert "Supplier P&amp;L Snapshot" in body
+        assert 'id="settlement-pnl-grid"' in body
+        assert "loadSettlementData" in body
+        assert "/api/supplier/performance" in body
+        assert "/api/supply-chain/settlements" in body
+
+    srv.stop()
+
+
 def test_404_error_handling():
     """Test 404 errors are handled properly"""
     port = 8084
