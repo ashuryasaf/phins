@@ -927,3 +927,176 @@ def test_location_aware_delivery_options_and_validation_flow():
     finally:
         srv.stop()
 
+
+def test_external_delivery_supplier_connector_flow_and_retry_visibility():
+    _reset_supply_chain_state()
+
+    port = 8166
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "delivery",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "delivery connector flow",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        invitation_code = (invitation.get("invitation") or {}).get("code")
+        assert invitation_code
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": invitation_code,
+                "company_name": "Connector Courier",
+                "contact_email": "connector-courier@example.com",
+                "contact_name": "Connector Ops",
+                "supplier_type": "delivery",
+                "password": "Connector123!",
+                "address": "50 Hub Street",
+                "city": "New York",
+                "country": "USA",
+                "latitude": 40.7128,
+                "longitude": -74.0060,
+                "service_radius_km": 100,
+                "preferred_delivery_provider": "ups",
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for delivery connector flow"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "connector-courier@example.com", "password": "Connector123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Cold-Chain Medication Delivery",
+                "description": "Courier delivery via external carrier connectors",
+                "item_type": "product",
+                "category": "medication",
+                "price": 60.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+                "delivery_config": {
+                    "mode": "delivery",
+                    "eta_days": 1,
+                    "fee": 14.0,
+                    "service_radius_km": 150,
+                },
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": "CUST-CONNECTOR-001", "amount": 200.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        order_result, status = _post(
+            f"{base}/api/supply-chain/orders",
+            {
+                "customer_id": "CUST-CONNECTOR-001",
+                "supplier_id": supplier_id,
+                "offer_id": offer_id,
+                "quantity": 1,
+                "payment_method": "health_wallet",
+                "preferred_delivery_provider": "ups",
+                "delivery_location": {
+                    "latitude": 40.7306,
+                    "longitude": -73.9352,
+                    "address": "12 Patient Ave",
+                    "city": "New York",
+                    "country": "USA",
+                },
+                "delivery_address": {
+                    "latitude": 40.7306,
+                    "longitude": -73.9352,
+                    "address": "12 Patient Ave",
+                    "city": "New York",
+                    "country": "USA",
+                },
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        order_id = (order_result.get("order") or {}).get("id")
+        assert order_id
+
+        try:
+            shipment_result, status = _post(
+                f"{base}/api/supply-chain/orders/{order_id}/shipments",
+                {"preferred_delivery_provider": "ups"},
+                token=supplier_token,
+            )
+        except HTTPError as e:
+            body = e.read().decode("utf-8", errors="ignore")
+            shipment_result = json.loads(body)
+            status = e.code
+        assert status in (200, 400)
+        assert shipment_result.get("provider") == "ups"
+        assert shipment_result.get("retry")
+        assert shipment_result.get("shipment", {}).get("provider") == "ups"
+        if status == 200:
+            assert shipment_result.get("shipment", {}).get("shipment_id")
+
+        sync_status, status = _get(f"{base}/api/supplier/sync-status", token=supplier_token)
+        assert status == 200
+        assert sync_status.get("connector_mode") in {"portal", "ups", "fedex", "wolt"}
+        assert isinstance(sync_status.get("integrity_score"), (int, float, type(None)))
+
+        try:
+            track_result, status = _post(
+                f"{base}/api/supply-chain/orders/{order_id}/shipments/track",
+                {},
+                token=supplier_token,
+            )
+        except HTTPError as e:
+            assert e.code == 400
+            body = e.read().decode("utf-8", errors="ignore")
+            track_result = json.loads(body)
+            status = e.code
+        assert status in (200, 400)
+        if status == 200:
+            assert track_result.get("provider") == "ups"
+            assert track_result.get("tracking", {}).get("shipment_id") == shipment_result.get("shipment", {}).get("shipment_id")
+        else:
+            assert track_result.get("error") == "Order does not have an external delivery shipment"
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+

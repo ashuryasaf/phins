@@ -43,6 +43,7 @@ Version: 2.0 - Supply Chain Architecture
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -50,6 +51,11 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import random
+
+from services.delivery_provider_connectors import (
+    create_delivery_provider_connector,
+    DeliveryProviderConnectorError,
+)
 
 
 # ============================================================================
@@ -382,6 +388,7 @@ class SupplyChainEcosystemService:
         self.settlement_history: List[Dict[str, Any]] = []
         self.connector_retry_queue: List[Dict[str, Any]] = []
         self.connector_audit_log: List[Dict[str, Any]] = []
+        self.delivery_shipments: Dict[str, Dict[str, Any]] = {}
         
         # Ledger chain tracking
         self.ledger_chain: List[str] = []  # List of entry hashes in order
@@ -2207,6 +2214,237 @@ class SupplyChainEcosystemService:
             items = [item for item in items if item.get("supplier_id") == supplier_id]
         items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return items[:max(1, limit)]
+
+    def _resolve_delivery_provider(self, order: Dict[str, Any], payload: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Resolve the external delivery provider name for a shipment request."""
+        payload = payload or {}
+        requested = self._safe_text(payload.get("provider") or payload.get("carrier") or payload.get("connector"))
+        if requested:
+            return requested.lower()
+        supplier = self.suppliers.get(order.get("supplier_id"), {})
+        preferred = self._safe_text(
+            payload.get("preferred_delivery_provider")
+            or order.get("preferred_delivery_provider")
+            or supplier.get("preferred_delivery_provider")
+            or supplier.get("connector_mode")
+        )
+        return preferred.lower() if preferred else None
+
+    def create_delivery_shipment(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Create an external shipment via Wolt/UPS/FedEx style delivery connectors."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        payload = data or {}
+        order = self.orders[order_id]
+        provider_name = self._resolve_delivery_provider(order, payload)
+        if not provider_name:
+            raise ValueError("provider is required")
+
+        shipping_address = (
+            self._coerce_location(payload.get("delivery_location"))
+            or self._coerce_location(payload.get("destination"))
+            or self._coerce_location(order.get("delivery_location"))
+            or self._build_location_from_fields(order.get("delivery_address"))
+        )
+        if not shipping_address:
+            raise ValueError("A delivery location with latitude/longitude is required")
+
+        supplier = self.suppliers.get(order.get("supplier_id"))
+        if not supplier:
+            raise ValueError(f"Supplier {order.get('supplier_id')} not found")
+
+        supplier_location = self._build_location_from_fields(supplier)
+        if not supplier_location:
+            raise ValueError("Supplier location must include latitude and longitude")
+
+        connector = create_delivery_provider_connector(provider_name)
+        shipment_payload = {
+            "order_id": order_id,
+            "item_name": order.get("item_name"),
+            "quantity": order.get("quantity"),
+            "amount": order.get("total_amount"),
+            "customer_id": order.get("customer_id"),
+            "supplier_id": order.get("supplier_id"),
+            "supplier_name": supplier.get("company_name"),
+            "origin": supplier_location,
+            "destination": shipping_address,
+            "delivery_method": payload.get("delivery_method")
+            or ((order.get("delivery_plan") or {}).get("recommended_method") or {}).get("method")
+            or order.get("delivery_mode"),
+        }
+
+        try:
+            shipment_result = connector.create_shipment(shipment_payload)
+        except DeliveryProviderConnectorError as exc:
+            retry = self.queue_connector_retry(
+                supplier_id=order.get("supplier_id"),
+                connector_type=provider_name,
+                reason=str(exc),
+                payload={"order_id": order_id, "provider": provider_name},
+            )
+            supplier["connector_status"] = "degraded"
+            supplier["last_order_sync_at"] = datetime.now(timezone.utc).isoformat()
+            self.connector_audit_log.append({
+                "event_id": f"AUD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}",
+                "supplier_id": order.get("supplier_id"),
+                "connector_type": provider_name,
+                "event_type": "shipment_create_failed",
+                "reason": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "payload": {"order_id": order_id, "retry_id": retry.get("retry_id")},
+            })
+            raise ValueError(str(exc)) from exc
+
+        shipment = shipment_result.to_dict() if hasattr(shipment_result, "to_dict") else dict(shipment_result)
+        if not shipment.get("success") or shipment.get("status") == "unconfigured":
+            reason = shipment.get("error") or f"{provider_name} shipment creation failed"
+            retry = self.queue_connector_retry(
+                supplier_id=order.get("supplier_id"),
+                connector_type=provider_name,
+                reason=reason,
+                payload={"order_id": order_id, "provider": provider_name},
+            )
+            supplier["connector_status"] = "degraded"
+            supplier["last_order_sync_at"] = datetime.now(timezone.utc).isoformat()
+            self.connector_audit_log.append({
+                "event_id": f"AUD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}",
+                "supplier_id": order.get("supplier_id"),
+                "connector_type": provider_name,
+                "event_type": "shipment_create_failed",
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "payload": {"order_id": order_id, "retry_id": retry.get("retry_id")},
+            })
+            return {
+                "success": False,
+                "provider": provider_name,
+                "order": order,
+                "shipment": shipment,
+                "retry": retry,
+                "message": reason,
+            }
+
+        shipment_id = shipment.get("shipment_id")
+        self.delivery_shipments[shipment_id] = shipment
+        supplier["connector_mode"] = provider_name
+        supplier["connector_status"] = "active"
+        supplier["last_order_sync_at"] = datetime.now(timezone.utc).isoformat()
+
+        order["delivery_provider"] = provider_name
+        order["shipment_id"] = shipment_id
+        order["tracking_number"] = shipment.get("tracking_number")
+        order["tracking_url"] = shipment.get("tracking_url")
+        order["delivery_status"] = shipment.get("status")
+        order["delivery_provider_payload"] = shipment
+        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+        if str(order.get("status") or "").strip().lower() == OrderStatus.PROCESSING.value:
+            order["status"] = OrderStatus.IN_TRANSIT.value
+
+        self.connector_audit_log.append({
+            "event_id": f"AUD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}",
+            "supplier_id": order.get("supplier_id"),
+            "connector_type": provider_name,
+            "event_type": "shipment_created",
+            "reason": "Delivery connector shipment created",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payload": {
+                "order_id": order_id,
+                "shipment_id": shipment_id,
+                "tracking_number": shipment.get("tracking_number"),
+            },
+        })
+
+        self._record_ledger_entry(
+            entry_type="delivery_shipment_created",
+            supplier_id=order["supplier_id"],
+            customer_id=order.get("customer_id"),
+            order_id=order_id,
+            amount=order.get("total_amount", 0.0),
+            commission=order.get("commission", 0.0),
+            supplier_payout=order.get("supplier_payout", 0.0),
+            description=f"Delivery shipment created via {provider_name.upper()}",
+            metadata={
+                "provider": provider_name,
+                "shipment_id": shipment_id,
+                "tracking_number": shipment.get("tracking_number"),
+                "created_by": actor,
+            },
+        )
+
+        return {
+            "success": True,
+            "provider": provider_name,
+            "order": order,
+            "shipment": shipment,
+        }
+
+    def track_delivery_shipment(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+    ) -> Dict[str, Any]:
+        """Return live tracking information for an externally connected delivery shipment."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        order = self.orders[order_id]
+        provider_name = self._safe_text(order.get("delivery_provider"))
+        shipment_id = self._safe_text(order.get("shipment_id"))
+        if not provider_name or not shipment_id:
+            raise ValueError("Order does not have an external delivery shipment")
+
+        connector = create_delivery_provider_connector(provider_name)
+        try:
+            tracking = connector.track_shipment(shipment_id)
+        except DeliveryProviderConnectorError as exc:
+            retry = self.queue_connector_retry(
+                supplier_id=order.get("supplier_id"),
+                connector_type=provider_name,
+                reason=str(exc),
+                payload={"order_id": order_id, "shipment_id": shipment_id},
+            )
+            self.connector_audit_log.append({
+                "event_id": f"AUD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}",
+                "supplier_id": order.get("supplier_id"),
+                "connector_type": provider_name,
+                "event_type": "tracking_failed",
+                "reason": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "payload": {"order_id": order_id, "retry_id": retry.get("retry_id")},
+            })
+            raise ValueError(str(exc)) from exc
+
+        stored = self.delivery_shipments.get(shipment_id, {})
+        stored.update(tracking)
+        self.delivery_shipments[shipment_id] = stored
+        order["delivery_status"] = tracking.get("status")
+        order["tracking_url"] = tracking.get("tracking_url") or order.get("tracking_url")
+        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+
+        self.connector_audit_log.append({
+            "event_id": f"AUD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}",
+            "supplier_id": order.get("supplier_id"),
+            "connector_type": provider_name,
+            "event_type": "tracking_polled",
+            "reason": "Delivery tracking refreshed",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payload": {"order_id": order_id, "shipment_id": shipment_id, "status": tracking.get("status")},
+        })
+
+        return {
+            "success": True,
+            "order_id": order_id,
+            "provider": provider_name,
+            "shipment": stored,
+        }
     
     # =========================================================================
     # SUPPLIER P&L AND REPORTS
