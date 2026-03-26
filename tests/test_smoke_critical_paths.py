@@ -156,10 +156,14 @@ def test_dashboard_health_wallet_contains_ai_search_supplier_offer_hooks():
         assert "🤖 AI Search Offers" in body
         assert 'id="health-wallet-ai-search"' in body
         assert 'id="health-ai-search-query"' in body
+        assert "Diabetes supplies" in body
+        assert 'id="health-ai-search-location-city"' in body
+        assert 'id="health-ai-search-location-country"' in body
+        assert 'id="health-ai-search-max-distance"' in body
         assert 'id="health-ai-search-results"' in body
         assert "openHealthWalletAISearch" in body
         assert "runHealthWalletAISearch" in body
-        assert "runHealthWalletAISearch" in body
+        assert "applyHealthWalletAISuggestion" in body
 
     srv.stop()
 
