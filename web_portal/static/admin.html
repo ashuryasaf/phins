@@ -1389,6 +1389,55 @@
           </div>
         </div>
       </div>
+
+      <div class="card" style="background: white; margin-top: 24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">🛡️ Marketplace Integrity Report</h3>
+            <div class="muted-text" id="marketplace-integrity-summary">Loading integrity diagnostics...</div>
+          </div>
+          <button class="btn btn-small" onclick="loadMarketplaceIntegrityReport()">Refresh Integrity</button>
+        </div>
+
+        <div class="dashboard-stats" style="margin-bottom: 16px;">
+          <div class="stat-box" style="background: #fff8e1; color:#5d4037;">
+            <div class="stat-icon">🏢</div>
+            <div class="stat-value" id="mp-integrity-missing-suppliers">0</div>
+            <div class="stat-label">Approved Suppliers Missing Visible Offers</div>
+          </div>
+          <div class="stat-box" style="background: #e8f5e9; color:#1b5e20;">
+            <div class="stat-icon">💼</div>
+            <div class="stat-value" id="mp-integrity-wallet-gaps">0</div>
+            <div class="stat-label">Visible Offers Missing Wallet Compatibility</div>
+          </div>
+          <div class="stat-box" style="background: #fce4ec; color:#880e4f;">
+            <div class="stat-icon">🧾</div>
+            <div class="stat-value" id="mp-integrity-ledger-gaps">0</div>
+            <div class="stat-label">Purchases Missing Ledger / NFT Links</div>
+          </div>
+          <div class="stat-box" style="background: #e3f2fd; color:#0d47a1;">
+            <div class="stat-icon">🔄</div>
+            <div class="stat-value" id="mp-integrity-drift">0</div>
+            <div class="stat-label">Orders With Marketplace Drift</div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Issue Type</th>
+                <th>Reference</th>
+                <th>Supplier / Customer</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="marketplace-integrity-table">
+              <tr><td colspan="4" style="text-align:center;color:#666;">Loading integrity report...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
     
     <!-- Insurance AI BI Dashboard -->

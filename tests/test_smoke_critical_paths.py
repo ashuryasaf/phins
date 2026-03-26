@@ -114,6 +114,10 @@ def test_admin_marketplace_page_contains_live_transaction_hooks():
         assert "fetchMarketplaceTransactions" in body
         assert 'id="top-services"' in body
         assert 'id="top-products"' in body
+        assert "Marketplace Integrity Report" in body
+        assert 'id="marketplace-integrity-table"' in body
+        assert 'id="marketplace-integrity-summary"' in body
+        assert "loadMarketplaceIntegrityReport" in body
 
     srv.stop()
 
