@@ -1724,6 +1724,7 @@ class SupplyChainEcosystemService:
             "unit_price": unit_price,
             "base_amount": base_amount,
             "total_amount": total_amount,
+            "payment_processing_fee": round(total_amount * 0.025, 2),
             "pricing_plan": pricing_plan,
             "expense_loading_pct": pricing_plan["expense_loading_pct"],
             "expense_loading_amount": pricing_plan["expense_loading_amount"],

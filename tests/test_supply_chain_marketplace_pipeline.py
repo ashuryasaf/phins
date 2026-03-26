@@ -541,6 +541,9 @@ def test_marketplace_order_parity_across_customer_admin_and_settlement_views():
         assert pnl.get("success") is True
         assert pnl.get("supplier_name") == "Parity Pharmacy"
         assert pnl.get("report", {}).get("gross_sales", 0) == admin_order.get("total_amount", 0)
+        assert pnl.get("report", {}).get("payment_processing_fees", 0) == round(
+            admin_order.get("total_amount", 0) * 0.025, 2
+        )
         assert pnl.get("report", {}).get("net_payout", 0) == admin_order.get("supplier_payout", 0)
         assert pnl.get("report", {}).get("pending_settlement", 0) == settlements.get("pending_amount", 0)
 
