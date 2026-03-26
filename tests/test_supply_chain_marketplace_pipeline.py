@@ -9,6 +9,7 @@ invitation -> supplier registration -> admin approval -> offer publishing
 import json
 import threading
 import time
+from datetime import datetime
 from http.server import HTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -685,7 +686,9 @@ def test_marketplace_cancel_and_refund_endpoints_update_customer_and_admin_views
         assert status == 200
         assert purchase_result.get("success") is True
         purchase_id = purchase_result.get("purchase", {}).get("id")
+        order_id = purchase_result.get("purchase", {}).get("order_id")
         assert purchase_id
+        assert order_id
 
         history_before, status = _get(
             f"{base}/api/health-wallet/purchases?customer_id={customer_id}",
@@ -696,13 +699,26 @@ def test_marketplace_cancel_and_refund_endpoints_update_customer_and_admin_views
         assert len(before_rows) == 1
         assert before_rows[0].get("status") == "completed"
 
-        refund_result, status = _post(
-            f"{base}/api/marketplace/orders/refund",
-            {"purchase_id": purchase_id, "customer_id": customer_id},
-            token=admin_token,
-        )
+        original_update_order_status = portal.supply_chain_service.update_order_status
+
+        def fail_update_order_status(*args, **kwargs):
+            raise RuntimeError("force refund fallback")
+
+        portal.supply_chain_service.update_order_status = fail_update_order_status
+        try:
+            refund_result, status = _post(
+                f"{base}/api/marketplace/orders/refund",
+                {"purchase_id": purchase_id, "customer_id": customer_id},
+                token=admin_token,
+            )
+        finally:
+            portal.supply_chain_service.update_order_status = original_update_order_status
+
         assert status == 200
         assert refund_result.get("success") is True
+        refunded_order = portal.supply_chain_service.orders[order_id]
+        assert refunded_order.get("status") == "refunded"
+        assert datetime.fromisoformat(refunded_order["updated_date"]).tzinfo is not None
 
         history_after, status = _get(
             f"{base}/api/health-wallet/purchases?customer_id={customer_id}",

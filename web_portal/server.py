@@ -15,7 +15,7 @@ import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import uuid
 import hashlib
@@ -28629,7 +28629,7 @@ For claims or questions, please contact:
                             )
                         except Exception:
                             order['status'] = 'refunded'
-                            order['updated_date'] = datetime.now().isoformat()
+                            order['updated_date'] = datetime.now(timezone.utc).isoformat()
 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
