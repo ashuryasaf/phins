@@ -1333,3 +1333,236 @@ def test_external_delivery_supplier_connector_flow_and_retry_visibility():
     finally:
         srv.stop()
 
+
+def test_admin_marketplace_integrity_report_lists_supplier_offer_purchase_and_view_drift():
+    _reset_supply_chain_state()
+
+    port = 8167
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        # Supplier A: approved and visible offer, later used to create purchase/order drift.
+        invitation_a, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "integrity report visible supplier",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        supplier_a_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": (invitation_a.get("invitation") or {}).get("code"),
+                "company_name": "Visible Pharmacy",
+                "contact_email": "visible-pharmacy@example.com",
+                "contact_name": "Visible Contact",
+                "supplier_type": "pharmacy",
+                "password": "Visible123!",
+            },
+        )
+        assert status == 201
+        supplier_a_id = supplier_a_reg.get("supplier_id")
+        assert supplier_a_id
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_a_id}/approve",
+            {"notes": "approved for integrity report"},
+            token=admin_token,
+        )
+        assert status == 200
+        supplier_a_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "visible-pharmacy@example.com", "password": "Visible123!"},
+        )
+        assert status == 200
+        supplier_a_token = supplier_a_login["token"]
+        offer_a_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Visible Offer",
+                "description": "Offer used for drift checks",
+                "item_type": "product",
+                "category": "medication",
+                "price": 25.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+            },
+            token=supplier_a_token,
+        )
+        assert status in (200, 201)
+        offer_a_id = offer_a_res.get("id")
+        assert offer_a_id
+
+        # Supplier B: approved, portal active, but no visible offers.
+        invitation_b, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "clinic",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "integrity report missing visible offer",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        supplier_b_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": (invitation_b.get("invitation") or {}).get("code"),
+                "company_name": "No Offer Clinic",
+                "contact_email": "no-offer-clinic@example.com",
+                "contact_name": "No Offer Contact",
+                "supplier_type": "clinic",
+                "password": "NoOffer123!",
+            },
+        )
+        assert status == 201
+        supplier_b_id = supplier_b_reg.get("supplier_id")
+        assert supplier_b_id
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_b_id}/approve",
+            {"notes": "approved without offers"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        # Supplier C: approved with a visible offer missing wallet compatibility.
+        invitation_c, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "wellness",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "integrity report wallet compatibility",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+        supplier_c_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": (invitation_c.get("invitation") or {}).get("code"),
+                "company_name": "Walletless Wellness",
+                "contact_email": "walletless@example.com",
+                "contact_name": "Walletless Contact",
+                "supplier_type": "wellness",
+                "password": "Walletless123!",
+            },
+        )
+        assert status == 201
+        supplier_c_id = supplier_c_reg.get("supplier_id")
+        assert supplier_c_id
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_c_id}/approve",
+            {"notes": "approved for wallet compatibility issue"},
+            token=admin_token,
+        )
+        assert status == 200
+        supplier_c_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "walletless@example.com", "password": "Walletless123!"},
+        )
+        assert status == 200
+        supplier_c_token = supplier_c_login["token"]
+        offer_c_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Walletless Offer",
+                "description": "Visible but missing wallet compatibility",
+                "item_type": "service",
+                "category": "wellness",
+                "price": 45.0,
+                "currency": "USD",
+                "wallet_compatible": [],
+            },
+            token=supplier_c_token,
+        )
+        assert status in (200, 201)
+        offer_c_id = offer_c_res.get("id")
+        assert offer_c_id
+
+        customer_id = "CUST-INTEGRITY-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "Integrity Customer",
+                "email": "integrity-customer@example.com",
+            }
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 150.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        purchase_result, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": customer_id,
+                "offer_id": offer_a_id,
+                "product_id": offer_a_id,
+                "product_name": "Visible Offer",
+                "amount": 25.0,
+                "quantity": 2,
+                "payment_method": "health_wallet",
+                "category": "medication",
+                "allow_credit_fallback": False,
+            },
+        )
+        assert status == 200
+        purchase = purchase_result.get("purchase", {})
+        order = purchase_result.get("order", {})
+        order_id = order.get("id")
+        purchase_id = purchase.get("id")
+        assert order_id and purchase_id
+
+        # Force explicit drift issues.
+        with portal.STATE_LOCK:
+            portal.SUPPLIER_OFFERS[offer_c_id]["wallet_compatible"] = []
+            portal.MEDICAL_PURCHASES[purchase_id]["ledger_tx_id"] = None
+            portal.MEDICAL_PURCHASES[purchase_id]["nft_token_id"] = None
+            portal.MEDICAL_PURCHASES[purchase_id]["supplier_name"] = "Drifted Supplier"
+            portal.MEDICAL_PURCHASES[purchase_id]["customer_name"] = "Drifted Customer"
+
+        report, status = _get(f"{base}/api/admin/marketplace/integrity-report", token=admin_token)
+        assert status == 200
+        assert report.get("success") is True
+
+        missing_visible = report.get("approved_suppliers_missing_visible_offers", [])
+        assert any(item.get("supplier_id") == supplier_b_id for item in missing_visible)
+
+        missing_wallets = report.get("visible_offers_missing_wallet_compatibility", [])
+        assert any(item.get("offer_id") == offer_c_id for item in missing_wallets)
+
+        missing_links = report.get("purchases_missing_ledger_or_nft_links", [])
+        assert any(item.get("purchase_id") == purchase_id for item in missing_links)
+
+        drift_rows = report.get("orders_with_marketplace_view_drift", [])
+        drift_entry = next(item for item in drift_rows if item.get("order_id") == order_id)
+        assert "supplier_name" in drift_entry.get("drift_fields", [])
+        assert "customer_name" in drift_entry.get("drift_fields", [])
+
+        assert any("approved suppliers missing visible offers" in issue for issue in report.get("issues", []))
+        assert any("visible offers missing wallet compatibility" in issue for issue in report.get("issues", []))
+        assert any("purchases missing ledger or NFT links" in issue for issue in report.get("issues", []))
+        assert any("orders have marketplace/admin/customer drift" in issue for issue in report.get("issues", []))
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+

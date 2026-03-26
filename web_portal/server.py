@@ -549,6 +549,10 @@ def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
             'pending_settlement_amount': 0.0,
             'integrity_score': 0,
             'issues': [],
+            'approved_suppliers_missing_visible_offers': [],
+            'visible_offers_missing_wallet_compatibility': [],
+            'purchases_missing_ledger_or_nft_links': [],
+            'orders_with_marketplace_view_drift': [],
         }
 
     issues: List[str] = []
@@ -557,6 +561,9 @@ def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
         offers = dict(SUPPLIER_OFFERS)
         orders = dict(getattr(supply_chain_service, 'orders', {}))
         pending_settlements = dict(getattr(supply_chain_service, 'pending_settlements', {}))
+        purchases = dict(MEDICAL_PURCHASES)
+        transaction_ledger = dict(TRANSACTION_LEDGER)
+        nft_ledger = dict(NFT_LEDGER)
 
     offers_missing_supplier = sum(
         1 for offer in offers.values()
@@ -584,6 +591,116 @@ def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
     ), 2)
     pending_settlement_suppliers = sum(1 for items in pending_settlements.values() if items)
 
+    approved_suppliers_missing_visible_offers: List[Dict[str, Any]] = []
+    visible_offers_missing_wallet_compatibility: List[Dict[str, Any]] = []
+    purchases_missing_ledger_or_nft_links: List[Dict[str, Any]] = []
+    orders_with_marketplace_view_drift: List[Dict[str, Any]] = []
+
+    approved_suppliers = {
+        sid: supplier for sid, supplier in suppliers.items()
+        if get_status_lower(supplier) == 'approved' and bool(supplier.get('portal_active', False))
+    }
+    visible_offer_rows = [
+        offer for offer in offers.values()
+        if offer.get('supplier_id') in approved_suppliers
+        and bool(offer.get('active', True))
+    ]
+    visible_offer_ids = {str(offer.get('id') or '').strip() for offer in visible_offer_rows if offer.get('id')}
+
+    for sid, supplier in approved_suppliers.items():
+        supplier_visible_offers = [
+            offer for offer in visible_offer_rows
+            if offer.get('supplier_id') == sid
+        ]
+        if not supplier_visible_offers:
+            approved_suppliers_missing_visible_offers.append({
+                'supplier_id': sid,
+                'supplier_name': get_supplier_display_name(sid),
+                'connector_mode': supplier.get('connector_mode') or 'portal',
+                'connector_status': supplier.get('connector_status') or ('active' if supplier.get('portal_active') else 'inactive'),
+            })
+
+    for offer in visible_offer_rows:
+        wallets = parse_wallet_compatible(offer.get('wallet_compatible'))
+        if not wallets:
+            visible_offers_missing_wallet_compatibility.append({
+                'offer_id': offer.get('id'),
+                'supplier_id': offer.get('supplier_id'),
+                'supplier_name': get_supplier_display_name(offer.get('supplier_id')),
+                'offer_name': offer.get('name'),
+                'category': offer.get('category'),
+            })
+
+    normalized_orders_by_id = {
+        str(order.get('id') or '').strip(): order
+        for order in normalized_orders
+        if order.get('id')
+    }
+    purchase_by_order_id = {
+        str(purchase.get('order_id') or '').strip(): purchase
+        for purchase in purchases.values()
+        if purchase.get('order_id')
+    }
+    admin_order_rows_by_id = {
+        str(order.get('id') or '').strip(): order
+        for order in list_normalized_supply_chain_orders()
+        if order.get('id')
+    }
+
+    for purchase in purchases.values():
+        order_id = str(purchase.get('order_id') or '').strip()
+        ledger_tx_id = str(purchase.get('ledger_tx_id') or '').strip()
+        nft_token_id = str(purchase.get('nft_token_id') or '').strip()
+        ledger_entry = transaction_ledger.get(ledger_tx_id) if ledger_tx_id else None
+        nft_entry = nft_ledger.get(nft_token_id) if nft_token_id else None
+        if not ledger_tx_id or not nft_token_id or not ledger_entry or not nft_entry:
+            purchases_missing_ledger_or_nft_links.append({
+                'purchase_id': purchase.get('id'),
+                'order_id': order_id or None,
+                'supplier_id': purchase.get('supplier_id'),
+                'supplier_name': purchase.get('supplier_name') or get_supplier_display_name(purchase.get('supplier_id')),
+                'missing_ledger_tx': not bool(ledger_entry),
+                'missing_nft': not bool(nft_entry),
+            })
+
+    for order_id, order in normalized_orders_by_id.items():
+        if not order_id:
+            continue
+        purchase = purchase_by_order_id.get(order_id)
+        admin_row = admin_order_rows_by_id.get(order_id)
+        drift_fields: List[str] = []
+        if not purchase:
+            drift_fields.append('missing_purchase_history')
+        else:
+            if str(purchase.get('supplier_id') or '') != str(order.get('supplier_id') or ''):
+                drift_fields.append('supplier_id')
+            if str(purchase.get('offer_id') or purchase.get('product_id') or '') != str(order.get('offer_id') or ''):
+                drift_fields.append('offer_id')
+            if str(purchase.get('supplier_name') or '') != str(order.get('supplier_name') or ''):
+                drift_fields.append('supplier_name')
+            if str(purchase.get('customer_name') or '') != str(order.get('customer_name') or ''):
+                drift_fields.append('customer_name')
+            if abs(safe_float(purchase.get('platform_fee'), 0.0) - safe_float(order.get('platform_fee'), 0.0)) > 0.01:
+                drift_fields.append('platform_fee')
+            if abs(safe_float(purchase.get('supplier_payout'), 0.0) - safe_float(order.get('supplier_payout'), 0.0)) > 0.01:
+                drift_fields.append('supplier_payout')
+            if abs(safe_float(purchase.get('amount'), 0.0) - safe_float(order.get('total_amount'), 0.0)) > 0.01:
+                drift_fields.append('total_amount')
+        if admin_row:
+            if str(admin_row.get('supplier_name') or '') != str(order.get('supplier_name') or ''):
+                drift_fields.append('admin_supplier_name')
+            if str(admin_row.get('customer_name') or '') != str(order.get('customer_name') or ''):
+                drift_fields.append('admin_customer_name')
+        if drift_fields:
+            orders_with_marketplace_view_drift.append({
+                'order_id': order_id,
+                'supplier_id': order.get('supplier_id'),
+                'supplier_name': order.get('supplier_name'),
+                'customer_id': order.get('customer_id'),
+                'customer_name': order.get('customer_name'),
+                'drift_fields': sorted(set(drift_fields)),
+            })
+
     integrity = supply_chain_service.verify_ledger_integrity()
     integrity_score = safe_int(integrity.get('integrity_score'), 0)
 
@@ -595,6 +712,14 @@ def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
         issues.append(f'{orders_missing_customer_name} orders missing resolved customer names')
     if orders_missing_supplier_name:
         issues.append(f'{orders_missing_supplier_name} orders missing resolved supplier names')
+    if approved_suppliers_missing_visible_offers:
+        issues.append(f'{len(approved_suppliers_missing_visible_offers)} approved suppliers missing visible offers')
+    if visible_offers_missing_wallet_compatibility:
+        issues.append(f'{len(visible_offers_missing_wallet_compatibility)} visible offers missing wallet compatibility')
+    if purchases_missing_ledger_or_nft_links:
+        issues.append(f'{len(purchases_missing_ledger_or_nft_links)} purchases missing ledger or NFT links')
+    if orders_with_marketplace_view_drift:
+        issues.append(f'{len(orders_with_marketplace_view_drift)} orders have marketplace/admin/customer drift')
     if integrity.get('issues'):
         issues.append(f"{len(integrity.get('issues', []))} supply-chain ledger integrity issues")
 
@@ -611,6 +736,10 @@ def build_supply_chain_reconciliation_summary() -> Dict[str, Any]:
         'pending_settlement_amount': pending_settlement_amount,
         'integrity_score': integrity_score,
         'issues': issues,
+        'approved_suppliers_missing_visible_offers': approved_suppliers_missing_visible_offers,
+        'visible_offers_missing_wallet_compatibility': visible_offers_missing_wallet_compatibility,
+        'purchases_missing_ledger_or_nft_links': purchases_missing_ledger_or_nft_links,
+        'orders_with_marketplace_view_drift': orders_with_marketplace_view_drift,
     }
 
 
@@ -9010,6 +9139,22 @@ For claims or questions, please contact:
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps(integrity, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Admin marketplace integrity report
+        if path == '/api/admin/marketplace/integrity-report':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+
+            try:
+                report = build_supply_chain_reconciliation_summary()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
