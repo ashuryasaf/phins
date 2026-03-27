@@ -972,7 +972,8 @@ def test_marketplace_cancel_and_refund_endpoints_update_customer_and_admin_views
         assert status == 200
         before_rows = history_before.get("purchases", [])
         assert len(before_rows) == 1
-        assert before_rows[0].get("status") == "completed"
+        assert before_rows[0].get("status") == "pending"
+        assert before_rows[0].get("settlement_status") == "pending_supplier_request"
 
         refund_result, status = _post(
             f"{base}/api/marketplace/orders/refund",
@@ -1176,13 +1177,26 @@ def test_location_aware_delivery_options_and_validation_flow():
         )
         assert status == 200
 
+        settlement_request, status = _post(
+            f"{base}/api/supply-chain/orders/{order_id}/request-settlement",
+            {
+                "validation_type": "geo_checkin",
+                "notes": "Nurse arrived on site and is requesting patient approval",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        settlement_code = settlement_request.get("order", {}).get("settlement_code")
+        assert settlement_code
+
         validation, status = _post(
-            f"{base}/api/supply-chain/orders/{order_id}/delivery-validation",
+            f"{base}/api/supply-chain/orders/{order_id}/approve-settlement",
             {
                 "delivery_method": "on_site_visit",
+                "settlement_code": settlement_code,
                 "validation_code": validation_code,
-                "proof_type": "geo_checkin",
-                "proof_url": "https://example.com/proof/geo-checkin",
+                "validation_type": "geo_checkin",
+                "customer_acknowledged": True,
                 "delivery_location": {
                     "latitude": 32.0900,
                     "longitude": 34.7900,
@@ -1191,7 +1205,7 @@ def test_location_aware_delivery_options_and_validation_flow():
                     "country": "Israel",
                 },
             },
-            token=supplier_token,
+            token=admin_token,
         )
         assert status == 200
         assert validation.get("success") is True
