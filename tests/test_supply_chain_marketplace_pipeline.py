@@ -583,21 +583,22 @@ def test_supplier_orders_endpoint_returns_supply_chain_orders_with_expected_fiel
         assert order.get("total_amount", 0) > 0
         assert order.get("supplier_payout", 0) > 0
         assert order.get("created_date")
-        assert order.get("status") == "completed"
+        assert order.get("status") == "pending"
         assert order.get("payment_status") == "paid"
+        assert order.get("settlement_status") == "pending_supplier_request"
 
         confirm_result, status = _post(
             f"{base}/api/supplier/orders/update-status",
             {
                 "transaction_id": order["id"],
-                "status": "completed",
+                "status": "confirmed",
             },
             token=supplier_token,
         )
         assert status == 200
         assert confirm_result.get("success") is True
         assert confirm_result.get("order", {}).get("id") == order["id"]
-        assert confirm_result.get("order", {}).get("status") == "completed"
+        assert confirm_result.get("order", {}).get("status") == "confirmed"
 
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")
@@ -741,6 +742,7 @@ def test_marketplace_order_parity_across_customer_admin_and_settlement_views():
         assert purchase.get("supplier_payout", 0) > 0
         assert purchase.get("can_cancel") is False
         assert purchase.get("can_refund") is False
+        assert purchase.get("settlement_status") == "pending_supplier_request"
 
         admin_orders, status = _get(f"{base}/api/admin/suppliers/orders", token=admin_token)
         assert status == 200
@@ -751,6 +753,49 @@ def test_marketplace_order_parity_across_customer_admin_and_settlement_views():
         assert admin_order.get("supplier_name") == "Parity Pharmacy"
         assert admin_order.get("platform_fee", 0) > 0
         assert admin_order.get("supplier_payout", 0) > 0
+
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {
+                "transaction_id": order["id"],
+                "status": "confirmed",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {
+                "transaction_id": order["id"],
+                "status": "processing",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        supplier_request, status = _post(
+            f"{base}/api/supply-chain/orders/{order['id']}/request-settlement",
+            {
+                "validation_type": "pickup_code",
+                "notes": "Ready for patient pickup confirmation",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        settlement_code = supplier_request.get("order", {}).get("settlement_code")
+        assert settlement_code
+
+        customer_approval, status = _post(
+            f"{base}/api/supply-chain/orders/{order['id']}/approve-settlement",
+            {
+                "settlement_code": settlement_code,
+                "pickup_code": supplier_request.get("order", {}).get("delivery_validation_code"),
+                "customer_acknowledged": True,
+            },
+            token=admin_token,
+        )
+        assert status == 200
+        assert customer_approval.get("order", {}).get("status") == "completed"
+        assert customer_approval.get("order", {}).get("settlement_status") == "pending_admin_payout"
 
         settlements, status = _get(f"{base}/api/supply-chain/settlements", token=supplier_token)
         assert status == 200
@@ -927,7 +972,8 @@ def test_marketplace_cancel_and_refund_endpoints_update_customer_and_admin_views
         assert status == 200
         before_rows = history_before.get("purchases", [])
         assert len(before_rows) == 1
-        assert before_rows[0].get("status") == "completed"
+        assert before_rows[0].get("status") == "pending"
+        assert before_rows[0].get("settlement_status") == "pending_supplier_request"
 
         refund_result, status = _post(
             f"{base}/api/marketplace/orders/refund",
@@ -1131,13 +1177,26 @@ def test_location_aware_delivery_options_and_validation_flow():
         )
         assert status == 200
 
+        settlement_request, status = _post(
+            f"{base}/api/supply-chain/orders/{order_id}/request-settlement",
+            {
+                "validation_type": "geo_checkin",
+                "notes": "Nurse arrived on site and is requesting patient approval",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        settlement_code = settlement_request.get("order", {}).get("settlement_code")
+        assert settlement_code
+
         validation, status = _post(
-            f"{base}/api/supply-chain/orders/{order_id}/delivery-validation",
+            f"{base}/api/supply-chain/orders/{order_id}/approve-settlement",
             {
                 "delivery_method": "on_site_visit",
+                "settlement_code": settlement_code,
                 "validation_code": validation_code,
-                "proof_type": "geo_checkin",
-                "proof_url": "https://example.com/proof/geo-checkin",
+                "validation_type": "geo_checkin",
+                "customer_acknowledged": True,
                 "delivery_location": {
                     "latitude": 32.0900,
                     "longitude": 34.7900,
@@ -1146,7 +1205,7 @@ def test_location_aware_delivery_options_and_validation_flow():
                     "country": "Israel",
                 },
             },
-            token=supplier_token,
+            token=admin_token,
         )
         assert status == 200
         assert validation.get("success") is True

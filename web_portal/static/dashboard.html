@@ -6607,16 +6607,32 @@
         return;
       }
       
+      const statusStyles = {
+        pending_supplier_request: { color: '#5c6bc0', icon: '🧾', label: 'Paid - Waiting for supplier request' },
+        awaiting_customer_approval: { color: '#f57c00', icon: '📍', label: 'Awaiting your approval' },
+        pending_admin_payout: { color: '#1565c0', icon: '💸', label: 'Approved - awaiting payout' },
+        settled: { color: '#2e7d32', icon: '✅', label: 'Settled' }
+      };
+
       tbody.innerHTML = purchases.map(p => {
         const purchaseTimestamp = p.timestamp || p.order_date || p.created_date;
         const date = purchaseTimestamp ? new Date(purchaseTimestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
         const time = purchaseTimestamp ? new Date(purchaseTimestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
         const status = String(p.status || 'pending').toLowerCase();
-        const statusColor = status === 'completed' ? '#28a745' : status === 'pending' ? '#ffc107' : status === 'cancelled' || status === 'refunded' ? '#dc3545' : '#1565c0';
-        const statusIcon = status === 'completed' ? '✅' : status === 'pending' ? '⏳' : status === 'cancelled' ? '❌' : status === 'refunded' ? '↩️' : 'ℹ️';
+        const settlementStatus = String(p.settlement_status || '').toLowerCase();
+        const statusMeta = statusStyles[settlementStatus] || {};
+        const statusColor = statusMeta.color || (status === 'completed' ? '#28a745' : status === 'pending' ? '#ffc107' : status === 'cancelled' || status === 'refunded' ? '#dc3545' : '#1565c0');
+        const statusIcon = statusMeta.icon || (status === 'completed' ? '✅' : status === 'pending' ? '⏳' : status === 'cancelled' ? '❌' : status === 'refunded' ? '↩️' : 'ℹ️');
+        const statusLabel = statusMeta.label || `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
         const refundedAmount = Number(p.refunded_amount || 0);
         const canCancel = status === 'pending' || status === 'confirmed';
-        const canRefund = status === 'completed' && refundedAmount < Number(p.amount || 0);
+        const canRefund = settlementStatus === 'settled' && refundedAmount < Number(p.amount || 0);
+        const needsCustomerApproval = settlementStatus === 'awaiting_customer_approval';
+        const qrButton = needsCustomerApproval ? `
+          <button onclick="approveSettlementFlow('${p.id}')" class="btn" style="background:#1565c0;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">
+            ✅ Approve / Scan QR
+          </button>
+        ` : '';
         
         // NFT badge with ledger link indicator
         const hasNft = !!p.nft_token_id;
@@ -6641,9 +6657,14 @@
             <td style="font-weight: 600; color: ${refundedAmount > 0 ? '#2e7d32' : '#78909c'};">$${refundedAmount.toFixed(2)}</td>
             <td>${nftBadge}</td>
             <td><span style="font-size: 0.75rem; color: ${ledgerColor};">${ledgerStatus}</span></td>
-            <td><span style="color: ${statusColor};">${statusIcon} ${status.charAt(0).toUpperCase() + status.slice(1)}</span></td>
+            <td>
+              <div style="color: ${statusColor}; font-weight: 600;">${statusIcon} ${statusLabel}</div>
+              ${p.settlement_request?.validation_type ? `<div style="font-size:0.75rem;color:#666;">Validation: ${escapeHtml(String(p.settlement_request.validation_type).replace(/_/g, ' '))}</div>` : ''}
+              ${p.settlement_code ? `<div style="font-size:0.75rem;color:#666;">Code: ${escapeHtml(p.settlement_code)}</div>` : ''}
+            </td>
             <td>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                ${qrButton}
                 ${canCancel ? `<button onclick="cancelMarketplacePurchase('${p.id}')" class="btn" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Cancel</button>` : ''}
                 ${canRefund ? `<button onclick="refundMarketplacePurchase('${p.id}')" class="btn" style="background:#43a047;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Refund</button>` : ''}
                 ${!canCancel && !canRefund ? '<span style="font-size:0.8rem;color:#78909c;">No actions</span>' : ''}
@@ -6652,6 +6673,60 @@
           </tr>
         `;
       }).join('');
+    }
+
+    async function getBrowserLocationPayload() {
+      if (!navigator.geolocation) return null;
+      return new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({
+            latitude: Number(pos.coords.latitude.toFixed(6)),
+            longitude: Number(pos.coords.longitude.toFixed(6))
+          }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 }
+        );
+      });
+    }
+
+    async function approveSettlementFlow(purchaseId) {
+      const purchase = medicalPurchases.find(p => p.id === purchaseId);
+      if (!purchase || !purchase.order_id) {
+        showNotification('Unable to resolve the linked order for this purchase', 'error');
+        return;
+      }
+
+      const defaultCode = purchase.settlement_code || '';
+      const providedCode = prompt(
+        `Approve settlement for ${purchase.product_name || purchase.order_id}.\n\nEnter the PHINS settlement QR/code shown by the supplier or courier:`,
+        defaultCode
+      );
+      if (providedCode === null) return;
+
+      showNotification('🔄 Approving delivery/service settlement...', 'info');
+      try {
+        const locationPayload = await getBrowserLocationPayload();
+        const response = await fetch(`/api/supply-chain/orders/${encodeURIComponent(purchase.order_id)}/approve-settlement`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            settlement_code: providedCode,
+            customer_acknowledged: true,
+            recipient_name: document.getElementById('welcome-name')?.textContent || customerId || 'Customer',
+            notes: 'Approved from customer dashboard',
+            delivery_location: locationPayload
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        showNotification(data.message || 'Settlement approved successfully', 'success');
+        loadPurchaseHistory();
+      } catch (err) {
+        showNotification(`❌ Approval failed: ${err.message}`, 'error');
+      }
     }
 
     async function cancelMarketplacePurchase(purchaseId) {

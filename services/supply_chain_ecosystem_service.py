@@ -46,6 +46,7 @@ import json
 import os
 import secrets
 import uuid
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
@@ -475,6 +476,149 @@ class SupplyChainEcosystemService:
         c = 2 * asin(min(1.0, sqrt(a)))
         return round(radius_km * c, 2)
 
+    @staticmethod
+    def _build_settlement_qr_payload(order_id: str, qr_token: str) -> str:
+        """Build a compact QR payload used for customer settlement approval."""
+        return f"PHINS-SETTLE|{order_id}|{qr_token}"
+
+    @staticmethod
+    def _build_settlement_qr_image_url(payload: str) -> str:
+        """Render a QR image through the already-allowed QR image provider."""
+        return f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={quote(payload, safe='')}"
+
+    def _ensure_settlement_artifacts(self, order: Dict[str, Any]) -> Dict[str, str]:
+        """Ensure an order has a stable settlement code and QR assets."""
+        order_id = str(order.get("id") or "").strip()
+        qr_token = self._safe_text(order.get("settlement_qr_token")) or secrets.token_urlsafe(10)
+        settlement_code = self._safe_text(order.get("settlement_code")) or f"SET-{qr_token[:8].upper()}"
+        qr_payload = self._build_settlement_qr_payload(order_id, qr_token)
+        qr_image_url = self._build_settlement_qr_image_url(qr_payload)
+
+        order["settlement_qr_token"] = qr_token
+        order["settlement_code"] = settlement_code
+        order["settlement_qr_data"] = qr_payload
+        order["settlement_qr_image_url"] = qr_image_url
+
+        return {
+            "settlement_qr_token": qr_token,
+            "settlement_code": settlement_code,
+            "settlement_qr_data": qr_payload,
+            "settlement_qr_image_url": qr_image_url,
+        }
+
+    def _validate_customer_settlement_approval(
+        self,
+        *,
+        order: Dict[str, Any],
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Validate the customer-side approval that releases an order into settlement."""
+        payload = data or {}
+        artifacts = self._ensure_settlement_artifacts(order)
+        settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
+        requested_validation_type = str(
+            payload.get("validation_type")
+            or settlement_request.get("validation_type")
+            or order.get("requested_validation_type")
+            or "delivery_confirmation"
+        ).strip().lower()
+
+        provided_code = self._safe_text(
+            payload.get("settlement_code")
+            or payload.get("qr_token")
+            or payload.get("settlement_qr_token")
+            or payload.get("validation_code")
+        )
+        provided_pickup_code = self._safe_text(payload.get("pickup_code"))
+        provided_service_pin = self._safe_text(payload.get("service_pin"))
+        provided_photo = self._safe_text(payload.get("photo_url"))
+        provided_recipient = self._safe_text(payload.get("recipient_name"))
+        customer_acknowledged = bool(payload.get("customer_acknowledged", False))
+
+        proof_location = (
+            self._coerce_location(payload.get("delivery_location"))
+            or self._coerce_location(payload.get("customer_location"))
+            or self._build_location_from_fields(payload)
+        )
+        order_location = (
+            self._coerce_location(order.get("delivery_location"))
+            or self._build_location_from_fields(order.get("delivery_address"))
+            or self._build_location_from_fields(order)
+        )
+
+        token_valid = bool(
+            provided_code and (
+                provided_code == artifacts["settlement_qr_token"]
+                or provided_code == artifacts["settlement_code"]
+                or provided_code == artifacts["settlement_qr_data"]
+            )
+        )
+
+        requires_geo = requested_validation_type in {"pod_and_geo", "photo_and_geo", "geo_checkin", "qr_geo"}
+        distance_km = self._distance_km(order_location, proof_location) if order_location and proof_location else None
+        max_distance_km = 0.5 if requested_validation_type == "geo_checkin" else 1.5
+        geo_valid = (order_location is None) or (
+            proof_location is not None
+            and distance_km is not None
+            and distance_km <= max_distance_km
+        )
+
+        reasons: List[str] = []
+        if requires_geo and not geo_valid:
+            reasons.append("Customer approval location is outside the allowed validation radius")
+        if requested_validation_type == "photo_and_geo" and not provided_photo:
+            reasons.append("Photo proof is required for this settlement approval")
+
+        fulfillment_kind = str(order.get("fulfillment_kind") or "").strip().lower() or (
+            "service" if str(order.get("order_type") or "").strip().lower() == "service" else "delivery"
+        )
+
+        valid = False
+        if requested_validation_type == "pickup_code":
+            expected = self._safe_text(order.get("delivery_validation_code"))
+            valid = bool((expected and provided_pickup_code and expected == provided_pickup_code) or token_valid)
+            if not valid:
+                reasons.append("Pickup code or PHINS settlement code is required")
+        elif requested_validation_type == "digital_attestation":
+            valid = bool(token_valid or customer_acknowledged or provided_service_pin)
+            if not valid:
+                reasons.append("Service approval requires customer acknowledgement, service PIN, or QR settlement code")
+        elif requested_validation_type in {"pod_and_geo", "photo_and_geo", "geo_checkin", "qr_geo"}:
+            valid = bool((token_valid or customer_acknowledged or provided_recipient) and geo_valid)
+            if not valid and not reasons:
+                reasons.append("Delivery approval requires QR confirmation or acknowledgement near the destination")
+        else:
+            valid = bool(token_valid or customer_acknowledged or provided_recipient or provided_service_pin)
+            if not valid:
+                reasons.append("Customer acknowledgement or PHINS settlement code is required")
+
+        if fulfillment_kind == "service" and str(order.get("delivery_method") or "").strip().lower() == "on_site_visit":
+            if order_location and not geo_valid:
+                valid = False
+                if "Customer approval location is outside the allowed validation radius" not in reasons:
+                    reasons.append("On-site services require customer approval near the booked service location")
+
+        if not valid:
+            raise ValueError("; ".join(reasons) or "Settlement approval validation failed")
+
+        proof = {
+            "validation_type": requested_validation_type,
+            "confirmed_by": self._safe_text(payload.get("confirmed_by")) or actor,
+            "recipient_name": provided_recipient,
+            "pickup_code": provided_pickup_code,
+            "service_pin": provided_service_pin,
+            "photo_url": provided_photo,
+            "customer_acknowledged": customer_acknowledged,
+            "notes": self._safe_text(payload.get("notes")),
+            "delivery_location": proof_location,
+            "settlement_code_validated": token_valid,
+            "approval_target": fulfillment_kind,
+        }
+        if distance_km is not None:
+            proof["distance_from_destination_km"] = distance_km
+        return proof
+
     def _build_delivery_plan(
         self,
         *,
@@ -652,7 +796,7 @@ class SupplyChainEcosystemService:
         actor: str,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Validate proof of delivery/service completion and mark order delivered."""
+        """Validate customer approval and release an order into settlement."""
         if order_id not in self.orders:
             raise ValueError(f"Order {order_id} not found")
 
@@ -666,70 +810,33 @@ class SupplyChainEcosystemService:
             OrderStatus.DELIVERED.value,
         }:
             raise ValueError(f"Order {order_id} is not in a deliverable status")
+        settlement_status = str(order.get("settlement_status") or "").strip().lower()
+        if settlement_status not in {"awaiting_customer_approval", "customer_approved", "pending_admin_payout"}:
+            raise ValueError("Supplier must request settlement approval before customer validation can release funds")
 
-        delivery_plan = order.get("delivery_plan") if isinstance(order.get("delivery_plan"), dict) else {}
-        recommended_method = delivery_plan.get("recommended_method") if isinstance(delivery_plan.get("recommended_method"), dict) else {}
-        validation_type = str(
-            payload.get("validation_type")
-            or recommended_method.get("validation_type")
-            or "delivery_confirmation"
-        ).strip().lower()
-
-        proof = {
-            "validation_type": validation_type,
-            "confirmed_by": self._safe_text(payload.get("confirmed_by")) or actor,
-            "recipient_name": self._safe_text(payload.get("recipient_name")),
-            "pickup_code": self._safe_text(payload.get("pickup_code")),
-            "service_pin": self._safe_text(payload.get("service_pin")),
-            "photo_url": self._safe_text(payload.get("photo_url")),
-            "customer_acknowledged": bool(payload.get("customer_acknowledged", False)),
-            "notes": self._safe_text(payload.get("notes")),
-            "delivery_location": self._coerce_location(payload.get("delivery_location"))
-            or self._build_location_from_fields(payload),
-        }
-
-        valid = False
-        reasons: List[str] = []
-        if validation_type == "pickup_code":
-            expected = self._safe_text(order.get("delivery_validation_code"))
-            provided = proof.get("pickup_code")
-            valid = bool(expected and provided and expected == provided)
-            if not valid:
-                reasons.append("Pickup code does not match")
-        elif validation_type == "digital_attestation":
-            valid = bool(proof.get("customer_acknowledged") or proof.get("service_pin"))
-            if not valid:
-                reasons.append("Digital services require customer acknowledgement or service PIN")
-        elif validation_type in {"pod_and_geo", "photo_and_geo", "geo_checkin"}:
-            order_location = self._coerce_location(order.get("delivery_location")) or self._build_location_from_fields(order.get("delivery_address"))
-            proof_location = proof.get("delivery_location")
-            distance_km = self._distance_km(order_location, proof_location)
-            max_distance_km = 1.5 if validation_type != "geo_checkin" else 0.5
-            geo_valid = distance_km is not None and distance_km <= max_distance_km
-            if not geo_valid:
-                reasons.append("Delivery proof location is outside the allowed validation radius")
-            if validation_type == "photo_and_geo" and not proof.get("photo_url"):
-                reasons.append("Photo proof is required for this delivery method")
-            valid = geo_valid and (validation_type != "photo_and_geo" or bool(proof.get("photo_url")))
-            proof["distance_from_destination_km"] = distance_km
-        else:
-            valid = bool(proof.get("customer_acknowledged") or proof.get("recipient_name") or proof.get("photo_url"))
-            if not valid:
-                reasons.append("Missing delivery confirmation proof")
-
-        if not valid:
-            raise ValueError("; ".join(reasons) or "Delivery validation failed")
+        proof = self._validate_customer_settlement_approval(order=order, actor=actor, data=payload)
 
         now = datetime.now(timezone.utc).isoformat()
         order["actual_delivery"] = now
         order["updated_date"] = now
+        order["settlement_status"] = "customer_approved"
+        order["settlement_phase"] = "ready_for_payout"
+        order["customer_approval"] = {
+            "approved": True,
+            "approved_at": now,
+            "approved_by": actor,
+            "approval_target": proof.get("approval_target"),
+            "proof": proof,
+        }
         order["delivery_validation"] = {
             "validated": True,
             "validated_at": now,
             "validated_by": actor,
-            "method": validation_type,
+            "method": proof.get("validation_type"),
             "proof": proof,
         }
+        if str(order.get("status") or "").strip().lower() != OrderStatus.DELIVERED.value:
+            order["status"] = OrderStatus.DELIVERED.value
 
         self._record_ledger_entry(
             entry_type="delivery_validated",
@@ -742,7 +849,7 @@ class SupplyChainEcosystemService:
             description=f"Delivery validated for order {order_id}",
             metadata={
                 "validated_by": actor,
-                "validation_type": validation_type,
+                "validation_type": proof.get("validation_type"),
                 "proof_summary": {
                     "recipient_name": proof.get("recipient_name"),
                     "photo_url": proof.get("photo_url"),
@@ -761,6 +868,168 @@ class SupplyChainEcosystemService:
             "order": completion_result.get("order", order),
             "validation": completion_result.get("order", order).get("delivery_validation", order["delivery_validation"]),
             "message": f"Delivery validated for order {order_id}",
+        }
+
+    def request_settlement_release(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Supplier-side request that asks the customer to release settlement."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        payload = data or {}
+        order = self.orders[order_id]
+        current_status = str(order.get("status") or "").strip().lower()
+        if current_status in {OrderStatus.CANCELLED.value, OrderStatus.REFUNDED.value, OrderStatus.COMPLETED.value}:
+            raise ValueError("Settlement cannot be requested for this order")
+        if str(order.get("payment_status") or "").strip().lower() != "paid":
+            raise ValueError("Settlement can only be requested after payment is secured")
+
+        fulfillment_kind = str(order.get("fulfillment_kind") or "").strip().lower() or (
+            "service" if str(order.get("order_type") or "").strip().lower() == "service" else "delivery"
+        )
+        allowed_statuses = {
+            "service": {
+                OrderStatus.CONFIRMED.value,
+                OrderStatus.PROCESSING.value,
+                OrderStatus.DELIVERED.value,
+            },
+            "delivery": {
+                OrderStatus.PROCESSING.value,
+                OrderStatus.IN_TRANSIT.value,
+                OrderStatus.DELIVERED.value,
+            },
+        }
+        if current_status not in allowed_statuses.get(fulfillment_kind, set()):
+            raise ValueError(
+                "Settlement can be requested only after supplier fulfillment has started"
+            )
+
+        artifacts = self._ensure_settlement_artifacts(order)
+        now = datetime.now(timezone.utc).isoformat()
+        validation_type = str(
+            payload.get("validation_type")
+            or (order.get("delivery_plan") or {}).get("recommended_method", {}).get("validation_type")
+            or ("digital_attestation" if fulfillment_kind == "service" else "pod_and_geo")
+        ).strip().lower()
+
+        order["settlement_status"] = "awaiting_customer_approval"
+        order["settlement_phase"] = "awaiting_customer_approval"
+        order["requested_validation_type"] = validation_type
+        order["settlement_request"] = {
+            "requested": True,
+            "requested_at": now,
+            "requested_by": actor,
+            "notes": self._safe_text(payload.get("notes")),
+            "validation_type": validation_type,
+            "fulfillment_kind": fulfillment_kind,
+            "supplier_location": (
+                self._coerce_location(payload.get("supplier_location"))
+                or self._build_location_from_fields(payload)
+                or self._build_location_from_fields(self.suppliers.get(order.get("supplier_id")))
+            ),
+            "settlement_code": artifacts["settlement_code"],
+            "settlement_qr_data": artifacts["settlement_qr_data"],
+            "settlement_qr_image_url": artifacts["settlement_qr_image_url"],
+        }
+        order["updated_date"] = now
+
+        self._record_ledger_entry(
+            entry_type="settlement_requested",
+            supplier_id=order["supplier_id"],
+            customer_id=order.get("customer_id"),
+            order_id=order_id,
+            amount=order.get("total_amount", 0.0),
+            commission=order.get("commission", 0.0),
+            supplier_payout=order.get("supplier_payout", 0.0),
+            description=f"Settlement requested for order {order_id}",
+            metadata={
+                "requested_by": actor,
+                "validation_type": validation_type,
+                "fulfillment_kind": fulfillment_kind,
+                "settlement_code": artifacts["settlement_code"],
+            },
+        )
+
+        return {
+            "success": True,
+            "order": order,
+            "message": f"Customer approval requested for order {order_id}",
+        }
+
+    def approve_order_settlement(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Customer-facing alias for settlement approval and validation."""
+        return self.validate_delivery_completion(order_id=order_id, actor=actor, data=data)
+
+    def get_customer_pending_approvals(self, customer_id: str) -> Dict[str, Any]:
+        """Return orders awaiting the customer's settlement approval."""
+        items: List[Dict[str, Any]] = []
+        for order in self.orders.values():
+            if order.get("customer_id") != customer_id:
+                continue
+            if str(order.get("settlement_status") or "").strip().lower() != "awaiting_customer_approval":
+                continue
+            artifacts = self._ensure_settlement_artifacts(order)
+            settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
+            items.append({
+                "order_id": order.get("id"),
+                "supplier_id": order.get("supplier_id"),
+                "customer_id": customer_id,
+                "item_name": order.get("item_name"),
+                "order_type": order.get("order_type"),
+                "amount": round(float(order.get("total_amount", 0) or 0), 2),
+                "supplier_payout": round(float(order.get("supplier_payout", 0) or 0), 2),
+                "status": order.get("status"),
+                "settlement_status": order.get("settlement_status"),
+                "validation_type": settlement_request.get("validation_type"),
+                "requested_at": settlement_request.get("requested_at"),
+                "notes": settlement_request.get("notes"),
+                "settlement_code": artifacts["settlement_code"],
+                "settlement_qr_data": artifacts["settlement_qr_data"],
+                "settlement_qr_image_url": artifacts["settlement_qr_image_url"],
+            })
+        items.sort(key=lambda x: x.get("requested_at") or "", reverse=True)
+        return {
+            "success": True,
+            "customer_id": customer_id,
+            "items": items,
+            "total": len(items),
+        }
+
+    def get_supplier_pending_releases(self, supplier_id: str) -> Dict[str, Any]:
+        """Return supplier orders that are waiting for customer approval."""
+        items: List[Dict[str, Any]] = []
+        for order in self.orders.values():
+            if order.get("supplier_id") != supplier_id:
+                continue
+            if str(order.get("settlement_status") or "").strip().lower() != "awaiting_customer_approval":
+                continue
+            settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
+            items.append({
+                "order_id": order.get("id"),
+                "customer_id": order.get("customer_id"),
+                "item_name": order.get("item_name"),
+                "amount": round(float(order.get("supplier_payout", 0) or 0), 2),
+                "requested_at": settlement_request.get("requested_at"),
+                "validation_type": settlement_request.get("validation_type"),
+                "settlement_code": order.get("settlement_code"),
+            })
+        items.sort(key=lambda x: x.get("requested_at") or "", reverse=True)
+        return {
+            "success": True,
+            "supplier_id": supplier_id,
+            "items": items,
+            "total": len(items),
         }
 
     @staticmethod
@@ -1920,11 +2189,20 @@ class SupplyChainEcosystemService:
         order = self.orders[order_id]
         if order["status"] == OrderStatus.COMPLETED.value:
             raise ValueError("Order is already completed")
+        settlement_status = str(order.get("settlement_status") or "").strip().lower()
+        if bool(order.get("requires_customer_settlement_approval", True)) and settlement_status not in {
+            "customer_approved",
+            "pending_admin_payout",
+            "settled",
+        }:
+            raise ValueError("Customer settlement approval is required before supplier payout can be released")
         
         now = datetime.now(timezone.utc)
         order["status"] = OrderStatus.COMPLETED.value
         order["completed_date"] = now.isoformat()
         order["updated_date"] = now.isoformat()
+        order["settlement_status"] = "pending_admin_payout"
+        order["settlement_phase"] = "awaiting_admin_payout"
         
         supplier_id = order["supplier_id"]
         supplier = self.suppliers.get(supplier_id)
@@ -1952,7 +2230,9 @@ class SupplyChainEcosystemService:
             self.pending_settlements[supplier_id].append({
                 "order_id": order_id,
                 "amount": order["supplier_payout"],
-                "completed_date": now.isoformat()
+                "completed_date": now.isoformat(),
+                "settlement_status": order.get("settlement_status"),
+                "customer_approved_at": ((order.get("customer_approval") or {}).get("approved_at")),
             })
         
         # Record on ledger
@@ -2091,20 +2371,52 @@ class SupplyChainEcosystemService:
         if supplier_id:
             pending = self.pending_settlements.get(supplier_id, [])
             total = sum(p["amount"] for p in pending)
+            awaiting_customer_approval = [
+                o for o in self.orders.values()
+                if o.get("supplier_id") == supplier_id
+                and str(o.get("settlement_status") or "").strip().lower() == "awaiting_customer_approval"
+            ]
             return {
                 "supplier_id": supplier_id,
                 "pending_orders": len(pending),
                 "pending_amount": total,
-                "orders": pending
+                "orders": pending,
+                "awaiting_customer_approval_orders": len(awaiting_customer_approval),
+                "awaiting_customer_approval_amount": round(
+                    sum(float(o.get("supplier_payout", 0) or 0) for o in awaiting_customer_approval),
+                    2,
+                ),
+                "approval_required": [
+                    {
+                        "order_id": o.get("id"),
+                        "item_name": o.get("item_name"),
+                        "customer_id": o.get("customer_id"),
+                        "customer_name": o.get("customer_name"),
+                        "requested_at": (o.get("settlement_request") or {}).get("requested_at"),
+                        "amount": round(float(o.get("supplier_payout", 0) or 0), 2),
+                        "settlement_code": o.get("settlement_code"),
+                    }
+                    for o in awaiting_customer_approval
+                ],
             }
         
         # All suppliers
         result = {}
         for sup_id, pending in self.pending_settlements.items():
             total = sum(p["amount"] for p in pending)
+            awaiting_customer_approval = [
+                o for o in self.orders.values()
+                if o.get("supplier_id") == sup_id
+                and str(o.get("settlement_status") or "").strip().lower() == "awaiting_customer_approval"
+            ]
             result[sup_id] = {
                 "pending_orders": len(pending),
-                "pending_amount": total
+                "pending_amount": total,
+                "awaiting_customer_approval_orders": len(awaiting_customer_approval),
+                "awaiting_customer_approval_amount": round(
+                    sum(float(o.get("supplier_payout", 0) or 0) for o in awaiting_customer_approval),
+                    2,
+                ),
             }
         return result
     
@@ -2122,6 +2434,15 @@ class SupplyChainEcosystemService:
         
         # Clear pending
         self.pending_settlements[supplier_id] = []
+        for order_id in order_ids:
+            order = self.orders.get(order_id)
+            if not order:
+                continue
+            order["settlement_status"] = "settled"
+            order["settlement_phase"] = "paid_out"
+            order["settled_at"] = now.isoformat()
+            order["settled_by"] = processed_by
+            order["updated_date"] = now.isoformat()
 
         settlement_record = {
             "settlement_id": settlement_id,
@@ -2514,6 +2835,11 @@ class SupplyChainEcosystemService:
             - sum(float(o.get("supplier_payout", 0) or 0) for o in refunded)
         )
         pending_settlement = sum(float(p.get("amount", 0) or 0) for p in self.pending_settlements.get(supplier_id, []))
+        awaiting_customer_approval = sum(
+            float(o.get("supplier_payout", 0) or 0)
+            for o in orders
+            if str(o.get("settlement_status") or "").strip().lower() == "awaiting_customer_approval"
+        )
         settled_amount = sum(
             float(record.get("amount", 0) or 0)
             for record in self.settlement_history
@@ -2543,6 +2869,7 @@ class SupplyChainEcosystemService:
         report.pending_settlement = round(report.pending_settlement, 2)
         report.settled_amount = round(report.settled_amount, 2)
         report.net_payout = round(net_payout, 2)
+        report.other_fees = round(awaiting_customer_approval, 2)
         
         if len(completed) > 0:
             report.commission_rate_avg = commission / gross_sales * 100 if gross_sales > 0 else 0
@@ -2627,6 +2954,11 @@ class SupplyChainEcosystemService:
             
             # Pending
             "pending_settlement": sum(p["amount"] for p in self.pending_settlements.get(supplier_id, [])),
+            "awaiting_customer_approval": sum(
+                float(o.get("supplier_payout", 0) or 0)
+                for o in all_orders
+                if str(o.get("settlement_status") or "").strip().lower() == "awaiting_customer_approval"
+            ),
             
             # Revenue trend
             "revenue_by_month": revenue_by_month
