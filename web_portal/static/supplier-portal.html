@@ -734,25 +734,45 @@
       return order.item_name || order.product_name || order.offer_name || 'N/A';
     }
 
+    function settlementBadge(order) {
+      const value = String(order.settlement_status || '').toLowerCase();
+      const labels = {
+        pending_supplier_request: ['Awaiting supplier request', '#92400e', '#fef3c7'],
+        awaiting_customer_approval: ['Waiting for customer approval', '#1d4ed8', '#dbeafe'],
+        pending_admin_payout: ['Ready for admin payout', '#166534', '#dcfce7'],
+        settled: ['Settled', '#166534', '#dcfce7']
+      };
+      const [label, fg, bg] = labels[value] || [value || 'Unknown', '#374151', '#e5e7eb'];
+      return `<div style="font-size:11px;margin-top:6px;padding:4px 8px;border-radius:999px;background:${bg};color:${fg};display:inline-block;">${esc(label)}</div>`;
+    }
+
     function getOrderActions(order) {
       const status = String(order.status || '').toLowerCase();
+      const settlementStatus = String(order.settlement_status || '').toLowerCase();
       const orderId = esc(order.id);
+      const actions = [];
       if (status === 'pending') {
-        return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'confirmed')">Confirm</button>`;
+        actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'confirmed')">Confirm</button>`);
+        actions.push(`<button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button>`);
+      } else if (status === 'confirmed') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'processing')">Start</button>`);
+        actions.push(`<button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button>`);
+      } else if (status === 'processing') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'in_transit')">Dispatch</button>`);
+        actions.push(`<button class="btn-sm btn-edit" onclick="requestSettlement('${orderId}')">Request approval</button>`);
+      } else if (status === 'in_transit') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'delivered')">Mark delivered</button>`);
+        actions.push(`<button class="btn-sm btn-edit" onclick="requestSettlement('${orderId}')">Request approval</button>`);
+      } else if (status === 'delivered' && settlementStatus !== 'pending_admin_payout' && settlementStatus !== 'settled') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="requestSettlement('${orderId}')">Request approval</button>`);
       }
-      if (status === 'confirmed') {
-        return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'processing')">Start</button>`;
+      if (settlementStatus === 'awaiting_customer_approval') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="showSettlementQr('${orderId}')">Show QR</button>`);
       }
-      if (status === 'processing') {
-        return `<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'completed')">Complete</button>`;
+      if (!actions.length) {
+        return `${settlementBadge(order)}<div class="muted-text" style="margin-top:6px;">No actions</div>`;
       }
-      if (status === 'confirmed') {
-        return `<div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'processing')">Start</button><button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button></div>`;
-      }
-      if (status === 'pending') {
-        return `<div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'confirmed')">Confirm</button><button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button></div>`;
-      }
-      return '<span class="muted-text">No actions</span>';
+      return `<div style="display:flex; gap:8px; flex-wrap:wrap;">${actions.join('')}</div>${settlementBadge(order)}`;
     }
 
     async function loadSettlementData() {
@@ -767,18 +787,28 @@
         document.getElementById('settlement-pending-orders').textContent = settlementData.pending_orders || 0;
 
         const pendingOrders = settlementData.orders || [];
+        const approvalRequired = settlementData.approval_required || [];
         const pendingBody = document.getElementById('settlement-orders-body');
-        if (!pendingOrders.length) {
-          pendingBody.innerHTML = '<tr><td colspan="3" class="muted-text">No pending settlements</td></tr>';
-        } else {
-          pendingBody.innerHTML = pendingOrders.map(order => `
+        const rows = [];
+        if (pendingOrders.length) {
+          rows.push(...pendingOrders.map(order => `
             <tr>
               <td>${esc(order.order_id || 'N/A')}</td>
               <td>${formatDate(order.completed_date)}</td>
               <td>${formatCurrency(order.amount)}</td>
             </tr>
-          `).join('');
+          `));
         }
+        if (approvalRequired.length) {
+          rows.push(...approvalRequired.map(order => `
+            <tr>
+              <td>${esc(order.order_id || 'N/A')}<div class="muted-text" style="font-size:11px;">Waiting for ${esc(order.customer_name || order.customer_id || 'customer')}</div></td>
+              <td>${formatDate(order.requested_at)}</td>
+              <td>${formatCurrency(order.amount)}<div class="muted-text" style="font-size:11px;">Code: ${esc(order.settlement_code || 'Pending')}</div></td>
+            </tr>
+          `));
+        }
+        pendingBody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="3" class="muted-text">No pending settlements</td></tr>';
 
         const report = (profileData && profileData.pnl && profileData.pnl.report) || {};
         document.getElementById('settlement-gross-sales').textContent = formatCurrency(report.gross_sales || 0);
@@ -803,6 +833,10 @@
           <div class="profile-item">
             <div class="label">Pending Settlement</div>
             <div class="value">${formatCurrency(report.pending_settlement || settlementData.pending_amount || 0)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Waiting Customer Approval</div>
+            <div class="value">${formatCurrency(settlementData.awaiting_customer_approval_amount || 0)}</div>
           </div>
           <div class="profile-item">
             <div class="label">Settled Amount</div>
@@ -1068,6 +1102,7 @@
             <td>${formatCurrency(order.supplier_payout, order.currency || 'USD')}</td>
             <td>
               <span class="order-status ${esc(order.status || 'unknown')}">${esc((order.status || '').toUpperCase() || 'UNKNOWN')}</span>
+              ${settlementBadge(order)}
             </td>
             <td>${getOrderActions(order)}</td>
           </tr>
@@ -1255,6 +1290,37 @@
         await Promise.all([refreshOrders(), loadSettlementData()]);
       } catch (e) {
         alert('Failed to update order: ' + e.message);
+      }
+    }
+
+    async function requestSettlement(orderId) {
+      try {
+        await apiPost(`/api/supply-chain/orders/${encodeURIComponent(orderId)}/request-settlement`, {
+          notes: 'Supplier requested customer settlement approval'
+        });
+        alert(`Settlement approval requested for ${orderId}. Share the PHINS QR/code with the customer.`);
+        await Promise.all([refreshOrders(), loadSettlementData()]);
+      } catch (e) {
+        alert('Failed to request settlement: ' + e.message);
+      }
+    }
+
+    async function showSettlementQr(orderId) {
+      try {
+        const data = await apiGet('/api/supplier/orders');
+        const order = (data.items || []).find(o => o.id === orderId);
+        if (!order) {
+          throw new Error('Order not found');
+        }
+        const qrUrl = order.settlement_qr_image_url;
+        const code = order.settlement_code || 'Pending';
+        if (!qrUrl) {
+          throw new Error('Settlement QR not ready yet');
+        }
+        window.alert(`Settlement code for ${orderId}: ${code}\nOpen the next browser tab if your popup blocker allows it.`);
+        window.open(qrUrl, '_blank', 'noopener');
+      } catch (e) {
+        alert('Failed to open settlement QR: ' + e.message);
       }
     }
 

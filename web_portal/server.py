@@ -379,6 +379,14 @@ def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
     row['external_payment_amount'] = round(external_paid, 2)
     row['payment_status'] = row.get('payment_status') or ('paid' if total_amount > 0 else 'pending')
     row['status'] = row.get('status') or 'pending'
+    row['settlement_status'] = row.get('settlement_status') or ('pending_admin_payout' if row['status'] == 'completed' else 'pending_supplier_request')
+    row['settlement_phase'] = row.get('settlement_phase') or row['settlement_status']
+    row['settlement_request'] = row.get('settlement_request') if isinstance(row.get('settlement_request'), dict) else {}
+    row['customer_approval'] = row.get('customer_approval') if isinstance(row.get('customer_approval'), dict) else {}
+    row['settlement_code'] = row.get('settlement_code')
+    row['settlement_qr_image_url'] = row.get('settlement_qr_image_url')
+    row['settlement_qr_data'] = row.get('settlement_qr_data')
+    row['requires_customer_settlement_approval'] = bool(row.get('requires_customer_settlement_approval', True))
     row['pricing_plan'] = pricing_plan
     row['profit_margin_amount'] = safe_float(
         row.get('profit_margin_amount'),
@@ -395,6 +403,85 @@ def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
         or (safe_float(row.get('wallet_refunded_amount'), 0.0) + safe_float(row.get('external_refunded_amount'), 0.0)),
         2,
     )
+    return row
+
+
+def _enrich_medical_purchase_rows(purchases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Project live supply-chain order state onto marketplace purchase rows."""
+    enriched: List[Dict[str, Any]] = []
+    for purchase in purchases:
+        row = dict(purchase or {})
+        order_id = str(row.get('order_id') or '').strip()
+        if order_id and supply_chain_enabled and supply_chain_service:
+            live_order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+            if live_order:
+                normalized_order = normalize_supply_chain_order_row(live_order)
+                row['status'] = normalized_order.get('status') or row.get('status')
+                row['settlement_status'] = normalized_order.get('settlement_status')
+                row['settlement_phase'] = normalized_order.get('settlement_phase')
+                row['settlement_request'] = normalized_order.get('settlement_request')
+                row['customer_approval'] = normalized_order.get('customer_approval')
+                row['settlement_code'] = normalized_order.get('settlement_code')
+                row['settlement_qr_image_url'] = normalized_order.get('settlement_qr_image_url')
+                row['settlement_qr_data'] = normalized_order.get('settlement_qr_data')
+                row['requires_customer_settlement_approval'] = normalized_order.get('requires_customer_settlement_approval')
+                row['supplier_name'] = normalized_order.get('supplier_name') or row.get('supplier_name')
+                row['provider_name'] = normalized_order.get('provider_name') or row.get('provider_name')
+                row['provider'] = normalized_order.get('provider') or row.get('provider')
+                row['customer_name'] = normalized_order.get('customer_name') or row.get('customer_name')
+                row['platform_fee'] = normalized_order.get('platform_fee', row.get('platform_fee'))
+                row['supplier_payout'] = normalized_order.get('supplier_payout', row.get('supplier_payout'))
+                row['amount'] = normalized_order.get('total_amount', row.get('amount'))
+                row['wallet_paid'] = normalized_order.get('wallet_paid', row.get('wallet_paid'))
+                row['wallet_deduction'] = normalized_order.get('wallet_deduction', row.get('wallet_deduction'))
+                row['external_payment_amount'] = normalized_order.get('external_payment_amount', row.get('external_payment_amount'))
+        enriched.append(row)
+    return enriched
+
+
+def get_customer_marketplace_purchases(customer_id: str) -> List[Dict[str, Any]]:
+    """Return marketplace purchases enriched with live order state."""
+    purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+    purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return _enrich_medical_purchase_rows(purchases)
+
+
+def _customer_purchase_rows(customer_id: str) -> List[Dict[str, Any]]:
+    """Return medical purchases enriched with live order state."""
+    purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+    purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return _enrich_medical_purchase_rows(purchases)
+
+
+def enrich_marketplace_purchase_row(purchase: Dict[str, Any]) -> Dict[str, Any]:
+    """Align a marketplace purchase row with its linked supply-chain order."""
+    row = dict(purchase or {})
+    order_id = str(row.get('order_id') or '').strip()
+    order = None
+    if order_id and supply_chain_enabled and supply_chain_service:
+        order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+    if isinstance(order, dict):
+        normalized_order = normalize_supply_chain_order_row(order)
+        row['status'] = normalized_order.get('status') or row.get('status')
+        row['supplier_id'] = normalized_order.get('supplier_id') or row.get('supplier_id')
+        row['supplier_name'] = normalized_order.get('supplier_name') or row.get('supplier_name')
+        row['provider'] = normalized_order.get('provider') or row.get('provider')
+        row['provider_name'] = normalized_order.get('provider_name') or row.get('provider_name')
+        row['customer_name'] = normalized_order.get('customer_name') or row.get('customer_name')
+        row['platform_fee'] = normalized_order.get('platform_fee', row.get('platform_fee'))
+        row['supplier_payout'] = normalized_order.get('supplier_payout', row.get('supplier_payout'))
+        row['settlement_status'] = normalized_order.get('settlement_status')
+        row['settlement_phase'] = normalized_order.get('settlement_phase')
+        row['settlement_request'] = normalized_order.get('settlement_request') or {}
+        row['customer_approval'] = normalized_order.get('customer_approval') or {}
+        row['settlement_code'] = normalized_order.get('settlement_code')
+        row['settlement_qr_image_url'] = normalized_order.get('settlement_qr_image_url')
+        row['settlement_qr_data'] = normalized_order.get('settlement_qr_data')
+        row['requires_customer_settlement_approval'] = normalized_order.get('requires_customer_settlement_approval')
+        row['delivery_method'] = normalized_order.get('delivery_method') or row.get('delivery_method')
+        row['delivery_validation'] = normalized_order.get('delivery_validation') or row.get('delivery_validation')
+    row['can_cancel'] = bool(str(row.get('status') or '').strip().lower() in {'pending', 'confirmed'})
+    row['can_refund'] = bool(str(row.get('status') or '').strip().lower() == 'completed' and safe_float(row.get('refunded_amount'), 0.0) < safe_float(row.get('amount'), 0.0))
     return row
 
 
@@ -13324,6 +13411,7 @@ For claims or questions, please contact:
                 return
             
             purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+            purchases = _enrich_medical_purchase_rows(purchases)
             purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
             
             self._set_json_headers()
@@ -28651,14 +28739,6 @@ For claims or questions, please contact:
                     order = order_result.get('order', {})
                     pricing_plan = order_result.get('pricing_plan') or order.get('pricing_plan') or {}
 
-                    # Auto-complete immediately for paid checkout flows.
-                    if order.get('payment_status') == 'paid':
-                        try:
-                            supply_chain_service.complete_order(order.get('id'), completed_by='wallet_checkout')
-                            order = supply_chain_service.orders.get(order.get('id'), order)
-                        except Exception:
-                            pass
-
                     purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                     final_amount = safe_float(order.get('total_amount'), 0.0)
                     wallet_deduction = safe_float(order.get('wallet_deduction'), 0.0)
@@ -28703,7 +28783,7 @@ For claims or questions, please contact:
                         'provider_name': order.get('supplier_name') or supplier_offer.get('supplier_name') or get_supplier_display_name(supplier_id),
                         'quantity': quantity,
                         'amount': final_amount,
-                        'status': 'completed' if order.get('payment_status') == 'paid' else 'pending',
+                        'status': order.get('status') or ('pending' if order.get('payment_status') == 'paid' else 'pending'),
                         'timestamp': datetime.now().isoformat(),
                         'payment_method': payment_method,
                         'wallet_paid': wallet_deduction,
@@ -28868,6 +28948,7 @@ For claims or questions, please contact:
                     customer_id = requested_customer_id or session_customer_id or 'CUST001'
                 
                 purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+                purchases = _enrich_medical_purchase_rows(purchases)
                 purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
                 
                 self._set_json_headers()

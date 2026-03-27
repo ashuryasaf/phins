@@ -596,6 +596,16 @@
             <div style="font-size:1.5rem; font-weight:bold;" id="avg-settlement">$0.00</div>
           </div>
         </div>
+        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:16px; margin-bottom:24px;">
+          <div style="background:#eff6ff; padding:16px; border-radius:8px; text-align:center; border:1px solid #bfdbfe;">
+            <div style="font-size:0.9rem; color:#1d4ed8;">Awaiting Customer Approval</div>
+            <div style="font-size:1.4rem; font-weight:bold; color:#1d4ed8;" id="awaiting-customer-total">$0.00</div>
+          </div>
+          <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid var(--border);">
+            <div style="font-size:0.9rem; color:var(--text-muted); margin-bottom:8px;">Approval Queue</div>
+            <div id="approval-queue-summary" class="muted-text">Loading supplier approval queue...</div>
+          </div>
+        </div>
 
         <div class="table-card">
           <table class="data-table">
@@ -1490,10 +1500,12 @@
         // Calculate totals
         let totalPending = 0;
         let suppliersCount = 0;
+        let awaitingCustomerTotal = 0;
         const entries = Object.entries(data || {}).filter(([k, v]) => typeof v === 'object' && v.pending_amount);
         
         entries.forEach(([supplierId, info]) => {
           totalPending += info.pending_amount || 0;
+          awaitingCustomerTotal += info.awaiting_customer_approval_amount || 0;
           suppliersCount++;
         });
         
@@ -1501,8 +1513,10 @@
         document.getElementById('suppliers-awaiting').textContent = suppliersCount;
         document.getElementById('avg-settlement').textContent = suppliersCount > 0 ? formatCurrency(totalPending / suppliersCount) : '$0.00';
         document.getElementById('settlement-count').textContent = suppliersCount;
+        document.getElementById('awaiting-customer-total').textContent = formatCurrency(awaitingCustomerTotal);
         
         if (!entries.length) {
+          document.getElementById('approval-queue-summary').textContent = 'No suppliers are waiting for settlement actions.';
           tbody.innerHTML = '<tr><td colspan="6" class="muted-text">No pending settlements</td></tr>';
           return;
         }
@@ -1511,6 +1525,16 @@
         const supplierData = await apiGet('/api/admin/suppliers');
         const suppliers = {};
         (supplierData.items || []).forEach(s => suppliers[s.id] = s);
+        const approvalSummary = entries
+          .filter(([, info]) => Number(info.awaiting_customer_approval_orders || 0) > 0)
+          .map(([supplierId, info]) => {
+            const supplier = suppliers[supplierId] || {};
+            const companyName = supplier.company_name || supplierId;
+            return `${companyName}: ${info.awaiting_customer_approval_orders || 0} awaiting customer`;
+          });
+        document.getElementById('approval-queue-summary').textContent = approvalSummary.length
+          ? approvalSummary.join(' | ')
+          : 'All listed suppliers are payout-ready.';
         
         tbody.innerHTML = entries.map(([supplierId, info]) => {
           const supplier = suppliers[supplierId] || {};
@@ -1518,11 +1542,17 @@
             <tr>
               <td>${esc(supplierId)}</td>
               <td>${esc(supplier.company_name) || 'Unknown'}</td>
-              <td>${info.pending_orders || 0}</td>
-              <td style="font-weight:bold;color:#f59e0b;">${formatCurrency(info.pending_amount)}</td>
+              <td>
+                ${info.pending_orders || 0}
+                ${info.awaiting_customer_approval_orders ? `<div class="muted-text" style="font-size:11px;">+ ${info.awaiting_customer_approval_orders} awaiting customer</div>` : ''}
+              </td>
+              <td style="font-weight:bold;color:#f59e0b;">
+                ${formatCurrency(info.pending_amount)}
+                ${info.awaiting_customer_approval_amount ? `<div class="muted-text" style="font-size:11px;">Awaiting customer: ${formatCurrency(info.awaiting_customer_approval_amount)}</div>` : ''}
+              </td>
               <td>${formatSupplierType(supplier.settlement_frequency) || 'Weekly'}</td>
               <td>
-                <button class="btn-sm btn-approve" onclick="processSettlement('${esc(supplierId)}')">Process Payout</button>
+                <button class="btn-sm btn-approve" onclick="processSettlement('${esc(supplierId)}')" ${Number(info.pending_amount || 0) > 0 ? '' : 'disabled'}>Process Payout</button>
               </td>
             </tr>
           `;
