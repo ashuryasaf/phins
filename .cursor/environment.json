@@ -1,0 +1,4 @@
+{
+  "$schema": "https://www.cursor.com/schemas/environment.schema.json",
+  "install": "python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt"
+}
