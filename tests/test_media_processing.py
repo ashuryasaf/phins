@@ -17,6 +17,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import web_portal.server as portal
+import services.media_generation_service as media_generation_service
 
 
 class ServerThread(threading.Thread):
@@ -582,3 +583,40 @@ def test_marketing_video_provider_capabilities_endpoint():
         assert isinstance(capabilities["providers"]["kling"]["models"], list)
     finally:
         srv.stop()
+
+
+def test_kling_provider_enabled_with_access_secret_credentials(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "")
+    monkeypatch.setenv("KLING_ACCESS_KEY", "access-key-1")
+    monkeypatch.setenv("KLING_SECRET_KEY", "secret-key-1")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    service = media_generation_service.MediaGenerationService()
+    capabilities = service.supported_provider_config()
+
+    assert capabilities["kling"]["enabled"] is True
+
+
+def test_kling_jwt_from_access_secret_is_hs256_and_contains_issuer():
+    token = media_generation_service.MediaGenerationService._build_kling_access_secret_jwt(
+        access_key="AK-123",
+        secret_key="SK-123",
+        now_epoch_seconds=1_700_000_000,
+        ttl_seconds=1800,
+    )
+
+    header_b64, payload_b64, signature_b64 = token.split(".")
+    assert header_b64
+    assert payload_b64
+    assert signature_b64
+
+    import base64 as _base64
+
+    decoded_header = json.loads(_base64.urlsafe_b64decode(header_b64 + "==").decode("utf-8"))
+    decoded_payload = json.loads(_base64.urlsafe_b64decode(payload_b64 + "==").decode("utf-8"))
+
+    assert decoded_header["alg"] == "HS256"
+    assert decoded_header["typ"] == "JWT"
+    assert decoded_payload["iss"] == "AK-123"
+    assert decoded_payload["exp"] == 1_700_001_800
+    assert decoded_payload["nbf"] == 1_699_999_995
