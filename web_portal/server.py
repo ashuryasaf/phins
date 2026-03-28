@@ -1492,6 +1492,135 @@ def marketing_state_dict() -> Dict[str, Any]:
     return state
 
 
+def _copy_json_value(value: Any) -> Any:
+    """Return a JSON-safe deep copy to avoid shared mutable references."""
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except Exception:
+        return value
+
+
+def normalize_marketing_assets_created(assets_created: Any) -> List[Dict[str, Any]]:
+    """Normalize the stored list of media assets linked to a marketing campaign."""
+    if not isinstance(assets_created, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for item in assets_created:
+        if isinstance(item, dict):
+            normalized.append(dict(item))
+    return normalized
+
+
+def get_marketing_campaign_entry(campaign_id: str = '') -> Dict[str, Any]:
+    """Return a stored marketing campaign envelope by id (or latest when omitted)."""
+    marketing_state = marketing_state_dict()
+    campaign_store = marketing_state.get('campaign_store')
+    if not isinstance(campaign_store, dict):
+        campaign_store = {}
+        marketing_state['campaign_store'] = campaign_store
+
+    target_id = str(campaign_id or '').strip()
+    if target_id and isinstance(campaign_store.get(target_id), dict):
+        return dict(campaign_store[target_id])
+
+    latest_campaign = marketing_state.get('latest_campaign')
+    if isinstance(latest_campaign, dict):
+        latest_campaign_id = str((latest_campaign.get('campaign') or {}).get('campaign_id') or '').strip()
+        if latest_campaign_id and latest_campaign_id not in campaign_store:
+            campaign_store[latest_campaign_id] = dict(latest_campaign)
+        if not target_id or latest_campaign_id == target_id:
+            return dict(latest_campaign)
+
+    if target_id:
+        return {}
+
+    campaign_order = marketing_state.get('campaign_order')
+    if isinstance(campaign_order, list):
+        for ordered_id in campaign_order:
+            campaign_key = str(ordered_id or '').strip()
+            candidate = campaign_store.get(campaign_key)
+            if isinstance(candidate, dict):
+                marketing_state['latest_campaign'] = dict(candidate)
+                return dict(candidate)
+    return {}
+
+
+def store_marketing_campaign_entry(
+    *,
+    campaign_payload: Dict[str, Any],
+    integrity_payload: Dict[str, Any],
+    actor: str,
+    lifecycle_status: str = 'generated',
+    assets_created: Optional[List[Dict[str, Any]]] = None,
+    published_at: str = '',
+    published_by: str = '',
+) -> Dict[str, Any]:
+    """Persist campaign payload and integrity state for cross-page media/video workflows."""
+    marketing_state = marketing_state_dict()
+    campaign_store = marketing_state.get('campaign_store')
+    if not isinstance(campaign_store, dict):
+        campaign_store = {}
+        marketing_state['campaign_store'] = campaign_store
+
+    campaign_order = marketing_state.get('campaign_order')
+    if not isinstance(campaign_order, list):
+        campaign_order = []
+
+    campaign_id = str((campaign_payload or {}).get('campaign_id') or '').strip()
+    if not campaign_id:
+        campaign_id = f"MKT-{uuid.uuid4().hex[:10]}"
+        campaign_payload = dict(campaign_payload or {})
+        campaign_payload['campaign_id'] = campaign_id
+
+    existing_entry = campaign_store.get(campaign_id)
+    if not isinstance(existing_entry, dict):
+        existing_entry = {}
+    existing_assets = normalize_marketing_assets_created(existing_entry.get('assets_created'))
+
+    envelope = {
+        'campaign': _copy_json_value(campaign_payload or {}),
+        'integrity': _copy_json_value(integrity_payload or {}),
+        'generated_at': str(
+            (campaign_payload or {}).get('generated_at')
+            or existing_entry.get('generated_at')
+            or datetime.now().isoformat()
+        ),
+        'generated_by': str(
+            (campaign_payload or {}).get('generated_by')
+            or existing_entry.get('generated_by')
+            or actor
+            or 'admin'
+        ),
+        'published_at': str(
+            published_at
+            or existing_entry.get('published_at')
+            or ''
+        ),
+        'published_by': str(
+            published_by
+            or existing_entry.get('published_by')
+            or ''
+        ),
+        'assets_created': normalize_marketing_assets_created(assets_created) if assets_created is not None else existing_assets,
+        'lifecycle_status': str(lifecycle_status or existing_entry.get('lifecycle_status') or 'generated').strip().lower(),
+        'updated_at': datetime.now().isoformat(),
+        'updated_by': actor or 'admin',
+    }
+
+    campaign_store[campaign_id] = envelope
+    campaign_order = [cid for cid in campaign_order if str(cid or '').strip() and str(cid or '').strip() != campaign_id]
+    campaign_order.insert(0, campaign_id)
+    marketing_state['campaign_order'] = campaign_order[:60]
+    marketing_state['campaign_store'] = campaign_store
+    marketing_state['latest_campaign'] = envelope
+    marketing_state['updated_at'] = envelope['updated_at']
+    marketing_state['updated_by'] = actor or 'admin'
+    DESIGN_SETTINGS['marketing_sales_agent'] = marketing_state
+    DESIGN_SETTINGS['updated_at'] = envelope['updated_at']
+    DESIGN_SETTINGS['updated_by'] = actor or 'admin'
+    return envelope
+
+
 def get_media_subtitle_track(asset: Dict[str, Any], track_id: str = '') -> Optional[Dict[str, Any]]:
     """Return the requested subtitle track, or the most recent one if no id is provided."""
     tracks = get_media_subtitle_tracks(asset)
@@ -1939,12 +2068,11 @@ def resolve_media_video_job_image_data_url(payload: Dict[str, Any]) -> str:
 
 
 def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
-    """Return latest published campaign video blueprints for the requested campaign."""
-    marketing_state = marketing_state_dict()
-    latest_campaign = marketing_state.get('latest_campaign') if isinstance(marketing_state, dict) else {}
-    campaign_payload = latest_campaign.get('campaign') if isinstance(latest_campaign, dict) else {}
-    if str(campaign_payload.get('campaign_id') or '') != campaign_id:
-        return {}, [], 'Campaign not found or not loaded as latest campaign'
+    """Return stored campaign video blueprints for the requested campaign id."""
+    campaign_entry = get_marketing_campaign_entry(campaign_id)
+    campaign_payload = campaign_entry.get('campaign') if isinstance(campaign_entry, dict) else {}
+    if str(campaign_payload.get('campaign_id') or '') != str(campaign_id or '').strip():
+        return {}, [], 'Campaign not found'
 
     blueprints = campaign_payload.get('ai_video_blueprints')
     if not isinstance(blueprints, list) or not blueprints:
@@ -2011,6 +2139,70 @@ def get_media_generation_service():
     from services.media_generation_service import get_media_generation_service as _get_media_generation_service
 
     return _get_media_generation_service()
+
+
+def media_video_provider_capabilities() -> Dict[str, Any]:
+    """Return normalized provider availability and model metadata for UI routing."""
+    service = get_media_generation_service()
+    provider_config: Dict[str, Any] = {}
+    supported_config_fn = getattr(service, 'supported_provider_config', None)
+    if callable(supported_config_fn):
+        try:
+            maybe_config = supported_config_fn()
+            if isinstance(maybe_config, dict):
+                provider_config = maybe_config
+        except Exception:
+            provider_config = {}
+    if not provider_config:
+        provider_config = {
+            'gemini': {
+                'enabled': True,
+                'label': 'Gemini / Veo',
+                'models': ['veo-3.1-generate-preview', 'veo-3-fast-preview'],
+            },
+            'kling': {
+                'enabled': True,
+                'label': 'Kling',
+                'models': ['kling-v2.6-pro', 'kling-v2.6-std'],
+            },
+        }
+    providers: Dict[str, Dict[str, Any]] = {}
+    for provider_name, config in provider_config.items():
+        if not isinstance(config, dict):
+            continue
+        providers[str(provider_name)] = {
+            'enabled': bool(config.get('enabled')),
+            'label': str(config.get('label') or str(provider_name).title()),
+            'default_model': str(config.get('model') or ''),
+            'models': [str(model) for model in (config.get('models') or []) if str(model).strip()],
+        }
+    default_provider = next(
+        (name for name, config in providers.items() if config.get('enabled')),
+        (next(iter(providers.keys()), DEFAULT_MEDIA_VIDEO_PROVIDER)),
+    )
+    return {
+        'providers': providers,
+        'default_provider': str(default_provider or DEFAULT_MEDIA_VIDEO_PROVIDER),
+    }
+
+
+def validate_media_video_provider_selection(provider: str, provider_model: str = '') -> Tuple[str, str]:
+    """Validate the selected media video provider/model against connected capabilities."""
+    selected_provider = str(provider or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
+    selected_model = str(provider_model or '').strip()
+    capabilities = media_video_provider_capabilities()
+    providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
+    if not isinstance(providers, dict):
+        providers = {}
+    provider_config = providers.get(selected_provider)
+    if not isinstance(provider_config, dict):
+        return selected_provider, f'Unsupported video provider: {selected_provider}'
+    if not provider_config.get('enabled'):
+        return selected_provider, f'Selected provider "{selected_provider}" is not connected'
+    available_models = [str(model) for model in (provider_config.get('models') or []) if str(model).strip()]
+    if selected_model and available_models and selected_model not in available_models:
+        return selected_provider, f'Invalid model "{selected_model}" for provider "{selected_provider}"'
+    return selected_provider, ''
 
 # ========== INVITATION CODES (Registration by Invitation Only) ==========
 # Invitation codes for new user registration
@@ -6559,10 +6751,22 @@ For claims or questions, please contact:
                     generated_by=(session or {}).get('username', 'admin'),
                 )
 
+                actor = (session or {}).get('username', 'admin')
+                generated_campaign = campaign_data.get('campaign') if isinstance(campaign_data, dict) else {}
+                generated_integrity = campaign_data.get('integrity') if isinstance(campaign_data, dict) else {}
+                latest_entry = store_marketing_campaign_entry(
+                    campaign_payload=generated_campaign if isinstance(generated_campaign, dict) else {},
+                    integrity_payload=generated_integrity if isinstance(generated_integrity, dict) else {},
+                    actor=actor,
+                    lifecycle_status='generated',
+                )
+                save_ledger_data()
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'generated': campaign_data,
+                    'latest_campaign': latest_entry,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -6576,11 +6780,12 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
 
-            marketing_state = DESIGN_SETTINGS.get('marketing_sales_agent', {})
-            latest_campaign = marketing_state.get('latest_campaign')
+            marketing_state = marketing_state_dict()
+            requested_campaign_id = str(qs.get('campaign_id', [''])[0]).strip()
+            latest_campaign = get_marketing_campaign_entry(requested_campaign_id)
             if not latest_campaign:
                 self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'No published campaign found'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'No generated campaign found'}).encode('utf-8'))
                 return
 
             try:
@@ -6629,6 +6834,24 @@ For claims or questions, please contact:
                 'jobs': jobs,
             }).encode('utf-8'))
             return
+
+        if path == '/api/admin/media/video-providers':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                capabilities = media_video_provider_capabilities()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'capabilities': capabilities,
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':
@@ -18090,29 +18313,51 @@ For claims or questions, please contact:
                 if not isinstance(social_networks, list):
                     social_networks = []
 
+                publisher = (session or {}).get('username', 'admin')
+                requested_campaign_id = str(data.get('campaign_id') or '').strip()
+                regenerate_campaign = bool(data.get('regenerate'))
                 service = get_marketing_sales_agent_service()
-                generated = service.generate_campaign(
-                    customers=CUSTOMERS,
-                    policies=POLICIES,
-                    billing=BILLING,
-                    claims=CLAIMS,
-                    health_wallets=HEALTH_WALLETS,
-                    investment_accounts=INVESTMENT_ACCOUNTS,
-                    transaction_ledger=TRANSACTION_LEDGER,
-                    vertical=data.get('vertical', 'insurance'),
-                    objective=data.get('objective', 'growth'),
-                    persona=data.get('persona', 'families'),
-                    region=data.get('region', 'global'),
-                    budget_tier=data.get('budget_tier', 'balanced'),
-                    social_networks=social_networks,
-                    generated_by=(session or {}).get('username', 'admin'),
-                )
 
-                campaign_payload = generated.get('campaign', {})
-                integrity_payload = generated.get('integrity', {})
+                selected_campaign_entry: Dict[str, Any] = {}
+                campaign_payload: Dict[str, Any] = {}
+                integrity_payload: Dict[str, Any] = {}
+                campaign_source = 'generated_store'
+                if not regenerate_campaign:
+                    selected_campaign_entry = get_marketing_campaign_entry(requested_campaign_id)
+                    campaign_payload = selected_campaign_entry.get('campaign') if isinstance(selected_campaign_entry, dict) else {}
+                    integrity_payload = selected_campaign_entry.get('integrity') if isinstance(selected_campaign_entry, dict) else {}
+                    if not isinstance(campaign_payload, dict):
+                        campaign_payload = {}
+                    if not isinstance(integrity_payload, dict):
+                        integrity_payload = {}
+
+                if not campaign_payload:
+                    generated = service.generate_campaign(
+                        customers=CUSTOMERS,
+                        policies=POLICIES,
+                        billing=BILLING,
+                        claims=CLAIMS,
+                        health_wallets=HEALTH_WALLETS,
+                        investment_accounts=INVESTMENT_ACCOUNTS,
+                        transaction_ledger=TRANSACTION_LEDGER,
+                        vertical=data.get('vertical', 'insurance'),
+                        objective=data.get('objective', 'growth'),
+                        persona=data.get('persona', 'families'),
+                        region=data.get('region', 'global'),
+                        budget_tier=data.get('budget_tier', 'balanced'),
+                        social_networks=social_networks,
+                        generated_by=publisher,
+                    )
+                    campaign_payload = generated.get('campaign', {}) if isinstance(generated, dict) else {}
+                    integrity_payload = generated.get('integrity', {}) if isinstance(generated, dict) else {}
+                    if not isinstance(campaign_payload, dict):
+                        campaign_payload = {}
+                    if not isinstance(integrity_payload, dict):
+                        integrity_payload = {}
+                    campaign_source = 'regenerated'
+
                 campaign_id = str(campaign_payload.get('campaign_id') or f"MKT-{uuid.uuid4().hex[:10]}")
                 published_at = datetime.now().isoformat()
-                publisher = (session or {}).get('username', 'admin')
 
                 # Convert campaign artifacts into media-brief assets for /admin-media.
                 briefs = service.build_media_briefs(campaign_payload)
@@ -18148,9 +18393,7 @@ For claims or questions, please contact:
                         'brief_type': brief.get('brief_type', 'campaign'),
                     })
 
-                marketing_state = DESIGN_SETTINGS.setdefault('marketing_sales_agent', {})
-                if not isinstance(marketing_state, dict):
-                    marketing_state = {}
+                marketing_state = marketing_state_dict()
                 published_campaigns = marketing_state.get('published_campaigns', [])
                 if not isinstance(published_campaigns, list):
                     published_campaigns = []
@@ -18172,17 +18415,20 @@ For claims or questions, please contact:
                     'objective': campaign_payload.get('scope', {}).get('objective'),
                     'assets_created': len(created_assets),
                     'integrity_signature': integrity_payload.get('signature', ''),
+                    'source': campaign_source,
                 }
                 published_campaigns.append(summary_entry)
                 published_campaigns = published_campaigns[-30:]
 
-                marketing_state['latest_campaign'] = {
-                    'campaign': campaign_payload,
-                    'integrity': integrity_payload,
-                    'published_at': published_at,
-                    'published_by': publisher,
-                    'assets_created': created_assets,
-                }
+                latest_entry = store_marketing_campaign_entry(
+                    campaign_payload=campaign_payload if isinstance(campaign_payload, dict) else {},
+                    integrity_payload=integrity_payload if isinstance(integrity_payload, dict) else {},
+                    actor=publisher,
+                    lifecycle_status='published',
+                    assets_created=created_assets,
+                    published_at=published_at,
+                    published_by=publisher,
+                )
                 marketing_state['published_campaigns'] = published_campaigns
                 marketing_state['social_connections'] = social_connections
                 marketing_state['updated_at'] = published_at
@@ -18197,9 +18443,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'message': 'Marketing campaign published and synced to media dashboard',
-                    'latest_campaign': marketing_state.get('latest_campaign', {}),
+                    'latest_campaign': latest_entry,
                     'published_count': len(published_campaigns),
                     'created_assets': created_assets,
+                    'campaign_source': campaign_source,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -18510,9 +18757,19 @@ For claims or questions, please contact:
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
+            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
+            if provider_error:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
+                return
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
+            if provider_error:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
                 return
 
             _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
@@ -18583,9 +18840,19 @@ For claims or questions, please contact:
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
+            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
+            if provider_error:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
+                return
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
+                return
+            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
+            if provider_error:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
                 return
             if blueprint_index < 0:
                 self._set_json_headers(400)
@@ -18626,6 +18893,82 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
+
+        if path in {'/api/admin/media/video-jobs/retry', '/api/admin/media/video-jobs/cancel'}:
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            job_id = str(data.get('job_id') or '').strip()
+            campaign_id = str(data.get('campaign_id') or '').strip()
+            if not job_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'job_id is required'}).encode('utf-8'))
+                return
+
+            job = find_media_processing_job(job_id=job_id)
+            if not job or str(job.get('job_kind') or '') != 'video_generation':
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Video generation job not found'}).encode('utf-8'))
+                return
+
+            job_campaign_id = str(job.get('campaign_id') or '').strip()
+            if campaign_id and campaign_id != job_campaign_id:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Job does not match campaign_id'}).encode('utf-8'))
+                return
+
+            action = path.rsplit('/', 1)[-1]
+            requested_by = (session or {}).get('username', 'admin')
+            if action == 'cancel':
+                cancel_media_video_job(job, cancelled_by=requested_by)
+                save_ledger_data()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Video generation job cancelled',
+                    'job': serialize_media_job(job, include_callback=True),
+                    'jobs': video_generation_jobs_for_campaign_response(job_campaign_id),
+                }).encode('utf-8'))
+                return
+
+            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            poll_mode = str(data.get('poll_mode') or '').strip().lower()
+            try:
+                retried_job = retry_media_video_job(
+                    job,
+                    requested_by=requested_by,
+                    callback_base_url=callback_base_url,
+                )
+            except Exception as exc:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+
+            if poll_mode != 'webhook' or not callback_base_url:
+                start_media_job_polling(retried_job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
+            save_ledger_data()
+            self._set_json_headers(202)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'message': 'Video generation job retried',
+                'job': serialize_media_job(retried_job, include_callback=True),
+                'jobs': video_generation_jobs_for_campaign_response(job_campaign_id),
+            }).encode('utf-8'))
+            return
 
         # ========== MEDIA ASSETS API - Subtitle Jobs ==========
         if path.startswith('/api/provider/media-processing/callback'):

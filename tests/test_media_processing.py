@@ -522,3 +522,63 @@ def test_marketing_video_generation_batch_route_accepts_dashboard_payload():
     finally:
         portal.get_media_generation_service = original_factory
         srv.stop()
+
+
+def test_marketing_generate_route_persists_latest_campaign_for_video_agents():
+    port = 8295
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_generate_persist"
+    _inject_session(token, "media_admin_generate", "admin")
+
+    try:
+        status, generate_resp = _json_request(
+            base + "/api/admin/marketing-sales-agent?vertical=insurance&objective=growth&persona=families&region=global&budget_tier=balanced&networks=linkedin,x",
+            token=token,
+        )
+        assert status == 200
+        assert generate_resp["success"] is True
+        assert "generated" in generate_resp
+        assert "latest_campaign" in generate_resp
+
+        generated_campaign_id = str(generate_resp["generated"]["campaign"]["campaign_id"])
+        latest_campaign_id = str(generate_resp["latest_campaign"]["campaign"]["campaign_id"])
+        assert latest_campaign_id == generated_campaign_id
+        assert generate_resp["latest_campaign"]["lifecycle_status"] == "generated"
+
+        status, latest_resp = _json_request(base + "/api/admin/marketing-sales-agent/latest", token=token)
+        assert status == 200
+        assert latest_resp["latest_campaign"]["campaign"]["campaign_id"] == generated_campaign_id
+        assert latest_resp["latest_campaign"]["integrity"]["verified"] is True
+    finally:
+        srv.stop()
+
+
+def test_marketing_video_provider_capabilities_endpoint():
+    port = 8296
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_provider_caps"
+    _inject_session(token, "media_admin_caps", "admin")
+
+    try:
+        status, caps_resp = _json_request(base + "/api/admin/media/video-providers", token=token)
+        assert status == 200
+        assert caps_resp["success"] is True
+        capabilities = caps_resp["capabilities"]
+        assert "providers" in capabilities
+        assert "default_provider" in capabilities
+        assert "gemini" in capabilities["providers"]
+        assert "kling" in capabilities["providers"]
+        assert isinstance(capabilities["providers"]["gemini"]["models"], list)
+        assert isinstance(capabilities["providers"]["kling"]["models"], list)
+    finally:
+        srv.stop()
