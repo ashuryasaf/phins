@@ -440,6 +440,7 @@
         let videoAgentJobs = [];
         let videoAgentMediaAssets = [];
         let videoAgentRefreshTimer = null;
+        let videoAgentProviderCapabilities = {};
 
         function escapeHtml(value) {
             return String(value || '')
@@ -466,6 +467,64 @@
         function selectedCampaignId() {
             return (document.getElementById('va-campaign-id')?.value || '').trim();
         }
+
+        function providerConfig(providerName) {
+            if (!providerName) return null;
+            const key = String(providerName).trim().toLowerCase();
+            return videoAgentProviderCapabilities?.providers?.[key] || null;
+        }
+
+        function isProviderEnabled(providerName) {
+            const config = providerConfig(providerName);
+            return config ? Boolean(config.enabled) : true;
+        }
+
+        function applyProviderCapabilities(capabilities) {
+            videoAgentProviderCapabilities = capabilities || {};
+            const providers = capabilities?.providers || {};
+            const providerSelect = document.getElementById('va-provider');
+            const modelSelect = document.getElementById('va-model');
+            if (!providerSelect || !modelSelect) return;
+
+            const providerOrder = Array.from(providerSelect.options).map(opt => String(opt.value || '').trim().toLowerCase());
+            const currentProvider = String(providerSelect.value || '').trim().toLowerCase();
+            const currentModel = String(modelSelect.value || '').trim();
+
+            providerSelect.innerHTML = providerOrder.map((provider) => {
+                const config = providers[provider] || {};
+                const enabled = Boolean(config.enabled);
+                const label = String(config.label || provider).trim() || provider;
+                const disabledSuffix = enabled ? '' : ' (not configured)';
+                return `<option value="${provider}" ${enabled ? '' : 'disabled'}>${escapeHtml(label + disabledSuffix)}</option>`;
+            }).join('');
+
+            const defaultProvider = String(capabilities?.default_provider || '').trim().toLowerCase();
+            const resolvedProvider = isProviderEnabled(currentProvider)
+                ? currentProvider
+                : (isProviderEnabled(defaultProvider) ? defaultProvider : providerOrder.find(name => isProviderEnabled(name)) || providerOrder[0] || 'gemini');
+            providerSelect.value = resolvedProvider;
+
+            const models = Array.isArray(providers?.[resolvedProvider]?.models) ? providers[resolvedProvider].models : [];
+            modelSelect.innerHTML = '<option value="">Provider default</option>' +
+                models.map(model => `<option value="${escapeHtml(String(model))}">${escapeHtml(String(model))}</option>`).join('');
+            if (currentModel && models.includes(currentModel)) {
+                modelSelect.value = currentModel;
+            }
+        }
+
+        async function loadProviderCapabilities() {
+            try {
+                const data = await fetchJson('/api/admin/media/video-providers');
+                applyProviderCapabilities(data?.capabilities || {});
+            } catch (err) {
+                videoAgentProviderCapabilities = {};
+            }
+        }
+
+        document.addEventListener('change', (event) => {
+            if (event?.target?.id !== 'va-provider') return;
+            applyProviderCapabilities(videoAgentProviderCapabilities);
+        });
 
         function selectedReferenceImage() {
             const imageId = (document.getElementById('va-reference-image')?.value || '').trim();
@@ -505,13 +564,21 @@
         }
 
         async function loadLatestCampaign() {
-            const data = await fetchJson('/api/admin/marketing-sales-agent/latest');
-            videoAgentCampaign = data.latest_campaign || null;
-            const campaignId = videoAgentCampaign?.campaign?.campaign_id || '';
-            if (campaignId) {
-                document.getElementById('va-campaign-id').value = campaignId;
+            try {
+                const data = await fetchJson('/api/admin/marketing-sales-agent/latest');
+                videoAgentCampaign = data.latest_campaign || null;
+                const campaignId = videoAgentCampaign?.campaign?.campaign_id || '';
+                if (campaignId) {
+                    document.getElementById('va-campaign-id').value = campaignId;
+                }
+                return videoAgentCampaign;
+            } catch (err) {
+                if (String(err.message || '').toLowerCase().includes('no generated campaign found')) {
+                    videoAgentCampaign = null;
+                    return null;
+                }
+                throw err;
             }
-            return videoAgentCampaign;
         }
 
         async function loadMediaImages() {
@@ -637,6 +704,10 @@
         async function queueVideoAgentBatch() {
             const campaignId = selectedCampaignId();
             const provider = (document.getElementById('va-provider')?.value || 'gemini').trim();
+            if (!isProviderEnabled(provider)) {
+                setStatus(`${String(provider).toUpperCase()} is not configured on the server. Connect the provider and try again.`, 'warning');
+                return;
+            }
             const providerModel = (document.getElementById('va-model')?.value || '').trim();
             const referenceImage = selectedReferenceImage();
             const pollMode = (document.getElementById('va-completion-mode')?.value || 'webhook').trim();
@@ -667,10 +738,15 @@
 
         async function refreshVideoAgentsDashboard() {
             try {
-                await loadLatestCampaign();
+                const campaign = await loadLatestCampaign();
+                await loadProviderCapabilities();
                 await loadMediaImages();
                 await refreshVideoAgentJobs(true);
-                setStatus('Video Agents dashboard refreshed.', 'success');
+                if (campaign?.campaign?.campaign_id) {
+                    setStatus('Video Agents dashboard refreshed.', 'success');
+                } else {
+                    setStatus('No generated campaign found yet. Generate Agent Plan in Admin to create a Campaign ID, then return here.', 'warning');
+                }
             } catch (err) {
                 setStatus(`Refresh failed: ${err.message}`, 'error');
             }

@@ -2033,6 +2033,7 @@
       loadUnderwritingApplications();
       loadPolicies();
       loadPlatformAnalytics();
+      loadMarketingProviderCapabilities();
       loadLatestMarketingCampaign();
       loadClaims();
       loadBillingData();
@@ -3661,6 +3662,7 @@
     let latestMarketingVideoJobs = [];
     let latestMarketingMediaAssets = [];
     let marketingVideoJobsRefreshTimer = null;
+    let latestMarketingProviderCapabilities = {};
 
     function escapeMarketingHtml(value) {
       return String(value || '')
@@ -3718,6 +3720,72 @@
     function getCurrentCampaignId() {
       return latestMarketingCampaignPayload?.campaign?.campaign_id || '';
     }
+
+    function marketingProviderConfig(providerName) {
+      if (!providerName) return null;
+      const key = String(providerName).trim().toLowerCase();
+      return latestMarketingProviderCapabilities?.providers?.[key] || null;
+    }
+
+    function isMarketingProviderEnabled(providerName) {
+      const config = marketingProviderConfig(providerName);
+      return config ? Boolean(config.enabled) : true;
+    }
+
+    function applyMarketingProviderCapabilities(capabilities) {
+      latestMarketingProviderCapabilities = capabilities || {};
+      const providers = capabilities?.providers || {};
+      const providerSelect = document.getElementById('mkt-video-provider');
+      const modelSelect = document.getElementById('mkt-video-model');
+      if (!providerSelect || !modelSelect) return;
+
+      const currentProvider = String(providerSelect.value || '').trim().toLowerCase();
+      const currentModel = String(modelSelect.value || '').trim();
+      const providerOrder = Array.from(providerSelect.options).map(opt => String(opt.value || '').trim().toLowerCase());
+
+      providerSelect.innerHTML = providerOrder.map((provider) => {
+        const config = providers[provider] || {};
+        const enabled = Boolean(config.enabled);
+        const label = String(config.label || provider).trim() || provider;
+        const disabledSuffix = enabled ? '' : ' (not configured)';
+        return `<option value="${provider}" ${enabled ? '' : 'disabled'}>${escapeMarketingHtml(label + disabledSuffix)}</option>`;
+      }).join('');
+
+      const defaultProvider = String(capabilities?.default_provider || '').trim().toLowerCase();
+      const resolvedProvider = isMarketingProviderEnabled(currentProvider)
+        ? currentProvider
+        : (isMarketingProviderEnabled(defaultProvider) ? defaultProvider : providerOrder.find(name => isMarketingProviderEnabled(name)) || providerOrder[0] || 'gemini');
+      providerSelect.value = resolvedProvider;
+
+      const resolvedModels = Array.isArray(providers?.[resolvedProvider]?.models) ? providers[resolvedProvider].models : [];
+      modelSelect.innerHTML = '<option value="">Provider default</option>' + resolvedModels
+        .map(model => `<option value="${escapeMarketingHtml(String(model))}">${escapeMarketingHtml(String(model))}</option>`)
+        .join('');
+
+      if (currentModel && resolvedModels.includes(currentModel)) {
+        modelSelect.value = currentModel;
+      }
+    }
+
+    async function loadMarketingProviderCapabilities() {
+      try {
+        const response = await fetch('/api/admin/media/video-providers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          throw new Error(`provider capabilities failed (${response.status})`);
+        }
+        const data = await response.json();
+        applyMarketingProviderCapabilities(data?.capabilities || {});
+      } catch (err) {
+        latestMarketingProviderCapabilities = {};
+      }
+    }
+
+    document.addEventListener('change', (event) => {
+      if (event?.target?.id !== 'mkt-video-provider') return;
+      applyMarketingProviderCapabilities(latestMarketingProviderCapabilities);
+    });
 
     function selectedMarketingVideoProvider() {
       return (document.getElementById('mkt-video-provider')?.value || 'gemini').trim();
@@ -3930,6 +3998,10 @@
       }
 
       const provider = selectedMarketingVideoProvider();
+      if (!isMarketingProviderEnabled(provider)) {
+        setMarketingVideoJobStatus(`${String(provider).toUpperCase()} is not configured on the server. Connect the provider and try again.`, 'warning');
+        return;
+      }
       const providerModel = selectedMarketingVideoModel();
       const referenceImage = selectedMarketingReferenceImage();
       const pollMode = selectedMarketingPollMode();
@@ -3964,6 +4036,10 @@
       }
 
       const provider = (providerOverride || selectedMarketingVideoProvider() || 'gemini').trim().toLowerCase();
+      if (!isMarketingProviderEnabled(provider)) {
+        setMarketingVideoJobStatus(`${String(provider).toUpperCase()} is not configured on the server. Connect the provider and try again.`, 'warning');
+        return;
+      }
       const referenceImage = selectedMarketingReferenceImage();
       const pollMode = selectedMarketingPollMode();
       const providerModel = selectedMarketingVideoModel();
@@ -4065,6 +4141,9 @@
         </div>
       `);
 
+      const geminiEnabled = isMarketingProviderEnabled('gemini');
+      const klingEnabled = isMarketingProviderEnabled('kling');
+      const selectedProviderEnabled = isMarketingProviderEnabled(selectedMarketingVideoProvider());
       const videosHtml = renderMarketingList(campaign.ai_video_blueprints, (item, index) => {
         const job = latestVideoJobForBlueprint(index);
         const storyboard = Array.isArray(item.storyboard) ? item.storyboard : [];
@@ -4078,9 +4157,9 @@
             <div style="font-size:0.8rem;opacity:0.85;margin-top:3px;">Voiceover: ${escapeMarketingHtml(item.voiceover_style)}</div>
             ${storyboard.length ? `<div style="font-size:0.76rem;opacity:0.82;margin-top:6px;">Storyboard: ${escapeMarketingHtml(storyboard.join(' | '))}</div>` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-              <button onclick="generateMarketingBlueprintVideo(${index})" style="background:#42a5f5;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Generate with selected provider</button>
-              <button onclick="generateMarketingBlueprintVideo(${index}, 'gemini')" style="background:#1976d2;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Veo / Gemini</button>
-              <button onclick="generateMarketingBlueprintVideo(${index}, 'kling')" style="background:#7c4dff;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Kling</button>
+              <button ${selectedProviderEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index})" style="background:#42a5f5;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${selectedProviderEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Generate with selected provider</button>
+              <button ${geminiEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index}, 'gemini')" style="background:#1976d2;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${geminiEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Veo / Gemini${geminiEnabled ? '' : ' (not configured)'}</button>
+              <button ${klingEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index}, 'kling')" style="background:#7c4dff;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${klingEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Kling${klingEnabled ? '' : ' (not configured)'}</button>
               ${job && job.status === 'failed' ? `<button onclick="retryMarketingVideoJob('${job.id}')" style="background:#ffb300;color:#10203a;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Retry</button>` : ''}
               ${job && ['queued', 'processing'].includes(String(job.status || '').toLowerCase()) ? `<button onclick="cancelMarketingVideoJob('${job.id}')" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Cancel</button>` : ''}
             </div>
@@ -4116,7 +4195,7 @@
         });
 
         if (response.status === 404) {
-          setMarketingStatus('No published campaign yet. Generate a new one to begin.', 'info');
+          setMarketingStatus('No generated campaign yet. Generate a new one to begin.', 'info');
           return;
         }
         if (!response.ok) {
@@ -4127,6 +4206,7 @@
         const data = await response.json();
         if (data && data.latest_campaign) {
           renderMarketingCampaign(data.latest_campaign);
+          await loadMarketingProviderCapabilities();
           await loadMarketingMediaAssets();
           await loadMarketingVideoJobs({ silent: true });
           setMarketingStatus(`Latest campaign loaded (${data.latest_campaign.campaign?.campaign_id || 'unknown'}).`, 'success');
@@ -4160,9 +4240,12 @@
           return;
         }
         const data = await response.json();
-        if (data?.generated?.campaign) {
-          renderMarketingCampaign(data.generated);
-          setMarketingStatus('Campaign generated successfully. Review and publish to media when ready.', 'success');
+        if (data?.latest_campaign?.campaign || data?.generated?.campaign) {
+          renderMarketingCampaign(data.latest_campaign || data.generated);
+          await loadMarketingProviderCapabilities();
+          await loadMarketingMediaAssets();
+          await loadMarketingVideoJobs({ silent: true });
+          setMarketingStatus('Campaign generated and stored successfully. Campaign ID is now ready for media + video generation.', 'success');
         } else {
           setMarketingStatus('Generation response did not include campaign details.', 'warning');
         }
@@ -4194,6 +4277,9 @@
         const data = await response.json();
         if (data?.latest_campaign?.campaign) {
           renderMarketingCampaign(data.latest_campaign);
+          await loadMarketingProviderCapabilities();
+          await loadMarketingMediaAssets();
+          await loadMarketingVideoJobs({ silent: true });
           setMarketingStatus(`Campaign published. ${data.created_assets?.length || 0} media briefs synced to admin-media dashboard.`, 'success');
         } else {
           setMarketingStatus('Publish completed but no campaign payload returned.', 'warning');
