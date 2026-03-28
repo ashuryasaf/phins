@@ -295,67 +295,66 @@ class MediaGenerationService:
 
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
         normalized_duration = self._normalize_kling_duration(duration_seconds, selected_model)
-        body: Dict[str, Any] = {
-            "model": selected_model,
+        image_payload = self._parse_data_url(image_data_url)
+        base_payload: Dict[str, Any] = {
             "prompt": prompt,
             "aspect_ratio": aspect_ratio or "16:9",
             "duration": normalized_duration,
             "title": title,
+            "model": selected_model,
         }
-        image_payload = self._parse_data_url(image_data_url)
-        endpoint_path = self._kling_text_to_video_path
+        if metadata:
+            base_payload["metadata"] = metadata
+        if callback_url:
+            base_payload.setdefault("metadata", {})
+            base_payload["metadata"]["phins_callback_url"] = callback_url
+        image_endpoint_path = self._kling_image_to_video_path
         if image_payload:
-            endpoint_path = self._kling_image_to_video_path
-            body["image"] = {
+            base_payload["image"] = {
                 "data": image_payload["bytes_b64"],
                 "mime_type": image_payload["mime_type"],
             }
-        if metadata:
-            body["metadata"] = metadata
-        if callback_url:
-            body.setdefault("metadata", {})
-            body["metadata"]["phins_callback_url"] = callback_url
-
-        url = f"{self._kling_base_url}{endpoint_path}"
-        payload = json.dumps(body).encode("utf-8")
-        request = urllib.request.Request(
-            url,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": self._kling_authorization_header(),
-            },
-            method="POST",
+        attempts = self._build_kling_submit_attempts(
+            base_payload=base_payload,
+            selected_model=selected_model,
+            requested_duration=duration_seconds,
+            normalized_duration=normalized_duration,
+            use_image_endpoint=bool(image_payload),
         )
-        try:
-            with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-                response_body = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            response_body = self._decode_http_error_json(exc)
-            provider_message = self._provider_error_message(response_body)
-            if exc.code == 400 and duration_seconds and duration_seconds != normalized_duration:
-                fallback_body = dict(body)
-                fallback_body["duration"] = int(max(1, duration_seconds))
-                fallback_request = urllib.request.Request(
-                    url,
-                    data=json.dumps(fallback_body).encode("utf-8"),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": self._kling_authorization_header(),
-                    },
-                    method="POST",
-                )
-                try:
-                    with validated_urlopen(fallback_request, timeout=60, allowed_schemes=("https",)) as response:
-                        response_body = json.loads(response.read().decode("utf-8"))
-                except urllib.error.HTTPError as fallback_exc:
-                    fallback_body_json = self._decode_http_error_json(fallback_exc)
-                    fallback_message = self._provider_error_message(fallback_body_json)
-                    raise MediaGenerationError(
-                        f"Kling generation failed ({fallback_exc.code}): {fallback_message}"
-                    ) from fallback_exc
-            else:
-                raise MediaGenerationError(f"Kling generation failed ({exc.code}): {provider_message}") from exc
+        response_body: Dict[str, Any] = {}
+        attempt_errors = []
+        for index, attempt in enumerate(attempts):
+            attempt_url = attempt["url"]
+            attempt_body = attempt["body"]
+            request = urllib.request.Request(
+                attempt_url,
+                data=json.dumps(attempt_body).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": self._kling_authorization_header(),
+                },
+                method="POST",
+            )
+            try:
+                with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
+                    response_body = json.loads(response.read().decode("utf-8"))
+                    break
+            except urllib.error.HTTPError as exc:
+                error_payload = self._decode_http_error_json(exc)
+                provider_message = self._provider_error_message(error_payload)
+                attempt_errors.append(f"{attempt.get('label', f'attempt-{index + 1}')} ({exc.code}): {provider_message}")
+                retryable_contract_error = exc.code in {400, 404, 409, 415, 422}
+                if not retryable_contract_error or index == len(attempts) - 1:
+                    if attempt_errors:
+                        raise MediaGenerationError(
+                            f"Kling generation failed after {len(attempt_errors)} attempt(s): {attempt_errors[-1]}"
+                        ) from exc
+                    raise MediaGenerationError(f"Kling generation failed ({exc.code}): {provider_message}") from exc
+            except Exception as exc:
+                raise MediaGenerationError(f"Kling generation request error: {exc}") from exc
+        else:
+            summary = attempt_errors[-1] if attempt_errors else "Unknown provider error"
+            raise MediaGenerationError(f"Kling generation failed: {summary}")
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
         provider_job_id = str(
@@ -455,6 +454,82 @@ class MediaGenerationService:
 
     def _build_kling_status_url(self, provider_job_id: str) -> str:
         return f"{self._kling_base_url}/v1/videos/{urllib.parse.quote(provider_job_id, safe='')}"
+
+    def _kling_model_variants(self, selected_model: str) -> list[str]:
+        model_name = str(selected_model or "").strip()
+        variants = []
+        if model_name:
+            variants.append(model_name)
+            dashed = model_name.replace(".", "-")
+            if dashed != model_name:
+                variants.append(dashed)
+            if "v2.6" in model_name:
+                variants.append(model_name.replace("v2.6", "v2-6"))
+            if "v2.5" in model_name:
+                variants.append(model_name.replace("v2.5", "v2-5"))
+            if "v3.0" in model_name:
+                variants.append(model_name.replace("v3.0", "v3-0"))
+        deduped = []
+        seen = set()
+        for value in variants:
+            key = str(value).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return deduped or [self.DEFAULT_PROVIDER_MODELS["kling"][0]]
+
+    def _build_kling_submit_attempts(
+        self,
+        *,
+        base_payload: Dict[str, Any],
+        selected_model: str,
+        requested_duration: int,
+        normalized_duration: int,
+        use_image_endpoint: bool,
+    ) -> list[Dict[str, Any]]:
+        attempts: list[Dict[str, Any]] = []
+        seen_signatures = set()
+        endpoint_path = self._kling_image_to_video_path if use_image_endpoint else self._kling_text_to_video_path
+        fallback_text_path = self._kling_text_to_video_path
+        model_variants = self._kling_model_variants(selected_model)
+        requested = int(requested_duration) if requested_duration else 0
+
+        def add_attempt(path: str, body: Dict[str, Any], label: str) -> None:
+            signature = f"{path}:{json.dumps(body, sort_keys=True, separators=(',', ':'))}"
+            if signature in seen_signatures:
+                return
+            seen_signatures.add(signature)
+            attempts.append({"url": f"{self._kling_base_url}{path}", "body": body, "label": label})
+
+        for model_name in model_variants:
+            body = dict(base_payload)
+            body["model"] = model_name
+            body["duration"] = normalized_duration
+            add_attempt(endpoint_path, body, f"primary-model-{model_name}")
+
+            if requested > 0 and requested != normalized_duration:
+                requested_body = dict(body)
+                requested_body["duration"] = requested
+                add_attempt(endpoint_path, requested_body, f"requested-duration-{requested}-model-{model_name}")
+
+            compact_body = dict(body)
+            compact_body.pop("title", None)
+            add_attempt(endpoint_path, compact_body, f"compact-model-{model_name}")
+
+            model_name_body = dict(compact_body)
+            model_name_body["model_name"] = model_name_body.pop("model")
+            add_attempt(endpoint_path, model_name_body, f"model-name-key-{model_name}")
+
+            if use_image_endpoint:
+                text_fallback = dict(compact_body)
+                text_fallback.pop("image", None)
+                add_attempt(fallback_text_path, text_fallback, f"text-fallback-model-{model_name}")
+                text_model_name_fallback = dict(text_fallback)
+                text_model_name_fallback["model_name"] = text_model_name_fallback.pop("model")
+                add_attempt(fallback_text_path, text_model_name_fallback, f"text-fallback-model-name-key-{model_name}")
+
+        return attempts
 
     def _normalize_kling_duration(self, duration_seconds: int, selected_model: str) -> int:
         """

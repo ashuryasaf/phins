@@ -706,5 +706,72 @@ def test_kling_http_error_is_exposed_with_provider_message(monkeypatch):
         assert False, "Expected MediaGenerationError"
     except media_generation_service.MediaGenerationError as exc:
         message = str(exc)
-        assert "failed (400)" in message
+        assert "(400)" in message
         assert "5 or 10" in message
+
+
+def test_kling_submit_retries_with_provider_specific_payload_variants(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "kling-token")
+    service = media_generation_service.MediaGenerationService()
+    calls = []
+
+    class _Response:
+        def __init__(self, body: bytes):
+            self._body = body
+            self.headers = {}
+            self.status = 200
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeHeaders:
+        def get_content_charset(self, default='utf-8'):
+            return default
+
+    class _FakeFP:
+        def __init__(self, body: bytes):
+            self._body = body
+        def read(self):
+            return self._body
+        def close(self):
+            return None
+
+    def _stub_urlopen(request, *args, **kwargs):
+        request_body = json.loads(request.data.decode("utf-8"))
+        calls.append(request_body)
+        # Fail first variant (mode/professional fields present), succeed second variant.
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                url="https://api.klingai.com/v1/videos/text2video",
+                code=400,
+                msg="Bad Request",
+                hdrs=_FakeHeaders(),
+                fp=_FakeFP(b'{"error":"Invalid field mode"}'),
+            )
+        return _Response(b'{"task_id":"kling-task-1","status":"queued"}')
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _stub_urlopen)
+
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="Generate a compliant insurance explainer",
+        title="Smoke",
+        model="kling-v2.6-pro",
+        duration_seconds=8,
+    )
+
+    assert result["provider"] == "kling"
+    assert result["provider_job_id"] == "kling-task-1"
+    assert len(calls) >= 2
+    # First attempt uses the normalized provider-native payload.
+    assert calls[0].get("model") == "kling-v2.6-pro"
+    assert calls[0].get("duration") == 10
+    # Retry variant should strip optional mode/profile fields.
+    assert "mode" not in calls[1]
+    assert "profile" not in calls[1]
