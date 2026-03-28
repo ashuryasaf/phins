@@ -9,6 +9,8 @@ completed files.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import time
@@ -36,6 +38,8 @@ class MediaGenerationService:
         self._gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         self._gemini_model = os.environ.get("PHINS_GEMINI_VIDEO_MODEL", "veo-3.1-generate-preview").strip()
         self._kling_api_key = os.environ.get("KLING_API_KEY", "").strip()
+        self._kling_access_key = os.environ.get("KLING_ACCESS_KEY", "").strip()
+        self._kling_secret_key = os.environ.get("KLING_SECRET_KEY", "").strip()
         self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingai.com").strip().rstrip("/")
         self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
         self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
@@ -50,7 +54,7 @@ class MediaGenerationService:
                 "models": list(self.DEFAULT_PROVIDER_MODELS["gemini"]),
             },
             "kling": {
-                "enabled": bool(self._kling_api_key),
+                "enabled": self._kling_credentials_available(),
                 "label": "Kling",
                 "base_url": self._kling_base_url,
                 "models": list(self.DEFAULT_PROVIDER_MODELS["kling"]),
@@ -132,7 +136,7 @@ class MediaGenerationService:
         if provider_name == "gemini":
             headers = {"x-goog-api-key": self._gemini_api_key}
         elif provider_name == "kling":
-            headers = {"Authorization": f"Bearer {self._kling_api_key}"}
+            headers = {"Authorization": self._kling_authorization_header()}
         else:
             raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
@@ -284,8 +288,8 @@ class MediaGenerationService:
         callback_url: str,
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if not self._kling_api_key:
-            raise MediaGenerationError("KLING_API_KEY is not configured")
+        if not self._kling_credentials_available():
+            raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
 
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
         body: Dict[str, Any] = {
@@ -316,7 +320,7 @@ class MediaGenerationService:
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._kling_api_key}",
+                "Authorization": self._kling_authorization_header(),
             },
             method="POST",
         )
@@ -352,15 +356,15 @@ class MediaGenerationService:
         provider_job_id: str,
         provider_state: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if not self._kling_api_key:
-            raise MediaGenerationError("KLING_API_KEY is not configured")
+        if not self._kling_credentials_available():
+            raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
         if not provider_job_id:
             raise MediaGenerationError("Kling provider job id is required")
 
         status_url = str(provider_state.get("status_url") or self._build_kling_status_url(provider_job_id)).strip()
         request = urllib.request.Request(
             status_url,
-            headers={"Authorization": f"Bearer {self._kling_api_key}"},
+            headers={"Authorization": self._kling_authorization_header()},
             method="GET",
         )
         with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
@@ -421,6 +425,47 @@ class MediaGenerationService:
 
     def _build_kling_status_url(self, provider_job_id: str) -> str:
         return f"{self._kling_base_url}/v1/videos/{urllib.parse.quote(provider_job_id, safe='')}"
+
+    def _kling_credentials_available(self) -> bool:
+        return bool(self._kling_api_key) or bool(self._kling_access_key and self._kling_secret_key)
+
+    def _kling_authorization_header(self) -> str:
+        if self._kling_api_key:
+            return f"Bearer {self._kling_api_key}"
+        if self._kling_access_key and self._kling_secret_key:
+            jwt_token = self._build_kling_access_secret_jwt(
+                access_key=self._kling_access_key,
+                secret_key=self._kling_secret_key,
+            )
+            return f"Bearer {jwt_token}"
+        raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
+
+    @staticmethod
+    def _base64url_encode(raw_bytes: bytes) -> str:
+        return base64.urlsafe_b64encode(raw_bytes).decode("ascii").rstrip("=")
+
+    @classmethod
+    def _build_kling_access_secret_jwt(
+        cls,
+        *,
+        access_key: str,
+        secret_key: str,
+        now_epoch_seconds: Optional[int] = None,
+        ttl_seconds: int = 1800,
+    ) -> str:
+        now_seconds = int(now_epoch_seconds if now_epoch_seconds is not None else time.time())
+        token_header = {"alg": "HS256", "typ": "JWT"}
+        token_payload = {
+            "iss": str(access_key),
+            "exp": now_seconds + max(60, int(ttl_seconds)),
+            "nbf": max(0, now_seconds - 5),
+        }
+        encoded_header = cls._base64url_encode(json.dumps(token_header, separators=(",", ":")).encode("utf-8"))
+        encoded_payload = cls._base64url_encode(json.dumps(token_payload, separators=(",", ":")).encode("utf-8"))
+        signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
+        signature = hmac.new(str(secret_key).encode("utf-8"), signing_input, hashlib.sha256).digest()
+        encoded_signature = cls._base64url_encode(signature)
+        return f"{encoded_header}.{encoded_payload}.{encoded_signature}"
 
     @staticmethod
     def _parse_data_url(data_url: str) -> Optional[Dict[str, str]]:
