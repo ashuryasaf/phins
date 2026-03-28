@@ -14,6 +14,7 @@ import hmac
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
@@ -33,6 +34,7 @@ class MediaGenerationService:
         "gemini": ["veo-3.1-generate-preview", "veo-3-fast-preview"],
         "kling": ["kling-v2.6-pro", "kling-v2.6-std"],
     }
+    KLING_STANDARD_DURATIONS = (5, 10)
 
     def __init__(self) -> None:
         self._gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -292,11 +294,12 @@ class MediaGenerationService:
             raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
 
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
+        normalized_duration = self._normalize_kling_duration(duration_seconds, selected_model)
         body: Dict[str, Any] = {
             "model": selected_model,
             "prompt": prompt,
             "aspect_ratio": aspect_ratio or "16:9",
-            "duration": int(max(1, duration_seconds or 8)),
+            "duration": normalized_duration,
             "title": title,
         }
         image_payload = self._parse_data_url(image_data_url)
@@ -324,8 +327,35 @@ class MediaGenerationService:
             },
             method="POST",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            response_body = json.loads(response.read().decode("utf-8"))
+        try:
+            with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
+                response_body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            response_body = self._decode_http_error_json(exc)
+            provider_message = self._provider_error_message(response_body)
+            if exc.code == 400 and duration_seconds and duration_seconds != normalized_duration:
+                fallback_body = dict(body)
+                fallback_body["duration"] = int(max(1, duration_seconds))
+                fallback_request = urllib.request.Request(
+                    url,
+                    data=json.dumps(fallback_body).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": self._kling_authorization_header(),
+                    },
+                    method="POST",
+                )
+                try:
+                    with validated_urlopen(fallback_request, timeout=60, allowed_schemes=("https",)) as response:
+                        response_body = json.loads(response.read().decode("utf-8"))
+                except urllib.error.HTTPError as fallback_exc:
+                    fallback_body_json = self._decode_http_error_json(fallback_exc)
+                    fallback_message = self._provider_error_message(fallback_body_json)
+                    raise MediaGenerationError(
+                        f"Kling generation failed ({fallback_exc.code}): {fallback_message}"
+                    ) from fallback_exc
+            else:
+                raise MediaGenerationError(f"Kling generation failed ({exc.code}): {provider_message}") from exc
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
         provider_job_id = str(
@@ -426,6 +456,27 @@ class MediaGenerationService:
     def _build_kling_status_url(self, provider_job_id: str) -> str:
         return f"{self._kling_base_url}/v1/videos/{urllib.parse.quote(provider_job_id, safe='')}"
 
+    def _normalize_kling_duration(self, duration_seconds: int, selected_model: str) -> int:
+        """
+        Normalize duration for Kling models to avoid provider 400 responses.
+
+        - Kling 2.x/1.x models generally accept only 5s or 10s.
+        - Kling 3.x accepts a wider 3-15s range.
+        """
+        model_name = str(selected_model or "").strip().lower()
+        requested = int(duration_seconds) if duration_seconds else 8
+        if requested < 1:
+            requested = 8
+        if "kling-v3" in model_name:
+            return max(3, min(15, requested))
+        if "kling-v2." in model_name or "kling-v1." in model_name:
+            if requested in self.KLING_STANDARD_DURATIONS:
+                return requested
+            return min(self.KLING_STANDARD_DURATIONS, key=lambda value: abs(value - requested))
+        if requested in self.KLING_STANDARD_DURATIONS:
+            return requested
+        return min(self.KLING_STANDARD_DURATIONS, key=lambda value: abs(value - requested))
+
     def _kling_credentials_available(self) -> bool:
         return bool(self._kling_api_key) or bool(self._kling_access_key and self._kling_secret_key)
 
@@ -443,6 +494,38 @@ class MediaGenerationService:
     @staticmethod
     def _base64url_encode(raw_bytes: bytes) -> str:
         return base64.urlsafe_b64encode(raw_bytes).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_http_error_json(exc: urllib.error.HTTPError) -> Dict[str, Any]:
+        raw = ""
+        try:
+            raw = exc.read().decode("utf-8") if exc.fp else ""
+        except Exception:
+            raw = ""
+        if not raw:
+            return {"error": str(exc)}
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        return {"error": raw}
+
+    @staticmethod
+    def _provider_error_message(payload: Dict[str, Any]) -> str:
+        if not isinstance(payload, dict):
+            return "Unknown provider error"
+        nested_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        return str(
+            payload.get("error_message")
+            or payload.get("message")
+            or payload.get("error")
+            or nested_data.get("error_message")
+            or nested_data.get("message")
+            or nested_data.get("error")
+            or "Unknown provider error"
+        )
 
     @classmethod
     def _build_kling_access_secret_jwt(

@@ -11,6 +11,7 @@ Focused coverage for:
 import json
 import threading
 import time
+import urllib.error
 from datetime import datetime, timedelta
 from http.server import HTTPServer
 from urllib.error import HTTPError
@@ -657,3 +658,53 @@ def test_kling_jwt_from_access_secret_is_hs256_and_contains_issuer():
     assert decoded_payload["iss"] == "AK-123"
     assert decoded_payload["exp"] == 1_700_001_800
     assert decoded_payload["nbf"] == 1_699_999_995
+
+
+def test_kling_duration_is_normalized_for_supported_values(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "kling-token")
+    service = media_generation_service.MediaGenerationService()
+
+    assert service._normalize_kling_duration(8, "kling-v2.6-pro") == 10
+    assert service._normalize_kling_duration(0, "kling-v2.6-pro") == 10
+    assert service._normalize_kling_duration(5, "kling-v2.6-pro") == 5
+    assert service._normalize_kling_duration(10, "kling-v2.6-pro") == 10
+    assert service._normalize_kling_duration(4, "kling-v3.0") == 4
+
+
+def test_kling_http_error_is_exposed_with_provider_message(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "kling-token")
+    service = media_generation_service.MediaGenerationService()
+
+    class _FakeHeaders:
+        def get_content_charset(self, default='utf-8'):
+            return default
+
+    class _FakeFP:
+        def read(self):
+            return b'{"error":"Parameter duration is required to be 5 or 10"}'
+        def close(self):
+            return None
+
+    def _raise_http_error(*args, **kwargs):
+        raise urllib.error.HTTPError(
+            url="https://api.klingai.com/v1/videos/text2video",
+            code=400,
+            msg="Bad Request",
+            hdrs=_FakeHeaders(),
+            fp=_FakeFP(),
+        )
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _raise_http_error)
+
+    try:
+        service.submit_video_generation(
+            provider="kling",
+            prompt="Create a short claims explainer",
+            title="Claims explainer",
+            duration_seconds=8,
+        )
+        assert False, "Expected MediaGenerationError"
+    except media_generation_service.MediaGenerationError as exc:
+        message = str(exc)
+        assert "failed (400)" in message
+        assert "5 or 10" in message
