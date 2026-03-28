@@ -585,6 +585,43 @@ def test_marketing_video_provider_capabilities_endpoint():
         srv.stop()
 
 
+def test_video_provider_capabilities_prefers_configured_default_when_enabled(monkeypatch):
+    monkeypatch.setenv("DEFAULT_MEDIA_VIDEO_PROVIDER", "kling")
+    monkeypatch.setenv("KLING_API_KEY", "kling-token")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-token")
+
+    # Force module-level default/provider factory to pick up monkeypatched env.
+    original_default = portal.DEFAULT_MEDIA_VIDEO_PROVIDER
+    original_factory = portal.get_media_generation_service
+    portal.DEFAULT_MEDIA_VIDEO_PROVIDER = "kling"
+    portal.get_media_generation_service = lambda: media_generation_service.MediaGenerationService()
+    try:
+        capabilities = portal.media_video_provider_capabilities()
+        assert capabilities["default_provider"] == "kling"
+    finally:
+        portal.DEFAULT_MEDIA_VIDEO_PROVIDER = original_default
+        portal.get_media_generation_service = original_factory
+
+
+def test_video_provider_capabilities_falls_back_when_configured_default_disabled(monkeypatch):
+    monkeypatch.setenv("DEFAULT_MEDIA_VIDEO_PROVIDER", "kling")
+    monkeypatch.setenv("KLING_API_KEY", "")
+    monkeypatch.setenv("KLING_ACCESS_KEY", "")
+    monkeypatch.setenv("KLING_SECRET_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-token")
+
+    original_default = portal.DEFAULT_MEDIA_VIDEO_PROVIDER
+    original_factory = portal.get_media_generation_service
+    portal.DEFAULT_MEDIA_VIDEO_PROVIDER = "kling"
+    portal.get_media_generation_service = lambda: media_generation_service.MediaGenerationService()
+    try:
+        capabilities = portal.media_video_provider_capabilities()
+        assert capabilities["default_provider"] == "gemini"
+    finally:
+        portal.DEFAULT_MEDIA_VIDEO_PROVIDER = original_default
+        portal.get_media_generation_service = original_factory
+
+
 def test_kling_provider_enabled_with_access_secret_credentials(monkeypatch):
     monkeypatch.setenv("KLING_API_KEY", "")
     monkeypatch.setenv("KLING_ACCESS_KEY", "access-key-1")

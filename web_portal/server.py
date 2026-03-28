@@ -1146,7 +1146,7 @@ MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
-DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'gemini')
+DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'kling')
 MEDIA_STORAGE_DIR = os.environ.get(
     'PHINS_MEDIA_STORAGE_DIR',
     os.path.join(tempfile.gettempdir(), 'phins_media_assets'),
@@ -2176,10 +2176,14 @@ def media_video_provider_capabilities() -> Dict[str, Any]:
             'default_model': str(config.get('model') or ''),
             'models': [str(model) for model in (config.get('models') or []) if str(model).strip()],
         }
-    default_provider = next(
-        (name for name, config in providers.items() if config.get('enabled')),
-        (next(iter(providers.keys()), DEFAULT_MEDIA_VIDEO_PROVIDER)),
-    )
+    configured_default = str(DEFAULT_MEDIA_VIDEO_PROVIDER or '').strip().lower() or 'kling'
+    if providers.get(configured_default, {}).get('enabled'):
+        default_provider = configured_default
+    else:
+        default_provider = next(
+            (name for name, config in providers.items() if config.get('enabled')),
+            (configured_default if configured_default in providers else next(iter(providers.keys()), configured_default)),
+        )
     return {
         'providers': providers,
         'default_provider': str(default_provider or DEFAULT_MEDIA_VIDEO_PROVIDER),
@@ -2188,12 +2192,14 @@ def media_video_provider_capabilities() -> Dict[str, Any]:
 
 def validate_media_video_provider_selection(provider: str, provider_model: str = '') -> Tuple[str, str]:
     """Validate the selected media video provider/model against connected capabilities."""
-    selected_provider = str(provider or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
+    selected_provider = str(provider or '').strip().lower()
     selected_model = str(provider_model or '').strip()
     capabilities = media_video_provider_capabilities()
     providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
     if not isinstance(providers, dict):
         providers = {}
+    if not selected_provider:
+        selected_provider = str(capabilities.get('default_provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
     provider_config = providers.get(selected_provider)
     if not isinstance(provider_config, dict):
         return selected_provider, f'Unsupported video provider: {selected_provider}'
@@ -18757,11 +18763,6 @@ For claims or questions, please contact:
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
-            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
-            if provider_error:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
-                return
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
@@ -18840,11 +18841,6 @@ For claims or questions, please contact:
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
-            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
-            if provider_error:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
-                return
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))

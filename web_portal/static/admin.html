@@ -3663,6 +3663,7 @@
     let latestMarketingMediaAssets = [];
     let marketingVideoJobsRefreshTimer = null;
     let latestMarketingProviderCapabilities = {};
+    let marketingProviderExplicitlySelected = false;
 
     function escapeMarketingHtml(value) {
       return String(value || '')
@@ -3752,9 +3753,10 @@
       }).join('');
 
       const defaultProvider = String(capabilities?.default_provider || '').trim().toLowerCase();
-      const resolvedProvider = isMarketingProviderEnabled(currentProvider)
+      const shouldKeepCurrentProvider = marketingProviderExplicitlySelected && isMarketingProviderEnabled(currentProvider);
+      const resolvedProvider = shouldKeepCurrentProvider
         ? currentProvider
-        : (isMarketingProviderEnabled(defaultProvider) ? defaultProvider : providerOrder.find(name => isMarketingProviderEnabled(name)) || providerOrder[0] || 'gemini');
+        : (isMarketingProviderEnabled(defaultProvider) ? defaultProvider : providerOrder.find(name => isMarketingProviderEnabled(name)) || providerOrder[0] || 'kling');
       providerSelect.value = resolvedProvider;
 
       const resolvedModels = Array.isArray(providers?.[resolvedProvider]?.models) ? providers[resolvedProvider].models : [];
@@ -3784,11 +3786,17 @@
 
     document.addEventListener('change', (event) => {
       if (event?.target?.id !== 'mkt-video-provider') return;
+      marketingProviderExplicitlySelected = true;
       applyMarketingProviderCapabilities(latestMarketingProviderCapabilities);
     });
 
     function selectedMarketingVideoProvider() {
-      return (document.getElementById('mkt-video-provider')?.value || 'gemini').trim();
+      const providerSelect = document.getElementById('mkt-video-provider');
+      const selected = (providerSelect?.value || '').trim();
+      if (selected) return selected;
+      const serverDefault = String(latestMarketingProviderCapabilities?.default_provider || '').trim();
+      if (serverDefault) return serverDefault;
+      return 'kling';
     }
 
     function selectedMarketingVideoModel() {
