@@ -24,6 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import unittest
 import json
 from datetime import datetime
+import io
+import zipfile
 
 from services.ai_risk_reports_service import (
     AIRiskReportsService,
@@ -484,6 +486,106 @@ class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
         serialized = json.dumps(export_payload)
         self.assertNotIn('http://', serialized)
         self.assertNotIn('https://', serialized)
+
+    def test_affiliated_summary_normalizes_customer_identity_fields(self):
+        csv_content = b"""customer_id,birth_date,savings_balance,cover_amount,policy_number
+123456782,19781111,10000,55000,POL-2001"""
+
+        parse_result = self.service.parse_file(
+            'identity_snapshot.csv',
+            csv_content,
+            'csv',
+            owner_id='CUST-OWNER-001',
+            owner_role='customer'
+        )
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        summary = report.metadata.get('savings_cover_id_summary', {})
+        self.assertEqual(summary.get('customer_id'), '123456782')
+        self.assertTrue(summary.get('customer_id_valid'))
+        self.assertEqual(summary.get('birth_date_raw'), '19781111')
+        self.assertEqual(summary.get('birth_date'), '11/11/1978')
+        self.assertEqual(summary.get('integrity_issues', []), [])
+
+
+class TestZipAffiliatedIntegrity(unittest.TestCase):
+    """ZIP merge and affiliated integrity regression tests."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_multi_xml_zip_merges_affiliated_pension_data(self):
+        xml_1 = """<?xml version="1.0" encoding="UTF-8"?>
+<MislakaReport>
+  <YeshutLakoach>
+    <MISPAR-ZIHUI-LAKOACH>123456782</MISPAR-ZIHUI-LAKOACH>
+    <TAARICH-LEYDA>19781111</TAARICH-LEYDA>
+    <SHEM-LAKOACH>Test Client</SHEM-LAKOACH>
+  </YeshutLakoach>
+  <YeshutYatzran>
+    <SHEM-YATZRAN>Provider A</SHEM-YATZRAN>
+    <Mutzar>
+      <SHEM-MUTZAR>Plan A</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-XML-1</MISPAR-POLISA-O-HESHBON>
+        <SALDO>10000</SALDO>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</MislakaReport>""".encode('utf-8')
+
+        xml_2 = """<?xml version="1.0" encoding="UTF-8"?>
+<MislakaReport>
+  <YeshutLakoach>
+    <MISPAR-ZIHUI-LAKOACH>123456782</MISPAR-ZIHUI-LAKOACH>
+    <TAARICH-LEYDA>19781111</TAARICH-LEYDA>
+    <SHEM-LAKOACH>Test Client</SHEM-LAKOACH>
+  </YeshutLakoach>
+  <YeshutYatzran>
+    <SHEM-YATZRAN>Provider B</SHEM-YATZRAN>
+    <Mutzar>
+      <SHEM-MUTZAR>Plan B</SHEM-MUTZAR>
+      <HeshbonOPolisa>
+        <MISPAR-POLISA-O-HESHBON>POL-XML-2</MISPAR-POLISA-O-HESHBON>
+        <SALDO>15000</SALDO>
+      </HeshbonOPolisa>
+    </Mutzar>
+  </YeshutYatzran>
+</MislakaReport>""".encode('utf-8')
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('affiliated_one.xml', xml_1)
+            zf.writestr('affiliated_two.xml', xml_2)
+
+        parse_result = self.service.parse_file(
+            'affiliated_bundle.zip',
+            zip_buf.getvalue(),
+            'zip',
+            owner_id='CUST-OWNER-001',
+            owner_role='customer'
+        )
+        self.assertEqual(parse_result['status'], 'completed')
+
+        parsed_data = parse_result.get('parsed_data', {})
+        integrity = parsed_data.get('integrity', {})
+        self.assertEqual(integrity.get('zip_file_count'), 2)
+        self.assertEqual(integrity.get('affiliated_files_processed'), 2)
+        self.assertEqual(len(integrity.get('pension_sources', [])), 2)
+
+        pension_data = parsed_data.get('pension_data', {})
+        accounts = pension_data.get('accounts', [])
+        policy_numbers = {acct.get('policy_number') for acct in accounts}
+        self.assertIn('POL-XML-1', policy_numbers)
+        self.assertIn('POL-XML-2', policy_numbers)
+
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+        summary = report.metadata.get('savings_cover_id_summary', {})
+        self.assertEqual(summary.get('customer_id'), '123456782')
+        self.assertEqual(summary.get('birth_date'), '11/11/1978')
+        self.assertGreaterEqual(summary.get('records_analyzed', 0), 2)
 
 
 class TestHebrewWorkflow(unittest.TestCase):

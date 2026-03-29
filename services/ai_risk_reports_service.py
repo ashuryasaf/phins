@@ -16,6 +16,7 @@ Author: PHINS Platform
 """
 
 import csv
+import copy
 import io
 import json
 import os
@@ -899,6 +900,9 @@ class AIRiskReportsService:
             client_info['full_name'] = ' '.join(p for p in parts if p)
         elif client_info.get('client_name'):
             client_info['full_name'] = client_info['client_name']
+
+        # Normalize customer identity fields for report consistency.
+        client_info = self._normalize_client_profile_fields(client_info)
         
         if not accounts and not client_info:
             return None
@@ -927,13 +931,25 @@ class AIRiskReportsService:
     
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
         """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
-        combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None}
+        combined_data = {
+            'columns': [],
+            'rows': [],
+            'files': [],
+            'pension_data': None,
+            'integrity': {
+                'zip_file_count': 0,
+                'affiliated_files_processed': 0,
+                'pension_sources': [],
+                'issues': [],
+            }
+        }
         
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
             for name in zf.namelist():
                 # Skip directories and hidden files
                 if name.endswith('/') or name.startswith('__') or name.startswith('.'):
                     continue
+                combined_data['integrity']['zip_file_count'] += 1
                 
                 name_lower = name.lower()
                 ext = name_lower.split('.')[-1] if '.' in name_lower else ''
@@ -955,7 +971,12 @@ class AIRiskReportsService:
                         file_type = 'pension_xml'
                         # Store pension data separately for enhanced analysis
                         if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
+                            combined_data['integrity']['affiliated_files_processed'] += 1
+                            combined_data['integrity']['pension_sources'].append(name)
+                            combined_data['pension_data'] = self._merge_pension_data_records(
+                                combined_data.get('pension_data'),
+                                parsed.get('pension_data')
+                            )
                 elif ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
                     parsed = self._parse_image(file_content, name, ext)
                 elif ext == 'pdf':
@@ -967,7 +988,12 @@ class AIRiskReportsService:
                         file_type = 'excel'
                         # Check if this looks like Mislaka data
                         if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
+                            combined_data['integrity']['affiliated_files_processed'] += 1
+                            combined_data['integrity']['pension_sources'].append(name)
+                            combined_data['pension_data'] = self._merge_pension_data_records(
+                                combined_data.get('pension_data'),
+                                parsed.get('pension_data')
+                            )
                 
                 if parsed:
                     combined_data['files'].append({
@@ -982,8 +1008,256 @@ class AIRiskReportsService:
                         if col not in combined_data['columns']:
                             combined_data['columns'].append(col)
                     combined_data['rows'].extend(parsed.get('rows', []))
+
+        if (
+            combined_data['integrity']['zip_file_count'] > 0
+            and combined_data['integrity']['affiliated_files_processed'] == 0
+        ):
+            combined_data['integrity']['issues'].append(
+                'No Swiftness-affiliated XML/Excel records detected in ZIP'
+            )
         
         return combined_data
+
+    @staticmethod
+    def _normalize_customer_identifier(identifier: Any) -> str:
+        """Normalize customer identifiers while preserving non-digit fallback values."""
+        text = str(identifier or '').strip()
+        if not text:
+            return ''
+
+        digits = re.sub(r'\D', '', text)
+        # Israeli IDs are 9 digits; some sources drop leading zeroes.
+        if 7 <= len(digits) <= 9:
+            return digits.zfill(9)
+        return text
+
+    @staticmethod
+    def _is_valid_israeli_id(identifier: str) -> bool:
+        """Validate Israeli ID checksum for 9-digit identifiers."""
+        if not identifier or not identifier.isdigit() or len(identifier) != 9:
+            return False
+
+        total = 0
+        for index, char in enumerate(identifier):
+            digit = int(char)
+            factor = 1 if index % 2 == 0 else 2
+            product = digit * factor
+            if product > 9:
+                product -= 9
+            total += product
+
+        return total % 10 == 0
+
+    @staticmethod
+    def _normalize_birth_date(value: Any) -> Tuple[str, str]:
+        """
+        Normalize birth dates into:
+          - raw canonical format: YYYYMMDD
+          - display format: DD/MM/YYYY
+        """
+        raw_input = str(value or '').strip()
+        if not raw_input:
+            return '', ''
+
+        def _to_pair(dt: datetime) -> Tuple[str, str]:
+            return dt.strftime('%Y%m%d'), dt.strftime('%d/%m/%Y')
+
+        digits = re.sub(r'\D', '', raw_input)
+        if len(digits) == 8:
+            # Prefer YYYYMMDD (e.g. 19781111), fallback to DDMMYYYY.
+            for year, month, day in [
+                (digits[0:4], digits[4:6], digits[6:8]),
+                (digits[4:8], digits[2:4], digits[0:2]),
+            ]:
+                try:
+                    parsed = datetime(int(year), int(month), int(day))
+                    if 1900 <= parsed.year <= 2100:
+                        return _to_pair(parsed)
+                except Exception:
+                    continue
+
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y', '%Y.%m.%d', '%d.%m.%Y'):
+            try:
+                parsed = datetime.strptime(raw_input, fmt)
+                if 1900 <= parsed.year <= 2100:
+                    return _to_pair(parsed)
+            except Exception:
+                continue
+
+        try:
+            parsed = datetime.fromisoformat(raw_input.replace('Z', '+00:00'))
+            if 1900 <= parsed.year <= 2100:
+                return _to_pair(parsed)
+        except Exception:
+            pass
+
+        return digits if len(digits) == 8 else raw_input, ''
+
+    def _normalize_client_profile_fields(self, client_info: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Normalize and enrich client identity fields used in reports."""
+        normalized = dict(client_info or {})
+
+        normalized_id = self._normalize_customer_identifier(normalized.get('id_number'))
+        if normalized_id:
+            normalized['id_number'] = normalized_id
+            normalized['id_israeli_valid'] = self._is_valid_israeli_id(normalized_id)
+
+        birth_raw, birth_display = self._normalize_birth_date(normalized.get('birth_date'))
+        if birth_raw:
+            normalized['birth_date_raw'] = birth_raw
+        if birth_display:
+            normalized['birth_date'] = birth_display
+
+        return normalized
+
+    def _merge_pension_data_records(
+        self,
+        current: Optional[Dict[str, Any]],
+        incoming: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Merge multiple pension-affiliated payloads from ZIP members while preserving
+        customer profile and totals integrity.
+        """
+        if not isinstance(current, dict) or not current:
+            base = copy.deepcopy(incoming or {})
+            if isinstance(base.get('client'), dict):
+                base['client'] = self._normalize_client_profile_fields(base.get('client', {}))
+            return base
+        if not isinstance(incoming, dict) or not incoming:
+            return copy.deepcopy(current)
+
+        merged = copy.deepcopy(current)
+        incoming_copy = copy.deepcopy(incoming)
+
+        def _dedupe_by_key(rows: List[Dict[str, Any]], key_fields: List[str]) -> List[Dict[str, Any]]:
+            results: List[Dict[str, Any]] = []
+            seen: set = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                key = tuple(str(row.get(field, '') or '').strip() for field in key_fields)
+                if not any(key):
+                    payload = json.dumps(row, sort_keys=True, ensure_ascii=False)
+                    key = ('hash', hashlib.sha256(payload.encode('utf-8')).hexdigest())
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(row)
+            return results
+
+        merged_client = merged.get('client', {})
+        incoming_client = incoming_copy.get('client', {})
+        if isinstance(merged_client, list):
+            merged_client = merged_client[0] if merged_client else {}
+        if isinstance(incoming_client, list):
+            incoming_client = incoming_client[0] if incoming_client else {}
+
+        merged_client = self._normalize_client_profile_fields(merged_client if isinstance(merged_client, dict) else {})
+        incoming_client = self._normalize_client_profile_fields(incoming_client if isinstance(incoming_client, dict) else {})
+        for key, value in incoming_client.items():
+            if value and not merged_client.get(key):
+                merged_client[key] = value
+        merged_anomalies = list(merged.get('anomalies', []) or [])
+        if (
+            merged_client.get('id_number')
+            and incoming_client.get('id_number')
+            and str(merged_client.get('id_number')) != str(incoming_client.get('id_number'))
+        ):
+            merged_anomalies.append(
+                f"Client ID mismatch across affiliated files: {merged_client.get('id_number')} vs {incoming_client.get('id_number')}"
+            )
+        merged['anomalies'] = merged_anomalies
+        merged['client'] = merged_client
+
+        merged_accounts = list(merged.get('accounts', []) or [])
+        incoming_accounts = list(incoming_copy.get('accounts', []) or [])
+        merged['accounts'] = _dedupe_by_key(
+            merged_accounts + incoming_accounts,
+            ['policy_number', 'provider', 'product_type', 'start_date']
+        )
+
+        merged_contributions = list(merged.get('contributions', []) or [])
+        incoming_contributions = list(incoming_copy.get('contributions', []) or [])
+        merged['contributions'] = _dedupe_by_key(
+            merged_contributions + incoming_contributions,
+            ['period', 'policy_number', 'employer_name', 'employee_amount', 'employer_amount', 'severance_amount', 'total_amount']
+        )
+
+        merged_severance = list(merged.get('severance', []) or [])
+        incoming_severance = list(incoming_copy.get('severance', []) or [])
+        merged['severance'] = _dedupe_by_key(
+            merged_severance + incoming_severance,
+            ['employer_name', 'section14_date', 'total_severance']
+        )
+
+        merged_employers = list(merged.get('employers', []) or [])
+        incoming_employers = list(incoming_copy.get('employers', []) or [])
+        employer_rows: List[Dict[str, Any]] = []
+        for employer in (merged_employers + incoming_employers):
+            if isinstance(employer, dict):
+                employer_rows.append(employer)
+            else:
+                name = str(employer or '').strip()
+                if name:
+                    employer_rows.append({'id': '', 'name': name})
+        merged['employers'] = _dedupe_by_key(employer_rows, ['id', 'name'])
+
+        merged_providers = list(merged.get('providers', []) or [])
+        incoming_providers = list(incoming_copy.get('providers', []) or [])
+        if merged_providers and isinstance(merged_providers[0], dict):
+            merged['providers'] = _dedupe_by_key(merged_providers + incoming_providers, ['code', 'name'])
+        else:
+            merged['providers'] = sorted({
+                str(p).strip()
+                for p in (merged_providers + incoming_providers)
+                if str(p).strip()
+            })
+
+        header = dict(merged.get('header', {}) or {})
+        incoming_header = dict(incoming_copy.get('header', {}) or {})
+        for key, value in incoming_header.items():
+            if value and not header.get(key):
+                header[key] = value
+        merged['header'] = header
+
+        # Recompute key totals after merge.
+        total_balance = sum(self._to_float_amount(a.get('total_balance')) for a in merged.get('accounts', []))
+        total_savings = sum(self._to_float_amount(a.get('savings_balance')) for a in merged.get('accounts', []))
+        total_severance = (
+            sum(self._to_float_amount(a.get('severance_balance')) for a in merged.get('accounts', [])) +
+            sum(self._to_float_amount(s.get('total_severance')) for s in merged.get('severance', []))
+        )
+        provider_names = sorted({
+            str(a.get('provider', '')).strip()
+            for a in merged.get('accounts', [])
+            if str(a.get('provider', '')).strip()
+        })
+        totals = dict(merged.get('totals', {}) or {})
+        totals.update({
+            'total_balance': round(total_balance, 2),
+            'total_balance_formatted': f"₪{total_balance:,.2f}",
+            'total_savings': round(total_savings, 2),
+            'total_savings_formatted': f"₪{total_savings:,.2f}",
+            'total_severance': round(total_severance, 2),
+            'total_severance_formatted': f"₪{total_severance:,.2f}",
+            'total_coverage': round(
+                sum(
+                    self._to_float_amount(a.get('coverage_amount'))
+                    or self._to_float_amount(a.get('death_coverage')) + self._to_float_amount(a.get('disability_coverage'))
+                    for a in merged.get('accounts', [])
+                ),
+                2
+            ),
+            'account_count': len(merged.get('accounts', [])),
+            'provider_count': len(provider_names),
+            'providers': provider_names,
+            'section14_coverage': any(bool(a.get('section14')) for a in merged.get('accounts', [])),
+        })
+        merged['totals'] = totals
+
+        return merged
     
     def _parse_pension_xml(self, content: bytes, filename: str) -> Dict[str, Any]:
         """
@@ -1008,6 +1282,8 @@ class AIRiskReportsService:
             result = agent.process_xml_content(content)
             
             pension_data = result.get('data', {})
+            if isinstance(pension_data.get('client'), dict):
+                pension_data['client'] = self._normalize_client_profile_fields(pension_data.get('client', {}))
             report_text = result.get('report', '')
             
             # Convert to CSV-like format for AI analysis
@@ -2925,6 +3201,31 @@ Factors Affecting Score:
         contributions = pension_data.get('contributions', []) or []
         totals = pension_data.get('totals', {}) or {}
         employers = pension_data.get('employers', []) or []
+        client = pension_data.get('client', {}) or {}
+        if isinstance(client, list):
+            client = client[0] if client else {}
+        if isinstance(client, dict) and client:
+            client = self._normalize_client_profile_fields(client)
+            profile_rows = [{
+                'שם מלא' if is_hebrew else 'Full Name': client.get('full_name', client.get('client_name', '')),
+                'מזהה לקוח' if is_hebrew else 'Customer ID': client.get('id_number', ''),
+                'תאריך לידה' if is_hebrew else 'Birth Date': client.get('birth_date', ''),
+                'פורמט גולמי' if is_hebrew else 'Birth Date Raw': client.get('birth_date_raw', ''),
+                'אימות מזהה' if is_hebrew else 'ID Validation': (
+                    'תקין' if client.get('id_israeli_valid') else 'דורש בדיקה'
+                ) if is_hebrew else (
+                    'Valid' if client.get('id_israeli_valid') else 'Needs review'
+                ),
+            }]
+            sections.append(ReportSection(
+                title='פרופיל לקוח (שיוך)' if is_hebrew else 'Customer Profile (Affiliated)',
+                content='פרטי לקוח מאומתים מתוך קבצים מסונפים.' if is_hebrew else 'Customer identity fields validated from affiliated files.',
+                data_table={
+                    'columns': list(profile_rows[0].keys()),
+                    'rows': profile_rows
+                },
+                order=2
+            ))
 
         if accounts:
             status_rows = []
@@ -3257,6 +3558,58 @@ Factors Affecting Score:
                     })
 
         unique_ids = sorted({v for v in id_values if v})
+        customer_id = ''
+        customer_id_valid = None
+        customer_birth_date = ''
+        customer_birth_date_raw = ''
+        integrity_issues: List[str] = []
+
+        client_data = {}
+        if isinstance(pension_data, dict):
+            client_data = pension_data.get('client', {}) or {}
+            if isinstance(client_data, list):
+                client_data = client_data[0] if client_data else {}
+            if not isinstance(client_data, dict):
+                client_data = {}
+        client_data = self._normalize_client_profile_fields(client_data)
+        if client_data.get('id_number'):
+            customer_id = str(client_data.get('id_number') or '').strip()
+        elif unique_ids:
+            customer_id = self._normalize_customer_identifier(unique_ids[0])
+
+        if customer_id and customer_id.isdigit() and len(customer_id) == 9:
+            customer_id_valid = self._is_valid_israeli_id(customer_id)
+            if not customer_id_valid:
+                integrity_issues.append('Customer ID failed Israeli checksum validation')
+        elif customer_id:
+            customer_id_valid = False
+            integrity_issues.append('Customer ID is not a 9-digit value')
+
+        customer_birth_date = str(client_data.get('birth_date') or '').strip()
+        customer_birth_date_raw = str(client_data.get('birth_date_raw') or '').strip()
+
+        if not customer_birth_date:
+            birth_tokens = ['birth', 'birth_date', 'date_of_birth', 'dob', 'תאריך לידה', 'לידה']
+            birth_columns = [c for c in columns if self._column_matches(str(c), birth_tokens)]
+            for row in rows[:500]:
+                if not isinstance(row, dict):
+                    continue
+                found_raw = ''
+                for birth_col in birth_columns:
+                    candidate = str(row.get(birth_col, '') or '').strip()
+                    if candidate:
+                        found_raw = candidate
+                        break
+                if found_raw:
+                    birth_raw, birth_display = self._normalize_birth_date(found_raw)
+                    customer_birth_date_raw = birth_raw or customer_birth_date_raw
+                    customer_birth_date = birth_display or customer_birth_date
+                    if customer_birth_date:
+                        break
+
+        if customer_birth_date_raw and not customer_birth_date:
+            integrity_issues.append('Birth date could not be normalized to DD/MM/YYYY')
+
         records_analyzed = max(len(rows), len(sample_rows), 0)
         id_rows_count = len([entry for entry in sample_rows if entry.get('id')])
 
@@ -3274,6 +3627,12 @@ Factors Affecting Score:
             'average_cover': round(total_cover / records_with_cover, 2) if records_with_cover else 0.0,
             'coverage_to_savings_ratio': round(total_cover / total_savings, 2) if total_savings > 0 else None,
             'sample_rows': sample_rows[:120],
+            'customer_id': customer_id,
+            'customer_id_masked': self._mask_identifier(customer_id) if customer_id else '',
+            'customer_id_valid': customer_id_valid,
+            'birth_date': customer_birth_date,
+            'birth_date_raw': customer_birth_date_raw,
+            'integrity_issues': integrity_issues,
         }
 
     def _build_savings_cover_id_section(
@@ -3295,15 +3654,22 @@ Factors Affecting Score:
         if is_hebrew:
             content = (
                 "סיכום מסונף לחיסכון וביטוח (על בסיס שיוכי מסלקה):\n\n"
+                f"• מזהה לקוח: {summary.get('customer_id', 'לא זמין')}\n"
+                f"• תאריך לידה: {summary.get('birth_date', 'לא זמין')}"
+                + (f" (מקור: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
+                + "\n"
                 f"• רשומות שנותחו: {records_analyzed}\n"
                 f"• סך חיסכון: ₪{total_savings:,.2f}\n"
                 f"• סך כיסוי: ₪{total_cover:,.2f}\n"
                 f"• מזהים ייחודיים: {unique_id_count}\n"
-                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
+                f"• תקינות מזהה: {'✓ תקין' if summary.get('customer_id_valid') else '⚠ דורש בדיקה'}"
             )
             title = 'סיכום מסונף - חיסכון, כיסוי וזיהוי'
-            columns = ['מזהה (מוסתר)', 'חיסכון', 'כיסוי', 'אסמכתא']
+            columns = ['מזהה לקוח', 'תאריך לידה', 'מזהה (מוסתר)', 'חיסכון', 'כיסוי', 'אסמכתא']
             data_rows = [{
+                'מזהה לקוח': summary.get('customer_id', ''),
+                'תאריך לידה': summary.get('birth_date', ''),
                 'מזהה (מוסתר)': row.get('id', ''),
                 'חיסכון': row.get('savings', 0),
                 'כיסוי': row.get('cover', 0),
@@ -3312,15 +3678,22 @@ Factors Affecting Score:
         else:
             content = (
                 "Affiliated savings and insurance snapshot (Mislaka-aligned):\n\n"
+                f"• Customer ID: {summary.get('customer_id', 'N/A')}\n"
+                f"• Birth Date: {summary.get('birth_date', 'N/A')}"
+                + (f" (source: {summary.get('birth_date_raw')})" if summary.get('birth_date_raw') else "")
+                + "\n"
                 f"• Records analyzed: {records_analyzed}\n"
                 f"• Total savings: ₪{total_savings:,.2f}\n"
                 f"• Total cover: ₪{total_cover:,.2f}\n"
                 f"• Unique IDs: {unique_id_count}\n"
-                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}\n"
+                f"• ID validation: {'Valid' if summary.get('customer_id_valid') else 'Needs review'}"
             )
             title = 'Affiliated Summary - Savings, Cover & ID'
-            columns = ['Masked ID', 'Savings', 'Cover', 'Reference']
+            columns = ['Customer ID', 'Birth Date', 'Masked ID', 'Savings', 'Cover', 'Reference']
             data_rows = [{
+                'Customer ID': summary.get('customer_id', ''),
+                'Birth Date': summary.get('birth_date', ''),
                 'Masked ID': row.get('id', ''),
                 'Savings': row.get('savings', 0),
                 'Cover': row.get('cover', 0),

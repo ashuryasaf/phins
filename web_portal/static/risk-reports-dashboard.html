@@ -2608,6 +2608,25 @@
       const date = new Date(dateStr);
       return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     }
+
+    function normalizeBirthDateDisplay(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length === 8) {
+        // Prefer YYYYMMDD format from affiliated Swiftness/Mislaka payloads.
+        const yyyy = digits.slice(0, 4);
+        const mm = digits.slice(4, 6);
+        const dd = digits.slice(6, 8);
+        const parsed = new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+        if (!Number.isNaN(parsed.getTime()) && parsed.getFullYear() >= 1900 && parsed.getFullYear() <= 2100) {
+          return `${dd}/${mm}/${yyyy}`;
+        }
+      }
+
+      return raw;
+    }
     
     function getRiskColor(score) {
       if (score < 30) return 'var(--success)';
@@ -2910,6 +2929,7 @@
       
       const clientName = client.full_name || client.client_name || 'לא זמין';
       const idNumber = client.id_number || 'לא זמין';
+      const birthDate = normalizeBirthDateDisplay(client.birth_date) || 'לא זמין';
       const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
       const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
       const accountCount = accounts.length;
@@ -2924,6 +2944,7 @@
           <h5 style="color: white;">👤 פרטי לקוח</h5>
           <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
           <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
+          <small style="color: rgba(255,255,255,0.9);">תאריך לידה: ${birthDate}</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
           <h5 style="color: white;">💰 סה״כ צבירה</h5>
@@ -2971,6 +2992,7 @@
       const container = document.getElementById('insightsGrid');
       const accounts = pensionData.accounts || [];
       const client = pensionData.client || {};
+      const birthDate = normalizeBirthDateDisplay(client.birth_date);
       
       let html = '';
       
@@ -2981,7 +3003,7 @@
           <div class="insight-detail" style="direction: rtl; text-align: right;">
             <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
             <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
-            ${client.birth_date ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${client.birth_date}</span></div>` : ''}
+            ${birthDate ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${birthDate}</span></div>` : ''}
             ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${client.phone}</span></div>` : ''}
           </div>
           <span class="insight-badge" style="background: #667eea; color: white;">נתוני לקוח</span>
