@@ -5248,12 +5248,35 @@ def persist_claim_update_to_database(claim_id: str, updates: Dict[str, Any]) -> 
     """Best-effort DB sync for claim mutations to preserve pipeline integrity."""
     if not claim_id or not (USE_DATABASE and database_enabled):
         return
+    db_updates: Dict[str, Any] = dict(updates or {})
+    datetime_fields = {
+        'filed_date',
+        'created_date',
+        'updated_date',
+        'approval_date',
+        'payment_date',
+    }
+    for field in datetime_fields:
+        if field not in db_updates:
+            continue
+        value = db_updates.get(field)
+        if value in (None, ''):
+            db_updates[field] = None
+            continue
+        if isinstance(value, datetime):
+            continue
+        if isinstance(value, str):
+            try:
+                db_updates[field] = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except ValueError:
+                # Leave unknown formats untouched (repository update is best-effort).
+                pass
     try:
         from database.manager import DatabaseManager
         from database.repositories.claim_repository import ClaimRepository
         with DatabaseManager() as db:
             claim_repo = ClaimRepository(db.session)
-            claim_repo.update(claim_id, **updates)
+            claim_repo.update(claim_id, **db_updates)
     except Exception as e:
         print(f"[CLAIMS API] Database update note for {claim_id}: {e}")
 
