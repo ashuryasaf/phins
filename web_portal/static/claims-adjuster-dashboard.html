@@ -785,6 +785,85 @@
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 4000);
         }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function escapeForSingleQuotedJs(value) {
+            return String(value ?? '')
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/\r/g, '\\r')
+                .replace(/\n/g, '\\n')
+                .replace(/</g, '\\u003c')
+                .replace(/>/g, '\\u003e');
+        }
+
+        function safeNumber(value, defaultValue = 0) {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : defaultValue;
+        }
+
+        function csvSafeCell(value) {
+            const text = String(value ?? '').replace(/"/g, '""');
+            return /^[=+\-@]/.test(text) ? `'${text}` : text;
+        }
+
+        function formatDisplayDate(value) {
+            if (!value) return 'N/A';
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString();
+        }
+
+        function maskEmail(email) {
+            const text = String(email || '').trim();
+            const atIndex = text.indexOf('@');
+            if (atIndex <= 1) return text;
+            const local = text.slice(0, atIndex);
+            const domain = text.slice(atIndex);
+            return `${local[0]}***${local.slice(-1)}${domain}`;
+        }
+
+        function formatCustomerLabel(claim) {
+            const name = String(claim?.customer_name || '').trim();
+            if (name) {
+                if (name.includes('@')) return maskEmail(name);
+                return name;
+            }
+            const customerId = String(claim?.customer_id || '').trim();
+            return customerId || 'N/A';
+        }
+
+        function sanitizeClaimForUI(claim) {
+            const claimId = String(claim?.id || claim?.claim_id || '').trim();
+            return {
+                id: claimId,
+                claim_id: claimId,
+                policy_id: String(claim?.policy_id || '').trim(),
+                customer_id: String(claim?.customer_id || '').trim(),
+                customer_name: String(claim?.customer_name || '').trim(),
+                type: String(claim?.type || '').trim(),
+                description: String(claim?.description || '').trim(),
+                status: String(claim?.status || '').trim(),
+                claimed_amount: safeNumber(claim?.claimed_amount, 0),
+                approved_amount: safeNumber(claim?.approved_amount, 0),
+                paid_amount: safeNumber(claim?.paid_amount, 0),
+                filed_date: claim?.filed_date || claim?.created_date || '',
+                created_date: claim?.created_date || '',
+                updated_date: claim?.updated_date || '',
+                approval_date: claim?.approval_date || claim?.approved_date || '',
+                approved_date: claim?.approved_date || '',
+                payment_date: claim?.payment_date || '',
+                rejection_reason: String(claim?.rejection_reason || '').trim(),
+                next_stage: String(claim?.next_stage || '').trim()
+            };
+        }
         
         // View customer risk report
         function viewCustomerRiskReport(customerId) {
@@ -819,10 +898,7 @@
                         : (Array.isArray(data.items) ? data.items : []));
                 allClaims = claimsList
                     .filter(claim => claim && typeof claim === 'object')
-                    .map(claim => ({
-                        ...claim,
-                        id: claim.id || claim.claim_id || ''
-                    }));
+                    .map(claim => sanitizeClaimForUI(claim));
                 filterClaims();
                 updateStats(allClaims);
             } catch (error) {
@@ -885,30 +961,31 @@
                 const displayStatus = formatClaimStatus(claim.status);
                 const filedDate = claim.filed_date || claim.created_date;
                 const claimId = String(claim.id || claim.claim_id || '').trim();
-                const claimIdEscaped = claimId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const claimIdEscaped = escapeForSingleQuotedJs(claimId);
                 const customerId = String(claim.customer_id || '').trim();
-                const customerIdEscaped = customerId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const customerIdEscaped = escapeForSingleQuotedJs(customerId);
+                const customerLabel = formatCustomerLabel(claim);
                 
                 return `
                 <div class="claim-item">
                     <div class="claim-header">
                         <div>
-                            <div class="claim-id">Claim #${claimId || 'N/A'}</div>
-                            <div class="claim-policy">Policy: ${claim.policy_id || 'N/A'}</div>
+                            <div class="claim-id">Claim #${escapeHtml(claimId || 'N/A')}</div>
+                            <div class="claim-policy">Policy: ${escapeHtml(claim.policy_id || 'N/A')}</div>
                         </div>
                         <div>
-                            <span class="priority-badge priority-${priority.toLowerCase()}">${priority} Priority</span>
-                            <span class="status-badge ${statusClass}">${displayStatus}</span>
+                            <span class="priority-badge priority-${escapeHtml(priority.toLowerCase())}">${escapeHtml(priority)} Priority</span>
+                            <span class="status-badge ${escapeHtml(statusClass)}">${escapeHtml(displayStatus)}</span>
                         </div>
                     </div>
                     <div class="claim-details">
-                        <div class="claim-detail"><strong>Type:</strong> ${claim.type || 'General'}</div>
-                        <div class="claim-detail"><strong>Customer:</strong> ${claim.customer_name || claim.customer_id || 'N/A'}</div>
+                        <div class="claim-detail"><strong>Type:</strong> ${escapeHtml(claim.type || 'General')}</div>
+                        <div class="claim-detail"><strong>Customer:</strong> ${escapeHtml(customerLabel)}</div>
                         <div class="claim-detail"><strong>Claimed:</strong> <span class="amount-display">$${formatNumber(claim.claimed_amount || 0)}</span></div>
                         ${claim.approved_amount ? `<div class="claim-detail"><strong>Approved:</strong> <span style="color: #28a745; font-weight: 600;">$${formatNumber(claim.approved_amount)}</span></div>` : ''}
-                        <div class="claim-detail"><strong>Filed:</strong> ${filedDate ? new Date(filedDate).toLocaleDateString() : 'N/A'}</div>
+                        <div class="claim-detail"><strong>Filed:</strong> ${escapeHtml(formatDisplayDate(filedDate))}</div>
                     </div>
-                    <div class="claim-description">${claim.description || 'No description provided'}</div>
+                    <div class="claim-description">${escapeHtml(claim.description || 'No description provided')}</div>
                     <div class="action-group" style="margin-top: 12px;">
                         ${claimId && (normalizedStatus === 'pending' || normalizedStatus === 'under review') ? `
                             <button class="btn btn-view" onclick="openReview('${claimIdEscaped}')">
@@ -933,13 +1010,13 @@
                         ${claim.payment_date ? `
                             <span style="color: #10b981; display: flex; align-items: center; gap: 8px; font-weight: 500; background: rgba(16, 185, 129, 0.1); padding: 8px 16px; border-radius: 8px;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                Paid on ${new Date(claim.payment_date).toLocaleDateString()}
+                                Paid on ${escapeHtml(formatDisplayDate(claim.payment_date))}
                             </span>
                         ` : ''}
                         ${normalizedStatus === 'rejected' ? `
                             <span style="color: #ef4444; display: flex; align-items: center; gap: 8px; font-weight: 500; background: rgba(239, 68, 68, 0.1); padding: 8px 16px; border-radius: 8px;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-                                Rejected${claim.rejection_reason ? ': ' + claim.rejection_reason : ''}
+                                Rejected${claim.rejection_reason ? ': ' + escapeHtml(claim.rejection_reason) : ''}
                             </span>
                         ` : ''}
                     </div>
@@ -1036,16 +1113,16 @@
             document.getElementById('claim-details').innerHTML = `
                 <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                        <div><strong>Claim ID:</strong> ${claim.id}</div>
-                        <div><strong>Policy:</strong> ${claim.policy_id || 'N/A'}</div>
-                        <div><strong>Type:</strong> ${claim.type || 'General'}</div>
-                        <div><strong>Customer:</strong> ${claim.customer_name || claim.customer_id || 'N/A'}</div>
-                        <div><strong>Filed Date:</strong> ${claim.filed_date ? new Date(claim.filed_date).toLocaleDateString() : 'N/A'}</div>
+                        <div><strong>Claim ID:</strong> ${escapeHtml(claim.id)}</div>
+                        <div><strong>Policy:</strong> ${escapeHtml(claim.policy_id || 'N/A')}</div>
+                        <div><strong>Type:</strong> ${escapeHtml(claim.type || 'General')}</div>
+                        <div><strong>Customer:</strong> ${escapeHtml(formatCustomerLabel(claim))}</div>
+                        <div><strong>Filed Date:</strong> ${escapeHtml(formatDisplayDate(claim.filed_date))}</div>
                         <div><strong>Claimed Amount:</strong> <span style="color: #dc3545; font-weight: 700; font-size: 1.2rem;">$${formatNumber(claim.claimed_amount || 0)}</span></div>
                     </div>
                     <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #dee2e6;">
                         <strong>Description:</strong>
-                        <p style="margin: 10px 0 0 0;">${claim.description || 'No description provided'}</p>
+                        <p style="margin: 10px 0 0 0;">${escapeHtml(claim.description || 'No description provided')}</p>
                     </div>
                 </div>
             `;
@@ -1215,7 +1292,7 @@
                 document.getElementById('probability-content').innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">⚠️</div>
-                        <p>Error generating probability report: ${error.message}</p>
+                        <p>Error generating probability report: ${escapeHtml(error?.message || 'Unknown error')}</p>
                         <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close</button>
                     </div>
                 `;
@@ -1227,6 +1304,8 @@
             const fraudProb = report.fraud_probability || 0;
             const riskLevel = report.risk_level || 'medium';
             const recommendation = report.recommendation_display || report.recommendation || 'Pending';
+            const reportClaimId = String(report?.claim_id || '').trim();
+            const reportClaimIdJs = escapeForSingleQuotedJs(reportClaimId);
             
             // Determine colors based on authenticity
             let authClass = 'highlight';
@@ -1259,7 +1338,7 @@
                         <div style="font-size: 0.8rem; margin-top: 8px;">Risk Level: ${riskLevel.toUpperCase()}</div>
                     </div>
                     <div class="prob-score-card">
-                        <div class="prob-score-value" style="font-size: 1.5rem; color: ${authProb >= 0.7 ? '#10b981' : (authProb >= 0.5 ? '#f59e0b' : '#ef4444')};">${recommendation}</div>
+                        <div class="prob-score-value" style="font-size: 1.5rem; color: ${authProb >= 0.7 ? '#10b981' : (authProb >= 0.5 ? '#f59e0b' : '#ef4444')};">${escapeHtml(recommendation)}</div>
                         <div class="prob-score-label">AI Recommendation</div>
                         <div style="font-size: 0.8rem; margin-top: 8px;">Confidence: ${((report.confidence_level || 0.75) * 100).toFixed(0)}%</div>
                     </div>
@@ -1268,7 +1347,7 @@
                 <!-- AI Summary -->
                 <div class="ai-summary">
                     <h4>🤖 AI Analysis Summary</h4>
-                    <p style="margin: 0;">${ai.summary || 'Analysis completed.'}</p>
+                    <p style="margin: 0;">${escapeHtml(ai.summary || 'Analysis completed.')}</p>
                 </div>
                 
                 <!-- Component Scores -->
@@ -1289,10 +1368,10 @@
                     <h4>📅 Policy Timeline Analysis</h4>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
                         <div>
-                            <strong>Days Since Policy:</strong> ${timeline.days_since_policy || 0}
+                            <strong>Days Since Policy:</strong> ${safeNumber(timeline.days_since_policy, 0)}
                         </div>
                         <div>
-                            <strong>Years Since Policy:</strong> ${(timeline.years_since_policy || 0).toFixed(2)}
+                            <strong>Years Since Policy:</strong> ${safeNumber(timeline.years_since_policy, 0).toFixed(2)}
                         </div>
                         <div>
                             <strong>Within Contestability:</strong> 
@@ -1313,10 +1392,10 @@
                         ${(hidden.conditions || []).map(hc => `
                             <div class="prob-indicator red">
                                 <div style="flex: 1;">
-                                    <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})
-                                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${hc.evidence_source}</div>
+                                    <strong>${escapeHtml(hc.condition_name)}</strong> (ICD: ${escapeHtml(hc.icd_code)})
+                                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${escapeHtml(hc.evidence_source)}</div>
                                     <div style="font-size: 0.85rem; margin-top: 4px;">
-                                        <span style="color: #dc2626;">Concealment Score: ${(hc.deliberate_concealment_score * 100).toFixed(0)}%</span>
+                                        <span style="color: #dc2626;">Concealment Score: ${(safeNumber(hc.deliberate_concealment_score, 0) * 100).toFixed(0)}%</span>
                                         ${hc.causal_link_to_claim ? ' | <strong style="color: #dc2626;">CAUSALLY LINKED TO CLAIM</strong>' : ''}
                                     </div>
                                 </div>
@@ -1334,10 +1413,10 @@
                         ${(fraud.indicators || []).map(fi => `
                             <div class="prob-indicator ${fi.severity > 0.7 ? 'red' : 'yellow'}">
                                 <div style="flex: 1;">
-                                    <strong>${fi.indicator_type.replace(/_/g, ' ').toUpperCase()}</strong>
-                                    <span style="float: right; color: ${fi.severity > 0.7 ? '#dc2626' : '#d97706'};">Severity: ${(fi.severity * 100).toFixed(0)}%</span>
-                                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${fi.explanation}</div>
-                                    <div style="font-size: 0.85rem; color: #0369a1; margin-top: 4px;"><em>Recommendation: ${fi.recommendation}</em></div>
+                                    <strong>${escapeHtml(String(fi.indicator_type || '').replace(/_/g, ' ').toUpperCase())}</strong>
+                                    <span style="float: right; color: ${fi.severity > 0.7 ? '#dc2626' : '#d97706'};">Severity: ${(safeNumber(fi.severity, 0) * 100).toFixed(0)}%</span>
+                                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${escapeHtml(fi.explanation)}</div>
+                                    <div style="font-size: 0.85rem; color: #0369a1; margin-top: 4px;"><em>Recommendation: ${escapeHtml(fi.recommendation)}</em></div>
                                 </div>
                             </div>
                         `).join('')}
@@ -1353,14 +1432,14 @@
                         <div>
                             <h5 style="color: #dc2626; margin-bottom: 8px;">🔴 Red Flags</h5>
                             ${(ai.red_flags || []).length > 0 ? 
-                                (ai.red_flags || []).map(f => `<div class="prob-indicator red" style="padding: 8px;">${f}</div>`).join('') :
+                                (ai.red_flags || []).map(f => `<div class="prob-indicator red" style="padding: 8px;">${escapeHtml(f)}</div>`).join('') :
                                 '<div style="color: #10b981;">✅ No red flags detected</div>'
                             }
                         </div>
                         <div>
                             <h5 style="color: #10b981; margin-bottom: 8px;">🟢 Green Flags</h5>
                             ${(ai.green_flags || []).length > 0 ?
-                                (ai.green_flags || []).map(f => `<div class="prob-indicator green" style="padding: 8px;">${f}</div>`).join('') :
+                                (ai.green_flags || []).map(f => `<div class="prob-indicator green" style="padding: 8px;">${escapeHtml(f)}</div>`).join('') :
                                 '<div style="color: #666;">No specific green flags</div>'
                             }
                         </div>
@@ -1370,14 +1449,14 @@
                 <!-- Explanation -->
                 <div class="prob-section">
                     <h4>📝 Decision Explanation</h4>
-                    <p style="margin: 0;">${report.explanation || 'Assessment completed.'}</p>
+                    <p style="margin: 0;">${escapeHtml(report.explanation || 'Assessment completed.')}</p>
                 </div>
                 
                 <!-- Actions -->
                 <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
                     <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close Report</button>
-                    ${authProb >= 0.7 ? `<button class="btn btn-approve" onclick="closeProbabilityModal(); openReview('${report.claim_id}');">Proceed to Approve</button>` : ''}
-                    ${authProb < 0.5 ? `<button class="btn btn-reject" onclick="closeProbabilityModal(); openReview('${report.claim_id}');">Review for Rejection</button>` : ''}
+                    ${authProb >= 0.7 ? `<button class="btn btn-approve" onclick="closeProbabilityModal(); openReview('${reportClaimIdJs}');">Proceed to Approve</button>` : ''}
+                    ${authProb < 0.5 ? `<button class="btn btn-reject" onclick="closeProbabilityModal(); openReview('${reportClaimIdJs}');">Review for Rejection</button>` : ''}
                 </div>
             `;
             
@@ -2027,11 +2106,10 @@
                                 ${riskAnalyses.map(ra => `
                                     <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                                         <td style="padding: 12px; color: white;">
-                                            <a href="#" onclick="openProbabilityReport('${ra.claim.id}'); return false;" style="color: #4facfe; text-decoration: none;">${ra.claim.id}</a>
+                                            <a href="#" onclick="openProbabilityReport('${escapeForSingleQuotedJs(ra.claim.id)}'); return false;" style="color: #4facfe; text-decoration: none;">${escapeHtml(ra.claim.id)}</a>
                                         </td>
                                         <td style="padding: 12px; color: rgba(255,255,255,0.8);">
-                                            ${ra.claim.customer_name || ra.claim.customer_id || 'N/A'}
-                                            ${ra.analysis.uwData?.customer_email ? `<br><span style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">${ra.analysis.uwData.customer_email}</span>` : ''}
+                                            ${escapeHtml(formatCustomerLabel(ra.claim))}
                                         </td>
                                         <td style="padding: 12px; color: white; text-align: right; font-weight: 600;">$${Number(ra.claim.claimed_amount || 0).toLocaleString()}</td>
                                         <td style="padding: 12px; text-align: center;">
@@ -2046,7 +2124,7 @@
                                                 '<span style="color: rgba(255,255,255,0.4);">-</span>'}
                                         </td>
                                         <td style="padding: 12px; color: rgba(255,255,255,0.7); font-size: 0.8rem;">
-                                            ${ra.analysis.factors.slice(0, 2).map(f => f.factor).join(', ') || 'No significant factors'}
+                                            ${escapeHtml(ra.analysis.factors.slice(0, 2).map(f => f.factor).join(', ') || 'No significant factors')}
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -2085,7 +2163,7 @@
                     <div style="background: rgba(220,53,69,0.2); border: 1px solid rgba(220,53,69,0.5); border-radius: 12px; padding: 30px; text-align: center;">
                         <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
                         <h3 style="color: #dc3545; margin: 0 0 8px 0;">Report Generation Error</h3>
-                        <p style="color: rgba(255,255,255,0.7); margin: 0 0 16px 0;">${error.message || 'An unexpected error occurred.'}</p>
+                        <p style="color: rgba(255,255,255,0.7); margin: 0 0 16px 0;">${escapeHtml(error.message || 'An unexpected error occurred.')}</p>
                         <button onclick="generateAccumulativeRiskReport()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Retry</button>
                     </div>
                 `;
@@ -2330,11 +2408,11 @@
                 };
             });
             
-            let csv = 'Claim ID,Customer,Email,Amount,Risk Score,Risk Level,Fraud Flags,Key Factors,Status,Filed Date\n';
+            let csv = 'Claim ID,Customer,Amount,Risk Score,Risk Level,Fraud Flags,Key Factors,Status,Filed Date\n';
             
             riskAnalyses.forEach(ra => {
                 const factors = ra.analysis.factors.slice(0, 3).map(f => f.factor).join('; ');
-                csv += `"${ra.claim.id}","${ra.claim.customer_name || ra.claim.customer_id}","${ra.analysis.uwData?.customer_email || ''}",${ra.claim.claimed_amount || 0},${ra.analysis.score},"${ra.analysis.level}",${ra.fraudIndicators.length},"${factors}","${ra.claim.status}","${ra.claim.filed_date || ''}"\n`;
+                csv += `"${csvSafeCell(ra.claim.id)}","${csvSafeCell(formatCustomerLabel(ra.claim))}",${safeNumber(ra.claim.claimed_amount, 0)},${safeNumber(ra.analysis.score, 0)},"${csvSafeCell(ra.analysis.level)}",${ra.fraudIndicators.length},"${csvSafeCell(factors)}","${csvSafeCell(ra.claim.status)}","${csvSafeCell(ra.claim.filed_date || '')}"\n`;
             });
             
             const blob = new Blob([csv], { type: 'text/csv' });
