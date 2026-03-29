@@ -2753,6 +2753,7 @@
       
       try {
         let allResults = [];
+        let uploadedEvidenceSnapshots = [];
         
         for (let i = 0; i < uploadedFiles.length; i++) {
           const file = uploadedFiles[i];
@@ -2782,6 +2783,15 @@
             const parseError = parseResult.error || `Upload parse failed (${parseResponse.status})`;
             console.warn(`Skipping ${file.name}: ${parseError}`);
             continue;
+          }
+
+          if (parseResult.uploaded_data_affiliations) {
+            uploadedEvidenceSnapshots.push({
+              ...parseResult.uploaded_data_affiliations,
+              source_filename: parseResult.uploaded_data_affiliations.source_filename || file.name,
+              file_type: parseResult.uploaded_data_affiliations.file_type || fileType,
+              file_size_label: formatFileSize(file.size)
+            });
           }
           
           // Analyze with inductive reasoning
@@ -2849,7 +2859,8 @@
         displayResults(currentAnalysis, currentReport, {
           affiliations: affiliationSnapshot,
           files: filesSnapshot,
-          analysisTypeLabel: analysisTypeLabel
+          analysisTypeLabel: analysisTypeLabel,
+          uploadedEvidence: uploadedEvidenceSnapshots
         });
         
         // Hide processing, show results
@@ -3199,6 +3210,220 @@
       }
 
       return charts;
+    }
+
+    function getUploadedEvidenceSnapshots(report, options = {}) {
+      const optionSnapshots = Array.isArray(options.uploadedEvidence)
+        ? options.uploadedEvidence.filter(Boolean)
+        : [];
+
+      if (optionSnapshots.length) {
+        return optionSnapshots;
+      }
+
+      const reportSnapshot = report?.metadata?.uploaded_data_affiliations;
+      return reportSnapshot ? [reportSnapshot] : [];
+    }
+
+    function summarizeUploadedEvidenceSnapshots(snapshots) {
+      const exactFields = [...new Set(
+        (snapshots || []).flatMap(snapshot => {
+          const directFields = snapshot?.integrity?.exact_value_fields || [];
+          if (directFields.length) {
+            return directFields;
+          }
+          return (snapshot?.source_columns || []).map(column => column?.field).filter(Boolean);
+        })
+      )];
+
+      const topMappings = (snapshots || [])
+        .flatMap(snapshot => snapshot?.affiliation_matches || [])
+        .slice(0, 6);
+
+      return {
+        fileCount: (snapshots || []).length,
+        previewRowCount: (snapshots || []).reduce((sum, snapshot) => sum + (snapshot?.integrity?.preview_row_count || snapshot?.preview_rows?.length || 0), 0),
+        mappedValueCount: (snapshots || []).reduce((sum, snapshot) => sum + (snapshot?.affiliation_matches?.length || 0), 0),
+        exactFields: exactFields.slice(0, 10),
+        topMappings
+      };
+    }
+
+    function renderUploadedEvidenceInsights(snapshots, analysisTypeLabel = 'Auto-detect') {
+      const container = document.getElementById('insightsGrid');
+      if (!container || !snapshots || !snapshots.length) {
+        return;
+      }
+
+      const summary = summarizeUploadedEvidenceSnapshots(snapshots);
+      const exactFieldTags = summary.exactFields.length
+        ? summary.exactFields.map(field => `<span class="tag">${escapeHtml(field)}</span>`).join('')
+        : '<span style="color: var(--text-muted);">No preserved source fields detected</span>';
+
+      const mappingDetails = summary.topMappings.length
+        ? summary.topMappings.map(match => `
+            <div class="stat-detail">
+              <span class="label">${escapeHtml(match.category || 'Affiliation')}</span>
+              <span class="val">${escapeHtml(match.raw_value || '—')}${match.affiliation_label ? ` → ${escapeHtml(match.affiliation_label)}` : ''}</span>
+            </div>
+          `).join('')
+        : '<div class="stat-detail"><span class="label">Affiliations</span><span class="val">No mapped values detected</span></div>';
+
+      container.innerHTML += `
+        <div class="insight-card fade-in" style="border-left-color: #0ea5e9;">
+          <h5>🧾 Uploaded Data Integrity</h5>
+          <div class="insight-detail">
+            <div class="stat-detail"><span class="label">Run Type</span><span class="val">${escapeHtml(analysisTypeLabel)}</span></div>
+            <div class="stat-detail"><span class="label">Files with exact preview</span><span class="val">${summary.fileCount}</span></div>
+            <div class="stat-detail"><span class="label">Preview rows</span><span class="val">${summary.previewRowCount}</span></div>
+            <div class="stat-detail"><span class="label">Mapped affiliation values</span><span class="val">${summary.mappedValueCount}</span></div>
+          </div>
+          <div class="tag-grid" style="margin-top: 0.75rem;">${exactFieldTags}</div>
+          <span class="insight-badge">Exact source values preserved</span>
+        </div>
+        <div class="insight-card fade-in" style="border-left-color: #7c3aed;">
+          <h5>🧭 Affiliation Matches from Uploaded Data</h5>
+          <div class="insight-detail">
+            ${mappingDetails}
+          </div>
+          <span class="insight-badge">Swiftness affiliation alignment</span>
+        </div>
+      `;
+    }
+
+    function renderCustomer360Insights(summary, analysisTypeLabel = 'Auto-detect') {
+      const container = document.getElementById('insightsGrid');
+      if (!container || !summary || !Array.isArray(summary.customers) || summary.customers.length === 0) {
+        return;
+      }
+
+      const topCustomers = (summary.customers || []).slice(0, 4);
+      const topCustomerRows = topCustomers.map(customer => `
+        <div class="stat-detail">
+          <span class="label">${escapeHtml(customer.full_name || customer.id_number || customer.customer_key || 'Customer')}</span>
+          <span class="val">${escapeHtml(customer.policy_count || 0)} policies • ₪${escapeHtml((customer.cumulative_savings || 0).toLocaleString())}</span>
+        </div>
+      `).join('');
+
+      const modules = (summary.module_breakdown || []).map(module => `
+        <span class="tag">${escapeHtml(module.title || module.module)}: ${escapeHtml(module.status || 'ready')}</span>
+      `).join('');
+
+      const conflictCount = (summary.identity_conflicts || []).length;
+
+      container.innerHTML += `
+        <div class="insight-card fade-in" style="border-left-color: #2563eb;">
+          <h5>🧠 Customer 360 BI Summary</h5>
+          <div class="insight-detail">
+            <div class="stat-detail"><span class="label">Run Type</span><span class="val">${escapeHtml(analysisTypeLabel)}</span></div>
+            <div class="stat-detail"><span class="label">Customers</span><span class="val">${escapeHtml(summary.customer_count || 0)}</span></div>
+            <div class="stat-detail"><span class="label">Policies</span><span class="val">${escapeHtml(summary.policy_count || 0)}</span></div>
+            <div class="stat-detail"><span class="label">One-to-many customers</span><span class="val">${escapeHtml(summary.one_to_many_customer_count || 0)}</span></div>
+            <div class="stat-detail"><span class="label">Identity integrity</span><span class="val">${escapeHtml((summary.identity_integrity_score || 0).toFixed(0))}/100</span></div>
+            <div class="stat-detail"><span class="label">Conflicts</span><span class="val">${escapeHtml(conflictCount)}</span></div>
+            <div class="stat-detail"><span class="label">Cumulative savings</span><span class="val">₪${escapeHtml((summary.cumulative_savings || 0).toLocaleString())}</span></div>
+            <div class="stat-detail"><span class="label">Cumulative hedged risk</span><span class="val">₪${escapeHtml((summary.cumulative_hedged_risk || 0).toLocaleString())}</span></div>
+          </div>
+          <div class="tag-grid" style="margin-top: 0.75rem;">${modules || '<span style="color: var(--text-muted);">No report modules available</span>'}</div>
+          <span class="insight-badge">Modular 360 assessment</span>
+        </div>
+        <div class="insight-card fade-in" style="border-left-color: #0f766e;">
+          <h5>👥 Top Customer Aggregations</h5>
+          <div class="insight-detail">
+            ${topCustomerRows || '<div class="stat-detail"><span class="label">Customers</span><span class="val">No aggregated customers available</span></div>'}
+          </div>
+          <span class="insight-badge">One-to-many reasoning</span>
+        </div>
+      `;
+    }
+
+    function buildUploadedEvidenceSections(snapshots) {
+      if (!snapshots || !snapshots.length) {
+        return '';
+      }
+
+      const summaryRows = snapshots.map(snapshot => {
+        const exactFields = snapshot?.integrity?.exact_value_fields || (snapshot?.source_columns || []).map(column => column?.field).filter(Boolean);
+        return {
+          File: snapshot?.source_filename || 'Uploaded file',
+          Type: ((snapshot?.file_type || '') + '').toUpperCase() || 'N/A',
+          Records: snapshot?.record_count || 0,
+          'Exact Fields': exactFields.join(', ') || '—',
+          'Mapped Affiliations': snapshot?.affiliation_matches?.length || 0
+        };
+      });
+
+      const detailSections = snapshots.map((snapshot, index) => {
+        const sourceRows = (snapshot?.source_columns || []).map(column => ({
+          Field: column?.field || '—',
+          'Source Column': column?.source_column || '—',
+          Category: column?.category || '—'
+        }));
+
+        const matchRows = (snapshot?.affiliation_matches || []).map(match => ({
+          Category: match?.category || '—',
+          'Source Column': match?.source_column || '—',
+          'Raw Value': match?.raw_value || '—',
+          'Affiliation Label': match?.affiliation_label || '—',
+          Detail: match?.affiliation_detail || '—'
+        }));
+
+        const integrityNotes = (snapshot?.integrity?.notes || [])
+          .map(note => `<li>${escapeHtml(note)}</li>`)
+          .join('');
+        const nestedFileRows = (snapshot?.nested_files || []).map(file => {
+          const exactFields = file?.integrity?.exact_value_fields || (file?.source_columns || []).map(column => column?.field).filter(Boolean);
+          return {
+            File: file?.source_filename || 'ZIP entry',
+            Type: ((file?.file_type || '') + '').toUpperCase() || 'N/A',
+            Records: file?.record_count || 0,
+            'Exact Fields': exactFields.join(', ') || '—',
+            'Mapped Affiliations': file?.affiliation_matches?.length || 0
+          };
+        });
+
+        return `
+          <div class="report-section fade-in">
+            <h3>🧾 Exact Uploaded Evidence ${snapshots.length > 1 ? `#${index + 1}` : ''}</h3>
+            <div class="content">
+              <p><strong>File:</strong> ${escapeHtml(snapshot?.source_filename || 'Uploaded file')}</p>
+              <p><strong>Records Parsed:</strong> ${escapeHtml(snapshot?.record_count || 0)}</p>
+              ${sourceRows.length ? renderDataTable({ columns: ['Field', 'Source Column', 'Category'], rows: sourceRows }) : '<p style="color: var(--text-muted);">No exact source columns detected.</p>'}
+              <div style="margin-top: 1rem;">
+                <h4 style="margin-bottom: 0.5rem;">Preview Rows</h4>
+                ${snapshot?.preview_rows?.length ? renderDataTable(snapshot.preview_rows) : '<p style="color: var(--text-muted);">No preview rows available.</p>'}
+              </div>
+              <div style="margin-top: 1rem;">
+                <h4 style="margin-bottom: 0.5rem;">Affiliation Value Matches</h4>
+                ${matchRows.length ? renderDataTable({ columns: ['Category', 'Source Column', 'Raw Value', 'Affiliation Label', 'Detail'], rows: matchRows }) : '<p style="color: var(--text-muted);">No affiliation-coded values detected in this upload.</p>'}
+              </div>
+              ${nestedFileRows.length ? `
+                <div style="margin-top: 1rem;">
+                  <h4 style="margin-bottom: 0.5rem;">ZIP Internal Modules</h4>
+                  ${renderDataTable({ columns: ['File', 'Type', 'Records', 'Exact Fields', 'Mapped Affiliations'], rows: nestedFileRows })}
+                </div>
+              ` : ''}
+              ${integrityNotes ? `
+                <div style="margin-top: 1rem;">
+                  <h4 style="margin-bottom: 0.5rem;">Integrity Notes</h4>
+                  <ul style="padding-left: 1.25rem;">${integrityNotes}</ul>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="report-section fade-in">
+          <h3>🔎 Uploaded Data Affiliation Summary</h3>
+          <div class="content">
+            <p>Exact uploaded values are presented alongside the affiliation categories used during Analyze &amp; Generate.</p>
+            ${renderDataTable({ columns: ['File', 'Type', 'Records', 'Exact Fields', 'Mapped Affiliations'], rows: summaryRows })}
+          </div>
+        </div>
+        ${detailSections}
+      `;
     }
 
     function renderRecommendationsList(recommendations) {
@@ -3643,6 +3868,16 @@
         renderStandardStats(analysis);
         renderInsights(analysis, analysis.key_metrics || {});
       }
+
+      const uploadedEvidence = getUploadedEvidenceSnapshots(report, options);
+      if (uploadedEvidence.length) {
+        renderUploadedEvidenceInsights(uploadedEvidence, options.analysisTypeLabel || 'Auto-detect');
+      }
+
+      const customer360Summary = report?.metadata?.customer_360_summary;
+      if (customer360Summary) {
+        renderCustomer360Insights(customer360Summary, options.analysisTypeLabel || 'Auto-detect');
+      }
       
       // Charts (merge generated report charts with affiliation coverage charts)
       const baseCharts = Array.isArray(report.charts) ? [...report.charts] : [];
@@ -3690,7 +3925,8 @@
           summary: affiliationSummary,
           affiliations: options.affiliations,
           files: options.files || [],
-          analysisTypeLabel: options.analysisTypeLabel || 'Auto-detect'
+          analysisTypeLabel: options.analysisTypeLabel || 'Auto-detect',
+          uploadedEvidence
         });
       }
 
@@ -3723,6 +3959,7 @@
       if (!reportBody || !payload) return;
       const summary = payload.summary || {};
       const files = payload.files || [];
+      const uploadedEvidence = payload.uploadedEvidence || [];
       const analysisTypeLabel = payload.analysisTypeLabel || 'Auto-detect';
       const updatedAtLabel = swiftnessAffiliationsUpdatedAt
         ? swiftnessAffiliationsUpdatedAt.toLocaleString()
@@ -3750,6 +3987,7 @@
       const integrityRules = (swiftnessReportModel?.metadata?.data_integrity_rules || [])
         .map(rule => `<span class="integrity-badge pass">✓ ${escapeHtml(rule)}</span>`)
         .join('');
+      const uploadedEvidenceSections = buildUploadedEvidenceSections(uploadedEvidence);
 
       reportBody.insertAdjacentHTML('beforeend', `
         <div class="report-section fade-in">
@@ -3789,6 +4027,7 @@
             ${fileRows.length ? renderDataTable({ columns: ['File', 'Type', 'Size'], rows: fileRows }) : '<p style="color: var(--text-muted);">No uploaded files available for this run.</p>'}
           </div>
         </div>
+        ${uploadedEvidenceSections}
         <div class="report-section fade-in">
           <h3>🛡️ Data Integrity Rules</h3>
           <div class="content">

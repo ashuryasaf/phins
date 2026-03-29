@@ -23,6 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
 import json
+import io
+import zipfile
 from datetime import datetime
 
 from services.ai_risk_reports_service import (
@@ -410,6 +412,126 @@ POL-002,150000,620"""
         report = self.service.generate_report(self.analysis.id, language='hebrew')
         self.assertGreater(len(report.charts), 0)
         self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
+
+
+class TestUploadedEvidenceAffiliationMetadata(unittest.TestCase):
+    """Regression coverage for exact uploaded-data affiliation previews."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_uploaded_evidence_metadata_preserves_exact_values(self):
+        csv_content = b"""full_name,birth_date,id_type,status,product_type,policy_number,provider
+Dana Levy,1988-05-01,3,1,7,POL-9001,Phoenix
+Dana Levy,1988-05-01,3,6,8,POL-9002,Harel"""
+
+        parse_result = self.service.parse_file(
+            'exact_values.csv',
+            csv_content,
+            'csv',
+            owner_id='CUST-EXACT-001',
+            owner_role='customer'
+        )
+
+        uploaded_metadata = parse_result.get('uploaded_data_affiliations', {})
+        self.assertEqual(uploaded_metadata.get('source_filename'), 'exact_values.csv')
+        self.assertEqual(uploaded_metadata.get('record_count'), 2)
+        self.assertGreaterEqual(len(uploaded_metadata.get('preview_rows', [])), 2)
+
+        first_row = uploaded_metadata['preview_rows'][0]
+        self.assertEqual(first_row.get('Full Name'), 'Dana Levy')
+        self.assertEqual(first_row.get('Birth Date'), '1988-05-01')
+        self.assertEqual(first_row.get('Policy Number'), 'POL-9001')
+
+        exact_fields = uploaded_metadata.get('integrity', {}).get('exact_value_fields', [])
+        self.assertIn('Full Name', exact_fields)
+        self.assertIn('Birth Date', exact_fields)
+
+        matches = uploaded_metadata.get('affiliation_matches', [])
+        self.assertTrue(any(match.get('category') == 'Status' and str(match.get('raw_value')) == '1' for match in matches))
+        self.assertTrue(any(match.get('category') == 'Product' and str(match.get('raw_value')) == '7' for match in matches))
+        self.assertTrue(any(match.get('category') == 'ID Type' and str(match.get('raw_value')) == '3' for match in matches))
+
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        report_metadata = report.metadata.get('uploaded_data_affiliations', {})
+        self.assertEqual(report_metadata.get('preview_rows', [])[0].get('Full Name'), 'Dana Levy')
+        self.assertEqual(report_metadata.get('preview_rows', [])[0].get('Birth Date'), '1988-05-01')
+
+
+class TestZipCustomer360Reporting(unittest.TestCase):
+    """Regression coverage for ZIP modular customer reporting."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_zip_upload_generates_customer_360_summary_and_modules(self):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w') as archive:
+            archive.writestr(
+                'holdings/customer_accounts.csv',
+                "full_name,id_number,birth_date,policy_number,provider,product_type,status,savings_balance,cover_amount,severance_balance\n"
+                "Dana Levy,123456789,1988-05-01,POL-1001,Phoenix,7,1,150000,900000,45000\n"
+                "Dana Levy,123456789,1988-05-01,POL-2001,Harel,8,1,85000,400000,15000\n"
+            )
+            archive.writestr(
+                'payments/contributions.csv',
+                "full_name,id_number,birth_date,policy_number,provider,product_type,status,savings_balance,cover_amount,severance_balance\n"
+                "Dana Levy,123456789,1988-05-01,POL-3001,Menora,10,6,65000,250000,5000\n"
+            )
+
+        parse_result = self.service.parse_file(
+            'customer_portfolio.zip',
+            zip_buffer.getvalue(),
+            'zip',
+            owner_id='CUST-ZIP-001',
+            owner_role='customer'
+        )
+
+        uploaded_affiliations = parse_result.get('uploaded_data_affiliations', {})
+        self.assertEqual(uploaded_affiliations.get('source_filename'), 'customer_portfolio.zip')
+        self.assertGreaterEqual(uploaded_affiliations.get('source_file_count', 0), 2)
+        self.assertGreaterEqual(len(uploaded_affiliations.get('nested_files', [])), 2)
+
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        customer_360 = report.metadata.get('customer_360_summary', {})
+        self.assertEqual(customer_360.get('customer_count'), 1)
+        self.assertEqual(customer_360.get('policy_count'), 3)
+        self.assertEqual(customer_360.get('provider_count'), 3)
+        self.assertGreater(customer_360.get('one_to_many_customer_count', 0), 0)
+        self.assertEqual(customer_360.get('cumulative_savings'), 300000.0)
+        self.assertEqual(customer_360.get('cumulative_severance'), 65000.0)
+        self.assertEqual(customer_360.get('cumulative_hedged_risk'), 1550000.0)
+        self.assertGreater(customer_360.get('identity_integrity_score', 0), 90)
+        self.assertTrue(customer_360.get('module_breakdown'))
+        self.assertTrue(customer_360.get('file_breakdown'))
+
+        customer_row = customer_360.get('customers', [])[0]
+        self.assertEqual(customer_row.get('full_name'), 'Dana Levy')
+        self.assertEqual(customer_row.get('id_number'), '123456789')
+        self.assertEqual(customer_row.get('birth_date'), '1988-05-01')
+        self.assertEqual(customer_row.get('policy_count'), 3)
+
+        section_titles = [section.title for section in report.sections]
+        self.assertTrue(any('Customer 360 Overview' in title for title in section_titles))
+        self.assertTrue(any('Customer Relationship Matrix' in title for title in section_titles))
+        self.assertTrue(any('ZIP Module Coverage' in title for title in section_titles))
+
+        chart_titles = [chart.title for chart in report.charts]
+        self.assertTrue(any('Cumulative Savings by Customer' in title for title in chart_titles))
+        self.assertTrue(any('Cumulative Hedged Risk' in title for title in chart_titles))
+        self.assertTrue(any('Identity Integrity Score' in title for title in chart_titles))
+
+        export_payload = self.service.build_report_download_summary(
+            report_id=report.id,
+            user_id='CUST-ZIP-001',
+            user_role='customer'
+        )
+        self.assertIn('customer_360_summary', export_payload)
+        self.assertEqual(export_payload['customer_360_summary'].get('policy_count'), 3)
 
 
 class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
