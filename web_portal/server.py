@@ -5210,6 +5210,80 @@ DOCUMENT_ADMIN_ROLES = {
     'adjuster',  # legacy alias
 }
 
+# Roles permitted to review and decide claims.
+CLAIMS_REVIEW_ROLES = {
+    'admin',
+    'underwriter',
+    'claims',
+    'claims_adjuster',
+    'adjuster',
+}
+
+# Roles permitted to process claim payments.
+CLAIMS_PAYMENT_ROLES = {
+    'admin',
+    'accountant',
+    'claims',
+    'claims_adjuster',
+    'adjuster',
+}
+
+
+def normalize_claim_status_value(status: Any) -> str:
+    """Normalize claim statuses for safe transition checks."""
+    return str(status or '').strip().lower().replace(' ', '_').replace('-', '_')
+
+
+def is_claims_review_role(role: str) -> bool:
+    """True when role can approve/reject or inspect claim risk reports."""
+    return (role or '').strip().lower() in CLAIMS_REVIEW_ROLES
+
+
+def is_claims_payment_role(role: str) -> bool:
+    """True when role can execute claim payments."""
+    return (role or '').strip().lower() in CLAIMS_PAYMENT_ROLES
+
+
+def persist_claim_update_to_database(claim_id: str, updates: Dict[str, Any]) -> None:
+    """Best-effort DB sync for claim mutations to preserve pipeline integrity."""
+    if not claim_id or not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        from database.repositories.claim_repository import ClaimRepository
+        with DatabaseManager() as db:
+            claim_repo = ClaimRepository(db.session)
+            claim_repo.update(claim_id, **updates)
+    except Exception as e:
+        print(f"[CLAIMS API] Database update note for {claim_id}: {e}")
+
+
+def sanitize_claim_probability_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Return a safe report payload for UI usage.
+    Removes raw evidence arrays that can expose unnecessary sensitive details.
+    """
+    if not isinstance(report, dict):
+        return {}
+    sanitized = dict(report)
+    fraud_section = sanitized.get('fraud_indicators')
+    if isinstance(fraud_section, dict):
+        cleaned_indicators = []
+        for indicator in fraud_section.get('indicators', []):
+            if not isinstance(indicator, dict):
+                continue
+            cleaned = dict(indicator)
+            cleaned.pop('evidence', None)
+            cleaned_indicators.append(cleaned)
+        fraud_section = dict(fraud_section)
+        fraud_section['indicators'] = cleaned_indicators
+        fraud_section['count'] = len(cleaned_indicators)
+        fraud_section['high_severity_count'] = sum(
+            1 for item in cleaned_indicators if safe_float(item.get('severity'), 0.0) > 0.7
+        )
+        sanitized['fraud_indicators'] = fraud_section
+    return sanitized
+
 # Keep this aligned with front-end accepted document/media uploads.
 ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
     '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
@@ -26832,23 +26906,72 @@ For claims or questions, please contact:
         
         # Approve Claim Endpoint
         if path == '/api/claims/approve':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            effective_role = get_effective_role(session)
+
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not is_claims_review_role(effective_role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Claims review access required'}).encode('utf-8'))
+                return
             try:
                 data = json.loads(body)
                 claim_id = data.get('id')
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
-                    approved_amount = float(data.get('approved_amount', claim['claimed_amount']))
+                    normalized_status = normalize_claim_status_value(claim.get('status'))
+                    if normalized_status not in {'pending', 'under_review', 'underreview'}:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': f"Claim status '{claim.get('status', 'unknown')}' cannot be approved"
+                        }).encode('utf-8'))
+                        return
+
+                    approved_amount = float(data.get('approved_amount', claim['claimed_amount']) or 0)
+                    claimed_amount = safe_float(claim.get('claimed_amount'), 0.0)
+                    if approved_amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Approved amount must be greater than 0'}).encode('utf-8'))
+                        return
+                    if claimed_amount > 0 and approved_amount > claimed_amount:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Approved amount cannot exceed claimed amount'
+                        }).encode('utf-8'))
+                        return
                     
                     claim['status'] = 'approved'
                     claim['approved_amount'] = approved_amount
                     claim['approval_date'] = datetime.now().isoformat()
-                    claim['approved_by'] = data.get('approved_by', 'admin')
+                    claim['approved_by'] = (
+                        (session or {}).get('username')
+                        or data.get('approved_by')
+                        or 'admin'
+                    )
                     claim['approval_notes'] = data.get('notes', '')
                     claim['next_stage'] = 'payment'  # Pipeline tracking
+                    claim.pop('rejection_reason', None)
+                    claim.pop('rejection_date', None)
+                    claim.pop('rejected_by', None)
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    persist_claim_update_to_database(claim_id, {
+                        'status': claim.get('status'),
+                        'approved_amount': claim.get('approved_amount'),
+                        'approval_date': claim.get('approval_date'),
+                        'approved_by': claim.get('approved_by'),
+                        'approval_notes': claim.get('approval_notes'),
+                        'rejection_reason': None,
+                        'rejected_by': None,
+                    })
+                    save_ledger_data()
                     
                     # Record in transaction ledger for audit trail
                     record_transaction(
@@ -26861,13 +26984,13 @@ For claims or questions, please contact:
                             'policy_id': claim.get('policy_id'),
                             'claimed_amount': claim.get('claimed_amount'),
                             'approved_amount': approved_amount,
-                            'approved_by': data.get('approved_by', 'admin'),
+                            'approved_by': claim.get('approved_by', 'admin'),
                             'notes': data.get('notes', '')
                         }
                     )
                     
                     if audit:
-                        actor = claim.get('approved_by', 'admin')
+                        actor = claim.get('approved_by', (session or {}).get('username') or 'admin')
                         try:
                             audit.log(actor, 'approve', 'claim', claim_id, {'approved_amount': claim['approved_amount']})
                         except Exception:
@@ -26890,21 +27013,57 @@ For claims or questions, please contact:
         
         # Reject Claim Endpoint
         if path == '/api/claims/reject':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            effective_role = get_effective_role(session)
+
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not is_claims_review_role(effective_role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Claims review access required'}).encode('utf-8'))
+                return
             try:
                 data = json.loads(body)
                 claim_id = data.get('id')
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
+                    normalized_status = normalize_claim_status_value(claim.get('status'))
+                    if normalized_status not in {'pending', 'under_review', 'underreview'}:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': f"Claim status '{claim.get('status', 'unknown')}' cannot be rejected"
+                        }).encode('utf-8'))
+                        return
+
                     rejection_reason = data.get('reason', 'Not covered')
+                    if not str(rejection_reason or '').strip():
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Rejection reason is required'}).encode('utf-8'))
+                        return
                     
                     claim['status'] = 'rejected'
                     claim['rejection_date'] = datetime.now().isoformat()
                     claim['rejection_reason'] = rejection_reason
-                    claim['rejected_by'] = data.get('rejected_by', 'admin')
+                    claim['rejected_by'] = (
+                        (session or {}).get('username')
+                        or data.get('rejected_by')
+                        or 'admin'
+                    )
+                    claim['next_stage'] = 'closed'
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    persist_claim_update_to_database(claim_id, {
+                        'status': claim.get('status'),
+                        'rejection_reason': claim.get('rejection_reason'),
+                        'rejected_by': claim.get('rejected_by'),
+                    })
+                    save_ledger_data()
                     
                     # Record in transaction ledger
                     record_transaction(
@@ -26917,12 +27076,12 @@ For claims or questions, please contact:
                             'policy_id': claim.get('policy_id'),
                             'claimed_amount': claim.get('claimed_amount'),
                             'rejection_reason': rejection_reason,
-                            'rejected_by': data.get('rejected_by', 'admin')
+                            'rejected_by': claim.get('rejected_by', 'admin')
                         }
                     )
                     
                     if audit:
-                        actor = data.get('rejected_by', 'admin')
+                        actor = claim.get('rejected_by', (session or {}).get('username') or 'admin')
                         try:
                             audit.log(actor, 'reject', 'claim', claim_id, {'reason': claim['rejection_reason']})
                         except Exception:
@@ -27017,16 +27176,33 @@ For claims or questions, please contact:
         
         # Pay Claim Endpoint - Transfers from PHINS Balance Sheet to Customer Health Wallet
         if path == '/api/claims/pay':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            effective_role = get_effective_role(session)
+
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not is_claims_payment_role(effective_role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Claims payment access required'}).encode('utf-8'))
+                return
             try:
                 data = json.loads(body)
                 claim_id = data.get('id')
                 claim = CLAIMS.get(claim_id)
                 
                 # Check if claim is approved (case-insensitive)
-                if claim and claim.get('status', '').lower() == 'approved':
+                if claim and normalize_claim_status_value(claim.get('status')) == 'approved':
                     paid_amount = claim.get('approved_amount', claim['claimed_amount'])
                     customer_id = claim.get('customer_id', 'unknown')
-                    processed_by = data.get('processed_by', 'accountant')
+                    processed_by = (
+                        (session or {}).get('username')
+                        or data.get('processed_by')
+                        or 'accountant'
+                    )
                     
                     # Process payment through PHINS Balance Sheet to Health Wallet
                     payment_result = process_claim_payment_to_wallet(
@@ -27056,9 +27232,18 @@ For claims or questions, please contact:
                     claim['balance_sheet_tx_id'] = payment_result['balance_sheet_tx']['tx_id']
                     claim['customer_tx_id'] = payment_result['customer_tx']['id']
                     claim['nft_token_id'] = payment_result['customer_tx'].get('nft_token_id')
+                    claim['next_stage'] = 'completed'
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    persist_claim_update_to_database(claim_id, {
+                        'status': claim.get('status'),
+                        'payment_date': claim.get('payment_date'),
+                        'payment_method': claim.get('payment_method'),
+                        'payment_reference': claim.get('payment_reference'),
+                        'paid_amount': claim.get('paid_amount'),
+                        'processed_by': claim.get('processed_by'),
+                    })
                     save_ledger_data()
                     
                     if audit:
@@ -27087,6 +27272,9 @@ For claims or questions, please contact:
                             'nft_token_id': payment_result['customer_tx'].get('nft_token_id')
                         }
                     }).encode('utf-8'))
+                elif claim and normalize_claim_status_value(claim.get('status')) == 'paid':
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': 'Claim has already been paid'}).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Claim not approved or not found'}).encode('utf-8'))
@@ -27255,6 +27443,20 @@ For claims or questions, please contact:
         # ========== CLAIMS BOT - PROBABILITY REPORT ==========
         # Generate AI/BI probability report for a claim (fraud detection)
         if path == '/api/claims/probability-report':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            effective_role = get_effective_role(session)
+            session_customer_id = get_session_customer_id(session)
+
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not (is_claims_review_role(effective_role) or effective_role == 'customer'):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Claims report access denied'}).encode('utf-8'))
+                return
             try:
                 data = json.loads(body)
                 claim_id = data.get('id') or data.get('claim_id')
@@ -27269,6 +27471,18 @@ For claims or questions, please contact:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
                     return
+
+                # Customers can only run reports for their own claims.
+                if session and effective_role == 'customer':
+                    claim_customer_id = str(claim.get('customer_id') or '').strip()
+                    claim_policy_id = str(claim.get('policy_id') or '').strip()
+                    policy_customer_id = str((POLICIES.get(claim_policy_id) or {}).get('customer_id') or '').strip()
+                    if not session_customer_id or (
+                        claim_customer_id != session_customer_id and policy_customer_id != session_customer_id
+                    ):
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
+                        return
                 
                 # Initialize Claims Bot Service
                 try:
@@ -27367,6 +27581,7 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Failed to generate probability report'}).encode('utf-8'))
                         return
                 
+                report = sanitize_claim_probability_report(report)
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
