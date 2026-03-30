@@ -121,5 +121,14 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
     # Ensure customer-assistant parity language for multi-input orchestration is present.
     assert "Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards." in content
     assert "title=\"Help\"" in content
-    assert "title=\"Expand\"" in content
+    assert "title=\"Minimize\"" in content
     assert "toggleButton.title = 'Minimize';" in content
+
+
+def test_admin_ai_assistant_minimized_tab_box_default_state():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    assert 'id="admin-ai-assistant-panel" data-minimized="true"' in content
+    assert "title=\"Minimize\">➖</button>" in content
+    assert "toggleButton.textContent = '➖';" in content
+    assert "toggleButton.textContent = '🎤➕';" in content
