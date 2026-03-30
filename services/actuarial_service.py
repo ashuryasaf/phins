@@ -110,6 +110,236 @@ class SimulationParams:
 
 
 # =============================================================================
+# REINSURANCE RESEARCH + HEDGING ANALYTICS
+# =============================================================================
+
+REINSURANCE_RESEARCH_LIBRARY: List[Dict[str, Any]] = [
+    {
+        'id': 'soa_group_ltd_2015_2022',
+        'source': 'SOA/LIMRA 2015-2022 Group Long-Term Disability Incidence Study',
+        'published_year': 2025,
+        'headline_metric': '294 million life-years exposed and about 1.2 million claims across 19 carriers representing 97% of the market.',
+        'relevance': 'Anchors the permanent disability incidence credibility used in PHINS reinsurance stress testing.',
+        'url': 'https://beta.soa.org/resources/experience-studies/15-22-grp-ltd-inc/',
+    },
+    {
+        'id': 'ihme_gbd_2021',
+        'source': 'IHME Global Burden of Disease 2021 / The Lancet 2024',
+        'published_year': 2024,
+        'headline_metric': 'Global DALYs increased from 2.63B in 2010 to 2.88B in 2021 and healthy life expectancy reached 62.2 years.',
+        'relevance': 'Backs PHINS disability burden framing for life-health hedging and reserve stress scenarios.',
+        'url': 'https://healthdata.org/research-analysis/library/global-incidence-prevalence-years-lived-disability-ylds-disability',
+    },
+    {
+        'id': 'aaa_soa_idi_work_group',
+        'source': 'American Academy of Actuaries / SOA Individual Disability Tables Work Group',
+        'published_year': 2014,
+        'headline_metric': 'Recommends the 2013 IDI valuation table with claim incidence, claim termination, and valuation margin standards.',
+        'relevance': 'Supports PHINS permanent ADL disability pricing margin and reserve-based reinsurance costing.',
+        'url': 'https://www.actuary.org/sites/default/files/files/IDTWG_Table_Report_Oct_2014.pdf',
+    },
+]
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _summarize_age_band_rates(table: List[Dict[str, Any]], age_min: int, age_max: int) -> Dict[str, float]:
+    """Summarize a rate table over the requested age band."""
+    if age_max <= age_min:
+        age_max = age_min + 1
+
+    total_years = 0.0
+    weighted_rate = 0.0
+    min_rate = None
+    max_rate = None
+
+    for row in table:
+        overlap_min = max(age_min, int(row.get('age_min', age_min)))
+        overlap_max = min(age_max, int(row.get('age_max', age_max)))
+        overlap = max(0, overlap_max - overlap_min)
+        if overlap <= 0:
+            continue
+
+        rate = float(row.get('rate_per_1000', 0.0))
+        total_years += overlap
+        weighted_rate += rate * overlap
+        min_rate = rate if min_rate is None else min(min_rate, rate)
+        max_rate = rate if max_rate is None else max(max_rate, rate)
+
+    average_rate = (weighted_rate / total_years) if total_years else 0.0
+    return {
+        'average_per_1000': round(average_rate, 3),
+        'min_per_1000': round(min_rate or 0.0, 3),
+        'max_per_1000': round(max_rate or 0.0, 3),
+    }
+
+
+def classify_reinsurance_risk_band(loss_ratio_pct: float) -> str:
+    """Classify reinsurance risk band from the annual loss ratio."""
+    if loss_ratio_pct >= 95:
+        return 'very_high'
+    if loss_ratio_pct >= 75:
+        return 'high'
+    if loss_ratio_pct >= 45:
+        return 'medium'
+    return 'low'
+
+
+def get_reinsurance_research_library() -> List[Dict[str, Any]]:
+    return [dict(item) for item in REINSURANCE_RESEARCH_LIBRARY]
+
+
+def calculate_reinsurance_program(
+    simulation: Dict[str, Any],
+    tables_store: Optional['ActuarialTablesStore'] = None,
+    contract_count: Optional[int] = None,
+    hedge_share_pct: float = 35.0,
+    covered_risks: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Build a research-backed reinsurance program from a simulation snapshot.
+
+    The program is intentionally deterministic so the same simulation always maps to
+    the same hedge math on the dashboard, recommendation flow, and balance sheet.
+    """
+    tables_store = tables_store or get_actuarial_store()
+    covered_risks = covered_risks or ['mortality', 'permanent_adl_disability']
+
+    portfolio = simulation.get('portfolio_summary', {})
+    risk_metrics = simulation.get('risk_metrics', {})
+    profitability = simulation.get('profitability', {})
+    params = simulation.get('parameters', {})
+
+    accepted_customers = max(0, int(portfolio.get('accepted_customers', 0) or 0))
+    total_coverage = float(portfolio.get('total_coverage', 0.0) or 0.0)
+    gross_premium = float(profitability.get('gross_premium', 0.0) or 0.0)
+    annual_expected_claims = float(risk_metrics.get('annual_expected_claims', 0.0) or 0.0)
+    reserve_requirement = float(risk_metrics.get('reserve_requirement', 0.0) or 0.0)
+    loss_ratio_pct = float(risk_metrics.get('loss_ratio', 0.0) or 0.0)
+
+    if accepted_customers <= 0 or total_coverage <= 0:
+        return {
+            'covered_risks': covered_risks,
+            'selected_contracts': 0,
+            'hedge_share_pct': round(_clamp(hedge_share_pct, 0.0, 100.0), 2),
+            'risk_band': 'low',
+            'quote_request': {
+                'currency': 'USD',
+                'line_of_business': 'life_health',
+                'region': 'global',
+                'total_exposure': 0.0,
+                'expected_annual_premium': 0.0,
+                'expected_loss_ratio': 0.0,
+                'risk_band': 'low',
+            },
+            'research_backing': {
+                'sources': get_reinsurance_research_library(),
+                'mortality_basis': {'average_per_1000': 0.0, 'min_per_1000': 0.0, 'max_per_1000': 0.0},
+                'disability_basis': {'average_per_1000': 0.0, 'min_per_1000': 0.0, 'max_per_1000': 0.0},
+            },
+            'data_integrity': {
+                'contracts_within_portfolio': True,
+                'ceded_exposure_within_total': True,
+                'gross_premium_reconciles': True,
+            },
+        }
+
+    default_contract_count = min(accepted_customers, max(1000, int(round(accepted_customers * 0.25))))
+    selected_contracts = int(contract_count if contract_count is not None else default_contract_count)
+    selected_contracts = max(1, min(selected_contracts, accepted_customers))
+
+    hedge_share_decimal = _clamp(float(hedge_share_pct) / 100.0, 0.0, 0.95)
+    contract_participation = selected_contracts / accepted_customers if accepted_customers else 0.0
+    protected_claims_share = contract_participation * hedge_share_decimal
+
+    mortality_share = float(risk_metrics.get('mortality_pct_of_claims', 0.0) or 0.0) / 100.0
+    disability_share = float(risk_metrics.get('disability_pct_of_claims', 0.0) or 0.0) / 100.0
+    avg_coverage = total_coverage / accepted_customers if accepted_customers else 0.0
+
+    ceded_exposure = total_coverage * protected_claims_share
+    ceded_annual_claims = annual_expected_claims * protected_claims_share
+    ceded_mortality_claims = ceded_annual_claims * mortality_share
+    ceded_disability_claims = ceded_annual_claims * disability_share
+    reserve_relief = reserve_requirement * protected_claims_share
+
+    risk_band = classify_reinsurance_risk_band(loss_ratio_pct)
+    pricing_load = {
+        'low': 1.08,
+        'medium': 1.12,
+        'high': 1.18,
+        'very_high': 1.24,
+    }[risk_band]
+    technical_annual_premium = ceded_annual_claims * pricing_load
+    estimated_fees = {
+        'broker_fee': round(technical_annual_premium * 0.01, 2),
+        'platform_fee': round(technical_annual_premium * 0.0025, 2),
+    }
+    total_contract_cost = round(technical_annual_premium + estimated_fees['broker_fee'] + estimated_fees['platform_fee'], 2)
+    premium_uplift_pct = round((total_contract_cost / gross_premium) * 100, 2) if gross_premium > 0 else 0.0
+
+    tables = tables_store.get_current_tables()
+    age_min = int(params.get('age_min', 0) or 0)
+    age_max = int(params.get('age_max', 120) or 120)
+    mortality_basis = _summarize_age_band_rates(tables.get('mortality_rates', []), age_min, age_max)
+    disability_basis = _summarize_age_band_rates(tables.get('disability_incidence_rates', []), age_min, age_max)
+
+    calculated_gross = float(profitability.get('calculated_gross', gross_premium) or gross_premium)
+    net_profit = float(profitability.get('net_profit', 0.0) or 0.0)
+
+    return {
+        'covered_risks': covered_risks,
+        'accepted_lives': accepted_customers,
+        'selected_contracts': selected_contracts,
+        'participation_pct': round(contract_participation * 100, 2),
+        'hedge_share_pct': round(hedge_share_decimal * 100, 2),
+        'protected_claims_pct': round(protected_claims_share * 100, 2),
+        'avg_coverage_per_contract': round(avg_coverage, 2),
+        'risk_band': risk_band,
+        'ceded_exposure': round(ceded_exposure, 2),
+        'ceded_expected_claims_annual': round(ceded_annual_claims, 2),
+        'ceded_mortality_claims_annual': round(ceded_mortality_claims, 2),
+        'ceded_disability_claims_annual': round(ceded_disability_claims, 2),
+        'reserve_relief_estimate': round(reserve_relief, 2),
+        'technical_annual_premium': round(technical_annual_premium, 2),
+        'estimated_fees': estimated_fees,
+        'total_contract_cost': total_contract_cost,
+        'premium_uplift_pct': premium_uplift_pct,
+        'gross_premium_with_reinsurance': round(gross_premium + total_contract_cost, 2),
+        'net_profit_after_reinsurance': round(net_profit - total_contract_cost, 2),
+        'balance_sheet_impact': {
+            'expense_category': 'reinsurance',
+            'annual_reinsurance_expense': total_contract_cost,
+            'operating_reserve_delta': round(-total_contract_cost, 2),
+            'capital_relief_estimate': round(reserve_relief, 2),
+        },
+        'quote_request': {
+            'currency': 'USD',
+            'line_of_business': 'life_health',
+            'region': 'global',
+            'total_exposure': round(ceded_exposure, 2),
+            'expected_annual_premium': round(technical_annual_premium, 2),
+            'expected_loss_ratio': round(_clamp(loss_ratio_pct / 100.0, 0.15, 0.98), 4),
+            'risk_band': risk_band,
+        },
+        'research_backing': {
+            'sources': get_reinsurance_research_library(),
+            'mortality_basis': mortality_basis,
+            'disability_basis': disability_basis,
+            'table_version': simulation.get('tables_version', tables_store.current_version),
+            'adl_model_note': 'Permanent ADL disability risk is sourced from PHINS ADL disability multipliers and disability benefit percentage tables.',
+        },
+        'data_integrity': {
+            'contracts_within_portfolio': selected_contracts <= accepted_customers,
+            'ceded_exposure_within_total': ceded_exposure <= total_coverage + 1,
+            'gross_premium_reconciles': abs(gross_premium - calculated_gross) < 1.0,
+            'protected_claims_share': round(protected_claims_share, 6),
+        },
+    }
+
+
+# =============================================================================
 # ACTUARIAL TABLES STORE (Version Controlled)
 # =============================================================================
 
@@ -894,7 +1124,7 @@ class PortfolioSimulator:
         # Build result
         duration = (datetime.now() - start_time).total_seconds()
         
-        return {
+        result = {
             'simulation_id': f"SIM-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
             'run_at': datetime.now().isoformat(),
             'duration_seconds': round(duration, 2),
@@ -925,6 +1155,8 @@ class PortfolioSimulator:
                 'reinsurance': True
             }
         }
+        result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
+        return result
     
     def _generate_customer(self, params: SimulationParams) -> Dict:
         """Generate a single customer with random demographics"""

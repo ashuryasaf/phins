@@ -356,6 +356,104 @@
       gap: 8px;
     }
     
+    .micro-copy {
+      color: var(--text-light);
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    
+    .reinsurance-bar {
+      background: linear-gradient(90deg, rgba(229, 62, 62, 0.12) 0%, rgba(66, 153, 225, 0.2) 100%);
+      border: 1px solid rgba(66, 153, 225, 0.25);
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    
+    .pill-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    
+    .metric-pill {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    
+    .research-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    
+    .research-card {
+      background: var(--bg);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 16px;
+    }
+    
+    .research-card h4 {
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+    }
+    
+    .research-card a {
+      color: var(--secondary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    
+    .badge-soft {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(66, 153, 225, 0.12);
+      color: var(--secondary);
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    
+    .quote-highlight {
+      background: rgba(56, 161, 105, 0.08);
+      border-left: 4px solid var(--success);
+    }
+    
+    .quote-selected {
+      background: rgba(66, 153, 225, 0.08);
+      border-left: 4px solid var(--accent);
+    }
+    
+    .stack-list {
+      list-style: none;
+      padding-left: 0;
+      display: grid;
+      gap: 10px;
+    }
+    
+    .stack-list li {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+    }
+    
+    .inline-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+      align-items: center;
+    }
+    
     /* Loading */
     .loading {
       text-align: center;
@@ -594,6 +692,10 @@
             <span class="nav-icon">🎲</span>
             <span>Portfolio Simulator</span>
           </div>
+          <div class="nav-item" onclick="showSection('reinsurance')">
+            <span class="nav-icon">🛡️</span>
+            <span>Reinsurance Hedge</span>
+          </div>
           <div class="nav-item" onclick="showSection('automation')">
             <span class="nav-icon">🤖</span>
             <span>Automation Metrics</span>
@@ -678,9 +780,31 @@
             <div class="card-title">🔄 Quick Actions</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
               <button class="btn btn-primary" onclick="showSection('simulator')">🎲 Run Simulation</button>
+              <button class="btn btn-success" onclick="showSection('reinsurance')">🛡️ Structure Hedge</button>
               <button class="btn btn-success" onclick="showSection('underwriting')">📋 Edit Underwriting</button>
               <button class="btn btn-warning" onclick="exportTables()">📥 Export Tables</button>
               <button class="btn btn-outline" onclick="showSection('audit')">🔍 View Audit Log</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">🛡️ Reinsurance Balance Sheet Link</div>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-label">Bound Hedges</div>
+                <div class="stat-value" id="overview-reinsurance-contracts">0</div>
+              </div>
+              <div class="stat-card warning">
+                <div class="stat-label">Booked Reinsurance Expense</div>
+                <div class="stat-value" id="overview-reinsurance-expense">$0</div>
+              </div>
+              <div class="stat-card success">
+                <div class="stat-label">Latest Hedge Share</div>
+                <div class="stat-value" id="overview-reinsurance-share">0%</div>
+              </div>
+            </div>
+            <div id="overview-reinsurance-summary" class="research-note">
+              Run a portfolio simulation to produce a treaty recommendation backed by mortality, ADL disability, and balance-sheet impact data.
             </div>
           </div>
         </section>
@@ -1015,6 +1139,119 @@
           
           <div id="sim-results" class="results-panel" style="display:none;"></div>
         </section>
+
+        <!-- Reinsurance Section -->
+        <section id="section-reinsurance" class="section">
+          <h2 class="section-title">🛡️ Reinsurance Hedge Design</h2>
+
+          <div class="alert alert-warning">
+            Hedge pricing, premium uplift, and balance-sheet movements are derived from the last saved actuarial simulation so PHINS uses one source of truth end to end.
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Selected Life-Health Contracts</div>
+              <div class="stat-value" id="reins-contract-count-display">0</div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-label">Hedge Share of Selected Risks</div>
+              <div class="stat-value" id="reins-hedge-share-display">0%</div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-label">Annual Treaty Cost</div>
+              <div class="stat-value" id="reins-cost-display">$0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Balance Sheet Relief</div>
+              <div class="stat-value" id="reins-relief-display">$0</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Treaty Design Controls</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID</label>
+                <input type="text" id="reins-simulation-id" class="form-input" placeholder="Run the simulator to populate this field automatically">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Selected Contracts</label>
+                <input type="number" id="reins-contract-count" class="form-input" value="10000" min="1" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Hedge Share (%)</label>
+                <input type="number" id="reins-hedge-share" class="form-input" value="35" min="1" max="95" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Objective</label>
+                <select id="reins-objective" class="form-input">
+                  <option value="min_cost">Minimum Cost</option>
+                  <option value="best_confidence">Best Confidence</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="refreshReinsuranceProgram()">Recalculate Hedge Program</button>
+              <button class="btn btn-success" onclick="recommendReinsurance()">Get Reinsurance Recommendation</button>
+              <button class="btn btn-outline" onclick="showSection('simulator')">Back to Simulation</button>
+            </div>
+            <p id="reins-status" class="research-note">No actuarial simulation linked yet.</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Affiliated Actuarial Data & Research</div>
+            <div id="reins-research"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Actuarial Treaty Economics</div>
+            <div id="reins-program-summary"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Provider Quotes</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>Product</th>
+                  <th>Annual Premium</th>
+                  <th>Total Cost</th>
+                  <th>Attachment</th>
+                  <th>Limit</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody id="reins-quotes-body">
+                <tr><td colspan="7" style="text-align:center;">Run a hedge recommendation to view treaty quotes.</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">
+              <button class="btn btn-success" id="reins-bind-btn" onclick="bindSelectedReinsurance()" disabled>Bind Recommended Treaty</button>
+              <button class="btn btn-outline" onclick="loadReinsuranceContracts()">Refresh Bound Contracts</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Bound Reinsurance Contracts</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Provider</th>
+                  <th>Simulation</th>
+                  <th>Annual Expense</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="reins-contracts-body">
+                <tr><td colspan="7" style="text-align:center;">No contracts bound yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
         
         <!-- Automation Metrics Section -->
         <section id="section-automation" class="section">
@@ -1113,6 +1350,9 @@
     let currentUser = null;
     let currentTables = null;
     let currentConfig = null;
+    let currentSimulation = null;
+    let currentReinsuranceProgram = null;
+    let currentRecommendedQuote = null;
     
     const ADL_DESCRIPTIONS = {
       1: 'Fully Independent',
@@ -1259,6 +1499,250 @@
         document.getElementById('limit-6').value = currentConfig.coverage_limits['6'] || 1000000;
         document.getElementById('limit-7').value = currentConfig.coverage_limits['7'] || 750000;
         document.getElementById('limit-8').value = currentConfig.coverage_limits['8'] || 500000;
+      }
+    }
+
+    function fmtNumber(value, digits = 0) {
+      return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+    }
+
+    function fmtCurrency(value) {
+      return '$' + fmtNumber(value, 0);
+    }
+
+    function fmtPctValue(value) {
+      return `${Number(value || 0).toFixed(1)}%`;
+    }
+
+    function updateOverviewReinsurance(program) {
+      const contractCount = program?.selected_contracts || 0;
+      const treatyCost = program?.total_contract_cost || 0;
+      const hedgeShare = program?.hedge_share_pct || 0;
+      const reserveRelief = program?.reserve_relief_estimate || 0;
+
+      document.getElementById('overview-reinsurance-contracts').textContent = fmtNumber(contractCount);
+      document.getElementById('overview-reinsurance-expense').textContent = fmtCurrency(treatyCost);
+      document.getElementById('overview-reinsurance-share').textContent = fmtPctValue(hedgeShare);
+      document.getElementById('reins-contract-count-display').textContent = fmtNumber(contractCount);
+      document.getElementById('reins-hedge-share-display').textContent = fmtPctValue(hedgeShare);
+      document.getElementById('reins-cost-display').textContent = fmtCurrency(treatyCost);
+      document.getElementById('reins-relief-display').textContent = fmtCurrency(reserveRelief);
+
+      document.getElementById('overview-reinsurance-summary').textContent = program
+        ? `${fmtNumber(program.selected_contracts)} contracts hedge ${fmtPctValue(program.protected_claims_pct || 0)} of modeled mortality and permanent ADL disability claims, adding ${fmtCurrency(program.total_contract_cost || 0)} to premium and booking it to the balance sheet.`
+        : 'Run a portfolio simulation to calculate a research-backed reinsurance program.';
+    }
+
+    function renderReinsuranceResearch(program) {
+      const container = document.getElementById('reins-research');
+      if (!program?.research_backing) {
+        container.innerHTML = '<p class="research-note">Run a simulation to load mortality, disability, and health-disability research references.</p>';
+        return;
+      }
+
+      const research = program.research_backing;
+      const sources = research.sources || [];
+      container.innerHTML = `
+        <div class="research-grid">
+          <div class="research-card">
+            <h4>Mortality Basis</h4>
+            <p>Average: <strong>${fmtNumber(research.mortality_basis?.average_per_1000, 2)}</strong> per 1,000</p>
+            <p>Range: ${fmtNumber(research.mortality_basis?.min_per_1000, 2)} - ${fmtNumber(research.mortality_basis?.max_per_1000, 2)} per 1,000</p>
+          </div>
+          <div class="research-card">
+            <h4>Permanent Disability Basis</h4>
+            <p>Average: <strong>${fmtNumber(research.disability_basis?.average_per_1000, 2)}</strong> per 1,000</p>
+            <p>Range: ${fmtNumber(research.disability_basis?.min_per_1000, 2)} - ${fmtNumber(research.disability_basis?.max_per_1000, 2)} per 1,000</p>
+          </div>
+        </div>
+        <p class="research-note">${research.adl_model_note || ''}</p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Year</th>
+              <th>Headline Metric</th>
+              <th>Why It Matters</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sources.map(source => `
+              <tr>
+                <td><a href="${source.url}" target="_blank" rel="noopener noreferrer">${source.source}</a></td>
+                <td>${source.published_year || 'N/A'}</td>
+                <td>${source.headline_metric || ''}</td>
+                <td>${source.relevance || ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderReinsuranceProgram(program) {
+      currentReinsuranceProgram = program || null;
+      updateOverviewReinsurance(currentReinsuranceProgram);
+      renderReinsuranceResearch(currentReinsuranceProgram);
+
+      const summary = document.getElementById('reins-program-summary');
+      if (!program) {
+        summary.innerHTML = '<p class="research-note">Run a simulation and refresh the hedge program to connect selected treaties to premium and balance-sheet results.</p>';
+        return;
+      }
+
+      summary.innerHTML = `
+        <div class="reinsurance-bar">
+          <div class="reinsurance-bar-fill" style="width:${Math.min(program.protected_claims_pct || 0, 100)}%;">
+            ${fmtPctValue(program.protected_claims_pct || 0)} protected
+          </div>
+        </div>
+        <table class="data-table">
+          <tr><td>Covered Risks</td><td><strong>${(program.covered_risks || []).join(', ')}</strong></td><td style="color:var(--text-light);">Mortality + permanent ADL disability research-backed hedge</td></tr>
+          <tr><td>Selected Contracts</td><td><strong>${fmtNumber(program.selected_contracts)}</strong></td><td style="color:var(--text-light);">Based on accepted simulated lives</td></tr>
+          <tr><td>Ceded Exposure</td><td><strong>${fmtCurrency(program.ceded_exposure)}</strong></td><td style="color:var(--text-light);">Portfolio share transferred to reinsurers</td></tr>
+          <tr><td>Ceded Expected Claims (Annual)</td><td><strong>${fmtCurrency(program.ceded_expected_claims_annual)}</strong></td><td style="color:var(--text-light);">Annual claims hedge</td></tr>
+          <tr><td>Annual Treaty Cost</td><td><strong>${fmtCurrency(program.total_contract_cost)}</strong></td><td style="color:var(--text-light);">Premium + fees</td></tr>
+          <tr><td>Gross Premium With Reinsurance</td><td><strong>${fmtCurrency(program.gross_premium_with_reinsurance)}</strong></td><td style="color:var(--text-light);">Customer premium plus treaty cost</td></tr>
+          <tr><td>Net Profit After Reinsurance</td><td><strong>${fmtCurrency(program.net_profit_after_reinsurance)}</strong></td><td style="color:var(--text-light);">Shared to balance sheet after hedge spend</td></tr>
+          <tr><td>Balance Sheet Expense</td><td><strong>${fmtCurrency(program.balance_sheet_impact?.annual_reinsurance_expense || 0)}</strong></td><td style="color:var(--text-light);">Booked to ${program.balance_sheet_impact?.expense_category || 'reinsurance'}</td></tr>
+          <tr><td>Capital Relief Estimate</td><td><strong>${fmtCurrency(program.balance_sheet_impact?.capital_relief_estimate || program.reserve_relief_estimate || 0)}</strong></td><td style="color:var(--text-light);">Reserve release estimate</td></tr>
+        </table>
+      `;
+    }
+
+    function renderReinsuranceQuotes(quotes) {
+      const body = document.getElementById('reins-quotes-body');
+      if (!quotes || !quotes.length) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No treaty quotes returned for the selected program.</td></tr>';
+        return;
+      }
+
+      body.innerHTML = quotes.map((quote) => `
+        <tr${currentRecommendedQuote && currentRecommendedQuote.quote_id === quote.quote_id ? ' style="background:rgba(56,161,105,0.08);"' : ''}>
+          <td>${quote.provider || ''}</td>
+          <td>${quote.product || ''}</td>
+          <td>${fmtCurrency(quote.annual_premium || 0)}</td>
+          <td>${fmtCurrency(quote.phins_total_contract_cost || quote.annual_premium || 0)}</td>
+          <td>${fmtCurrency(quote.attachment_point || 0)}</td>
+          <td>${fmtCurrency(quote.limit || 0)}</td>
+          <td>${fmtNumber((quote.terms?.confidence || 0) * 100, 1)}%</td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadReinsuranceOverview() {
+      try {
+        const res = await fetch('/api/bi/actuary', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        updateOverviewReinsurance(data.reinsurance?.latest_program || null);
+      } catch (err) {
+        console.error('Error loading reinsurance overview:', err);
+      }
+    }
+
+    async function loadReinsuranceContracts() {
+      try {
+        const res = await fetch('/api/reinsurance/contracts', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        const items = data.items || [];
+        const body = document.getElementById('reins-contracts-body');
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="7" style="text-align:center;">No contracts bound yet.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = items.map(item => `
+          <tr>
+            <td>${item.id}</td>
+            <td>${item.name}</td>
+            <td>${item.provider || ''}</td>
+            <td>${item.simulation_id || item.portfolio_id || 'N/A'}</td>
+            <td>${fmtCurrency(item.annual_reinsurance_expense || item.annual_premium || 0)}</td>
+            <td>${item.status || ''}</td>
+            <td>${item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('Error loading reinsurance contracts:', err);
+      }
+    }
+
+    async function refreshReinsuranceProgram() {
+      const simulationId = (document.getElementById('reins-simulation-id').value || '').trim();
+      if (!simulationId) {
+        document.getElementById('reins-status').textContent = 'Run a portfolio simulation first so the treaty math is linked to an actuarial snapshot.';
+        return;
+      }
+
+      const contractCount = document.getElementById('reins-contract-count').value || '10000';
+      const hedgeShare = document.getElementById('reins-hedge-share').value || '35';
+      const objective = document.getElementById('reins-objective').value || 'min_cost';
+      document.getElementById('reins-status').textContent = 'Refreshing actuarial reinsurance program...';
+
+      const qs = new URLSearchParams({
+        simulation_id: simulationId,
+        contract_count: contractCount,
+        hedge_share_pct: hedgeShare,
+        objective
+      });
+
+      try {
+        const res = await fetch(`/api/reinsurance/recommendation?${qs.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to load reinsurance recommendation');
+
+        renderReinsuranceProgram(data.actuarial_program || null);
+        currentRecommendedQuote = data.recommended || null;
+        renderReinsuranceQuotes(data.quotes || []);
+        document.getElementById('reins-bind-btn').disabled = !currentRecommendedQuote;
+        document.getElementById('reins-status').textContent = currentRecommendedQuote
+          ? `Recommended ${currentRecommendedQuote.provider} ${currentRecommendedQuote.product} for simulation ${simulationId}.`
+          : 'No treaty recommendation returned.';
+      } catch (err) {
+        document.getElementById('reins-status').textContent = `Reinsurance refresh failed: ${err.message}`;
+        document.getElementById('reins-bind-btn').disabled = true;
+      }
+    }
+
+    async function bindSelectedReinsurance() {
+      if (!currentRecommendedQuote) {
+        alert('No recommended treaty selected. Refresh the reinsurance program first.');
+        return;
+      }
+
+      const simulationId = (document.getElementById('reins-simulation-id').value || '').trim();
+      const contractCount = document.getElementById('reins-contract-count').value || '10000';
+      const contractName = `Life-Health Reinsurance ${contractCount} Contracts`;
+
+      try {
+        const res = await fetch('/api/reinsurance/contracts/bind', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contract_name: contractName,
+            portfolio_id: simulationId,
+            simulation_id: simulationId,
+            quote: currentRecommendedQuote
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to bind reinsurance contract');
+
+        document.getElementById('reins-status').textContent =
+          `Bound contract ${data.id} and booked ${fmtCurrency(data.balance_sheet_transaction?.amount || currentRecommendedQuote.phins_total_contract_cost || 0)} to the balance sheet.`;
+        await loadReinsuranceContracts();
+        await loadReinsuranceOverview();
+      } catch (err) {
+        alert(`❌ Error binding reinsurance: ${err.message}`);
       }
     }
     

@@ -4760,6 +4760,124 @@ except ImportError as e:
 
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
+ACTUARIAL_SIMULATIONS: Dict[str, Dict[str, Any]] = {}  # simulation_id -> actuarial snapshot
+
+
+def get_actuarial_simulation_snapshot(simulation_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Return a JSON-safe actuarial simulation snapshot for downstream integrations."""
+    if not simulation_id:
+        return None
+    with STATE_LOCK:
+        snapshot = ACTUARIAL_SIMULATIONS.get(simulation_id)
+    return _copy_json_value(snapshot) if isinstance(snapshot, dict) else None
+
+
+def build_reinsurance_request_context(qs: Dict[str, List[str]]) -> Dict[str, Any]:
+    """
+    Build a reinsurance request context from either a saved actuarial simulation or
+    direct query parameters. When a simulation_id is provided, the hedge program is
+    always re-derived server-side to preserve data integrity.
+    """
+    simulation_id = (qs.get('simulation_id', [None])[0] or '').strip() or None
+    covered_risks_raw = (qs.get('covered_risks', ['mortality,permanent_adl_disability'])[0] or '')
+    covered_risks = [risk.strip() for risk in covered_risks_raw.split(',') if risk.strip()]
+    if not covered_risks:
+        covered_risks = ['mortality', 'permanent_adl_disability']
+
+    contract_count_raw = qs.get('contract_count', [None])[0]
+    hedge_share_raw = qs.get('hedge_share_pct', ['35'])[0]
+    contract_count = safe_int(contract_count_raw, 0) if contract_count_raw not in (None, '') else None
+    hedge_share_pct = safe_float(hedge_share_raw, 35.0)
+
+    if simulation_id:
+        simulation = get_actuarial_simulation_snapshot(simulation_id)
+        if not simulation:
+            return {'error': f'Unknown simulation_id: {simulation_id}'}
+
+        from services.actuarial_service import calculate_reinsurance_program
+
+        actuarial_program = calculate_reinsurance_program(
+            simulation,
+            contract_count=contract_count,
+            hedge_share_pct=hedge_share_pct,
+            covered_risks=covered_risks,
+        )
+        quote_request = actuarial_program.get('quote_request', {})
+        return {
+            'simulation_id': simulation_id,
+            'simulation': simulation,
+            'actuarial_program': actuarial_program,
+            'currency': str(quote_request.get('currency') or 'USD').upper(),
+            'total_exposure': safe_float(quote_request.get('total_exposure', 0)),
+            'expected_annual_premium': safe_float(quote_request.get('expected_annual_premium', 0)),
+            'expected_loss_ratio': safe_float(quote_request.get('expected_loss_ratio', 0.6), 0.6),
+            'risk_band': str(quote_request.get('risk_band') or 'medium').lower(),
+            'region': str(quote_request.get('region') or 'global'),
+            'line_of_business': str(quote_request.get('line_of_business') or 'health').lower(),
+            'portfolio_id': simulation_id,
+            'customer_id': None,
+            'covered_risks': covered_risks,
+        }
+
+    try:
+        return {
+            'simulation_id': None,
+            'simulation': None,
+            'actuarial_program': None,
+            'currency': (qs.get('currency', ['USD'])[0] or 'USD').upper(),
+            'total_exposure': float(qs.get('total_exposure', ['0'])[0] or 0),
+            'expected_annual_premium': float(qs.get('expected_annual_premium', ['0'])[0] or 0),
+            'expected_loss_ratio': float(qs.get('expected_loss_ratio', ['0.6'])[0] or 0.6),
+            'risk_band': (qs.get('risk_band', ['medium'])[0] or 'medium').lower(),
+            'region': (qs.get('region', ['global'])[0] or 'global'),
+            'line_of_business': (qs.get('line_of_business', ['health'])[0] or 'health').lower(),
+            'portfolio_id': (qs.get('portfolio_id', [None])[0] or None),
+            'customer_id': (qs.get('customer_id', [None])[0] or None),
+            'covered_risks': covered_risks,
+        }
+    except Exception as e:
+        return {'error': f'Invalid parameters: {e}'}
+
+
+def augment_reinsurance_quotes(quotes: List[Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Attach PHINS actuarial linkage to quote payloads when sourced from a simulation."""
+    actuarial_program = context.get('actuarial_program') if isinstance(context, dict) else None
+    simulation_id = context.get('simulation_id') if isinstance(context, dict) else None
+    items: List[Dict[str, Any]] = []
+
+    for quote in quotes:
+        item = quote.to_dict() if hasattr(quote, 'to_dict') else dict(quote)
+        if actuarial_program:
+            fees = item.get('fees', {})
+            if not isinstance(fees, dict):
+                fees = {}
+            total_fees = round(sum(safe_float(v) for v in fees.values()), 2)
+            selected_total_cost = round(safe_float(item.get('annual_premium', 0)) + total_fees, 2)
+            benchmark_cost = safe_float(actuarial_program.get('total_contract_cost', 0))
+            gross_before = safe_float(actuarial_program.get('gross_premium_before_reinsurance', 0))
+            net_before = safe_float(actuarial_program.get('net_profit_before_reinsurance', 0))
+            balance_sheet_impact = _copy_json_value(actuarial_program.get('balance_sheet_impact', {}))
+            if not isinstance(balance_sheet_impact, dict):
+                balance_sheet_impact = {}
+            balance_sheet_impact['annual_reinsurance_expense'] = selected_total_cost
+            balance_sheet_impact['operating_reserve_delta'] = round(-selected_total_cost, 2)
+
+            item.update({
+                'phins_simulation_id': simulation_id,
+                'phins_total_contract_cost': selected_total_cost,
+                'phins_pricing_gap_vs_technical': round(selected_total_cost - benchmark_cost, 2),
+                'phins_gross_premium_with_reinsurance': round(gross_before + selected_total_cost, 2),
+                'phins_net_profit_after_reinsurance': round(net_before - selected_total_cost, 2),
+                'phins_balance_sheet_impact': balance_sheet_impact,
+                'phins_contract_count': safe_int(actuarial_program.get('selected_contracts', 0)),
+                'phins_hedge_share_pct': safe_float(actuarial_program.get('hedge_share_pct', 0)),
+                'phins_covered_risks': _copy_json_value(actuarial_program.get('covered_risks', [])),
+                'phins_research_backing': _copy_json_value(actuarial_program.get('research_backing', {})),
+                'phins_data_integrity': _copy_json_value(actuarial_program.get('data_integrity', {})),
+            })
+        items.append(item)
+
+    return items
 
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
@@ -6092,7 +6210,23 @@ def get_bi_data_actuary() -> Dict[str, Any]:
     total_exposure = sum(safe_float(p.get('coverage_amount', 0)) for p in POLICIES.values())
     total_premium = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values())
     claims_paid_amount = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
-    
+
+    latest_simulation = None
+    latest_reinsurance_program = None
+    with STATE_LOCK:
+        if ACTUARIAL_SIMULATIONS:
+            latest_simulation = sorted(
+                ACTUARIAL_SIMULATIONS.values(),
+                key=lambda item: item.get('run_at', ''),
+                reverse=True
+            )[0]
+    if isinstance(latest_simulation, dict):
+        latest_reinsurance_program = _copy_json_value(latest_simulation.get('reinsurance_program'))
+
+    reinsurance_expense = safe_float(PHINS_BALANCE_SHEET.get('expense_breakdown', {}).get('reinsurance', 0))
+    reinsurance_contracts = list(REINSURANCE_CONTRACTS.values())
+    total_bound_premium = round(sum(safe_float(item.get('annual_premium', 0)) for item in reinsurance_contracts), 2)
+
     return {
         'total_policies': len(POLICIES),
         'total_exposure': round(total_exposure, 2),
@@ -6124,6 +6258,9 @@ def get_bi_data_actuary() -> Dict[str, Any]:
             'enabled': bool(reinsurance_enabled),
             'providers': reinsurance_service.providers() if reinsurance_enabled and reinsurance_service else [],
             'bound_contracts': len(REINSURANCE_CONTRACTS),
+            'annual_expense_booked': round(reinsurance_expense, 2),
+            'total_bound_premium': total_bound_premium,
+            'latest_program': latest_reinsurance_program,
         }
     }
 
@@ -15848,36 +15985,30 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Reinsurance service unavailable'}).encode('utf-8'))
                 return
 
-            # Inputs are provided as query params for quick BI prototyping.
-            try:
-                currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
-                total_exposure = float(qs.get('total_exposure', ['0'])[0] or 0)
-                expected_annual_premium = float(qs.get('expected_annual_premium', ['0'])[0] or 0)
-                expected_loss_ratio = float(qs.get('expected_loss_ratio', ['0.6'])[0] or 0.6)
-                risk_band = (qs.get('risk_band', ['medium'])[0] or 'medium').lower()
-                region = (qs.get('region', ['global'])[0] or 'global')
-                line_of_business = (qs.get('line_of_business', ['health'])[0] or 'health').lower()
-                portfolio_id = (qs.get('portfolio_id', [None])[0] or None)
-                customer_id = (qs.get('customer_id', [None])[0] or None)
-            except Exception as e:
+            context = build_reinsurance_request_context(qs)
+            if context.get('error'):
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid parameters', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': context['error']}).encode('utf-8'))
                 return
 
             req = ReinsuranceQuoteRequest(
-                customer_id=customer_id,
-                portfolio_id=portfolio_id,
-                currency=currency,
-                total_exposure=total_exposure,
-                expected_annual_premium=expected_annual_premium,
-                expected_loss_ratio=expected_loss_ratio,
-                risk_band=risk_band,
-                region=region,
-                line_of_business=line_of_business,
+                customer_id=context.get('customer_id'),
+                portfolio_id=context.get('portfolio_id'),
+                currency=context.get('currency', 'USD'),
+                total_exposure=safe_float(context.get('total_exposure', 0)),
+                expected_annual_premium=safe_float(context.get('expected_annual_premium', 0)),
+                expected_loss_ratio=safe_float(context.get('expected_loss_ratio', 0.6), 0.6),
+                risk_band=str(context.get('risk_band') or 'medium'),
+                region=str(context.get('region') or 'global'),
+                line_of_business=str(context.get('line_of_business') or 'health'),
             )
-            quotes = reinsurance_service.quote_all(req)
+            quotes = augment_reinsurance_quotes(reinsurance_service.quote_all(req), context)
             self._set_json_headers()
-            self.wfile.write(json.dumps({'items': [q.to_dict() for q in quotes]}).encode('utf-8'))
+            self.wfile.write(json.dumps({
+                'items': quotes,
+                'simulation_id': context.get('simulation_id'),
+                'actuarial_program': context.get('actuarial_program'),
+            }).encode('utf-8'))
             return
 
         if path == '/api/reinsurance/recommendation':
@@ -15891,37 +16022,38 @@ For claims or questions, please contact:
                 return
 
             objective = (qs.get('objective', ['min_cost'])[0] or 'min_cost').strip()
-            # reuse quote endpoint logic by calling quote_all with same query params
-            try:
-                currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
-                total_exposure = float(qs.get('total_exposure', ['0'])[0] or 0)
-                expected_annual_premium = float(qs.get('expected_annual_premium', ['0'])[0] or 0)
-                expected_loss_ratio = float(qs.get('expected_loss_ratio', ['0.6'])[0] or 0.6)
-                risk_band = (qs.get('risk_band', ['medium'])[0] or 'medium').lower()
-                region = (qs.get('region', ['global'])[0] or 'global')
-                line_of_business = (qs.get('line_of_business', ['health'])[0] or 'health').lower()
-                portfolio_id = (qs.get('portfolio_id', [None])[0] or None)
-                customer_id = (qs.get('customer_id', [None])[0] or None)
-            except Exception as e:
+            context = build_reinsurance_request_context(qs)
+            if context.get('error'):
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid parameters', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': context['error']}).encode('utf-8'))
                 return
 
             req = ReinsuranceQuoteRequest(
-                customer_id=customer_id,
-                portfolio_id=portfolio_id,
-                currency=currency,
-                total_exposure=total_exposure,
-                expected_annual_premium=expected_annual_premium,
-                expected_loss_ratio=expected_loss_ratio,
-                risk_band=risk_band,
-                region=region,
-                line_of_business=line_of_business,
+                customer_id=context.get('customer_id'),
+                portfolio_id=context.get('portfolio_id'),
+                currency=context.get('currency', 'USD'),
+                total_exposure=safe_float(context.get('total_exposure', 0)),
+                expected_annual_premium=safe_float(context.get('expected_annual_premium', 0)),
+                expected_loss_ratio=safe_float(context.get('expected_loss_ratio', 0.6), 0.6),
+                risk_band=str(context.get('risk_band') or 'medium'),
+                region=str(context.get('region') or 'global'),
+                line_of_business=str(context.get('line_of_business') or 'health'),
             )
-            quotes = reinsurance_service.quote_all(req)
-            rec = reinsurance_service.recommend(quotes, objective=objective)
+            raw_quotes = reinsurance_service.quote_all(req)
+            quote_payloads = augment_reinsurance_quotes(raw_quotes, context)
+            rec = reinsurance_service.recommend(raw_quotes, objective=objective)
+            if rec.get('success') and isinstance(rec.get('recommended'), dict):
+                recommended_id = rec.get('recommended_quote_id')
+                enriched_match = next((item for item in quote_payloads if item.get('quote_id') == recommended_id), None)
+                if enriched_match:
+                    rec['recommended'] = enriched_match
             self._set_json_headers()
-            self.wfile.write(json.dumps({'quotes': [q.to_dict() for q in quotes], **rec}).encode('utf-8'))
+            self.wfile.write(json.dumps({
+                'quotes': quote_payloads,
+                'simulation_id': context.get('simulation_id'),
+                'actuarial_program': context.get('actuarial_program'),
+                **rec
+            }).encode('utf-8'))
             return
         
         # ========== END DATA INTEGRITY API ==========
@@ -18904,7 +19036,9 @@ For claims or questions, please contact:
                 simulator = get_portfolio_simulator()
                 result = simulator.generate_portfolio(params)
                 result['run_by'] = session.get('username', 'admin')
-                
+                with STATE_LOCK:
+                    ACTUARIAL_SIMULATIONS[result['simulation_id']] = _copy_json_value(result)
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -22335,6 +22469,19 @@ For claims or questions, please contact:
                 contract_name = str(payload.get('contract_name') or 'Reinsurance Contract').strip()
                 portfolio_id = str(payload.get('portfolio_id') or '').strip() or None
                 customer_id = str(payload.get('customer_id') or '').strip() or None
+                simulation_id = str(payload.get('simulation_id') or quote.get('phins_simulation_id') or '').strip() or None
+                simulation_snapshot = get_actuarial_simulation_snapshot(simulation_id)
+                actuarial_program = quote.get('phins_actuarial_program')
+                if not isinstance(actuarial_program, dict) and isinstance(simulation_snapshot, dict):
+                    actuarial_program = simulation_snapshot.get('reinsurance_program')
+                balance_sheet_impact = quote.get('phins_balance_sheet_impact')
+                if not isinstance(balance_sheet_impact, dict) and isinstance(actuarial_program, dict):
+                    balance_sheet_impact = actuarial_program.get('balance_sheet_impact', {})
+                if not isinstance(balance_sheet_impact, dict):
+                    balance_sheet_impact = {}
+                annual_reinsurance_expense = safe_float(
+                    quote.get('phins_total_contract_cost', quote.get('annual_premium', 0))
+                )
 
                 contract_id = f"RC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
                 actor = (session or {}).get('username') or 'unknown'
@@ -22353,6 +22500,10 @@ For claims or questions, please contact:
                     'quote_id': quote.get('quote_id'),
                     'provider_request_id': quote.get('provider_request_id'),
                     'status': 'bound',
+                    'simulation_id': simulation_id,
+                    'covered_risks': quote.get('phins_covered_risks'),
+                    'balance_sheet_impact': balance_sheet_impact,
+                    'annual_reinsurance_expense': annual_reinsurance_expense,
                     'created_at': datetime.now().isoformat(),
                     'created_by': actor,
                 }
@@ -22366,19 +22517,52 @@ For claims or questions, please contact:
                     except Exception:
                         pass
 
+                balance_sheet_tx = None
+                try:
+                    balance_sheet_tx = record_balance_sheet_transaction(
+                        tx_type='expense',
+                        category='reinsurance',
+                        amount=annual_reinsurance_expense,
+                        description=f"Reinsurance premium booked for {contract_id}",
+                        actor=actor,
+                        customer_id=customer_id,
+                        metadata={
+                            'contract_id': contract_id,
+                            'provider': row.get('provider'),
+                            'product': row.get('product'),
+                            'simulation_id': simulation_id,
+                            'portfolio_id': portfolio_id,
+                            'quote_id': row.get('quote_id'),
+                        },
+                    )
+                except Exception:
+                    balance_sheet_tx = None
+
                 try:
                     record_transaction(
                         customer_id=customer_id,
                         tx_type='reinsurance_contract_bound',
                         amount=0.0,
                         description=f"Reinsurance contract bound: {contract_id}",
-                        metadata={'contract_id': contract_id, 'provider': row.get('provider'), 'annual_premium': row.get('annual_premium')},
+                        metadata={
+                            'contract_id': contract_id,
+                            'provider': row.get('provider'),
+                            'annual_premium': row.get('annual_premium'),
+                            'annual_reinsurance_expense': annual_reinsurance_expense,
+                            'balance_sheet_tx_id': (balance_sheet_tx or {}).get('tx_id'),
+                            'simulation_id': simulation_id,
+                        },
                     )
                 except Exception:
                     pass
 
                 self._set_json_headers(201)
-                self.wfile.write(json.dumps({'success': True, 'id': contract_id}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'id': contract_id,
+                    'simulation_id': simulation_id,
+                    'balance_sheet_transaction': balance_sheet_tx,
+                }).encode('utf-8'))
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
