@@ -713,6 +713,19 @@ def test_kling_provider_enabled_with_access_secret_credentials(monkeypatch):
     assert capabilities["kling"]["enabled"] is True
 
 
+def test_kling_credentials_are_trimmed_from_environment(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "  ")
+    monkeypatch.setenv("KLING_ACCESS_KEY", "  access-key-1  ")
+    monkeypatch.setenv("KLING_SECRET_KEY", "\tsecret-key-1\n")
+
+    service = media_generation_service.MediaGenerationService()
+
+    assert service._kling_api_key == ""
+    assert service._kling_access_key == "access-key-1"
+    assert service._kling_secret_key == "secret-key-1"
+    assert service._kling_credentials_available() is True
+
+
 def test_kling_jwt_from_access_secret_is_hs256_and_contains_issuer():
     token = media_generation_service.MediaGenerationService._build_kling_access_secret_jwt(
         access_key="AK-123",
@@ -813,6 +826,50 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
     assert captured["body"]["mode"] == "professional"
     assert captured["body"]["duration"] == 10
     assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")
+
+
+def test_kling_submit_surfaces_sanitized_provider_error_details(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "api-key-1")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+
+    request_payloads = []
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        request_payloads.append(json.loads(request.data.decode("utf-8")))
+        error_body = json.dumps({
+            "code": 40017,
+            "message": "duration must be 5 or 10",
+            "request_id": "req-123",
+        }).encode("utf-8")
+        raise HTTPError(
+            request.full_url,
+            400,
+            "Bad Request",
+            hdrs={},
+            fp=BytesIO(error_body),
+        )
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+
+    try:
+        service.submit_video_generation(
+            provider="kling",
+            prompt="A marketing explainer for claims readiness",
+            title="Claims readiness",
+            model="kling-v2.6-pro",
+        )
+        assert False, "Expected MediaGenerationError"
+    except media_generation_service.MediaGenerationError as exc:
+        message = str(exc)
+        assert "Kling generation request failed with HTTP 400" in message
+        assert "duration must be 5 or 10" in message
+        assert "api-key-1" not in message
+
+    assert request_payloads
 
 
 def test_kling_image_submit_includes_compatible_image_fields(monkeypatch):

@@ -15,6 +15,7 @@ import json
 import os
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
@@ -23,6 +24,13 @@ from security.network import validated_urlopen
 
 class MediaGenerationError(RuntimeError):
     """Raised when a media generation provider call fails."""
+
+
+def _truncate_error_detail(value: str, limit: int = 400) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
 
 
 class MediaGenerationService:
@@ -328,8 +336,16 @@ class MediaGenerationService:
             },
             method="POST",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            response_body = json.loads(response.read().decode("utf-8"))
+        try:
+            with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
+                response_body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            provider_error = self._read_provider_error_body(exc)
+            detail = self._extract_provider_error_message(provider_error)
+            message = f"Kling generation request failed with HTTP {exc.code}"
+            if detail:
+                message += f": {detail}"
+            raise MediaGenerationError(message) from exc
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
         provider_job_id = str(
@@ -371,8 +387,16 @@ class MediaGenerationService:
             headers={"Authorization": self._kling_authorization_header()},
             method="GET",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        try:
+            with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            provider_error = self._read_provider_error_body(exc)
+            detail = self._extract_provider_error_message(provider_error)
+            message = f"Kling status polling failed with HTTP {exc.code}"
+            if detail:
+                message += f": {detail}"
+            raise MediaGenerationError(message) from exc
 
         data = body.get("data") if isinstance(body.get("data"), dict) else body
         status_value = str(
@@ -466,6 +490,39 @@ class MediaGenerationService:
 
     def _kling_credentials_available(self) -> bool:
         return bool(self._kling_api_key) or bool(self._kling_access_key and self._kling_secret_key)
+
+    @staticmethod
+    def _read_provider_error_body(exc: urllib.error.HTTPError) -> Any:
+        try:
+            raw_body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+        if not raw_body.strip():
+            return ""
+        try:
+            return json.loads(raw_body)
+        except json.JSONDecodeError:
+            return raw_body
+
+    @classmethod
+    def _extract_provider_error_message(cls, payload: Any) -> str:
+        if isinstance(payload, dict):
+            for key in ("message", "error_message", "error", "detail"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return _truncate_error_detail(value)
+                if isinstance(value, dict):
+                    nested = cls._extract_provider_error_message(value)
+                    if nested:
+                        return nested
+            if payload:
+                return _truncate_error_detail(json.dumps(payload, separators=(",", ":"), ensure_ascii=True))
+            return ""
+        if isinstance(payload, list) and payload:
+            return _truncate_error_detail(json.dumps(payload, separators=(",", ":"), ensure_ascii=True))
+        if isinstance(payload, str):
+            return _truncate_error_detail(payload)
+        return ""
 
     def _kling_authorization_header(self) -> str:
         if self._kling_api_key:
