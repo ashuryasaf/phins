@@ -85,6 +85,15 @@ def test_ui_clarity_asset_requires_authenticated_session_before_render():
     assert "ensureFloatingBar();" in content
 
 
+def test_ui_clarity_suppresses_floating_bar_on_public_pages():
+    content = _fetch("/ui-clarity.js")
+    assert "function isPublicPage(pathname)" in content
+    assert '"/index.html"' in content
+    assert '"/login.html"' in content
+    assert "const onPublicPage = isPublicPage(window.location.pathname);" in content
+    assert "onPublicPage ? false : await resolveFloatingAuth();" in content
+
+
 def test_customer_dashboard_voice_button_starts_disabled_until_session_validates():
     content = _fetch("/dashboard.html")
     assert 'id="voice-btn"' in content

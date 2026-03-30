@@ -90,6 +90,11 @@
     return safeTab ? `/supplier-portal.html?tab=${encodeURIComponent(safeTab)}` : "/supplier-portal.html";
   }
 
+  function isPublicPage(pathname) {
+    const p = String(pathname || "").toLowerCase().replace(/\/$/, "");
+    return p === "" || p === "/index.html" || p === "/login.html";
+  }
+
   function isStaffPath(pathname) {
     const p = String(pathname || "").toLowerCase();
     return [
@@ -1025,7 +1030,8 @@
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
 
-    const authAllowed = await resolveFloatingAuth();
+    const onPublicPage = isPublicPage(window.location.pathname);
+    const authAllowed = onPublicPage ? false : await resolveFloatingAuth();
     if (authAllowed) {
       ensureFloatingBar();
       runPendingAdminActionIfAny();
