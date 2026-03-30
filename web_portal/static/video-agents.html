@@ -602,6 +602,7 @@
                     ? 'rgba(239,83,80,0.24)'
                     : 'rgba(66,165,245,0.24)';
             const progress = Math.max(0, Math.min(100, Number(job.progress_pct || 0)));
+            const downloadUrl = String(job.download_url || '').trim();
             return `
                 <div class="job-card">
                     <div class="job-head">
@@ -622,6 +623,7 @@
                     </div>
                     <div class="job-actions">
                         ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
+                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download>Download Video</a>` : ''}
                         ${status === 'failed' ? `<button class="small-btn retry" onclick="retryVideoAgentJob('${job.id}')">Retry</button>` : ''}
                         ${['queued', 'processing'].includes(status) ? `<button class="small-btn cancel" onclick="cancelVideoAgentJob('${job.id}')">Cancel</button>` : ''}
                     </div>
@@ -710,7 +712,7 @@
             }
             const providerModel = (document.getElementById('va-model')?.value || '').trim();
             const referenceImage = selectedReferenceImage();
-            const pollMode = (document.getElementById('va-completion-mode')?.value || 'webhook').trim();
+            const pollMode = (document.getElementById('va-completion-mode')?.value || 'poll').trim();
             const autoHero = Boolean(document.getElementById('va-auto-hero')?.checked);
             const promptOverride = (document.getElementById('va-prompt-override')?.value || '').trim();
             try {
