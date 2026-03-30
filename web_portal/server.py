@@ -8518,7 +8518,6 @@ For claims or questions, please contact:
             db_url = os.environ.get('DATABASE_URL', '')
             if db_url:
                 # Show URL format (hide password)
-                import re
                 safe_url = re.sub(r':([^:@]+)@', ':****@', db_url)
                 result['database_url_format'] = safe_url
                 
