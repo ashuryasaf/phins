@@ -1363,19 +1363,9 @@ def infer_media_asset_filename(asset: Dict[str, Any], fallback_stem: str = 'medi
     return f'{stem}.{extension}' if extension else stem
 
 
-def derive_request_base_url(handler: Any) -> str:
-    """Resolve the best public base URL for provider callbacks and links."""
-    configured_base = str(os.environ.get('WEBHOOK_BASE_URL') or os.environ.get('BASE_URL') or '').strip().rstrip('/')
-    if configured_base:
-        return configured_base
-
-    forwarded_proto = str(handler.headers.get('X-Forwarded-Proto') or '').split(',', 1)[0].strip()
-    forwarded_host = str(handler.headers.get('X-Forwarded-Host') or '').split(',', 1)[0].strip()
-    host = forwarded_host or str(handler.headers.get('Host') or '').split(',', 1)[0].strip()
-    if host:
-        scheme = forwarded_proto or ('https' if '.railway.app' in host or '.phins.ai' in host else 'http')
-        return f'{scheme}://{host}'.rstrip('/')
-    return ''
+def configured_media_callback_base_url() -> str:
+    """Return an explicit public callback base URL if operators configured one."""
+    return str(os.environ.get('WEBHOOK_BASE_URL') or '').strip().rstrip('/')
 
 
 def get_media_subtitle_tracks(asset: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -18953,7 +18943,7 @@ For claims or questions, please contact:
             campaign_id = str(data.get('campaign_id') or '').strip()
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
-            callback_base_url = str(data.get('callback_base_url') or '').strip() or derive_request_base_url(self)
+            callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
@@ -19036,7 +19026,7 @@ For claims or questions, please contact:
             blueprint_index = safe_int(data.get('blueprint_index'), -1)
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
-            callback_base_url = str(data.get('callback_base_url') or '').strip() or derive_request_base_url(self)
+            callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
@@ -19146,7 +19136,7 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
 
-            callback_base_url = str(data.get('callback_base_url') or '').strip() or derive_request_base_url(self)
+            callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             try:
                 retried_job = retry_media_video_job(

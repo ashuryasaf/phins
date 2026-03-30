@@ -772,7 +772,7 @@ def test_generated_video_download_route_serves_inline_media_payload():
         assert resp.status == 200
         assert body == b"phins-video"
         assert headers["Content-Type"].startswith("video/mp4")
-        assert 'filename="kling-demo.mp4"' in headers["Content-Disposition"]
+        assert 'filename="kling-demo_mp4.mp4"' in headers["Content-Disposition"]
     finally:
         srv.stop()
 
