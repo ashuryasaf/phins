@@ -35,6 +35,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 from services.platform_event_ledger_service import PlatformEventLedgerService
+from services.advanced_ai_assessment_service import get_ai_assessment_service
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -2516,242 +2517,69 @@ def _generate_bi_insights(
     return insights
 
 
+def _build_affiliated_context_for_document(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve nearby entities so uploaded-data analysis can reason over context."""
+    entity_type = str(doc.get('entity_type') or '').strip().lower()
+    entity_id = str(doc.get('entity_id') or '').strip()
+    context: Dict[str, Any] = {}
+    related_documents: List[Dict[str, Any]] = []
+
+    if entity_type == 'claim' and entity_id:
+        claim = CLAIMS.get(entity_id) or {}
+        policy = POLICIES.get(claim.get('policy_id')) or {}
+        customer = CUSTOMERS.get(claim.get('customer_id')) or {}
+        context.update({
+            'claim': claim,
+            'policy': policy,
+            'customer': customer,
+        })
+        related_documents = [
+            file_info for file_info in CLAIM_FILES.values()
+            if file_info.get('claim_id') == entity_id and file_info.get('id') != doc.get('id')
+        ]
+    elif entity_type == 'underwriting' and entity_id:
+        application = UNDERWRITING_APPLICATIONS.get(entity_id) or {}
+        policy = POLICIES.get(application.get('policy_id')) or {}
+        customer = CUSTOMERS.get(application.get('customer_id')) or {}
+        context.update({
+            'application': application,
+            'policy': policy,
+            'customer': customer,
+        })
+        related_documents = [
+            file_info for file_info in UNDERWRITING_FILES.values()
+            if file_info.get('application_id') == entity_id and file_info.get('id') != doc.get('id')
+        ]
+    elif entity_type == 'policy' and entity_id:
+        policy = POLICIES.get(entity_id) or {}
+        customer = CUSTOMERS.get(policy.get('customer_id')) or {}
+        context.update({
+            'policy': policy,
+            'customer': customer,
+        })
+        related_documents = [
+            item for item in POLICY_DOCUMENTS.values()
+            if item.get('entity_type') == 'policy'
+            and item.get('entity_id') == entity_id
+            and item.get('id') != doc.get('id')
+        ]
+    elif entity_type == 'customer' and entity_id:
+        customer = CUSTOMERS.get(entity_id) or {}
+        context['customer'] = customer
+        related_documents = [
+            item for item in POLICY_DOCUMENTS.values()
+            if item.get('id') != doc.get('id')
+            and resolve_document_owner_customer_id(item) == entity_id
+        ]
+
+    context['related_documents'] = related_documents
+    return context
+
+
 def analyze_document_content(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """AI Document Analysis Engine for PHINS.
-
-    Performs rule-based AI analysis on an insurance document and returns structured
-    findings covering actuarial underwriting risk, claims investigation
-    (death / disability certificate authenticity), and billing anomaly detection.
-
-    Returned dict keys:
-        risk_level       : 'low' | 'medium' | 'high' | 'very_high'
-        risk_score       : float 0–1
-        flags            : list[str]  — machine-readable event labels
-        findings         : list[str]  — human-readable sentences
-        recommendation   : str        — suggested next action
-        bi_insights      : dict       — actuarial / claims / billing metrics
-        confidence       : float
-        analyzed_at      : ISO-8601 timestamp
-        analysis_version : str
-        analysis_mode    : str
-    """
-    import base64 as _b64
-    import re
-
-    doc_type = doc.get('document_type', 'general')
-    doc_name = (doc.get('name') or '').lower()
-    description = (doc.get('description') or '').lower()
-    entity_type = doc.get('entity_type', 'general')
-
-    # Decode base64 content for keyword inspection (text-based files only)
-    text_content = ''
-    raw_data = doc.get('data', '')
-    if raw_data:
-        try:
-            text_content = _b64.b64decode(raw_data).decode('utf-8', errors='ignore').lower()
-        except Exception:
-            text_content = ''
-
-    full_text = f"{doc_name} {description} {text_content}"
-
-    flags: list = []
-    findings: list = []
-    risk_score = 0.0
-
-    # ── Medical / Underwriting analysis ─────────────────────────────────────
-    if doc_type == 'medical' or entity_type == 'underwriting':
-        if any(kw in full_text for kw in [
-            'terminal', 'death', 'died', 'fatal', 'deceased',
-            'mortality', 'end-of-life', 'hospice', 'palliative',
-        ]):
-            flags.append('TERMINAL_CONDITION_DETECTED')
-            findings.append(
-                'Terminal or death-related indicators found — life policy risk is VERY HIGH.'
-            )
-            risk_score = max(risk_score, 0.95)
-
-        if any(kw in full_text for kw in [
-            'cancer', 'tumor', 'stage 4', 'stage iv', 'hiv', 'aids',
-            'stroke', 'heart failure', 'cardiac arrest', 'organ failure',
-        ]):
-            flags.append('SERIOUS_ILLNESS_DETECTED')
-            findings.append(
-                'Serious illness marker detected (cancer/cardiac/etc.) — significant premium loading required.'
-            )
-            risk_score = max(risk_score, 0.80)
-
-        if any(kw in full_text for kw in [
-            'disability', 'disabled', 'paralysis', 'amputation',
-            'loss of limb', 'loss of sight', 'permanent partial',
-        ]):
-            flags.append('DISABILITY_CONDITION_DETECTED')
-            findings.append(
-                'Disability condition detected — evaluate disability coverage eligibility.'
-            )
-            risk_score = max(risk_score, 0.75)
-
-        if any(kw in full_text for kw in [
-            'diabetes', 'hypertension', 'chronic', 'smoker', 'obesity', 'bmi',
-        ]):
-            flags.append('CHRONIC_CONDITION_DETECTED')
-            findings.append(
-                'Chronic health conditions present — standard premium loading 20–35% recommended.'
-            )
-            risk_score = max(risk_score, 0.55)
-
-        if 'very high risk' in full_text or 'high risk' in full_text:
-            flags.append('EXPLICIT_HIGH_RISK_FLAG')
-            findings.append('Document explicitly states a HIGH RISK classification.')
-            risk_score = max(risk_score, 0.85)
-
-        if not findings:
-            findings.append('No elevated risk markers detected in medical documentation.')
-            risk_score = max(risk_score, 0.25)
-
-    # ── Authority certificate analysis (death / disability) ─────────────────
-    if doc_type == 'authority':
-        # Death certificate
-        if any(kw in full_text for kw in [
-            'certificate of death', 'death certificate', 'cause of death', 'died on',
-        ]):
-            flags.append('DEATH_CERTIFICATE')
-            findings.append(
-                'Death certificate identified — life insurance claim processing should be triggered.'
-            )
-            risk_score = max(risk_score, 0.90)
-            auth_markers = [
-                'ministry', 'registrar', 'authorized', 'certificate no', 'official', 'issued by',
-            ]
-            auth_count = sum(1 for m in auth_markers if m in full_text)
-            if auth_count >= 3:
-                flags.append('AUTHENTICITY_VERIFIED')
-                findings.append(
-                    f'Certificate authenticity: GENUINE ({auth_count}/6 official markers present).'
-                )
-            elif auth_count >= 1:
-                flags.append('AUTHENTICITY_REQUIRES_INQUIRY')
-                findings.append(
-                    f'Partial authenticity markers ({auth_count}/6) — REQUIRES FURTHER INQUIRY before claim approval.'
-                )
-            else:
-                flags.append('AUTHENTICITY_UNVERIFIABLE')
-                findings.append(
-                    'No official authenticity markers found — REQUIRES MANUAL VERIFICATION.'
-                )
-
-        # Disability certificate
-        elif any(kw in full_text for kw in [
-            'disability certificate', 'certificate of disability',
-            'disability grade', 'permanent partial', 'national insurance',
-        ]):
-            flags.append('DISABILITY_CERTIFICATE')
-            findings.append(
-                'Disability certificate identified — disability benefit processing should be triggered.'
-            )
-            risk_score = max(risk_score, 0.80)
-            auth_markers = [
-                'national insurance', 'authorized', 'certificate no',
-                'medical examiner', 'valid until', 'issued by',
-            ]
-            auth_count = sum(1 for m in auth_markers if m in full_text)
-            if auth_count >= 3:
-                flags.append('AUTHENTICITY_VERIFIED')
-                findings.append(
-                    f'Disability certificate appears GENUINE ({auth_count}/6 official markers present).'
-                )
-            else:
-                flags.append('AUTHENTICITY_REQUIRES_INQUIRY')
-                findings.append(
-                    f'Only {auth_count}/6 authenticity markers present — REQUIRES FURTHER INQUIRY.'
-                )
-        else:
-            flags.append('MANUAL_REVIEW_REQUIRED')
-            findings.append(
-                'Authority certificate type not definitively identified — manual classification required.'
-            )
-            risk_score = max(risk_score, 0.50)
-
-    # ── Billing / receipt analysis ───────────────────────────────────────────
-    if doc_type == 'receipt' or entity_type in ('billing', 'policy'):
-        if any(kw in full_text for kw in [
-            'overdue', 'outstanding', 'late fee', 'delinquent', 'past due',
-        ]):
-            flags.append('BILLING_ANOMALY_OVERDUE')
-            findings.append(
-                'Overdue / outstanding payment indicators detected — billing attention required.'
-            )
-            risk_score = max(risk_score, 0.40)
-
-        amounts = re.findall(r'\$[\d,]+(?:\.\d{2})?', full_text)
-        if amounts:
-            try:
-                max_amount = max(
-                    float(a.replace('$', '').replace(',', '')) for a in amounts
-                )
-                if max_amount > 50000:
-                    flags.append('LARGE_TRANSACTION_DETECTED')
-                    findings.append(
-                        f'Large transaction amount detected (${max_amount:,.2f}) — financial review required.'
-                    )
-                    risk_score = max(risk_score, 0.60)
-            except ValueError:
-                pass
-
-        if not findings:
-            findings.append('Billing document reviewed — no payment anomalies detected.')
-            risk_score = max(risk_score, 0.10)
-
-    # ── ID document ─────────────────────────────────────────────────────────
-    if doc_type == 'id':
-        flags.append('IDENTITY_DOCUMENT')
-        findings.append('Identity document submitted — standard verification process applies.')
-        risk_score = max(risk_score, 0.15)
-
-    # ── Fallback for general docs ────────────────────────────────────────────
-    if not findings:
-        findings.append('General document analyzed — no specific risk indicators identified.')
-        risk_score = max(risk_score, 0.10)
-
-    # Determine risk level
-    if risk_score >= 0.85:
-        risk_level = 'very_high'
-    elif risk_score >= 0.65:
-        risk_level = 'high'
-    elif risk_score >= 0.40:
-        risk_level = 'medium'
-    else:
-        risk_level = 'low'
-
-    # Determine recommendation
-    if 'AUTHENTICITY_REQUIRES_INQUIRY' in flags or 'AUTHENTICITY_UNVERIFIABLE' in flags:
-        recommendation = 'hold_pending_verification'
-    elif 'DEATH_CERTIFICATE' in flags:
-        recommendation = 'process_death_claim'
-    elif 'DISABILITY_CERTIFICATE' in flags:
-        recommendation = 'process_disability_claim'
-    else:
-        recommendation_map = {
-            'very_high': 'decline_or_senior_review',
-            'high': 'refer_manual_review',
-            'medium': 'approve_conditional',
-            'low': 'approve',
-        }
-        recommendation = recommendation_map.get(risk_level, 'approve')
-
-    bi_insights = _generate_bi_insights(doc_type, entity_type, risk_level, flags)
-
-    return {
-        'risk_level': risk_level,
-        'risk_score': round(risk_score, 3),
-        'flags': flags,
-        'findings': findings,
-        'recommendation': recommendation,
-        'bi_insights': bi_insights,
-        'confidence': 0.85,
-        'analyzed_at': datetime.now().isoformat(),
-        'analysis_version': '1.0',
-        'analysis_mode': 'rule_based_ai',
-    }
+    """Run contextual document analysis with affiliated policy/claim/application data."""
+    service = get_ai_assessment_service()
+    return service.assess_document(doc, _build_affiliated_context_for_document(doc))
 
 
 def initialize_balance_sheet():
@@ -7678,6 +7506,7 @@ For claims or questions, please contact:
                 return
             
             try:
+                assessment_service = get_ai_assessment_service()
                 # Core metrics
                 active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
                 pending_uw = [a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')]
@@ -7714,26 +7543,16 @@ For claims or questions, please contact:
                     ptype = (p.get('type') or 'other').lower()
                     policy_types[ptype] = policy_types.get(ptype, 0) + 1
                 
-                # AI Insights & Recommendations
-                insights = []
-                recommendations = []
-                
-                # Generate insights
-                if loss_ratio > 60:
-                    insights.append({'type': 'warning', 'category': 'risk', 'message': f'High loss ratio at {loss_ratio:.1f}% - review underwriting criteria'})
-                elif loss_ratio < 20:
-                    insights.append({'type': 'success', 'category': 'risk', 'message': f'Healthy loss ratio at {loss_ratio:.1f}% - claims exposure well managed'})
-                
-                if pending_uw:
-                    insights.append({'type': 'info', 'category': 'pipeline', 'message': f'{len(pending_uw)} underwriting applications pending review'})
-                    recommendations.append({'priority': 'high', 'action': 'Process pending underwriting', 'impact': f'${sum(a.get("coverage_amount", 0) for a in pending_uw):,.0f} coverage waiting'})
-                
-                if collection_rate < 50:
-                    insights.append({'type': 'warning', 'category': 'billing', 'message': f'Low collection rate at {collection_rate:.1f}%'})
-                    recommendations.append({'priority': 'medium', 'action': 'Follow up on outstanding bills', 'impact': 'Improve cash flow'})
-                
-                if pending_exposure > total_premium * 0.3:
-                    insights.append({'type': 'alert', 'category': 'claims', 'message': f'Pending claims exposure (${pending_exposure:,.0f}) exceeds 30% of annual premium'})
+                portfolio_assessment = assessment_service.assess_bi_portfolio(
+                    customers=CUSTOMERS,
+                    policies=POLICIES,
+                    claims=CLAIMS,
+                    billing=BILLING,
+                    underwriting_apps=UNDERWRITING_APPLICATIONS,
+                    documents=POLICY_DOCUMENTS,
+                )
+                insights = list(portfolio_assessment.get('insights', []))
+                recommendations = list(portfolio_assessment.get('recommendations', []))
                 
                 # Ledger health
                 ledger_health = 'HEALTHY' if len(TRANSACTION_LEDGER) > 0 else 'EMPTY'
@@ -7815,6 +7634,7 @@ For claims or questions, please contact:
                     # AI insights
                     'ai_insights': insights,
                     'recommendations': recommendations,
+                    'portfolio_assessment': portfolio_assessment,
                     
                     # Trend indicators (simplified for demo)
                     'trends': {
@@ -23566,6 +23386,26 @@ For claims or questions, please contact:
                     
                     assessment_id = f"AI-ASSESS-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
                     
+                    dashboard_doc = {
+                        'name': filename,
+                        'type': up.get('content_type', 'application/octet-stream'),
+                        'size': file_size,
+                        'entity_type': 'underwriting',
+                        'entity_id': assessment_id,
+                        'document_type': 'medical' if lower_name.endswith('.pdf') else 'general',
+                        'description': f'Risk dashboard upload {filename}',
+                        'data': base64.b64encode(file_content).decode('utf-8'),
+                    }
+                    shared_assessment = get_ai_assessment_service().assess_document(dashboard_doc, {
+                        'application': {
+                            'id': assessment_id,
+                            'customer_id': f"UPLOAD-{datetime.now().strftime('%Y%m%d')}",
+                            'policy_type': 'general',
+                            'coverage_amount': 100000,
+                        },
+                        'related_documents': [],
+                    })
+
                     assessment_result = {
                         'assessment_id': assessment_id,
                         'report_id': f"REPORT-{assessment_id}",
@@ -23587,7 +23427,14 @@ For claims or questions, please contact:
                         'file_hash': file_hash,
                         'analyzed_by': actor,
                         'analyzed_at': datetime.now().isoformat(),
-                        'assessment_mode': 'simulated'
+                        'assessment_mode': 'simulated',
+                        'analysis_mode': shared_assessment.get('analysis_mode'),
+                        'reasoning_summary': shared_assessment.get('reasoning_summary'),
+                        'optimization_opportunities': shared_assessment.get('optimization_opportunities', []),
+                        'process_impacts': shared_assessment.get('process_impacts', {}),
+                        'bi_insights': shared_assessment.get('bi_insights', {}),
+                        'flags': shared_assessment.get('flags', []),
+                        'findings': shared_assessment.get('findings', []),
                     }
                     
                     random.seed()  # Reset random seed
@@ -25808,6 +25655,31 @@ For claims or questions, please contact:
                     }
                 }
                 
+                supporting_documents = [
+                    UNDERWRITING_FILES.get(file_meta.get('id'), {})
+                    for file_meta in files_metadata
+                    if UNDERWRITING_FILES.get(file_meta.get('id'))
+                ]
+                application_ai_assessment = get_ai_assessment_service().assess_policy_application(
+                    {
+                        **UNDERWRITING_APPLICATIONS[uw_id],
+                        'policy_type': data.get('type', 'life'),
+                    },
+                    policy=policy,
+                    customer=CUSTOMERS.get(customer_id, {}),
+                    documents=supporting_documents,
+                )
+                UNDERWRITING_APPLICATIONS[uw_id]['ai_assessment'] = application_ai_assessment
+                UNDERWRITING_APPLICATIONS[uw_id]['ai_risk_level'] = application_ai_assessment.get('risk_level')
+                UNDERWRITING_APPLICATIONS[uw_id]['ai_recommendation'] = application_ai_assessment.get('recommendation')
+                if not data.get('risk_score'):
+                    UNDERWRITING_APPLICATIONS[uw_id]['risk_score'] = application_ai_assessment.get('risk_level', 'medium')
+                    UNDERWRITING_APPLICATIONS[uw_id]['risk_assessment'] = application_ai_assessment.get('risk_level', 'medium')
+                    policy['risk_score'] = application_ai_assessment.get('risk_level', 'medium')
+                policy['ai_assessment'] = application_ai_assessment
+                policy['ai_risk_level'] = application_ai_assessment.get('risk_level')
+                policy['ai_recommendation'] = application_ai_assessment.get('recommendation')
+
                 POLICIES[policy_id] = policy
                 if audit:
                     actor = session.get('username') if 'session' in locals() and session else 'system'
@@ -26889,6 +26761,20 @@ For claims or questions, please contact:
                 # Set NFT and ledger IDs on the claim before storing
                 claim['nft_token_id'] = claim_tx.get('nft_token_id')
                 claim['ledger_tx_id'] = claim_tx.get('id')
+                supporting_documents = [
+                    CLAIM_FILES.get(file_meta.get('id'), {})
+                    for file_meta in files_metadata
+                    if CLAIM_FILES.get(file_meta.get('id'))
+                ]
+                claim_ai_assessment = get_ai_assessment_service().assess_claim(
+                    claim,
+                    policy=POLICIES.get(policy_id, {}),
+                    customer=CUSTOMERS.get(data.get('customer_id'), {}),
+                    documents=supporting_documents,
+                )
+                claim['ai_assessment'] = claim_ai_assessment
+                claim['ai_risk_level'] = claim_ai_assessment.get('risk_level')
+                claim['ai_recommendation'] = claim_ai_assessment.get('recommendation')
                 
                 # Now store the complete claim with all fields including NFT token
                 CLAIMS[claim_id] = claim

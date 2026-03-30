@@ -579,6 +579,10 @@ def test_analyze_medical_high_risk():
     assert len(a.get('findings', [])) > 0
     assert a.get('recommendation') is not None
     assert a.get('risk_score', 0) >= 0.65
+    assert a.get('analysis_mode') == 'contextual_reasoning_engine'
+    assert a.get('reasoning_summary')
+    assert isinstance(a.get('optimization_opportunities'), list)
+    assert 'assessment_scope' in a
 
     # Analysis should be persisted in POLICY_DOCUMENTS
     assert portal.POLICY_DOCUMENTS[doc_id].get('ai_analysis') is not None

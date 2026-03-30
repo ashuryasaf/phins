@@ -139,6 +139,9 @@ class AnalysisResult:
     processing_time_ms: int
     summary: str
     key_metrics: Dict[str, Any]
+    advanced_assessment: Dict[str, Any] = field(default_factory=dict)
+    optimization_opportunities: List[Dict[str, Any]] = field(default_factory=list)
+    reasoning_summary: str = ""
 
 
 @dataclass
@@ -1630,6 +1633,24 @@ class AIRiskReportsService:
         
         analysis_id = f"ANA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
         
+        advanced_assessment = {}
+        try:
+            from services.advanced_ai_assessment_service import get_ai_assessment_service
+            advanced_assessment = get_ai_assessment_service().assess_uploaded_dataset(
+                document_name=doc.get('filename') or doc.get('original_filename') or document_id,
+                parsed_data=parsed,
+                affiliated_context={
+                    'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
+                    'owner_id': doc.get('owner_id'),
+                    'owner_role': doc.get('owner_role'),
+                },
+            )
+        except Exception as exc:
+            advanced_assessment = {
+                'error': str(exc),
+                'analysis_mode': 'advanced_assessment_unavailable',
+            }
+
         result = AnalysisResult(
             id=analysis_id,
             document_id=document_id,
@@ -1643,7 +1664,10 @@ class AIRiskReportsService:
             confidence=min((lang_confidence + type_confidence) / 2, 1.0),
             processing_time_ms=processing_time,
             summary=summary,
-            key_metrics=key_metrics
+            key_metrics=key_metrics,
+            advanced_assessment=advanced_assessment,
+            optimization_opportunities=advanced_assessment.get('optimization_opportunities', []),
+            reasoning_summary=advanced_assessment.get('reasoning_summary', ''),
         )
         
         self.analyses[analysis_id] = result
