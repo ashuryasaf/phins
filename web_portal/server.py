@@ -5308,7 +5308,6 @@ def sanitize_claim_probability_report(report: Dict[str, Any]) -> Dict[str, Any]:
         sanitized['fraud_indicators'] = fraud_section
     return sanitized
 
-
 def _inject_ui_clarity_script(html_content: str) -> str:
     """
     Inject shared UI script before the real closing </body> tag.
@@ -5330,7 +5329,6 @@ def _inject_ui_clarity_script(html_content: str) -> str:
             + html_content[last.start():]
         )
     return f'{html_content}\n{inject_tag}\n'
-
 # Keep this aligned with front-end accepted document/media uploads.
 ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
     '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
@@ -18251,17 +18249,7 @@ For claims or questions, please contact:
                     with open(file_path, 'r', encoding='utf-8') as fh:
                         html_content = fh.read()
                     # Inject shared UI clarity/voice quick-actions script on all HTML pages.
-                    # Avoid duplicate insertion if page already includes the script.
-                    if 'ui-clarity.js' not in html_content.lower():
-                        inject_tag = '<script src="/ui-clarity.js"></script>'
-                        # Insert only before a real </body> (not inside JS template literals).
-                        body_close_matches = list(re.finditer(r'</body>', html_content, flags=re.IGNORECASE))
-                        if body_close_matches:
-                            last_match = body_close_matches[-1]
-                            idx = last_match.start()
-                            html_content = f"{html_content[:idx]}  {inject_tag}\n{html_content[idx:]}"
-                        else:
-                            html_content = f'{html_content}\n{inject_tag}\n'
+                    html_content = _inject_ui_clarity_script(html_content)
                     self.wfile.write(html_content.encode('utf-8'))
                 else:
                     with open(file_path, 'rb') as fh:
