@@ -24,7 +24,7 @@ def test_admin_ai_assistant_positioned_under_admin_dashboard_header():
         r'<div class="welcome-section">.*?<h1>Admin Dashboard</h1>.*?'
         r'<p class="muted-text">Comprehensive system management and oversight</p>.*?</div>\s*'
         r'<!--\s*=+\s*PHINS ADMIN AI ASSISTANT\s*=+\s*-->\s*'
-        r'<div id="admin-ai-assistant-panel">',
+        r'<div id="admin-ai-assistant-panel" data-minimized="true">',
         flags=re.S,
     )
     assert placement_pattern.search(content)
@@ -121,4 +121,5 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
     # Ensure customer-assistant parity language for multi-input orchestration is present.
     assert "Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards." in content
     assert "title=\"Help\"" in content
-    assert "title=\"Minimize\"" in content
+    assert "title=\"Expand\"" in content
+    assert "toggleButton.title = 'Minimize';" in content

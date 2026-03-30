@@ -332,16 +332,22 @@
       color: white;
     }
     #admin-ai-assistant-panel[data-minimized="true"] {
-      padding: 18px;
+      padding: 14px 16px;
+      width: fit-content;
+      max-width: 100%;
     }
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-help-panel,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-voice-recording-indicator,
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-tab-bar,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-quick-actions,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area {
       display: none !important;
     }
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
+      margin-bottom: 0 !important;
+    }
+    #admin-ai-assistant-panel[data-minimized="true"] > div:first-child {
       margin-bottom: 0 !important;
     }
     .admin-ai-tab-bar {
@@ -489,7 +495,7 @@
     </div>
 
     <!-- ==================== PHINS ADMIN AI ASSISTANT ==================== -->
-    <div id="admin-ai-assistant-panel">
+    <div id="admin-ai-assistant-panel" data-minimized="true">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:12px;">
           <div style="width:46px;height:46px;background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
@@ -502,7 +508,7 @@
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
-          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize">➖</button>
+          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">🎤➕</button>
         </div>
       </div>
 
