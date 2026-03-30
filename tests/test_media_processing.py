@@ -13,6 +13,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from http.server import HTTPServer
+from io import BytesIO
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -126,6 +127,46 @@ class _StubMediaGenerationService:
             "content_type": "video/mp4",
             "size": 16,
         }
+
+
+class _EventuallyReadyMediaGenerationService(_StubMediaGenerationService):
+    def __init__(self):
+        super().__init__()
+        self._poll_count = 0
+
+    def poll_video_generation(self, **kwargs):
+        self.polls.append(kwargs)
+        self._poll_count += 1
+        if self._poll_count < 2:
+            return {
+                "status": "processing",
+                "message": "Still rendering at provider.",
+                "provider_job_id": kwargs["provider_job_id"],
+                "provider_state": {"progress": self._poll_count},
+            }
+        return {
+            "status": "completed",
+            "message": "Provider completed the video on a later poll.",
+            "provider_job_id": kwargs["provider_job_id"],
+            "download_url": "https://cdn.example.com/generated/eventually-ready.mp4",
+            "duration": 8,
+            "provider_state": {"done": True},
+        }
+
+
+class _FakeUrlopenResponse:
+    def __init__(self, body: bytes, headers: dict[str, str] | None = None):
+        self._body = body
+        self.headers = headers or {}
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 def test_media_subtitle_job_lifecycle_and_download():
     port = 8290
     srv = ServerThread(port)
@@ -525,6 +566,81 @@ def test_marketing_video_generation_batch_route_accepts_dashboard_payload():
         srv.stop()
 
 
+def test_marketing_video_generation_repolls_until_completed():
+    port = 8297
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_repoll"
+    _inject_session(token, "media_admin_repoll", "admin")
+
+    stub_service = _EventuallyReadyMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub_service
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "latest_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-TEST-REPOLL",
+                    "generated_at": datetime.now().isoformat(),
+                    "ai_video_blueprints": [
+                        {
+                            "title": "Claims Confidence",
+                            "format": "Short vertical explainer",
+                            "voiceover_style": "Clear and calm",
+                            "storyboard": [
+                                "Show a customer opening the claims portal.",
+                                "Explain review and payout milestones.",
+                            ],
+                        }
+                    ],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "stub"},
+                "assets_created": [],
+            },
+            "published_campaigns": [],
+            "social_connections": {},
+        }
+
+        status, create_resp = _json_request(
+            base + "/api/admin/media/video-jobs",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": "MKT-TEST-REPOLL",
+                "blueprint_index": 0,
+                "provider": "kling",
+                "poll_mode": "poll",
+            },
+        )
+        assert status == 202
+
+        final_job = None
+        for _ in range(30):
+            time.sleep(0.25)
+            status, jobs_resp = _json_request(
+                base + "/api/admin/media/video-jobs?campaign_id=MKT-TEST-REPOLL",
+                token=token,
+            )
+            assert status == 200
+            final_job = jobs_resp["jobs"][0]
+            if final_job.get("status") == "completed":
+                break
+
+        assert final_job is not None
+        assert final_job["status"] == "completed"
+        assert final_job["generated_asset_id"]
+        assert final_job["download_url"] == f"/api/media/{final_job['generated_asset_id']}/download"
+        assert len(stub_service.polls) >= 2
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
 def test_marketing_generate_route_persists_latest_campaign_for_video_agents():
     port = 8295
     srv = ServerThread(port)
@@ -620,3 +736,79 @@ def test_kling_jwt_from_access_secret_is_hs256_and_contains_issuer():
     assert decoded_payload["iss"] == "AK-123"
     assert decoded_payload["exp"] == 1_700_001_800
     assert decoded_payload["nbf"] == 1_699_999_995
+
+
+def test_generated_video_download_route_serves_inline_media_payload():
+    port = 8298
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_download"
+    _inject_session(token, "media_admin_download", "admin")
+
+    try:
+        asset_id = "media-generated-download"
+        portal.MEDIA_ASSETS[asset_id] = {
+            "id": asset_id,
+            "name": "kling-demo.mp4",
+            "type": "video",
+            "format": "video/mp4",
+            "size": 12,
+            "url": "",
+            "data": "data:video/mp4;base64,cGhpbnMtdmlkZW8=",
+            "source": "ai_video_generation",
+            "uploaded_at": datetime.now().isoformat(),
+            "uploaded_by": "media_admin_download",
+        }
+
+        req = Request(base + f"/api/media/{asset_id}/download", headers={"Authorization": f"Bearer {token}"})
+        with urlopen(req) as resp:
+            body = resp.read()
+            headers = dict(resp.headers)
+
+        assert resp.status == 200
+        assert body == b"phins-video"
+        assert headers["Content-Type"].startswith("video/mp4")
+        assert 'filename="kling-demo.mp4"' in headers["Content-Disposition"]
+    finally:
+        srv.stop()
+
+
+def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "api-key-1")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["url"] = request.full_url
+        captured["headers"] = dict(request.header_items())
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({"task_id": "task-123"}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="A calm claims explainer video for policyholders",
+        title="Claims explainer",
+        model="kling-v2.6-pro",
+        aspect_ratio="9:16",
+        duration_seconds=8,
+        callback_url="https://phins.example.com/api/provider/media-processing/callback?job_id=1&token=abc",
+    )
+
+    assert result["provider"] == "kling"
+    assert result["provider_job_id"] == "task-123"
+    assert captured["url"] == "https://api.klingapi.com/v1/videos/text2video"
+    assert captured["headers"]["Authorization"] == "Bearer api-key-1"
+    assert captured["body"]["model"] == "kling-v2.6-pro"
+    assert captured["body"]["mode"] == "professional"
+    assert captured["body"]["duration"] == 10
+    assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")

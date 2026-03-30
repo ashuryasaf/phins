@@ -40,7 +40,7 @@ class MediaGenerationService:
         self._kling_api_key = os.environ.get("KLING_API_KEY", "").strip()
         self._kling_access_key = os.environ.get("KLING_ACCESS_KEY", "").strip()
         self._kling_secret_key = os.environ.get("KLING_SECRET_KEY", "").strip()
-        self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingai.com").strip().rstrip("/")
+        self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingapi.com").strip().rstrip("/")
         self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
         self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
 
@@ -296,22 +296,23 @@ class MediaGenerationService:
             "model": selected_model,
             "prompt": prompt,
             "aspect_ratio": aspect_ratio or "16:9",
-            "duration": int(max(1, duration_seconds or 8)),
-            "title": title,
+            "duration": self._normalize_kling_duration(duration_seconds),
         }
+        mode = self._kling_generation_mode(selected_model)
+        if mode:
+            body["mode"] = mode
         image_payload = self._parse_data_url(image_data_url)
         endpoint_path = self._kling_text_to_video_path
         if image_payload:
             endpoint_path = self._kling_image_to_video_path
-            body["image"] = {
-                "data": image_payload["bytes_b64"],
-                "mime_type": image_payload["mime_type"],
-            }
-        if metadata:
-            body["metadata"] = metadata
+            body["image"] = image_payload["bytes_b64"]
+        elif str(image_data_url or "").strip():
+            parsed_image_url = urllib.parse.urlparse(str(image_data_url).strip())
+            if parsed_image_url.scheme in {"http", "https"} and parsed_image_url.netloc:
+                endpoint_path = self._kling_image_to_video_path
+                body["image"] = str(image_data_url).strip()
         if callback_url:
-            body.setdefault("metadata", {})
-            body["metadata"]["phins_callback_url"] = callback_url
+            body["callBackUrl"] = callback_url
 
         url = f"{self._kling_base_url}{endpoint_path}"
         payload = json.dumps(body).encode("utf-8")
@@ -378,7 +379,7 @@ class MediaGenerationService:
             or ""
         ).strip().lower()
 
-        if status_value in {"queued", "pending", "submitted", "processing", "running", "in_progress"}:
+        if status_value in {"queued", "pending", "submitted", "processing", "running", "in_progress", "generating", "created"}:
             return {
                 "status": "processing",
                 "message": "Kling is still generating the video.",
@@ -389,7 +390,7 @@ class MediaGenerationService:
                 },
             }
 
-        if status_value in {"failed", "error", "cancelled"}:
+        if status_value in {"failed", "error", "cancelled", "aborted", "rejected"}:
             return {
                 "status": "failed",
                 "error": str(data.get("error_message") or data.get("message") or "Kling generation failed"),
@@ -400,15 +401,7 @@ class MediaGenerationService:
                 },
             }
 
-        outputs = data.get("outputs") if isinstance(data.get("outputs"), list) else []
-        first_output = outputs[0] if outputs else {}
-        download_url = str(
-            first_output.get("url")
-            or first_output.get("download_url")
-            or data.get("video_url")
-            or data.get("url")
-            or ""
-        ).strip()
+        download_url = self._extract_kling_download_url(data)
         if not download_url:
             raise MediaGenerationError("Kling generation completed without a downloadable video URL")
 
@@ -425,6 +418,48 @@ class MediaGenerationService:
 
     def _build_kling_status_url(self, provider_job_id: str) -> str:
         return f"{self._kling_base_url}/v1/videos/{urllib.parse.quote(provider_job_id, safe='')}"
+
+    @staticmethod
+    def _normalize_kling_duration(duration_seconds: int) -> int:
+        requested_seconds = int(duration_seconds or 5)
+        return 5 if requested_seconds <= 5 else 10
+
+    @staticmethod
+    def _kling_generation_mode(model_name: str) -> str:
+        normalized = str(model_name or "").strip().lower()
+        if normalized.endswith("-pro"):
+            return "professional"
+        if normalized.endswith("-std") or normalized.endswith("-standard"):
+            return "standard"
+        return ""
+
+    @staticmethod
+    def _extract_kling_download_url(data: Dict[str, Any]) -> str:
+        outputs = data.get("outputs") if isinstance(data.get("outputs"), list) else []
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            nested_video = output.get("video") if isinstance(output.get("video"), dict) else {}
+            candidate = str(
+                output.get("url")
+                or output.get("download_url")
+                or output.get("video_url")
+                or nested_video.get("url")
+                or nested_video.get("download_url")
+                or ""
+            ).strip()
+            if candidate:
+                return candidate
+
+        video_payload = data.get("video") if isinstance(data.get("video"), dict) else {}
+        return str(
+            data.get("video_url")
+            or data.get("download_url")
+            or data.get("url")
+            or video_payload.get("url")
+            or video_payload.get("download_url")
+            or ""
+        ).strip()
 
     def _kling_credentials_available(self) -> bool:
         return bool(self._kling_api_key) or bool(self._kling_access_key and self._kling_secret_key)

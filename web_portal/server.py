@@ -1234,6 +1234,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'provider_operation_name': job.get('provider_operation_name', ''),
         'provider_status': job.get('provider_status', ''),
         'provider_model': job.get('provider_model', ''),
+        'download_url': job.get('download_url', ''),
         'progress_pct': safe_int(job.get('progress_pct'), 0),
     }
     if include_callback:
@@ -1261,6 +1262,11 @@ def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
 def media_asset_url(asset: Dict[str, Any]) -> str:
     """Resolve the best available playback/download URL for a media asset."""
     return str(asset.get('url') or asset.get('data') or '').strip()
+
+
+def build_media_asset_download_url(asset_id: str) -> str:
+    """Return the authenticated download route for a generated media asset."""
+    return f"/api/media/{asset_id}/download"
 
 
 def get_media_asset_playback_url(asset_id: str) -> str:
@@ -1329,6 +1335,47 @@ def persist_media_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
     asset['format'] = asset.get('format') or mime_type
     asset['size'] = safe_int(asset.get('size') or len(payload_bytes), len(payload_bytes))
     return asset
+
+
+def infer_media_asset_filename(asset: Dict[str, Any], fallback_stem: str = 'media_asset') -> str:
+    """Create a stable attachment filename for a media asset download."""
+    asset_id = str(asset.get('id') or fallback_stem).strip() or fallback_stem
+    raw_name = str(asset.get('name') or '').strip()
+    stem = safe_ascii_filename_stem(raw_name or asset_id, fallback=asset_id)
+    extension = ''
+    if '.' in raw_name:
+        candidate_extension = raw_name.rsplit('.', 1)[-1].strip().lower()
+        if candidate_extension and re.fullmatch(r'[a-z0-9]{1,8}', candidate_extension):
+            extension = candidate_extension
+    if not extension:
+        content_type = str(asset.get('format') or '').split(';', 1)[0].strip().lower()
+        inferred_extension = {
+            'video/mp4': 'mp4',
+            'video/webm': 'webm',
+            'image/png': 'png',
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/gif': 'gif',
+            'application/pdf': 'pdf',
+            'text/plain': 'txt',
+        }.get(content_type, '')
+        extension = inferred_extension
+    return f'{stem}.{extension}' if extension else stem
+
+
+def derive_request_base_url(handler: Any) -> str:
+    """Resolve the best public base URL for provider callbacks and links."""
+    configured_base = str(os.environ.get('WEBHOOK_BASE_URL') or os.environ.get('BASE_URL') or '').strip().rstrip('/')
+    if configured_base:
+        return configured_base
+
+    forwarded_proto = str(handler.headers.get('X-Forwarded-Proto') or '').split(',', 1)[0].strip()
+    forwarded_host = str(handler.headers.get('X-Forwarded-Host') or '').split(',', 1)[0].strip()
+    host = forwarded_host or str(handler.headers.get('Host') or '').split(',', 1)[0].strip()
+    if host:
+        scheme = forwarded_proto or ('https' if '.railway.app' in host or '.phins.ai' in host else 'http')
+        return f'{scheme}://{host}'.rstrip('/')
+    return ''
 
 
 def get_media_subtitle_tracks(asset: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1833,6 +1880,11 @@ def create_media_video_job(
 ) -> Dict[str, Any]:
     """Create and submit a provider-backed video generation job."""
     service = get_media_generation_service()
+    requested_at = datetime.now().isoformat()
+    job_id = f"mjob-{uuid.uuid4().hex[:12]}"
+    callback_token = secrets.token_urlsafe(18)
+    callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
+    callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
     prompt_override = str(prompt_override or '').strip()
     prompt_parts = [
         prompt_override,
@@ -1861,7 +1913,7 @@ def create_media_video_job(
         duration_seconds=8,
         resolution='720p',
         image_data_url=image_data_url,
-        callback_url=f"{callback_base_url.rstrip('/')}/api/provider/media-processing/callback" if callback_base_url else '',
+        callback_url=callback_url if callback_base_url else '',
         metadata={
             'campaign_id': campaign_id,
             'blueprint_index': blueprint_index,
@@ -1869,11 +1921,6 @@ def create_media_video_job(
         },
     )
 
-    requested_at = datetime.now().isoformat()
-    job_id = f"mjob-{uuid.uuid4().hex[:12]}"
-    callback_token = secrets.token_urlsafe(18)
-    callback_path = f"/api/provider/media-processing/callback?job_id={job_id}&token={callback_token}"
-    callback_url = f"{callback_base_url.rstrip('/')}{callback_path}" if callback_base_url else callback_path
     job = {
         'id': job_id,
         'job_kind': 'video_generation',
@@ -1996,7 +2043,7 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
     job['completed_at'] = uploaded_at
     job['error'] = None
     job['message'] = str(poll_result.get('message') or 'Generated video saved to media library.')
-    job['download_url'] = download_url
+    job['download_url'] = build_media_asset_download_url(asset_id)
     if job.get('auto_publish_to_hero'):
         DESIGN_SETTINGS['hero_video_id'] = asset_id
         DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
@@ -2016,7 +2063,7 @@ def poll_and_finalize_media_video_job(job_id: str) -> None:
         return
     if str(job.get('job_kind') or '') != 'video_generation':
         return
-    if str(job.get('status') or '') in {'completed', 'failed'}:
+    if str(job.get('status') or '') in {'completed', 'failed', 'cancelled'}:
         return
 
     service = get_media_generation_service()
@@ -2028,6 +2075,8 @@ def poll_and_finalize_media_video_job(job_id: str) -> None:
         )
         update_video_generation_job_state(job, poll_result)
         finalize_media_video_job(job, poll_result)
+        if str(job.get('status') or '').strip().lower() in {'queued', 'processing'}:
+            start_media_job_polling(job_id, delay_seconds=5)
     except MediaGenerationError as exc:
         job['status'] = 'failed'
         job['completed_at'] = datetime.now().isoformat()
@@ -7042,6 +7091,46 @@ For claims or questions, please contact:
                 self.send_header('Content-Length', str(len(srt_content)))
                 self.end_headers()
                 self.wfile.write(srt_content)
+                return
+
+            if len(path_parts) >= 5 and path_parts[4] == 'download':
+                asset_id = path_parts[3]
+                asset = MEDIA_ASSETS.get(asset_id)
+                if not asset:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                    return
+
+                file_path = str(asset.get('file_path') or '').strip()
+                payload_bytes = b''
+                if file_path:
+                    try:
+                        with open(file_path, 'rb') as handle:
+                            payload_bytes = handle.read()
+                    except OSError:
+                        payload_bytes = b''
+                if not payload_bytes:
+                    data_url = str(asset.get('data') or '').strip()
+                    if not data_url:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Media asset has no downloadable payload'}).encode('utf-8'))
+                        return
+                    try:
+                        payload_bytes, mime_type = decode_media_data_url(data_url)
+                    except Exception:
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({'error': 'Media asset payload is invalid'}).encode('utf-8'))
+                        return
+                else:
+                    mime_type = str(asset.get('format') or 'application/octet-stream').split(';', 1)[0].strip() or 'application/octet-stream'
+
+                filename = infer_media_asset_filename(asset, fallback_stem=asset_id)
+                self.send_response(200)
+                self.send_header('Content-Type', mime_type)
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('Content-Length', str(len(payload_bytes)))
+                self.end_headers()
+                self.wfile.write(payload_bytes)
                 return
 
             if len(path_parts) >= 5 and path_parts[4] == 'subtitles':
@@ -18864,7 +18953,7 @@ For claims or questions, please contact:
             campaign_id = str(data.get('campaign_id') or '').strip()
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
-            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            callback_base_url = str(data.get('callback_base_url') or '').strip() or derive_request_base_url(self)
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
@@ -18947,7 +19036,7 @@ For claims or questions, please contact:
             blueprint_index = safe_int(data.get('blueprint_index'), -1)
             provider = str(data.get('provider') or DEFAULT_MEDIA_VIDEO_PROVIDER).strip().lower() or DEFAULT_MEDIA_VIDEO_PROVIDER
             provider_model = str(data.get('provider_model') or '').strip()
-            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            callback_base_url = str(data.get('callback_base_url') or '').strip() or derive_request_base_url(self)
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
@@ -19057,7 +19146,7 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
 
-            callback_base_url = str(data.get('callback_base_url') or '').strip()
+            callback_base_url = str(data.get('callback_base_url') or '').strip() or derive_request_base_url(self)
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             try:
                 retried_job = retry_media_video_job(
