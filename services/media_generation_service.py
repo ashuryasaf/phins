@@ -348,9 +348,18 @@ class MediaGenerationService:
         except urllib.error.HTTPError as exc:
             provider_error = self._read_provider_error_body(exc)
             detail = self._extract_provider_error_message(provider_error)
+            service_code = self._extract_provider_error_code(provider_error)
+            request_id = self._extract_provider_request_id(provider_error)
             message = f"Kling generation request failed with HTTP {exc.code}"
             if detail:
                 message += f": {detail}"
+            context = []
+            if service_code:
+                context.append(f"service_code={service_code}")
+            if request_id:
+                context.append(f"request_id={request_id}")
+            if context:
+                message += f" ({', '.join(context)})"
             raise MediaGenerationError(message) from exc
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
@@ -399,9 +408,18 @@ class MediaGenerationService:
         except urllib.error.HTTPError as exc:
             provider_error = self._read_provider_error_body(exc)
             detail = self._extract_provider_error_message(provider_error)
+            service_code = self._extract_provider_error_code(provider_error)
+            request_id = self._extract_provider_request_id(provider_error)
             message = f"Kling status polling failed with HTTP {exc.code}"
             if detail:
                 message += f": {detail}"
+            context = []
+            if service_code:
+                context.append(f"service_code={service_code}")
+            if request_id:
+                context.append(f"request_id={request_id}")
+            if context:
+                message += f" ({', '.join(context)})"
             raise MediaGenerationError(message) from exc
 
         data = body.get("data") if isinstance(body.get("data"), dict) else body
@@ -530,15 +548,33 @@ class MediaGenerationService:
             return _truncate_error_detail(payload)
         return ""
 
+    @staticmethod
+    def _extract_provider_error_code(payload: Any) -> str:
+        if isinstance(payload, dict):
+            for key in ("service_code", "code", "error_code"):
+                value = payload.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+        return ""
+
+    @staticmethod
+    def _extract_provider_request_id(payload: Any) -> str:
+        if isinstance(payload, dict):
+            for key in ("request_id", "requestId", "trace_id", "traceId"):
+                value = payload.get(key)
+                if value is not None and str(value).strip():
+                    return _truncate_error_detail(str(value).strip(), limit=120)
+        return ""
+
     def _kling_authorization_header(self) -> str:
-        if self._kling_api_key:
-            return f"Bearer {self._kling_api_key}"
         if self._kling_access_key and self._kling_secret_key:
             jwt_token = self._build_kling_access_secret_jwt(
                 access_key=self._kling_access_key,
                 secret_key=self._kling_secret_key,
             )
             return f"Bearer {jwt_token}"
+        if self._kling_api_key:
+            return f"Bearer {self._kling_api_key}"
         raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
 
     @staticmethod

@@ -713,6 +713,18 @@ def test_kling_provider_enabled_with_access_secret_credentials(monkeypatch):
     assert capabilities["kling"]["enabled"] is True
 
 
+def test_kling_access_secret_credentials_take_priority_over_api_key(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "legacy-api-key")
+    monkeypatch.setenv("KLING_ACCESS_KEY", "access-key-1")
+    monkeypatch.setenv("KLING_SECRET_KEY", "secret-key-1")
+
+    service = media_generation_service.MediaGenerationService()
+    authorization = service._kling_authorization_header()
+
+    assert authorization.startswith("Bearer ")
+    assert authorization != "Bearer legacy-api-key"
+
+
 def test_kling_credentials_are_trimmed_from_environment(monkeypatch):
     monkeypatch.setenv("KLING_API_KEY", "  ")
     monkeypatch.setenv("KLING_ACCESS_KEY", "  access-key-1  ")
@@ -869,6 +881,8 @@ def test_kling_submit_surfaces_sanitized_provider_error_details(monkeypatch):
         message = str(exc)
         assert "Kling generation request failed with HTTP 400" in message
         assert "duration must be 5 or 10" in message
+        assert "service_code=40017" in message
+        assert "request_id=req-123" in message
         assert "api-key-1" not in message
 
     assert request_payloads
