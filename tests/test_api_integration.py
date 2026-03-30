@@ -1087,8 +1087,90 @@ def test_bi_actuary_endpoint():
     assert 'average_premium' in data
     assert 'risk_distribution' in data
     assert 'claims_ratio' in data
+    assert 'reinsurance' in data
     
     srv.stop()
+
+
+def test_reinsurance_simulation_binding_updates_balance_sheet():
+    """Simulation-backed reinsurance binding should book balance-sheet expense."""
+    port = 8152
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/login", {
+        "username": "admin",
+        "password": "admin123"
+    })
+    admin_token = json.loads(body)['token']
+
+    try:
+        sim_body, sim_status = _post(base + "/api/actuarial/simulate", {
+            "customer_count": 5000,
+            "age_min": 25,
+            "age_max": 55,
+            "age_mean": 39,
+            "age_std": 8,
+            "coverage_min": 100000,
+            "coverage_max": 500000,
+            "coverage_median": 220000,
+            "policy_term_min": 10,
+            "policy_term_max": 20,
+            "policy_term_mode": "random",
+            "male_pct": 49,
+            "female_pct": 51,
+            "ethnicity": {
+                "caucasian": 60,
+                "african": 13,
+                "hispanic": 18,
+                "asian": 6,
+                "other": 3
+            }
+        }, admin_token)
+        assert sim_status == 200
+        sim_payload = json.loads(sim_body)
+        simulation = sim_payload["simulation"]
+        simulation_id = simulation["simulation_id"]
+        assert simulation["reinsurance_program"]["selected_contracts"] > 0
+
+        rec_body, rec_status = _get(
+            base + f"/api/reinsurance/recommendation?simulation_id={simulation_id}&contract_count=1000&hedge_share_pct=30&objective=min_cost",
+            admin_token
+        )
+        assert rec_status == 200
+        rec_payload = json.loads(rec_body)
+        assert rec_payload["success"] is True
+        recommended = rec_payload["recommended"]
+        assert recommended["phins_simulation_id"] == simulation_id
+        assert recommended["phins_total_contract_cost"] > 0
+
+        bind_body, bind_status = _post(base + "/api/reinsurance/contracts/bind", {
+            "contract_name": "Simulation Treaty",
+            "portfolio_id": simulation_id,
+            "quote": recommended
+        }, admin_token)
+        assert bind_status == 201
+        bind_payload = json.loads(bind_body)
+        assert bind_payload["success"] is True
+        assert bind_payload["simulation_id"] == simulation_id
+        assert bind_payload["balance_sheet_transaction"]["category"] == "reinsurance"
+        assert bind_payload["balance_sheet_transaction"]["amount"] > 0
+
+        bs_body, bs_status = _get(base + "/api/admin/balance-sheet", admin_token)
+        assert bs_status == 200
+        balance_sheet = json.loads(bs_body)["balance_sheet"]
+        assert balance_sheet["expense_breakdown"]["reinsurance"] >= bind_payload["balance_sheet_transaction"]["amount"]
+
+        bi_body, bi_status = _get(base + "/api/bi/actuary", admin_token)
+        assert bi_status == 200
+        bi_payload = json.loads(bi_body)
+        assert bi_payload["reinsurance"]["annual_expense_booked"] >= bind_payload["balance_sheet_transaction"]["amount"]
+        assert bi_payload["reinsurance"]["latest_program"]["selected_contracts"] > 0
+    finally:
+        srv.stop()
 
 
 def test_bi_underwriting_endpoint():
