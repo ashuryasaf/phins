@@ -50,3 +50,11 @@ def test_claims_server_enforces_claims_auth_and_state_transitions():
     assert "cleaned.pop('evidence', None)" in content
     assert "Claim has already been paid" in content
 
+def test_ui_clarity_injection_skips_script_blocks():
+    content = SERVER_PATH.read_text(encoding="utf-8")
+
+    # Ensure UI-clarity injection targets the last real body close tag.
+    assert "def _inject_ui_clarity_script(html_content: str) -> str:" in content
+    assert "Some static pages contain \"</body>\" inside JavaScript template literals." in content
+    assert "body_close_regex = re.compile(r'</body\\s*>', flags=re.IGNORECASE)" in content
+    assert "matches = list(body_close_regex.finditer(html_content))" in content

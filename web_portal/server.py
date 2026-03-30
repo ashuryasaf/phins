@@ -26,6 +26,7 @@ import time
 import csv
 import io
 import tempfile
+import re
 from typing import Dict, Any, Tuple, Optional, List
 
 # Ensure repository-root imports work when the server is executed as a script
@@ -5307,6 +5308,27 @@ def sanitize_claim_probability_report(report: Dict[str, Any]) -> Dict[str, Any]:
         sanitized['fraud_indicators'] = fraud_section
     return sanitized
 
+def _inject_ui_clarity_script(html_content: str) -> str:
+    """
+    Inject shared UI script before the real closing </body> tag.
+
+    Some static pages contain "</body>" inside JavaScript template literals.
+    A naive .replace('</body>', ...) can corrupt script blocks and break pages.
+    """
+    if not html_content or 'ui-clarity.js' in html_content.lower():
+        return html_content
+
+    inject_tag = '<script src="/ui-clarity.js"></script>'
+    body_close_regex = re.compile(r'</body\s*>', flags=re.IGNORECASE)
+    matches = list(body_close_regex.finditer(html_content))
+    if matches:
+        last = matches[-1]
+        return (
+            html_content[:last.start()]
+            + f'  {inject_tag}\n'
+            + html_content[last.start():]
+        )
+    return f'{html_content}\n{inject_tag}\n'
 # Keep this aligned with front-end accepted document/media uploads.
 ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
     '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
@@ -8494,7 +8516,6 @@ For claims or questions, please contact:
             db_url = os.environ.get('DATABASE_URL', '')
             if db_url:
                 # Show URL format (hide password)
-                import re
                 safe_url = re.sub(r':([^:@]+)@', ':****@', db_url)
                 result['database_url_format'] = safe_url
                 
@@ -18228,13 +18249,7 @@ For claims or questions, please contact:
                     with open(file_path, 'r', encoding='utf-8') as fh:
                         html_content = fh.read()
                     # Inject shared UI clarity/voice quick-actions script on all HTML pages.
-                    # Avoid duplicate insertion if page already includes the script.
-                    if 'ui-clarity.js' not in html_content.lower():
-                        inject_tag = '<script src="/ui-clarity.js"></script>'
-                        if '</body>' in html_content:
-                            html_content = html_content.replace('</body>', f'  {inject_tag}\n</body>', 1)
-                        else:
-                            html_content = f'{html_content}\n{inject_tag}\n'
+                    html_content = _inject_ui_clarity_script(html_content)
                     self.wfile.write(html_content.encode('utf-8'))
                 else:
                     with open(file_path, 'rb') as fh:
