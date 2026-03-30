@@ -294,6 +294,7 @@ class MediaGenerationService:
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
         body: Dict[str, Any] = {
             "model": selected_model,
+            "model_name": selected_model,
             "prompt": prompt,
             "aspect_ratio": aspect_ratio or "16:9",
             "duration": self._normalize_kling_duration(duration_seconds),
@@ -306,11 +307,13 @@ class MediaGenerationService:
         if image_payload:
             endpoint_path = self._kling_image_to_video_path
             body["image"] = image_payload["bytes_b64"]
+            body["image_url"] = image_payload["bytes_b64"]
         elif str(image_data_url or "").strip():
             parsed_image_url = urllib.parse.urlparse(str(image_data_url).strip())
             if parsed_image_url.scheme in {"http", "https"} and parsed_image_url.netloc:
                 endpoint_path = self._kling_image_to_video_path
                 body["image"] = str(image_data_url).strip()
+                body["image_url"] = str(image_data_url).strip()
         if callback_url:
             body["callBackUrl"] = callback_url
 
