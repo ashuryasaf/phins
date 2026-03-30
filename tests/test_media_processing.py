@@ -806,7 +806,7 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
 
     assert result["provider"] == "kling"
     assert result["provider_job_id"] == "task-123"
-    assert captured["url"] == "https://api.klingapi.com/v1/videos/text2video"
+    assert captured["url"] == "https://api-singapore.klingai.com/v1/videos/text2video"
     assert captured["headers"]["Authorization"] == "Bearer api-key-1"
     assert captured["body"]["model"] == "kling-v2.6-pro"
     assert captured["body"]["model_name"] == "kling-v2.6-pro"
@@ -840,7 +840,7 @@ def test_kling_image_submit_includes_compatible_image_fields(monkeypatch):
     )
 
     assert result["provider_job_id"] == "task-456"
-    assert captured["url"] == "https://api.klingapi.com/v1/videos/image2video"
+    assert captured["url"] == "https://api-singapore.klingai.com/v1/videos/image2video"
     assert captured["body"]["model"] == "kling-v2.6-std"
     assert captured["body"]["model_name"] == "kling-v2.6-std"
     assert captured["body"]["mode"] == "standard"

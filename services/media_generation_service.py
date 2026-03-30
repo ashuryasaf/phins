@@ -40,7 +40,7 @@ class MediaGenerationService:
         self._kling_api_key = os.environ.get("KLING_API_KEY", "").strip()
         self._kling_access_key = os.environ.get("KLING_ACCESS_KEY", "").strip()
         self._kling_secret_key = os.environ.get("KLING_SECRET_KEY", "").strip()
-        self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingapi.com").strip().rstrip("/")
+        self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api-singapore.klingai.com").strip().rstrip("/")
         self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
         self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
 
