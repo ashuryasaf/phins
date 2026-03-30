@@ -50,3 +50,13 @@ def test_claims_server_enforces_claims_auth_and_state_transitions():
     assert "cleaned.pop('evidence', None)" in content
     assert "Claim has already been paid" in content
 
+
+def test_ui_clarity_injection_skips_script_blocks():
+    content = SERVER_PATH.read_text(encoding="utf-8")
+
+    # Ensure UI-clarity injection targets the last real body close tag.
+    assert "Inject shared UI clarity/voice quick-actions script on all HTML pages." in content
+    assert "re.finditer(r'</body>', html_content, flags=re.IGNORECASE)" in content
+    assert "last_match = body_close_matches[-1]" in content
+    assert "idx = last_match.start()" in content
+
