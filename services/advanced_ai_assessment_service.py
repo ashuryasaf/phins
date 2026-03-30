@@ -118,6 +118,17 @@ class AdvancedAIAssessmentService:
             return "medium"
         return "low"
 
+    def _apply_flag_bonus(
+        self,
+        risk_score: float,
+        flags: List[str],
+        *,
+        per_flag: float,
+        max_bonus: float,
+    ) -> float:
+        bonus = min(max_bonus, max(0, len(set(flags)) - 2) * per_flag)
+        return risk_score + bonus
+
     def _build_reasoning_summary(self, findings: List[str]) -> str:
         if not findings:
             return "Assessment completed with limited supporting evidence."
@@ -478,6 +489,14 @@ class AdvancedAIAssessmentService:
         if not findings:
             findings.append("No elevated risk indicators were detected in the uploaded document.")
 
+        adjusted_risk_score = self._apply_flag_bonus(
+            risk_score,
+            flags,
+            per_flag=0.02,
+            max_bonus=0.09,
+        )
+        adjusted_risk_level = self._derive_risk_level(adjusted_risk_score)
+
         if "AUTHENTICITY_REQUIRES_INQUIRY" in flags or "AUTHENTICITY_UNVERIFIABLE" in flags:
             recommendation = "hold_pending_verification"
         elif "DEATH_CERTIFICATE" in flags:
@@ -490,13 +509,13 @@ class AdvancedAIAssessmentService:
                 "high": "refer_manual_review",
                 "medium": "approve_conditional",
                 "low": "approve",
-            }[self._derive_risk_level(risk_score)]
+            }[adjusted_risk_level]
 
         bi_insights = self._build_document_bi_insights(
             document_type=document_type,
             entity_type=entity_type,
-            risk_level=self._derive_risk_level(risk_score),
-            risk_score=risk_score,
+            risk_level=adjusted_risk_level,
+            risk_score=adjusted_risk_score,
             flags=flags,
             affiliated_context=affiliated_context,
         )
@@ -504,7 +523,7 @@ class AdvancedAIAssessmentService:
         return self._finalize_assessment(
             process="claims" if entity_type == "claim" else "underwriting" if entity_type == "underwriting" else "document",
             entity_type=entity_type,
-            risk_score=risk_score + min(0.09, max(0, len(set(flags)) - 2) * 0.02),
+            risk_score=adjusted_risk_score,
             flags=flags,
             findings=findings,
             recommendation=recommendation,
@@ -583,12 +602,20 @@ class AdvancedAIAssessmentService:
         if not findings:
             findings.append("The application data supports standard underwriting review with no major anomalies.")
 
+        adjusted_risk_score = self._apply_flag_bonus(
+            risk_score,
+            flags,
+            per_flag=0.015,
+            max_bonus=0.08,
+        )
+        adjusted_risk_level = self._derive_risk_level(adjusted_risk_score)
+
         recommendation = {
             "very_high": "decline_or_senior_review",
             "high": "refer_manual_review",
             "medium": "approve_conditional",
             "low": "approve",
-        }[self._derive_risk_level(risk_score)]
+        }[adjusted_risk_level]
 
         bi_insights = {
             "underwriting_impact": {
@@ -600,7 +627,7 @@ class AdvancedAIAssessmentService:
                 ),
             },
             "pricing_signal": {
-                "recommended_review_band": self._derive_risk_level(risk_score),
+                "recommended_review_band": adjusted_risk_level,
                 "medical_disclosures_present": "QUESTIONNAIRE_MEDICAL_DISCLOSURE" in flags,
             },
         }
@@ -608,7 +635,7 @@ class AdvancedAIAssessmentService:
         return self._finalize_assessment(
             process="underwriting",
             entity_type="underwriting",
-            risk_score=risk_score + min(0.08, max(0, len(set(flags)) - 2) * 0.015),
+            risk_score=adjusted_risk_score,
             flags=flags,
             findings=findings,
             recommendation=recommendation,
@@ -686,9 +713,11 @@ class AdvancedAIAssessmentService:
             risk_score = max(risk_score, max(item.get("risk_score", 0.0) for item in document_assessments))
             for item in document_assessments:
                 flags.extend(item.get("flags", []))
-            findings.append(
-                f"{sum(1 for item in document_assessments if item.get('risk_level') in ('high', 'very_high'))} attached file(s) triggered elevated review logic."
-            )
+            high_risk_docs = sum(1 for item in document_assessments if item.get("risk_level") in ("high", "very_high"))
+            if high_risk_docs:
+                findings.append(
+                    f"{high_risk_docs} attached file(s) triggered elevated review logic."
+                )
 
         if claim_type in ("death_benefit", "death", "life"):
             findings.append("Claim type suggests a life-event workflow with authority-document dependencies.")
@@ -698,7 +727,13 @@ class AdvancedAIAssessmentService:
             findings.append("Claim intake data supports standard adjudication with normal review depth.")
 
         recommendation = "standard_review"
-        risk_level = self._derive_risk_level(risk_score)
+        adjusted_risk_score = self._apply_flag_bonus(
+            risk_score,
+            flags,
+            per_flag=0.015,
+            max_bonus=0.08,
+        )
+        risk_level = self._derive_risk_level(adjusted_risk_score)
         if "AUTHENTICITY_REQUIRES_INQUIRY" in flags or "AUTHENTICITY_UNVERIFIABLE" in flags:
             recommendation = "hold_pending_verification"
         elif risk_level in ("high", "very_high"):
@@ -725,7 +760,7 @@ class AdvancedAIAssessmentService:
         return self._finalize_assessment(
             process="claims",
             entity_type="claim",
-            risk_score=risk_score + min(0.08, max(0, len(set(flags)) - 2) * 0.015),
+            risk_score=adjusted_risk_score,
             flags=flags,
             findings=findings,
             recommendation=recommendation,
@@ -769,8 +804,9 @@ class AdvancedAIAssessmentService:
 
         numeric_columns: Dict[str, List[float]] = {}
         missing_cells = 0
-        total_cells = max(row_count * max(column_count, 1), 1)
-        for row in rows[:500]:
+        sampled_rows = rows[:500]
+        total_cells = max(len(sampled_rows) * max(column_count, 1), 1)
+        for row in sampled_rows:
             if not isinstance(row, dict):
                 continue
             for column in columns:
