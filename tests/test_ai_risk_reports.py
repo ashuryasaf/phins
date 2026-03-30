@@ -588,6 +588,103 @@ class TestZipAffiliatedIntegrity(unittest.TestCase):
         self.assertGreaterEqual(summary.get('records_analyzed', 0), 2)
 
 
+class TestAggregateEvidenceGrounding(unittest.TestCase):
+    """Aggregate report generation should stay grounded in uploaded evidence."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_aggregate_analysis_combines_uploaded_documents(self):
+        csv_one = b"""policy_number,cover_amount,premium
+POL-3001,250000,450
+POL-3002,300000,510"""
+        csv_two = b"""id_number,savings_balance,provider
+123456782,12500,Provider A
+123456782,8300,Provider B"""
+
+        doc_one = self.service.parse_file(
+            'coverage_snapshot.csv',
+            csv_one,
+            'csv',
+            owner_id='CUST-OWNER-AGG',
+            owner_role='customer'
+        )
+        doc_two = self.service.parse_file(
+            'savings_snapshot.csv',
+            csv_two,
+            'csv',
+            owner_id='CUST-OWNER-AGG',
+            owner_role='customer'
+        )
+
+        analysis = self.service.analyze_documents([
+            doc_one['document_id'],
+            doc_two['document_id'],
+        ])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        self.assertTrue(str(analysis.document_id).startswith('DOC-COMB-'))
+        self.assertGreaterEqual(analysis.key_metrics.get('total_records', 0), 4)
+        self.assertTrue(analysis.source_evidence)
+        self.assertEqual(report.metadata.get('source_document_ids'), [doc_one['document_id'], doc_two['document_id']])
+        self.assertTrue(report.metadata.get('evidence_grounded'))
+        self.assertIn('uploaded file', analysis.summary.lower())
+
+    def test_grounded_report_suppresses_generic_statistical_section_when_evidence_exists(self):
+        csv_content = b"""policy_number,cover_amount,premium,status
+POL-4001,500000,780,active
+POL-4002,150000,330,pending"""
+
+        parse_result = self.service.parse_file(
+            'grounded_policy_report.csv',
+            csv_content,
+            'csv',
+            owner_id='CUST-OWNER-GROUND',
+            owner_role='customer'
+        )
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        section_titles = [section.title for section in report.sections]
+        self.assertIn('Demonstrated Evidence from Uploaded Files', section_titles)
+        self.assertNotIn('Statistical Analysis', section_titles)
+        evidence_section = next(section for section in report.sections if section.title == 'Demonstrated Evidence from Uploaded Files')
+        self.assertIn('Policy Number', evidence_section.content)
+        self.assertIn('POL-4001', evidence_section.content)
+        self.assertIn('Cover Amount', evidence_section.content)
+
+    def test_aggregate_report_access_respects_document_owner(self):
+        csv_one = b"""policy_number,cover_amount
+POL-5001,120000"""
+        csv_two = b"""policy_number,cover_amount
+POL-5002,180000"""
+
+        doc_one = self.service.parse_file(
+            'owner_one.csv',
+            csv_one,
+            'csv',
+            owner_id='CUST-OWNER-LOCK',
+            owner_role='customer'
+        )
+        doc_two = self.service.parse_file(
+            'owner_two.csv',
+            csv_two,
+            'csv',
+            owner_id='CUST-OWNER-LOCK',
+            owner_role='customer'
+        )
+
+        analysis = self.service.analyze_documents([doc_one['document_id'], doc_two['document_id']])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        allowed, _ = self.service.authorize_access('report', report.id, 'CUST-OWNER-LOCK', 'customer')
+        denied, error = self.service.authorize_access('report', report.id, 'CUST-OTHER-LOCK', 'customer')
+
+        self.assertTrue(allowed)
+        self.assertFalse(denied)
+        self.assertIn('own reports', error)
+
+
 class TestHebrewWorkflow(unittest.TestCase):
     """Test complete workflow with Hebrew data"""
     

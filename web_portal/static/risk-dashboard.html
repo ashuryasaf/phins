@@ -1539,7 +1539,7 @@
           throw new Error('No files could be analyzed');
         }
         
-        // Generate report from first successful analysis
+        // Generate one grounded report from all successful analyses
         processingMessage.textContent = 'Generating AI assessment report...';
         
         const selectedLanguage = document.getElementById('reportLanguage').value;
@@ -1552,7 +1552,7 @@
             'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
           },
           body: JSON.stringify({
-            analysis_id: allAnalyses[0].id,
+            analysis_ids: allAnalyses.map(item => item.id),
             language: language
           })
         });

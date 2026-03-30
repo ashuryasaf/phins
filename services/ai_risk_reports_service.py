@@ -139,6 +139,7 @@ class AnalysisResult:
     processing_time_ms: int
     summary: str
     key_metrics: Dict[str, Any]
+    source_evidence: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -1625,6 +1626,14 @@ class AIRiskReportsService:
         key_metrics = self._extract_key_metrics_advanced(
             rows, columns, data_type, column_profiles, correlations, domain_insights
         )
+        source_evidence = self._extract_source_evidence(
+            parsed,
+            rows,
+            hebrew_extracted,
+            domain_insights,
+            lang_code,
+            file_label=str(doc.get('filename') or document_id),
+        )
         
         processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
         
@@ -1643,7 +1652,8 @@ class AIRiskReportsService:
             confidence=min((lang_confidence + type_confidence) / 2, 1.0),
             processing_time_ms=processing_time,
             summary=summary,
-            key_metrics=key_metrics
+            key_metrics=key_metrics,
+            source_evidence=source_evidence,
         )
         
         self.analyses[analysis_id] = result
@@ -1651,6 +1661,225 @@ class AIRiskReportsService:
         # Auto-save for persistence
         self.save_data()
         
+        return result
+
+    def analyze_documents(self, document_ids: List[str]) -> AnalysisResult:
+        """
+        Create a single grounded analysis from multiple uploaded documents.
+        This keeps the assessment tied to the demonstrated uploaded evidence
+        instead of reporting from only the first successfully processed file.
+        """
+        normalized_ids = [
+            str(document_id).strip()
+            for document_id in (document_ids or [])
+            if str(document_id).strip()
+        ]
+        if not normalized_ids:
+            raise ValueError("At least one document_id is required")
+
+        owner_id = None
+        owner_role = None
+        combined_rows: List[Dict[str, Any]] = []
+        combined_columns: List[str] = []
+        combined_files: List[Dict[str, Any]] = []
+        combined_integrity_issues: List[str] = []
+        combined_source_evidence: List[Dict[str, Any]] = []
+        pension_data: Optional[Dict[str, Any]] = None
+        pension_report_blocks: List[str] = []
+        all_text_parts: List[str] = []
+        hebrew_extracted: Dict[str, Any] = {}
+        analysis_source_ids: List[str] = []
+
+        for document_id in normalized_ids:
+            doc = self.documents.get(document_id)
+            if not doc:
+                raise ValueError(f"Document {document_id} not found")
+            parsed = doc.get('parsed_data')
+            if not isinstance(parsed, dict):
+                raise ValueError(f"Document {document_id} is no longer available for analysis")
+
+            doc_owner_id = doc.get('owner_id')
+            doc_owner_role = doc.get('owner_role')
+            if owner_id is None:
+                owner_id = doc_owner_id
+                owner_role = doc_owner_role
+            elif owner_id != doc_owner_id:
+                raise ValueError("Documents from different owners cannot be analyzed together")
+
+            analysis_source_ids.append(document_id)
+            filename = str(doc.get('filename') or document_id)
+            rows = parsed.get('rows', [])
+            columns = parsed.get('columns', [])
+
+            for col in columns:
+                if col not in combined_columns:
+                    combined_columns.append(col)
+
+            if isinstance(rows, list):
+                combined_rows.extend(row for row in rows if isinstance(row, dict))
+
+            combined_files.append({
+                'document_id': document_id,
+                'name': filename,
+                'type': parsed.get('file_type') or doc.get('file_type') or '',
+                'row_count': len(rows) if isinstance(rows, list) else 0,
+                'column_count': len(columns) if isinstance(columns, list) else 0,
+            })
+
+            doc_integrity = parsed.get('integrity') if isinstance(parsed.get('integrity'), dict) else {}
+            for issue in doc_integrity.get('issues', []) if isinstance(doc_integrity.get('issues'), list) else []:
+                issue_text = str(issue).strip()
+                if issue_text and issue_text not in combined_integrity_issues:
+                    combined_integrity_issues.append(issue_text)
+
+            doc_pension_data = parsed.get('pension_data')
+            if isinstance(doc_pension_data, dict):
+                pension_data = self._merge_pension_data_records(pension_data, doc_pension_data)
+
+            doc_pension_report = str(parsed.get('pension_report') or '').strip()
+            if doc_pension_report:
+                pension_report_blocks.append(doc_pension_report)
+
+            text_bits = columns[:] if isinstance(columns, list) else []
+            if isinstance(rows, list):
+                for row in rows[:50]:
+                    if isinstance(row, dict):
+                        text_bits.extend(str(v) for v in row.values() if v)
+            combined_text = ' '.join(str(part) for part in text_bits if str(part).strip())
+            if combined_text:
+                all_text_parts.append(combined_text)
+
+            doc_hebrew = {}
+            if combined_text and re.search(r'[\u0590-\u05FF]', combined_text):
+                doc_hebrew = self._extract_hebrew_document_data(combined_text, rows if isinstance(rows, list) else [])
+                for key, value in doc_hebrew.items():
+                    if value and not hebrew_extracted.get(key):
+                        hebrew_extracted[key] = value
+
+            combined_source_evidence.extend(
+                self._extract_source_evidence(
+                    parsed,
+                    rows if isinstance(rows, list) else [],
+                    doc_hebrew,
+                    {},
+                    'hebrew' if doc_hebrew else 'english',
+                    file_label=filename,
+                )
+            )
+
+        all_text = ' '.join(all_text_parts)
+        lang_code, lang_name, lang_confidence = LanguageDetector.detect(all_text)
+        data_type, type_confidence = DataClassifier.classify(combined_columns, combined_rows)
+        if not hebrew_extracted and (lang_code == 'hebrew' or re.search(r'[\u0590-\u05FF]', all_text)):
+            hebrew_extracted = self._extract_hebrew_document_data(all_text, combined_rows)
+
+        column_profiles = self._profile_columns(combined_columns, combined_rows)
+        correlations = self._find_correlations(combined_columns, combined_rows, column_profiles)
+        factors = self._extract_factors_advanced(combined_columns, combined_rows, data_type, column_profiles)
+        if hebrew_extracted:
+            factors.extend(self._create_hebrew_document_factors(hebrew_extracted, lang_code))
+        patterns = self._find_patterns_advanced(combined_rows, data_type, column_profiles, correlations)
+        if hebrew_extracted:
+            patterns.extend(self._find_hebrew_patterns(hebrew_extracted))
+        anomalies = self._detect_anomalies_advanced(combined_rows, data_type, column_profiles)
+        domain_insights = self._generate_domain_insights(data_type, column_profiles, combined_rows, lang_code, hebrew_extracted)
+
+        combined_source_evidence.extend(
+            self._extract_source_evidence(
+                {
+                    'rows': combined_rows,
+                    'columns': combined_columns,
+                    'files': combined_files,
+                    'pension_data': pension_data,
+                },
+                combined_rows,
+                hebrew_extracted,
+                domain_insights,
+                lang_code,
+                file_label='combined upload set',
+            )
+        )
+        combined_source_evidence = self._dedupe_source_evidence(combined_source_evidence)
+
+        risk_score = self._calculate_grounded_risk_score(
+            factors,
+            patterns,
+            anomalies,
+            correlations,
+            domain_insights,
+            pension_data,
+            combined_integrity_issues,
+        )
+        summary = self._generate_grounded_summary(
+            lang_code,
+            data_type,
+            len(combined_rows),
+            combined_files,
+            risk_score,
+            domain_insights,
+            combined_source_evidence,
+            pension_data,
+            combined_integrity_issues,
+        )
+        key_metrics = self._extract_key_metrics_advanced(
+            combined_rows,
+            combined_columns,
+            data_type,
+            column_profiles,
+            correlations,
+            domain_insights,
+        )
+        key_metrics['source_document_count'] = len(combined_files)
+        key_metrics['source_documents'] = [file_info.get('name') for file_info in combined_files]
+        if combined_integrity_issues:
+            key_metrics['integrity_issues'] = combined_integrity_issues
+
+        analysis_id = f"ANA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        synthetic_doc_id = f"DOC-COMB-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        synthetic_doc = {
+            'document_id': synthetic_doc_id,
+            'filename': 'combined-risk-assessment',
+            'file_type': 'aggregate',
+            'file_size': 0,
+            'status': 'completed',
+            'parsed_data': {
+                'columns': combined_columns,
+                'rows': combined_rows,
+                'files': combined_files,
+                'file_type': 'aggregate',
+                'pension_data': pension_data,
+                'pension_report': '\n\n'.join(pension_report_blocks).strip(),
+                'integrity': {
+                    'issues': combined_integrity_issues,
+                    'source_document_ids': analysis_source_ids,
+                },
+                'source_evidence': combined_source_evidence,
+            },
+            'owner_id': owner_id,
+            'owner_role': owner_role,
+            'created_at': datetime.now().isoformat(),
+            'source_document_ids': analysis_source_ids,
+        }
+        self.documents[synthetic_doc_id] = synthetic_doc
+
+        result = AnalysisResult(
+            id=analysis_id,
+            document_id=synthetic_doc_id,
+            language=lang_code,
+            language_name=lang_name,
+            data_classification=data_type,
+            extracted_factors=factors,
+            patterns_found=patterns,
+            anomalies=anomalies,
+            risk_score=risk_score,
+            confidence=min((lang_confidence + type_confidence) / 2, 1.0),
+            processing_time_ms=0,
+            summary=summary,
+            key_metrics=key_metrics,
+            source_evidence=combined_source_evidence,
+        )
+        self.analyses[analysis_id] = result
+        self.save_data()
         return result
     
     # =========================================================================
@@ -2556,6 +2785,80 @@ class AIRiskReportsService:
                 summary += f"• {finding['finding']}: {finding['detail']}\n"
         
         return summary
+
+    def _generate_grounded_summary(
+        self,
+        lang: str,
+        data_type: DataType,
+        row_count: int,
+        files: List[Dict[str, Any]],
+        risk_score: float,
+        domain_insights: Dict[str, Any],
+        source_evidence: List[Dict[str, Any]],
+        pension_data: Optional[Dict[str, Any]],
+        integrity_issues: List[str],
+    ) -> str:
+        """Generate a report summary anchored in uploaded source evidence."""
+        risk_level = 'נמוך' if lang == 'hebrew' else 'Low'
+        if risk_score >= 60:
+            risk_level = 'גבוה' if lang == 'hebrew' else 'High'
+        elif risk_score >= 30:
+            risk_level = 'בינוני' if lang == 'hebrew' else 'Medium'
+
+        file_names = [str(file_info.get('name') or '').strip() for file_info in files if str(file_info.get('name') or '').strip()]
+        evidence_lines = []
+        for evidence in source_evidence[:4]:
+            label = str(evidence.get('label') or '').strip()
+            detail = str(evidence.get('detail') or '').strip()
+            source = str(evidence.get('source') or '').strip()
+            if label and detail:
+                suffix = f" ({source})" if source else ''
+                evidence_lines.append(f"• {label}: {detail}{suffix}")
+
+        if lang == 'hebrew':
+            lines = [
+                f"ניתוח מבוסס-מסמכים של {len(files)} קבצים שהועלו.",
+                f"• סוג הערכה: {data_type.value}",
+                f"• רשומות מודגמות שנותחו: {row_count}",
+                f"• רמת סיכון משוקללת: {risk_score:.0f}/100 ({risk_level})",
+            ]
+            if file_names:
+                lines.append(f"• מסמכים שנבחנו: {', '.join(file_names[:6])}")
+            if pension_data:
+                totals = pension_data.get('totals', {}) if isinstance(pension_data.get('totals'), dict) else {}
+                if totals.get('account_count'):
+                    lines.append(f"• נמצאו {totals.get('account_count')} מוצרים ו-{totals.get('provider_count', 0)} יצרנים בדוחות המסונפים")
+            if integrity_issues:
+                lines.append(f"• דגלי שלמות נתונים: {len(integrity_issues)}")
+            lines.append("")
+            lines.append("ממצאים מודגמים מהקבצים:")
+            lines.extend(evidence_lines or ["• לא נמצאו די ראיות מובנות בקבצים, ולכן ההערכה מוגבלת למה שחולץ בפועל."])
+        else:
+            lines = [
+                f"Document-grounded assessment based on {len(files)} uploaded file(s).",
+                f"• Assessment type: {data_type.value}",
+                f"• Demonstrated records analyzed: {row_count}",
+                f"• Weighted risk level: {risk_score:.0f}/100 ({risk_level})",
+            ]
+            if file_names:
+                lines.append(f"• Files reviewed: {', '.join(file_names[:6])}")
+            if pension_data:
+                totals = pension_data.get('totals', {}) if isinstance(pension_data.get('totals'), dict) else {}
+                if totals.get('account_count'):
+                    lines.append(f"• Affiliated reports show {totals.get('account_count')} products across {totals.get('provider_count', 0)} providers")
+            if integrity_issues:
+                lines.append(f"• Data integrity flags: {len(integrity_issues)}")
+            lines.append("")
+            lines.append("Evidence demonstrated in the uploaded files:")
+            lines.extend(evidence_lines or ["• No structured source evidence could be extracted beyond metadata, so the assessment is limited to demonstrated extracted content."])
+
+        for finding in domain_insights.get('key_findings', [])[:2]:
+            finding_text = str(finding.get('finding') or '').strip()
+            detail_text = str(finding.get('detail') or '').strip()
+            if finding_text:
+                lines.append(f"• {finding_text}{(': ' + detail_text) if detail_text else ''}")
+
+        return '\n'.join(lines)
     
     def _extract_key_metrics_advanced(self, rows: List[Dict], columns: List[str],
                                       data_type: DataType, profiles: Dict[str, Dict],
@@ -2820,11 +3123,12 @@ class AIRiskReportsService:
         
         # Retrieve original document data for content analysis
         doc_data = None
+        doc_record = None
         pension_data = None
         pension_report = None
         if analysis.document_id in self.documents:
-            doc = self.documents[analysis.document_id]
-            doc_data = doc.get('parsed_data', {})
+            doc_record = self.documents[analysis.document_id]
+            doc_data = doc_record.get('parsed_data', {})
             # Check for pension data from ZIP files
             if doc_data:
                 pension_data = doc_data.get('pension_data')
@@ -2882,6 +3186,8 @@ class AIRiskReportsService:
             generated_at=datetime.now().isoformat(),
             metadata={
                 'document_id': analysis.document_id,
+                'source_document_ids': list((doc_record or {}).get('source_document_ids') or []),
+                'evidence_grounded': bool(analysis.source_evidence) or bool(pension_data),
                 'risk_score': analysis.risk_score,
                 'confidence': analysis.confidence,
                 'processing_time_ms': analysis.processing_time_ms,
@@ -2986,11 +3292,29 @@ class AIRiskReportsService:
             content=profile_content,
             order=2
         ))
+
+        if analysis.source_evidence:
+            evidence_lines = []
+            for evidence in analysis.source_evidence[:10]:
+                label = str(evidence.get('label') or '').strip()
+                detail = str(evidence.get('detail') or '').strip()
+                source = str(evidence.get('source') or '').strip()
+                if not label or not detail:
+                    continue
+                source_suffix = f" ({source})" if source else ''
+                evidence_lines.append(f"• {label}: {detail}{source_suffix}")
+            if evidence_lines:
+                sections.append(ReportSection(
+                    title='ראיות מודגמות מהמסמכים' if is_hebrew else 'Demonstrated Evidence from Uploaded Files',
+                    content='\n'.join(evidence_lines),
+                    order=3
+                ))
         
         # 3. Statistical Analysis (BI Metrics)
         # SKIP for pension data - the pension report already shows meaningful data clearly
         # Statistical analysis of IDs/policy numbers is meaningless
-        if not pension_report:  # Only show statistical analysis for non-pension data
+        has_grounded_evidence = bool(analysis.source_evidence) or bool(pension_data)
+        if not pension_report and not has_grounded_evidence:  # Only show statistical analysis when source-grounded evidence is weak
             stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
             if stat_factors:
                 if is_hebrew:
@@ -4232,6 +4556,121 @@ Factors Affecting Score:
                         break
         
         return key_fields
+
+    def _extract_source_evidence(
+        self,
+        doc_data: Dict[str, Any],
+        rows: List[Dict[str, Any]],
+        hebrew_extracted: Dict[str, Any],
+        domain_insights: Dict[str, Any],
+        lang_code: str,
+        *,
+        file_label: str = '',
+    ) -> List[Dict[str, Any]]:
+        """Extract grounded evidence snippets from uploaded files and affiliated reports."""
+        evidence: List[Dict[str, Any]] = []
+        source_name = str(file_label or doc_data.get('original_filename') or '').strip()
+
+        def _add(label: str, detail: str, category: str) -> None:
+            label_text = str(label or '').strip()
+            detail_text = str(detail or '').strip()
+            if not label_text or not detail_text:
+                return
+            evidence.append({
+                'label': label_text,
+                'detail': detail_text[:220],
+                'category': category,
+                'source': source_name,
+            })
+
+        key_fields = self._extract_key_fields_from_data(rows, lang_code == 'hebrew')
+        for key, value in list(key_fields.items())[:8]:
+            _add(key, value, 'uploaded_field')
+
+        pension_data = doc_data.get('pension_data') if isinstance(doc_data, dict) else None
+        if isinstance(pension_data, dict):
+            totals = pension_data.get('totals', {}) if isinstance(pension_data.get('totals'), dict) else {}
+            accounts = pension_data.get('accounts', []) if isinstance(pension_data.get('accounts'), list) else []
+            if totals.get('total_balance_formatted'):
+                _add('Total affiliated balance', str(totals.get('total_balance_formatted')), 'affiliated_total')
+            elif totals.get('total_balance'):
+                _add('Total affiliated balance', f"₪{float(totals.get('total_balance', 0)):,.0f}", 'affiliated_total')
+            if totals.get('provider_count'):
+                _add('Providers identified', str(totals.get('provider_count')), 'affiliated_provider_count')
+            if totals.get('account_count'):
+                _add('Accounts / products identified', str(totals.get('account_count')), 'affiliated_account_count')
+            for account in accounts[:5]:
+                policy_number = str(account.get('policy_number') or '').strip()
+                provider = str(account.get('provider') or '').strip()
+                product_name = str(account.get('product_type_name') or account.get('product_name') or account.get('product_type') or '').strip()
+                balance = account.get('total_balance') or account.get('savings_balance') or 0
+                parts = [part for part in [provider, product_name] if part]
+                if balance:
+                    parts.append(f"₪{float(balance):,.0f}")
+                if policy_number and parts:
+                    _add(f"Policy {policy_number}", ', '.join(parts), 'affiliated_account')
+
+        for key in ('policy_number', 'insurance_type', 'product_type', 'premium', 'cover_amount', 'insured_name', 'beneficiary'):
+            value = hebrew_extracted.get(key)
+            if value:
+                readable = key.replace('_', ' ').title()
+                _add(readable, str(value), 'hebrew_extract')
+
+        for finding in domain_insights.get('key_findings', [])[:5]:
+            finding_text = str(finding.get('finding') or '').strip()
+            detail_text = str(finding.get('detail') or '').strip()
+            if finding_text and detail_text:
+                _add(finding_text, detail_text, 'domain_finding')
+
+        return self._dedupe_source_evidence(evidence)
+
+    @staticmethod
+    def _dedupe_source_evidence(evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deduped: List[Dict[str, Any]] = []
+        seen: set = set()
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            key = (
+                str(item.get('label') or '').strip(),
+                str(item.get('detail') or '').strip(),
+                str(item.get('source') or '').strip(),
+            )
+            if key in seen or not key[0] or not key[1]:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
+
+    def _calculate_grounded_risk_score(
+        self,
+        factors: List[Factor],
+        patterns: List[Pattern],
+        anomalies: List[Anomaly],
+        correlations: List[Dict[str, Any]],
+        domain_insights: Dict[str, Any],
+        pension_data: Optional[Dict[str, Any]],
+        integrity_issues: List[str],
+    ) -> float:
+        """Favor concrete uploaded evidence and affiliated integrity signals over generic BI volatility."""
+        base_score = self._calculate_risk_score_advanced(factors, patterns, anomalies, correlations, domain_insights)
+        score = float(base_score)
+
+        if integrity_issues:
+            score += min(len(integrity_issues) * 6, 18)
+
+        if isinstance(pension_data, dict):
+            totals = pension_data.get('totals', {}) if isinstance(pension_data.get('totals'), dict) else {}
+            if totals.get('missing_contribution_months'):
+                score += min(len(totals.get('missing_contribution_months', [])) * 2, 12)
+            if totals.get('section14_coverage') is False:
+                score += 8
+            health_score = totals.get('health_score', {}) if isinstance(totals.get('health_score'), dict) else {}
+            overall = health_score.get('overall')
+            if isinstance(overall, (int, float)):
+                score = max(score, 100 - float(overall))
+
+        return min(max(score, 0), 100)
     
     def _generate_hebrew_insurance_section(self, hebrew_factors: List[Factor], 
                                             is_hebrew: bool) -> str:

@@ -19704,13 +19704,25 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 analysis_id = data.get('analysis_id')
+                analysis_ids = data.get('analysis_ids')
                 language = data.get('language')  # Optional override
-                
-                if not analysis_id:
+
+                requested_analysis_ids = []
+                if isinstance(analysis_ids, list):
+                    requested_analysis_ids = [
+                        str(item).strip()
+                        for item in analysis_ids
+                        if str(item).strip()
+                    ]
+                if analysis_id and str(analysis_id).strip():
+                    requested_analysis_ids.insert(0, str(analysis_id).strip())
+                requested_analysis_ids = list(dict.fromkeys(requested_analysis_ids))
+
+                if not requested_analysis_ids:
                     self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'analysis_id required'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'analysis_id or analysis_ids required'}).encode('utf-8'))
                     return
-                
+
                 # Get AI reports service
                 from services.ai_risk_reports_service import get_ai_reports_service
                 service = get_ai_reports_service()
@@ -19722,14 +19734,18 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
                     return
                 
-                is_authorized, auth_error = service.authorize_access('analysis', analysis_id, user_id, user_role)
-                if not is_authorized:
-                    self._set_json_headers(403)
-                    self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
-                    return
-                
+                for requested_analysis_id in requested_analysis_ids:
+                    is_authorized, auth_error = service.authorize_access('analysis', requested_analysis_id, user_id, user_role)
+                    if not is_authorized:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
+                        return
+
                 # Generate report
-                report = service.generate_report(analysis_id, language)
+                if len(requested_analysis_ids) == 1:
+                    report = service.generate_report(requested_analysis_ids[0], language)
+                else:
+                    report = service.generate_aggregate_report(requested_analysis_ids, language)
                 
                 # Convert to dict for JSON
                 result = service.to_dict(report)
