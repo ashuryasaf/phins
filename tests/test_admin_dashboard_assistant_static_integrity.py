@@ -122,3 +122,14 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
     assert "Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards." in content
     assert "title=\"Help\"" in content
     assert "title=\"Minimize\"" in content
+
+
+def test_admin_growth_video_controls_default_to_safe_polling_and_download_links():
+    content = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+
+    assert 'id="mkt-video-poll-mode"' in content
+    assert '<option value="poll" selected>Background polling</option>' in content
+    assert '<option value="webhook">Webhook first</option>' in content
+    assert "document.getElementById('mkt-video-poll-mode')?.value || 'poll'" in content
+    assert 'job.download_url' in content
+    assert 'Download video' in content

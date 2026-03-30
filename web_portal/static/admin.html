@@ -1607,8 +1607,8 @@
         <div>
           <label for="mkt-video-poll-mode" style="font-size: 0.78rem; opacity: 0.82;">Completion Mode</label>
           <select id="mkt-video-poll-mode" style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;">
+            <option value="poll" selected>Background polling</option>
             <option value="webhook">Webhook first</option>
-            <option value="poll">Background polling</option>
           </select>
         </div>
       </div>
@@ -3800,7 +3800,7 @@
     }
 
     function selectedMarketingPollMode() {
-      return (document.getElementById('mkt-video-poll-mode')?.value || 'webhook').trim();
+      return (document.getElementById('mkt-video-poll-mode')?.value || 'poll').trim();
     }
 
     function selectedMarketingAutoHero() {
@@ -3884,6 +3884,9 @@
       if (job.provider) parts.push(`Provider: ${escapeMarketingHtml(String(job.provider).toUpperCase())}`);
       if (job.provider_model) parts.push(`Model: ${escapeMarketingHtml(job.provider_model)}`);
       if (job.message) parts.push(escapeMarketingHtml(job.message));
+      if (job.status === 'completed' && job.download_url) {
+        parts.push(`<a href="${escapeMarketingHtml(job.download_url)}" download style="color:#c5e1ff;text-decoration:none;">Download video</a>`);
+      }
       if (job.generated_asset_id) {
         parts.push(`<a href="/admin-media.html" style="color:#c5e1ff;text-decoration:none;">Open generated asset</a>`);
       }
