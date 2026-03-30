@@ -51,6 +51,9 @@ class MediaGenerationService:
         self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api-singapore.klingai.com").strip().rstrip("/")
         self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
         self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
+        self._kling_include_model_name = os.environ.get("KLING_INCLUDE_MODEL_NAME", "false").strip().lower() in {"1", "true", "yes", "on"}
+        self._kling_include_image_url = os.environ.get("KLING_INCLUDE_IMAGE_URL", "false").strip().lower() in {"1", "true", "yes", "on"}
+        self._kling_include_callback_url = os.environ.get("KLING_INCLUDE_CALLBACK_URL", "false").strip().lower() in {"1", "true", "yes", "on"}
 
     def supported_provider_config(self) -> Dict[str, Dict[str, Any]]:
         """Return provider availability and public configuration hints."""
@@ -302,11 +305,12 @@ class MediaGenerationService:
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
         body: Dict[str, Any] = {
             "model": selected_model,
-            "model_name": selected_model,
             "prompt": prompt,
             "aspect_ratio": aspect_ratio or "16:9",
             "duration": self._normalize_kling_duration(duration_seconds),
         }
+        if self._kling_include_model_name:
+            body["model_name"] = selected_model
         mode = self._kling_generation_mode(selected_model)
         if mode:
             body["mode"] = mode
@@ -315,14 +319,16 @@ class MediaGenerationService:
         if image_payload:
             endpoint_path = self._kling_image_to_video_path
             body["image"] = image_payload["bytes_b64"]
-            body["image_url"] = image_payload["bytes_b64"]
+            if self._kling_include_image_url:
+                body["image_url"] = image_payload["bytes_b64"]
         elif str(image_data_url or "").strip():
             parsed_image_url = urllib.parse.urlparse(str(image_data_url).strip())
             if parsed_image_url.scheme in {"http", "https"} and parsed_image_url.netloc:
                 endpoint_path = self._kling_image_to_video_path
                 body["image"] = str(image_data_url).strip()
-                body["image_url"] = str(image_data_url).strip()
-        if callback_url:
+                if self._kling_include_image_url:
+                    body["image_url"] = str(image_data_url).strip()
+        if callback_url and self._kling_include_callback_url:
             body["callBackUrl"] = callback_url
 
         url = f"{self._kling_base_url}{endpoint_path}"

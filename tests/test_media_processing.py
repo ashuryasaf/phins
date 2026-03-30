@@ -795,6 +795,8 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
     monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
     monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
     monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("KLING_INCLUDE_MODEL_NAME", raising=False)
+    monkeypatch.delenv("KLING_INCLUDE_CALLBACK_URL", raising=False)
 
     captured = {}
 
@@ -822,10 +824,10 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
     assert captured["url"] == "https://api-singapore.klingai.com/v1/videos/text2video"
     assert captured["headers"]["Authorization"] == "Bearer api-key-1"
     assert captured["body"]["model"] == "kling-v2.6-pro"
-    assert captured["body"]["model_name"] == "kling-v2.6-pro"
     assert captured["body"]["mode"] == "professional"
     assert captured["body"]["duration"] == 10
-    assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")
+    assert "model_name" not in captured["body"]
+    assert "callBackUrl" not in captured["body"]
 
 
 def test_kling_submit_surfaces_sanitized_provider_error_details(monkeypatch):
@@ -877,6 +879,8 @@ def test_kling_image_submit_includes_compatible_image_fields(monkeypatch):
     monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
     monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
     monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("KLING_INCLUDE_MODEL_NAME", raising=False)
+    monkeypatch.delenv("KLING_INCLUDE_IMAGE_URL_FIELD", raising=False)
 
     captured = {}
 
@@ -899,7 +903,41 @@ def test_kling_image_submit_includes_compatible_image_fields(monkeypatch):
     assert result["provider_job_id"] == "task-456"
     assert captured["url"] == "https://api-singapore.klingai.com/v1/videos/image2video"
     assert captured["body"]["model"] == "kling-v2.6-std"
-    assert captured["body"]["model_name"] == "kling-v2.6-std"
     assert captured["body"]["mode"] == "standard"
     assert captured["body"]["image"] == "c3RpbGwtaW1hZ2U="
+    assert "model_name" not in captured["body"]
+    assert "image_url" not in captured["body"]
+
+
+def test_kling_optional_compatibility_fields_can_be_enabled(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "api-key-1")
+    monkeypatch.setenv("KLING_INCLUDE_MODEL_NAME", "true")
+    monkeypatch.setenv("KLING_INCLUDE_IMAGE_URL", "true")
+    monkeypatch.setenv("KLING_INCLUDE_CALLBACK_URL", "true")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({"task_id": "task-789"}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="Animate a still image",
+        title="Animated still",
+        model="kling-v2.6-std",
+        image_data_url="data:image/png;base64,c3RpbGwtaW1hZ2U=",
+        callback_url="https://phins.example.com/api/provider/media-processing/callback?job_id=1&token=abc",
+    )
+
+    assert result["provider_job_id"] == "task-789"
+    assert captured["body"]["model_name"] == "kling-v2.6-std"
     assert captured["body"]["image_url"] == "c3RpbGwtaW1hZ2U="
+    assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")
