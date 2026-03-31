@@ -477,11 +477,6 @@ class SupplyChainEcosystemService:
         return round(radius_km * c, 2)
 
     @staticmethod
-    def _build_settlement_qr_payload(order_id: str, qr_token: str) -> str:
-        """Build a compact QR payload used for customer settlement approval."""
-        return f"PHINS-SETTLE|{order_id}|{qr_token}"
-
-    @staticmethod
     def _build_settlement_qr_image_url(payload: str) -> str:
         """Render a QR image through the already-allowed QR image provider."""
         return f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={quote(payload, safe='')}"
