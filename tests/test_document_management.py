@@ -727,6 +727,179 @@ def test_analyze_billing_overdue():
     srv.stop()
 
 
+def test_bill_payment_generates_accounting_book_and_invoice_documents():
+    """Paying a bill should auto-generate accounting-book and invoice docs once."""
+    port = 8223
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token_admin = 'phins_test-bill-doc-admin'
+    token_customer = 'phins_test-bill-doc-customer'
+    customer_id = 'CUST-BILL-DOCS'
+    policy_id = 'POL-BILL-DOCS'
+    bill_id = 'BILL-BILL-DOCS'
+
+    _inject_session(token_admin, 'admin_bill_docs', 'admin', '')
+    _inject_session(token_customer, 'custBillDocs', 'customer', customer_id)
+
+    portal.CUSTOMERS[customer_id] = {
+        'id': customer_id,
+        'name': 'Bill Doc Customer',
+        'email': 'billdocs@example.com',
+        'created_date': datetime.now().isoformat(),
+    }
+    portal.POLICIES[policy_id] = {
+        'id': policy_id,
+        'customer_id': customer_id,
+        'status': 'active',
+        'monthly_premium': 125.0,
+        'billing': {'frequency': 'monthly', 'auto_pay': False},
+    }
+    portal.BILLING[bill_id] = {
+        'id': bill_id,
+        'bill_id': bill_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'amount': 125.0,
+        'amount_due': 125.0,
+        'amount_paid': 0.0,
+        'status': 'outstanding',
+        'created_date': datetime.now().isoformat(),
+        'due_date': datetime.now().isoformat(),
+    }
+
+    status, resp = _post(base + '/api/billing/pay', {
+        'bill_id': bill_id,
+        'amount': 125.0,
+        'payment_method': 'card'
+    }, token_admin)
+    assert status == 200, f"Expected 200, got {status}: {resp}"
+    assert resp.get('success') is True
+    docs = resp.get('documents_generated', [])
+    assert len(docs) == 2
+    doc_types = {doc.get('document_type') for doc in docs}
+    assert doc_types == {'accounting_book', 'invoice'}
+
+    bill = portal.BILLING[bill_id]
+    linked_doc_ids = bill.get('document_ids', [])
+    assert len(linked_doc_ids) == 2
+
+    status_list, list_resp = _get(
+        base + f'/api/documents/list?entity_type=billing&entity_id={bill_id}',
+        token_customer
+    )
+    assert status_list == 200, f"Expected 200, got {status_list}: {list_resp}"
+    listed = list_resp.get('documents', [])
+    assert len(listed) == 2
+    assert {doc.get('document_type') for doc in listed} == {'accounting_book', 'invoice'}
+
+    invoice_doc = next(
+        doc for doc in portal.POLICY_DOCUMENTS.values()
+        if doc.get('entity_type') == 'billing'
+        and doc.get('entity_id') == bill_id
+        and doc.get('document_type') == 'invoice'
+    )
+    invoice_payload = json.loads(base64.b64decode(invoice_doc['data']).decode('utf-8'))
+    assert invoice_payload['document_standard'] == 'PHINS_CUSTOMER_TAX_YEAR_PREMIUM_REPORT_V1'
+    customer_snapshot = invoice_payload['personal_details']
+    assert customer_snapshot['customer_id'] == customer_id
+    assert customer_snapshot['full_name'] == 'Bill Doc Customer'
+    assert invoice_payload['tax_year'] == datetime.now().year
+    assert invoice_payload['tax_year_summary']['paid_premium_total'] >= 125.0
+    assert invoice_payload['tax_year_summary']['risk_paid_total'] >= 0
+    assert invoice_payload['tax_year_summary']['savings_paid_total'] >= 0
+    assert 'verified_balances' in invoice_payload
+    assert 'wallet_balance' in invoice_payload['verified_balances']
+    assert 'investment_balance' in invoice_payload['verified_balances']
+    assert 'savings_usage' in invoice_payload
+
+    status_hist, hist_resp = _get(base + f'/api/notifications/history?customer_id={customer_id}', token_customer)
+    assert status_hist == 200, f"Expected 200, got {status_hist}: {hist_resp}"
+    history = hist_resp.get('history', [])
+    assert any(item.get('channel') == 'in_app' for item in history)
+    assert any(item.get('channel') == 'email' for item in history)
+
+    # Re-paying the same bill should not create duplicate generated docs.
+    existing_doc_ids = list(portal.BILLING[bill_id].get('document_ids', []))
+    status2, resp2 = _post(base + '/api/billing/pay', {
+        'bill_id': bill_id,
+        'amount': 25.0,
+        'payment_method': 'card'
+    }, token_admin)
+    assert status2 == 200, f"Expected 200, got {status2}: {resp2}"
+    assert len(portal.BILLING[bill_id].get('document_ids', [])) == len(existing_doc_ids) == 2
+
+    srv.stop()
+
+
+def test_marketplace_purchase_generates_accounting_book_and_invoice_documents():
+    """Service/product purchase should generate accounting documents linked to the purchase."""
+    port = 8224
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token_customer = 'phins_test-purchase-doc-customer'
+    customer_id = 'CUST-PURCHASE-DOCS'
+    _inject_session(token_customer, 'custPurchaseDocs', 'customer', customer_id)
+
+    portal.CUSTOMERS[customer_id] = {
+        'id': customer_id,
+        'name': 'Purchase Doc Customer',
+        'email': 'purchasedocs@example.com',
+        'created_date': datetime.now().isoformat(),
+    }
+    portal.HEALTH_WALLETS[customer_id] = {
+        'customer_id': customer_id,
+        'balance': 1000.0,
+        'monthly_deposit': 0.0,
+        'transactions': [],
+        'created_at': datetime.now().isoformat(),
+    }
+
+    status, resp = _post(base + '/api/health-wallet/purchase', {
+        'customer_id': customer_id,
+        'product_id': 'PROD-DOC-001',
+        'product_name': 'Institutional Lab Service',
+        'amount': 80.0,
+        'category': 'medical_services',
+        'provider': 'PHINS Labs',
+        'payment_method': 'health_wallet'
+    }, token_customer)
+    assert status == 200, f"Expected 200, got {status}: {resp}"
+    assert resp.get('success') is True
+    purchase = resp.get('purchase', {})
+    docs = resp.get('documents_generated', [])
+    assert len(docs) == 2
+    assert {doc.get('document_type') for doc in docs} == {'accounting_book', 'invoice'}
+
+    purchase_id = purchase.get('id')
+    assert purchase_id
+    stored_purchase = portal.MEDICAL_PURCHASES[purchase_id]
+    assert len(stored_purchase.get('document_ids', [])) == 2
+
+    ledger_tx_id = purchase.get('ledger_tx_id')
+    assert ledger_tx_id
+    ledger_entry = portal.TRANSACTION_LEDGER[ledger_tx_id]
+    assert len(ledger_entry.get('document_ids', [])) == 2
+
+    status_list, list_resp = _get(
+        base + f'/api/documents/list?entity_type=transaction&entity_id={ledger_tx_id}',
+        token_customer
+    )
+    assert status_list == 200, f"Expected 200, got {status_list}: {list_resp}"
+    listed = list_resp.get('documents', [])
+    assert len(listed) == 2
+    assert {doc.get('document_type') for doc in listed} == {'accounting_book', 'invoice'}
+
+    srv.stop()
+
+
 def test_analyze_requires_auth():
     """Unauthenticated analyze request should be rejected."""
     port = 8216
