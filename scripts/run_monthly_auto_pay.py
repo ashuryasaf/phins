@@ -7,7 +7,6 @@ Intended for Render/Railway cron jobs or manual operator execution.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 
@@ -19,16 +18,7 @@ from web_portal.server import execute_monthly_auto_pay_cli  # noqa: E402
 
 
 def main() -> int:
-    force = '--force' in sys.argv
-    dry_run = '--dry-run' in sys.argv
-    notify_users = '--no-notify' not in sys.argv
-    report = execute_monthly_auto_pay_cli(
-        force=force,
-        dry_run=dry_run,
-        notify_users=notify_users,
-    )
-    print(json.dumps(report, indent=2, default=str))
-    return 0 if report.get('success', False) else 1
+    return execute_monthly_auto_pay_cli(sys.argv[1:])
 
 
 if __name__ == '__main__':
