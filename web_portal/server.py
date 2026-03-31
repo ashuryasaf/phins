@@ -4891,6 +4891,59 @@ def process_customer_premium_payment(
         metadata=ledger_metadata
     )
 
+    generated_documents = []
+    document_generation_details = []
+    related_document_ids: List[str] = []
+    for paid_bill_id in bills_paid:
+        bill_record = BILLING.get(paid_bill_id) or BILLING.get(str(paid_bill_id)) or {}
+        doc_bundle = generate_action_accounting_documents(
+            action_type='premium_payment',
+            entity_type='billing',
+            entity_id=str(bill_record.get('id') or paid_bill_id),
+            customer_id=customer_id,
+            amount=safe_float(bill_record.get('amount_paid', amount), amount),
+            description=f"Premium payment for bill {bill_record.get('id') or paid_bill_id}",
+            tx=tx,
+            metadata={
+                'policy_id': bill_record.get('policy_id') or policy_id,
+                'payment_method': normalized_payment_method,
+                'bill_status': bill_record.get('status'),
+                'billed_amount': bill_record.get('amount'),
+                'amount_paid': bill_record.get('amount_paid'),
+            },
+            uploaded_by='billing_system',
+        )
+        generated_documents.extend(doc_bundle.get('documents', []))
+        document_generation_details.append(doc_bundle)
+        related_document_ids.extend([
+            doc.get('id') for doc in doc_bundle.get('documents', []) if doc.get('id')
+        ])
+
+    tx_doc_bundle = generate_action_accounting_documents(
+        action_type='premium_payment_ledger',
+        entity_type='transaction',
+        entity_id=str(tx.get('id') or ''),
+        customer_id=customer_id,
+        amount=amount,
+        description=f"Ledger-backed premium payment for {customer_id}",
+        tx=tx,
+        metadata={
+            'policy_id': policy_id,
+            'payment_method': normalized_payment_method,
+            'bills_updated': bills_paid,
+        },
+        uploaded_by='billing_system',
+    )
+    generated_documents.extend(tx_doc_bundle.get('documents', []))
+    document_generation_details.append(tx_doc_bundle)
+    related_document_ids.extend([
+        doc.get('id') for doc in tx_doc_bundle.get('documents', []) if doc.get('id')
+    ])
+    if related_document_ids:
+        tx['document_ids'] = sorted(set(
+            list(tx.get('document_ids', [])) + related_document_ids
+        ))
+
     if use_pipeline and savings_amount > 0:
         try:
             pipeline_result = savings_pipeline_service.deposit_to_pipeline(
@@ -4948,7 +5001,8 @@ def process_customer_premium_payment(
         'timestamp': now.isoformat(),
         'status': 'completed',
         'applied_to_bills': amount_applied_to_bills,
-        'unbilled_premium_amount': unbilled_premium_amount
+        'unbilled_premium_amount': unbilled_premium_amount,
+        'document_ids': sorted(set(related_document_ids)),
     }
 
     integrity_payload = None
@@ -4996,6 +5050,9 @@ def process_customer_premium_payment(
         response['integrity'] = integrity_payload
     if notification_result:
         response['notification'] = notification_result
+    if generated_documents:
+        response['documents_generated'] = generated_documents
+        response['document_generation_details'] = document_generation_details
     return response
 
 
@@ -6533,6 +6590,10 @@ def resolve_document_owner_customer_id(doc: Dict[str, Any]) -> str:
         return entity_id
     if entity_type == 'policy':
         return str((POLICIES.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'billing':
+        return str((BILLING.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'transaction':
+        return str((TRANSACTION_LEDGER.get(entity_id) or {}).get('customer_id') or '').strip()
     if entity_type == 'claim':
         return str((CLAIMS.get(entity_id) or {}).get('customer_id') or '').strip()
     if entity_type == 'underwriting':
@@ -6555,6 +6616,10 @@ def infer_document_owner_customer_id(entity_type: str, entity_id: str, fallback_
         return entity_id
     if entity_type == 'policy':
         return str((POLICIES.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'billing':
+        return str((BILLING.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'transaction':
+        return str((TRANSACTION_LEDGER.get(entity_id) or {}).get('customer_id') or '').strip()
     if entity_type == 'claim':
         return str((CLAIMS.get(entity_id) or {}).get('customer_id') or '').strip()
     if entity_type == 'underwriting':
@@ -6615,6 +6680,208 @@ def store_policy_document(
     }
     POLICY_DOCUMENTS[doc_id] = doc
     return doc
+
+
+def _append_unique_document_link(target: Dict[str, Any], doc_id: str, field_name: str = 'document_ids') -> None:
+    """Attach document IDs without duplicating references."""
+    if not isinstance(target, dict) or not doc_id:
+        return
+    current = target.get(field_name)
+    if not isinstance(current, list):
+        current = []
+    if doc_id not in current:
+        current.append(doc_id)
+    target[field_name] = current
+
+
+def _document_exists_for_entity(entity_type: str, entity_id: str, file_name: str) -> Optional[Dict[str, Any]]:
+    """Return an existing matching document for an entity when present."""
+    for doc in POLICY_DOCUMENTS.values():
+        if (
+            doc.get('entity_type') == entity_type
+            and doc.get('entity_id') == entity_id
+            and doc.get('name') == file_name
+        ):
+            return doc
+    return None
+
+
+def _serialize_text_document(payload: Dict[str, Any]) -> str:
+    """Render a deterministic text document body and return base64 content."""
+    document_text = json.dumps(payload, indent=2, sort_keys=True, default=str)
+    return base64.b64encode(document_text.encode('utf-8')).decode('ascii')
+
+
+def _build_document_file_name(prefix: str, entity_id: str, suffix: str) -> str:
+    """Create a stable ASCII document file name for generated accounting docs."""
+    safe_entity = _sanitize_ascii_filename_stem(
+        entity_id or 'record',
+        'record',
+        strip_chars='_',
+        collapse_repeated_underscores=False,
+    )
+    return f"{prefix}_{safe_entity}_{suffix}.txt"
+
+
+def _build_institutional_accounting_book_payload(
+    *,
+    action_type: str,
+    customer_id: str,
+    entity_id: str,
+    amount: float,
+    description: str,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Build standardized accounting-book data for a billed action."""
+    details = dict(metadata or {})
+    return {
+        'document_standard': 'PHINS_INSTITUTIONAL_ACCOUNTING_BOOK_V1',
+        'action_type': action_type,
+        'entity_id': entity_id,
+        'customer_id': customer_id,
+        'customer_name': get_customer_display_name(customer_id),
+        'recorded_at': datetime.now().isoformat(),
+        'amount': round(safe_float(amount, 0.0), 2),
+        'currency': 'USD',
+        'description': description,
+        'details': details,
+        'institutional_views': {
+            'balance_sheet_category': 'premium_income' if action_type in {'bill_payment', 'auto_pay_execution'} else 'service_revenue',
+            'ledger_classification': action_type,
+            'nft_supported': True,
+            'tokenized_invoice_supported': True
+        }
+    }
+
+
+def _build_tokenized_invoice_payload(
+    *,
+    action_type: str,
+    customer_id: str,
+    entity_id: str,
+    amount: float,
+    description: str,
+    tx: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Build a PHINS tokenized invoice payload linked to ledger/NFT state."""
+    details = dict(metadata or {})
+    return {
+        'document_standard': 'PHINS_TOKENIZED_INVOICE_V1',
+        'invoice_entity_type': action_type,
+        'invoice_entity_id': entity_id,
+        'customer_id': customer_id,
+        'customer_name': get_customer_display_name(customer_id),
+        'issued_at': datetime.now().isoformat(),
+        'amount': round(safe_float(amount, 0.0), 2),
+        'currency': 'USD',
+        'description': description,
+        'ledger_transaction_id': (tx or {}).get('id'),
+        'nft_token_id': (tx or {}).get('nft_token_id'),
+        'invoice_token_hash': hashlib.sha256(
+            f"{action_type}|{entity_id}|{customer_id}|{safe_float(amount, 0.0):.2f}|{(tx or {}).get('id', '')}".encode('utf-8')
+        ).hexdigest(),
+        'details': details,
+    }
+
+
+def generate_action_accounting_documents(
+    *,
+    action_type: str,
+    entity_type: str,
+    entity_id: str,
+    customer_id: str,
+    amount: float,
+    description: str,
+    tx: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    uploaded_by: str = 'system'
+) -> Dict[str, Any]:
+    """Generate institutional accounting books and PHINS invoices exactly once per action."""
+    if not entity_id or not customer_id:
+        return {'generated': False, 'documents': [], 'reason': 'Missing entity_id or customer_id'}
+
+    owner_customer_id = infer_document_owner_customer_id(entity_type, entity_id, customer_id)
+    accounting_file_name = _build_document_file_name('institutional_accounting_book', entity_id, action_type)
+    invoice_file_name = _build_document_file_name('phins_tokenized_invoice', entity_id, action_type)
+
+    generated_docs = []
+    for file_name, payload_builder, document_type in (
+        (
+            accounting_file_name,
+            _build_institutional_accounting_book_payload(
+                action_type=action_type,
+                customer_id=customer_id,
+                entity_id=entity_id,
+                amount=amount,
+                description=description,
+                metadata=metadata,
+            ),
+            'accounting_book',
+        ),
+        (
+            invoice_file_name,
+            _build_tokenized_invoice_payload(
+                action_type=action_type,
+                customer_id=customer_id,
+                entity_id=entity_id,
+                amount=amount,
+                description=description,
+                tx=tx,
+                metadata=metadata,
+            ),
+            'invoice',
+        ),
+    ):
+        existing = _document_exists_for_entity(entity_type, entity_id, file_name)
+        if existing:
+            generated_docs.append(existing)
+            continue
+
+        doc = store_policy_document(
+            file_name=file_name,
+            mime_type='text/plain',
+            file_data_b64=_serialize_text_document(payload_builder),
+            entity_type=entity_type,
+            entity_id=entity_id,
+            document_type=document_type,
+            description=f"{description} ({document_type.replace('_', ' ')})",
+            uploaded_by=uploaded_by,
+            owner_customer_id=owner_customer_id,
+        )
+        doc['ledger_tx_id'] = (tx or {}).get('id')
+        doc['nft_token_id'] = (tx or {}).get('nft_token_id')
+        doc['document_standard'] = payload_builder.get('document_standard')
+        generated_docs.append(doc)
+
+    target_record = None
+    if entity_type == 'billing':
+        target_record = BILLING.get(entity_id)
+    elif entity_type == 'transaction':
+        target_record = TRANSACTION_LEDGER.get(entity_id)
+    elif entity_type == 'policy':
+        target_record = POLICIES.get(entity_id)
+
+    for doc in generated_docs:
+        _append_unique_document_link(doc, doc.get('id', ''), field_name='related_document_ids')
+        if target_record is not None:
+            _append_unique_document_link(target_record, doc.get('id', ''))
+        if tx is not None:
+            _append_unique_document_link(tx, doc.get('id', ''))
+
+    return {
+        'generated': True,
+        'documents': [
+            {
+                'id': doc.get('id'),
+                'name': doc.get('name'),
+                'document_type': doc.get('document_type'),
+                'entity_type': doc.get('entity_type'),
+                'entity_id': doc.get('entity_id'),
+            }
+            for doc in generated_docs
+        ],
+    }
 
 
 def hydrate_document_customer_links() -> int:
@@ -31163,6 +31430,33 @@ For claims or questions, please contact:
                     }
                     MEDICAL_PURCHASES[purchase_id] = purchase
 
+                    purchase_doc_bundle = generate_action_accounting_documents(
+                        action_type='medical_purchase',
+                        entity_type='transaction',
+                        entity_id=str(ledger_tx.get('id') or ''),
+                        customer_id=customer_id,
+                        amount=final_amount,
+                        description=f"Marketplace purchase for {purchase.get('product_name')}",
+                        tx=ledger_tx,
+                        metadata={
+                            'purchase_id': purchase_id,
+                            'order_id': order.get('id'),
+                            'offer_id': product_id,
+                            'supplier_id': supplier_id,
+                            'platform_fee': purchase.get('platform_fee'),
+                            'supplier_payout': purchase.get('supplier_payout'),
+                            'payment_method': payment_method,
+                        },
+                        uploaded_by='marketplace_system',
+                    )
+                    purchase_doc_ids = [
+                        doc.get('id') for doc in purchase_doc_bundle.get('documents', []) if doc.get('id')
+                    ]
+                    if purchase_doc_ids:
+                        purchase['document_ids'] = sorted(set(purchase.get('document_ids', []) + purchase_doc_ids))
+                        order['document_ids'] = sorted(set(order.get('document_ids', []) + purchase_doc_ids))
+                        ledger_tx['document_ids'] = sorted(set(ledger_tx.get('document_ids', []) + purchase_doc_ids))
+
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
                         'success': True,
@@ -31173,7 +31467,8 @@ For claims or questions, please contact:
                         'payment_summary': order_result.get('payment_summary', {}),
                         'nft_token_id': ledger_tx.get('nft_token_id'),
                         'ledger_recorded': True,
-                        'new_balance': HEALTH_WALLETS.get(customer_id, {}).get('balance', 0.0)
+                        'new_balance': HEALTH_WALLETS.get(customer_id, {}).get('balance', 0.0),
+                        'documents_generated': purchase_doc_bundle.get('documents', []),
                     }).encode('utf-8'))
                     return
 
@@ -31253,6 +31548,30 @@ For claims or questions, please contact:
                 }
                 MEDICAL_PURCHASES[purchase_id] = purchase
 
+                purchase_doc_bundle = generate_action_accounting_documents(
+                    action_type='medical_purchase',
+                    entity_type='transaction',
+                    entity_id=str(ledger_tx.get('id') or ''),
+                    customer_id=customer_id,
+                    amount=final_amount,
+                    description=f"Medical purchase for {product_name}",
+                    tx=ledger_tx,
+                    metadata={
+                        'purchase_id': purchase_id,
+                        'product_id': product_id,
+                        'provider': provider,
+                        'pricing_plan': pricing_plan,
+                        'payment_method': payment_method,
+                    },
+                    uploaded_by='marketplace_system',
+                )
+                purchase_doc_ids = [
+                    doc.get('id') for doc in purchase_doc_bundle.get('documents', []) if doc.get('id')
+                ]
+                if purchase_doc_ids:
+                    purchase['document_ids'] = sorted(set(purchase.get('document_ids', []) + purchase_doc_ids))
+                    ledger_tx['document_ids'] = sorted(set(ledger_tx.get('document_ids', []) + purchase_doc_ids))
+
                 # Record transaction in wallet
                 transaction = None
                 if wallet_deduction > 0:
@@ -31280,7 +31599,8 @@ For claims or questions, please contact:
                     'pricing_plan': pricing_plan,
                     'nft_token_id': ledger_tx.get('nft_token_id'),
                     'ledger_recorded': True,
-                    'new_balance': wallet['balance']
+                    'new_balance': wallet['balance'],
+                    'documents_generated': purchase_doc_bundle.get('documents', []),
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
@@ -34824,6 +35144,24 @@ For claims or questions, please contact:
                         'wallet_deduction': wallet_deduction_info
                     }
                 )
+
+                doc_bundle = generate_action_accounting_documents(
+                    action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
+                    entity_type='billing',
+                    entity_id=str(bill_id),
+                    customer_id=customer_id,
+                    amount=amount,
+                    description=f"Bill payment for {bill_id}",
+                    tx=payment_tx,
+                    metadata={
+                        'policy_id': policy_id,
+                        'payment_method': payment_method,
+                        'amount_due': amount_due,
+                        'amount_paid_total': bill['amount_paid'],
+                        'bill_status': bill['status'],
+                    },
+                    uploaded_by='billing_system',
+                )
                 
                 # If payment allocates to savings (for premium payments), route through pipeline
                 if savings_pipeline_enabled and savings_pipeline_service and policy_id:
@@ -34850,6 +35188,25 @@ For claims or questions, please contact:
                     except Exception:
                         pass
                 
+                bill_doc_bundle = generate_action_accounting_documents(
+                    action_type='bill_payment',
+                    entity_type='billing',
+                    entity_id=str(bill_id),
+                    customer_id=customer_id,
+                    amount=amount,
+                    description=f"Bill payment for {bill_id}",
+                    tx=payment_tx,
+                    metadata={
+                        'policy_id': policy_id,
+                        'payment_method': payment_method,
+                        'bill_status': bill.get('status'),
+                        'amount_due': amount_due,
+                        'amount_paid_total': bill.get('amount_paid'),
+                    },
+                    uploaded_by='billing_system',
+                )
+                generated_bill_documents = bill_doc_bundle.get('documents', [])
+
                 response_data = {
                     'success': True,
                     'bill': bill,
@@ -34859,11 +35216,15 @@ For claims or questions, please contact:
                     'amount_paid': amount,
                     'revenue_recorded': True
                 }
+                if doc_bundle.get('documents'):
+                    response_data['documents_generated'] = doc_bundle['documents']
                 
                 # Include wallet deduction info if paid from health wallet
                 if wallet_deduction_info:
                     response_data['wallet_deduction'] = wallet_deduction_info
                     response_data['message'] = f'Bill paid from health wallet. New wallet balance: ${wallet_deduction_info["new_balance"]:,.2f}'
+                if generated_bill_documents:
+                    response_data['documents_generated'] = generated_bill_documents
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
