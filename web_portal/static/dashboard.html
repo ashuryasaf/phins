@@ -6696,6 +6696,13 @@
         return;
       }
 
+      const approvalUrl = purchase.settlement_approval_url;
+      if (approvalUrl) {
+        window.open(approvalUrl, '_blank', 'noopener');
+        showNotification('Opened the PHINS settlement approval page in a new tab', 'info');
+        return;
+      }
+
       const defaultCode = purchase.settlement_code || '';
       const providedCode = prompt(
         `Approve settlement for ${purchase.product_name || purchase.order_id}.\n\nEnter the PHINS settlement QR/code shown by the supplier or courier:`,

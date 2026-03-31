@@ -1313,12 +1313,18 @@
           throw new Error('Order not found');
         }
         const qrUrl = order.settlement_qr_image_url;
+        const approvalUrl = order.settlement_approval_url || order.settlement_qr_data;
         const code = order.settlement_code || 'Pending';
         if (!qrUrl) {
           throw new Error('Settlement QR not ready yet');
         }
-        window.alert(`Settlement code for ${orderId}: ${code}\nOpen the next browser tab if your popup blocker allows it.`);
-        window.open(qrUrl, '_blank', 'noopener');
+        const destination = approvalUrl || qrUrl;
+        window.alert(
+          `Settlement code for ${orderId}: ${code}\n` +
+          `PHINS approval page: ${approvalUrl || 'Unavailable'}\n\n` +
+          'Open the next browser tab if your popup blocker allows it.'
+        );
+        window.open(destination, '_blank', 'noopener');
       } catch (e) {
         alert('Failed to open settlement QR: ' + e.message);
       }

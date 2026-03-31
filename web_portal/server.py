@@ -384,9 +384,13 @@ def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
     row['settlement_phase'] = row.get('settlement_phase') or row['settlement_status']
     row['settlement_request'] = row.get('settlement_request') if isinstance(row.get('settlement_request'), dict) else {}
     row['customer_approval'] = row.get('customer_approval') if isinstance(row.get('customer_approval'), dict) else {}
+    row['settlement_dispute'] = row.get('settlement_dispute') if isinstance(row.get('settlement_dispute'), dict) else {}
+    row['settlement_messages'] = row.get('settlement_messages') if isinstance(row.get('settlement_messages'), list) else []
+    row['settlement_notifications'] = row.get('settlement_notifications') if isinstance(row.get('settlement_notifications'), list) else []
     row['settlement_code'] = row.get('settlement_code')
     row['settlement_qr_image_url'] = row.get('settlement_qr_image_url')
     row['settlement_qr_data'] = row.get('settlement_qr_data')
+    row['settlement_approval_url'] = row.get('settlement_approval_url')
     row['requires_customer_settlement_approval'] = bool(row.get('requires_customer_settlement_approval', True))
     row['pricing_plan'] = pricing_plan
     row['profit_margin_amount'] = safe_float(
@@ -422,9 +426,13 @@ def _enrich_medical_purchase_rows(purchases: List[Dict[str, Any]]) -> List[Dict[
                 row['settlement_phase'] = normalized_order.get('settlement_phase')
                 row['settlement_request'] = normalized_order.get('settlement_request')
                 row['customer_approval'] = normalized_order.get('customer_approval')
+                row['settlement_dispute'] = normalized_order.get('settlement_dispute')
+                row['settlement_messages'] = normalized_order.get('settlement_messages')
+                row['settlement_notifications'] = normalized_order.get('settlement_notifications')
                 row['settlement_code'] = normalized_order.get('settlement_code')
                 row['settlement_qr_image_url'] = normalized_order.get('settlement_qr_image_url')
                 row['settlement_qr_data'] = normalized_order.get('settlement_qr_data')
+                row['settlement_approval_url'] = normalized_order.get('settlement_approval_url')
                 row['requires_customer_settlement_approval'] = normalized_order.get('requires_customer_settlement_approval')
                 row['supplier_name'] = normalized_order.get('supplier_name') or row.get('supplier_name')
                 row['provider_name'] = normalized_order.get('provider_name') or row.get('provider_name')
@@ -475,9 +483,13 @@ def enrich_marketplace_purchase_row(purchase: Dict[str, Any]) -> Dict[str, Any]:
         row['settlement_phase'] = normalized_order.get('settlement_phase')
         row['settlement_request'] = normalized_order.get('settlement_request') or {}
         row['customer_approval'] = normalized_order.get('customer_approval') or {}
+        row['settlement_dispute'] = normalized_order.get('settlement_dispute') or {}
+        row['settlement_messages'] = normalized_order.get('settlement_messages') or []
+        row['settlement_notifications'] = normalized_order.get('settlement_notifications') or []
         row['settlement_code'] = normalized_order.get('settlement_code')
         row['settlement_qr_image_url'] = normalized_order.get('settlement_qr_image_url')
         row['settlement_qr_data'] = normalized_order.get('settlement_qr_data')
+        row['settlement_approval_url'] = normalized_order.get('settlement_approval_url')
         row['requires_customer_settlement_approval'] = normalized_order.get('requires_customer_settlement_approval')
         row['delivery_method'] = normalized_order.get('delivery_method') or row.get('delivery_method')
         row['delivery_validation'] = normalized_order.get('delivery_validation') or row.get('delivery_validation')
@@ -9589,6 +9601,114 @@ For claims or questions, please contact:
                 approvals = supply_chain_service.get_customer_pending_approvals(customer_id)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(approvals, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/supply-chain/public-settlement':
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                order_id = (qs.get('order_id', [None])[0] or '').strip()
+                token_value = (qs.get('token', [None])[0] or qs.get('settlement_token', [None])[0] or '').strip()
+                if not order_id or not token_value:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'order_id and token are required'}).encode('utf-8'))
+                    return
+                detail = supply_chain_service.get_public_settlement_detail(
+                    order_id=order_id,
+                    token=token_value,
+                )
+                self._set_json_headers()
+                self.wfile.write(json.dumps(detail, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/supply-chain/settlement-disputes':
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                role = get_effective_role(session)
+                supplier_id = None
+                if role == 'supplier':
+                    supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                else:
+                    supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
+                dispute_status = (qs.get('status', [None])[0] or '').strip() or None
+                disputes = supply_chain_service.get_settlement_disputes(
+                    supplier_id=supplier_id,
+                    status=dispute_status,
+                )
+                self._set_json_headers()
+                self.wfile.write(json.dumps(disputes, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/supply-chain/settlement-thread':
+            if not require_role(session, ['admin', 'accountant', 'supplier', 'customer']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                order_id = (qs.get('order_id', [None])[0] or '').strip()
+                if not order_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'order_id required'}).encode('utf-8'))
+                    return
+                order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+                if not order:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Order not found'}).encode('utf-8'))
+                    return
+
+                role = get_effective_role(session)
+                if role == 'supplier':
+                    supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                    if order.get('supplier_id') != supplier_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                elif role == 'customer':
+                    customer_id = get_session_customer_id(session)
+                    if order.get('customer_id') != customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+
+                thread = supply_chain_service.get_settlement_thread(order_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(thread, default=str).encode('utf-8'))
             except ValueError as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -22917,6 +23037,199 @@ For claims or questions, please contact:
                     actor=actor,
                     data=data,
                 )
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/dispute-settlement'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'customer']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                order_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+                if not order:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Order not found'}).encode('utf-8'))
+                    return
+
+                role = get_effective_role(session)
+                customer_id = get_session_customer_id(session)
+                if role == 'customer' and order.get('customer_id') != customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+
+                actor = customer_id or (session or {}).get('username', 'system')
+                result = supply_chain_service.dispute_order_settlement(
+                    order_id=order_id,
+                    actor=actor,
+                    data=data,
+                )
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/resolve-dispute'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Admin/Accountant access required'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                order_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                actor = (session or {}).get('username', 'admin')
+                result = supply_chain_service.resolve_settlement_dispute(
+                    order_id=order_id,
+                    actor=actor,
+                    data=data,
+                )
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/settlement-message'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'supplier', 'customer']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                order_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+                if not order:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Order not found'}).encode('utf-8'))
+                    return
+
+                role = get_effective_role(session)
+                actor_id = (session or {}).get('username', 'system')
+                if role == 'customer':
+                    customer_id = get_session_customer_id(session)
+                    if order.get('customer_id') != customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    actor_id = customer_id or actor_id
+                elif role == 'supplier':
+                    supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                    if order.get('supplier_id') != supplier_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    actor_id = supplier_id or actor_id
+
+                result = supply_chain_service.add_settlement_message(
+                    order_id=order_id,
+                    actor_role=role or 'system',
+                    actor_id=actor_id,
+                    content=data.get('content'),
+                    message_type=data.get('message_type') or 'note',
+                    metadata=data.get('metadata') if isinstance(data.get('metadata'), dict) else None,
+                )
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/supply-chain/public-settlement/action':
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                order_id = str(data.get('order_id') or '').strip()
+                token = str(data.get('token') or data.get('settlement_token') or '').strip()
+                action = str(data.get('action') or '').strip().lower()
+                if not order_id or not token:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'order_id and token are required'}).encode('utf-8'))
+                    return
+
+                detail = supply_chain_service.get_public_settlement_detail(order_id=order_id, token=token)
+                settlement = detail.get('settlement') or {}
+                actor = str(data.get('customer_id') or settlement.get('customer_id') or 'public_customer').strip() or 'public_customer'
+
+                if action == 'approve':
+                    result = supply_chain_service.approve_order_settlement(
+                        order_id=order_id,
+                        actor=actor,
+                        data={**data, 'settlement_token': token},
+                    )
+                elif action == 'dispute':
+                    result = supply_chain_service.dispute_order_settlement(
+                        order_id=order_id,
+                        actor=actor,
+                        data={**data, 'settlement_token': token},
+                    )
+                elif action == 'message':
+                    result = supply_chain_service.add_settlement_message(
+                        order_id=order_id,
+                        actor_role='customer',
+                        actor_id=actor,
+                        content=data.get('content'),
+                        message_type=data.get('message_type') or 'customer_message',
+                        metadata={'public_token_flow': True},
+                    )
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'action must be approve, dispute, or message'}).encode('utf-8'))
+                    return
+
                 self._set_json_headers(200 if result.get('success') else 400)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
