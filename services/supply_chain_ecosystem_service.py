@@ -653,7 +653,12 @@ class SupplyChainEcosystemService:
                 metadata=payload,
             )
 
-    def _build_settlement_snapshot(self, order: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_settlement_snapshot(
+        self,
+        order: Dict[str, Any],
+        *,
+        include_notifications: bool = True,
+    ) -> Dict[str, Any]:
         """Expose a safe settlement-centric view of an order."""
         supplier = self.suppliers.get(order.get("supplier_id"), {}) if isinstance(order.get("supplier_id"), str) else {}
         settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
@@ -682,7 +687,11 @@ class SupplyChainEcosystemService:
             "delivery_validation": delivery_validation,
             "settlement_dispute": settlement_dispute,
             "settlement_messages": list(order.get("settlement_messages") or []),
-            "settlement_notifications": list(order.get("settlement_notifications") or []),
+            "settlement_notifications": (
+                list(order.get("settlement_notifications") or [])
+                if include_notifications
+                else []
+            ),
             "updated_date": order.get("updated_date"),
         }
 
@@ -1535,7 +1544,10 @@ class SupplyChainEcosystemService:
             raise ValueError("Invalid settlement token for this order")
         return {
             "success": True,
-            "settlement": self._build_settlement_snapshot(order),
+            "settlement": self._build_settlement_snapshot(
+                order,
+                include_notifications=False,
+            ),
         }
 
     def get_settlement_disputes(

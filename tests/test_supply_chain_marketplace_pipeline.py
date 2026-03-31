@@ -12,6 +12,7 @@ import time
 from http.server import HTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from unittest.mock import patch
 
 import web_portal.server as portal
 
@@ -1403,6 +1404,166 @@ def test_public_settlement_qr_page_and_dispute_resolution_flow():
         assert status == 200
         assert settlements.get("pending_orders") == 1
         assert settlements.get("pending_amount", 0) > 0
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+
+
+def test_public_settlement_detail_hides_internal_notification_errors():
+    _reset_supply_chain_state()
+
+    port = 8171
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "public settlement notification privacy",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": (invitation.get("invitation") or {}).get("code"),
+                "company_name": "Notification Privacy Pharmacy",
+                "contact_email": "notification-privacy@example.com",
+                "contact_name": "Notification Privacy Contact",
+                "supplier_type": "pharmacy",
+                "password": "NotificationPrivacy123!",
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for notification privacy flow"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "notification-privacy@example.com", "password": "NotificationPrivacy123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Notification Privacy Medication Pack",
+                "description": "Used to verify public settlement redaction",
+                "item_type": "product",
+                "category": "medication",
+                "price": 64.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+                "delivery_config": {"mode": "delivery", "eta_days": 1, "fee": 4.0},
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        customer_id = "CUST-QR-NOTIFY-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "QR Notification Customer",
+                "email": "qr-notification@example.com",
+            }
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 250.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        purchase_result, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": customer_id,
+                "offer_id": offer_id,
+                "product_id": offer_id,
+                "product_name": "Notification Privacy Medication Pack",
+                "amount": 64.0,
+                "quantity": 1,
+                "payment_method": "health_wallet",
+                "category": "medication",
+                "allow_credit_fallback": False,
+            },
+        )
+        assert status == 200
+        order = purchase_result.get("order", {})
+        order_id = order.get("id")
+        assert order_id
+
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "confirmed"},
+            token=supplier_token,
+        )
+        assert status == 200
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "processing"},
+            token=supplier_token,
+        )
+        assert status == 200
+
+        with patch("services.notification_service.get_notification_service") as get_notification_service:
+            get_notification_service.return_value.send.side_effect = RuntimeError(
+                "services.notification_service.NotificationService unavailable"
+            )
+            settlement_request, status = _post(
+                f"{base}/api/supply-chain/orders/{order_id}/request-settlement",
+                {
+                    "validation_type": "pod_and_geo",
+                    "notes": "Trigger notification send failure",
+                },
+                token=supplier_token,
+            )
+        assert status == 200
+
+        requested_order = settlement_request.get("order", {})
+        detail = portal.supply_chain_service.get_settlement_thread(order_id)
+        internal_notifications = (detail.get("thread") or {}).get("settlement_notifications") or []
+        assert internal_notifications
+        assert any(
+            notification.get("delivery_error") == "services.notification_service.NotificationService unavailable"
+            for notification in internal_notifications
+        )
+
+        public_detail, status = _get(
+            f"{base}/api/supply-chain/public-settlement?order_id={order_id}&token={requested_order.get('settlement_code')}"
+        )
+        assert status == 200
+        settlement = public_detail.get("settlement", {})
+        assert settlement.get("order_id") == order_id
+        assert settlement.get("settlement_notifications") == []
 
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")
