@@ -1220,6 +1220,197 @@ def test_location_aware_delivery_options_and_validation_flow():
         srv.stop()
 
 
+def test_public_settlement_qr_page_and_dispute_resolution_flow():
+    _reset_supply_chain_state()
+
+    port = 8169
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        invitation, status = _post(
+            f"{base}/api/supply-chain/invitations",
+            {
+                "supplier_type": "pharmacy",
+                "max_uses": 1,
+                "expires_days": 30,
+                "notes": "public settlement dispute flow",
+            },
+            token=admin_token,
+        )
+        assert status == 201
+
+        supplier_reg, status = _post(
+            f"{base}/api/supply-chain/register",
+            {
+                "invitation_code": (invitation.get("invitation") or {}).get("code"),
+                "company_name": "Dispute Flow Pharmacy",
+                "contact_email": "dispute-flow@example.com",
+                "contact_name": "Dispute Flow Contact",
+                "supplier_type": "pharmacy",
+                "password": "DisputeFlow123!",
+            },
+        )
+        assert status == 201
+        supplier_id = supplier_reg.get("supplier_id")
+        assert supplier_id
+
+        _, status = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "Approved for public settlement dispute flow"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "dispute-flow@example.com", "password": "DisputeFlow123!"},
+        )
+        assert status == 200
+        supplier_token = supplier_login["token"]
+
+        offer_res, status = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "name": "Dispute Resolution Medication Pack",
+                "description": "Used to verify QR settlement flows",
+                "item_type": "product",
+                "category": "medication",
+                "price": 64.0,
+                "currency": "USD",
+                "wallet_compatible": ["health"],
+                "delivery_config": {"mode": "delivery", "eta_days": 1, "fee": 4.0},
+            },
+            token=supplier_token,
+        )
+        assert status in (200, 201)
+        offer_id = offer_res.get("id")
+        assert offer_id
+
+        customer_id = "CUST-QR-DISPUTE-001"
+        with portal.STATE_LOCK:
+            portal.CUSTOMERS[customer_id] = {
+                "id": customer_id,
+                "name": "QR Dispute Customer",
+                "email": "qr-dispute@example.com",
+            }
+
+        _, status = _post(
+            f"{base}/api/health-wallet/deposit",
+            {"customer_id": customer_id, "amount": 250.0, "payment_method": "card_on_file"},
+        )
+        assert status == 200
+
+        purchase_result, status = _post(
+            f"{base}/api/health-wallet/purchase",
+            {
+                "customer_id": customer_id,
+                "offer_id": offer_id,
+                "product_id": offer_id,
+                "product_name": "Dispute Resolution Medication Pack",
+                "amount": 64.0,
+                "quantity": 1,
+                "payment_method": "health_wallet",
+                "category": "medication",
+                "allow_credit_fallback": False,
+            },
+        )
+        assert status == 200
+        order = purchase_result.get("order", {})
+        order_id = order.get("id")
+        assert order_id
+
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "confirmed"},
+            token=supplier_token,
+        )
+        assert status == 200
+        _, status = _post(
+            f"{base}/api/supplier/orders/update-status",
+            {"transaction_id": order_id, "status": "processing"},
+            token=supplier_token,
+        )
+        assert status == 200
+
+        settlement_request, status = _post(
+            f"{base}/api/supply-chain/orders/{order_id}/request-settlement",
+            {
+                "validation_type": "pod_and_geo",
+                "notes": "Courier marked package as handed over",
+            },
+            token=supplier_token,
+        )
+        assert status == 200
+        requested_order = settlement_request.get("order", {})
+        approval_url = requested_order.get("settlement_approval_url")
+        assert approval_url and "settlement-approval.html" in approval_url
+
+        public_detail, status = _get(
+            f"{base}/api/supply-chain/public-settlement?order_id={order_id}&token={requested_order.get('settlement_code')}"
+        )
+        assert status == 200
+        settlement = public_detail.get("settlement", {})
+        assert settlement.get("order_id") == order_id
+        assert settlement.get("settlement_status") == "awaiting_customer_approval"
+        assert settlement.get("settlement_approval_url")
+
+        dispute_result, status = _post(
+            f"{base}/api/supply-chain/public-settlement/action",
+            {
+                "order_id": order_id,
+                "token": requested_order.get("settlement_code"),
+                "action": "dispute",
+                "customer_id": customer_id,
+                "reason": "Package was incomplete",
+                "notes": "One prescribed item was missing from the box",
+                "category": "missing_items",
+                "requested_action": "admin_review",
+            },
+        )
+        assert status == 200
+        assert dispute_result.get("dispute", {}).get("open") is True
+        assert dispute_result.get("order", {}).get("settlement_status") == "settlement_dispute"
+
+        disputes, status = _get(f"{base}/api/supply-chain/settlement-disputes", token=admin_token)
+        assert status == 200
+        dispute_entry = next(item for item in disputes.get("items", []) if item.get("order_id") == order_id)
+        assert dispute_entry.get("settlement_dispute", {}).get("category") == "missing_items"
+        assert dispute_entry.get("settlement_messages")
+
+        resolution, status = _post(
+            f"{base}/api/supply-chain/orders/{order_id}/resolve-dispute",
+            {
+                "resolution": "approve_settlement",
+                "notes": "Supplier provided proof and replacement shipment confirmation",
+            },
+            token=admin_token,
+        )
+        assert status == 200
+        assert resolution.get("order", {}).get("status") == "completed"
+        assert resolution.get("order", {}).get("settlement_status") == "pending_admin_payout"
+
+        settlements, status = _get(f"{base}/api/supply-chain/settlements", token=supplier_token)
+        assert status == 200
+        assert settlements.get("pending_orders") == 1
+        assert settlements.get("pending_amount", 0) > 0
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+
+
 def test_external_delivery_supplier_connector_flow_and_retry_visibility():
     _reset_supply_chain_state()
 

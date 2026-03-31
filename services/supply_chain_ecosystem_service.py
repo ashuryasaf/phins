@@ -477,33 +477,235 @@ class SupplyChainEcosystemService:
         return round(radius_km * c, 2)
 
     @staticmethod
-    def _build_settlement_qr_payload(order_id: str, qr_token: str) -> str:
-        """Build a compact QR payload used for customer settlement approval."""
-        return f"PHINS-SETTLE|{order_id}|{qr_token}"
-
-    @staticmethod
     def _build_settlement_qr_image_url(payload: str) -> str:
         """Render a QR image through the already-allowed QR image provider."""
         return f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={quote(payload, safe='')}"
+
+    @staticmethod
+    def _get_public_base_url() -> str:
+        """Resolve the externally reachable PHINS base URL used in QR flows."""
+        return str(
+            os.environ.get("BASE_URL", "https://phins-portal-production.up.railway.app")
+        ).strip().rstrip("/")
+
+    @classmethod
+    def _build_settlement_approval_url(cls, order_id: str, qr_token: str) -> str:
+        """Build a first-party approval page URL for customer settlement flows."""
+        return (
+            f"{cls._get_public_base_url()}/settlement-approval.html"
+            f"?order_id={quote(order_id, safe='')}&token={quote(qr_token, safe='')}"
+        )
+
+    def _is_settlement_token_valid(self, order: Dict[str, Any], token: Optional[str]) -> bool:
+        """Validate a public settlement token/code for an order."""
+        provided = self._safe_text(token)
+        if not provided:
+            return False
+        artifacts = self._ensure_settlement_artifacts(order)
+        return provided in {
+            artifacts["settlement_qr_token"],
+            artifacts["settlement_code"],
+            artifacts["settlement_qr_data"],
+            artifacts["settlement_approval_url"],
+        }
+
+    def _remove_pending_settlement_entry(self, supplier_id: Optional[str], order_id: str) -> None:
+        """Ensure an order is not left in the supplier payout queue twice."""
+        if not supplier_id:
+            return
+        pending = self.pending_settlements.get(supplier_id, [])
+        filtered = [row for row in pending if row.get("order_id") != order_id]
+        if filtered:
+            self.pending_settlements[supplier_id] = filtered
+        elif supplier_id in self.pending_settlements:
+            self.pending_settlements.pop(supplier_id, None)
+
+    def _append_settlement_message(
+        self,
+        order: Dict[str, Any],
+        *,
+        author_role: str,
+        author_id: str,
+        message_type: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Append an auditable settlement message to the order thread."""
+        now = datetime.now(timezone.utc).isoformat()
+        message = {
+            "message_id": f"MSG-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}",
+            "created_at": now,
+            "author_role": self._safe_text(author_role) or "system",
+            "author_id": self._safe_text(author_id) or "system",
+            "message_type": self._safe_text(message_type) or "note",
+            "content": self._safe_text(content) or "",
+            "metadata": metadata or {},
+        }
+        order.setdefault("settlement_messages", []).append(message)
+        return message
+
+    def _append_settlement_notification(
+        self,
+        order: Dict[str, Any],
+        *,
+        audience: str,
+        recipient: str,
+        subject: str,
+        content: str,
+        customer_id: Optional[str] = None,
+        priority: str = "normal",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Record a settlement notification and best-effort send an in-app copy."""
+        now = datetime.now(timezone.utc).isoformat()
+        record = {
+            "notification_id": f"NOTIF-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}",
+            "created_at": now,
+            "audience": self._safe_text(audience) or "unknown",
+            "recipient": self._safe_text(recipient) or "unknown",
+            "subject": self._safe_text(subject) or "PHINS settlement update",
+            "content": self._safe_text(content) or "",
+            "metadata": metadata or {},
+        }
+        order.setdefault("settlement_notifications", []).append(record)
+
+        try:
+            from services.notification_service import (
+                NotificationChannel,
+                NotificationPriority,
+                NotificationRequest,
+                get_notification_service,
+            )
+
+            priority_value = NotificationPriority.HIGH if str(priority).strip().lower() == "high" else NotificationPriority.NORMAL
+            result = get_notification_service().send(NotificationRequest(
+                channel=NotificationChannel.IN_APP,
+                recipient=record["recipient"],
+                subject=record["subject"],
+                content=record["content"],
+                priority=priority_value,
+                customer_id=customer_id,
+                user_id=record["recipient"],
+                metadata={
+                    **(metadata or {}),
+                    "order_id": order.get("id"),
+                    "settlement_status": order.get("settlement_status"),
+                    "audience": record["audience"],
+                },
+            ))
+            record["delivery"] = result.to_dict()
+        except Exception as exc:
+            record["delivery_error"] = str(exc)
+
+        return record
+
+    def _notify_settlement_participants(
+        self,
+        order: Dict[str, Any],
+        *,
+        event_type: str,
+        subject: str,
+        content: str,
+        actor: Optional[str] = None,
+        priority: str = "normal",
+        include_customer: bool = True,
+        include_supplier: bool = True,
+        include_admin: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Broadcast a settlement event to the relevant in-app audiences."""
+        payload = {
+            "event_type": self._safe_text(event_type) or "settlement_update",
+            "actor": self._safe_text(actor),
+            **(metadata or {}),
+        }
+        customer_id = self._safe_text(order.get("customer_id"))
+        supplier_id = self._safe_text(order.get("supplier_id"))
+        if include_customer and customer_id:
+            self._append_settlement_notification(
+                order,
+                audience="customer",
+                recipient=customer_id,
+                subject=subject,
+                content=content,
+                customer_id=customer_id,
+                priority=priority,
+                metadata=payload,
+            )
+        if include_supplier and supplier_id:
+            self._append_settlement_notification(
+                order,
+                audience="supplier",
+                recipient=f"supplier:{supplier_id}",
+                subject=subject,
+                content=content,
+                priority=priority,
+                metadata=payload,
+            )
+        if include_admin:
+            self._append_settlement_notification(
+                order,
+                audience="admin",
+                recipient="admin:settlements",
+                subject=subject,
+                content=content,
+                priority=priority,
+                metadata=payload,
+            )
+
+    def _build_settlement_snapshot(self, order: Dict[str, Any]) -> Dict[str, Any]:
+        """Expose a safe settlement-centric view of an order."""
+        supplier = self.suppliers.get(order.get("supplier_id"), {}) if isinstance(order.get("supplier_id"), str) else {}
+        settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
+        customer_approval = order.get("customer_approval") if isinstance(order.get("customer_approval"), dict) else {}
+        delivery_validation = order.get("delivery_validation") if isinstance(order.get("delivery_validation"), dict) else {}
+        settlement_dispute = order.get("settlement_dispute") if isinstance(order.get("settlement_dispute"), dict) else {}
+        return {
+            "order_id": order.get("id"),
+            "supplier_id": order.get("supplier_id"),
+            "supplier_name": supplier.get("company_name") or order.get("supplier_name") or order.get("supplier_id"),
+            "customer_id": order.get("customer_id"),
+            "customer_name": order.get("customer_name"),
+            "item_name": order.get("item_name"),
+            "order_type": order.get("order_type"),
+            "currency": order.get("currency") or "USD",
+            "status": order.get("status"),
+            "settlement_status": order.get("settlement_status"),
+            "settlement_phase": order.get("settlement_phase"),
+            "amount": round(float(order.get("total_amount", 0) or 0), 2),
+            "supplier_payout": round(float(order.get("supplier_payout", 0) or 0), 2),
+            "settlement_code": order.get("settlement_code"),
+            "settlement_qr_image_url": order.get("settlement_qr_image_url"),
+            "settlement_approval_url": order.get("settlement_approval_url"),
+            "settlement_request": settlement_request,
+            "customer_approval": customer_approval,
+            "delivery_validation": delivery_validation,
+            "settlement_dispute": settlement_dispute,
+            "settlement_messages": list(order.get("settlement_messages") or []),
+            "settlement_notifications": list(order.get("settlement_notifications") or []),
+            "updated_date": order.get("updated_date"),
+        }
 
     def _ensure_settlement_artifacts(self, order: Dict[str, Any]) -> Dict[str, str]:
         """Ensure an order has a stable settlement code and QR assets."""
         order_id = str(order.get("id") or "").strip()
         qr_token = self._safe_text(order.get("settlement_qr_token")) or secrets.token_urlsafe(10)
         settlement_code = self._safe_text(order.get("settlement_code")) or f"SET-{qr_token[:8].upper()}"
-        qr_payload = self._build_settlement_qr_payload(order_id, qr_token)
-        qr_image_url = self._build_settlement_qr_image_url(qr_payload)
+        approval_url = self._build_settlement_approval_url(order_id, qr_token)
+        qr_image_url = self._build_settlement_qr_image_url(approval_url)
 
         order["settlement_qr_token"] = qr_token
         order["settlement_code"] = settlement_code
-        order["settlement_qr_data"] = qr_payload
+        order["settlement_qr_data"] = approval_url
         order["settlement_qr_image_url"] = qr_image_url
+        order["settlement_approval_url"] = approval_url
 
         return {
             "settlement_qr_token": qr_token,
             "settlement_code": settlement_code,
-            "settlement_qr_data": qr_payload,
+            "settlement_qr_data": approval_url,
             "settlement_qr_image_url": qr_image_url,
+            "settlement_approval_url": approval_url,
         }
 
     def _validate_customer_settlement_approval(
@@ -828,6 +1030,7 @@ class SupplyChainEcosystemService:
             "approval_target": proof.get("approval_target"),
             "proof": proof,
         }
+        order["settlement_dispute"] = {}
         order["delivery_validation"] = {
             "validated": True,
             "validated_at": now,
@@ -837,6 +1040,33 @@ class SupplyChainEcosystemService:
         }
         if str(order.get("status") or "").strip().lower() != OrderStatus.DELIVERED.value:
             order["status"] = OrderStatus.DELIVERED.value
+
+        self._append_settlement_message(
+            order,
+            author_role="customer",
+            author_id=actor,
+            message_type="approval",
+            content=self._safe_text(payload.get("notes")) or "Customer approved the settlement request",
+            metadata={
+                "validation_type": proof.get("validation_type"),
+                "settlement_code_validated": proof.get("settlement_code_validated"),
+            },
+        )
+        self._notify_settlement_participants(
+            order,
+            event_type="settlement_approved",
+            subject=f"Settlement approved for order {order_id}",
+            content=(
+                f"Customer approval was recorded for {order.get('item_name') or order_id}. "
+                "The order has moved to pending admin payout."
+            ),
+            actor=actor,
+            priority="normal",
+            metadata={
+                "validation_type": proof.get("validation_type"),
+                "approval_target": proof.get("approval_target"),
+            },
+        )
 
         self._record_ledger_entry(
             entry_type="delivery_validated",
@@ -935,8 +1165,36 @@ class SupplyChainEcosystemService:
             "settlement_code": artifacts["settlement_code"],
             "settlement_qr_data": artifacts["settlement_qr_data"],
             "settlement_qr_image_url": artifacts["settlement_qr_image_url"],
+            "settlement_approval_url": artifacts["settlement_approval_url"],
         }
         order["updated_date"] = now
+        order["settlement_dispute"] = {}
+        self._append_settlement_message(
+            order,
+            author_role="supplier",
+            author_id=actor,
+            message_type="request",
+            content=self._safe_text(payload.get("notes")) or "Supplier requested customer settlement approval",
+            metadata={
+                "validation_type": validation_type,
+                "settlement_code": artifacts["settlement_code"],
+            },
+        )
+        self._notify_settlement_participants(
+            order,
+            event_type="settlement_requested",
+            subject=f"Customer approval requested for order {order_id}",
+            content=(
+                f"Supplier settlement approval is waiting for customer action on "
+                f"{order.get('item_name') or order_id}."
+            ),
+            actor=actor,
+            priority="normal",
+            metadata={
+                "validation_type": validation_type,
+                "settlement_approval_url": artifacts["settlement_approval_url"],
+            },
+        )
 
         self._record_ledger_entry(
             entry_type="settlement_requested",
@@ -952,6 +1210,7 @@ class SupplyChainEcosystemService:
                 "validation_type": validation_type,
                 "fulfillment_kind": fulfillment_kind,
                 "settlement_code": artifacts["settlement_code"],
+                "settlement_approval_url": artifacts["settlement_approval_url"],
             },
         )
 
@@ -970,6 +1229,344 @@ class SupplyChainEcosystemService:
     ) -> Dict[str, Any]:
         """Customer-facing alias for settlement approval and validation."""
         return self.validate_delivery_completion(order_id=order_id, actor=actor, data=data)
+
+    def dispute_order_settlement(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Place a settlement request into dispute for admin resolution."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        payload = data or {}
+        order = self.orders[order_id]
+        settlement_status = str(order.get("settlement_status") or "").strip().lower()
+        if settlement_status not in {"awaiting_customer_approval", "settlement_dispute"}:
+            raise ValueError("Only pending customer settlement approvals can be disputed")
+
+        token = (
+            payload.get("settlement_token")
+            or payload.get("token")
+            or payload.get("settlement_code")
+            or payload.get("qr_token")
+        )
+        if token and not self._is_settlement_token_valid(order, token):
+            raise ValueError("Invalid settlement token for this order")
+
+        dispute_reason = self._safe_text(payload.get("reason")) or "Customer raised a settlement dispute"
+        dispute_notes = self._safe_text(payload.get("notes"))
+        dispute_category = self._safe_text(payload.get("category")) or "general"
+        now = datetime.now(timezone.utc).isoformat()
+
+        order["settlement_status"] = "settlement_dispute"
+        order["settlement_phase"] = "awaiting_admin_resolution"
+        order["updated_date"] = now
+        order["settlement_dispute"] = {
+            "open": True,
+            "disputed_at": now,
+            "disputed_by": actor,
+            "reason": dispute_reason,
+            "notes": dispute_notes,
+            "category": dispute_category,
+            "customer_requested_action": self._safe_text(payload.get("requested_action")) or "admin_review",
+            "status": "open",
+            "evidence": payload.get("evidence") if isinstance(payload.get("evidence"), list) else [],
+            "admin_resolution": None,
+        }
+        self._remove_pending_settlement_entry(order.get("supplier_id"), order_id)
+
+        self._append_settlement_message(
+            order,
+            author_role="customer",
+            author_id=actor,
+            message_type="dispute",
+            content=dispute_notes or dispute_reason,
+            metadata={
+                "category": dispute_category,
+                "requested_action": order["settlement_dispute"]["customer_requested_action"],
+            },
+        )
+        self._notify_settlement_participants(
+            order,
+            event_type="settlement_disputed",
+            subject=f"Settlement dispute opened for order {order_id}",
+            content=(
+                f"A customer dispute was submitted for {order.get('item_name') or order_id}. "
+                "Admin review is required before payout can continue."
+            ),
+            actor=actor,
+            priority="high",
+            metadata={
+                "category": dispute_category,
+                "reason": dispute_reason,
+            },
+        )
+
+        self._record_ledger_entry(
+            entry_type="settlement_disputed",
+            supplier_id=order["supplier_id"],
+            customer_id=order.get("customer_id"),
+            order_id=order_id,
+            amount=order.get("total_amount", 0.0),
+            commission=order.get("commission", 0.0),
+            supplier_payout=order.get("supplier_payout", 0.0),
+            description=f"Settlement disputed for order {order_id}",
+            metadata={
+                "disputed_by": actor,
+                "reason": dispute_reason,
+                "category": dispute_category,
+            },
+        )
+
+        return {
+            "success": True,
+            "order": order,
+            "dispute": order["settlement_dispute"],
+            "message": f"Settlement dispute recorded for order {order_id}",
+        }
+
+    def resolve_settlement_dispute(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Resolve a disputed settlement by approving or rejecting the dispute."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        payload = data or {}
+        order = self.orders[order_id]
+        dispute = order.get("settlement_dispute") if isinstance(order.get("settlement_dispute"), dict) else {}
+        if not dispute or not dispute.get("open"):
+            raise ValueError("This order does not have an open settlement dispute")
+
+        resolution = str(payload.get("resolution") or "").strip().lower()
+        if resolution not in {"approve_settlement", "reject_settlement", "request_more_info"}:
+            raise ValueError("resolution must be one of approve_settlement, reject_settlement, request_more_info")
+
+        resolution_notes = self._safe_text(payload.get("notes"))
+        now = datetime.now(timezone.utc).isoformat()
+        dispute["open"] = resolution == "request_more_info"
+        dispute["status"] = "awaiting_more_info" if resolution == "request_more_info" else "resolved"
+        dispute["admin_resolution"] = {
+            "resolution": resolution,
+            "resolved_at": now,
+            "resolved_by": actor,
+            "notes": resolution_notes,
+        }
+        order["updated_date"] = now
+
+        self._append_settlement_message(
+            order,
+            author_role="admin",
+            author_id=actor,
+            message_type="resolution",
+            content=resolution_notes or f"Admin marked dispute as {resolution}",
+            metadata={"resolution": resolution},
+        )
+
+        if resolution == "approve_settlement":
+            order["settlement_status"] = "customer_approved"
+            order["settlement_phase"] = "ready_for_payout"
+            order["customer_approval"] = {
+                "approved": True,
+                "approved_at": now,
+                "approved_by": actor,
+                "approval_target": "admin_override",
+                "proof": {
+                    "validation_type": "admin_override",
+                    "notes": resolution_notes,
+                    "customer_acknowledged": False,
+                },
+            }
+            result = self.complete_order(order_id, completed_by=actor)
+            self._notify_settlement_participants(
+                order,
+                event_type="settlement_dispute_resolved",
+                subject=f"Dispute resolved and payout resumed for order {order_id}",
+                content=(
+                    f"Admin resolved the settlement dispute for {order.get('item_name') or order_id} "
+                    "and released the order back into payout flow."
+                ),
+                actor=actor,
+                priority="normal",
+                metadata={"resolution": resolution},
+            )
+            self._record_ledger_entry(
+                entry_type="settlement_dispute_resolved",
+                supplier_id=order["supplier_id"],
+                customer_id=order.get("customer_id"),
+                order_id=order_id,
+                amount=order.get("total_amount", 0.0),
+                commission=order.get("commission", 0.0),
+                supplier_payout=order.get("supplier_payout", 0.0),
+                description=f"Settlement dispute resolved with payout approval for order {order_id}",
+                metadata={"resolved_by": actor, "resolution": resolution},
+            )
+            return {
+                "success": True,
+                "order": result.get("order", order),
+                "dispute": dispute,
+                "message": f"Settlement dispute resolved for order {order_id}",
+            }
+
+        if resolution == "reject_settlement":
+            order["settlement_status"] = "settlement_rejected"
+            order["settlement_phase"] = "closed_after_dispute"
+            order["status"] = OrderStatus.DISPUTED.value
+            self._notify_settlement_participants(
+                order,
+                event_type="settlement_dispute_rejected",
+                subject=f"Settlement payout blocked for order {order_id}",
+                content=(
+                    f"Admin resolved the settlement dispute for {order.get('item_name') or order_id} "
+                    "by rejecting the payout. Further manual action is required."
+                ),
+                actor=actor,
+                priority="high",
+                metadata={"resolution": resolution},
+            )
+            self._record_ledger_entry(
+                entry_type="settlement_dispute_resolved",
+                supplier_id=order["supplier_id"],
+                customer_id=order.get("customer_id"),
+                order_id=order_id,
+                amount=order.get("total_amount", 0.0),
+                commission=order.get("commission", 0.0),
+                supplier_payout=order.get("supplier_payout", 0.0),
+                description=f"Settlement dispute resolved with payout rejection for order {order_id}",
+                metadata={"resolved_by": actor, "resolution": resolution},
+            )
+            return {
+                "success": True,
+                "order": order,
+                "dispute": dispute,
+                "message": f"Settlement dispute resolved for order {order_id}",
+            }
+
+        order["settlement_status"] = "settlement_dispute"
+        order["settlement_phase"] = "awaiting_customer_response"
+        self._notify_settlement_participants(
+            order,
+            event_type="settlement_dispute_more_info",
+            subject=f"More information requested for order {order_id}",
+            content=(
+                f"Admin requested more information to resolve the settlement dispute for "
+                f"{order.get('item_name') or order_id}."
+            ),
+            actor=actor,
+            priority="high",
+            metadata={"resolution": resolution},
+        )
+        return {
+            "success": True,
+            "order": order,
+            "dispute": dispute,
+            "message": f"Additional customer information requested for order {order_id}",
+        }
+
+    def add_settlement_message(
+        self,
+        *,
+        order_id: str,
+        actor_role: str,
+        actor_id: str,
+        content: str,
+        message_type: str = "note",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Append a discussion message to an order's settlement thread."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+        if not self._safe_text(content):
+            raise ValueError("content is required")
+
+        order = self.orders[order_id]
+        message = self._append_settlement_message(
+            order,
+            author_role=actor_role,
+            author_id=actor_id,
+            message_type=message_type,
+            content=content,
+            metadata=metadata,
+        )
+        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+        self._notify_settlement_participants(
+            order,
+            event_type="settlement_message",
+            subject=f"New settlement message for order {order_id}",
+            content=content,
+            actor=actor_id,
+            priority="normal",
+            metadata={"message_type": message_type},
+        )
+        return {
+            "success": True,
+            "message": message,
+            "order": order,
+        }
+
+    def get_settlement_thread(self, order_id: str) -> Dict[str, Any]:
+        """Return the settlement thread/messages for a single order."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+        order = self.orders[order_id]
+        return {
+            "success": True,
+            "thread": self._build_settlement_snapshot(order),
+        }
+
+    def get_public_settlement_detail(
+        self,
+        *,
+        order_id: str,
+        token: str,
+    ) -> Dict[str, Any]:
+        """Return settlement detail for a QR-scanned public approval page."""
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+        order = self.orders[order_id]
+        if not self._is_settlement_token_valid(order, token):
+            raise ValueError("Invalid settlement token for this order")
+        return {
+            "success": True,
+            "settlement": self._build_settlement_snapshot(order),
+        }
+
+    def get_settlement_disputes(
+        self,
+        supplier_id: Optional[str] = None,
+        *,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return disputed settlement orders for admin or supplier review."""
+        items: List[Dict[str, Any]] = []
+        normalized_status = self._safe_text(status)
+        for order in self.orders.values():
+            if supplier_id and order.get("supplier_id") != supplier_id:
+                continue
+            dispute = order.get("settlement_dispute") if isinstance(order.get("settlement_dispute"), dict) else {}
+            if not dispute:
+                continue
+            if normalized_status and str(dispute.get("status") or "").strip().lower() != normalized_status.lower():
+                continue
+            snapshot = self._build_settlement_snapshot(order)
+            snapshot["dispute_status"] = dispute.get("status")
+            items.append(snapshot)
+        items.sort(
+            key=lambda item: ((item.get("settlement_dispute") or {}).get("disputed_at") or item.get("updated_date") or ""),
+            reverse=True,
+        )
+        return {
+            "success": True,
+            "items": items,
+            "total": len(items),
+        }
 
     def get_customer_pending_approvals(self, customer_id: str) -> Dict[str, Any]:
         """Return orders awaiting the customer's settlement approval."""
@@ -997,6 +1594,9 @@ class SupplyChainEcosystemService:
                 "settlement_code": artifacts["settlement_code"],
                 "settlement_qr_data": artifacts["settlement_qr_data"],
                 "settlement_qr_image_url": artifacts["settlement_qr_image_url"],
+                "settlement_approval_url": artifacts["settlement_approval_url"],
+                "settlement_messages": list(order.get("settlement_messages") or []),
+                "settlement_dispute": order.get("settlement_dispute") if isinstance(order.get("settlement_dispute"), dict) else {},
             })
         items.sort(key=lambda x: x.get("requested_at") or "", reverse=True)
         return {
@@ -1023,6 +1623,8 @@ class SupplyChainEcosystemService:
                 "requested_at": settlement_request.get("requested_at"),
                 "validation_type": settlement_request.get("validation_type"),
                 "settlement_code": order.get("settlement_code"),
+                "settlement_approval_url": order.get("settlement_approval_url"),
+                "settlement_dispute": order.get("settlement_dispute") if isinstance(order.get("settlement_dispute"), dict) else {},
             })
         items.sort(key=lambda x: x.get("requested_at") or "", reverse=True)
         return {

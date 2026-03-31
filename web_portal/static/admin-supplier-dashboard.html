@@ -596,10 +596,14 @@
             <div style="font-size:1.5rem; font-weight:bold;" id="avg-settlement">$0.00</div>
           </div>
         </div>
-        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:16px; margin-bottom:24px;">
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:24px;">
           <div style="background:#eff6ff; padding:16px; border-radius:8px; text-align:center; border:1px solid #bfdbfe;">
             <div style="font-size:0.9rem; color:#1d4ed8;">Awaiting Customer Approval</div>
             <div style="font-size:1.4rem; font-weight:bold; color:#1d4ed8;" id="awaiting-customer-total">$0.00</div>
+          </div>
+          <div style="background:#fef2f2; padding:16px; border-radius:8px; text-align:center; border:1px solid #fecaca;">
+            <div style="font-size:0.9rem; color:#b91c1c;">Settlement Disputes</div>
+            <div style="font-size:1.4rem; font-weight:bold; color:#b91c1c;" id="settlement-dispute-count">0</div>
           </div>
           <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid var(--border);">
             <div style="font-size:0.9rem; color:var(--text-muted); margin-bottom:8px;">Approval Queue</div>
@@ -620,6 +624,28 @@
               </tr>
             </thead>
             <tbody id="settlements-body">
+              <tr><td colspan="6" class="muted-text">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-card" style="margin-top:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h4 style="margin:0;">Dispute Resolution Queue</h4>
+            <button class="btn btn-outline" onclick="refreshSettlements()">Refresh disputes</button>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Supplier</th>
+                <th>Customer</th>
+                <th>Issue</th>
+                <th>Messages</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="settlement-disputes-body">
               <tr><td colspan="6" class="muted-text">Loading...</td></tr>
             </tbody>
           </table>
@@ -1492,16 +1518,22 @@
     // ========== SETTLEMENTS ==========
     async function refreshSettlements() {
       const tbody = document.getElementById('settlements-body');
+      const disputeBody = document.getElementById('settlement-disputes-body');
       tbody.innerHTML = '<tr><td colspan="6" class="muted-text">Loading...</td></tr>';
+      disputeBody.innerHTML = '<tr><td colspan="6" class="muted-text">Loading...</td></tr>';
       
       try {
-        const data = await apiGet('/api/supply-chain/settlements');
+        const [data, disputesData] = await Promise.all([
+          apiGet('/api/supply-chain/settlements'),
+          apiGet('/api/supply-chain/settlement-disputes')
+        ]);
         
         // Calculate totals
         let totalPending = 0;
         let suppliersCount = 0;
         let awaitingCustomerTotal = 0;
         const entries = Object.entries(data || {}).filter(([k, v]) => typeof v === 'object' && v.pending_amount);
+        const disputes = disputesData.items || [];
         
         entries.forEach(([supplierId, info]) => {
           totalPending += info.pending_amount || 0;
@@ -1514,11 +1546,11 @@
         document.getElementById('avg-settlement').textContent = suppliersCount > 0 ? formatCurrency(totalPending / suppliersCount) : '$0.00';
         document.getElementById('settlement-count').textContent = suppliersCount;
         document.getElementById('awaiting-customer-total').textContent = formatCurrency(awaitingCustomerTotal);
+        document.getElementById('settlement-dispute-count').textContent = disputes.length;
         
         if (!entries.length) {
           document.getElementById('approval-queue-summary').textContent = 'No suppliers are waiting for settlement actions.';
           tbody.innerHTML = '<tr><td colspan="6" class="muted-text">No pending settlements</td></tr>';
-          return;
         }
         
         // Get supplier details
@@ -1536,30 +1568,67 @@
           ? approvalSummary.join(' | ')
           : 'All listed suppliers are payout-ready.';
         
-        tbody.innerHTML = entries.map(([supplierId, info]) => {
-          const supplier = suppliers[supplierId] || {};
+        if (entries.length) {
+          tbody.innerHTML = entries.map(([supplierId, info]) => {
+            const supplier = suppliers[supplierId] || {};
+            return `
+              <tr>
+                <td>${esc(supplierId)}</td>
+                <td>${esc(supplier.company_name) || 'Unknown'}</td>
+                <td>
+                  ${info.pending_orders || 0}
+                  ${info.awaiting_customer_approval_orders ? `<div class="muted-text" style="font-size:11px;">+ ${info.awaiting_customer_approval_orders} awaiting customer</div>` : ''}
+                  ${info.dispute_orders ? `<div class="muted-text" style="font-size:11px;color:#b91c1c;">+ ${info.dispute_orders} dispute(s)</div>` : ''}
+                </td>
+                <td style="font-weight:bold;color:#f59e0b;">
+                  ${formatCurrency(info.pending_amount)}
+                  ${info.awaiting_customer_approval_amount ? `<div class="muted-text" style="font-size:11px;">Awaiting customer: ${formatCurrency(info.awaiting_customer_approval_amount)}</div>` : ''}
+                  ${info.dispute_amount ? `<div class="muted-text" style="font-size:11px;color:#b91c1c;">Disputed: ${formatCurrency(info.dispute_amount)}</div>` : ''}
+                </td>
+                <td>${formatSupplierType(supplier.settlement_frequency) || 'Weekly'}</td>
+                <td>
+                  <button class="btn-sm btn-approve" onclick="processSettlement('${esc(supplierId)}')" ${Number(info.pending_amount || 0) > 0 ? '' : 'disabled'}>Process Payout</button>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        disputeBody.innerHTML = disputes.length ? disputes.map(item => {
+          const dispute = item.settlement_dispute || {};
+          const messages = item.settlement_messages || [];
+          const issueSummary = dispute.notes || dispute.reason || 'Customer raised a dispute';
+          const latestMessage = messages.length ? messages[messages.length - 1] : null;
           return `
             <tr>
-              <td>${esc(supplierId)}</td>
-              <td>${esc(supplier.company_name) || 'Unknown'}</td>
               <td>
-                ${info.pending_orders || 0}
-                ${info.awaiting_customer_approval_orders ? `<div class="muted-text" style="font-size:11px;">+ ${info.awaiting_customer_approval_orders} awaiting customer</div>` : ''}
+                <div style="font-weight:600;">${esc(item.order_id || 'N/A')}</div>
+                <div class="muted-text" style="font-size:11px;">${esc(item.item_name || 'Unknown item')}</div>
               </td>
-              <td style="font-weight:bold;color:#f59e0b;">
-                ${formatCurrency(info.pending_amount)}
-                ${info.awaiting_customer_approval_amount ? `<div class="muted-text" style="font-size:11px;">Awaiting customer: ${formatCurrency(info.awaiting_customer_approval_amount)}</div>` : ''}
-              </td>
-              <td>${formatSupplierType(supplier.settlement_frequency) || 'Weekly'}</td>
+              <td>${esc(item.supplier_name || item.supplier_id || 'Unknown')}</td>
+              <td>${esc(item.customer_name || item.customer_id || 'Unknown')}</td>
               <td>
-                <button class="btn-sm btn-approve" onclick="processSettlement('${esc(supplierId)}')" ${Number(info.pending_amount || 0) > 0 ? '' : 'disabled'}>Process Payout</button>
+                <div style="font-weight:600;color:#b91c1c;">${esc(dispute.category || 'general')}</div>
+                <div class="muted-text" style="font-size:11px;">${esc(issueSummary)}</div>
+              </td>
+              <td>
+                <div>${messages.length} message(s)</div>
+                ${latestMessage ? `<div class="muted-text" style="font-size:11px;">Latest: ${esc(latestMessage.content || '')}</div>` : '<div class="muted-text" style="font-size:11px;">No thread yet</div>'}
+              </td>
+              <td>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <button class="btn-sm btn-approve" onclick="resolveSettlementDispute('${esc(item.order_id)}', 'approve_settlement')">Approve Payout</button>
+                  <button class="btn-sm btn-delete" onclick="resolveSettlementDispute('${esc(item.order_id)}', 'reject_settlement')">Reject Payout</button>
+                  <button class="btn-sm btn-edit" onclick="resolveSettlementDispute('${esc(item.order_id)}', 'request_more_info')">Request Info</button>
+                </div>
               </td>
             </tr>
           `;
-        }).join('');
+        }).join('') : '<tr><td colspan="6" class="muted-text">No open settlement disputes</td></tr>';
         
       } catch (e) {
         tbody.innerHTML = `<tr><td colspan="6" class="muted-text">Error: ${esc(e.message)}</td></tr>`;
+        disputeBody.innerHTML = `<tr><td colspan="6" class="muted-text">Error: ${esc(e.message)}</td></tr>`;
         console.error('Failed to load settlements:', e);
       }
     }
@@ -1572,6 +1641,21 @@
         alert(`Settlement processed: ${result.message}`);
         refreshSettlements();
         loadDashboardStats();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    async function resolveSettlementDispute(orderId, resolution) {
+      const notes = prompt(`Add admin notes for ${resolution.replace(/_/g, ' ')} on ${orderId}:`, '');
+      if (notes === null) return;
+      try {
+        const result = await apiPost(`/api/supply-chain/orders/${encodeURIComponent(orderId)}/resolve-dispute`, {
+          resolution,
+          notes
+        });
+        alert(result.message || 'Settlement dispute updated');
+        refreshSettlements();
       } catch (e) {
         alert('Error: ' + e.message);
       }

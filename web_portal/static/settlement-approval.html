@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS Settlement Approval</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #122033;
+      --muted: #5f6c80;
+      --border: #d7deea;
+      --primary: #1565c0;
+      --primary-dark: #0d47a1;
+      --success: #166534;
+      --danger: #b91c1c;
+      --warning: #92400e;
+      --shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 35%, #eef2f7 100%);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0d47a1 0%, #1976d2 60%, #42a5f5 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 2rem;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      line-height: 1.5;
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 22px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .card h2, .card h3 {
+      margin-top: 0;
+      margin-bottom: 14px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .meta-item {
+      background: #f8fbff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .meta-item .label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .meta-item .value {
+      font-size: 1rem;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .status-awaiting { background: #dbeafe; color: #1d4ed8; }
+    .status-approved { background: #dcfce7; color: #166534; }
+    .status-dispute { background: #fee2e2; color: #b91c1c; }
+    .status-settled { background: #dcfce7; color: #166534; }
+    .status-default { background: #e5e7eb; color: #374151; }
+
+    .action-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: #eff6ff;
+      color: var(--primary-dark);
+      border: 1px solid #bfdbfe;
+    }
+
+    .btn-danger {
+      background: #fee2e2;
+      color: var(--danger);
+      border: 1px solid #fecaca;
+    }
+
+    .btn-outline {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .section-note {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+      margin-bottom: 14px;
+    }
+
+    .thread {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .thread-item {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fcfdff;
+    }
+
+    .thread-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .thread-body {
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
+
+    .banner {
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      display: none;
+      font-weight: 600;
+    }
+
+    .banner.info { display: block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .banner.success { display: block; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .banner.error { display: block; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+    .banner.warning { display: block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .wrap { padding: 20px 14px 36px; }
+      .hero { padding: 22px 18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Approve or dispute this PHINS settlement</h1>
+      <p>
+        This secure page is generated from the supplier’s PHINS QR. Review the order details, confirm the delivery or service completion,
+        or raise a dispute so PHINS admin can resolve it before any payout is released.
+      </p>
+    </div>
+
+    <div id="page-banner" class="banner"></div>
+
+    <div class="grid">
+      <section class="card">
+        <div id="status-pill" class="status-pill status-default">Loading settlement...</div>
+        <h2 id="order-title">Settlement details</h2>
+        <div class="muted" id="order-subtitle">Loading PHINS settlement information...</div>
+
+        <div class="meta-grid">
+          <div class="meta-item">
+            <div class="label">Order ID</div>
+            <div class="value" id="order-id">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Settlement code</div>
+            <div class="value" id="settlement-code">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Supplier</div>
+            <div class="value" id="supplier-name">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Customer</div>
+            <div class="value" id="customer-name">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Item / Service</div>
+            <div class="value" id="item-name">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Amount</div>
+            <div class="value" id="amount">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Validation type</div>
+            <div class="value" id="validation-type">-</div>
+          </div>
+          <div class="meta-item">
+            <div class="label">Requested at</div>
+            <div class="value" id="requested-at">-</div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px;">
+          <div class="label" style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Customer name / recipient</div>
+          <input id="recipient-name" type="text" placeholder="Enter your name">
+        </div>
+
+        <div style="margin-top:14px;">
+          <div class="label" style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Notes for approval or dispute</div>
+          <textarea id="action-notes" placeholder="Add any delivery confirmation details, service notes, or dispute context"></textarea>
+        </div>
+
+        <div class="action-row">
+          <button id="approve-btn" class="btn-primary" type="button">Approve settlement</button>
+          <button id="dispute-btn" class="btn-danger" type="button">Raise dispute</button>
+          <button id="refresh-btn" class="btn-outline" type="button">Refresh status</button>
+        </div>
+
+        <div id="dispute-panel" style="margin-top:18px;" class="hidden">
+          <h3>Dispute details</h3>
+          <p class="section-note">
+            Use this when the delivered item or service does not match expectations, was not received, or requires PHINS admin review.
+          </p>
+          <div style="margin-bottom:10px;">
+            <div class="label" style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Dispute reason</div>
+            <input id="dispute-reason" type="text" placeholder="Example: Wrong medication delivered">
+          </div>
+          <div style="margin-bottom:12px;">
+            <div class="label" style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Requested admin action</div>
+            <input id="requested-action" type="text" value="admin_review" placeholder="admin_review">
+          </div>
+          <button id="submit-dispute-btn" class="btn-danger" type="button">Submit dispute to admin</button>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h3>Settlement messages and audit trail</h3>
+        <p class="section-note">
+          Every approval, dispute, admin note, and customer message is recorded here to preserve data integrity across customer,
+          supplier, and admin views.
+        </p>
+
+        <div id="thread" class="thread">
+          <div class="muted">Loading message thread...</div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div class="label" style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Send a message</div>
+          <textarea id="message-content" placeholder="Send a message to supplier/admin about this settlement"></textarea>
+          <div class="action-row" style="margin-top:12px;">
+            <button id="send-message-btn" class="btn-secondary" type="button">Send message</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search || '');
+    const orderId = (params.get('order_id') || '').trim();
+    const token = (params.get('token') || '').trim();
+    let settlement = null;
+
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function formatCurrency(amount, currency = 'USD') {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency || 'USD'
+      }).format(Number(amount || 0));
+    }
+
+    function formatDate(value) {
+      if (!value) return 'N/A';
+      try {
+        return new Date(value).toLocaleString();
+      } catch {
+        return String(value);
+      }
+    }
+
+    function statusMeta(status) {
+      const normalized = String(status || '').toLowerCase();
+      const map = {
+        awaiting_customer_approval: ['Waiting for customer approval', 'status-awaiting'],
+        pending_admin_payout: ['Approved - awaiting admin payout', 'status-approved'],
+        customer_approved: ['Customer approved', 'status-approved'],
+        settlement_dispute: ['Settlement dispute open', 'status-dispute'],
+        settled: ['Settled', 'status-settled'],
+        settlement_rejected: ['Settlement rejected', 'status-dispute']
+      };
+      return map[normalized] || [normalized || 'Unknown', 'status-default'];
+    }
+
+    function setBanner(message, type = 'info') {
+      const el = document.getElementById('page-banner');
+      if (!message) {
+        el.className = 'banner';
+        el.textContent = '';
+        return;
+      }
+      el.className = `banner ${type}`;
+      el.textContent = message;
+    }
+
+    async function apiGet(path) {
+      const res = await fetch(path, { headers: { 'Accept': 'application/json' } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    async function apiPost(path, payload) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    async function getBrowserLocationPayload() {
+      if (!navigator.geolocation) return null;
+      return new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({
+            latitude: Number(pos.coords.latitude.toFixed(6)),
+            longitude: Number(pos.coords.longitude.toFixed(6))
+          }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 }
+        );
+      });
+    }
+
+    function renderSettlement(detail) {
+      settlement = detail || {};
+      const [statusLabel, statusClass] = statusMeta(settlement.settlement_status);
+      const pill = document.getElementById('status-pill');
+      pill.className = `status-pill ${statusClass}`;
+      pill.textContent = statusLabel;
+
+      document.getElementById('order-title').textContent = settlement.item_name || 'Settlement details';
+      document.getElementById('order-subtitle').textContent =
+        `Review order ${settlement.order_id || '-'} before funds are released to the supplier.`;
+
+      document.getElementById('order-id').textContent = settlement.order_id || '-';
+      document.getElementById('settlement-code').textContent = settlement.settlement_code || '-';
+      document.getElementById('supplier-name').textContent = settlement.supplier_name || settlement.supplier_id || '-';
+      document.getElementById('customer-name').textContent = settlement.customer_name || settlement.customer_id || '-';
+      document.getElementById('item-name').textContent = settlement.item_name || '-';
+      document.getElementById('amount').textContent = formatCurrency(settlement.amount || 0, settlement.currency || 'USD');
+      document.getElementById('validation-type').textContent =
+        String((settlement.settlement_request || {}).validation_type || 'delivery_confirmation').replace(/_/g, ' ');
+      document.getElementById('requested-at').textContent = formatDate((settlement.settlement_request || {}).requested_at);
+      document.getElementById('recipient-name').value =
+        document.getElementById('recipient-name').value || settlement.customer_name || settlement.customer_id || '';
+
+      const dispute = settlement.settlement_dispute || {};
+      document.getElementById('dispute-panel').classList.toggle(
+        'hidden',
+        !(String(settlement.settlement_status || '').toLowerCase() === 'settlement_dispute' || dispute.open)
+      );
+
+      const canAct = String(settlement.settlement_status || '').toLowerCase() === 'awaiting_customer_approval';
+      document.getElementById('approve-btn').disabled = !canAct;
+      document.getElementById('dispute-btn').disabled = !canAct;
+      document.getElementById('submit-dispute-btn').disabled = !canAct;
+
+      if (dispute.open) {
+        setBanner(
+          `Dispute open: ${dispute.reason || 'PHINS admin is reviewing this settlement.'}`,
+          'warning'
+        );
+      } else if (String(settlement.settlement_status || '').toLowerCase() === 'pending_admin_payout') {
+        setBanner('Settlement approved. PHINS admin/accounting can now release payout.', 'success');
+      } else if (String(settlement.settlement_status || '').toLowerCase() === 'settled') {
+        setBanner('Settlement has already been completed.', 'success');
+      }
+
+      renderThread(settlement.settlement_messages || []);
+    }
+
+    function renderThread(messages) {
+      const thread = document.getElementById('thread');
+      const items = Array.isArray(messages) ? messages : [];
+      if (!items.length) {
+        thread.innerHTML = '<div class="muted">No settlement messages yet.</div>';
+        return;
+      }
+      thread.innerHTML = items.map(msg => `
+        <div class="thread-item">
+          <div class="thread-meta">
+            <span>${esc((msg.author_role || 'system').toUpperCase())} • ${esc(msg.author_id || 'system')}</span>
+            <span>${esc(formatDate(msg.created_at))}</span>
+          </div>
+          <div class="thread-body">${esc(msg.content || '')}</div>
+        </div>
+      `).join('');
+    }
+
+    async function loadSettlement() {
+      if (!orderId || !token) {
+        setBanner('Missing settlement order_id or token in the QR link.', 'error');
+        return;
+      }
+      setBanner('Loading PHINS settlement details...', 'info');
+      try {
+        const data = await apiGet(`/api/supply-chain/public-settlement?order_id=${encodeURIComponent(orderId)}&token=${encodeURIComponent(token)}`);
+        renderSettlement(data.settlement || {});
+        setBanner('', 'info');
+      } catch (err) {
+        setBanner(`Unable to load settlement: ${err.message}`, 'error');
+      }
+    }
+
+    async function runAction(action, extra = {}) {
+      if (!settlement) return;
+      const payload = {
+        order_id: orderId,
+        token,
+        action,
+        recipient_name: document.getElementById('recipient-name').value.trim(),
+        customer_id: settlement.customer_id,
+        notes: document.getElementById('action-notes').value.trim(),
+        ...extra
+      };
+      if (action === 'approve') {
+        payload.customer_acknowledged = true;
+        payload.settlement_code = settlement.settlement_code;
+        payload.delivery_location = await getBrowserLocationPayload();
+      }
+      try {
+        const data = await apiPost('/api/supply-chain/public-settlement/action', payload);
+        setBanner(data.message || `Settlement ${action} completed`, action === 'approve' ? 'success' : 'warning');
+        await loadSettlement();
+      } catch (err) {
+        setBanner(`${action} failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function sendMessage() {
+      const content = document.getElementById('message-content').value.trim();
+      if (!content) {
+        setBanner('Write a message before sending it.', 'warning');
+        return;
+      }
+      if (!orderId || !token) {
+        setBanner('Missing settlement QR parameters.', 'error');
+        return;
+      }
+      try {
+        const data = await apiPost('/api/supply-chain/public-settlement/action', {
+          order_id: orderId,
+          token,
+          action: 'message',
+          customer_id: settlement?.customer_id,
+          content
+        });
+        document.getElementById('message-content').value = '';
+        setBanner(data.message?.content ? 'Message sent to PHINS settlement thread.' : 'Message sent.', 'success');
+        await loadSettlement();
+      } catch (err) {
+        setBanner(`Message failed: ${err.message}`, 'error');
+      }
+    }
+
+    document.getElementById('approve-btn').addEventListener('click', () => runAction('approve'));
+    document.getElementById('dispute-btn').addEventListener('click', () => {
+      document.getElementById('dispute-panel').classList.remove('hidden');
+      document.getElementById('dispute-reason').focus();
+    });
+    document.getElementById('submit-dispute-btn').addEventListener('click', () => runAction('dispute', {
+      reason: document.getElementById('dispute-reason').value.trim(),
+      requested_action: document.getElementById('requested-action').value.trim() || 'admin_review'
+    }));
+    document.getElementById('send-message-btn').addEventListener('click', sendMessage);
+    document.getElementById('refresh-btn').addEventListener('click', loadSettlement);
+
+    loadSettlement();
+  </script>
+  <script src="/ui-clarity.js"></script>
+</body>
+</html>
