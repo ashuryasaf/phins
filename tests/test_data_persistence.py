@@ -8,11 +8,13 @@ Ensures data survives and persists correctly:
 - Underwriting apps persist in UNDERWRITING_APPLICATIONS dict
 - Sessions persist in SESSIONS dict
 - Billing records persist in BILLING dict
+- Supplier/supply-chain graph survives save/load round trips
 """
 
 import threading
 import time
 import json
+import os
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 
@@ -602,3 +604,166 @@ def test_data_integrity_after_errors():
     assert policy['coverage_amount'] == 350000
     
     srv.stop()
+
+
+def test_supply_chain_persistence_round_trip(tmp_path):
+    """Supplier graph, settlements, and ledgers survive save/load from disk."""
+    persistence_file = tmp_path / "phins_persistence_round_trip.json"
+
+    original_file = portal.LEDGER_PERSISTENCE_FILE
+    original_enabled = portal.PERSISTENCE_ENABLED
+
+    with portal.STATE_LOCK:
+        portal.SUPPLIERS.clear()
+        portal.SUPPLIER_OFFERS.clear()
+        portal.SUPPLIER_ORDERS.clear()
+        portal.SUPPLIER_DOCUMENTS.clear()
+        portal.SUPPLIER_INVITATIONS.clear()
+        portal.SUPPLY_CHAIN_LEDGER.clear()
+        portal.HEALTH_WALLETS.clear()
+        portal.MEDICAL_PURCHASES.clear()
+        portal.TRANSACTION_LEDGER.clear()
+        portal.NFT_LEDGER.clear()
+
+        if portal.supply_chain_service:
+            portal.supply_chain_service.pending_settlements.clear()
+            portal.supply_chain_service.settlement_history.clear()
+            portal.supply_chain_service.connector_retry_queue.clear()
+            portal.supply_chain_service.connector_audit_log.clear()
+            portal.supply_chain_service.delivery_shipments.clear()
+            portal.supply_chain_service.ledger_chain.clear()
+
+        portal.SUPPLIERS["SUP-FOREVER-001"] = {
+            "id": "SUP-FOREVER-001",
+            "company_name": "Forever Pharmacy",
+            "contact_email": "forever@example.com",
+            "status": "approved",
+            "password_hash": "hash",
+            "password_salt": "salt",
+        }
+        portal.SUPPLIER_INVITATIONS["INV-FOREVER-001"] = {
+            "code": "INV-FOREVER-001",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "supplier_type": "pharmacy",
+            "status": "active",
+        }
+        portal.SUPPLIER_OFFERS["OFF-FOREVER-001"] = {
+            "id": "OFF-FOREVER-001",
+            "supplier_id": "SUP-FOREVER-001",
+            "name": "Persistent Offer",
+            "price": 77.5,
+            "currency": "USD",
+            "wallet_compatible": ["health"],
+        }
+        portal.SUPPLIER_ORDERS["ORD-FOREVER-001"] = {
+            "id": "ORD-FOREVER-001",
+            "supplier_id": "SUP-FOREVER-001",
+            "customer_id": "CUST-FOREVER-001",
+            "item_name": "Persistent Offer",
+            "status": "completed",
+            "settlement_status": "pending_admin_payout",
+            "supplier_payout": 68.0,
+            "total_amount": 77.5,
+        }
+        portal.SUPPLY_CHAIN_LEDGER["LEDGER-FOREVER-001"] = {
+            "entry_id": "LEDGER-FOREVER-001",
+            "order_id": "ORD-FOREVER-001",
+            "entry_type": "order_completed",
+        }
+        portal.HEALTH_WALLETS["CUST-FOREVER-001"] = {"balance": 900.0, "transactions": []}
+        portal.MEDICAL_PURCHASES["PUR-FOREVER-001"] = {
+            "id": "PUR-FOREVER-001",
+            "order_id": "ORD-FOREVER-001",
+            "customer_id": "CUST-FOREVER-001",
+            "supplier_id": "SUP-FOREVER-001",
+            "amount": 77.5,
+        }
+        portal.TRANSACTION_LEDGER["TX-FOREVER-001"] = {
+            "id": "TX-FOREVER-001",
+            "customer_id": "CUST-FOREVER-001",
+            "tx_type": "marketplace_order",
+            "metadata": {"order_id": "ORD-FOREVER-001", "supplier_id": "SUP-FOREVER-001"},
+        }
+        portal.NFT_LEDGER["NFT-FOREVER-001"] = {
+            "token_id": "NFT-FOREVER-001",
+            "owner_id": "CUST-FOREVER-001",
+            "asset_id": "ORD-FOREVER-001",
+        }
+
+        if portal.supply_chain_service:
+            portal.supply_chain_service.pending_settlements["SUP-FOREVER-001"] = [{
+                "order_id": "ORD-FOREVER-001",
+                "amount": 68.0,
+                "completed_date": "2026-01-02T00:00:00+00:00",
+                "settlement_status": "pending_admin_payout",
+            }]
+            portal.supply_chain_service.settlement_history.append({
+                "settlement_id": "SET-HIST-001",
+                "supplier_id": "SUP-FOREVER-001",
+                "amount": 68.0,
+                "status": "processed",
+            })
+            portal.supply_chain_service.connector_retry_queue.append({
+                "retry_id": "RETRY-FOREVER-001",
+                "supplier_id": "SUP-FOREVER-001",
+                "connector_type": "ups",
+            })
+            portal.supply_chain_service.connector_audit_log.append({
+                "event_id": "AUD-FOREVER-001",
+                "supplier_id": "SUP-FOREVER-001",
+                "event_type": "shipment_created",
+            })
+            portal.supply_chain_service.delivery_shipments["SHIP-FOREVER-001"] = {
+                "shipment_id": "SHIP-FOREVER-001",
+                "order_id": "ORD-FOREVER-001",
+                "provider": "ups",
+            }
+            portal.supply_chain_service.ledger_chain.extend(["hash-a", "hash-b"])
+
+    try:
+        portal.LEDGER_PERSISTENCE_FILE = str(persistence_file)
+        portal.PERSISTENCE_ENABLED = True
+        portal.save_ledger_data()
+        assert persistence_file.exists()
+
+        with portal.STATE_LOCK:
+            portal.SUPPLIERS.clear()
+            portal.SUPPLIER_OFFERS.clear()
+            portal.SUPPLIER_ORDERS.clear()
+            portal.SUPPLIER_DOCUMENTS.clear()
+            portal.SUPPLIER_INVITATIONS.clear()
+            portal.SUPPLY_CHAIN_LEDGER.clear()
+            portal.HEALTH_WALLETS.clear()
+            portal.MEDICAL_PURCHASES.clear()
+            portal.TRANSACTION_LEDGER.clear()
+            portal.NFT_LEDGER.clear()
+            if portal.supply_chain_service:
+                portal.supply_chain_service.pending_settlements.clear()
+                portal.supply_chain_service.settlement_history.clear()
+                portal.supply_chain_service.connector_retry_queue.clear()
+                portal.supply_chain_service.connector_audit_log.clear()
+                portal.supply_chain_service.delivery_shipments.clear()
+                portal.supply_chain_service.ledger_chain.clear()
+
+        assert portal.load_ledger_data() is True
+
+        assert "SUP-FOREVER-001" in portal.SUPPLIERS
+        assert "INV-FOREVER-001" in portal.SUPPLIER_INVITATIONS
+        assert "OFF-FOREVER-001" in portal.SUPPLIER_OFFERS
+        assert "ORD-FOREVER-001" in portal.SUPPLIER_ORDERS
+        assert "LEDGER-FOREVER-001" in portal.SUPPLY_CHAIN_LEDGER
+        assert "PUR-FOREVER-001" in portal.MEDICAL_PURCHASES
+        assert "TX-FOREVER-001" in portal.TRANSACTION_LEDGER
+        assert "NFT-FOREVER-001" in portal.NFT_LEDGER
+
+        assert portal.supply_chain_service.pending_settlements["SUP-FOREVER-001"][0]["order_id"] == "ORD-FOREVER-001"
+        assert portal.supply_chain_service.settlement_history[0]["settlement_id"] == "SET-HIST-001"
+        assert portal.supply_chain_service.connector_retry_queue[0]["retry_id"] == "RETRY-FOREVER-001"
+        assert portal.supply_chain_service.connector_audit_log[0]["event_id"] == "AUD-FOREVER-001"
+        assert portal.supply_chain_service.delivery_shipments["SHIP-FOREVER-001"]["provider"] == "ups"
+        assert portal.supply_chain_service.ledger_chain == ["hash-a", "hash-b"]
+    finally:
+        portal.LEDGER_PERSISTENCE_FILE = original_file
+        portal.PERSISTENCE_ENABLED = original_enabled
+        if os.path.exists(persistence_file):
+            os.remove(persistence_file)

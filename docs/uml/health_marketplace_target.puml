@@ -29,7 +29,8 @@ rectangle "PHINS Marketplace Operating Core" {
   [Settlement & Revenue Service] as Settlement
   [Integrity & Reconciliation Service] as Integrity
   [Outbox / Event Bus] as Bus
-  [Operational Database] as OLTP
+  [Operational Database\nappend-only core records] as OLTP
+  [Immutable NFT / Ledger Archive] as LedgerArchive
   [Lakehouse / Feature Store] as Lake
 }
 
@@ -56,6 +57,7 @@ MarketplaceAPI --> Wallet
 MarketplaceAPI --> SupplierHub
 MarketplaceAPI --> Settlement
 MarketplaceAPI --> OLTP
+MarketplaceAPI --> LedgerArchive
 
 Eligibility --> Payer : eligibility / pre-auth
 Claims --> Payer : claims / remittance / appeals
@@ -79,6 +81,9 @@ Settlement --> OLTP
 Claims --> OLTP
 Wallet --> OLTP
 SupplierHub --> OLTP
+Wallet --> LedgerArchive
+Settlement --> LedgerArchive
+SupplierHub --> LedgerArchive
 @enduml
 
 @startuml phins_health_marketplace_components
@@ -138,6 +143,7 @@ package "Control Plane" {
   [Transactional Outbox]
   [Reconciliation Jobs]
   [Data Contract Validator]
+  [Durable Relationship Snapshot]
 }
 
 database "Postgres OLTP" as DB
@@ -145,6 +151,7 @@ queue "Event Bus" as Q
 database "Lakehouse / Warehouse" as LH
 component "Feature Store" as FS
 component "AI / BI Services" as BI
+database "Immutable NFT / Ledger Archive" as LA
 
 [Customer Dashboard] --> [Portal Handler / API Gateway]
 [Supplier Portal] --> [Portal Handler / API Gateway]
@@ -193,6 +200,7 @@ component "AI / BI Services" as BI
 [Payment Intent Service] --> [Idempotency Store]
 [Supplier Settlement Service] --> [Idempotency Store]
 [Remittance / Recovery Service] --> [Idempotency Store]
+[Catalog Normalization Service] --> [Idempotency Store]
 
 [Cart & Order Orchestrator] --> [Transactional Outbox]
 [Wallet Account Service] --> [Transactional Outbox]
@@ -202,6 +210,7 @@ component "AI / BI Services" as BI
 
 [Transactional Outbox] --> Q
 [Platform Event Ledger] --> DB
+[Durable Relationship Snapshot] --> DB
 [Audit Service] --> DB
 [Catalog Normalization Service] --> DB
 [Search / Quote / Ranking Service] --> DB
@@ -213,10 +222,13 @@ component "AI / BI Services" as BI
 [Wallet Account Service] --> DB
 [Payment Intent Service] --> DB
 [Double-Entry Ledger Service] --> DB
+[Double-Entry Ledger Service] --> LA
 [Markup / Revenue Recognition Service] --> DB
 [Supplier Settlement Service] --> DB
+[Supplier Settlement Service] --> LA
 [Refund / Chargeback Service] --> DB
 [Supplier Connector Framework] --> DB
+[Supplier Connector Framework] --> LA
 [Payer Connector Framework] --> DB
 [PSP Connector Framework] --> DB
 
@@ -230,6 +242,8 @@ Q --> LH
 LH --> BI
 LH --> FS
 FS --> BI
+[Platform Event Ledger] --> LA
+[Audit Service] --> LA
 @enduml
 
 @startuml phins_health_marketplace_domain
@@ -253,6 +267,13 @@ class Supplier {
   +settlement_frequency
 }
 
+class SupplierInvitation {
+  +code
+  +created_by
+  +status
+  +expires_at
+}
+
 class SupplierConnector {
   +id
   +supplier_id
@@ -266,6 +287,8 @@ class Offer {
   +category
   +base_price
   +coverage_eligible
+  +active
+  +offer_approved_on
 }
 
 class Quote {
@@ -285,6 +308,8 @@ class Order {
   +gross_sales_amount
   +supplier_cost_amount
   +markup_amount
+  +settlement_status
+  +retention_policy = forever
 }
 
 class OrderItem {
@@ -326,6 +351,33 @@ class LedgerEntry {
   +amount
   +reference_type
   +reference_id
+  +retention_policy = append_only
+}
+
+class NFTReceipt {
+  +token_id
+  +asset_type
+  +asset_id
+  +owner_id
+}
+
+class SettlementThread {
+  +order_id
+  +message_count
+}
+
+class SettlementMessage {
+  +message_id
+  +author_role
+  +message_type
+  +created_at
+}
+
+class SettlementDispute {
+  +order_id
+  +status
+  +reason
+  +requested_action
 }
 
 class SupplierSettlement {
@@ -336,6 +388,7 @@ class SupplierSettlement {
   +net_payout
   +holdback_amount
   +status
+  +retention_policy = forever
 }
 
 class ExternalPayer {
@@ -410,9 +463,12 @@ class ReconciliationRun {
 Customer "1" -- "0..*" Quote
 Customer "1" -- "0..*" Order
 Customer "1" -- "0..*" WalletAccount
+Customer "1" -- "0..*" NFTReceipt
+SupplierInvitation "1" -- "0..*" Supplier : invitation creates infinite registration lineage
 Supplier "1" -- "0..*" SupplierConnector
 Supplier "1" -- "0..*" Offer
 Supplier "1" -- "0..*" SupplierSettlement
+Supplier "1" -- "0..*" SettlementThread
 Quote "1" -- "1..*" Offer : ranked inputs
 Quote "1" -- "1" PricingExplanation
 Order "1" -- "1..*" OrderItem
@@ -420,11 +476,16 @@ OrderItem "*" --> "1" Offer
 Order "1" -- "0..1" WalletHold
 Order "1" -- "0..*" PaymentIntent
 Order "1" -- "0..*" LedgerEntry
+Order "1" -- "0..*" NFTReceipt
+Order "1" -- "1" SettlementThread
+SettlementThread "1" -- "0..*" SettlementMessage
+Order "1" -- "0..1" SettlementDispute
 Order "1" -- "0..*" SupplierSettlement
 Order "1" -- "0..1" MarketplaceClaim
 Order "1" -- "0..*" Refund
 WalletAccount "1" -- "0..*" WalletHold
 WalletAccount "1" -- "0..*" LedgerEntry
+WalletAccount "1" -- "0..*" NFTReceipt
 ExternalPayer "1" -- "0..*" EligibilityCheck
 ExternalPayer "1" -- "0..*" PreAuthorization
 ExternalPayer "1" -- "0..*" MarketplaceClaim

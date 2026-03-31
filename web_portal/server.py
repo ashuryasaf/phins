@@ -3119,7 +3119,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '2.0',
+                'version': '2.1',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -3151,7 +3151,38 @@ def save_ledger_data():
                 'customer_invitations': CUSTOMER_INVITATIONS,
                 'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
                 # v1.9 additions - General Policy Documents
-                'policy_documents': POLICY_DOCUMENTS
+                'policy_documents': POLICY_DOCUMENTS,
+                # v2.1 additions - supplier and supply-chain persistence
+                'suppliers': SUPPLIERS,
+                'supplier_offers': SUPPLIER_OFFERS,
+                'supplier_orders': SUPPLIER_ORDERS,
+                'supplier_documents': SUPPLIER_DOCUMENTS,
+                'supplier_invitations': SUPPLIER_INVITATIONS,
+                'supply_chain_ledger': SUPPLY_CHAIN_LEDGER,
+                'supply_chain_pending_settlements': (
+                    dict(getattr(supply_chain_service, 'pending_settlements', {}))
+                    if supply_chain_enabled and supply_chain_service else {}
+                ),
+                'supply_chain_settlement_history': (
+                    list(getattr(supply_chain_service, 'settlement_history', []))
+                    if supply_chain_enabled and supply_chain_service else []
+                ),
+                'supply_chain_connector_retry_queue': (
+                    list(getattr(supply_chain_service, 'connector_retry_queue', []))
+                    if supply_chain_enabled and supply_chain_service else []
+                ),
+                'supply_chain_connector_audit_log': (
+                    list(getattr(supply_chain_service, 'connector_audit_log', []))
+                    if supply_chain_enabled and supply_chain_service else []
+                ),
+                'supply_chain_delivery_shipments': (
+                    dict(getattr(supply_chain_service, 'delivery_shipments', {}))
+                    if supply_chain_enabled and supply_chain_service else {}
+                ),
+                'supply_chain_ledger_chain': (
+                    list(getattr(supply_chain_service, 'ledger_chain', []))
+                    if supply_chain_enabled and supply_chain_service else []
+                ),
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -3371,6 +3402,7 @@ def load_ledger_data():
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     global POLICY_DOCUMENTS
+    global SUPPLIERS, SUPPLIER_OFFERS, SUPPLIER_ORDERS, SUPPLIER_DOCUMENTS, SUPPLIER_INVITATIONS, SUPPLY_CHAIN_LEDGER
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -3483,6 +3515,53 @@ def load_ledger_data():
             hydrated = hydrate_document_customer_links()
             if hydrated:
                 print(f"  - Policy Documents: hydrated owner links for {hydrated} legacy document(s)")
+
+        # Load Supplier + Supply Chain graph (v2.1+)
+        if data.get('version', '1.0') >= '2.1':
+            loaded_suppliers = data.get('suppliers', {})
+            loaded_supplier_offers = data.get('supplier_offers', {})
+            loaded_supplier_orders = data.get('supplier_orders', {})
+            loaded_supplier_documents = data.get('supplier_documents', {})
+            loaded_supplier_invitations = data.get('supplier_invitations', {})
+            loaded_supply_chain_ledger = data.get('supply_chain_ledger', {})
+
+            if loaded_suppliers:
+                SUPPLIERS.update(loaded_suppliers)
+                print(f"  - Suppliers: {len(SUPPLIERS)} loaded from persistence")
+            if loaded_supplier_offers:
+                SUPPLIER_OFFERS.update(loaded_supplier_offers)
+                print(f"  - Supplier Offers: {len(SUPPLIER_OFFERS)} loaded from persistence")
+            if loaded_supplier_orders:
+                SUPPLIER_ORDERS.update(loaded_supplier_orders)
+                print(f"  - Supplier Orders: {len(SUPPLIER_ORDERS)} loaded from persistence")
+            if loaded_supplier_documents:
+                SUPPLIER_DOCUMENTS.update(loaded_supplier_documents)
+                print(f"  - Supplier Documents: {len(SUPPLIER_DOCUMENTS)} loaded from persistence")
+            if loaded_supplier_invitations:
+                SUPPLIER_INVITATIONS.update(loaded_supplier_invitations)
+                print(f"  - Supplier Invitations: {len(SUPPLIER_INVITATIONS)} loaded from persistence")
+            if loaded_supply_chain_ledger:
+                SUPPLY_CHAIN_LEDGER.update(loaded_supply_chain_ledger)
+                print(f"  - Supply Chain Ledger: {len(SUPPLY_CHAIN_LEDGER)} entries loaded from persistence")
+
+            if supply_chain_enabled and supply_chain_service:
+                supply_chain_service.pending_settlements.clear()
+                supply_chain_service.pending_settlements.update(data.get('supply_chain_pending_settlements', {}))
+                supply_chain_service.settlement_history.clear()
+                supply_chain_service.settlement_history.extend(data.get('supply_chain_settlement_history', []))
+                supply_chain_service.connector_retry_queue.clear()
+                supply_chain_service.connector_retry_queue.extend(data.get('supply_chain_connector_retry_queue', []))
+                supply_chain_service.connector_audit_log.clear()
+                supply_chain_service.connector_audit_log.extend(data.get('supply_chain_connector_audit_log', []))
+                supply_chain_service.delivery_shipments.clear()
+                supply_chain_service.delivery_shipments.update(data.get('supply_chain_delivery_shipments', {}))
+                supply_chain_service.ledger_chain.clear()
+                supply_chain_service.ledger_chain.extend(data.get('supply_chain_ledger_chain', []))
+                print(
+                    "  - Supply Chain State: "
+                    f"{len(supply_chain_service.pending_settlements)} pending suppliers, "
+                    f"{len(supply_chain_service.settlement_history)} settlement records"
+                )
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")

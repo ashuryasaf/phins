@@ -297,6 +297,15 @@ class Offer {
   +last_updated_at
 }
 
+class SupplierInvitation {
+  +code
+  +supplier_type
+  +created_by
+  +max_uses
+  +status
+  +expires_at
+}
+
 class Quote {
   +id
   +customer_id
@@ -371,6 +380,22 @@ class Settlement {
   +status: {PENDING,PAID,FAILED}
 }
 
+class NFTRecord {
+  +token_id
+  +owner_id
+  +asset_type
+  +asset_id
+  +created_at
+}
+
+class BalanceSheetSnapshot {
+  +snapshot_id
+  +saved_at
+  +total_assets
+  +total_liabilities
+  +retained_history = forever
+}
+
 class Trade {
   +id
   +customer_id
@@ -393,7 +418,9 @@ ActuarialTable "1" -- "0..*" FeeSchedule : informs
 Customer "1" -- "0..*" Wallet
 Wallet "1" -- "0..*" LedgerEntry
 Wallet "1" -- "0..*" WalletHold
+Customer "1" -- "0..*" NFTRecord : immutable ownership / audit
 
+SupplierInvitation "1" -- "0..*" Supplier : approved registration lineage
 Supplier "1" -- "0..*" Offer
 ProductService "1" -- "0..*" Offer
 Customer "1" -- "0..*" Cart
@@ -402,6 +429,8 @@ Order "1" -- "1..*" OrderItem
 OrderItem "*" --> "1" Offer
 Order "1" -- "0..*" DeliveryQuote
 Order "1" -- "0..1" Settlement
+Order "1" -- "0..*" LedgerEntry : append-only financial history
+Order "1" -- "0..*" NFTRecord : immutable transaction mirror
 
 Quote "*" --> "1" Customer
 Quote "*" --> "0..*" Offer : references inputs used
@@ -410,6 +439,7 @@ Customer "1" -- "0..*" Trade
 Customer "1" -- "0..*" CustodyAccount
 FeeSchedule ..> Quote : used for fees
 ActuarialTable ..> Quote : used for risk/actuarial fees
+LedgerEntry ..> BalanceSheetSnapshot : rolled into durable balance sheet history
 @enduml
 
 @startuml phins_sequence_health_checkout
