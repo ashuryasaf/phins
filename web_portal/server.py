@@ -6715,6 +6715,18 @@ For claims or questions, please contact:
             self.send_header('Content-Type', 'application/javascript; charset=utf-8')
         elif path.endswith('.css'):
             self.send_header('Content-Type', 'text/css; charset=utf-8')
+        elif path.endswith('.svg'):
+            self.send_header('Content-Type', 'image/svg+xml')
+        elif path.endswith('.png'):
+            self.send_header('Content-Type', 'image/png')
+        elif path.endswith('.jpg') or path.endswith('.jpeg'):
+            self.send_header('Content-Type', 'image/jpeg')
+        elif path.endswith('.gif'):
+            self.send_header('Content-Type', 'image/gif')
+        elif path.endswith('.webp'):
+            self.send_header('Content-Type', 'image/webp')
+        elif path.endswith('.ico'):
+            self.send_header('Content-Type', 'image/x-icon')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
         # Security headers
