@@ -2704,6 +2704,15 @@ class NotificationService:
                 error_message=error,
                 sent_at=datetime.now(timezone.utc) if success else None
             )
+
+        elif request.channel == NotificationChannel.IN_APP:
+            return NotificationResult(
+                success=True,
+                notification_id=notification_id,
+                status=NotificationStatus.DELIVERED,
+                provider_message_id=f"in_app:{request.customer_id or request.recipient}",
+                sent_at=datetime.now(timezone.utc)
+            )
         
         return NotificationResult(
             success=False,

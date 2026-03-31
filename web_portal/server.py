@@ -6754,6 +6754,161 @@ def _build_institutional_accounting_book_payload(
     }
 
 
+def _safe_customer_age(customer: Dict[str, Any]) -> Optional[int]:
+    """Best-effort customer age derivation from stored DOB fields."""
+    if not isinstance(customer, dict):
+        return None
+    for dob_field in ('dob', 'date_of_birth'):
+        raw_dob = str(customer.get(dob_field) or '').strip()
+        if not raw_dob:
+            continue
+        try:
+            parsed = datetime.fromisoformat(raw_dob.replace('Z', '+00:00')) if 'T' in raw_dob else datetime.strptime(raw_dob[:10], '%Y-%m-%d')
+            return max(0, (datetime.now() - parsed.replace(tzinfo=None) if parsed.tzinfo else datetime.now() - parsed).days // 365)
+        except Exception:
+            continue
+    return None
+
+
+def _current_tax_year(reference_datetime: Optional[datetime] = None) -> int:
+    """Return the active tax/reporting year."""
+    return int((reference_datetime or datetime.now()).year)
+
+
+def _build_customer_personal_details(customer_id: str) -> Dict[str, Any]:
+    """Collect customer profile fields used in generated premium reports."""
+    customer = get_customer_with_fallback(customer_id) or CUSTOMERS.get(customer_id) or {}
+    age = _safe_customer_age(customer)
+    return {
+        'customer_id': customer_id,
+        'full_name': (
+            customer.get('name')
+            or ' '.join(part for part in [customer.get('first_name'), customer.get('last_name')] if part).strip()
+            or customer_id
+        ),
+        'email': customer.get('email'),
+        'phone': customer.get('phone'),
+        'date_of_birth': customer.get('dob') or customer.get('date_of_birth'),
+        'age': age,
+        'address': customer.get('address'),
+        'city': customer.get('city'),
+        'state': customer.get('state'),
+        'zip': customer.get('zip'),
+    }
+
+
+def _build_tax_year_premium_report(
+    customer_id: str,
+    action_amount: float,
+    metadata: Optional[Dict[str, Any]] = None,
+    reference_datetime: Optional[datetime] = None
+) -> Dict[str, Any]:
+    """Build an elaborated tax-year premium report with verified balances and allocations."""
+    now = reference_datetime or datetime.now()
+    tax_year = _current_tax_year(now)
+    metadata_dict = dict(metadata or {})
+    personal_details = _build_customer_personal_details(customer_id)
+
+    tax_year_bills = []
+    for bill in BILLING.values():
+        if bill.get('customer_id') != customer_id:
+            continue
+        paid_date = str(bill.get('paid_date') or bill.get('created_date') or '')
+        if not paid_date.startswith(str(tax_year)):
+            continue
+        tax_year_bills.append(bill)
+
+    premium_ledger_entries = []
+    for tx in TRANSACTION_LEDGER.values():
+        if tx.get('customer_id') != customer_id:
+            continue
+        tx_type = get_transaction_type(tx)
+        if tx_type not in PREMIUM_LEDGER_TX_TYPES:
+            continue
+        timestamp = str(tx.get('timestamp') or '')
+        if not timestamp.startswith(str(tax_year)):
+            continue
+        premium_ledger_entries.append(tx)
+
+    premium_paid_tax_year = round(sum(safe_float(bill.get('amount_paid', 0.0), 0.0) for bill in tax_year_bills), 2)
+    risk_paid_tax_year = 0.0
+    savings_paid_tax_year = 0.0
+    for tx in premium_ledger_entries:
+        meta = tx.get('metadata', {}) if isinstance(tx.get('metadata'), dict) else {}
+        amount = safe_float(tx.get('amount', 0.0), 0.0)
+        savings_component = safe_float(meta.get('savings_allocation', 0.0), 0.0)
+        risk_component = safe_float(meta.get('risk_allocation', amount - savings_component), 0.0)
+        risk_paid_tax_year += risk_component
+        savings_paid_tax_year += savings_component
+
+    verified_balances = {}
+    if integrity_service_enabled and integrity_service:
+        try:
+            verified_balances = integrity_service.get_verified_total(customer_id)
+        except Exception:
+            verified_balances = {}
+
+    investment_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
+    wallet = HEALTH_WALLETS.get(customer_id, {})
+    allocation = get_customer_allocation(customer_id)
+
+    premium_summary = {
+        'tax_year': tax_year,
+        'paid_premium_total': round(premium_paid_tax_year, 2),
+        'current_action_amount': round(safe_float(action_amount, 0.0), 2),
+        'risk_paid_total': round(risk_paid_tax_year, 2),
+        'savings_paid_total': round(savings_paid_tax_year, 2),
+        'paid_bill_count': len(tax_year_bills),
+        'premium_ledger_entries_count': len(premium_ledger_entries),
+    }
+    return {
+        'document_standard': 'PHINS_TAX_YEAR_PREMIUM_REPORT_V1',
+        'tax_year': tax_year,
+        'generated_at': now.isoformat(),
+        'personal_details': personal_details,
+        'premium_summary': premium_summary,
+        'tax_year_summary': premium_summary,
+        'verified_balances': {
+            'wallet_balance': round(safe_float(wallet.get('balance', 0.0), 0.0), 2),
+            'investment_balance': round(safe_float(investment_account.get('balance', 0.0), 0.0), 2),
+            'index_balance': round(safe_float(investment_account.get('index_balance', 0.0), 0.0), 2),
+            'bonds_balance': round(safe_float(investment_account.get('bonds_balance', 0.0), 0.0), 2),
+            'crypto_balance': round(safe_float(investment_account.get('crypto_balance', 0.0), 0.0), 2),
+            'verified_total_savings': round(safe_float(verified_balances.get('total_savings', 0.0), 0.0), 2),
+            'verified_wallet_balance': round(safe_float(verified_balances.get('wallet_balance', 0.0), 0.0), 2),
+            'verified_investment_balance': round(safe_float(verified_balances.get('investment_balance', 0.0), 0.0), 2),
+            'verified_algo_trading_balance': round(safe_float(verified_balances.get('algo_trading_balance', 0.0), 0.0), 2),
+        },
+        'savings_usage': {
+            'wallet_balance': round(safe_float(wallet.get('balance', 0.0), 0.0), 2),
+            'investment_balance': round(safe_float(investment_account.get('balance', 0.0), 0.0), 2),
+            'index_balance': round(safe_float(investment_account.get('index_balance', 0.0), 0.0), 2),
+            'bonds_balance': round(safe_float(investment_account.get('bonds_balance', 0.0), 0.0), 2),
+            'crypto_balance': round(safe_float(investment_account.get('crypto_balance', 0.0), 0.0), 2),
+            'verified_total_savings': round(safe_float(verified_balances.get('total_savings', 0.0), 0.0), 2),
+            'verified_wallet_balance': round(safe_float(verified_balances.get('wallet_balance', 0.0), 0.0), 2),
+            'verified_investment_balance': round(safe_float(verified_balances.get('investment_balance', 0.0), 0.0), 2),
+            'verified_algo_trading_balance': round(safe_float(verified_balances.get('algo_trading_balance', 0.0), 0.0), 2),
+        },
+        'allocation_profile': {
+            'savings_pct': allocation.get('savings_pct'),
+            'risk_pct': allocation.get('risk_pct'),
+            'wallet_pct': allocation.get('wallet_pct'),
+            'investment_pct': allocation.get('investment_pct'),
+            'algo_pct': allocation.get('algo_pct'),
+        },
+        'supporting_records': {
+            'bill_ids': [str(bill.get('id') or '') for bill in tax_year_bills if bill.get('id')],
+            'ledger_transaction_ids': [str(tx.get('id') or '') for tx in premium_ledger_entries if tx.get('id')],
+        },
+        'integrity': {
+            'verified_balances_available': bool(verified_balances),
+            'integrity_valid': bool(verified_balances.get('integrity_valid', False)) if verified_balances else None,
+        },
+        'source_metadata': metadata_dict,
+    }
+
+
 def _build_tokenized_invoice_payload(
     *,
     action_type: str,
@@ -6766,22 +6921,121 @@ def _build_tokenized_invoice_payload(
 ) -> Dict[str, Any]:
     """Build a PHINS tokenized invoice payload linked to ledger/NFT state."""
     details = dict(metadata or {})
-    return {
-        'document_standard': 'PHINS_TOKENIZED_INVOICE_V1',
+    tax_year_report = _build_tax_year_premium_report(
+        customer_id=customer_id,
+        action_amount=amount,
+        metadata=details,
+    )
+    tax_year_report.update({
         'invoice_entity_type': action_type,
         'invoice_entity_id': entity_id,
-        'customer_id': customer_id,
-        'customer_name': get_customer_display_name(customer_id),
         'issued_at': datetime.now().isoformat(),
-        'amount': round(safe_float(amount, 0.0), 2),
-        'currency': 'USD',
-        'description': description,
         'ledger_transaction_id': (tx or {}).get('id'),
         'nft_token_id': (tx or {}).get('nft_token_id'),
         'invoice_token_hash': hashlib.sha256(
             f"{action_type}|{entity_id}|{customer_id}|{safe_float(amount, 0.0):.2f}|{(tx or {}).get('id', '')}".encode('utf-8')
         ).hexdigest(),
         'details': details,
+        'document_standard': 'PHINS_CUSTOMER_TAX_YEAR_PREMIUM_REPORT_V1',
+    })
+    return tax_year_report
+
+
+def _record_customer_notification_center_event(
+    customer_id: str,
+    subject: str,
+    content: str,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
+    """Persist an in-app/dashboard notification entry using the shared notification history."""
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+
+        notification_service = get_notification_service()
+        request = NotificationRequest(
+            channel=NotificationChannel.IN_APP,
+            recipient=f"in_app:{customer_id}",
+            subject=subject,
+            content=content,
+            customer_id=customer_id,
+            priority=NotificationPriority.NORMAL,
+            metadata=dict(metadata or {}),
+        )
+        result = notification_service.send(request)
+        return result.to_dict() if hasattr(result, 'to_dict') else {'success': bool(result)}
+    except Exception:
+        return None
+
+
+def notify_customer_tax_year_report_available(
+    customer_id: str,
+    report_payload: Dict[str, Any],
+    document_ids: List[str],
+    subject_prefix: str = 'PHINS tax-year premium report'
+) -> Dict[str, Any]:
+    """Notify customers in dashboard history and by email when a premium report is generated."""
+    customer = get_customer_with_fallback(customer_id) or CUSTOMERS.get(customer_id) or {}
+    personal = report_payload.get('personal_details', {})
+    premium_summary = report_payload.get('premium_summary', {})
+    tax_year = report_payload.get('tax_year')
+    customer_name = personal.get('full_name') or customer.get('name') or customer_id
+    subject = f"{subject_prefix} {tax_year}" if tax_year else subject_prefix
+    content = (
+        f"Hello {customer_name}, your PHINS premium report for tax year {tax_year} is available. "
+        f"Premium paid: ${safe_float(premium_summary.get('premium_paid_tax_year', 0.0), 0.0):,.2f}. "
+        f"Risk: ${safe_float(premium_summary.get('risk_paid_tax_year', 0.0), 0.0):,.2f}. "
+        f"Savings: ${safe_float(premium_summary.get('savings_paid_tax_year', 0.0), 0.0):,.2f}. "
+        f"Related document IDs: {', '.join(document_ids)}."
+    )
+    metadata = {
+        'category': 'tax_year_premium_report',
+        'document_ids': list(document_ids),
+        'tax_year': tax_year,
+    }
+
+    notification_events = []
+    in_app_result = _record_customer_notification_center_event(
+        customer_id=customer_id,
+        subject=subject,
+        content=content,
+        metadata=metadata,
+    )
+    if in_app_result:
+        notification_events.append({'channel': 'in_app', **in_app_result})
+
+    email = str(customer.get('email') or personal.get('email') or '').strip()
+    if email:
+        try:
+            from services.notification_service import (
+                NotificationChannel,
+                NotificationPriority,
+                NotificationRequest,
+                get_notification_service,
+            )
+
+            notification_service = get_notification_service()
+            email_result = notification_service.send(NotificationRequest(
+                channel=NotificationChannel.EMAIL,
+                recipient=email,
+                subject=subject,
+                content=content,
+                customer_id=customer_id,
+                priority=NotificationPriority.HIGH,
+                metadata=metadata,
+            ))
+            notification_events.append({'channel': 'email', **email_result.to_dict()})
+        except Exception as exc:
+            notification_events.append({'channel': 'email', 'success': False, 'error': str(exc)})
+
+    return {
+        'subject': subject,
+        'content': content,
+        'events': notification_events,
     }
 
 
@@ -6869,6 +7123,19 @@ def generate_action_accounting_documents(
         if tx is not None:
             _append_unique_document_link(tx, doc.get('id', ''))
 
+    report_notification = None
+    invoice_doc = next((doc for doc in generated_docs if doc.get('document_type') == 'invoice'), None)
+    if invoice_doc:
+        try:
+            report_payload = json.loads(base64.b64decode(invoice_doc.get('data', '')).decode('utf-8'))
+            report_notification = notify_customer_tax_year_report_available(
+                customer_id=customer_id,
+                report_payload=report_payload,
+                document_ids=[doc.get('id') for doc in generated_docs if doc.get('id')],
+            )
+        except Exception:
+            report_notification = None
+
     return {
         'generated': True,
         'documents': [
@@ -6881,6 +7148,7 @@ def generate_action_accounting_documents(
             }
             for doc in generated_docs
         ],
+        'report_notification': report_notification,
     }
 
 
@@ -17632,14 +17900,11 @@ For claims or questions, please contact:
             
             try:
                 from services.notification_service import (
-                    create_notification_service,
+                    get_notification_service,
                     NotificationChannel,
-                    should_use_mock_notifications,
                 )
                 
-                notification_service = create_notification_service(
-                    use_mock=should_use_mock_notifications()
-                )
+                notification_service = get_notification_service()
                 
                 # Get query params
                 customer_id = qs.get('customer_id', [''])[0] or session.get('customer_id')
