@@ -60,6 +60,15 @@ Render offers free web services with easy GitHub integration.
 **Configuration:**
 
 - Uses `render.yaml` for infrastructure-as-code
+- Add a `cron` service in `render.yaml` for monthly auto-pay execution
+
+**Monthly auto-pay cron (recommended):**
+
+- The repo now includes `scripts/run_monthly_auto_pay.py`
+- Schedule it for **00:00 UTC on the 1st of every month**
+- Set `MONTHLY_AUTO_PAY_COMMAND_TOKEN` in both the web service and the cron job
+- The command exits after processing and writes a persisted batch report into the
+  main ledger persistence file
 
 **Custom Domain Setup:**
 
@@ -163,6 +172,14 @@ sudo systemctl enable phins
 sudo systemctl start phins
 ```
 
+**Monthly auto-pay with cron:**
+
+Add a first-of-month cron entry for the same app environment:
+
+```bash
+0 0 1 * * cd /var/www/phins && MONTHLY_AUTO_PAY_COMMAND_TOKEN=your-token /usr/bin/python3 scripts/run_monthly_auto_pay.py >> /var/log/phins-monthly-autopay.log 2>&1
+```
+
 Set up nginx reverse proxy for port 80/443
 
 
@@ -177,6 +194,43 @@ PORT = int(os.environ.get('PORT', 8000))
 ```
 
 Then set `PORT` environment variable in your hosting platform.
+
+### Monthly auto-pay environment variables
+
+Set these for production auto-pay automation:
+
+- `MONTHLY_AUTO_PAY_COMMAND_TOKEN`: shared secret used by deployment cron and the
+  secured auto-pay execution path
+- `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`
+- `PHINS_DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH`
+- `PHINS_DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR`
+- `PHINS_DEFAULT_AUTO_PAY_CARD_CVV`
+- `PHINS_DEFAULT_AUTO_PAY_CARDHOLDER_NAME`
+
+By default the app will normalize auto-pay to the **1st of each month** and will
+assign the configured fallback Mastercard details to policies that do not already
+have a credit card on file. Raw card values are not persisted in policy records;
+only masked metadata and a derived token are stored.
+
+### Post-deployment monthly trigger
+
+The supported production command is:
+
+```bash
+python3 scripts/run_monthly_auto_pay.py
+```
+
+This command:
+
+- normalizes eligible auto-pay schedules to the 1st of the month
+- assigns the configured fallback Mastercard to customers missing a card
+- processes due premium payments
+- updates billing, ledgers, balance sheet, investment/client wallet flows, and
+  persisted reporting
+- sends customer notifications when configuration or payment state changes
+
+Use platform scheduling rather than an in-process background thread so the job
+does not run multiple times on horizontally scaled web instances.
 
 ## Custom Domain
 

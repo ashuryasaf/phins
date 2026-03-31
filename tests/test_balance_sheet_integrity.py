@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
 from datetime import datetime
+import tempfile
 
 
 class TestBalanceSheetIntegrity(unittest.TestCase):
@@ -30,7 +31,10 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             initialize_balance_sheet, record_premium_revenue,
             process_claim_payment_to_wallet, HEALTH_WALLETS,
             TRANSACTION_LEDGER, calculate_cumulative_premium_income,
-            record_fee_revenue, record_balance_sheet_transaction
+            record_fee_revenue, record_balance_sheet_transaction,
+            POLICIES, CUSTOMERS, INVESTMENT_ACCOUNTS, CUSTOMER_ALLOCATIONS,
+            AUTO_PAY_RUN_REPORTS, ensure_policy_auto_pay_defaults,
+            run_monthly_auto_pay, save_ledger_data, load_ledger_data
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -38,12 +42,21 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.CLAIMS = CLAIMS
         self.HEALTH_WALLETS = HEALTH_WALLETS
         self.TRANSACTION_LEDGER = TRANSACTION_LEDGER
+        self.POLICIES = POLICIES
+        self.CUSTOMERS = CUSTOMERS
+        self.INVESTMENT_ACCOUNTS = INVESTMENT_ACCOUNTS
+        self.CUSTOMER_ALLOCATIONS = CUSTOMER_ALLOCATIONS
+        self.AUTO_PAY_RUN_REPORTS = AUTO_PAY_RUN_REPORTS
         self.initialize_balance_sheet = initialize_balance_sheet
         self.record_premium_revenue = record_premium_revenue
         self.process_claim_payment_to_wallet = process_claim_payment_to_wallet
         self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
         self.record_fee_revenue = record_fee_revenue
         self.record_balance_sheet_transaction = record_balance_sheet_transaction
+        self.ensure_policy_auto_pay_defaults = ensure_policy_auto_pay_defaults
+        self.run_monthly_auto_pay = run_monthly_auto_pay
+        self.save_ledger_data = save_ledger_data
+        self.load_ledger_data = load_ledger_data
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -275,6 +288,200 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             self.PHINS_BALANCE_SHEET['total_expenses'],
             initial_total_expenses + supplier_payout,
         )
+
+    def test_auto_pay_defaults_force_first_of_month_and_default_card(self):
+        """Auto-pay normalization should enforce the 1st and default Mastercard metadata."""
+        policy_id = "TEST-AUTOPAY-POL-001"
+        customer_id = "TEST-AUTOPAY-CUST-001"
+        prev_policy = self.POLICIES.get(policy_id)
+
+        try:
+            self.POLICIES[policy_id] = {
+                'id': policy_id,
+                'customer_id': customer_id,
+                'status': 'active',
+                'monthly_premium': 120.0,
+                'payment_setup': {
+                    'auto_pay': False,
+                    'billing_frequency': 'monthly',
+                    'billing_day': 15
+                },
+                'billing': {
+                    'auto_pay': False,
+                    'frequency': 'monthly',
+                    'next_billing_date': '2026-03-21T00:00:00'
+                }
+            }
+
+            result = self.ensure_policy_auto_pay_defaults(
+                self.POLICIES[policy_id],
+                reference_datetime=datetime(2026, 3, 20, 9, 0, 0),
+                notify_changes=False,
+            )
+            normalized = result['policy']
+
+            self.assertTrue(normalized['payment_setup']['auto_pay'])
+            self.assertEqual(normalized['payment_setup']['billing_day'], 1)
+            self.assertEqual(normalized['billing']['billing_day'], 1)
+            self.assertEqual(normalized['payment_setup']['card_last4'], '4444')
+            self.assertEqual(normalized['payment_setup']['card_type'], 'mastercard')
+            self.assertEqual(normalized['billing']['payment_method']['card_last4'], '4444')
+            self.assertTrue(normalized['payment_setup']['next_billing_date'].startswith('2026-03-01'))
+            self.assertTrue(result['default_card_assigned'])
+        finally:
+            if prev_policy is None:
+                self.POLICIES.pop(policy_id, None)
+            else:
+                self.POLICIES[policy_id] = prev_policy
+
+    def test_monthly_auto_pay_books_payment_and_persists_report(self):
+        """Monthly auto-pay should create a paid bill, ledger entries, and a persisted report."""
+        self.initialize_balance_sheet()
+        policy_id = "TEST-AUTOPAY-POL-002"
+        customer_id = "TEST-AUTOPAY-CUST-002"
+        previous_state = {
+            'policy': self.POLICIES.get(policy_id),
+            'customer': self.CUSTOMERS.get(customer_id),
+            'wallet': self.HEALTH_WALLETS.get(customer_id),
+            'investment': self.INVESTMENT_ACCOUNTS.get(customer_id),
+            'allocation': self.CUSTOMER_ALLOCATIONS.get(customer_id),
+            'reports': dict(self.AUTO_PAY_RUN_REPORTS),
+            'billing_keys': set(self.BILLING.keys()),
+            'ledger_keys': set(self.TRANSACTION_LEDGER.keys()),
+        }
+
+        try:
+            self.CUSTOMERS[customer_id] = {
+                'id': customer_id,
+                'name': 'Auto Pay Test Customer',
+                'email': 'autopay-test@example.com',
+                'phone': '+15555550123',
+                'created_date': datetime.now().isoformat(),
+            }
+            self.HEALTH_WALLETS[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 0.0,
+                'transactions': [],
+                'created_at': datetime.now().isoformat(),
+            }
+            self.INVESTMENT_ACCOUNTS[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 0.0,
+                'index_balance': 0.0,
+                'bonds_balance': 0.0,
+                'crypto_balance': 0.0,
+                'deposits': [],
+                'created_at': datetime.now().isoformat(),
+            }
+            self.CUSTOMER_ALLOCATIONS[customer_id] = {
+                'customer_id': customer_id,
+                'savings_pct': 25.0,
+                'risk_pct': 75.0,
+                'wallet_pct': 30.0,
+                'investment_pct': 65.0,
+                'algo_pct': 5.0,
+                'index_pct': 60.0,
+                'bonds_pct': 30.0,
+                'crypto_pct': 10.0,
+            }
+            self.POLICIES[policy_id] = {
+                'id': policy_id,
+                'customer_id': customer_id,
+                'status': 'active',
+                'monthly_premium': 100.0,
+                'payment_setup': {
+                    'auto_pay': True,
+                    'billing_frequency': 'monthly',
+                    'billing_day': 1,
+                    'next_billing_date': '2026-04-01T00:00:00'
+                },
+                'billing': {
+                    'auto_pay': True,
+                    'frequency': 'monthly',
+                    'billing_day': 1,
+                    'next_billing_date': '2026-04-01T00:00:00',
+                    'auto_pay_config': {}
+                }
+            }
+
+            report = self.run_monthly_auto_pay(
+                reference_datetime=datetime(2026, 4, 1, 8, 0, 0),
+                dry_run=False,
+                notify_users=False,
+                trigger='unit_test',
+                actor='unit_test',
+            )
+
+            self.assertTrue(report['success'])
+            self.assertEqual(report['processed'], 1)
+            self.assertAlmostEqual(report['total_amount'], 100.0)
+            self.assertIn(report['report_id'], self.AUTO_PAY_RUN_REPORTS)
+
+            new_bill_ids = [bill_id for bill_id in self.BILLING if bill_id not in previous_state['billing_keys']]
+            self.assertEqual(len(new_bill_ids), 1)
+            bill = self.BILLING[new_bill_ids[0]]
+            self.assertEqual(bill['status'], 'paid')
+            self.assertEqual(bill['amount_paid'], 100.0)
+            self.assertEqual(bill['billing_cycle_key'], '2026-04')
+
+            new_txs = [
+                tx for tx_id, tx in self.TRANSACTION_LEDGER.items()
+                if tx_id not in previous_state['ledger_keys']
+            ]
+            self.assertTrue(any(tx.get('type') == 'premium_payment' for tx in new_txs))
+            self.assertTrue(any(tx.get('type') == 'auto_pay_execution' for tx in new_txs))
+            self.assertAlmostEqual(
+                self.PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                100.0
+            )
+            self.assertTrue(
+                self.POLICIES[policy_id]['payment_setup']['next_billing_date'].startswith('2026-05-01')
+            )
+
+            import server as server_module
+            original_path = server_module.LEDGER_PERSISTENCE_FILE
+            fd, tmp_path = tempfile.mkstemp(prefix='phins-autopay-', suffix='.json')
+            os.close(fd)
+            try:
+                server_module.LEDGER_PERSISTENCE_FILE = tmp_path
+                self.save_ledger_data()
+                self.AUTO_PAY_RUN_REPORTS.clear()
+                self.load_ledger_data()
+                self.assertIn(report['report_id'], self.AUTO_PAY_RUN_REPORTS)
+            finally:
+                server_module.LEDGER_PERSISTENCE_FILE = original_path
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        finally:
+            if previous_state['policy'] is None:
+                self.POLICIES.pop(policy_id, None)
+            else:
+                self.POLICIES[policy_id] = previous_state['policy']
+            if previous_state['customer'] is None:
+                self.CUSTOMERS.pop(customer_id, None)
+            else:
+                self.CUSTOMERS[customer_id] = previous_state['customer']
+            if previous_state['wallet'] is None:
+                self.HEALTH_WALLETS.pop(customer_id, None)
+            else:
+                self.HEALTH_WALLETS[customer_id] = previous_state['wallet']
+            if previous_state['investment'] is None:
+                self.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+            else:
+                self.INVESTMENT_ACCOUNTS[customer_id] = previous_state['investment']
+            if previous_state['allocation'] is None:
+                self.CUSTOMER_ALLOCATIONS.pop(customer_id, None)
+            else:
+                self.CUSTOMER_ALLOCATIONS[customer_id] = previous_state['allocation']
+
+            for bill_id in list(self.BILLING.keys()):
+                if bill_id not in previous_state['billing_keys']:
+                    self.BILLING.pop(bill_id, None)
+            for tx_id in list(self.TRANSACTION_LEDGER.keys()):
+                if tx_id not in previous_state['ledger_keys']:
+                    self.TRANSACTION_LEDGER.pop(tx_id, None)
+            self.AUTO_PAY_RUN_REPORTS.clear()
+            self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
 
 
 def run_balance_sheet_integrity_test():

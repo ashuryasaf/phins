@@ -970,6 +970,13 @@ else:
 PORT = int(os.environ.get('PORT', 8000))
 HOST = os.environ.get('HOST') or ('0.0.0.0' if 'PORT' in os.environ else '127.0.0.1')  # nosec B104
 ROOT = os.path.join(os.path.dirname(__file__), "static")
+DEFAULT_AUTO_PAY_CARD_NUMBER = os.environ.get('PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER', '5555555555554444')
+DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH = int(os.environ.get('PHINS_DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH', '12'))
+DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR = int(os.environ.get('PHINS_DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR', '31'))
+DEFAULT_AUTO_PAY_CARD_CVV = os.environ.get('PHINS_DEFAULT_AUTO_PAY_CARD_CVV', '123')
+DEFAULT_AUTO_PAY_CARDHOLDER_NAME = os.environ.get('PHINS_DEFAULT_AUTO_PAY_CARDHOLDER_NAME', 'PHINS Monthly Auto Pay')
+AUTO_PAY_REPORT_RETENTION = int(os.environ.get('PHINS_AUTO_PAY_REPORT_RETENTION', '120'))
+MONTHLY_AUTO_PAY_COMMAND_TOKEN = os.environ.get('MONTHLY_AUTO_PAY_COMMAND_TOKEN', '')
 
 # Storage - either database-backed or in-memory
 if USE_DATABASE and database_enabled:
@@ -1114,6 +1121,7 @@ INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, 
 
 # Transaction ledger - master ledger for all financial transactions
 TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
+AUTO_PAY_RUN_REPORTS: Dict[str, Dict[str, Any]] = {}  # run_id -> monthly auto-pay report
 
 platform_event_ledger = PlatformEventLedgerService(
     TRANSACTION_LEDGER,
@@ -3151,7 +3159,9 @@ def save_ledger_data():
                 'customer_invitations': CUSTOMER_INVITATIONS,
                 'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
                 # v1.9 additions - General Policy Documents
-                'policy_documents': POLICY_DOCUMENTS
+                'policy_documents': POLICY_DOCUMENTS,
+                # v2.1 additions - monthly auto-pay batch reporting
+                'auto_pay_run_reports': AUTO_PAY_RUN_REPORTS
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -3483,6 +3493,11 @@ def load_ledger_data():
             hydrated = hydrate_document_customer_links()
             if hydrated:
                 print(f"  - Policy Documents: hydrated owner links for {hydrated} legacy document(s)")
+
+        loaded_auto_pay_reports = data.get('auto_pay_run_reports', {})
+        if loaded_auto_pay_reports:
+            AUTO_PAY_RUN_REPORTS.update(loaded_auto_pay_reports)
+            print(f"  - Auto-Pay Reports: {len(AUTO_PAY_RUN_REPORTS)} batch reports loaded")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -4264,6 +4279,983 @@ def record_transaction(
     threading.Thread(target=save_ledger_data, daemon=True).start()
 
     return transaction
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    """Best-effort parse for ISO timestamps used across policy billing metadata."""
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def _normalize_billing_frequency(value: Any) -> str:
+    """Normalize billing frequencies used by policies, underwriting, and reports."""
+    freq = str(value or 'monthly').strip().lower()
+    aliases = {
+        'month': 'monthly',
+        'monthly': 'monthly',
+        'quarter': 'quarterly',
+        'quarterly': 'quarterly',
+        'year': 'annual',
+        'yearly': 'annual',
+        'annual': 'annual',
+    }
+    return aliases.get(freq, 'monthly')
+
+
+def _months_for_frequency(frequency: str) -> int:
+    """Return the number of months represented by a billing frequency."""
+    if frequency == 'quarterly':
+        return 3
+    if frequency == 'annual':
+        return 12
+    return 1
+
+
+def _first_of_month(moment: datetime) -> datetime:
+    """Normalize a timestamp to the first day of its month at midnight."""
+    return moment.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _add_months_first_day(moment: datetime, months: int) -> datetime:
+    """Advance a first-of-month timestamp by a whole number of months."""
+    base = _first_of_month(moment)
+    zero_based_month = (base.month - 1) + months
+    year = base.year + (zero_based_month // 12)
+    month = (zero_based_month % 12) + 1
+    return base.replace(year=year, month=month, day=1)
+
+
+def _coerce_first_day_schedule(
+    raw_due_date: Any,
+    frequency: str,
+    reference_datetime: Optional[datetime] = None
+) -> datetime:
+    """Coerce billing schedules to the first day of the applicable month/period."""
+    now = reference_datetime or datetime.now()
+    parsed = _parse_iso_datetime(raw_due_date)
+    if parsed:
+        return _first_of_month(parsed)
+    default_due = _first_of_month(now)
+    if now.day == 1:
+        return default_due
+    return _add_months_first_day(default_due, _months_for_frequency(frequency))
+
+
+def _compute_billing_cycle_key(due_date: datetime, frequency: str) -> str:
+    """Build a stable cycle key so monthly auto-pay runs stay idempotent."""
+    normalized = _first_of_month(due_date)
+    if frequency == 'quarterly':
+        quarter = ((normalized.month - 1) // 3) + 1
+        return f"{normalized.year}-Q{quarter}"
+    if frequency == 'annual':
+        return str(normalized.year)
+    return normalized.strftime('%Y-%m')
+
+
+def _default_auto_pay_card_payload(customer_id: str) -> Dict[str, Any]:
+    """Return the runtime-only default Mastercard details requested for auto-pay."""
+    display_name = get_customer_display_name(customer_id)
+    return {
+        'card_number': DEFAULT_AUTO_PAY_CARD_NUMBER,
+        'expiry_month': DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH,
+        'expiry_year': DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR,
+        'cvv': DEFAULT_AUTO_PAY_CARD_CVV,
+        'card_type': 'mastercard',
+        'cardholder_name': display_name or DEFAULT_AUTO_PAY_CARDHOLDER_NAME,
+    }
+
+
+def _build_default_auto_pay_token(customer_id: str) -> str:
+    """Create a deterministic masked token without persisting raw card data."""
+    token_source = (
+        f"{customer_id}|{DEFAULT_AUTO_PAY_CARD_NUMBER[-4:]}|"
+        f"{DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH:02d}|{DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR:02d}"
+    )
+    return f"autopay_{hashlib.sha256(token_source.encode('utf-8')).hexdigest()[:24]}"
+
+
+def _build_card_display(card_type: str, card_last4: str) -> str:
+    """Human-readable payment method string for reports and notifications."""
+    display_type = (card_type or 'card').replace('_', ' ').title()
+    return f"{display_type} •••• {card_last4 or '****'}"
+
+
+def _send_generic_auto_pay_notification(
+    customer_id: str,
+    title: str,
+    message: str,
+    policy_id: str,
+    customer: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Send best-effort customer notifications for auto-pay configuration changes."""
+    customer_data = customer or get_customer_with_fallback(customer_id) or CUSTOMERS.get(customer_id) or {}
+    email = str(customer_data.get('email') or '').strip()
+    phone = str(customer_data.get('phone') or '').strip()
+    if not email and not phone:
+        return {'success': False, 'skipped': True, 'reason': 'No customer contact details'}
+
+    try:
+        from services.notification_service import NotificationChannel, NotificationPriority
+        from services.secure_notification_pipeline import (
+            PushNotificationRequest,
+            PushNotificationType,
+            get_secure_notification_pipeline,
+        )
+
+        channels = [NotificationChannel.EMAIL]
+        if phone:
+            channels.append(NotificationChannel.SMS)
+
+        pipeline = get_secure_notification_pipeline()
+        result = pipeline.send_push_notification(
+            PushNotificationRequest(
+                notification_type=PushNotificationType.MONTHLY_STATEMENT,
+                customer_id=customer_id,
+                title=title,
+                message=message,
+                data={'policy_id': policy_id, 'category': 'auto_pay_change'},
+                channels=channels,
+                email=email or None,
+                phone=phone or None,
+                priority=NotificationPriority.HIGH,
+                reference_id=policy_id,
+            )
+        )
+        payload = result.to_dict() if hasattr(result, 'to_dict') else {'success': bool(result)}
+        payload['customer_id'] = customer_id
+        payload['policy_id'] = policy_id
+        payload['title'] = title
+        return payload
+    except Exception as exc:
+        return {
+            'success': False,
+            'customer_id': customer_id,
+            'policy_id': policy_id,
+            'error': str(exc),
+        }
+
+
+def _send_auto_pay_billing_notification(
+    customer_id: str,
+    policy_id: str,
+    amount: float,
+    due_date: str,
+    event_name: str,
+    customer: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Send payment received/failed notices using the billing notification templates."""
+    customer_data = customer or get_customer_with_fallback(customer_id) or CUSTOMERS.get(customer_id) or {}
+    email = str(customer_data.get('email') or '').strip()
+    phone = str(customer_data.get('phone') or '').strip()
+    try:
+        from services.secure_notification_pipeline import (
+            PushNotificationType,
+            get_secure_notification_pipeline,
+        )
+
+        pipeline = get_secure_notification_pipeline()
+        event_type = (
+            PushNotificationType.PAYMENT_RECEIVED
+            if event_name == 'received'
+            else PushNotificationType.PAYMENT_FAILED
+        )
+        result = pipeline.notify_billing_event(
+            event_type=event_type,
+            customer_id=customer_id,
+            billing_data={
+                'amount': amount,
+                'due_date': due_date,
+                'policy_id': policy_id,
+                'event_name': event_name,
+            },
+            email=email or None,
+            phone=phone or None,
+        )
+        payload = result.to_dict() if hasattr(result, 'to_dict') else {'success': bool(result)}
+        payload['customer_id'] = customer_id
+        payload['policy_id'] = policy_id
+        payload['event_name'] = event_name
+        return payload
+    except Exception as exc:
+        return {
+            'success': False,
+            'customer_id': customer_id,
+            'policy_id': policy_id,
+            'event_name': event_name,
+            'error': str(exc),
+        }
+
+
+def ensure_policy_auto_pay_defaults(
+    policy: Dict[str, Any],
+    reference_datetime: Optional[datetime] = None,
+    notify_changes: bool = False,
+    actor: str = 'system_auto_pay'
+) -> Dict[str, Any]:
+    """Normalize policy auto-pay configuration to a tokenized first-of-month card schedule."""
+    now = reference_datetime or datetime.now()
+    customer_id = str(policy.get('customer_id') or '').strip()
+    policy_id = str(policy.get('id') or '').strip()
+    payment_setup = policy.setdefault('payment_setup', {})
+    billing = policy.setdefault('billing', {})
+    auto_pay_config = billing.setdefault('auto_pay_config', {})
+    frequency = _normalize_billing_frequency(
+        payment_setup.get('billing_frequency') or billing.get('frequency') or 'monthly'
+    )
+    next_due = _coerce_first_day_schedule(
+        payment_setup.get('next_billing_date') or billing.get('next_billing_date'),
+        frequency,
+        reference_datetime=now,
+    )
+
+    changes: List[str] = []
+    default_card_assigned = False
+
+    if not payment_setup.get('auto_pay'):
+        payment_setup['auto_pay'] = True
+        changes.append('enabled auto-pay in payment setup')
+    if not billing.get('auto_pay'):
+        billing['auto_pay'] = True
+        changes.append('enabled auto-pay in billing settings')
+
+    if payment_setup.get('billing_frequency') != frequency:
+        payment_setup['billing_frequency'] = frequency
+        changes.append(f'normalized payment frequency to {frequency}')
+    if billing.get('frequency') != frequency:
+        billing['frequency'] = frequency
+        changes.append(f'normalized billing frequency to {frequency}')
+
+    if safe_int(payment_setup.get('billing_day', 0), 0) != 1:
+        payment_setup['billing_day'] = 1
+        changes.append('scheduled auto-pay for the 1st of the month')
+    if safe_int(billing.get('billing_day', 0), 0) != 1:
+        billing['billing_day'] = 1
+    if auto_pay_config.get('billing_day') != 1:
+        auto_pay_config['billing_day'] = 1
+
+    next_due_iso = next_due.isoformat()
+    if payment_setup.get('next_billing_date') != next_due_iso:
+        payment_setup['next_billing_date'] = next_due_iso
+        changes.append(f'aligned next billing date to {next_due.strftime("%Y-%m-%d")}')
+    if billing.get('next_billing_date') != next_due_iso:
+        billing['next_billing_date'] = next_due_iso
+
+    auto_pay_config.setdefault('enabled', True)
+    auto_pay_config.setdefault('notify_before', 3)
+    auto_pay_config.setdefault('ai_optimization', True)
+    auto_pay_config['next_billing_date'] = next_due_iso
+    auto_pay_config['schedule'] = '1st_of_month'
+    auto_pay_config['updated_at'] = now.isoformat()
+    auto_pay_config['updated_by'] = actor
+
+    has_credit_card = bool(
+        payment_setup.get('card_last4')
+        or payment_setup.get('payment_token')
+        or (billing.get('payment_method') or {}).get('card_last4')
+    )
+
+    if not has_credit_card:
+        default_card = _default_auto_pay_card_payload(customer_id)
+        payment_setup.update({
+            'payment_method': 'credit_card',
+            'card_last4': DEFAULT_AUTO_PAY_CARD_NUMBER[-4:],
+            'card_type': 'mastercard',
+            'cardholder_name': default_card['cardholder_name'],
+            'expiry_month': f"{DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH:02d}",
+            'expiry_year': str(2000 + DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR if DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR < 100 else DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR),
+            'payment_token': _build_default_auto_pay_token(customer_id),
+            'default_card_assigned_at': now.isoformat(),
+            'default_card_source': 'system_monthly_autopay',
+        })
+        billing['payment_method'] = {
+            'type': 'card',
+            'card_last4': DEFAULT_AUTO_PAY_CARD_NUMBER[-4:],
+            'card_type': 'mastercard',
+            'cardholder_name': default_card['cardholder_name'],
+            'expiry_month': f"{DEFAULT_AUTO_PAY_CARD_EXPIRY_MONTH:02d}",
+            'expiry_year': str(2000 + DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR if DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR < 100 else DEFAULT_AUTO_PAY_CARD_EXPIRY_YEAR),
+        }
+        auto_pay_config['payment_method'] = 'credit_card'
+        auto_pay_config['payment_method_display'] = _build_card_display('mastercard', DEFAULT_AUTO_PAY_CARD_NUMBER[-4:])
+        auto_pay_config['default_card_assigned'] = True
+        default_card_assigned = True
+        changes.append('assigned the PHINS default Mastercard ending in 4444')
+    else:
+        if payment_setup.get('payment_method') != 'credit_card':
+            payment_setup['payment_method'] = 'credit_card'
+        auto_pay_config['payment_method'] = 'credit_card'
+        auto_pay_config['payment_method_display'] = _build_card_display(
+            str(payment_setup.get('card_type') or 'card'),
+            str(payment_setup.get('card_last4') or (billing.get('payment_method') or {}).get('card_last4') or '****'),
+        )
+
+    notification_result = None
+    if notify_changes and changes and customer_id and policy_id:
+        schedule_desc = f"Auto-pay is scheduled for the 1st of each {frequency.rstrip('ly') if frequency != 'monthly' else 'month'}"
+        payment_display = auto_pay_config.get('payment_method_display') or 'Credit Card •••• 4444'
+        message = (
+            f"Your PHINS auto-pay settings were updated for policy {policy_id}. "
+            f"{schedule_desc}. Payment method: {payment_display}. "
+            f"Changes: {'; '.join(changes)}."
+        )
+        notification_result = _send_generic_auto_pay_notification(
+            customer_id=customer_id,
+            title='PHINS auto-pay updated',
+            message=message,
+            policy_id=policy_id,
+        )
+
+    return {
+        'policy': policy,
+        'changed': bool(changes),
+        'changes': changes,
+        'default_card_assigned': default_card_assigned,
+        'notification': notification_result,
+    }
+
+
+def ensure_monthly_auto_pay_portfolio_defaults(
+    reference_datetime: Optional[datetime] = None,
+    notify_changes: bool = False,
+    specific_policy: Optional[str] = None,
+    specific_customer: Optional[str] = None,
+    actor: str = 'system_auto_pay'
+) -> Dict[str, Any]:
+    """Normalize all eligible policy auto-pay settings and optionally notify customers."""
+    now = reference_datetime or datetime.now()
+    updates = []
+    notifications = []
+    for policy_id, policy in list(POLICIES.items()):
+        if specific_policy and policy_id != specific_policy:
+            continue
+        if specific_customer and policy.get('customer_id') != specific_customer:
+            continue
+        if is_suspended_account(policy.get('customer_id', '')):
+            continue
+        if not status_eq(policy, 'active', 'approved'):
+            continue
+        result = ensure_policy_auto_pay_defaults(
+            policy,
+            reference_datetime=now,
+            notify_changes=notify_changes,
+            actor=actor,
+        )
+        POLICIES[policy_id] = result['policy']
+        if result['changed']:
+            updates.append({
+                'policy_id': policy_id,
+                'customer_id': policy.get('customer_id'),
+                'changes': result['changes'],
+                'default_card_assigned': result['default_card_assigned'],
+            })
+        if result.get('notification'):
+            notifications.append(result['notification'])
+    return {
+        'updated': len(updates),
+        'updates': updates,
+        'notifications': notifications,
+    }
+
+
+def _prepare_auto_pay_bill(
+    policy_id: str,
+    customer_id: str,
+    due_date: datetime,
+    amount: float,
+    frequency: str,
+    reference_datetime: Optional[datetime] = None
+) -> Tuple[Dict[str, Any], str]:
+    """Return or create the bill that should be settled by the current auto-pay cycle."""
+    now = reference_datetime or datetime.now()
+    cycle_key = _compute_billing_cycle_key(due_date, frequency)
+    legacy_bill = None
+    for bill_id, bill in BILLING.items():
+        if bill.get('policy_id') != policy_id:
+            continue
+        if str(bill.get('billing_cycle_key') or '') == cycle_key:
+            return bill, 'matched'
+        if (
+            not legacy_bill
+            and status_in(bill, ['outstanding', 'partial', 'pending'])
+            and not bill.get('billing_cycle_key')
+        ):
+            legacy_bill = bill
+
+    if legacy_bill:
+        legacy_bill['billing_cycle_key'] = cycle_key
+        legacy_bill['auto_pay'] = True
+        legacy_bill['billing_frequency'] = frequency
+        legacy_bill['due_date'] = due_date.isoformat()
+        legacy_bill['updated_date'] = now.isoformat()
+        BILLING[str(legacy_bill.get('id') or '')] = legacy_bill
+        return legacy_bill, 'legacy_reused'
+
+    bill_id = f"AUTOPAY-{due_date.strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+    next_cycle = _add_months_first_day(due_date, _months_for_frequency(frequency))
+    bill = {
+        'id': bill_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'customer_name': get_customer_display_name(customer_id),
+        'amount': round(float(amount), 2),
+        'amount_due': round(float(amount), 2),
+        'amount_paid': 0.0,
+        'status': 'outstanding',
+        'payment_method': 'credit_card',
+        'auto_pay': True,
+        'billing_frequency': frequency,
+        'billing_cycle_key': cycle_key,
+        'billing_period_start': due_date.isoformat(),
+        'billing_period_end': (next_cycle - timedelta(seconds=1)).isoformat(),
+        'due_date': due_date.isoformat(),
+        'created_date': now.isoformat(),
+        'updated_date': now.isoformat(),
+        'description': f"Auto-pay premium for {policy_id} ({cycle_key})",
+    }
+    BILLING[bill_id] = bill
+    return bill, 'created'
+
+
+def process_customer_premium_payment(
+    customer_id: str,
+    amount: float,
+    payment_method: str = 'card',
+    policy_id: Optional[str] = None,
+    allocate_to_investments: bool = True,
+    debug: bool = False,
+    use_pipeline: Optional[bool] = None,
+    specific_bill_ids: Optional[List[str]] = None,
+    extra_metadata: Optional[Dict[str, Any]] = None,
+    notify_customer: bool = False,
+    reference_datetime: Optional[datetime] = None
+) -> Dict[str, Any]:
+    """Shared premium payment flow used by customer checkout and scheduled auto-pay."""
+    now = reference_datetime or datetime.now()
+    amount = safe_float(amount, 0.0)
+    normalized_payment_method = normalize_payment_method(payment_method)
+    if not customer_id or amount <= 0:
+        raise ValueError('Invalid customer_id or amount')
+
+    pre_integrity = None
+    if integrity_service_enabled:
+        pre_integrity = integrity_service.validate_customer_integrity(customer_id)
+
+    allocation_prefs = get_customer_allocation(customer_id)
+    savings_pct = allocation_prefs['savings_pct'] / 100.0
+    risk_pct = allocation_prefs['risk_pct'] / 100.0
+    savings_amount = amount * savings_pct
+    risk_amount = amount * risk_pct
+
+    if use_pipeline is None:
+        use_pipeline = bool(savings_pipeline_enabled and savings_pipeline_service and not allocate_to_investments)
+    allocation_source = 'pipeline' if use_pipeline else 'direct_investment'
+    investment_base = savings_amount
+    if use_pipeline:
+        investment_base = savings_amount * (allocation_prefs['investment_pct'] / 100.0)
+
+    index_amount = investment_base * (allocation_prefs['index_pct'] / 100.0)
+    bonds_amount = investment_base * (allocation_prefs['bonds_pct'] / 100.0)
+    crypto_amount = investment_base * (allocation_prefs['crypto_pct'] / 100.0)
+
+    pipeline_configured = False
+    pipeline_config_error = None
+    pipeline_result = None
+    inv_account = None
+
+    if not use_pipeline:
+        if customer_id not in INVESTMENT_ACCOUNTS:
+            INVESTMENT_ACCOUNTS[customer_id] = {
+                'balance': 0.0,
+                'index_balance': 0.0,
+                'bonds_balance': 0.0,
+                'crypto_balance': 0.0,
+                'deposits': [],
+                'allocations': [],
+                'created_at': now.isoformat()
+            }
+
+        inv_account = INVESTMENT_ACCOUNTS[customer_id]
+        inv_account['balance'] += savings_amount
+        inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
+        inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
+        inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
+        inv_account.setdefault('deposits', []).append({
+            'id': f"PAY-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+            'type': 'premium_allocation',
+            'amount': savings_amount,
+            'index_amount': index_amount,
+            'bonds_amount': bonds_amount,
+            'crypto_amount': crypto_amount,
+            'timestamp': now.isoformat()
+        })
+        INVESTMENT_ACCOUNTS[customer_id] = inv_account
+    else:
+        try:
+            from services.savings_pipeline_service import AllocationStrategy
+
+            account = savings_pipeline_service.get_or_create_account(customer_id)
+            account.allocation_strategy = AllocationStrategy.CUSTOM
+            account.allocation_config.wallet_pct = allocation_prefs['wallet_pct']
+            account.allocation_config.investment_pct = allocation_prefs['investment_pct']
+            account.allocation_config.algo_trading_pct = allocation_prefs['algo_pct']
+            account.allocation_config.index_pct = allocation_prefs['index_pct']
+            account.allocation_config.bonds_pct = allocation_prefs['bonds_pct']
+            account.allocation_config.crypto_pct = allocation_prefs['crypto_pct']
+            pipeline_configured = True
+        except Exception as config_err:
+            pipeline_config_error = str(config_err)
+
+    bills_paid = []
+    remaining_amount = amount
+    specific_bill_lookup = {str(b) for b in (specific_bill_ids or [])}
+    for bill_id, bill in list(BILLING.items()):
+        if remaining_amount <= 0:
+            break
+        if bill.get('customer_id') != customer_id:
+            continue
+        if policy_id and bill.get('policy_id') != policy_id:
+            continue
+        if specific_bill_lookup and str(bill.get('id') or bill_id) not in specific_bill_lookup:
+            continue
+        if not status_in(bill, ['outstanding', 'pending', 'partial']):
+            continue
+
+        bill_due = safe_float(bill.get('amount', bill.get('amount_due', 0)), 0.0)
+        bill_paid_so_far = safe_float(bill.get('amount_paid', 0), 0.0)
+        outstanding = max(0.0, bill_due - bill_paid_so_far)
+        if outstanding <= 0:
+            continue
+
+        payment_for_bill = min(remaining_amount, outstanding)
+        bill['amount_paid'] = round(bill_paid_so_far + payment_for_bill, 2)
+        bill['updated_date'] = now.isoformat()
+        if bill['amount_paid'] >= bill_due:
+            bill['status'] = 'paid'
+            bill['paid_date'] = now.isoformat()
+        else:
+            bill['status'] = 'partial'
+        bill['payment_method'] = normalized_payment_method
+        BILLING[bill_id] = bill
+        remaining_amount = round(remaining_amount - payment_for_bill, 2)
+        bills_paid.append(str(bill.get('id') or bill_id))
+
+    amount_applied_to_bills = round(amount - remaining_amount, 2)
+    unbilled_premium_amount = round(max(0.0, remaining_amount), 2)
+
+    try:
+        record_premium_revenue(
+            customer_id=customer_id,
+            policy_id=policy_id or 'MULTI',
+            amount=amount,
+            description=f"Customer premium payment via {normalized_payment_method}"
+        )
+    except Exception as rev_err:
+        print(f"[BALANCE_SHEET] Error recording customer premium payment: {rev_err}")
+
+    ledger_metadata = {
+        'payment_method': normalized_payment_method,
+        'savings_allocation': savings_amount,
+        'risk_allocation': risk_amount,
+        'savings_pct': allocation_prefs['savings_pct'],
+        'risk_pct': allocation_prefs['risk_pct'],
+        'index_amount': index_amount,
+        'bonds_amount': bonds_amount,
+        'crypto_amount': crypto_amount,
+        'investment_account_balance': inv_account['balance'] if inv_account else 0.0,
+        'allocation_source': allocation_source,
+        'savings_captured_in_pipeline': use_pipeline,
+        'bills_updated': bills_paid,
+        'applied_to_bills': amount_applied_to_bills,
+        'unbilled_premium_amount': unbilled_premium_amount,
+    }
+    if policy_id:
+        ledger_metadata['policy_id'] = policy_id
+    if len(bills_paid) == 1:
+        ledger_metadata['bill_id'] = bills_paid[0]
+    if extra_metadata:
+        ledger_metadata.update(extra_metadata)
+
+    tx = record_transaction(
+        customer_id=customer_id,
+        tx_type='premium_payment',
+        amount=amount,
+        description=(
+            f"Premium payment via {normalized_payment_method}. "
+            f"Savings: ${savings_amount:.2f} ({allocation_prefs['savings_pct']}%)"
+        ),
+        metadata=ledger_metadata
+    )
+
+    if use_pipeline and savings_amount > 0:
+        try:
+            pipeline_result = savings_pipeline_service.deposit_to_pipeline(
+                customer_id=customer_id,
+                amount=savings_amount,
+                source='premium_payment',
+                auto_allocate=True
+            )
+        except Exception as pipe_err:
+            pipeline_result = {'error': str(pipe_err)}
+
+    if use_pipeline:
+        inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
+
+    allocation_checks = {
+        'savings_risk_sum_ok': abs((savings_amount + risk_amount) - amount) < 0.01,
+        'investment_breakdown_sum_ok': abs((index_amount + bonds_amount + crypto_amount) - investment_base) < 0.01,
+        'investment_base': investment_base,
+        'allocation_source': allocation_source,
+        'uses_pipeline': use_pipeline
+    }
+
+    post_integrity = None
+    if integrity_service_enabled:
+        post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
+
+    notification_result = None
+    if notify_customer and policy_id:
+        due_date = ''
+        if specific_bill_lookup:
+            paid_bill = BILLING.get(next(iter(specific_bill_lookup), ''), {})
+            due_date = str(paid_bill.get('due_date') or '')
+        notification_result = _send_auto_pay_billing_notification(
+            customer_id=customer_id,
+            policy_id=policy_id,
+            amount=amount,
+            due_date=due_date[:10] if due_date else now.strftime('%Y-%m-%d'),
+            event_name='received',
+        )
+
+    payment_record = {
+        'id': f"PAY-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+        'customer_id': customer_id,
+        'amount': amount,
+        'savings_allocated': savings_amount,
+        'risk_allocated': risk_amount,
+        'savings_pct': allocation_prefs['savings_pct'],
+        'risk_pct': allocation_prefs['risk_pct'],
+        'index_amount': index_amount,
+        'bonds_amount': bonds_amount,
+        'crypto_amount': crypto_amount,
+        'payment_method': normalized_payment_method,
+        'nft_token_id': tx.get('nft_token_id'),
+        'transaction_id': tx['id'],
+        'timestamp': now.isoformat(),
+        'status': 'completed',
+        'applied_to_bills': amount_applied_to_bills,
+        'unbilled_premium_amount': unbilled_premium_amount
+    }
+
+    integrity_payload = None
+    if post_integrity:
+        integrity_payload = {
+            'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
+            'post_total': post_integrity.calculated_total,
+            'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
+            'expected_delta': savings_amount,
+            'is_valid': post_integrity.is_valid,
+            'issues': post_integrity.issues
+        }
+
+    try:
+        save_ledger_data()
+    except Exception:
+        pass
+
+    response = {
+        'success': True,
+        'payment': payment_record,
+        'nft_token_id': tx.get('nft_token_id'),
+        'savings_allocated': savings_amount,
+        'risk_allocated': risk_amount,
+        'savings_pct': allocation_prefs['savings_pct'],
+        'risk_pct': allocation_prefs['risk_pct'],
+        'investment_breakdown': {
+            'index': index_amount,
+            'bonds': bonds_amount,
+            'crypto': crypto_amount
+        },
+        'investment_account_balance': inv_account.get('balance', 0.0) if inv_account else 0.0,
+        'bills_updated': bills_paid,
+        'allocation_checks': allocation_checks,
+        'allocation_source': allocation_source,
+    }
+    if pipeline_result:
+        response['pipeline_allocation'] = pipeline_result.get('allocation', {})
+        response['ai_optimized'] = True
+    if pipeline_config_error and debug:
+        response['pipeline_config_error'] = pipeline_config_error
+    if pipeline_configured and debug:
+        response['pipeline_configured'] = True
+    if integrity_payload and (debug or not integrity_payload['is_valid']):
+        response['integrity'] = integrity_payload
+    if notification_result:
+        response['notification'] = notification_result
+    return response
+
+
+def run_monthly_auto_pay(
+    reference_datetime: Optional[datetime] = None,
+    specific_policy: Optional[str] = None,
+    specific_customer: Optional[str] = None,
+    dry_run: bool = False,
+    notify_users: bool = True,
+    trigger: str = 'monthly_command',
+    actor: str = 'system_monthly_autopay',
+    enforce_first_day: bool = True
+) -> Dict[str, Any]:
+    """Process all due first-of-month auto-pay collections with persistent reporting."""
+    now = reference_datetime or datetime.now()
+    if enforce_first_day and now.day != 1:
+        return {
+            'success': False,
+            'error': 'Monthly auto-pay runs are restricted to the 1st of the month',
+            'executed_at': now.isoformat(),
+            'processed': 0,
+            'failed': [],
+            'payments': [],
+        }
+
+    normalization = ensure_monthly_auto_pay_portfolio_defaults(
+        reference_datetime=now,
+        notify_changes=notify_users,
+        specific_policy=specific_policy,
+        specific_customer=specific_customer,
+        actor=actor,
+    )
+
+    report_id = f"AUTOPAY-RUN-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+    report = {
+        'success': True,
+        'report_id': report_id,
+        'trigger': trigger,
+        'executed_at': now.isoformat(),
+        'dry_run': dry_run,
+        'processed': 0,
+        'failed_count': 0,
+        'total_amount': 0.0,
+        'payments': [],
+        'failed': [],
+        'notifications': list(normalization.get('notifications', [])),
+        'policy_updates': normalization.get('updates', []),
+        'scheduled_for_day': 1,
+        'billing_cycle': now.strftime('%Y-%m'),
+    }
+
+    for policy_id, policy in list(POLICIES.items()):
+        if specific_policy and policy_id != specific_policy:
+            continue
+        if specific_customer and policy.get('customer_id') != specific_customer:
+            continue
+        if is_suspended_account(policy.get('customer_id', '')):
+            continue
+        if not status_eq(policy, 'active', 'approved'):
+            continue
+
+        payment_setup = policy.get('payment_setup', {})
+        billing_config = policy.get('billing', {})
+        auto_pay_enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
+        if not auto_pay_enabled:
+            continue
+
+        frequency = _normalize_billing_frequency(
+            payment_setup.get('billing_frequency') or billing_config.get('frequency') or 'monthly'
+        )
+        due_date = _parse_iso_datetime(
+            payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
+        )
+        if not due_date:
+            due_date = _coerce_first_day_schedule(None, frequency, reference_datetime=now)
+        due_date = _first_of_month(due_date)
+        if due_date.date() > now.date():
+            continue
+
+        customer_id = str(policy.get('customer_id') or '').strip()
+        cycle_key = _compute_billing_cycle_key(due_date, frequency)
+        monthly_premium = safe_float(policy.get('monthly_premium', 0), 0.0) or (
+            safe_float(policy.get('annual_premium', 0), 0.0) / 12.0
+        )
+        if frequency == 'quarterly':
+            amount = round(monthly_premium * 3 * 0.97, 2)
+        elif frequency == 'annual':
+            amount = round(monthly_premium * 12 * 0.90, 2)
+        else:
+            amount = round(monthly_premium, 2)
+
+        max_amount = safe_float((billing_config.get('auto_pay_config') or {}).get('max_amount'), 0.0)
+        if max_amount and amount > max_amount:
+            failure = {
+                'policy_id': policy_id,
+                'customer_id': customer_id,
+                'error': f'Amount ${amount:.2f} exceeds max limit ${max_amount:.2f}',
+            }
+            report['failed'].append(failure)
+            report['failed_count'] += 1
+            if notify_users:
+                report['notifications'].append(
+                    _send_auto_pay_billing_notification(
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        amount=amount,
+                        due_date=due_date.strftime('%Y-%m-%d'),
+                        event_name='failed',
+                    )
+                )
+            continue
+
+        bill, bill_state = _prepare_auto_pay_bill(
+            policy_id=policy_id,
+            customer_id=customer_id,
+            due_date=due_date,
+            amount=amount,
+            frequency=frequency,
+            reference_datetime=now,
+        )
+        bill_id = str(bill.get('id') or '')
+        if status_eq(bill, 'paid'):
+            next_due = _add_months_first_day(due_date, _months_for_frequency(frequency))
+            policy.setdefault('payment_setup', {})['next_billing_date'] = next_due.isoformat()
+            policy.setdefault('billing', {})['next_billing_date'] = next_due.isoformat()
+            policy.setdefault('billing', {}).setdefault('auto_pay_config', {})['last_processed_cycle'] = cycle_key
+            POLICIES[policy_id] = policy
+            continue
+
+        payment_method_display = _build_card_display(
+            str(payment_setup.get('card_type') or 'mastercard'),
+            str(payment_setup.get('card_last4') or DEFAULT_AUTO_PAY_CARD_NUMBER[-4:]),
+        )
+        if dry_run:
+            report['payments'].append({
+                'policy_id': policy_id,
+                'customer_id': customer_id,
+                'bill_id': bill_id,
+                'amount': amount,
+                'billing_cycle_key': cycle_key,
+                'payment_method': payment_method_display,
+                'dry_run': True,
+                'bill_state': bill_state,
+            })
+            continue
+
+        try:
+            payment_result = process_customer_premium_payment(
+                customer_id=customer_id,
+                amount=amount,
+                payment_method='credit_card',
+                policy_id=policy_id,
+                allocate_to_investments=False,
+                debug=False,
+                use_pipeline=True,
+                specific_bill_ids=[bill_id],
+                extra_metadata={
+                    'auto_pay': True,
+                    'auto_pay_trigger': trigger,
+                    'billing_cycle_key': cycle_key,
+                    'charge_reference': f"CHARGE-{report_id}-{policy_id}",
+                    'payment_token': payment_setup.get('payment_token') or _build_default_auto_pay_token(customer_id),
+                },
+                notify_customer=notify_users,
+                reference_datetime=now,
+            )
+
+            next_due = _add_months_first_day(due_date, _months_for_frequency(frequency))
+            policy.setdefault('payment_setup', {})['next_billing_date'] = next_due.isoformat()
+            policy.setdefault('billing', {})['next_billing_date'] = next_due.isoformat()
+            policy.setdefault('billing', {}).setdefault('auto_pay_config', {})['last_processed_cycle'] = cycle_key
+            policy['last_auto_pay_at'] = now.isoformat()
+            POLICIES[policy_id] = policy
+
+            audit_tx = record_transaction(
+                customer_id=customer_id,
+                tx_type='auto_pay_execution',
+                amount=amount,
+                description=f"Auto-pay premium ${amount:.2f} for policy {policy_id}",
+                metadata={
+                    'policy_id': policy_id,
+                    'bill_id': bill_id,
+                    'billing_cycle_key': cycle_key,
+                    'payment_method': 'credit_card',
+                    'card_last4': payment_setup.get('card_last4') or DEFAULT_AUTO_PAY_CARD_NUMBER[-4:],
+                    'card_type': payment_setup.get('card_type') or 'mastercard',
+                    'billing_frequency': frequency,
+                    'next_billing_date': next_due.isoformat(),
+                    'trigger': trigger,
+                }
+            )
+
+            payment_entry = {
+                'policy_id': policy_id,
+                'customer_id': customer_id,
+                'bill_id': bill_id,
+                'amount': amount,
+                'billing_cycle_key': cycle_key,
+                'payment_method': payment_method_display,
+                'next_billing_date': next_due.strftime('%Y-%m-%d'),
+                'premium_payment_tx_id': payment_result.get('payment', {}).get('transaction_id'),
+                'auto_pay_tx_id': audit_tx.get('id'),
+                'nft_token_id': audit_tx.get('nft_token_id'),
+                'integrity': payment_result.get('integrity'),
+            }
+            if payment_result.get('notification'):
+                report['notifications'].append(payment_result['notification'])
+            report['payments'].append(payment_entry)
+            report['processed'] += 1
+            report['total_amount'] = round(report['total_amount'] + amount, 2)
+        except Exception as exc:
+            failure = {
+                'policy_id': policy_id,
+                'customer_id': customer_id,
+                'bill_id': bill_id,
+                'error': str(exc),
+                'billing_cycle_key': cycle_key,
+            }
+            report['failed'].append(failure)
+            report['failed_count'] += 1
+            if notify_users:
+                report['notifications'].append(
+                    _send_auto_pay_billing_notification(
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        amount=amount,
+                        due_date=due_date.strftime('%Y-%m-%d'),
+                        event_name='failed',
+                    )
+                )
+
+    AUTO_PAY_RUN_REPORTS[report_id] = report
+    if len(AUTO_PAY_RUN_REPORTS) > AUTO_PAY_REPORT_RETENTION:
+        oldest_ids = sorted(
+            AUTO_PAY_RUN_REPORTS,
+            key=lambda key: AUTO_PAY_RUN_REPORTS[key].get('executed_at', '')
+        )[:-AUTO_PAY_REPORT_RETENTION]
+        for old_id in oldest_ids:
+            AUTO_PAY_RUN_REPORTS.pop(old_id, None)
+
+    try:
+        save_ledger_data()
+    except Exception:
+        pass
+
+    report['message'] = (
+        f"{'Would process' if dry_run else 'Processed'} {report['processed']} auto-pay payments "
+        f"totaling ${report['total_amount']:,.2f}"
+    )
+    return report
+
+
+def bootstrap_job_runtime() -> None:
+    """Load persisted runtime state for scheduled command execution."""
+    print("📂 Loading persisted ledger data for scheduled job...")
+    load_ledger_data()
+    load_dynamic_customers()
+    load_invitation_codes_from_file()
+    seed_demo_documents()
+    initialize_balance_sheet()
 
 def generate_nft_token(
     customer_id: str,
@@ -12045,6 +13037,82 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps({'bills': bills_list}).encode('utf-8'))
+            return
+
+        if path == '/api/billing/auto-pay/reports':
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            report_id = qs.get('report_id', [None])[0]
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+
+            if role == 'customer':
+                if not session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                    return
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own reports'}).encode('utf-8'))
+                    return
+                customer_id = session_customer_id
+            else:
+                customer_id = requested_customer_id
+                if not customer_id and role not in ['admin', 'accountant', 'underwriter']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                    return
+
+            reports = list(AUTO_PAY_RUN_REPORTS.values())
+            reports.sort(key=lambda item: item.get('executed_at', ''), reverse=True)
+            if report_id:
+                reports = [r for r in reports if r.get('report_id') == report_id]
+            if customer_id:
+                filtered_reports = []
+                for report in reports:
+                    payments = [
+                        payment for payment in report.get('payments', [])
+                        if payment.get('customer_id') == customer_id
+                    ]
+                    failures = [
+                        failure for failure in report.get('failed', [])
+                        if failure.get('customer_id') == customer_id
+                    ]
+                    notifications = [
+                        notice for notice in report.get('notifications', [])
+                        if notice.get('customer_id') == customer_id
+                    ]
+                    policy_updates = [
+                        update for update in report.get('policy_updates', [])
+                        if update.get('customer_id') == customer_id
+                    ]
+                    if payments or failures or notifications or policy_updates:
+                        scoped_report = dict(report)
+                        scoped_report['payments'] = payments
+                        scoped_report['failed'] = failures
+                        scoped_report['notifications'] = notifications
+                        scoped_report['policy_updates'] = policy_updates
+                        scoped_report['processed'] = len(payments)
+                        scoped_report['failed_count'] = len(failures)
+                        scoped_report['total_amount'] = round(
+                            sum(safe_float(payment.get('amount'), 0.0) for payment in payments),
+                            2,
+                        )
+                        filtered_reports.append(scoped_report)
+                reports = filtered_reports
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'items': reports,
+                'page': 1,
+                'page_size': len(reports),
+                'total': len(reports)
+            }, default=str).encode('utf-8'))
             return
         
         # Billing stats for admin dashboard (fallback when billing_engine unavailable)
@@ -34252,219 +35320,61 @@ For claims or questions, please contact:
         # AI Auto-Pay Execute - Process scheduled auto-pay
         if path == '/api/billing/auto-pay/execute':
             """
-            Execute auto-pay for policies with scheduled payments due.
-            This is called by the AI scheduler or manually triggered.
-            
+            Execute first-of-month auto-pay for due policies.
+            Supports admin/customer sessions or deployment cron tokens.
+
             Body params:
             - policy_id: Specific policy to process (optional)
             - customer_id: Specific customer to process (optional)
-            - dry_run: If true, show what would be paid without executing (default false)
+            - dry_run: If true, show what would be paid without executing
+            - notify_users: If true, send customer notices (default true)
+            - force: Allow execution on non-1st day for admin/manual use
             """
             try:
                 data = json.loads(body) if body else {}
                 specific_policy = data.get('policy_id')
                 specific_customer = data.get('customer_id')
-                dry_run = data.get('dry_run', False)
-                
-                now = datetime.now()
-                today = now.strftime('%Y-%m-%d')
-                
-                # Find all policies with auto-pay due
-                policies_to_process = []
-                for pol_id, policy in POLICIES.items():
-                    if specific_policy and pol_id != specific_policy:
-                        continue
-                    if specific_customer and policy.get('customer_id') != specific_customer:
-                        continue
-                    
-                    payment_setup = policy.get('payment_setup', {})
-                    billing_config = policy.get('billing', {})
-                    
-                    auto_pay_enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
-                    if not auto_pay_enabled:
-                        continue
-                    
-                    next_billing = payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
-                    if not next_billing:
-                        continue
-                    
-                    # Check if payment is due
-                    next_billing_date = next_billing[:10] if next_billing else None
-                    if next_billing_date and next_billing_date <= today:
-                        policies_to_process.append({
-                            'policy_id': pol_id,
-                            'policy': policy,
-                            'customer_id': policy.get('customer_id'),
-                            'next_billing_date': next_billing_date
-                        })
-                
-                if not policies_to_process:
-                    self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'message': 'No auto-pay payments due',
-                        'processed': 0,
-                        'dry_run': dry_run
-                    }).encode('utf-8'))
-                    return
-                
-                # Process each policy
-                payments_processed = []
-                payments_failed = []
-                
-                for item in policies_to_process:
-                    pol_id = item['policy_id']
-                    policy = item['policy']
-                    customer_id = item['customer_id']
-                    
-                    try:
-                        payment_setup = policy.get('payment_setup', {})
-                        billing_config = policy.get('billing', {})
-                        
-                        # Get payment details
-                        payment_method = payment_setup.get('payment_method', 'credit_card')
-                        card_last4 = payment_setup.get('card_last4', '4444')
-                        card_type = payment_setup.get('card_type', 'card')
-                        billing_frequency = payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly')
-                        billing_day = payment_setup.get('billing_day', 1)
-                        max_amount = billing_config.get('auto_pay_config', {}).get('max_amount')
-                        
-                        # Calculate payment amount
-                        monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
-                        
-                        if billing_frequency == 'quarterly':
-                            amount = monthly_premium * 3 * 0.97
-                        elif billing_frequency in ['annual', 'yearly']:
-                            amount = monthly_premium * 12 * 0.90
-                        else:
-                            amount = monthly_premium
-                        
-                        # Check max amount limit
-                        if max_amount and amount > max_amount:
-                            payments_failed.append({
-                                'policy_id': pol_id,
-                                'customer_id': customer_id,
-                                'error': f'Amount ${amount:.2f} exceeds max limit ${max_amount:.2f}'
-                            })
-                            continue
-                        
-                        if dry_run:
-                            # Dry run - just report what would happen
-                            payments_processed.append({
-                                'policy_id': pol_id,
-                                'customer_id': customer_id,
-                                'amount': amount,
-                                'payment_method': f"{card_type.title()} •••• {card_last4}",
-                                'dry_run': True,
-                                'would_process': True
-                            })
-                            continue
-                        
-                        # Execute payment - create bill and mark paid
-                        bill_id = f"AUTOPAY-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                        
-                        bill = {
-                            'id': bill_id,
-                            'policy_id': pol_id,
-                            'customer_id': customer_id,
-                            'amount': amount,
-                            'amount_due': amount,
-                            'amount_paid': amount,
-                            'status': 'paid',
-                            'payment_method': payment_method,
-                            'card_last4': card_last4,
-                            'card_type': card_type,
-                            'auto_pay': True,
-                            'billing_frequency': billing_frequency,
-                            'created_date': now.isoformat(),
-                            'paid_date': now.isoformat(),
-                            'description': f"Auto-pay premium for {pol_id}"
-                        }
-                        BILLING[bill_id] = bill
-                        
-                        # Calculate next billing date
-                        if billing_frequency == 'monthly':
-                            if now.month == 12:
-                                next_bill = now.replace(year=now.year + 1, month=1, day=billing_day)
-                            else:
-                                next_bill = now.replace(month=now.month + 1, day=billing_day)
-                        elif billing_frequency == 'quarterly':
-                            next_month = now.month + 3
-                            next_year = now.year
-                            if next_month > 12:
-                                next_month -= 12
-                                next_year += 1
-                            next_bill = now.replace(year=next_year, month=next_month, day=billing_day)
-                        else:  # annual
-                            next_bill = now.replace(year=now.year + 1, day=billing_day)
-                        
-                        # Update policy next billing date
-                        policy['payment_setup']['next_billing_date'] = next_bill.isoformat()
-                        if 'billing' in policy:
-                            policy['billing']['next_billing_date'] = next_bill.isoformat()
-                        POLICIES[pol_id] = policy
-                        
-                        # Record premium revenue
-                        try:
-                            record_premium_revenue(
-                                customer_id=customer_id,
-                                policy_id=pol_id,
-                                amount=amount,
-                                description=f"Auto-pay premium for {pol_id}"
-                            )
-                        except:
-                            pass
-                        
-                        # Record on transaction ledger
-                        payment_tx = record_transaction(
-                            customer_id=customer_id,
-                            tx_type='auto_pay_execution',
-                            amount=amount,
-                            description=f"Auto-pay premium ${amount:.2f} for policy {pol_id}",
-                            metadata={
-                                'policy_id': pol_id,
-                                'bill_id': bill_id,
-                                'payment_method': payment_method,
-                                'card_last4': card_last4,
-                                'card_type': card_type,
-                                'billing_frequency': billing_frequency,
-                                'next_billing_date': next_bill.isoformat()
-                            }
-                        )
-                        
-                        payments_processed.append({
-                            'policy_id': pol_id,
-                            'customer_id': customer_id,
-                            'bill_id': bill_id,
-                            'amount': amount,
-                            'payment_method': f"{card_type.title()} •••• {card_last4}",
-                            'next_billing_date': next_bill.strftime('%Y-%m-%d'),
-                            'nft_token_id': payment_tx.get('nft_token_id')
-                        })
-                        
-                    except Exception as pol_err:
-                        payments_failed.append({
-                            'policy_id': pol_id,
-                            'customer_id': customer_id,
-                            'error': str(pol_err)
-                        })
-                
-                total_processed = len(payments_processed)
-                total_amount = sum(p.get('amount', 0) for p in payments_processed)
-                
-                response = {
-                    'success': True,
-                    'dry_run': dry_run,
-                    'processed': total_processed,
-                    'total_amount': total_amount,
-                    'payments': payments_processed,
-                    'failed': payments_failed,
-                    'message': f"{'Would process' if dry_run else 'Processed'} {total_processed} auto-pay payments totaling ${total_amount:,.2f}"
-                }
-                
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
-                
+                dry_run = bool(data.get('dry_run', False))
+                notify_users = bool(data.get('notify_users', True))
+                force = bool(data.get('force', False))
+
+                authorized = False
+                if session and require_role(session, ['admin', 'accountant']):
+                    authorized = True
+                elif session and specific_customer:
+                    customer_authorized, resolved_customer_id, _ = authorize_customer_data(
+                        session, specific_customer, 'auto-pay execute'
+                    )
+                    authorized = bool(customer_authorized and resolved_customer_id == specific_customer)
+                elif session and not specific_customer and not specific_policy:
+                    authorized = require_role(session, ['admin', 'accountant'])
+
+                if not authorized:
+                    command_token = self.headers.get('X-Monthly-Auto-Pay-Token', '')
+                    if not (
+                        MONTHLY_AUTO_PAY_COMMAND_TOKEN
+                        and command_token
+                        and hmac.compare_digest(command_token, MONTHLY_AUTO_PAY_COMMAND_TOKEN)
+                    ):
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({
+                            'error': 'Authentication required for auto-pay execution'
+                        }).encode('utf-8'))
+                        return
+
+                report = run_monthly_auto_pay(
+                    reference_datetime=datetime.now(),
+                    specific_policy=specific_policy,
+                    specific_customer=specific_customer,
+                    dry_run=dry_run,
+                    notify_users=notify_users,
+                    trigger='api_auto_pay_execute',
+                    actor=(session or {}).get('username', 'system_api_autopay'),
+                    enforce_first_day=not force,
+                )
+                status_code = 200 if report.get('success', True) else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -34970,12 +35880,11 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 requested_customer_id = data.get('customer_id')
-                amount = float(data.get('amount', 0))
+                amount = safe_float(data.get('amount', 0), 0.0)
                 payment_method = data.get('payment_method', 'card')
-                create_nft = data.get('create_nft', True)
                 allocate_to_investments = data.get('allocate_to_investments', True)
                 debug = bool(data.get('debug') or data.get('integrity_debug'))
-                
+
                 # SECURITY: Enforce customer data isolation
                 authorized, customer_id, error = authorize_customer_data(
                     session, requested_customer_id, 'payment'
@@ -34984,253 +35893,22 @@ For claims or questions, please contact:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
                     return
-                
+
                 if not customer_id or amount <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid customer_id or amount'}).encode('utf-8'))
                     return
-                
-                # Pre-operation integrity snapshot (for debugging/validation)
-                pre_integrity = None
-                if integrity_service_enabled:
-                    pre_integrity = integrity_service.validate_customer_integrity(customer_id)
-                
-                # Get customer's CUSTOM allocation preferences
-                allocation_prefs = get_customer_allocation(customer_id)
-                savings_pct = allocation_prefs['savings_pct'] / 100.0
-                risk_pct = allocation_prefs['risk_pct'] / 100.0
-                
-                # Process payment
-                payment_id = f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                
-                # Calculate allocations using customer's preferences
-                savings_amount = amount * savings_pct
-                risk_amount = amount * risk_pct
-                
-                use_pipeline = bool(savings_pipeline_enabled and savings_pipeline_service and not allocate_to_investments)
-                allocation_source = 'pipeline' if use_pipeline else 'direct_investment'
-                
-                # Calculate investment breakdown (based on investment portion of savings)
-                investment_base = savings_amount
-                if use_pipeline:
-                    investment_base = savings_amount * (allocation_prefs['investment_pct'] / 100.0)
-                
-                index_amount = investment_base * (allocation_prefs['index_pct'] / 100.0)
-                bonds_amount = investment_base * (allocation_prefs['bonds_pct'] / 100.0)
-                crypto_amount = investment_base * (allocation_prefs['crypto_pct'] / 100.0)
-                
-                pipeline_configured = False
-                pipeline_config_error = None
-                pipeline_result = None
-                inv_account = None
-                
-                if not use_pipeline:
-                    # Update customer's investment account directly
-                    if customer_id not in INVESTMENT_ACCOUNTS:
-                        INVESTMENT_ACCOUNTS[customer_id] = {
-                            'balance': 0.0,
-                            'index_balance': 0.0,
-                            'bonds_balance': 0.0,
-                            'crypto_balance': 0.0,
-                            'deposits': [],
-                            'allocations': [],
-                            'created_at': datetime.now().isoformat()
-                        }
-                    
-                    inv_account = INVESTMENT_ACCOUNTS[customer_id]
-                    inv_account['balance'] += savings_amount
-                    inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
-                    inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
-                    inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
-                    
-                    # Record deposit in investment account
-                    deposit_record = {
-                        'id': payment_id,
-                        'type': 'premium_allocation',
-                        'amount': savings_amount,
-                        'index_amount': index_amount,
-                        'bonds_amount': bonds_amount,
-                        'crypto_amount': crypto_amount,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    inv_account['deposits'].append(deposit_record)
-                    INVESTMENT_ACCOUNTS[customer_id] = inv_account
-                else:
-                    # Configure pipeline to use customer's allocation preferences
-                    try:
-                        from services.savings_pipeline_service import AllocationStrategy
-                        account = savings_pipeline_service.get_or_create_account(customer_id)
-                        account.allocation_strategy = AllocationStrategy.CUSTOM
-                        account.allocation_config.wallet_pct = allocation_prefs['wallet_pct']
-                        account.allocation_config.investment_pct = allocation_prefs['investment_pct']
-                        account.allocation_config.algo_trading_pct = allocation_prefs['algo_pct']
-                        account.allocation_config.index_pct = allocation_prefs['index_pct']
-                        account.allocation_config.bonds_pct = allocation_prefs['bonds_pct']
-                        account.allocation_config.crypto_pct = allocation_prefs['crypto_pct']
-                        pipeline_configured = True
-                    except Exception as config_err:
-                        pipeline_config_error = str(config_err)
-                
-                # Update any outstanding bills for this customer
-                bills_paid = []
-                remaining_amount = amount
-                for bill_id, bill in list(BILLING.items()):
-                    if remaining_amount <= 0:
-                        break
-                    if bill.get('customer_id') == customer_id and status_in(bill, ['outstanding', 'pending']):
-                        bill_due = bill.get('amount', bill.get('amount_due', 0))
-                        bill_paid_so_far = bill.get('amount_paid', 0)
-                        outstanding = bill_due - bill_paid_so_far
-                        
-                        if outstanding > 0:
-                            payment_for_bill = min(remaining_amount, outstanding)
-                            bill['amount_paid'] = bill_paid_so_far + payment_for_bill
-                            if bill['amount_paid'] >= bill_due:
-                                bill['status'] = 'paid'
-                                bill['paid_date'] = datetime.now().isoformat()
-                            else:
-                                bill['status'] = 'partial'
-                            BILLING[bill_id] = bill
-                            remaining_amount -= payment_for_bill
-                            bills_paid.append(bill_id)
 
-                amount_applied_to_bills = amount - remaining_amount
-                unbilled_premium_amount = max(0.0, remaining_amount)
-
-                # Keep PHINS balance sheet in sync with direct customer payments.
-                try:
-                    record_premium_revenue(
-                        customer_id=customer_id,
-                        policy_id='MULTI',
-                        amount=amount,
-                        description=f"Customer premium payment via {payment_method}"
-                    )
-                except Exception as rev_err:
-                    print(f"[BALANCE_SHEET] Error recording customer premium payment: {rev_err}")
-
-                # Record in master transaction ledger after bill application so
-                # metadata can separate billed vs unbilled premium portions.
-                tx = record_transaction(
+                response = process_customer_premium_payment(
                     customer_id=customer_id,
-                    tx_type='premium_payment',
                     amount=amount,
-                    description=f'Premium payment via {payment_method}. Savings: ${savings_amount:.2f} ({allocation_prefs["savings_pct"]}%) -> Investments',
-                    metadata={
-                        'payment_method': payment_method,
-                        'savings_allocation': savings_amount,
-                        'risk_allocation': risk_amount,
-                        'savings_pct': allocation_prefs['savings_pct'],
-                        'risk_pct': allocation_prefs['risk_pct'],
-                        'index_amount': index_amount,
-                        'bonds_amount': bonds_amount,
-                        'crypto_amount': crypto_amount,
-                        'investment_account_balance': inv_account['balance'] if inv_account else 0.0,
-                        'allocation_source': allocation_source,
-                        'savings_captured_in_pipeline': use_pipeline,
-                        'bills_updated': bills_paid,
-                        'applied_to_bills': amount_applied_to_bills,
-                        'unbilled_premium_amount': unbilled_premium_amount
-                    }
+                    payment_method=payment_method,
+                    allocate_to_investments=allocate_to_investments,
+                    debug=debug,
                 )
-
-                payment_record = {
-                    'id': payment_id,
-                    'customer_id': customer_id,
-                    'amount': amount,
-                    'savings_allocated': savings_amount,
-                    'risk_allocated': risk_amount,
-                    'savings_pct': allocation_prefs['savings_pct'],
-                    'risk_pct': allocation_prefs['risk_pct'],
-                    'index_amount': index_amount,
-                    'bonds_amount': bonds_amount,
-                    'crypto_amount': crypto_amount,
-                    'payment_method': payment_method,
-                    'nft_token_id': tx.get('nft_token_id'),
-                    'transaction_id': tx['id'],
-                    'timestamp': datetime.now().isoformat(),
-                    'status': 'completed',
-                    'applied_to_bills': amount_applied_to_bills,
-                    'unbilled_premium_amount': unbilled_premium_amount
-                }
-                
-                # Route savings through the AI Pipeline for smart allocation (opt-in)
-                if use_pipeline and savings_amount > 0:
-                    try:
-                        pipeline_result = savings_pipeline_service.deposit_to_pipeline(
-                            customer_id=customer_id,
-                            amount=savings_amount,
-                            source='premium_payment',
-                            auto_allocate=True  # Uses customer's allocation when configured
-                        )
-                    except Exception as pipe_err:
-                        pipeline_result = {'error': str(pipe_err)}
-                
-                if use_pipeline:
-                    inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
-                
-                allocation_checks = {
-                    'savings_risk_sum_ok': abs((savings_amount + risk_amount) - amount) < 0.01,
-                    'investment_breakdown_sum_ok': abs((index_amount + bonds_amount + crypto_amount) - investment_base) < 0.01,
-                    'investment_base': investment_base,
-                    'allocation_source': allocation_source,
-                    'uses_pipeline': use_pipeline
-                }
-                
-                # Post-operation integrity snapshot
-                post_integrity = None
-                if integrity_service_enabled:
-                    post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
-                
                 self._set_json_headers(200)
-                response = {
-                    'success': True,
-                    'payment': payment_record,
-                    'nft_token_id': tx.get('nft_token_id'),
-                    'savings_allocated': savings_amount,
-                    'risk_allocated': risk_amount,
-                    'savings_pct': allocation_prefs['savings_pct'],
-                    'risk_pct': allocation_prefs['risk_pct'],
-                    'investment_breakdown': {
-                        'index': index_amount,
-                        'bonds': bonds_amount,
-                        'crypto': crypto_amount
-                    },
-                    'investment_account_balance': inv_account.get('balance', 0.0) if inv_account else 0.0,
-                    'bills_updated': bills_paid,
-                    'allocation_checks': allocation_checks,
-                    'allocation_source': allocation_source
-                }
-                
-                # Add pipeline allocation details
-                if pipeline_result:
-                    response['pipeline_allocation'] = pipeline_result.get('allocation', {})
-                    response['ai_optimized'] = True
-                
-                if pipeline_config_error and debug:
-                    response['pipeline_config_error'] = pipeline_config_error
-                if pipeline_configured and debug:
-                    response['pipeline_configured'] = True
-                
-                if post_integrity:
-                    integrity_payload = {
-                        'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
-                        'post_total': post_integrity.calculated_total,
-                        'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
-                        'expected_delta': savings_amount,
-                        'is_valid': post_integrity.is_valid,
-                        'issues': post_integrity.issues
-                    }
-                    if debug or not post_integrity.is_valid:
-                        response['integrity'] = integrity_payload
-                
-                # Persist updated ledgers (best-effort)
-                try:
-                    save_ledger_data()
-                except Exception:
-                    pass
-                
-                self.wfile.write(json.dumps(response).encode('utf-8'))
-                
+                self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
+
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Payment failed', 'details': str(e)}).encode('utf-8'))
@@ -37729,6 +38407,54 @@ def run_server(port: int = PORT) -> None:
     httpd.serve_forever()
 
 
+def bootstrap_runtime_state_for_command() -> None:
+    """Load persisted command/runtime state for one-shot automation tasks."""
+    print("📂 Loading persisted ledger data for command execution...")
+    if load_ledger_data():
+        print("✓ Ledger data restored from persistent storage")
+    else:
+        print("ℹ️  Starting with fresh ledger data")
+
+    print("👥 Loading dynamic customers...")
+    load_dynamic_customers()
+    print("🎟️ Loading invitation codes...")
+    load_invitation_codes_from_file()
+    print("📄 Seeding demo documents...")
+    seed_demo_documents()
+    print("💰 Initializing PHINS Balance Sheet...")
+    initialize_balance_sheet()
+
+
+def execute_monthly_auto_pay_cli(argv: Optional[List[str]] = None) -> int:
+    """Run the monthly auto-pay batch as a one-shot command for schedulers."""
+    args = list(argv or [])
+    dry_run = '--dry-run' in args
+    notify_users = '--no-notify' not in args
+    force = '--force' in args
+
+    policy_id = None
+    customer_id = None
+    for index, token in enumerate(args):
+        if token == '--policy-id' and index + 1 < len(args):
+            policy_id = args[index + 1]
+        elif token == '--customer-id' and index + 1 < len(args):
+            customer_id = args[index + 1]
+
+    bootstrap_runtime_state_for_command()
+    report = run_monthly_auto_pay(
+        reference_datetime=datetime.now(),
+        specific_policy=policy_id,
+        specific_customer=customer_id,
+        dry_run=dry_run,
+        notify_users=notify_users,
+        trigger='cli_monthly_auto_pay',
+        actor='system_monthly_autopay_cli',
+        enforce_first_day=not force,
+    )
+    print(json.dumps(report, indent=2, default=str))
+    return 0 if report.get('success', True) else 1
+
+
 def run_tests():
     print('Running quick web_portal tests...')
     # Test statement fetch (best-effort)
@@ -37764,6 +38490,8 @@ if __name__ == '__main__':
 
     if '--test' in sys.argv:
         run_tests()
+    elif '--monthly-auto-pay' in sys.argv:
+        sys.exit(execute_monthly_auto_pay_cli(sys.argv[1:]))
     else:
         run_server()
 
