@@ -9,3 +9,12 @@ services:
         value: 3.11.0
       - key: PORT
         value: 8000
+  - type: cron
+    name: phins-monthly-auto-pay
+    env: python
+    schedule: "0 0 1 * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 scripts/run_monthly_auto_pay.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
