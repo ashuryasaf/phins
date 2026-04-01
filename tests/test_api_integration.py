@@ -1197,6 +1197,59 @@ def test_bi_underwriting_endpoint():
     assert 'approved_this_month' in data
     assert 'rejection_rate' in data
     assert 'risk_assessment_distribution' in data
+
+
+def test_admin_balance_sheet_reflects_collected_premium_breakdown():
+    """Admin balance sheet should expose collected premium totals and breakdown."""
+    port = 8054
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/login", {
+        "username": "admin",
+        "password": "admin123"
+    })
+    admin_token = json.loads(body)['token']
+
+    # Create a simple policy/customer and pay its bill so premium income is collected.
+    create_body, create_status = _post(base + "/api/policies/create", {
+        "customer_name": "Balance Sheet Premium Test",
+        "customer_email": "bs-premium@example.com",
+        "type": "life",
+        "coverage_amount": 100000
+    }, admin_token)
+    assert create_status in [200, 201]
+    created = json.loads(create_body)
+    policy_id = created["policy"]["id"]
+
+    bill_body, bill_status = _post(base + "/api/billing/create", {
+        "policy_id": policy_id,
+        "amount_due": 250.0,
+        "due_days": 30
+    }, admin_token)
+    assert bill_status in [200, 201]
+    bill = json.loads(bill_body)["bill"]
+
+    pay_body, pay_status = _post(base + "/api/billing/pay", {
+        "bill_id": bill["id"],
+        "amount": 250.0,
+        "payment_method": "card"
+    }, admin_token)
+    assert pay_status == 200, pay_body
+
+    bs_body, bs_status = _get(base + "/api/admin/balance-sheet", admin_token)
+    assert bs_status == 200
+    balance_sheet = json.loads(bs_body)["balance_sheet"]
+    assert balance_sheet["cumulative_premium"] >= 250.0
+    assert balance_sheet["revenue_breakdown"]["premium_income"] == balance_sheet["cumulative_premium"]
+    assert "cumulative_premium_breakdown" in balance_sheet
+    assert balance_sheet["cumulative_premium_breakdown"]["from_bills"] >= 250.0
+    assert "from_ledger" in balance_sheet["cumulative_premium_breakdown"]
+
+    srv.stop()
     
     srv.stop()
 

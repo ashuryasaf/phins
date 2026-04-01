@@ -751,6 +751,12 @@
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Premium Income</span><span id="bs-premium-income">$0</span>
             </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: rgba(255,255,255,0.8);">
+              <span>Collected From Paid Bills</span><span id="bs-premium-income-bills">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: rgba(255,255,255,0.8);">
+              <span>Collected From Ledger / Unbilled</span><span id="bs-premium-income-ledger">$0</span>
+            </div>
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Management Fees</span><span id="bs-management-fees">$0</span>
             </div>
@@ -4345,6 +4351,8 @@
           // Revenue breakdown
           if (bs.revenue_breakdown) {
             document.getElementById('bs-premium-income').textContent = fmt(bs.cumulative_premium || bs.revenue_breakdown?.premium_income || 0);
+            document.getElementById('bs-premium-income-bills').textContent = fmt(bs.cumulative_premium_breakdown?.from_bills || 0);
+            document.getElementById('bs-premium-income-ledger').textContent = fmt(bs.cumulative_premium_breakdown?.from_ledger || 0);
             document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
             document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
             document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income + bs.revenue_breakdown.late_fees + bs.revenue_breakdown.investment_earnings);
