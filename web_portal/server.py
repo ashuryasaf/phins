@@ -19332,6 +19332,14 @@ For claims or questions, please contact:
             premium_diff = abs(expected_premium_income - current_premium_income)
             claims_diff = abs(expected_claims_paid - current_claims_paid)
             supplier_diff = abs(total_medical_purchases - current_supplier_payments)
+
+            # Always reflect the latest cumulative collected premium in the
+            # persisted balance sheet during reconcile, even when there is no
+            # discrepancy, so the admin balance-sheet tab stays in sync after
+            # the reconcile action itself.
+            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+            PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
+            PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
             
             if premium_diff > 0.01:
                 discrepancies.append({
@@ -19386,7 +19394,6 @@ For claims or questions, please contact:
             
             # Update timestamp if corrections were made
             if corrections:
-                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
                 PHINS_BALANCE_SHEET['audit_log'].append({
                     'action': 'reconciliation_auto_correct',
                     'actor': session.get('username', 'system') if session else 'system',
@@ -19394,7 +19401,16 @@ For claims or questions, please contact:
                     'corrections': corrections,
                     'discrepancies_found': len(discrepancies)
                 })
-                save_ledger_data()
+            else:
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'reconciliation_refresh',
+                    'actor': session.get('username', 'system') if session else 'system',
+                    'timestamp': datetime.now().isoformat(),
+                    'premium_income_refreshed_to': expected_premium_income,
+                    'discrepancies_found': len(discrepancies)
+                })
+
+            save_ledger_data()
             
             is_valid = len(discrepancies) == 0
             
