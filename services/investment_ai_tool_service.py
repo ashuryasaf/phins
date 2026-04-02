@@ -25,7 +25,7 @@ import hmac
 import secrets
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -220,7 +220,7 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
     """
     result: Dict[str, Any] = {
         "module": "market_research_trend_analysis",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     if stock and stock.upper() in STOCK_DATABASE:
@@ -290,7 +290,7 @@ def _generate_market_insights(sector: str, stock: str) -> List[str]:
         "Geopolitical factors creating selective opportunities in defense and energy.",
         "Earnings revisions trending positive for large-cap technology stocks.",
     ]
-    rng = _seed_from(f"{sector}:{stock}:{datetime.utcnow().strftime('%Y-%m-%d')}")
+    rng = _seed_from(f"{sector}:{stock}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
     rng.shuffle(base_insights)
     return base_insights[:3]
 
@@ -343,7 +343,7 @@ def analyze_portfolio_diversification(
 
     return {
         "module": "portfolio_diversification",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "current_holdings": current_holdings,
         "held_sectors": sorted(held_sectors),
         "missing_sectors": sorted(missing_sectors),
@@ -439,7 +439,7 @@ def run_stock_screener(criteria: Optional[Dict[str, Any]] = None) -> Dict[str, A
 
     return {
         "module": "ai_stock_screener",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "criteria_applied": {
             "pe_range": f"{c.pe_min}-{c.pe_max}",
             "rsi_range": f"{c.rsi_min}-{c.rsi_max}",
@@ -582,7 +582,7 @@ def design_trading_strategy(
 
     return {
         "module": "automated_trading_strategy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "market": market,
         "strategy": strat,
         "risk_profile": risk_level,
@@ -660,7 +660,7 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
 
     return {
         "module": "technical_analysis",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "symbol": sym,
         "name": s["name"],
         "current_price": s["price"],
@@ -726,7 +726,7 @@ def analyze_earnings_report(company: str) -> Dict[str, Any]:
 
     return {
         "module": "earnings_report_analysis",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "symbol": sym,
         "name": s["name"],
         "key_metrics": {
@@ -783,7 +783,7 @@ def compare_growth_vs_dividend(
 
     return {
         "module": "growth_vs_dividend",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "growth_stock": {
             "symbol": growth_stock.upper(),
             "name": g["name"],
@@ -862,7 +862,7 @@ def get_algo_trading_bot_guide(strategy: str = "momentum") -> Dict[str, Any]:
     """
     return {
         "module": "algo_trading_bots",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "strategy": strategy,
         "setup_guide": {
             "step_1_platform_selection": {
@@ -967,7 +967,7 @@ def design_risk_management_system(
 
     return {
         "module": "automated_risk_management",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "market": market,
         "portfolio_value": portfolio_value,
         "volatility_assessment": {
@@ -1071,7 +1071,7 @@ def backtest_strategy(
 
     return {
         "module": "backtesting_strategies",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "configuration": {
             "strategy": strategy_type,
             "period": f"{period_years} years",
@@ -1200,6 +1200,8 @@ def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any
         }
 
     try:
+        if module == "stock_screener":
+            return handler(criteria=params if params else None)
         return handler(**params)
     except TypeError as e:
         return {"error": f"Invalid parameters for module '{module}': {e}"}
