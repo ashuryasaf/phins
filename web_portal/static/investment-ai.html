@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment AI Tool | PHINS</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #0ea5e9;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --bg-input: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #475569;
+            --gold: #fbbf24;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: white;
+        }
+
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #fde68a 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav { display: flex; gap: 0.5rem; align-items: center; }
+        .nav a {
+            padding: 0.5rem 1rem;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+
+        .key-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.75rem;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #10b981;
+        }
+        .key-indicator.disconnected {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 2rem 0 1.5rem;
+        }
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #ef4444 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        /* Access Key Panel */
+        .access-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .access-panel .field {
+            flex: 1;
+            min-width: 250px;
+        }
+        .access-panel label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+        .access-panel input {
+            width: 100%;
+            padding: 0.65rem 1rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            font-family: 'Courier New', monospace;
+        }
+        .access-panel input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .btn-connect {
+            padding: 0.65rem 1.5rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .btn-connect:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.4); }
+
+        /* Module Grid */
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .module-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.25s;
+            position: relative;
+            overflow: hidden;
+        }
+        .module-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transform: scaleX(0);
+            transition: transform 0.3s;
+        }
+        .module-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        .module-card:hover::before { transform: scaleX(1); }
+        .module-card.active {
+            border-color: var(--gold);
+            box-shadow: 0 0 20px rgba(251,191,36,0.15);
+        }
+        .module-card.active::before {
+            background: linear-gradient(90deg, var(--gold), #f59e0b);
+            transform: scaleX(1);
+        }
+
+        .module-icon {
+            width: 48px; height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            margin-bottom: 0.75rem;
+        }
+        .module-card:nth-child(1) .module-icon { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .module-card:nth-child(2) .module-icon { background: linear-gradient(135deg, #10b981, #059669); }
+        .module-card:nth-child(3) .module-icon { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+        .module-card:nth-child(4) .module-icon { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .module-card:nth-child(5) .module-icon { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .module-card:nth-child(6) .module-icon { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+        .module-card:nth-child(7) .module-icon { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+        .module-card:nth-child(8) .module-icon { background: linear-gradient(135deg, #f97316, #ea580c); }
+        .module-card:nth-child(9) .module-icon { background: linear-gradient(135deg, #ec4899, #db2777); }
+        .module-card:nth-child(10) .module-icon { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+
+        .module-card h3 { font-size: 1rem; margin-bottom: 0.35rem; }
+        .module-card p { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; }
+
+        /* Workspace */
+        .workspace {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 1.5rem;
+            min-height: 500px;
+        }
+        @media (max-width: 900px) {
+            .workspace { grid-template-columns: 1fr; }
+        }
+
+        .params-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            height: fit-content;
+            position: sticky;
+            top: 80px;
+        }
+        .params-panel h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .param-group { margin-bottom: 1rem; }
+        .param-group label {
+            display: block;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.3rem;
+        }
+        .param-group input, .param-group select {
+            width: 100%;
+            padding: 0.55rem 0.75rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .param-group input:focus, .param-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .param-group select { cursor: pointer; }
+        .param-group select option { background: var(--bg-dark); }
+
+        .btn-run {
+            width: 100%;
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .btn-run:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,158,11,0.4); }
+        .btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .results-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            min-height: 400px;
+        }
+        .results-panel h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .results-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+        .results-empty .icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+        .results-empty p { font-size: 0.95rem; }
+
+        /* Result Cards */
+        .result-section {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .result-section h4 {
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kv-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 0.5rem;
+        }
+        .kv-item {
+            padding: 0.5rem 0.75rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+        }
+        .kv-item .label { font-size: 0.75rem; color: var(--text-secondary); }
+        .kv-item .value { font-size: 0.95rem; font-weight: 600; margin-top: 0.15rem; }
+        .kv-item .value.positive { color: var(--success); }
+        .kv-item .value.negative { color: var(--danger); }
+        .kv-item .value.highlight { color: var(--gold); }
+
+        .tag-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .tag {
+            padding: 0.3rem 0.65rem;
+            background: rgba(99,102,241,0.15);
+            border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 6px;
+            font-size: 0.78rem;
+            color: #a5b4fc;
+        }
+        .tag.success { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.25); color: #6ee7b7; }
+        .tag.warning { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.25); color: #fcd34d; }
+        .tag.danger { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.25); color: #fca5a5; }
+
+        .recommendation-badge {
+            display: inline-block;
+            padding: 0.5rem 1.25rem;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            text-transform: uppercase;
+        }
+        .recommendation-badge.buy { background: rgba(16,185,129,0.2); color: #10b981; border: 2px solid #10b981; }
+        .recommendation-badge.sell { background: rgba(239,68,68,0.2); color: #ef4444; border: 2px solid #ef4444; }
+        .recommendation-badge.hold { background: rgba(245,158,11,0.2); color: #f59e0b; border: 2px solid #f59e0b; }
+
+        .list-items { list-style: none; }
+        .list-items li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        .list-items li::before { content: '\25B8'; color: var(--primary); flex-shrink: 0; margin-top: 1px; }
+        .list-items li:last-child { border-bottom: none; }
+
+        .stock-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .stock-table th {
+            text-align: left;
+            padding: 0.6rem 0.5rem;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+        }
+        .stock-table td {
+            padding: 0.55rem 0.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .stock-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+        .spinner {
+            display: inline-block;
+            width: 20px; height: 20px;
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .json-viewer {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            max-height: 500px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .toggle-raw {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            float: right;
+        }
+        .toggle-raw:hover { color: var(--text-primary); border-color: var(--primary); }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+
+<header class="header">
+    <div class="header-inner">
+        <a href="/" class="logo">
+            <div class="logo-icon">AI</div>
+            <span class="logo-text">PHINS Investment AI</span>
+        </a>
+        <nav class="nav">
+            <a href="/dashboard.html">Dashboard</a>
+            <a href="/savings-portfolio.html">Portfolio</a>
+            <a href="/algo-trading.html">Algo Trading</a>
+            <div id="connectionStatus" class="key-indicator disconnected">Disconnected</div>
+        </nav>
+    </div>
+</header>
+
+<main class="main">
+    <div class="hero">
+        <h1>Investment AI Super Tool</h1>
+        <p>10 AI-powered modules for market research, technical analysis, portfolio optimization, backtesting, and automated trading strategies.</p>
+    </div>
+
+    <div class="access-panel" id="accessPanel">
+        <div class="field">
+            <label>Access Key</label>
+            <input type="password" id="apiKeyInput" placeholder="Enter your Investment AI access key..." autocomplete="off">
+        </div>
+        <button class="btn-connect" onclick="connectWithKey()">Connect</button>
+    </div>
+
+    <div class="modules-grid" id="modulesGrid">
+        <div class="module-card" data-module="market_research" onclick="selectModule('market_research')">
+            <div class="module-icon">1</div>
+            <h3>Market Research</h3>
+            <p>Analyze trends, identify emerging patterns, and find investment opportunities by sector or stock.</p>
+        </div>
+        <div class="module-card" data-module="portfolio_diversification" onclick="selectModule('portfolio_diversification')">
+            <div class="module-icon">2</div>
+            <h3>Portfolio Diversification</h3>
+            <p>Get strategies to diversify your portfolio, reduce risk, and explore new sectors.</p>
+        </div>
+        <div class="module-card" data-module="stock_screener" onclick="selectModule('stock_screener')">
+            <div class="module-icon">3</div>
+            <h3>AI Stock Screener</h3>
+            <p>Screen stocks using P/E, RSI, moving averages, volume, and composite scoring.</p>
+        </div>
+        <div class="module-card" data-module="trading_strategy" onclick="selectModule('trading_strategy')">
+            <div class="module-icon">4</div>
+            <h3>Trading Strategy</h3>
+            <p>Design automated strategies with entry/exit signals, stop-loss, and risk management.</p>
+        </div>
+        <div class="module-card" data-module="technical_analysis" onclick="selectModule('technical_analysis')">
+            <div class="module-icon">5</div>
+            <h3>Technical Analysis</h3>
+            <p>Evaluate stocks with RSI, MACD, Bollinger Bands, and get Buy/Sell/Hold calls.</p>
+        </div>
+        <div class="module-card" data-module="earnings_analysis" onclick="selectModule('earnings_analysis')">
+            <div class="module-icon">6</div>
+            <h3>Earnings Analysis</h3>
+            <p>Interpret earnings reports with key metrics, EPS surprises, and price impact.</p>
+        </div>
+        <div class="module-card" data-module="growth_vs_dividend" onclick="selectModule('growth_vs_dividend')">
+            <div class="module-icon">7</div>
+            <h3>Growth vs Dividend</h3>
+            <p>Compare growth and dividend strategies with real stock examples and conditions.</p>
+        </div>
+        <div class="module-card" data-module="algo_trading_bots" onclick="selectModule('algo_trading_bots')">
+            <div class="module-icon">8</div>
+            <h3>Algo Trading Bots</h3>
+            <p>Step-by-step guide to building and deploying algorithmic trading bots.</p>
+        </div>
+        <div class="module-card" data-module="risk_management" onclick="selectModule('risk_management')">
+            <div class="module-icon">9</div>
+            <h3>Risk Management</h3>
+            <p>Design automated risk systems with dynamic stops and position sizing.</p>
+        </div>
+        <div class="module-card" data-module="backtesting" onclick="selectModule('backtesting')">
+            <div class="module-icon">10</div>
+            <h3>Backtesting</h3>
+            <p>Backtest strategies with simulated results, equity curves, and risk metrics.</p>
+        </div>
+    </div>
+
+    <div class="workspace" id="workspace" style="display:none;">
+        <div class="params-panel">
+            <h3 id="paramsTitle">Parameters</h3>
+            <div id="paramsForm"></div>
+            <button class="btn-run" id="runBtn" onclick="runAnalysis()">
+                Run AI Analysis
+            </button>
+        </div>
+        <div class="results-panel">
+            <h3>
+                Results
+                <button class="toggle-raw" id="toggleRawBtn" onclick="toggleRaw()" style="display:none;">JSON</button>
+            </h3>
+            <div id="resultsContainer">
+                <div class="results-empty">
+                    <div class="icon">AI</div>
+                    <p>Select a module and run analysis to see results here.</p>
+                </div>
+            </div>
+            <div id="rawJson" class="json-viewer" style="display:none;"></div>
+        </div>
+    </div>
+</main>
+
+<footer class="footer">
+    PHINS Investment AI Tool &mdash; For authorized use only. Not financial advice.
+</footer>
+
+<script>
+let apiKey = localStorage.getItem('investmentAiKey') || '';
+let currentModule = null;
+let lastResult = null;
+
+const MODULE_PARAMS = {
+    market_research: [
+        { id: 'sector', label: 'Sector', type: 'select', options: ['','technology','healthcare','financials','energy','consumer_discretionary','industrials','real_estate','utilities','materials','communication_services','crypto'] },
+        { id: 'stock', label: 'Stock Symbol', type: 'text', placeholder: 'e.g. AAPL, NVDA, BTC' },
+    ],
+    portfolio_diversification: [
+        { id: 'current_holdings', label: 'Current Holdings (comma-separated)', type: 'text', placeholder: 'e.g. AAPL, MSFT, GOOGL' },
+        { id: 'risk_tolerance', label: 'Risk Tolerance', type: 'select', options: ['moderate','conservative','aggressive'] },
+    ],
+    stock_screener: [
+        { id: 'pe_max', label: 'Max P/E Ratio', type: 'number', value: '50' },
+        { id: 'rsi_min', label: 'Min RSI', type: 'number', value: '30' },
+        { id: 'rsi_max', label: 'Max RSI', type: 'number', value: '70' },
+        { id: 'above_ma50', label: 'Above 50-day MA', type: 'select', options: ['true','false'] },
+        { id: 'above_ma200', label: 'Above 200-day MA', type: 'select', options: ['true','false'] },
+    ],
+    trading_strategy: [
+        { id: 'market', label: 'Market', type: 'text', value: 'US Equities' },
+        { id: 'strategy_type', label: 'Strategy', type: 'select', options: ['momentum','mean_reversion','trend_following','scalping'] },
+        { id: 'risk_level', label: 'Risk Level', type: 'select', options: ['moderate','conservative','aggressive'] },
+    ],
+    technical_analysis: [
+        { id: 'stock', label: 'Stock Symbol', type: 'text', placeholder: 'e.g. AAPL' },
+    ],
+    earnings_analysis: [
+        { id: 'company', label: 'Company Symbol', type: 'text', placeholder: 'e.g. MSFT' },
+    ],
+    growth_vs_dividend: [
+        { id: 'growth_stock', label: 'Growth Stock', type: 'text', value: 'NVDA' },
+        { id: 'dividend_stock', label: 'Dividend Stock', type: 'text', value: 'JNJ' },
+    ],
+    algo_trading_bots: [
+        { id: 'strategy', label: 'Strategy Type', type: 'select', options: ['momentum','mean_reversion','trend_following','scalping'] },
+    ],
+    risk_management: [
+        { id: 'market', label: 'Market', type: 'text', value: 'US Equities' },
+        { id: 'portfolio_value', label: 'Portfolio Value ($)', type: 'number', value: '100000' },
+        { id: 'max_risk_per_trade', label: 'Max Risk Per Trade (decimal)', type: 'number', value: '0.02' },
+    ],
+    backtesting: [
+        { id: 'strategy_type', label: 'Strategy', type: 'select', options: ['momentum','mean_reversion','trend_following','scalping'] },
+        { id: 'period_years', label: 'Period (years)', type: 'number', value: '5' },
+        { id: 'initial_capital', label: 'Initial Capital ($)', type: 'number', value: '100000' },
+        { id: 'symbols', label: 'Symbols (comma-separated)', type: 'text', value: 'AAPL,MSFT,GOOGL,AMZN,META' },
+    ],
+};
+
+const MODULE_NAMES = {
+    market_research: 'Market Research & Trend Analysis',
+    portfolio_diversification: 'Portfolio Diversification',
+    stock_screener: 'AI-Powered Stock Screener',
+    trading_strategy: 'Automated Trading Strategy',
+    technical_analysis: 'Technical Analysis',
+    earnings_analysis: 'Earnings Report Analysis',
+    growth_vs_dividend: 'Growth vs Dividend Stocks',
+    algo_trading_bots: 'Algorithmic Trading Bots',
+    risk_management: 'Automated Risk Management',
+    backtesting: 'Backtesting Strategies',
+};
+
+if (apiKey) {
+    document.getElementById('apiKeyInput').value = apiKey;
+    validateKey(true);
+}
+
+function connectWithKey() {
+    apiKey = document.getElementById('apiKeyInput').value.trim();
+    if (!apiKey) return;
+    localStorage.setItem('investmentAiKey', apiKey);
+    validateKey();
+}
+
+async function validateKey(silent) {
+    try {
+        const res = await fetch('/api/investment-ai/modules?api_key=' + encodeURIComponent(apiKey));
+        if (res.ok) {
+            const status = document.getElementById('connectionStatus');
+            status.textContent = 'Connected';
+            status.className = 'key-indicator';
+        } else {
+            if (!silent) alert('Invalid access key. Contact your admin.');
+            const status = document.getElementById('connectionStatus');
+            status.textContent = 'Disconnected';
+            status.className = 'key-indicator disconnected';
+            apiKey = '';
+            localStorage.removeItem('investmentAiKey');
+        }
+    } catch (e) {
+        if (!silent) alert('Connection failed: ' + e.message);
+    }
+}
+
+function selectModule(mod) {
+    currentModule = mod;
+    document.querySelectorAll('.module-card').forEach(c => c.classList.remove('active'));
+    document.querySelector(`[data-module="${mod}"]`).classList.add('active');
+
+    document.getElementById('workspace').style.display = 'grid';
+    document.getElementById('paramsTitle').textContent = MODULE_NAMES[mod] || mod;
+
+    const form = document.getElementById('paramsForm');
+    const params = MODULE_PARAMS[mod] || [];
+    form.innerHTML = '';
+    params.forEach(p => {
+        const group = document.createElement('div');
+        group.className = 'param-group';
+        let input;
+        if (p.type === 'select') {
+            input = `<select id="param_${p.id}">${p.options.map(o => `<option value="${o}">${o || '(all)'}</option>`).join('')}</select>`;
+        } else {
+            input = `<input type="${p.type}" id="param_${p.id}" placeholder="${p.placeholder || ''}" value="${p.value || ''}">`;
+        }
+        group.innerHTML = `<label>${p.label}</label>${input}`;
+        form.appendChild(group);
+    });
+
+    document.getElementById('resultsContainer').innerHTML = '<div class="results-empty"><div class="icon">AI</div><p>Configure parameters and click Run AI Analysis.</p></div>';
+    document.getElementById('rawJson').style.display = 'none';
+    document.getElementById('toggleRawBtn').style.display = 'none';
+    document.getElementById('workspace').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function runAnalysis() {
+    if (!currentModule) return;
+    if (!apiKey) { alert('Please enter your access key first.'); return; }
+
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Analyzing...';
+
+    const params = {};
+    (MODULE_PARAMS[currentModule] || []).forEach(p => {
+        const el = document.getElementById('param_' + p.id);
+        if (el && el.value) {
+            let val = el.value;
+            if (p.type === 'number') val = parseFloat(val);
+            if (p.id === 'above_ma50' || p.id === 'above_ma200') val = val === 'true';
+            params[p.id] = val;
+        }
+    });
+
+    try {
+        const res = await fetch('/api/investment-ai/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Investment-AI-Key': apiKey },
+            body: JSON.stringify({ module: currentModule, params }),
+        });
+        lastResult = await res.json();
+        renderResults(lastResult);
+        document.getElementById('toggleRawBtn').style.display = 'inline-block';
+    } catch (e) {
+        document.getElementById('resultsContainer').innerHTML = `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${e.message}</p></div>`;
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = 'Run AI Analysis';
+}
+
+function toggleRaw() {
+    const raw = document.getElementById('rawJson');
+    const container = document.getElementById('resultsContainer');
+    if (raw.style.display === 'none') {
+        raw.style.display = 'block';
+        raw.textContent = JSON.stringify(lastResult, null, 2);
+        container.style.display = 'none';
+    } else {
+        raw.style.display = 'none';
+        container.style.display = 'block';
+    }
+}
+
+function renderResults(data) {
+    const c = document.getElementById('resultsContainer');
+    c.style.display = 'block';
+    document.getElementById('rawJson').style.display = 'none';
+
+    if (data.error) {
+        c.innerHTML = `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${data.error}</p></div>`;
+        return;
+    }
+
+    let html = '';
+
+    if (currentModule === 'technical_analysis') {
+        html += renderTechnicalAnalysis(data);
+    } else if (currentModule === 'stock_screener') {
+        html += renderScreener(data);
+    } else if (currentModule === 'market_research') {
+        html += renderMarketResearch(data);
+    } else if (currentModule === 'portfolio_diversification') {
+        html += renderDiversification(data);
+    } else if (currentModule === 'earnings_analysis') {
+        html += renderEarnings(data);
+    } else if (currentModule === 'growth_vs_dividend') {
+        html += renderGrowthVsDividend(data);
+    } else if (currentModule === 'trading_strategy') {
+        html += renderTradingStrategy(data);
+    } else if (currentModule === 'algo_trading_bots') {
+        html += renderAlgoBots(data);
+    } else if (currentModule === 'risk_management') {
+        html += renderRiskManagement(data);
+    } else if (currentModule === 'backtesting') {
+        html += renderBacktesting(data);
+    } else {
+        html += renderGeneric(data);
+    }
+
+    c.innerHTML = html;
+}
+
+function renderTechnicalAnalysis(d) {
+    const rec = d.recommendation || '';
+    const recClass = rec.includes('BUY') ? 'buy' : (rec.includes('SELL') ? 'sell' : 'hold');
+    const ind = d.indicators || {};
+    let html = `<div class="result-section" style="text-align:center;padding:1.5rem;">
+        <h4>${d.symbol} - ${d.name}</h4>
+        <div style="font-size:1.5rem;margin:0.5rem 0;">$${d.current_price}</div>
+        <div class="recommendation-badge ${recClass}">${rec}</div>
+        <div style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.85rem;">Technical Score: ${d.technical_score}</div>
+    </div>`;
+
+    html += '<div class="result-section"><h4>Indicators</h4><div class="kv-grid">';
+    if (ind.rsi) html += kvItem('RSI', ind.rsi.value, signalColor(ind.rsi.signal));
+    if (ind.rsi) html += kvItem('RSI Signal', ind.rsi.signal);
+    if (ind.moving_averages) {
+        html += kvItem('50-Day MA', '$' + ind.moving_averages.ma50);
+        html += kvItem('200-Day MA', '$' + ind.moving_averages.ma200);
+        html += kvItem('MA Signal', ind.moving_averages.signal);
+        html += kvItem('Golden Cross', ind.moving_averages.golden_cross ? 'Yes' : 'No', ind.moving_averages.golden_cross ? 'positive' : '');
+    }
+    if (ind.macd) {
+        html += kvItem('MACD', ind.macd.value);
+        html += kvItem('MACD Signal', ind.macd.signal_line);
+        html += kvItem('Histogram', ind.macd.histogram, ind.macd.bullish ? 'positive' : 'negative');
+    }
+    if (ind.bollinger_bands) html += kvItem('BB Position', ind.bollinger_bands.position);
+    if (ind.volume) html += kvItem('Volume Trend', ind.volume.trend);
+    html += '</div></div>';
+    html += '<div class="result-section"><h4>Levels</h4><div class="kv-grid">';
+    html += kvItem('Support', '$' + d.support_level, 'positive');
+    html += kvItem('Resistance', '$' + d.resistance_level, 'negative');
+    html += '</div></div>';
+    return html;
+}
+
+function renderScreener(d) {
+    let html = `<div class="result-section"><h4>Screening Results (${d.total_matches} of ${d.total_screened} stocks)</h4>`;
+    if (d.matches && d.matches.length > 0) {
+        html += '<div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Symbol</th><th>Name</th><th>Price</th><th>P/E</th><th>RSI</th><th>Signal</th><th>Rev Growth</th><th>Score</th></tr></thead><tbody>';
+        d.matches.forEach(m => {
+            const scoreColor = m.composite_score >= 70 ? 'positive' : (m.composite_score >= 50 ? 'highlight' : 'negative');
+            html += `<tr><td><strong>${m.symbol}</strong></td><td>${m.name}</td><td>$${m.price}</td><td>${m.pe_ratio}</td><td>${m.rsi}</td><td><span class="tag ${signalTagClass(m.rsi_signal)}">${m.rsi_signal}</span></td><td>${m.revenue_growth}%</td><td class="value ${scoreColor}">${m.composite_score}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+    } else {
+        html += '<p style="color:var(--text-secondary)">No stocks matched your criteria. Try adjusting the filters.</p>';
+    }
+    html += '</div>';
+    if (d.methodology) {
+        html += '<div class="result-section"><h4>Methodology</h4><div class="kv-grid">';
+        html += kvItem('Fundamental', (d.methodology.fundamental || []).join(', '));
+        html += kvItem('Technical', (d.methodology.technical || []).join(', '));
+        html += kvItem('Composite', d.methodology.composite);
+        html += '</div></div>';
+    }
+    return html;
+}
+
+function renderMarketResearch(d) {
+    let html = '';
+    if (d.stock_analysis) {
+        const sa = d.stock_analysis;
+        html += `<div class="result-section"><h4>${sa.symbol} - ${sa.name}</h4><div class="kv-grid">`;
+        html += kvItem('Price', '$' + sa.current_price);
+        html += kvItem('P/E', sa.pe_ratio);
+        html += kvItem('RSI', sa.rsi, signalColor(sa.rsi_signal));
+        html += kvItem('RSI Signal', sa.rsi_signal);
+        html += kvItem('MA Signal', sa.ma_signal);
+        html += kvItem('Momentum', sa.momentum_score, sa.momentum_score > 65 ? 'positive' : '');
+        html += kvItem('Sector Trend', sa.sector_trend);
+        html += kvItem('Market Cap', sa.market_cap);
+        html += '</div></div>';
+    }
+    if (d.sector_analysis) {
+        const sa = d.sector_analysis;
+        html += `<div class="result-section"><h4>${sa.sector} Sector</h4><div class="kv-grid">`;
+        html += kvItem('Trend', sa.trend, sa.trend === 'bullish' ? 'positive' : (sa.trend === 'bearish' ? 'negative' : ''));
+        html += kvItem('YTD Return', sa.ytd_return + '%', sa.ytd_return > 0 ? 'positive' : 'negative');
+        html += kvItem('Avg P/E', sa.average_pe);
+        html += kvItem('Volatility', sa.volatility);
+        html += '</div><div style="margin-top:0.75rem;"><strong style="font-size:0.85rem;">Top Stocks:</strong> <div class="tag-list" style="margin-top:0.3rem;">' + (sa.top_stocks || []).map(s => `<span class="tag">${s}</span>`).join('') + '</div></div></div>';
+    }
+    if (d.market_overview) {
+        html += '<div class="result-section"><h4>Market Overview</h4>';
+        html += '<div style="margin-bottom:0.5rem;"><strong style="font-size:0.85rem;color:var(--success);">Bullish:</strong> ' + (d.market_overview.bullish_sectors || []).join(', ') + '</div>';
+        html += '<div><strong style="font-size:0.85rem;color:var(--danger);">Bearish:</strong> ' + (d.market_overview.bearish_sectors || []).join(', ') + '</div></div>';
+    }
+    if (d.emerging_patterns) {
+        html += '<div class="result-section"><h4>Emerging Patterns</h4><div class="tag-list">' + d.emerging_patterns.map(p => `<span class="tag warning">${p}</span>`).join('') + '</div></div>';
+    }
+    if (d.insights) {
+        html += '<div class="result-section"><h4>AI Insights</h4><ul class="list-items">' + d.insights.map(i => `<li>${i}</li>`).join('') + '</ul></div>';
+    }
+    return html;
+}
+
+function renderDiversification(d) {
+    let html = '<div class="result-section"><h4>Portfolio Analysis</h4><div class="kv-grid">';
+    html += kvItem('Diversification Score', d.diversification_score + '%', d.diversification_score > 50 ? 'positive' : 'negative');
+    html += kvItem('Held Sectors', (d.held_sectors || []).length);
+    html += kvItem('Missing Sectors', (d.missing_sectors || []).length, 'warning');
+    html += '</div></div>';
+    if (d.target_allocation) {
+        html += '<div class="result-section"><h4>Target Allocation</h4><div class="kv-grid">';
+        Object.entries(d.target_allocation).forEach(([k,v]) => { html += kvItem(k, v + '%'); });
+        html += '</div></div>';
+    }
+    if (d.new_sector_recommendations) {
+        html += '<div class="result-section"><h4>Recommended New Sectors</h4>';
+        d.new_sector_recommendations.forEach(r => {
+            html += `<div style="padding:0.75rem 0;border-bottom:1px solid rgba(255,255,255,0.05);"><strong>${r.sector}</strong> <span class="tag">${r.sector_volatility} vol</span><p style="font-size:0.85rem;color:var(--text-secondary);margin:0.3rem 0;">${r.rationale}</p><div class="tag-list">${(r.suggested_stocks || []).map(s => `<span class="tag success">${s}</span>`).join('')}</div></div>`;
+        });
+        html += '</div>';
+    }
+    if (d.correlation_insights && d.correlation_insights.length) {
+        html += '<div class="result-section"><h4>Correlation Insights</h4><ul class="list-items">' + d.correlation_insights.map(i => `<li>${i}</li>`).join('') + '</ul></div>';
+    }
+    return html;
+}
+
+function renderEarnings(d) {
+    const km = d.key_metrics || {};
+    const eps = km.earnings_per_share || {};
+    let html = `<div class="result-section" style="text-align:center;padding:1.5rem;"><h4>${d.symbol} - ${d.name}</h4>`;
+    html += `<div style="font-size:1.3rem;margin:0.5rem 0;" class="${eps.beat_estimate ? 'value positive' : 'value negative'}">${eps.beat_estimate ? 'Beat Estimates' : 'Missed Estimates'}</div>`;
+    html += `<div style="color:var(--text-secondary);font-size:0.9rem;">EPS Surprise: ${eps.surprise_pct > 0 ? '+' : ''}${eps.surprise_pct}%</div></div>`;
+    html += '<div class="result-section"><h4>Key Metrics</h4><div class="kv-grid">';
+    html += kvItem('Revenue', km.revenue);
+    html += kvItem('Revenue Growth', km.revenue_growth_yoy);
+    html += kvItem('Net Income', km.net_income);
+    html += kvItem('EPS (Actual)', eps.actual);
+    html += kvItem('EPS (Estimate)', eps.estimate);
+    html += kvItem('Gross Margin', km.gross_margin);
+    html += kvItem('Operating Margin', km.operating_margin);
+    html += kvItem('Free Cash Flow', km.free_cash_flow);
+    html += kvItem('P/E Ratio', km.pe_ratio);
+    html += '</div></div>';
+    if (d.investor_focus_areas) {
+        html += '<div class="result-section"><h4>Investor Focus Areas</h4><ul class="list-items">' + d.investor_focus_areas.map(i => `<li>${i}</li>`).join('') + '</ul></div>';
+    }
+    return html;
+}
+
+function renderGrowthVsDividend(d) {
+    const g = d.growth_stock || {};
+    const dv = d.dividend_stock || {};
+    let html = '<div class="result-section"><h4>Head-to-Head Comparison</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Metric</th><th>Growth: ' + g.symbol + '</th><th>Dividend: ' + dv.symbol + '</th></tr></thead><tbody>';
+    html += `<tr><td>Price</td><td>$${g.price}</td><td>$${dv.price}</td></tr>`;
+    html += `<tr><td>P/E Ratio</td><td>${g.pe_ratio}</td><td>${dv.pe_ratio}</td></tr>`;
+    html += `<tr><td>Revenue Growth</td><td class="value ${g.revenue_growth > 0 ? 'positive' : 'negative'}">${g.revenue_growth}%</td><td class="value ${dv.revenue_growth > 0 ? 'positive' : 'negative'}">${dv.revenue_growth}%</td></tr>`;
+    html += `<tr><td>Dividend Yield</td><td>${g.dividend_yield}%</td><td class="value positive">${dv.dividend_yield}%</td></tr>`;
+    html += `<tr><td>Beta</td><td>${g.beta}</td><td>${dv.beta}</td></tr>`;
+    html += '</tbody></table></div></div>';
+    const comp = d.comparison || {};
+    if (comp.growth_advantages) {
+        html += '<div class="result-section"><h4>Growth Advantages</h4><ul class="list-items">' + comp.growth_advantages.map(i => `<li>${i}</li>`).join('') + '</ul></div>';
+        html += '<div class="result-section"><h4>Dividend Advantages</h4><ul class="list-items">' + comp.dividend_advantages.map(i => `<li>${i}</li>`).join('') + '</ul></div>';
+    }
+    if (d.recommendation) {
+        html += `<div class="result-section"><h4>Recommendation</h4><p style="font-size:0.9rem;line-height:1.6;">${d.recommendation}</p></div>`;
+    }
+    return html;
+}
+
+function renderTradingStrategy(d) {
+    const s = d.strategy || {};
+    let html = `<div class="result-section"><h4>${s.name || 'Strategy'}</h4><p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem;">${s.description || ''}</p>`;
+    if (s.entry_signals) {
+        html += '<strong style="font-size:0.85rem;color:var(--success);">Entry Signals:</strong><ul class="list-items">' + s.entry_signals.map(i => `<li>${i}</li>`).join('') + '</ul>';
+    }
+    if (s.exit_signals) {
+        html += '<strong style="font-size:0.85rem;color:var(--danger);">Exit Signals:</strong><ul class="list-items">' + s.exit_signals.map(i => `<li>${i}</li>`).join('') + '</ul>';
+    }
+    html += '<div class="kv-grid" style="margin-top:1rem;">';
+    html += kvItem('Stop Loss', s.stop_loss);
+    html += kvItem('Take Profit', s.take_profit);
+    html += kvItem('Position Sizing', s.position_sizing);
+    html += '</div></div>';
+    if (s.backtest_expected) {
+        const bt = s.backtest_expected;
+        html += '<div class="result-section"><h4>Expected Backtest Results</h4><div class="kv-grid">';
+        html += kvItem('Win Rate', bt.win_rate + '%');
+        html += kvItem('Avg R:R', bt.avg_rr + 'x');
+        html += kvItem('Sharpe Ratio', bt.sharpe);
+        html += kvItem('Max Drawdown', bt.max_drawdown + '%', 'negative');
+        html += '</div></div>';
+    }
+    if (d.optimization_notes) {
+        html += '<div class="result-section"><h4>Optimization Notes</h4><ul class="list-items">' + d.optimization_notes.map(i => `<li>${i}</li>`).join('') + '</ul></div>';
+    }
+    return html;
+}
+
+function renderAlgoBots(d) {
+    const guide = d.setup_guide || {};
+    let html = '';
+    Object.values(guide).forEach(step => {
+        html += `<div class="result-section"><h4>${step.title || ''}</h4>`;
+        if (step.platforms) {
+            html += '<div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Platform</th><th>Language</th><th>Best For</th><th>Cost</th></tr></thead><tbody>';
+            step.platforms.forEach(p => { html += `<tr><td><strong>${p.name}</strong></td><td>${p.language}</td><td>${p.best_for}</td><td>${p.cost}</td></tr>`; });
+            html += '</tbody></table></div>';
+        }
+        if (step.components) {
+            html += '<ul class="list-items">' + step.components.map(i => `<li>${i}</li>`).join('') + '</ul>';
+        }
+        if (step.process) {
+            html += '<ul class="list-items">' + step.process.map(i => `<li>${i}</li>`).join('') + '</ul>';
+        }
+        if (step.checkpoints) {
+            html += '<ul class="list-items">' + step.checkpoints.map(i => `<li>${i}</li>`).join('') + '</ul>';
+        }
+        if (step.checklist) {
+            html += '<ul class="list-items">' + step.checklist.map(i => `<li>${i}</li>`).join('') + '</ul>';
+        }
+        if (step.example_pseudocode) {
+            html += `<pre style="background:var(--bg-dark);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-top:0.5rem;font-size:0.82rem;overflow-x:auto;">${step.example_pseudocode}</pre>`;
+        }
+        html += '</div>';
+    });
+    if (d.recommended_python_libraries) {
+        html += '<div class="result-section"><h4>Recommended Libraries</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Library</th><th>Purpose</th></tr></thead><tbody>';
+        d.recommended_python_libraries.forEach(l => { html += `<tr><td><strong>${l.name}</strong></td><td>${l.purpose}</td></tr>`; });
+        html += '</tbody></table></div></div>';
+    }
+    return html;
+}
+
+function renderRiskManagement(d) {
+    const va = d.volatility_assessment || {};
+    const ps = d.position_sizing || {};
+    let html = '<div class="result-section"><h4>Market Volatility Assessment</h4><div class="kv-grid">';
+    html += kvItem('VIX Proxy', va.vix_proxy, va.regime === 'high' ? 'negative' : (va.regime === 'low' ? 'positive' : 'highlight'));
+    html += kvItem('Regime', va.regime);
+    html += kvItem('Risk Multiplier', va.risk_multiplier + 'x');
+    html += '</div></div>';
+    html += '<div class="result-section"><h4>Position Sizing</h4><div class="kv-grid">';
+    html += kvItem('Base Risk/Trade', ps.base_risk_per_trade);
+    html += kvItem('Adjusted Risk', ps.adjusted_risk_per_trade);
+    html += kvItem('Max Position', '$' + (ps.max_position_dollars || 0).toLocaleString());
+    html += kvItem('Max Portfolio Risk', '$' + (ps.max_portfolio_risk || 0).toLocaleString());
+    html += '</div></div>';
+    if (d.stop_loss_system) {
+        html += '<div class="result-section"><h4>Stop-Loss System</h4>';
+        Object.values(d.stop_loss_system).forEach(s => {
+            html += `<div style="padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.05);"><strong style="font-size:0.85rem;">${s.method}</strong><p style="font-size:0.82rem;color:var(--text-secondary);">${s.description}</p></div>`;
+        });
+        html += '</div>';
+    }
+    if (d.dynamic_adjustments) {
+        html += '<div class="result-section"><h4>Dynamic Adjustments</h4>';
+        d.dynamic_adjustments.forEach(a => {
+            html += `<div style="padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span class="tag danger">${a.trigger}</span><p style="font-size:0.82rem;color:var(--text-secondary);margin-top:0.3rem;">${a.action}</p></div>`;
+        });
+        html += '</div>';
+    }
+    return html;
+}
+
+function renderBacktesting(d) {
+    const r = d.results || {};
+    const rm = d.risk_metrics || {};
+    let html = `<div class="result-section" style="text-align:center;padding:1.5rem;"><h4>Backtest: ${(d.configuration || {}).strategy}</h4>`;
+    html += `<div style="font-size:2rem;font-weight:700;color:var(--success);margin:0.5rem 0;">$${(r.final_portfolio_value || 0).toLocaleString()}</div>`;
+    html += `<div style="color:var(--text-secondary);">From $${((d.configuration || {}).initial_capital || 0).toLocaleString()} over ${(d.configuration || {}).period}</div></div>`;
+    html += '<div class="result-section"><h4>Performance</h4><div class="kv-grid">';
+    html += kvItem('Total Return', r.total_return_pct + '%', r.total_return_pct > 0 ? 'positive' : 'negative');
+    html += kvItem('Annualized', r.annualized_return_pct + '%', r.annualized_return_pct > 0 ? 'positive' : 'negative');
+    html += kvItem('Total Trades', r.total_trades);
+    html += kvItem('Win Rate', r.win_rate + '%');
+    html += kvItem('Profit Factor', r.profit_factor, r.profit_factor > 1.5 ? 'positive' : '');
+    html += kvItem('Avg Win', r.avg_win);
+    html += kvItem('Avg Loss', r.avg_loss);
+    html += '</div></div>';
+    html += '<div class="result-section"><h4>Risk Metrics</h4><div class="kv-grid">';
+    html += kvItem('Max Drawdown', rm.max_drawdown, 'negative');
+    html += kvItem('Sharpe Ratio', rm.sharpe_ratio, rm.sharpe_ratio > 1.5 ? 'positive' : '');
+    html += kvItem('Sortino Ratio', rm.sortino_ratio);
+    html += kvItem('Calmar Ratio', rm.calmar_ratio);
+    html += '</div></div>';
+    if (d.backtesting_guide) {
+        html += '<div class="result-section"><h4>Step-by-Step Guide</h4><ul class="list-items">';
+        Object.entries(d.backtesting_guide).sort().forEach(([k, v]) => { html += `<li><strong>${k.replace('step_', 'Step ')}:</strong> ${v}</li>`; });
+        html += '</ul></div>';
+    }
+    return html;
+}
+
+function renderGeneric(d) {
+    return `<div class="json-viewer">${JSON.stringify(d, null, 2)}</div>`;
+}
+
+function kvItem(label, value, cls) {
+    return `<div class="kv-item"><div class="label">${label}</div><div class="value ${cls || ''}">${value !== undefined && value !== null ? value : '-'}</div></div>`;
+}
+
+function signalColor(signal) {
+    if (!signal) return '';
+    if (signal === 'bullish' || signal === 'oversold') return 'positive';
+    if (signal === 'bearish' || signal === 'overbought') return 'negative';
+    return '';
+}
+
+function signalTagClass(signal) {
+    if (signal === 'bullish') return 'success';
+    if (signal === 'overbought') return 'danger';
+    if (signal === 'bearish' || signal === 'oversold') return 'warning';
+    return '';
+}
+</script>
+</body>
+</html>
