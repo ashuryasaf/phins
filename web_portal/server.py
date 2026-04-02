@@ -5410,6 +5410,19 @@ try:
 except ImportError as e:
     print(f"Warning: Algo Trading service not available: {e}")
 
+# Investment AI Tool Service for super AI investment analysis
+investment_ai_enabled = False
+try:
+    from services.investment_ai_tool_service import (
+        dispatch_investment_ai, get_modules_catalog,
+        validate_investment_ai_access, get_access_key_display,
+        AVAILABLE_MODULES,
+    )
+    investment_ai_enabled = True
+    print("✓ Investment AI Tool enabled (10 AI modules: screener, technicals, backtesting, etc.)")
+except ImportError as e:
+    print(f"Warning: Investment AI Tool not available: {e}")
+
 # Unified Balance Service for cross-system balance management
 unified_balance_service = None
 unified_balance_enabled = False
@@ -17399,6 +17412,79 @@ For claims or questions, please contact:
             return
         
         # ========== END UNIFIED INVESTMENT API ==========
+
+        # ========== INVESTMENT AI TOOL API (GET) ==========
+        if path == '/api/investment-ai/modules':
+            if not investment_ai_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not validate_investment_ai_access(ai_key):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
+                return
+            catalog = get_modules_catalog()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(catalog).encode('utf-8'))
+            return
+
+        if path == '/api/investment-ai/access-key':
+            if not investment_ai_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
+                return
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required to view access key'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'access_key': get_access_key_display(),
+                'note': 'Provide this key via X-Investment-AI-Key header or api_key query parameter.',
+            }).encode('utf-8'))
+            return
+
+        if path.startswith('/api/investment-ai/analyze'):
+            if not investment_ai_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not validate_investment_ai_access(ai_key):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
+                return
+            module = qs.get('module', [''])[0]
+            if not module:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'module parameter required', 'available': list(AVAILABLE_MODULES.keys())}).encode('utf-8'))
+                return
+            params = {}
+            for k, v in qs.items():
+                if k not in ('module', 'api_key'):
+                    params[k] = v[0] if len(v) == 1 else v
+            if 'current_holdings' in params and isinstance(params['current_holdings'], str):
+                params['current_holdings'] = [s.strip() for s in params['current_holdings'].split(',') if s.strip()]
+            if 'symbols' in params and isinstance(params['symbols'], str):
+                params['symbols'] = [s.strip() for s in params['symbols'].split(',') if s.strip()]
+            for numeric_field in ('portfolio_value', 'max_risk_per_trade', 'initial_capital', 'pe_max', 'pe_min', 'rsi_max', 'rsi_min', 'min_volume', 'min_market_cap'):
+                if numeric_field in params:
+                    try:
+                        params[numeric_field] = float(params[numeric_field])
+                    except (ValueError, TypeError):
+                        pass
+            if 'period_years' in params:
+                try:
+                    params['period_years'] = int(params['period_years'])
+                except (ValueError, TypeError):
+                    pass
+            result = dispatch_investment_ai(module, params)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        # ========== END INVESTMENT AI TOOL API (GET) ==========
         
         # Reconcile balances
         if path == '/api/balance/reconcile':
@@ -22071,6 +22157,35 @@ For claims or questions, please contact:
         else:
             body = body_bytes.decode('utf-8') if body_bytes else ''
         
+        # ========== INVESTMENT AI TOOL API (POST) ==========
+        if path == '/api/investment-ai/analyze':
+            if not investment_ai_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not validate_investment_ai_access(ai_key):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
+                return
+            module = body_data.get('module', '')
+            if not module:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'module field required', 'available': list(AVAILABLE_MODULES.keys())}).encode('utf-8'))
+                return
+            params = body_data.get('params', {})
+            result = dispatch_investment_ai(module, params)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        # ========== END INVESTMENT AI TOOL API (POST) ==========
+
         # Demo login endpoint with secure password verification
         if path == '/api/login':
             client_ip = self.client_address[0]
