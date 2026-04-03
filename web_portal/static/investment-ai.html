@@ -485,8 +485,9 @@
         </a>
         <nav class="nav">
             <a href="/dashboard.html">Dashboard</a>
-            <a href="/savings-portfolio.html">Portfolio</a>
-            <a href="/algo-trading.html">Algo Trading</a>
+            <a href="/savings-portfolio.html">📈 Investments</a>
+            <a href="/algo-trading.html">🤖 Algo Trading</a>
+            <a href="/investment-ai.html" style="background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%); color: white;">🧠 Investment AI</a>
             <div id="connectionStatus" class="key-indicator disconnected">Disconnected</div>
         </nav>
     </div>
@@ -500,7 +501,7 @@
 
     <div class="access-panel" id="accessPanel">
         <div class="field">
-            <label>Access Key</label>
+            <label>Access Key <span style="font-size:0.75rem;color:var(--text-secondary);font-weight:normal;">&mdash; find in Railway logs at startup, or set INVESTMENT_AI_ACCESS_KEY env var</span></label>
             <input type="password" id="apiKeyInput" placeholder="Enter your Investment AI access key..." autocomplete="off">
         </div>
         <button class="btn-connect" onclick="connectWithKey()">Connect</button>
@@ -656,6 +657,26 @@ if (apiKey) {
     document.getElementById('apiKeyInput').value = apiKey;
     validateKey(true);
 }
+
+async function autoFetchKeyIfAdmin() {
+    const token = localStorage.getItem('token');
+    if (!token || apiKey) return;
+    try {
+        const res = await fetch('/api/investment-ai/access-key', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.access_key) {
+                apiKey = data.access_key;
+                localStorage.setItem('investmentAiKey', apiKey);
+                document.getElementById('apiKeyInput').value = apiKey;
+                validateKey(true);
+            }
+        }
+    } catch (e) { /* not admin or not logged in */ }
+}
+autoFetchKeyIfAdmin();
 
 function connectWithKey() {
     apiKey = document.getElementById('apiKeyInput').value.trim();
