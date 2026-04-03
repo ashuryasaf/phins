@@ -37,14 +37,15 @@ BASE_URL = "https://www.alphavantage.co/query"
 
 ALPHA_VANTAGE_API_KEY = os.environ.get(
     "ALPHA_VANTAGE_API_KEY",
-    "TPX0B2Z2NKO2Y3Q2",
+    None,
 )
 
 # Rate limits: free tier = 25 req/day, 5 req/min
 _REQUEST_TIMESTAMPS: List[float] = []
 _RATE_LOCK = threading.Lock()
+REQUEST_WINDOW_SECONDS = 60.0
 MAX_REQUESTS_PER_MINUTE = 5
-MIN_REQUEST_INTERVAL = 12.5  # seconds between requests to stay under 5/min
+MIN_REQUEST_INTERVAL = REQUEST_WINDOW_SECONDS / MAX_REQUESTS_PER_MINUTE
 
 
 @dataclass
@@ -89,9 +90,9 @@ class AlphaVantageService:
     def _rate_limit_wait(self) -> None:
         with _RATE_LOCK:
             now = time.time()
-            _REQUEST_TIMESTAMPS[:] = [t for t in _REQUEST_TIMESTAMPS if now - t < 60]
+            _REQUEST_TIMESTAMPS[:] = [t for t in _REQUEST_TIMESTAMPS if now - t < REQUEST_WINDOW_SECONDS]
             if len(_REQUEST_TIMESTAMPS) >= MAX_REQUESTS_PER_MINUTE:
-                wait = MIN_REQUEST_INTERVAL - (now - _REQUEST_TIMESTAMPS[0])
+                wait = REQUEST_WINDOW_SECONDS - (now - _REQUEST_TIMESTAMPS[0])
                 if wait > 0:
                     time.sleep(wait)
 
@@ -107,6 +108,11 @@ class AlphaVantageService:
             cached = self._cache.get(cache_key)
             if cached and not cached.is_expired:
                 return cached.data
+
+        if not self._api_key:
+            if cached:
+                return cached.data
+            return None
 
         self._rate_limit_wait()
         try:
@@ -126,8 +132,7 @@ class AlphaVantageService:
             if "higher API call volume" in str(msg) or "rate limit" in str(msg).lower():
                 if cached:
                     return cached.data
-            if "Error Message" in data:
-                return None
+            return None
 
         with self._lock:
             self._cache[cache_key] = CachedEntry(data=data, fetched_at=time.time(), ttl=cache_ttl)

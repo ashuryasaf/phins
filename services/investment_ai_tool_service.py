@@ -76,22 +76,22 @@ def _get_live_fundamentals(symbol: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _get_live_news(tickers: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _get_live_news(tickers: Optional[str] = None, topics: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Fetch news sentiment from Alpha Vantage."""
     if not LIVE_DATA_AVAILABLE or not _av_service:
         return None
     try:
-        return _av_service.get_news_sentiment(tickers=tickers, limit=10)
+        return _av_service.get_news_sentiment(tickers=tickers, topics=topics, limit=10)
     except Exception:
         return None
 
 
-def _get_live_daily(symbol: str) -> Optional[Dict[str, Any]]:
+def _get_live_daily(symbol: str, outputsize: str = "compact") -> Optional[Dict[str, Any]]:
     """Fetch daily time series from Alpha Vantage."""
     if not LIVE_DATA_AVAILABLE or not _av_service:
         return None
     try:
-        return _av_service.get_daily(symbol)
+        return _av_service.get_daily(symbol, outputsize=outputsize)
     except Exception:
         return None
 
@@ -1541,7 +1541,7 @@ def get_live_stock_quote(symbol: str = "AAPL") -> Dict[str, Any]:
 def get_live_stock_history(symbol: str = "AAPL", outputsize: str = "compact") -> Dict[str, Any]:
     """Get daily price history from Alpha Vantage."""
     sym = symbol.upper()
-    daily = _get_live_daily(sym)
+    daily = _get_live_daily(sym, outputsize=outputsize)
     if not daily:
         return {"module": "live_history", "error": f"Could not fetch history for '{sym}'. Try again later (rate limited)."}
     bars = daily.get("bars", [])
@@ -1559,7 +1559,7 @@ def get_live_stock_history(symbol: str = "AAPL", outputsize: str = "compact") ->
 
 def get_news_analysis(tickers: str = "", topics: str = "") -> Dict[str, Any]:
     """Get AI-analyzed news sentiment from Alpha Vantage."""
-    news = _get_live_news(tickers=tickers or None)
+    news = _get_live_news(tickers=tickers or None, topics=topics or None)
     if not news:
         return {"module": "news_sentiment", "error": "News data unavailable. Try again later (rate limited)."}
     return {
