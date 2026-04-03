@@ -5419,7 +5419,9 @@ try:
         AVAILABLE_MODULES,
     )
     investment_ai_enabled = True
+    _ai_key = get_access_key_display()
     print("✓ Investment AI Tool enabled (10 AI modules: screener, technicals, backtesting, etc.)")
+    print(f"  Investment AI Access Key: {_ai_key}")
 except ImportError as e:
     print(f"Warning: Investment AI Tool not available: {e}")
 

@@ -500,7 +500,7 @@
 
     <div class="access-panel" id="accessPanel">
         <div class="field">
-            <label>Access Key</label>
+            <label>Access Key <span style="font-size:0.75rem;color:var(--text-secondary);font-weight:normal;">&mdash; find in Railway logs at startup, or set INVESTMENT_AI_ACCESS_KEY env var</span></label>
             <input type="password" id="apiKeyInput" placeholder="Enter your Investment AI access key..." autocomplete="off">
         </div>
         <button class="btn-connect" onclick="connectWithKey()">Connect</button>
@@ -656,6 +656,26 @@ if (apiKey) {
     document.getElementById('apiKeyInput').value = apiKey;
     validateKey(true);
 }
+
+async function autoFetchKeyIfAdmin() {
+    const token = localStorage.getItem('token');
+    if (!token || apiKey) return;
+    try {
+        const res = await fetch('/api/investment-ai/access-key', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.access_key) {
+                apiKey = data.access_key;
+                localStorage.setItem('investmentAiKey', apiKey);
+                document.getElementById('apiKeyInput').value = apiKey;
+                validateKey(true);
+            }
+        }
+    } catch (e) { /* not admin or not logged in */ }
+}
+autoFetchKeyIfAdmin();
 
 function connectWithKey() {
     apiKey = document.getElementById('apiKeyInput').value.trim();
