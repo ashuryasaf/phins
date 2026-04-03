@@ -5415,8 +5415,11 @@ alpha_vantage_enabled = False
 try:
     from services.alpha_vantage_service import get_alpha_vantage_service, ALPHA_VANTAGE_API_KEY
     _av_svc = get_alpha_vantage_service()
-    alpha_vantage_enabled = True
-    print(f"✓ Alpha Vantage live data enabled (key: ...{ALPHA_VANTAGE_API_KEY[-4:]})")
+    if ALPHA_VANTAGE_API_KEY:
+        alpha_vantage_enabled = True
+        print("✓ Alpha Vantage live data enabled")
+    else:
+        print("Warning: Alpha Vantage service available but ALPHA_VANTAGE_API_KEY is not configured")
 except ImportError as e:
     print(f"Warning: Alpha Vantage service not available: {e}")
 
