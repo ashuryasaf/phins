@@ -5410,17 +5410,28 @@ try:
 except ImportError as e:
     print(f"Warning: Algo Trading service not available: {e}")
 
+# Alpha Vantage live market data service
+alpha_vantage_enabled = False
+try:
+    from services.alpha_vantage_service import get_alpha_vantage_service, ALPHA_VANTAGE_API_KEY
+    _av_svc = get_alpha_vantage_service()
+    alpha_vantage_enabled = True
+    print(f"✓ Alpha Vantage live data enabled (key: ...{ALPHA_VANTAGE_API_KEY[-4:]})")
+except ImportError as e:
+    print(f"Warning: Alpha Vantage service not available: {e}")
+
 # Investment AI Tool Service for super AI investment analysis
 investment_ai_enabled = False
 try:
     from services.investment_ai_tool_service import (
         dispatch_investment_ai, get_modules_catalog,
         validate_investment_ai_access, get_access_key_display,
-        AVAILABLE_MODULES,
+        AVAILABLE_MODULES, LIVE_DATA_AVAILABLE,
     )
     investment_ai_enabled = True
     _ai_key = get_access_key_display()
-    print("✓ Investment AI Tool enabled (10 AI modules: screener, technicals, backtesting, etc.)")
+    _live_str = "LIVE (Alpha Vantage)" if LIVE_DATA_AVAILABLE else "static fallback"
+    print(f"✓ Investment AI Tool enabled (14 AI modules, data: {_live_str})")
     print(f"  Investment AI Access Key: {_ai_key}")
 except ImportError as e:
     print(f"Warning: Investment AI Tool not available: {e}")

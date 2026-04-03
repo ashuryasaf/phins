@@ -313,11 +313,68 @@ class TestDispatcher:
 class TestModulesCatalog:
     def test_catalog(self):
         catalog = get_modules_catalog()
-        assert catalog["total_modules"] == 10
+        assert catalog["total_modules"] == 14
         assert "modules" in catalog
         assert "available_stocks" in catalog
         assert "available_sectors" in catalog
         assert "market_research" in catalog["modules"]
+
+
+class TestLiveDataModules:
+    """Tests for the 4 new live data modules (work in both live & static modes)."""
+
+    def test_live_quote_known_stock(self):
+        from services.investment_ai_tool_service import get_live_stock_quote
+        result = get_live_stock_quote("AAPL")
+        assert result["module"] == "live_quote"
+        assert result["symbol"] == "AAPL"
+
+    def test_live_quote_unknown_stock(self):
+        from services.investment_ai_tool_service import get_live_stock_quote
+        result = get_live_stock_quote("ZZZZZZNOTREAL")
+        assert result["module"] == "live_quote"
+
+    def test_market_movers(self):
+        from services.investment_ai_tool_service import get_market_movers
+        result = get_market_movers()
+        assert result["module"] == "market_movers"
+
+    def test_news_analysis(self):
+        from services.investment_ai_tool_service import get_news_analysis
+        result = get_news_analysis()
+        assert result["module"] == "news_sentiment"
+
+    def test_dispatcher_live_quote(self):
+        result = dispatch_investment_ai("live_quote", {"symbol": "MSFT"})
+        assert result.get("module") == "live_quote" or "error" in result
+
+    def test_dispatcher_market_movers(self):
+        result = dispatch_investment_ai("market_movers", {})
+        assert result.get("module") == "market_movers" or "error" in result
+
+    def test_data_source_field(self):
+        result = analyze_market_trends(stock="AAPL")
+        assert "data_source" in result
+
+
+class TestAlphaVantageService:
+    """Unit tests for the Alpha Vantage service layer."""
+
+    def test_service_importable(self):
+        from services.alpha_vantage_service import get_alpha_vantage_service, AlphaVantageService
+        svc = get_alpha_vantage_service()
+        assert isinstance(svc, AlphaVantageService)
+
+    def test_signal_computation(self):
+        from services.alpha_vantage_service import _compute_signals
+        signals = _compute_signals(
+            price=150.0, rsi=35.0, sma50=145.0, sma200=140.0,
+            macd_data={"histogram": 0.5}, adx=28.0,
+            bb_data={"upper": 160.0, "lower": 135.0},
+        )
+        assert "recommendation" in signals
+        assert "composite_score" in signals
+        assert signals["composite_score"] > 0
 
 
 class TestAccessKey:
@@ -346,7 +403,8 @@ class TestInvestmentAiApi:
     def test_modules_endpoint(self):
         data, status = _get(f"/api/investment-ai/modules?api_key={self.api_key}")
         assert status == 200
-        assert data["total_modules"] == 10
+        assert data["total_modules"] == 14
+        assert "live_data" in data
 
     def test_modules_endpoint_no_key(self):
         data, status = _get_error("/api/investment-ai/modules")

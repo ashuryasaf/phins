@@ -496,7 +496,8 @@
 <main class="main">
     <div class="hero">
         <h1>Investment AI Super Tool</h1>
-        <p>10 AI-powered modules for market research, technical analysis, portfolio optimization, backtesting, and automated trading strategies.</p>
+        <p>14 AI-powered modules with live Alpha Vantage market data for real-time quotes, technical analysis, portfolio optimization, backtesting, news sentiment, and automated trading strategies.</p>
+        <div id="liveDataBadge" style="margin-top:0.75rem;display:inline-block;padding:0.35rem 1rem;border-radius:8px;font-size:0.82rem;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#10b981;">Checking live data connection...</div>
     </div>
 
     <div class="access-panel" id="accessPanel">
@@ -557,6 +558,26 @@
             <div class="module-icon">10</div>
             <h3>Backtesting</h3>
             <p>Backtest strategies with simulated results, equity curves, and risk metrics.</p>
+        </div>
+        <div class="module-card" data-module="live_quote" onclick="selectModule('live_quote')" style="border-color:rgba(16,185,129,0.4);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#10b981,#059669);">LIVE</div>
+            <h3>Live Stock Quote</h3>
+            <p>Real-time price, change, and volume from Alpha Vantage. Any US stock symbol.</p>
+        </div>
+        <div class="module-card" data-module="live_history" onclick="selectModule('live_history')" style="border-color:rgba(16,185,129,0.4);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#10b981,#059669);">HIST</div>
+            <h3>Historical Prices</h3>
+            <p>Daily OHLCV data from Alpha Vantage. Up to 100 trading days of history.</p>
+        </div>
+        <div class="module-card" data-module="news_sentiment" onclick="selectModule('news_sentiment')" style="border-color:rgba(16,185,129,0.4);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#10b981,#059669);">NEWS</div>
+            <h3>News & Sentiment</h3>
+            <p>AI-analyzed news articles with sentiment scores. Filter by ticker or topic.</p>
+        </div>
+        <div class="module-card" data-module="market_movers" onclick="selectModule('market_movers')" style="border-color:rgba(16,185,129,0.4);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#10b981,#059669);">TOP</div>
+            <h3>Market Movers</h3>
+            <p>Top gainers, losers, and most actively traded stocks right now.</p>
         </div>
     </div>
 
@@ -638,6 +659,16 @@ const MODULE_PARAMS = {
         { id: 'initial_capital', label: 'Initial Capital ($)', type: 'number', value: '100000' },
         { id: 'symbols', label: 'Symbols (comma-separated)', type: 'text', value: 'AAPL,MSFT,GOOGL,AMZN,META' },
     ],
+    live_quote: [
+        { id: 'symbol', label: 'Stock Symbol', type: 'text', placeholder: 'Any US stock: AAPL, TSLA, NVDA...' },
+    ],
+    live_history: [
+        { id: 'symbol', label: 'Stock Symbol', type: 'text', placeholder: 'e.g. MSFT' },
+    ],
+    news_sentiment: [
+        { id: 'tickers', label: 'Tickers (optional)', type: 'text', placeholder: 'e.g. AAPL or AAPL,TSLA' },
+    ],
+    market_movers: [],
 };
 
 const MODULE_NAMES = {
@@ -651,6 +682,10 @@ const MODULE_NAMES = {
     algo_trading_bots: 'Algorithmic Trading Bots',
     risk_management: 'Automated Risk Management',
     backtesting: 'Backtesting Strategies',
+    live_quote: 'Live Stock Quote (Alpha Vantage)',
+    live_history: 'Historical Price Data (Alpha Vantage)',
+    news_sentiment: 'News & Sentiment Analysis (Alpha Vantage)',
+    market_movers: 'Market Movers (Alpha Vantage)',
 };
 
 if (apiKey) {
@@ -689,9 +724,24 @@ async function validateKey(silent) {
     try {
         const res = await fetch('/api/investment-ai/modules?api_key=' + encodeURIComponent(apiKey));
         if (res.ok) {
+            const data = await res.json();
             const status = document.getElementById('connectionStatus');
-            status.textContent = 'Connected';
-            status.className = 'key-indicator';
+            const badge = document.getElementById('liveDataBadge');
+            if (data.live_data) {
+                status.textContent = 'LIVE Connected';
+                status.className = 'key-indicator';
+                badge.textContent = 'LIVE DATA: Alpha Vantage Connected';
+                badge.style.background = 'rgba(16,185,129,0.15)';
+                badge.style.borderColor = 'rgba(16,185,129,0.3)';
+                badge.style.color = '#10b981';
+            } else {
+                status.textContent = 'Connected (Static)';
+                status.className = 'key-indicator';
+                badge.textContent = 'Static Data Mode (Alpha Vantage unavailable)';
+                badge.style.background = 'rgba(245,158,11,0.15)';
+                badge.style.borderColor = 'rgba(245,158,11,0.3)';
+                badge.style.color = '#f59e0b';
+            }
         } else {
             if (!silent) alert('Invalid access key. Contact your admin.');
             const status = document.getElementById('connectionStatus');
@@ -816,8 +866,21 @@ function renderResults(data) {
         html += renderRiskManagement(data);
     } else if (currentModule === 'backtesting') {
         html += renderBacktesting(data);
+    } else if (currentModule === 'live_quote') {
+        html += renderLiveQuote(data);
+    } else if (currentModule === 'live_history') {
+        html += renderLiveHistory(data);
+    } else if (currentModule === 'news_sentiment') {
+        html += renderNewsSentiment(data);
+    } else if (currentModule === 'market_movers') {
+        html += renderMarketMovers(data);
     } else {
         html += renderGeneric(data);
+    }
+
+    if (data.data_source) {
+        const srcColor = data.data_source === 'live' ? '#10b981' : '#f59e0b';
+        html = `<div style="margin-bottom:0.75rem;display:inline-block;padding:0.25rem 0.75rem;border-radius:6px;font-size:0.78rem;background:rgba(${data.data_source === 'live' ? '16,185,129' : '245,158,11'},0.15);border:1px solid rgba(${data.data_source === 'live' ? '16,185,129' : '245,158,11'},0.3);color:${srcColor};">${data.data_source === 'live' ? 'LIVE DATA — Alpha Vantage' : 'STATIC DATA — Cached'}</div>` + html;
     }
 
     c.innerHTML = html;
@@ -1109,6 +1172,91 @@ function renderBacktesting(d) {
         html += '</ul></div>';
     }
     return html;
+}
+
+function renderLiveQuote(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    const changeNum = parseFloat(d.change_percent || 0);
+    const changeClass = changeNum >= 0 ? 'positive' : 'negative';
+    let html = `<div class="result-section" style="text-align:center;padding:1.5rem;">
+        <h4>${d.symbol}</h4>
+        <div style="font-size:2.5rem;font-weight:700;margin:0.5rem 0;">$${d.price}</div>
+        <div class="value ${changeClass}" style="font-size:1.2rem;">${changeNum >= 0 ? '+' : ''}${d.change_percent}%</div>
+        <div style="color:var(--text-secondary);font-size:0.85rem;margin-top:0.5rem;">Latest: ${d.latest_trading_day || 'N/A'}</div>
+    </div>`;
+    html += '<div class="result-section"><h4>Quote Details</h4><div class="kv-grid">';
+    html += kvItem('Open', '$' + d.open);
+    html += kvItem('High', '$' + d.high);
+    html += kvItem('Low', '$' + d.low);
+    html += kvItem('Previous Close', '$' + d.previous_close);
+    html += kvItem('Change', '$' + d.change, changeClass);
+    html += kvItem('Volume', d.volume ? d.volume.toLocaleString() : '-');
+    html += '</div></div>';
+    return html;
+}
+
+function renderLiveHistory(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    const bars = d.bars || [];
+    let html = `<div class="result-section"><h4>${d.symbol} — ${d.bar_count} Trading Days</h4>`;
+    if (d.latest) {
+        html += '<div class="kv-grid" style="margin-bottom:1rem;">';
+        html += kvItem('Latest Date', d.latest.date);
+        html += kvItem('Close', '$' + d.latest.close);
+        html += kvItem('Open', '$' + d.latest.open);
+        html += kvItem('High', '$' + d.latest.high);
+        html += kvItem('Low', '$' + d.latest.low);
+        html += kvItem('Volume', d.latest.volume ? d.latest.volume.toLocaleString() : '-');
+        html += '</div>';
+    }
+    html += '<div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>';
+    bars.slice(0, 30).forEach(b => {
+        html += `<tr><td>${b.date}</td><td>$${b.open}</td><td>$${b.high}</td><td>$${b.low}</td><td><strong>$${b.close}</strong></td><td>${b.volume ? b.volume.toLocaleString() : '-'}</td></tr>`;
+    });
+    html += '</tbody></table></div></div>';
+    return html;
+}
+
+function renderNewsSentiment(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    const articles = d.articles || [];
+    let html = `<div class="result-section"><h4>News & Sentiment (${articles.length} articles)</h4>`;
+    articles.forEach(a => {
+        const score = a.overall_sentiment_score || 0;
+        const label = a.overall_sentiment_label || 'Neutral';
+        const sentColor = score > 0.15 ? 'positive' : (score < -0.15 ? 'negative' : 'highlight');
+        html += `<div style="padding:0.75rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+                <a href="${a.url}" target="_blank" style="color:var(--text-primary);text-decoration:none;font-weight:600;font-size:0.9rem;">${a.title}</a>
+                <span class="tag ${sentColor === 'positive' ? 'success' : (sentColor === 'negative' ? 'danger' : '')}" style="white-space:nowrap;">${label} (${score.toFixed(2)})</span>
+            </div>
+            <p style="font-size:0.82rem;color:var(--text-secondary);margin-top:0.3rem;">${(a.summary || '').substring(0, 200)}...</p>
+            <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.2rem;">${a.source || ''} — ${a.time_published || ''}</div>
+        </div>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+function renderMarketMovers(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    let html = '';
+    if (d.top_gainers && d.top_gainers.length) {
+        html += '<div class="result-section"><h4 style="color:var(--success);">Top Gainers</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>% Change</th><th>Volume</th></tr></thead><tbody>';
+        d.top_gainers.forEach(g => { html += `<tr><td><strong>${g.ticker}</strong></td><td>$${g.price}</td><td class="value positive">+$${g.change_amount}</td><td class="value positive">+${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td></tr>`; });
+        html += '</tbody></table></div></div>';
+    }
+    if (d.top_losers && d.top_losers.length) {
+        html += '<div class="result-section"><h4 style="color:var(--danger);">Top Losers</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>% Change</th><th>Volume</th></tr></thead><tbody>';
+        d.top_losers.forEach(g => { html += `<tr><td><strong>${g.ticker}</strong></td><td>$${g.price}</td><td class="value negative">-$${Math.abs(parseFloat(g.change_amount || 0)).toFixed(2)}</td><td class="value negative">${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td></tr>`; });
+        html += '</tbody></table></div></div>';
+    }
+    if (d.most_actively_traded && d.most_actively_traded.length) {
+        html += '<div class="result-section"><h4>Most Active</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Volume</th></tr></thead><tbody>';
+        d.most_actively_traded.forEach(g => { html += `<tr><td><strong>${g.ticker}</strong></td><td>$${g.price}</td><td>${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td></tr>`; });
+        html += '</tbody></table></div></div>';
+    }
+    return html || '<div class="result-section"><p>No market mover data available.</p></div>';
 }
 
 function renderGeneric(d) {

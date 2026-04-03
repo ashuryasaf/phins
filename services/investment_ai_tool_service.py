@@ -33,6 +33,80 @@ from collections import deque
 
 
 # ---------------------------------------------------------------------------
+# Alpha Vantage live data integration
+# ---------------------------------------------------------------------------
+
+_av_service = None
+
+try:
+    from services.alpha_vantage_service import get_alpha_vantage_service
+    _av_service = get_alpha_vantage_service()
+    LIVE_DATA_AVAILABLE = True
+except ImportError:
+    LIVE_DATA_AVAILABLE = False
+
+
+def _get_live_quote(symbol: str) -> Optional[Dict[str, Any]]:
+    """Fetch a live quote from Alpha Vantage, returns None on failure."""
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_quote(symbol)
+    except Exception:
+        return None
+
+
+def _get_live_technical_profile(symbol: str) -> Optional[Dict[str, Any]]:
+    """Fetch full technical profile from Alpha Vantage."""
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_full_technical_profile(symbol)
+    except Exception:
+        return None
+
+
+def _get_live_fundamentals(symbol: str) -> Optional[Dict[str, Any]]:
+    """Fetch fundamentals from Alpha Vantage."""
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_full_fundamental_profile(symbol)
+    except Exception:
+        return None
+
+
+def _get_live_news(tickers: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Fetch news sentiment from Alpha Vantage."""
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_news_sentiment(tickers=tickers, limit=10)
+    except Exception:
+        return None
+
+
+def _get_live_daily(symbol: str) -> Optional[Dict[str, Any]]:
+    """Fetch daily time series from Alpha Vantage."""
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_daily(symbol)
+    except Exception:
+        return None
+
+
+def _get_live_gainers_losers() -> Optional[Dict[str, Any]]:
+    """Fetch top gainers/losers from Alpha Vantage."""
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_top_gainers_losers()
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Access control: single-user API key
 # ---------------------------------------------------------------------------
 
@@ -217,37 +291,81 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
     """
     Analyze current trends in the stock market focusing on a sector or stock.
     Identifies emerging patterns and suggests investment opportunities.
+    Uses live Alpha Vantage data when available, falls back to static data.
     """
     result: Dict[str, Any] = {
         "module": "market_research_trend_analysis",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data_source": "live" if LIVE_DATA_AVAILABLE else "static",
     }
 
-    if stock and stock.upper() in STOCK_DATABASE:
-        s = STOCK_DATABASE[stock.upper()]
-        sec = SECTOR_DATA.get(s["sector"], {})
+    if stock:
+        sym = stock.upper()
+        s = STOCK_DATABASE.get(sym, {})
+        sec = SECTOR_DATA.get(s.get("sector", ""), {})
         rng = _seed_from(stock)
         momentum_score = rng.uniform(40, 95)
+
+        live_quote = _get_live_quote(sym)
+        live_overview = None
+        live_news = None
+        if LIVE_DATA_AVAILABLE and _av_service:
+            try:
+                live_overview = _av_service.get_company_overview(sym)
+            except Exception:
+                pass
+            live_news = _get_live_news(sym)
+
+        price = (live_quote or {}).get("price") or s.get("price")
+        pe = (live_overview or {}).get("pe_ratio") or s.get("pe")
+        ma50 = (live_overview or {}).get("50_day_ma") or s.get("ma50", 0)
+        ma200 = (live_overview or {}).get("200_day_ma") or s.get("ma200", 0)
+        volume = (live_quote or {}).get("volume") or s.get("volume")
+        mkt_cap = (live_overview or {}).get("market_cap") or s.get("market_cap", 0)
+        beta = (live_overview or {}).get("beta") or s.get("beta")
+        change_pct = (live_quote or {}).get("change_percent")
+
         result["stock_analysis"] = {
-            "symbol": stock.upper(),
-            "name": s["name"],
-            "sector": s["sector"],
-            "current_price": s["price"],
-            "pe_ratio": s["pe"],
-            "rsi": s["rsi"],
-            "rsi_signal": _rsi_signal(s["rsi"]),
-            "ma50": s["ma50"],
-            "ma200": s["ma200"],
-            "ma_signal": _ma_signal(s["price"], s["ma50"], s["ma200"]),
-            "volume": s["volume"],
-            "market_cap": _format_large_number(s["market_cap"]),
+            "symbol": sym,
+            "name": (live_overview or {}).get("name") or s.get("name", sym),
+            "sector": (live_overview or {}).get("sector") or s.get("sector", "unknown"),
+            "industry": (live_overview or {}).get("industry"),
+            "current_price": price,
+            "previous_close": (live_quote or {}).get("previous_close"),
+            "change_percent": change_pct,
+            "pe_ratio": pe,
+            "forward_pe": (live_overview or {}).get("forward_pe"),
+            "peg_ratio": (live_overview or {}).get("peg_ratio"),
+            "eps": (live_overview or {}).get("eps") or s.get("eps"),
+            "ma50": ma50,
+            "ma200": ma200,
+            "ma_signal": _ma_signal(price, ma50, ma200) if price and ma50 and ma200 else "unknown",
+            "volume": volume,
+            "market_cap": _format_large_number(mkt_cap) if mkt_cap else None,
+            "beta": beta,
+            "dividend_yield": (live_overview or {}).get("dividend_yield") or s.get("dividend_yield"),
+            "52_week_high": (live_overview or {}).get("52_week_high"),
+            "52_week_low": (live_overview or {}).get("52_week_low"),
+            "analyst_target_price": (live_overview or {}).get("analyst_target_price"),
             "momentum_score": round(momentum_score, 1),
             "sector_trend": sec.get("trend", "unknown"),
             "sector_ytd_return": sec.get("ytd_return"),
+            "live_data": live_quote is not None,
         }
+        if live_news and live_news.get("articles"):
+            result["news_sentiment"] = live_news["articles"][:5]
         result["emerging_patterns"] = sec.get("emerging", [])
-        similar = [k for k, v in STOCK_DATABASE.items() if v["sector"] == s["sector"] and k != stock.upper()]
+        similar = [k for k, v in STOCK_DATABASE.items() if v.get("sector") == s.get("sector") and k != sym]
         result["related_opportunities"] = similar[:5]
+
+        # Live market movers
+        movers = _get_live_gainers_losers()
+        if movers:
+            result["market_movers"] = {
+                "top_gainers": movers.get("top_gainers", [])[:5],
+                "top_losers": movers.get("top_losers", [])[:5],
+            }
+
     elif sector and sector.lower().replace(" ", "_") in SECTOR_DATA:
         key = sector.lower().replace(" ", "_")
         sec = SECTOR_DATA[key]
@@ -260,10 +378,25 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
             "top_stocks": sec["top_stocks"],
         }
         result["emerging_patterns"] = sec["emerging"]
-        result["investment_opportunities"] = [
-            {"stock": sym, **STOCK_DATABASE[sym]}
-            for sym in sec["top_stocks"] if sym in STOCK_DATABASE
-        ]
+
+        # Enrich top stocks with live quotes
+        opportunities = []
+        for sym in sec["top_stocks"]:
+            stock_data = dict(STOCK_DATABASE.get(sym, {}))
+            live_q = _get_live_quote(sym)
+            if live_q:
+                stock_data["price"] = live_q["price"]
+                stock_data["change_percent"] = live_q.get("change_percent")
+                stock_data["live"] = True
+            stock_data["stock"] = sym
+            opportunities.append(stock_data)
+        result["investment_opportunities"] = opportunities
+
+        # Live news for sector
+        sector_news = _get_live_news()
+        if sector_news and sector_news.get("articles"):
+            result["sector_news"] = sector_news["articles"][:5]
+
     else:
         result["market_overview"] = {
             "sectors": {
@@ -277,6 +410,9 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
             {"sector": v["name"], "emerging": v["emerging"]}
             for v in sorted(SECTOR_DATA.values(), key=lambda x: x["ytd_return"], reverse=True)[:5]
         ]
+        movers = _get_live_gainers_losers()
+        if movers:
+            result["market_movers"] = movers
 
     result["insights"] = _generate_market_insights(sector, stock)
     return result
@@ -604,11 +740,19 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
     """
     Evaluate a stock using technical analysis indicators.
     Produces a Buy / Sell / Hold recommendation.
+    Uses live Alpha Vantage data when available.
     """
     sym = stock.upper()
     s = STOCK_DATABASE.get(sym)
+
+    # Try live technical profile first
+    live_profile = _get_live_technical_profile(sym)
+    if live_profile and live_profile.get("quote"):
+        return _build_live_technical_result(sym, live_profile, s)
+
+    # Fallback to static data
     if not s:
-        return {"module": "technical_analysis", "error": f"Stock '{sym}' not found in database."}
+        return {"module": "technical_analysis", "error": f"Stock '{sym}' not found. Try a US stock symbol like AAPL, MSFT, NVDA."}
 
     rsi_sig = _rsi_signal(s["rsi"])
     ma_sig = _ma_signal(s["price"], s["ma50"], s["ma200"])
@@ -661,6 +805,7 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
     return {
         "module": "technical_analysis",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data_source": "static",
         "symbol": sym,
         "name": s["name"],
         "current_price": s["price"],
@@ -696,6 +841,75 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
     }
 
 
+def _build_live_technical_result(sym: str, profile: Dict[str, Any], static: Optional[Dict] = None) -> Dict[str, Any]:
+    """Build a technical analysis result from live Alpha Vantage data."""
+    q = profile.get("quote", {})
+    ind = profile.get("indicators", {})
+    signals = profile.get("signals", {})
+
+    rsi_val = (ind.get("rsi") or {}).get("value")
+    sma50_val = (ind.get("sma_50") or {}).get("value")
+    sma200_val = (ind.get("sma_200") or {}).get("value")
+    macd_data = ind.get("macd") or {}
+    bb_data = ind.get("bollinger_bands") or {}
+    adx_data = ind.get("adx") or {}
+    atr_data = ind.get("atr") or {}
+
+    price = q.get("price") if q else None
+
+    rsi_sig = _rsi_signal(rsi_val) if rsi_val else "unknown"
+    ma_sig = _ma_signal(price, sma50_val, sma200_val) if price and sma50_val and sma200_val else "unknown"
+    bb_pos = "upper" if price and bb_data.get("upper") and price >= bb_data["upper"] else (
+        "lower" if price and bb_data.get("lower") and price <= bb_data["lower"] else "middle"
+    )
+
+    support = round(sma200_val * 0.97, 2) if sma200_val else None
+    resistance = round(price * 1.08, 2) if price else None
+
+    return {
+        "module": "technical_analysis",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data_source": "live",
+        "symbol": sym,
+        "name": (static or {}).get("name", sym),
+        "current_price": price,
+        "previous_close": q.get("previous_close") if q else None,
+        "change": q.get("change") if q else None,
+        "change_percent": q.get("change_percent") if q else None,
+        "indicators": {
+            "rsi": {"value": rsi_val, "signal": rsi_sig},
+            "moving_averages": {
+                "ma50": sma50_val,
+                "ma200": sma200_val,
+                "signal": ma_sig,
+                "golden_cross": sma50_val > sma200_val if sma50_val and sma200_val else None,
+            },
+            "macd": {
+                "value": macd_data.get("macd"),
+                "signal_line": macd_data.get("signal"),
+                "histogram": macd_data.get("histogram"),
+                "bullish": (macd_data.get("histogram") or 0) > 0,
+            },
+            "bollinger_bands": {
+                "upper": bb_data.get("upper"),
+                "middle": bb_data.get("middle"),
+                "lower": bb_data.get("lower"),
+                "position": bb_pos,
+            },
+            "adx": {"value": adx_data.get("value"), "trend_strength": "strong" if (adx_data.get("value") or 0) > 25 else "weak"},
+            "atr": {"value": atr_data.get("value")},
+            "volume": {
+                "current": q.get("volume") if q else None,
+            },
+        },
+        "support_level": support,
+        "resistance_level": resistance,
+        "technical_score": signals.get("composite_score", 0),
+        "recommendation": signals.get("recommendation", "HOLD"),
+        "signal_details": signals.get("details", []),
+    }
+
+
 # ===================================================================
 # MODULE 6: Earnings Report Analysis
 # ===================================================================
@@ -703,11 +917,18 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
 def analyze_earnings_report(company: str) -> Dict[str, Any]:
     """
     Interpret a company's earnings report, highlighting key metrics.
+    Uses live Alpha Vantage fundamental data when available.
     """
     sym = company.upper()
     s = STOCK_DATABASE.get(sym)
+
+    # Try live fundamental data
+    live_fundamentals = _get_live_fundamentals(sym)
+    if live_fundamentals and live_fundamentals.get("overview"):
+        return _build_live_earnings_result(sym, live_fundamentals, s)
+
     if not s:
-        return {"module": "earnings_report_analysis", "error": f"Company '{sym}' not found."}
+        return {"module": "earnings_report_analysis", "error": f"Company '{sym}' not found. Try a US stock symbol like AAPL, MSFT."}
 
     rng = _seed_from(f"earnings:{sym}")
     revenue = s["market_cap"] * rng.uniform(0.03, 0.15)
@@ -727,6 +948,7 @@ def analyze_earnings_report(company: str) -> Dict[str, Any]:
     return {
         "module": "earnings_report_analysis",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data_source": "static",
         "symbol": sym,
         "name": s["name"],
         "key_metrics": {
@@ -761,6 +983,98 @@ def analyze_earnings_report(company: str) -> Dict[str, Any]:
             "Free cash flow — validates earnings quality; cash flow should track or exceed net income.",
         ],
     }
+
+
+def _build_live_earnings_result(sym: str, fundamentals: Dict[str, Any], static: Optional[Dict] = None) -> Dict[str, Any]:
+    """Build earnings analysis from live Alpha Vantage fundamental data."""
+    ov = fundamentals.get("overview", {})
+    earnings = fundamentals.get("earnings", {})
+    news = fundamentals.get("news", {})
+
+    quarterly = (earnings or {}).get("quarterly_earnings", [])
+    latest_q = quarterly[0] if quarterly else {}
+
+    eps_actual = None
+    eps_estimate = None
+    eps_surprise = None
+    beat = None
+    if latest_q:
+        eps_actual = _safe_float_or(latest_q.get("reportedEPS"))
+        eps_estimate = _safe_float_or(latest_q.get("estimatedEPS"))
+        eps_surprise = _safe_float_or(latest_q.get("surprisePercentage"))
+        if eps_actual is not None and eps_estimate is not None:
+            beat = eps_actual > eps_estimate
+
+    revenue_ttm = ov.get("revenue_ttm")
+    profit_margin = ov.get("profit_margin")
+    operating_margin = ov.get("operating_margin")
+
+    return {
+        "module": "earnings_report_analysis",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data_source": "live",
+        "symbol": sym,
+        "name": ov.get("name", sym),
+        "description": ov.get("description"),
+        "sector": ov.get("sector"),
+        "industry": ov.get("industry"),
+        "key_metrics": {
+            "revenue_ttm": _format_large_number(revenue_ttm) if revenue_ttm else None,
+            "gross_profit_ttm": _format_large_number(ov.get("gross_profit_ttm")) if ov.get("gross_profit_ttm") else None,
+            "ebitda": _format_large_number(ov.get("ebitda")) if ov.get("ebitda") else None,
+            "earnings_per_share": {
+                "current_eps": ov.get("eps"),
+                "latest_quarter_actual": eps_actual,
+                "latest_quarter_estimate": eps_estimate,
+                "surprise_pct": eps_surprise,
+                "beat_estimate": beat,
+                "fiscal_date": latest_q.get("fiscalDateEnding"),
+            },
+            "profit_margin": f"{round(profit_margin * 100, 2)}%" if profit_margin else None,
+            "operating_margin": f"{round(operating_margin * 100, 2)}%" if operating_margin else None,
+            "return_on_equity": f"{round(ov.get('return_on_equity', 0) * 100, 2)}%" if ov.get("return_on_equity") else None,
+            "pe_ratio": ov.get("pe_ratio"),
+            "forward_pe": ov.get("forward_pe"),
+            "peg_ratio": ov.get("peg_ratio"),
+            "price_to_sales": ov.get("price_to_sales"),
+            "price_to_book": ov.get("price_to_book"),
+            "ev_to_revenue": ov.get("ev_to_revenue"),
+            "ev_to_ebitda": ov.get("ev_to_ebitda"),
+            "market_cap": _format_large_number(ov.get("market_cap")) if ov.get("market_cap") else None,
+            "dividend_yield": f"{round(ov.get('dividend_yield', 0) * 100, 2)}%" if ov.get("dividend_yield") else None,
+            "beta": ov.get("beta"),
+            "52_week_high": ov.get("52_week_high"),
+            "52_week_low": ov.get("52_week_low"),
+            "analyst_target_price": ov.get("analyst_target_price"),
+        },
+        "quarterly_earnings_history": [
+            {
+                "date": q.get("fiscalDateEnding"),
+                "reported_eps": q.get("reportedEPS"),
+                "estimated_eps": q.get("estimatedEPS"),
+                "surprise_pct": q.get("surprisePercentage"),
+            }
+            for q in quarterly[:8]
+        ],
+        "news_sentiment": (news or {}).get("articles", [])[:5],
+        "investor_focus_areas": [
+            "Earnings Per Share (EPS) vs consensus — the primary driver of post-earnings moves.",
+            "Revenue growth rate — shows top-line demand trajectory.",
+            "Operating margins — indicate pricing power and cost discipline.",
+            "Forward guidance — management outlook often matters more than the reported quarter.",
+            "Free cash flow — validates earnings quality; cash flow should track or exceed net income.",
+            "PEG ratio — balances P/E against growth rate for fairer valuation.",
+        ],
+    }
+
+
+def _safe_float_or(val, default=None):
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
 
 
 # ===================================================================
@@ -1172,7 +1486,101 @@ AVAILABLE_MODULES = {
         "description": "Guide through backtesting with simulated results and metrics.",
         "handler": "backtest_strategy",
     },
+    "live_quote": {
+        "name": "Live Stock Quote",
+        "description": "Real-time stock quote from Alpha Vantage (price, change, volume).",
+        "handler": "get_live_stock_quote",
+        "requires_live": True,
+    },
+    "live_history": {
+        "name": "Historical Price Data",
+        "description": "Daily OHLCV history for a stock from Alpha Vantage.",
+        "handler": "get_live_stock_history",
+        "requires_live": True,
+    },
+    "news_sentiment": {
+        "name": "News & Sentiment",
+        "description": "AI-analyzed market news with sentiment scores from Alpha Vantage.",
+        "handler": "get_news_analysis",
+        "requires_live": True,
+    },
+    "market_movers": {
+        "name": "Market Movers",
+        "description": "Top gainers, losers, and most active stocks right now.",
+        "handler": "get_market_movers",
+        "requires_live": True,
+    },
 }
+
+
+# ===================================================================
+# NEW LIVE DATA MODULES
+# ===================================================================
+
+def get_live_stock_quote(symbol: str = "AAPL") -> Dict[str, Any]:
+    """Get a real-time stock quote from Alpha Vantage."""
+    sym = symbol.upper()
+    live = _get_live_quote(sym)
+    if not live:
+        s = STOCK_DATABASE.get(sym)
+        if s:
+            return {
+                "module": "live_quote", "data_source": "static", "symbol": sym,
+                "name": s.get("name", sym), "price": s["price"],
+                "note": "Live data unavailable, showing cached static price.",
+            }
+        return {"module": "live_quote", "error": f"Could not fetch quote for '{sym}'."}
+    return {
+        "module": "live_quote",
+        "data_source": "live",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **live,
+    }
+
+
+def get_live_stock_history(symbol: str = "AAPL", outputsize: str = "compact") -> Dict[str, Any]:
+    """Get daily price history from Alpha Vantage."""
+    sym = symbol.upper()
+    daily = _get_live_daily(sym)
+    if not daily:
+        return {"module": "live_history", "error": f"Could not fetch history for '{sym}'. Try again later (rate limited)."}
+    bars = daily.get("bars", [])
+    return {
+        "module": "live_history",
+        "data_source": "live",
+        "symbol": sym,
+        "bar_count": len(bars),
+        "latest": bars[0] if bars else None,
+        "bars": bars[:60],
+        "source": "alpha_vantage",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def get_news_analysis(tickers: str = "", topics: str = "") -> Dict[str, Any]:
+    """Get AI-analyzed news sentiment from Alpha Vantage."""
+    news = _get_live_news(tickers=tickers or None)
+    if not news:
+        return {"module": "news_sentiment", "error": "News data unavailable. Try again later (rate limited)."}
+    return {
+        "module": "news_sentiment",
+        "data_source": "live",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **news,
+    }
+
+
+def get_market_movers() -> Dict[str, Any]:
+    """Get top gainers, losers, and most active from Alpha Vantage."""
+    movers = _get_live_gainers_losers()
+    if not movers:
+        return {"module": "market_movers", "error": "Market movers data unavailable. Try again later (rate limited)."}
+    return {
+        "module": "market_movers",
+        "data_source": "live",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **movers,
+    }
 
 
 def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1190,6 +1598,10 @@ def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any
         "algo_trading_bots": get_algo_trading_bot_guide,
         "risk_management": design_risk_management_system,
         "backtesting": backtest_strategy,
+        "live_quote": get_live_stock_quote,
+        "live_history": get_live_stock_history,
+        "news_sentiment": get_news_analysis,
+        "market_movers": get_market_movers,
     }
 
     handler = handlers.get(module)
@@ -1202,6 +1614,8 @@ def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any
     try:
         if module == "stock_screener":
             return handler(criteria=params if params else None)
+        if module == "market_movers":
+            return handler()
         return handler(**params)
     except TypeError as e:
         return {"error": f"Invalid parameters for module '{module}': {e}"}
@@ -1213,9 +1627,12 @@ def get_modules_catalog() -> Dict[str, Any]:
     """Return the catalog of available AI modules."""
     return {
         "tool": "PHINS Investment AI",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "live_data": LIVE_DATA_AVAILABLE,
+        "data_provider": "Alpha Vantage" if LIVE_DATA_AVAILABLE else "Static",
         "modules": AVAILABLE_MODULES,
         "total_modules": len(AVAILABLE_MODULES),
         "available_stocks": sorted(STOCK_DATABASE.keys()),
         "available_sectors": sorted(SECTOR_DATA.keys()),
+        "note": "Modules with requires_live=True use real-time Alpha Vantage data. All other modules use live data when available with static fallback.",
     }
