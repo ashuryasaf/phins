@@ -247,7 +247,14 @@ class MarketDataService:
 
         quotes.update(self._fetch_public_crypto_quotes(crypto_symbols))
         quotes.update(self._fetch_public_fx_quotes(fx_symbols))
-        quotes.update(self._fetch_public_stooq_quotes(security_symbols))
+
+        # Try Alpha Vantage first for equities, then fall back to Stooq
+        av_quotes = self._fetch_alpha_vantage_quotes(security_symbols)
+        quotes.update(av_quotes)
+        av_fetched = set(av_quotes.keys())
+        stooq_remaining = [s for s in security_symbols if s not in av_fetched]
+        if stooq_remaining:
+            quotes.update(self._fetch_public_stooq_quotes(stooq_remaining))
 
         # Integrity guardrails: block invalid / outlier updates.
         for symbol in symbols_norm:
@@ -378,6 +385,39 @@ class MarketDataService:
         if isinstance(payload.get("data"), list):
             return [p for p in payload["data"] if isinstance(p, dict)]
         return []
+
+    # ---------------------------------------------------------------------
+    # Alpha Vantage provider (preferred for equities when available)
+    # ---------------------------------------------------------------------
+    def _fetch_alpha_vantage_quotes(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Fetch equity quotes from Alpha Vantage as primary source."""
+        try:
+            from services.alpha_vantage_service import get_alpha_vantage_service
+            av = get_alpha_vantage_service()
+        except Exception:
+            return {}
+
+        quotes: Dict[str, Dict[str, Any]] = {}
+        for symbol in symbols:
+            try:
+                q = av.get_quote(symbol)
+                if q and q.get("price") and q["price"] > 0:
+                    quotes[symbol] = {
+                        "symbol": symbol,
+                        "asset_class": self._classify_symbol(symbol),
+                        "price": q["price"],
+                        "open": q.get("open"),
+                        "high": q.get("high"),
+                        "low": q.get("low"),
+                        "volume": q.get("volume"),
+                        "change_pct": self._safe_float(q.get("change_percent")),
+                        "source": "alpha_vantage",
+                        "date": q.get("latest_trading_day"),
+                        "as_of": self._now_iso(),
+                    }
+            except Exception:
+                pass
+        return quotes
 
     # ---------------------------------------------------------------------
     # Public providers
