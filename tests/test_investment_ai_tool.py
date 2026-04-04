@@ -314,7 +314,7 @@ class TestDispatcher:
 class TestModulesCatalog:
     def test_catalog(self):
         catalog = get_modules_catalog()
-        assert catalog["total_modules"] == 14
+        assert catalog["total_modules"] == 17
         assert "modules" in catalog
         assert "available_stocks" in catalog
         assert "available_sectors" in catalog
@@ -423,6 +423,72 @@ class TestAlphaVantageService:
         assert data == {"Global Quote": {"01. symbol": "AAPL"}}
 
 
+class TestDeepDive:
+    def test_deep_dive_known_stock(self):
+        from services.investment_ai_tool_service import deep_dive_analysis
+        result = deep_dive_analysis("AAPL", "1M")
+        assert result["module"] == "deep_dive"
+        assert result["symbol"] == "AAPL"
+        assert result["timeframe"] == "1M"
+        assert "overview" in result
+        assert "technicals" in result
+        assert "chart_data" in result
+        assert "available_timeframes" in result
+
+    def test_deep_dive_timeframes(self):
+        from services.investment_ai_tool_service import deep_dive_analysis
+        for tf in ["1D", "1W", "1M", "3M", "1Y", "5Y"]:
+            result = deep_dive_analysis("MSFT", tf)
+            assert result["timeframe"] == tf
+
+    def test_compare_stocks(self):
+        from services.investment_ai_tool_service import compare_stocks
+        result = compare_stocks("AAPL,MSFT", "1M")
+        assert result["module"] == "compare_stocks"
+        assert len(result["stocks"]) == 2
+        assert result["stocks"][0]["symbol"] == "AAPL"
+        assert result["stocks"][1]["symbol"] == "MSFT"
+        assert "available_timeframes" in result
+
+    def test_compare_stocks_needs_two(self):
+        from services.investment_ai_tool_service import compare_stocks
+        result = compare_stocks("AAPL", "1M")
+        assert "error" in result
+
+    def test_algo_bridge_status(self):
+        from services.investment_ai_tool_service import algo_investment_bridge
+        result = algo_investment_bridge(action="status")
+        assert result["module"] == "algo_bridge"
+        assert "capabilities" in result
+
+    def test_algo_bridge_signal(self):
+        from services.investment_ai_tool_service import algo_investment_bridge
+        result = algo_investment_bridge(action="signal", symbol="AAPL")
+        assert result["module"] == "algo_bridge"
+        assert result["symbol"] == "AAPL"
+        assert "ai_recommendation" in result
+        assert "suggested_strategies" in result
+        assert "risk_assessment" in result
+
+    def test_algo_bridge_allocation(self):
+        from services.investment_ai_tool_service import algo_investment_bridge
+        result = algo_investment_bridge(action="recommend_allocation")
+        assert "portfolio_recommendations" in result
+        assert "algo_strategies" in result
+
+    def test_dispatcher_deep_dive(self):
+        result = dispatch_investment_ai("deep_dive", {"symbol": "AAPL"})
+        assert result["module"] == "deep_dive"
+
+    def test_dispatcher_compare(self):
+        result = dispatch_investment_ai("compare_stocks", {"symbols": "AAPL,MSFT"})
+        assert result["module"] == "compare_stocks"
+
+    def test_dispatcher_algo_bridge(self):
+        result = dispatch_investment_ai("algo_bridge", {"action": "status"})
+        assert result["module"] == "algo_bridge"
+
+
 class TestAccessKey:
     def test_generated_key_consistency(self):
         key = get_access_key_display()
@@ -490,7 +556,7 @@ class TestInvestmentAiApi:
     def test_modules_endpoint(self):
         data, status = _get(f"/api/investment-ai/modules?api_key={self.api_key}")
         assert status == 200
-        assert data["total_modules"] == 14
+        assert data["total_modules"] == 17
         assert "live_data" in data
 
     def test_modules_endpoint_no_key(self):
