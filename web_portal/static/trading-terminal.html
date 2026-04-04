@@ -773,12 +773,6 @@ function drawTerminalChart(bars, symbol, data, isRedraw) {
         const cmpCloses = comparisonBars.map(b => b.close || 0).reverse();
         const baseStart = closes[0] || 1;
         const cmpStart = cmpCloses[0] || 1;
-        const normBase = closes.map(c => c / baseStart);
-        const normCmp = cmpCloses.map(c => c / cmpStart);
-        const allNorm = [...normBase, ...normCmp];
-        const normMin = Math.min(...allNorm) * 0.998;
-        const normMax = Math.max(...allNorm) * 1.002;
-        const normRange = normMax - normMin || 1;
 
         ctx.beginPath();
         ctx.strokeStyle = '#06b6d4';
@@ -786,16 +780,16 @@ function drawTerminalChart(bars, symbol, data, isRedraw) {
         ctx.setLineDash([]);
         const cmpStep = chartW / (cmpCloses.length - 1 || 1);
         cmpCloses.forEach((c, i) => {
-            const nv = c / cmpStart;
+            const rebasedClose = cmpStart ? (c / cmpStart) * baseStart : baseStart;
             const x = i * cmpStep;
-            const y = padT + ((normMax - nv) / normRange) * chartH;
+            const y = padT + ((max - rebasedClose) / range) * chartH;
             i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         });
         ctx.stroke();
 
         ctx.fillStyle = '#06b6d4'; ctx.font = 'bold 18px monospace';
         ctx.textAlign = 'left';
-        ctx.fillText(comparisonSymbol + ' (normalized)', chartW - 260, padT + 22);
+        ctx.fillText(comparisonSymbol + ' (rebased)', chartW - 230, padT + 22);
     }
 
     // Forecast extension
@@ -1085,15 +1079,37 @@ function reportCard(label, value, color) {
 }
 
 // --- AI Trade Scanner ---
+function getScannerSignalStyles(signal) {
+    if (signal.includes('BUY')) return { color: '#10b981', background: 'rgba(16,185,129,0.15)' };
+    if (signal.includes('SELL')) return { color: '#ef4444', background: 'rgba(239,68,68,0.15)' };
+    if (signal.includes('HOLD')) return { color: '#fbbf24', background: 'rgba(251,191,36,0.15)' };
+    return { color: '#6b7280', background: 'rgba(107,114,128,0.15)' };
+}
+
+function formatScannerScore(score) {
+    const numericScore = Number(score);
+    if (!Number.isFinite(numericScore)) return '—';
+    return (numericScore > 0 ? '+' : '') + numericScore.toFixed(1).replace(/\.0$/, '');
+}
+
 async function loadScanner() {
+    $('scannerPanel').innerHTML = '<div style="color:var(--muted);padding:8px 0;">Loading live AI scanner...</div>';
+
+    const analyses = await Promise.all(SCANNER_STOCKS.map(async stock => {
+        try {
+            const d = await apiFetch('/api/terminal/copilot?symbol=' + encodeURIComponent(stock.symbol));
+            return { stock, analysis: d && !d.error ? d : null };
+        } catch(e) {
+            return { stock, analysis: null };
+        }
+    }));
+
     let html = '<table class="scanner-table"><thead><tr><th>Symbol</th><th>Name</th><th>Sector</th><th>Score</th><th>Signal</th></tr></thead><tbody>';
 
-    for (const stock of SCANNER_STOCKS) {
-        const score = Math.round(40 + Math.random() * 55);
-        let signal, sigColor, sigBg;
-        if (score >= 70) { signal = 'BUY'; sigColor = '#10b981'; sigBg = 'rgba(16,185,129,0.15)'; }
-        else if (score >= 50) { signal = 'HOLD'; sigColor = '#fbbf24'; sigBg = 'rgba(251,191,36,0.15)'; }
-        else { signal = 'SELL'; sigColor = '#ef4444'; sigBg = 'rgba(239,68,68,0.15)'; }
+    analyses.forEach(({ stock, analysis }) => {
+        const signal = ((analysis || {}).ai_recommendation || 'UNAVAILABLE').toUpperCase();
+        const { color: sigColor, background: sigBg } = getScannerSignalStyles(signal);
+        const score = formatScannerScore((analysis || {}).composite_score);
 
         html += `<tr onclick="$('chartSymbol').value='${stock.symbol}';$('copilotSymbol').value='${stock.symbol}';loadChart();runCopilot();">
             <td style="color:var(--gold);font-weight:700;">${stock.symbol}</td>
@@ -1102,7 +1118,7 @@ async function loadScanner() {
             <td><span class="scanner-score" style="color:${sigColor};background:${sigBg};">${score}</span></td>
             <td style="color:${sigColor};font-weight:700;">${signal}</td>
         </tr>`;
-    }
+    });
     html += '</tbody></table>';
     $('scannerPanel').innerHTML = html;
 }
