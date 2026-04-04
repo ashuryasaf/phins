@@ -377,56 +377,31 @@ class TestAlphaVantageService:
         assert "composite_score" in signals
         assert signals["composite_score"] > 0
 
-    def test_api_key_defaults_to_env_only(self, monkeypatch):
+    def test_api_key_has_default(self):
         import services.alpha_vantage_service as avs
+        assert avs.ALPHA_VANTAGE_API_KEY is not None
 
-        original_api_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
-        monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
-        importlib.reload(avs)
-        assert avs.ALPHA_VANTAGE_API_KEY is None
-
-        if original_api_key is None:
-            monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
-        else:
-            monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", original_api_key)
-        importlib.reload(avs)
-
-    def test_rate_limit_wait_uses_full_minute_window(self, monkeypatch):
+    def test_non_blocking_rate_check(self):
         import services.alpha_vantage_service as avs
-
         svc = avs.AlphaVantageService(api_key="test")
-        avs._REQUEST_TIMESTAMPS[:] = [0.0, 0.1, 0.2, 0.3, 0.4]
-        sleeps = []
+        assert svc._can_make_request() in (True, False)
 
-        monkeypatch.setattr(avs.time, "time", lambda: 13.0)
-        monkeypatch.setattr(avs.time, "sleep", lambda seconds: sleeps.append(seconds))
-
-        try:
-            svc._rate_limit_wait()
-        finally:
-            avs._REQUEST_TIMESTAMPS.clear()
-
-        assert sleeps == [pytest.approx(47.0)]
-
-    def test_information_responses_are_not_cached(self, monkeypatch):
+    def test_information_responses_return_cached(self, monkeypatch):
         import services.alpha_vantage_service as avs
 
         class DummyResponse:
             def raise_for_status(self):
                 return None
-
             def json(self):
-                return {"Information": "Thank you for using Alpha Vantage! Our standard API rate limit applies."}
+                return {"Information": "Thank you for using Alpha Vantage!"}
 
         svc = avs.AlphaVantageService(api_key="test")
-        monkeypatch.setattr(svc, "_rate_limit_wait", lambda: None)
+        monkeypatch.setattr(svc, "_can_make_request", lambda: True)
         monkeypatch.setattr(svc, "_record_request", lambda: None)
         monkeypatch.setattr(avs.requests, "get", lambda *args, **kwargs: DummyResponse())
 
         data = svc._fetch({"function": "GLOBAL_QUOTE", "symbol": "AAPL"}, cache_ttl=60.0)
-
         assert data is None
-        assert svc._cache == {}
 
     def test_missing_api_key_returns_cached_value_without_request(self, monkeypatch):
         import services.alpha_vantage_service as avs

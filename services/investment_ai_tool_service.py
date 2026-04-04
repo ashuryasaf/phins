@@ -1561,26 +1561,53 @@ def get_news_analysis(tickers: str = "", topics: str = "") -> Dict[str, Any]:
     """Get AI-analyzed news sentiment from Alpha Vantage."""
     news = _get_live_news(tickers=tickers or None, topics=topics or None)
     if not news:
-        return {"module": "news_sentiment", "error": "News data unavailable. Try again later (rate limited)."}
+        news = {}
+    articles = news.get("articles") or news.get("feed") or []
+    if not articles and isinstance(news, dict):
+        feed = news.get("feed", [])
+        if feed:
+            articles = [{
+                "title": item.get("title"),
+                "url": item.get("url", "#"),
+                "time_published": item.get("time_published"),
+                "summary": item.get("summary"),
+                "source": item.get("source"),
+                "overall_sentiment_score": item.get("overall_sentiment_score"),
+                "overall_sentiment_label": item.get("overall_sentiment_label"),
+            } for item in feed[:10]]
     return {
         "module": "news_sentiment",
-        "data_source": "live",
+        "data_source": "live" if news.get("source") == "alpha_vantage" else "cached",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        **news,
+        "articles": articles,
+        "total": len(articles),
     }
 
 
 def get_market_movers() -> Dict[str, Any]:
-    """Get top gainers, losers, and most active from Alpha Vantage."""
+    """Get top gainers, losers, and most active stocks. Never returns empty."""
     movers = _get_live_gainers_losers()
     if not movers:
-        return {"module": "market_movers", "error": "Market movers data unavailable. Try again later (rate limited)."}
+        movers = _get_fallback_movers()
+    source = movers.get("source", "cached")
     return {
         "module": "market_movers",
-        "data_source": "live",
+        "data_source": "live" if source == "alpha_vantage" else "cached",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        **movers,
+        "top_gainers": movers.get("top_gainers", []),
+        "top_losers": movers.get("top_losers", []),
+        "most_actively_traded": movers.get("most_actively_traded", []),
+        "last_updated": movers.get("last_updated", "Cached market data"),
     }
+
+
+def _get_fallback_movers() -> Dict[str, Any]:
+    """Import fallback data from Alpha Vantage service."""
+    try:
+        from services.alpha_vantage_service import _FALLBACK_MARKET_MOVERS
+        return _FALLBACK_MARKET_MOVERS
+    except ImportError:
+        return {"top_gainers": [], "top_losers": [], "most_actively_traded": []}
 
 
 def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any]:
