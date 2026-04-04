@@ -3177,69 +3177,161 @@ def save_ledger_data():
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
-def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LEGACY_DYNAMIC_CUSTOMERS_FILE = os.path.join(PROJECT_ROOT, 'database', 'dynamic_customers.json')
+LEGACY_INVITATION_CODES_FILE = os.path.join(PROJECT_ROOT, 'database', 'invitation_codes.json')
+
+
+def _runtime_data_file(filename: str) -> str:
+    """Return a private runtime JSON path outside tracked seed files."""
+    workspace_root = os.environ.get('WORKSPACE_PATH') or PROJECT_ROOT
+    data_dir = os.path.join(workspace_root, 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, filename)
+
+
+RUNTIME_DYNAMIC_CUSTOMERS_FILE = _runtime_data_file('dynamic_customers_runtime.json')
+RUNTIME_INVITATION_CODES_FILE = _runtime_data_file('invitation_codes_runtime.json')
+
+
+def _write_private_json(path: str, payload: Any) -> None:
+    """Persist runtime state atomically with restrictive file permissions."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp_file = f"{path}.tmp"
+    with open(temp_file, 'w') as f:
+        json.dump(payload, f, indent=2, default=str)
+    os.replace(temp_file, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def append_customer_to_seeds(
+    email: str,
+    password_hash: str,
+    password_salt: str,
+    name: str,
+    customer_id: str,
+    registered_at: str,
+):
     """
-    Append newly registered customer to dynamic seeds file for restart persistence.
-    
-    SECURITY: Passwords are hashed before storage - NEVER store plain-text passwords.
+    Persist newly registered customers in a runtime-only file for restart recovery.
+
+    SECURITY: credential hashes are never written back into tracked repository files.
     """
     try:
-        seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
-        
-        # Load existing dynamic customers
         dynamic_customers = []
-        if os.path.exists(seeds_file):
-            with open(seeds_file, 'r') as f:
+        if os.path.exists(RUNTIME_DYNAMIC_CUSTOMERS_FILE):
+            with open(RUNTIME_DYNAMIC_CUSTOMERS_FILE, 'r') as f:
                 dynamic_customers = json.load(f)
-        
-        # SECURITY: Hash password before storing
-        pwd_hash = hash_password(password)
-        
-        # Add new customer with hashed password
+
         dynamic_customers.append({
             'username': email,
-            # SECURITY: Store hash and salt, NEVER plain-text password
-            'password_hash': pwd_hash['hash'],
-            'password_salt': pwd_hash['salt'],
+            'password_hash': password_hash,
+            'password_salt': password_salt,
             'name': name,
             'role': 'customer',
             'customer_id': customer_id,
             'email': email,
-            'registered_at': registered_at
+            'registered_at': registered_at,
+            'test_only': email.endswith('@example.com') or email.endswith('@test.local'),
         })
-        
-        # Save back
-        with open(seeds_file, 'w') as f:
-            json.dump(dynamic_customers, f, indent=2)
-        
-        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file (password hashed)")
+
+        _write_private_json(RUNTIME_DYNAMIC_CUSTOMERS_FILE, dynamic_customers)
+        print(f"[SEEDS] Persisted new customer {email} to runtime dynamic customer state")
     except Exception as e:
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
 # ========== PERSISTENT INVITATION CODES STORAGE ==========
-# Store invitation codes in a git-tracked JSON file so they persist across Railway deployments
-INVITATION_CODES_FILE = os.path.join(os.path.dirname(__file__), '..', 'database', 'invitation_codes.json')
+# Runtime invitation state is persisted outside tracked seed files.
+
+
+def _is_test_invitation_record(code: str, invitation: Dict[str, Any]) -> bool:
+    notes = str(invitation.get('notes', '') or '').lower()
+    return invitation.get('created_by') == 'system' and 'test mode invitation code' in notes
+
+
+def _sanitize_used_by_entries(used_by: Any) -> list[Dict[str, Any]]:
+    sanitized_entries: list[Dict[str, Any]] = []
+    if not isinstance(used_by, list):
+        return sanitized_entries
+
+    for entry in used_by:
+        if isinstance(entry, dict):
+            sanitized_entry: Dict[str, Any] = {}
+            if entry.get('customer_id'):
+                sanitized_entry['customer_id'] = entry.get('customer_id')
+            if entry.get('used_at'):
+                sanitized_entry['used_at'] = entry.get('used_at')
+            if sanitized_entry:
+                sanitized_entries.append(sanitized_entry)
+        elif entry:
+            sanitized_entries.append({'customer_id': str(entry)})
+    return sanitized_entries
+
+
+def _sanitize_invitation_for_persistence(code: str, invitation: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(invitation, dict):
+        return None
+    if _is_test_invitation_record(code, invitation):
+        return None
+
+    clean = dict(invitation)
+    if 'used_by' in clean:
+        clean['used_by'] = _sanitize_used_by_entries(clean.get('used_by'))
+    return clean
+
+
+def _sanitize_referral_stats_for_persistence() -> Dict[str, Dict[str, Any]]:
+    sanitized_stats: Dict[str, Dict[str, Any]] = {}
+    for customer_id, stats in CUSTOMER_REFERRAL_STATS.items():
+        if not isinstance(stats, dict):
+            continue
+        clean = dict(stats)
+        referred_customers = []
+        for entry in clean.get('referred_customers', []) or []:
+            if isinstance(entry, dict):
+                referred_customers.append({
+                    k: v for k, v in entry.items()
+                    if k != 'email'
+                })
+        clean['referred_customers'] = referred_customers
+        sanitized_stats[customer_id] = clean
+    return sanitized_stats
 
 def save_invitation_codes_to_file():
     """
     Save all invitation codes (admin + customer) to persistent JSON file.
-    This file is git-tracked and persists across Railway deployments.
     """
     global INVITATION_CODES, CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     
     try:
+        admin_codes = {}
+        for code, invitation in INVITATION_CODES.items():
+            clean = _sanitize_invitation_for_persistence(code, invitation)
+            if clean is not None:
+                admin_codes[code] = clean
+
+        customer_codes = {}
+        for code, invitation in CUSTOMER_INVITATIONS.items():
+            clean = _sanitize_invitation_for_persistence(code, invitation)
+            if clean is not None:
+                customer_codes[code] = clean
+
         data = {
             'version': '1.0',
             'saved_at': datetime.now().isoformat(),
-            'admin_codes': dict(INVITATION_CODES),
-            'customer_codes': dict(CUSTOMER_INVITATIONS),
-            'referral_stats': dict(CUSTOMER_REFERRAL_STATS)
+            'admin_codes': admin_codes,
+            'customer_codes': customer_codes,
+            'referral_stats': _sanitize_referral_stats_for_persistence(),
         }
-        
-        with open(INVITATION_CODES_FILE, 'w') as f:
-            json.dump(data, f, indent=2, default=str)
-        
-        print(f"[INVITATIONS] Saved {len(INVITATION_CODES)} admin codes, {len(CUSTOMER_INVITATIONS)} customer codes to persistent file")
+
+        _write_private_json(RUNTIME_INVITATION_CODES_FILE, data)
+        print(
+            f"[INVITATIONS] Saved {len(admin_codes)} admin codes, "
+            f"{len(customer_codes)} customer codes to runtime state"
+        )
     except Exception as e:
         print(f"[INVITATIONS] Error saving invitation codes: {e}")
 
@@ -3250,32 +3342,46 @@ def load_invitation_codes_from_file():
     global INVITATION_CODES, CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     
     try:
-        if not os.path.exists(INVITATION_CODES_FILE):
+        source_files = [
+            LEGACY_INVITATION_CODES_FILE,
+            RUNTIME_INVITATION_CODES_FILE,
+        ]
+        existing_files = [path for path in source_files if os.path.exists(path)]
+        if not existing_files:
             print("[INVITATIONS] No invitation codes file found, starting fresh")
             return 0
-        
-        with open(INVITATION_CODES_FILE, 'r') as f:
-            data = json.load(f)
-        
-        # Load admin codes
-        admin_codes = data.get('admin_codes', {})
-        if admin_codes:
-            INVITATION_CODES.update(admin_codes)
-            print(f"[INVITATIONS] Loaded {len(admin_codes)} admin invitation codes")
-        
-        # Load customer codes
-        customer_codes = data.get('customer_codes', {})
-        if customer_codes:
-            CUSTOMER_INVITATIONS.update(customer_codes)
-            print(f"[INVITATIONS] Loaded {len(customer_codes)} customer referral codes")
-        
-        # Load referral stats
-        referral_stats = data.get('referral_stats', {})
-        if referral_stats:
-            CUSTOMER_REFERRAL_STATS.update(referral_stats)
-            print(f"[INVITATIONS] Loaded referral stats for {len(referral_stats)} customers")
-        
-        return len(admin_codes) + len(customer_codes)
+
+        total_admin_codes = 0
+        total_customer_codes = 0
+        total_referral_stats = 0
+
+        for source_file in existing_files:
+            with open(source_file, 'r') as f:
+                data = json.load(f)
+
+            admin_codes = data.get('admin_codes', {})
+            if admin_codes:
+                INVITATION_CODES.update(admin_codes)
+                total_admin_codes = len(INVITATION_CODES)
+
+            customer_codes = data.get('customer_codes', {})
+            if customer_codes:
+                CUSTOMER_INVITATIONS.update(customer_codes)
+                total_customer_codes = len(CUSTOMER_INVITATIONS)
+
+            referral_stats = data.get('referral_stats', {})
+            if referral_stats:
+                CUSTOMER_REFERRAL_STATS.update(referral_stats)
+                total_referral_stats = len(CUSTOMER_REFERRAL_STATS)
+
+        if total_admin_codes:
+            print(f"[INVITATIONS] Loaded {total_admin_codes} admin invitation codes")
+        if total_customer_codes:
+            print(f"[INVITATIONS] Loaded {total_customer_codes} customer referral codes")
+        if total_referral_stats:
+            print(f"[INVITATIONS] Loaded referral stats for {total_referral_stats} customers")
+
+        return total_admin_codes + total_customer_codes
         
     except json.JSONDecodeError as e:
         print(f"[INVITATIONS] Error parsing invitation codes file: {e}")
@@ -3293,16 +3399,23 @@ def load_dynamic_customers():
     """
     global USERS, CUSTOMERS, REGISTERED_CUSTOMERS
     
-    seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
-    
     try:
-        if not os.path.exists(seeds_file):
+        seed_files = [
+            LEGACY_DYNAMIC_CUSTOMERS_FILE,
+            RUNTIME_DYNAMIC_CUSTOMERS_FILE,
+        ]
+        existing_seed_files = [path for path in seed_files if os.path.exists(path)]
+        if not existing_seed_files:
             print("[DYNAMIC] No dynamic customers file found")
             return 0
-        
-        with open(seeds_file, 'r') as f:
-            dynamic_customers = json.load(f)
-        
+
+        dynamic_customers = []
+        for seeds_file in existing_seed_files:
+            with open(seeds_file, 'r') as f:
+                file_customers = json.load(f)
+            if isinstance(file_customers, list):
+                dynamic_customers.extend(file_customers)
+
         if not dynamic_customers:
             print("[DYNAMIC] Dynamic customers file is empty")
             return 0
@@ -3315,13 +3428,25 @@ def load_dynamic_customers():
             if not email:
                 continue
             
-            # Skip if already exists
-            if email in USERS:
-                continue
-            
+            def _is_valid_hex_hash(value: str) -> bool:
+                if not value or not isinstance(value, str):
+                    return False
+                placeholder = value.strip().upper()
+                if placeholder in ('REDACTED', 'NONE', 'NULL', ''):
+                    return False
+                try:
+                    bytes.fromhex(value)
+                    return len(value) >= 32
+                except ValueError:
+                    return False
+
             # SECURITY: Check if password is already hashed (new secure format)
-            if 'password_hash' in customer and 'password_salt' in customer:
-                # New format: pre-hashed password
+            if (
+                'password_hash' in customer and
+                'password_salt' in customer and
+                _is_valid_hex_hash(customer['password_hash']) and
+                _is_valid_hex_hash(customer['password_salt'])
+            ):
                 pwd_hash = customer['password_hash']
                 pwd_salt = customer['password_salt']
             elif 'password' in customer:
@@ -3337,19 +3462,25 @@ def load_dynamic_customers():
                 pwd_data = hash_password(secrets.token_urlsafe(32))
                 pwd_hash = pwd_data['hash']
                 pwd_salt = pwd_data['salt']
-            
-            USERS[email] = {
+
+            user_entry = {
                 'hash': pwd_hash,
                 'salt': pwd_salt,
                 'role': 'customer',
                 'name': customer.get('name', email),
                 'customer_id': customer.get('customer_id', f"CUST-{email}")
             }
+
+            # Later files override earlier seed copies so runtime state wins.
+            if email in USERS and not _is_valid_hex_hash(pwd_hash):
+                continue
+
+            USERS[email] = user_entry
             
-            # Also add to CUSTOMERS if customer_id is present
+            # Also sync to in-memory customer stores when customer_id is present.
             customer_id = customer.get('customer_id')
-            if customer_id and customer_id not in CUSTOMERS:
-                CUSTOMERS[customer_id] = {
+            if customer_id:
+                customer_record = {
                     'id': customer_id,
                     'name': customer.get('name', email),
                     'email': email,
@@ -3357,7 +3488,8 @@ def load_dynamic_customers():
                     'registered_at': customer.get('registered_at', datetime.now().isoformat()),
                     'created_date': customer.get('registered_at', datetime.now().isoformat())
                 }
-                REGISTERED_CUSTOMERS[customer_id] = CUSTOMERS[customer_id]
+                CUSTOMERS[customer_id] = customer_record
+                REGISTERED_CUSTOMERS[customer_id] = customer_record
             
             loaded_count += 1
         
@@ -22426,7 +22558,7 @@ For claims or questions, please contact:
                 import traceback
                 traceback.print_exc()
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Internal server error', 'debug': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
             return
         
         # Session Validation Endpoint (POST) - validates token and returns user info
@@ -22739,7 +22871,14 @@ For claims or questions, please contact:
                 # Persist all state
                 save_ledger_data()
                 save_invitation_codes_to_file()
-                append_customer_to_seeds(email, password, name, customer_id, registration_date)
+                append_customer_to_seeds(
+                    email,
+                    pwd_hash['hash'],
+                    pwd_hash['salt'],
+                    name,
+                    customer_id,
+                    registration_date,
+                )
 
                 # Best-effort branded welcome communication package
                 welcome_notification_sent = False

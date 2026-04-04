@@ -27,17 +27,6 @@ from collections import defaultdict
 import logging
 
 logger = logging.getLogger('phins.bi_analytics')
-PHINS BI and Statistical Analytics Service
-Comprehensive Business Intelligence and Statistical Analysis for:
-- System optimization
-- Performance metrics
-- Predictive analytics
-- Trend analysis
-- KPI monitoring
-- Community/Foundation analytics
-
-Provides AI-driven insights for decision making across the platform.
-"""
 
 import json
 import math
@@ -155,7 +144,7 @@ class BIAnalyticsService:
         
         logger.info("BI Analytics Service initialized")
     
-    def get_executive_dashboard(
+    def _get_executive_dashboard_parametric(
         self,
         customers: Dict[str, Any],
         policies: Dict[str, Any],
@@ -290,16 +279,8 @@ class BIAnalyticsService:
             },
             'supplier_metrics': supplier_metrics,
             'delivery_metrics': delivery_metrics,
-    Comprehensive BI and Statistical Analytics Service.
-    
-    Provides:
-    - Real-time KPI monitoring
-    - Trend analysis
-    - Predictive analytics
-    - System optimization recommendations
-    - Community/Foundation analytics
-    - Financial performance tracking
-    """
+        }
+        return dashboard
     
     def __init__(self,
                  customers: Dict = None,
@@ -412,12 +393,35 @@ class BIAnalyticsService:
     # CORE KPI DASHBOARD
     # =========================================================================
     
-    def get_executive_dashboard(self) -> Dict[str, Any]:
+    def get_executive_dashboard(
+        self,
+        customers: Optional[Dict[str, Any]] = None,
+        policies: Optional[Dict[str, Any]] = None,
+        claims: Optional[Dict[str, Any]] = None,
+        billing: Optional[Dict[str, Any]] = None,
+        balance_sheet: Optional[Dict[str, Any]] = None,
+        suppliers: Optional[Dict[str, Any]] = None,
+        deliveries: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Get executive-level dashboard with key metrics.
         
         Returns comprehensive view of platform health and performance.
         """
+        if all(
+            dataset is not None
+            for dataset in (customers, policies, claims, billing, balance_sheet)
+        ):
+            return self._get_executive_dashboard_parametric(
+                customers=customers or {},
+                policies=policies or {},
+                claims=claims or {},
+                billing=billing or {},
+                balance_sheet=balance_sheet or {},
+                suppliers=suppliers or self.suppliers,
+                deliveries=deliveries or self.delivery_requests,
+            )
+
         now = datetime.now(timezone.utc)
         
         dashboard = {
@@ -468,6 +472,203 @@ class BIAnalyticsService:
         }
         
         return dashboard
+
+    def _get_financial_kpis(self) -> List[Dict[str, Any]]:
+        """Build a compact financial KPI set from stored data."""
+        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
+        active_premium = sum(
+            float(p.get('annual_premium', 0) or 0)
+            for p in self.policies.values()
+            if str(p.get('status', '')).lower() == 'active'
+        )
+        total_claims_paid = sum(
+            float(c.get('approved_amount', c.get('paid_amount', 0)) or 0)
+            for c in self.claims.values()
+            if str(c.get('status', '')).lower() in {'approved', 'paid', 'closed'}
+        )
+        loss_ratio = round((total_claims_paid / total_premium * 100) if total_premium > 0 else 0, 2)
+
+        return [
+            {
+                'name': 'Total Premium Revenue',
+                'category': 'financial',
+                'value': round(total_premium, 2),
+                'unit': 'currency',
+            },
+            {
+                'name': 'Active Premium Revenue',
+                'category': 'financial',
+                'value': round(active_premium, 2),
+                'unit': 'currency',
+            },
+            {
+                'name': 'Claims Paid',
+                'category': 'financial',
+                'value': round(total_claims_paid, 2),
+                'unit': 'currency',
+            },
+            {
+                'name': 'Loss Ratio',
+                'category': 'financial',
+                'value': loss_ratio,
+                'unit': 'percentage',
+            },
+        ]
+
+    def _get_operational_kpis(self) -> List[Dict[str, Any]]:
+        """Build operational KPI values from stored policies and claims."""
+        active_policies = sum(
+            1 for policy in self.policies.values()
+            if str(policy.get('status', '')).lower() == 'active'
+        )
+        claims_by_status = defaultdict(int)
+        for claim in self.claims.values():
+            claims_by_status[str(claim.get('status', 'unknown')).lower()] += 1
+
+        return [
+            {
+                'name': 'Active Policies',
+                'category': 'operational',
+                'value': active_policies,
+                'unit': 'count',
+            },
+            {
+                'name': 'Total Claims',
+                'category': 'operational',
+                'value': len(self.claims),
+                'unit': 'count',
+            },
+            {
+                'name': 'Approved Claims',
+                'category': 'operational',
+                'value': claims_by_status.get('approved', 0) + claims_by_status.get('paid', 0),
+                'unit': 'count',
+            },
+        ]
+
+    def _get_customer_kpis(self) -> List[Dict[str, Any]]:
+        """Build customer KPI values from stored customer and wallet data."""
+        active_customers = sum(
+            1 for customer in self.customers.values()
+            if str(customer.get('status', 'active')).lower() == 'active'
+        )
+        wallet_total = sum(float(wallet.get('balance', 0) or 0) for wallet in self.health_wallets.values())
+
+        return [
+            {
+                'name': 'Total Customers',
+                'category': 'customer',
+                'value': len(self.customers),
+                'unit': 'count',
+            },
+            {
+                'name': 'Active Customers',
+                'category': 'customer',
+                'value': active_customers,
+                'unit': 'count',
+            },
+            {
+                'name': 'Wallet Balance',
+                'category': 'customer',
+                'value': round(wallet_total, 2),
+                'unit': 'currency',
+            },
+        ]
+
+    def _calculate_platform_health_score(self) -> float:
+        """Return a lightweight overall platform health score."""
+        score = 40.0
+        if self.customers:
+            score += min(20.0, len(self.customers) * 10.0)
+        if self.policies:
+            active_ratio = sum(
+                1 for policy in self.policies.values()
+                if str(policy.get('status', '')).lower() == 'active'
+            ) / max(len(self.policies), 1)
+            score += active_ratio * 20.0
+        if self.suppliers:
+            approved_ratio = sum(
+                1 for supplier in self.suppliers.values()
+                if str(supplier.get('status', '')).lower() == 'approved'
+            ) / max(len(self.suppliers), 1)
+            score += approved_ratio * 20.0
+        return round(min(100.0, max(0.0, score)), 2)
+
+    def _generate_insights(self) -> List[Dict[str, Any]]:
+        """Generate summary insights for dashboard rendering."""
+        insights: List[Dict[str, Any]] = []
+        if self.policies:
+            insights.append({
+                'title': 'Policy portfolio active',
+                'description': f'{len(self.policies)} policies are being tracked for analytics.',
+                'severity': 'info',
+            })
+        if self.claims:
+            insights.append({
+                'title': 'Claims activity detected',
+                'description': f'{len(self.claims)} claims contribute to operational KPIs.',
+                'severity': 'info',
+            })
+        return insights
+
+    def _generate_alerts(self) -> List[Dict[str, Any]]:
+        """Generate lightweight alert list for dashboard consumers."""
+        alerts: List[Dict[str, Any]] = []
+        pending_claims = sum(
+            1 for claim in self.claims.values()
+            if str(claim.get('status', '')).lower() == 'pending'
+        )
+        if pending_claims:
+            alerts.append({
+                'severity': 'warning',
+                'message': f'{pending_claims} claims are still pending review.',
+            })
+        return alerts
+
+    def get_premium_statistics(self) -> Dict[str, Any]:
+        """Return summary statistics for premium fields."""
+        annual_premiums = [float(p.get('annual_premium', 0) or 0) for p in self.policies.values()]
+        monthly_premiums = [float(p.get('monthly_premium', 0) or 0) for p in self.policies.values()]
+
+        return {
+            'annual_premium': self._calculate_statistics(annual_premiums).to_dict(),
+            'monthly_premium': self._calculate_statistics(monthly_premiums).to_dict(),
+        }
+
+    def get_claims_statistics(self) -> Dict[str, Any]:
+        """Return summary statistics for claims plus status totals."""
+        claimed_amounts = [float(c.get('claimed_amount', 0) or 0) for c in self.claims.values()]
+        by_status = defaultdict(int)
+        for claim in self.claims.values():
+            by_status[str(claim.get('status', 'unknown')).lower()] += 1
+
+        return {
+            'total_claims': len(self.claims),
+            'claimed_amounts': self._calculate_statistics(claimed_amounts).to_dict(),
+            'by_status': dict(by_status),
+        }
+
+    def get_optimization_recommendations(self) -> List[Dict[str, Any]]:
+        """Return actionable optimization recommendations."""
+        recommendations = [
+            {
+                'area': 'customer_engagement',
+                'priority': 'medium',
+                'recommendation': 'Increase wallet and account adoption tracking for active customers.',
+            },
+            {
+                'area': 'claims_operations',
+                'priority': 'medium',
+                'recommendation': 'Review pending claims regularly to keep operational metrics healthy.',
+            },
+        ]
+        if self.suppliers:
+            recommendations.append({
+                'area': 'supplier_network',
+                'priority': 'low',
+                'recommendation': 'Use supplier analytics to identify top performers and improve allocation.',
+            })
+        return recommendations
     
     def get_delivery_analytics(
         self,
@@ -674,9 +875,9 @@ class BIAnalyticsService:
     
     def get_supplier_analytics(
         self,
-        suppliers: Dict[str, Any],
-        supplier_orders: Dict[str, Any],
-        supplier_metrics: Dict[str, Any]
+        suppliers: Optional[Dict[str, Any]] = None,
+        supplier_orders: Optional[Dict[str, Any]] = None,
+        supplier_metrics: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Analyze supplier ecosystem performance.
@@ -684,6 +885,19 @@ class BIAnalyticsService:
         Returns:
             Supplier analytics and performance metrics
         """
+        suppliers = suppliers or self.suppliers
+        supplier_orders = supplier_orders or self.supplier_orders
+        supplier_metrics = supplier_metrics or {}
+
+        if not supplier_metrics and suppliers:
+            for supplier_id, supplier in suppliers.items():
+                supplier_metrics[supplier_id] = {
+                    'rating': float(supplier.get('average_rating', supplier.get('rating', 0)) or 0),
+                    'total_revenue': float(supplier.get('total_revenue', 0) or 0),
+                    'total_deliveries': int(supplier.get('total_orders', 0) or 0),
+                    'reliability_score': float(supplier.get('reliability_score', 0) or 0),
+                }
+
         total_suppliers = len(suppliers)
         
         # Status breakdown
@@ -695,10 +909,10 @@ class BIAnalyticsService:
         active_suppliers = status_breakdown.get('approved', 0)
         pending_suppliers = status_breakdown.get('pending', 0)
         
-        # Category breakdown
+        # Type breakdown
         category_breakdown = defaultdict(int)
         for supplier in suppliers.values():
-            category = supplier.get('category', 'unknown')
+            category = supplier.get('supplier_type', supplier.get('type', supplier.get('category', 'unknown')))
             category_breakdown[category] += 1
         
         # Order analytics
@@ -737,6 +951,11 @@ class BIAnalyticsService:
         ]
         
         return {
+            'total_suppliers': total_suppliers,
+            'by_status': dict(status_breakdown),
+            'by_type': dict(category_breakdown),
+            'total_orders': total_orders,
+            'total_order_value': round(total_order_value, 2),
             'summary': {
                 'total_suppliers': total_suppliers,
                 'active_suppliers': active_suppliers,
@@ -962,4 +1181,11 @@ def get_bi_analytics_service() -> BIAnalyticsService:
     global _bi_analytics_service
     if _bi_analytics_service is None:
         _bi_analytics_service = BIAnalyticsService()
+    return _bi_analytics_service
+
+
+def init_bi_analytics_service(**kwargs) -> BIAnalyticsService:
+    """Initialize BI analytics service with explicit data stores."""
+    global _bi_analytics_service
+    _bi_analytics_service = BIAnalyticsService(**kwargs)
     return _bi_analytics_service

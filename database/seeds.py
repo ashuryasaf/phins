@@ -28,8 +28,13 @@ from database.repositories import UserRepository
 
 logger = logging.getLogger(__name__)
 
-# Path to dynamic customers file (created by registration)
-DYNAMIC_CUSTOMERS_FILE = os.path.join(os.path.dirname(__file__), 'dynamic_customers.json')
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LEGACY_DYNAMIC_CUSTOMERS_FILE = os.path.join(os.path.dirname(__file__), 'dynamic_customers.json')
+RUNTIME_DYNAMIC_CUSTOMERS_FILE = os.path.join(
+    os.environ.get('WORKSPACE_PATH') or PROJECT_ROOT,
+    'data',
+    'dynamic_customers_runtime.json',
+)
 
 
 def hash_password(password: str) -> dict:
@@ -56,6 +61,46 @@ def _get_env_password(env_var: str, username: str) -> str:
     else:
         logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
         return secrets.token_urlsafe(32)  # Random password that cannot be guessed
+
+
+def _is_valid_hex_hash(value: str) -> bool:
+    """Return True when value looks like a stored credential hash/salt."""
+    if not value or not isinstance(value, str):
+        return False
+    placeholder = value.strip().upper()
+    if placeholder in ('REDACTED', 'NONE', 'NULL', ''):
+        return False
+    try:
+        bytes.fromhex(value)
+        return len(value) >= 32
+    except ValueError:
+        return False
+
+
+def _load_dynamic_customer_records() -> list[dict]:
+    """Load legacy seed data first, then runtime overrides."""
+    records: list[dict] = []
+    source_files = [
+        LEGACY_DYNAMIC_CUSTOMERS_FILE,
+        RUNTIME_DYNAMIC_CUSTOMERS_FILE,
+    ]
+    for source_file in source_files:
+        if not os.path.exists(source_file):
+            continue
+        with open(source_file, 'r') as f:
+            payload = json.load(f)
+        if isinstance(payload, list):
+            records.extend(payload)
+
+    deduped_records: dict[str, dict] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        identifier = record.get('username') or record.get('email')
+        if not identifier:
+            continue
+        deduped_records[str(identifier).strip().lower()] = record
+    return list(deduped_records.values())
 
 
 def seed_default_users(session=None):
@@ -207,13 +252,7 @@ def seed_default_users(session=None):
 def seed_dynamic_customers(session, user_repo):
     """Load dynamically registered customers from JSON file"""
     try:
-        if not os.path.exists(DYNAMIC_CUSTOMERS_FILE):
-            logger.info("No dynamic customers file found, skipping...")
-            return
-        
-        with open(DYNAMIC_CUSTOMERS_FILE, 'r') as f:
-            dynamic_customers = json.load(f)
-        
+        dynamic_customers = _load_dynamic_customer_records()
         if not dynamic_customers:
             logger.info("Dynamic customers file is empty")
             return
@@ -229,9 +268,17 @@ def seed_dynamic_customers(session, user_repo):
                 logger.info(f"Dynamic customer '{username}' already exists, skipping...")
                 continue
             
-            # Hash password - use env var for default or generate random
-            default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
-            password_hash = hash_password(customer.get('password', default_cust_pwd))
+            if (
+                _is_valid_hex_hash(customer.get('password_hash', '')) and
+                _is_valid_hex_hash(customer.get('password_salt', ''))
+            ):
+                password_hash = {
+                    'hash': customer['password_hash'],
+                    'salt': customer['password_salt'],
+                }
+            else:
+                default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+                password_hash = hash_password(customer.get('password', default_cust_pwd))
             
             # Create user
             user_repo.create(
