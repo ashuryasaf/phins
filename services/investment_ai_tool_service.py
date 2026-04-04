@@ -106,6 +106,33 @@ def _get_live_gainers_losers() -> Optional[Dict[str, Any]]:
         return None
 
 
+def _get_live_weekly(symbol: str) -> Optional[Dict[str, Any]]:
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_weekly(symbol)
+    except Exception:
+        return None
+
+
+def _get_live_intraday(symbol: str, interval: str = "5min") -> Optional[Dict[str, Any]]:
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_intraday(symbol, interval=interval)
+    except Exception:
+        return None
+
+
+def _get_live_company_overview(symbol: str) -> Optional[Dict[str, Any]]:
+    if not LIVE_DATA_AVAILABLE or not _av_service:
+        return None
+    try:
+        return _av_service.get_company_overview(symbol)
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Access control: single-user API key
 # ---------------------------------------------------------------------------
@@ -1510,6 +1537,23 @@ AVAILABLE_MODULES = {
         "handler": "get_market_movers",
         "requires_live": True,
     },
+    "deep_dive": {
+        "name": "Deep Dive Analysis",
+        "description": "Full stock analysis: multi-timeframe charts (1D-5Y), technicals, fundamentals, signals.",
+        "handler": "deep_dive_analysis",
+        "requires_live": True,
+    },
+    "compare_stocks": {
+        "name": "Stock Comparison",
+        "description": "Compare 2-5 stocks side-by-side: performance, fundamentals, normalized charts.",
+        "handler": "compare_stocks",
+        "requires_live": True,
+    },
+    "algo_bridge": {
+        "name": "Algo-Investment Bridge",
+        "description": "Bridge AI analysis to algo trading: signals, allocation, strategy recommendations.",
+        "handler": "algo_investment_bridge",
+    },
 }
 
 
@@ -1610,6 +1654,268 @@ def _get_fallback_movers() -> Dict[str, Any]:
         return {"top_gainers": [], "top_losers": [], "most_actively_traded": []}
 
 
+# ===================================================================
+# MODULE: Deep Dive Stock Analysis (multi-timeframe + full profile)
+# ===================================================================
+
+def deep_dive_analysis(symbol: str = "AAPL", timeframe: str = "1M") -> Dict[str, Any]:
+    """
+    Comprehensive single-stock deep dive: quote, fundamentals, technicals,
+    multi-timeframe price data, and AI trading signals.
+    """
+    sym = symbol.upper()
+
+    quote = _get_live_quote(sym)
+    overview = _get_live_company_overview(sym)
+    technical = _get_live_technical_profile(sym)
+    news = _get_live_news(sym)
+
+    TIMEFRAME_MAP = {
+        "1D": ("intraday", "5min", 78),
+        "1W": ("intraday", "60min", 35),
+        "1M": ("daily", None, 22),
+        "3M": ("daily", None, 65),
+        "1Y": ("daily", None, 252),
+        "5Y": ("weekly", None, 260),
+    }
+    series_type, interval, bar_limit = TIMEFRAME_MAP.get(timeframe, ("daily", None, 22))
+
+    bars = []
+    if series_type == "intraday" and interval:
+        data = _get_live_intraday(sym, interval)
+        if data:
+            bars = data.get("bars", [])[:bar_limit]
+    elif series_type == "weekly":
+        data = _get_live_weekly(sym)
+        if data:
+            bars = data.get("bars", [])[:bar_limit]
+    else:
+        data = _get_live_daily(sym)
+        if data:
+            bars = data.get("bars", [])[:bar_limit]
+
+    static = STOCK_DATABASE.get(sym, {})
+    price = (quote or {}).get("price") or static.get("price")
+    name = (overview or {}).get("name") or static.get("name", sym)
+
+    signals = {}
+    if technical and technical.get("signals"):
+        signals = technical["signals"]
+
+    result = {
+        "module": "deep_dive",
+        "data_source": "live" if quote else "static",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "symbol": sym,
+        "name": name,
+        "timeframe": timeframe,
+        "price": price,
+        "change_percent": (quote or {}).get("change_percent"),
+        "previous_close": (quote or {}).get("previous_close"),
+        "volume": (quote or {}).get("volume") or static.get("volume"),
+        "overview": {
+            "sector": (overview or {}).get("sector") or static.get("sector"),
+            "industry": (overview or {}).get("industry"),
+            "market_cap": (overview or {}).get("market_cap"),
+            "pe_ratio": (overview or {}).get("pe_ratio") or static.get("pe"),
+            "forward_pe": (overview or {}).get("forward_pe"),
+            "eps": (overview or {}).get("eps") or static.get("eps"),
+            "dividend_yield": (overview or {}).get("dividend_yield") or static.get("dividend_yield"),
+            "beta": (overview or {}).get("beta") or static.get("beta"),
+            "52_week_high": (overview or {}).get("52_week_high"),
+            "52_week_low": (overview or {}).get("52_week_low"),
+            "analyst_target": (overview or {}).get("analyst_target_price"),
+            "profit_margin": (overview or {}).get("profit_margin"),
+            "return_on_equity": (overview or {}).get("return_on_equity"),
+        },
+        "technicals": {
+            "rsi": ((technical or {}).get("indicators", {}).get("rsi", {}) or {}).get("value"),
+            "sma_50": ((technical or {}).get("indicators", {}).get("sma_50", {}) or {}).get("value"),
+            "sma_200": ((technical or {}).get("indicators", {}).get("sma_200", {}) or {}).get("value"),
+            "macd": (technical or {}).get("indicators", {}).get("macd", {}),
+            "bollinger_bands": (technical or {}).get("indicators", {}).get("bollinger_bands", {}),
+            "adx": ((technical or {}).get("indicators", {}).get("adx", {}) or {}).get("value"),
+            "atr": ((technical or {}).get("indicators", {}).get("atr", {}) or {}).get("value"),
+        },
+        "signals": signals,
+        "chart_data": {
+            "timeframe": timeframe,
+            "bars": bars,
+            "bar_count": len(bars),
+        },
+        "news": (news or {}).get("articles", [])[:5],
+        "available_timeframes": ["1D", "1W", "1M", "3M", "1Y", "5Y"],
+    }
+    return result
+
+
+# ===================================================================
+# MODULE: Stock Comparison (side-by-side multi-stock)
+# ===================================================================
+
+def compare_stocks(symbols: str = "AAPL,MSFT", timeframe: str = "1M") -> Dict[str, Any]:
+    """
+    Compare 2-5 stocks side-by-side: price performance, fundamentals, and
+    normalized chart data for overlay comparison.
+    """
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:5]
+    if len(sym_list) < 2:
+        return {"module": "compare_stocks", "error": "Provide at least 2 comma-separated symbols."}
+
+    TIMEFRAME_MAP = {
+        "1D": ("daily", 1), "1W": ("daily", 5), "1M": ("daily", 22),
+        "3M": ("daily", 65), "1Y": ("daily", 252), "5Y": ("daily", 252),
+    }
+    _, bar_limit = TIMEFRAME_MAP.get(timeframe, ("daily", 22))
+
+    stocks = []
+    for sym in sym_list:
+        quote = _get_live_quote(sym)
+        overview = _get_live_company_overview(sym)
+        static = STOCK_DATABASE.get(sym, {})
+        daily = _get_live_daily(sym)
+        bars = (daily or {}).get("bars", [])[:bar_limit] if daily else []
+
+        price = (quote or {}).get("price") or static.get("price")
+        first_price = bars[-1]["close"] if bars and bars[-1].get("close") else price
+
+        perf_pct = round(((price - first_price) / first_price) * 100, 2) if price and first_price and first_price > 0 else 0
+
+        normalized = []
+        if bars and first_price and first_price > 0:
+            for b in reversed(bars):
+                normalized.append({
+                    "date": b["date"],
+                    "value": round(((b["close"] or 0) / first_price - 1) * 100, 2),
+                })
+
+        stocks.append({
+            "symbol": sym,
+            "name": (overview or {}).get("name") or static.get("name", sym),
+            "price": price,
+            "change_percent": (quote or {}).get("change_percent"),
+            "period_return": perf_pct,
+            "pe_ratio": (overview or {}).get("pe_ratio") or static.get("pe"),
+            "market_cap": (overview or {}).get("market_cap") or static.get("market_cap"),
+            "dividend_yield": (overview or {}).get("dividend_yield") or static.get("dividend_yield"),
+            "beta": (overview or {}).get("beta") or static.get("beta"),
+            "eps": (overview or {}).get("eps") or static.get("eps"),
+            "sector": (overview or {}).get("sector") or static.get("sector"),
+            "chart_data": normalized,
+            "bar_count": len(bars),
+        })
+
+    return {
+        "module": "compare_stocks",
+        "data_source": "live" if LIVE_DATA_AVAILABLE else "static",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timeframe": timeframe,
+        "stocks": stocks,
+        "available_timeframes": ["1D", "1W", "1M", "3M", "1Y", "5Y"],
+    }
+
+
+# ===================================================================
+# MODULE: Algo-Investment Bridge (trade from AI analysis)
+# ===================================================================
+
+def algo_investment_bridge(
+    action: str = "status",
+    symbol: str = "",
+    amount: float = 0,
+    strategy: str = "momentum",
+    customer_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Bridge between Investment AI analysis and algo trading / portfolio execution.
+    Actions: status, signal, recommend_allocation
+    """
+    result: Dict[str, Any] = {
+        "module": "algo_bridge",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+    }
+
+    if action == "signal" and symbol:
+        sym = symbol.upper()
+        profile = _get_live_technical_profile(sym)
+        signals = (profile or {}).get("signals", {})
+        quote = _get_live_quote(sym)
+        static = STOCK_DATABASE.get(sym, {})
+
+        recommendation = signals.get("recommendation", "HOLD")
+        algo_action = "buy" if "BUY" in recommendation else ("sell" if "SELL" in recommendation else "hold")
+
+        result["symbol"] = sym
+        result["price"] = (quote or {}).get("price") or static.get("price")
+        result["ai_recommendation"] = recommendation
+        result["composite_score"] = signals.get("composite_score", 0)
+        result["signal_details"] = signals.get("details", [])
+        result["suggested_algo_action"] = algo_action
+        result["suggested_strategies"] = _suggest_strategies(signals)
+        result["risk_assessment"] = _assess_trade_risk(sym, signals, static)
+
+    elif action == "recommend_allocation":
+        result["portfolio_recommendations"] = [
+            {"category": "Index Funds", "allocation": "40-50%", "rationale": "Core stability from broad market exposure", "suggested": ["SPY", "QQQ", "VTI"]},
+            {"category": "Growth Stocks", "allocation": "20-30%", "rationale": "Higher return potential from AI/tech leaders", "suggested": ["NVDA", "MSFT", "GOOGL"]},
+            {"category": "Bonds/Fixed Income", "allocation": "10-20%", "rationale": "Downside protection and income", "suggested": ["BND", "TLT", "LQD"]},
+            {"category": "Crypto", "allocation": "5-10%", "rationale": "Alternative asset diversification", "suggested": ["BTC", "ETH"]},
+            {"category": "Dividend", "allocation": "10-15%", "rationale": "Steady income stream", "suggested": ["JNJ", "O", "NEE"]},
+        ]
+        result["algo_strategies"] = [
+            {"strategy": "momentum", "best_for": "Trending markets, strong directional moves"},
+            {"strategy": "mean_reversion", "best_for": "Range-bound markets, oversold recoveries"},
+            {"strategy": "trend_following", "best_for": "Long-term trends, lower frequency"},
+            {"strategy": "dca", "best_for": "Regular contributions, averaging into positions"},
+        ]
+
+    else:
+        result["bridge_status"] = "active"
+        result["capabilities"] = [
+            "Generate AI trading signals for any stock",
+            "Get portfolio allocation recommendations",
+            "Cross-reference algo strategies with AI analysis",
+            "Risk assessment for trade decisions",
+        ]
+        result["usage"] = {
+            "signal": "Set action=signal, symbol=AAPL to get AI trading signal",
+            "allocate": "Set action=recommend_allocation for portfolio split advice",
+        }
+
+    return result
+
+
+def _suggest_strategies(signals: Dict) -> List[Dict[str, str]]:
+    score = signals.get("composite_score", 0)
+    details = signals.get("details", [])
+    has_trend = any("trend" in str(d.get("signal", "")).lower() for d in details)
+    has_oversold = any("oversold" in str(d.get("signal", "")).lower() for d in details)
+
+    strategies = []
+    if score >= 2 and has_trend:
+        strategies.append({"strategy": "trend_following", "confidence": "high", "reason": "Strong trend confirmed by multiple indicators"})
+    if score >= 1:
+        strategies.append({"strategy": "momentum", "confidence": "medium", "reason": "Positive momentum detected"})
+    if has_oversold:
+        strategies.append({"strategy": "mean_reversion", "confidence": "medium", "reason": "Oversold conditions suggest bounce potential"})
+    strategies.append({"strategy": "dca", "confidence": "always", "reason": "Dollar-cost averaging is always appropriate for long-term positions"})
+    return strategies
+
+
+def _assess_trade_risk(sym: str, signals: Dict, static: Dict) -> Dict[str, Any]:
+    score = signals.get("composite_score", 0)
+    beta = static.get("beta", 1.0) or 1.0
+    risk_level = "low" if abs(score) <= 1 and beta < 1.0 else ("high" if abs(score) >= 3 or beta > 1.5 else "medium")
+    return {
+        "risk_level": risk_level,
+        "beta": beta,
+        "signal_strength": abs(score),
+        "max_suggested_allocation": "2%" if risk_level == "high" else ("5%" if risk_level == "medium" else "8%"),
+        "stop_loss_suggestion": f"{max(2, round(beta * 3, 1))}% below entry",
+    }
+
+
 def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Central dispatcher for all Investment AI modules.
@@ -1629,6 +1935,9 @@ def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any
         "live_history": get_live_stock_history,
         "news_sentiment": get_news_analysis,
         "market_movers": get_market_movers,
+        "deep_dive": deep_dive_analysis,
+        "compare_stocks": compare_stocks,
+        "algo_bridge": algo_investment_bridge,
     }
 
     handler = handlers.get(module)
@@ -1654,7 +1963,7 @@ def get_modules_catalog() -> Dict[str, Any]:
     """Return the catalog of available AI modules."""
     return {
         "tool": "PHINS Investment AI",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "live_data": LIVE_DATA_AVAILABLE,
         "data_provider": "Alpha Vantage" if LIVE_DATA_AVAILABLE else "Static",
         "modules": AVAILABLE_MODULES,

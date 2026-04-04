@@ -630,7 +630,22 @@
         <div class="module-card" data-module="market_movers" onclick="selectModule('market_movers')" style="border-color:rgba(16,185,129,0.4);">
             <div class="module-icon" style="background:linear-gradient(135deg,#10b981,#059669);">TOP</div>
             <h3>Market Movers</h3>
-            <p>Top gainers, losers, and most actively traded stocks right now.</p>
+            <p>Top gainers, losers, and most active. Click any stock for deep analysis.</p>
+        </div>
+        <div class="module-card" data-module="deep_dive" onclick="selectModule('deep_dive')" style="border-color:rgba(251,191,36,0.5);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">DIVE</div>
+            <h3>Deep Dive Analysis</h3>
+            <p>Full stock analysis: multi-timeframe charts (1D to 5Y), technicals, fundamentals, AI signals.</p>
+        </div>
+        <div class="module-card" data-module="compare_stocks" onclick="selectModule('compare_stocks')" style="border-color:rgba(251,191,36,0.5);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#8b5cf6,#6366f1);">VS</div>
+            <h3>Stock Comparison</h3>
+            <p>Compare 2-5 stocks: normalized performance chart, fundamentals, side-by-side.</p>
+        </div>
+        <div class="module-card" data-module="algo_bridge" onclick="selectModule('algo_bridge')" style="border-color:rgba(251,191,36,0.5);">
+            <div class="module-icon" style="background:linear-gradient(135deg,#f97316,#ea580c);">ALGO</div>
+            <h3>Algo-Investment Bridge</h3>
+            <p>Connect AI analysis to algo trading: signals, allocation, strategy recommendations.</p>
         </div>
     </div>
 
@@ -724,6 +739,18 @@ const MODULE_PARAMS = {
         { id: 'tickers', label: 'Tickers (optional)', type: 'text', placeholder: 'e.g. AAPL or AAPL,TSLA' },
     ],
     market_movers: [],
+    deep_dive: [
+        { id: 'symbol', label: 'Stock / Bond / Crypto Symbol', type: 'text', placeholder: 'e.g. AAPL, MSFT, NVDA, BTC' },
+        { id: 'timeframe', label: 'Timeframe', type: 'select', options: ['1M','1D','1W','3M','1Y','5Y'] },
+    ],
+    compare_stocks: [
+        { id: 'symbols', label: 'Symbols to Compare (comma-separated)', type: 'text', placeholder: 'e.g. AAPL,MSFT,GOOGL' },
+        { id: 'timeframe', label: 'Timeframe', type: 'select', options: ['1M','1D','1W','3M','1Y','5Y'] },
+    ],
+    algo_bridge: [
+        { id: 'action', label: 'Action', type: 'select', options: ['status','signal','recommend_allocation'] },
+        { id: 'symbol', label: 'Symbol (for signal action)', type: 'text', placeholder: 'e.g. AAPL' },
+    ],
 };
 
 const MODULE_NAMES = {
@@ -741,6 +768,9 @@ const MODULE_NAMES = {
     live_history: 'Historical Price Data (Alpha Vantage)',
     news_sentiment: 'News & Sentiment Analysis (Alpha Vantage)',
     market_movers: 'Market Movers (Alpha Vantage)',
+    deep_dive: 'Deep Dive Stock Analysis',
+    compare_stocks: 'Stock Comparison',
+    algo_bridge: 'Algo-Investment Bridge',
 };
 
 if (apiKey) {
@@ -1055,6 +1085,12 @@ function renderResults(data) {
         html += renderNewsSentiment(data);
     } else if (currentModule === 'market_movers') {
         html += renderMarketMovers(data);
+    } else if (currentModule === 'deep_dive') {
+        html += renderDeepDive(data);
+    } else if (currentModule === 'compare_stocks') {
+        html += renderCompareStocks(data);
+    } else if (currentModule === 'algo_bridge') {
+        html += renderAlgoBridge(data);
     } else {
         html += renderGeneric(data);
     }
@@ -1440,23 +1476,318 @@ function renderNewsSentiment(d) {
 
 function renderMarketMovers(d) {
     if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
-    let html = '';
+    let html = '<div style="margin-bottom:0.75rem;font-size:0.82rem;color:var(--text-secondary);">Click any ticker for full Deep Dive analysis</div>';
+    function tickerLink(t) { return `<strong style="cursor:pointer;color:var(--gold);text-decoration:underline;" onclick="launchDeepDive('${t}')">${t}</strong>`; }
     if (d.top_gainers && d.top_gainers.length) {
-        html += '<div class="result-section"><h4 style="color:var(--success);">Top Gainers</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>% Change</th><th>Volume</th></tr></thead><tbody>';
-        d.top_gainers.forEach(g => { html += `<tr><td><strong>${g.ticker}</strong></td><td>$${g.price}</td><td class="value positive">+$${g.change_amount}</td><td class="value positive">+${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td></tr>`; });
+        html += '<div class="result-section"><h4 style="color:var(--success);">Top Gainers</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>% Change</th><th>Volume</th><th></th></tr></thead><tbody>';
+        d.top_gainers.forEach(g => { html += `<tr><td>${tickerLink(g.ticker)}</td><td>$${g.price}</td><td class="value positive">+$${g.change_amount}</td><td class="value positive">+${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td><td><button class="btn-watch" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="addToWatchlist('${g.ticker}')">+</button></td></tr>`; });
         html += '</tbody></table></div></div>';
     }
     if (d.top_losers && d.top_losers.length) {
-        html += '<div class="result-section"><h4 style="color:var(--danger);">Top Losers</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>% Change</th><th>Volume</th></tr></thead><tbody>';
-        d.top_losers.forEach(g => { html += `<tr><td><strong>${g.ticker}</strong></td><td>$${g.price}</td><td class="value negative">-$${Math.abs(parseFloat(g.change_amount || 0)).toFixed(2)}</td><td class="value negative">${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td></tr>`; });
+        html += '<div class="result-section"><h4 style="color:var(--danger);">Top Losers</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>% Change</th><th>Volume</th><th></th></tr></thead><tbody>';
+        d.top_losers.forEach(g => { html += `<tr><td>${tickerLink(g.ticker)}</td><td>$${g.price}</td><td class="value negative">-$${Math.abs(parseFloat(g.change_amount || 0)).toFixed(2)}</td><td class="value negative">${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td><td><button class="btn-watch" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="addToWatchlist('${g.ticker}')">+</button></td></tr>`; });
         html += '</tbody></table></div></div>';
     }
     if (d.most_actively_traded && d.most_actively_traded.length) {
-        html += '<div class="result-section"><h4>Most Active</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Volume</th></tr></thead><tbody>';
-        d.most_actively_traded.forEach(g => { html += `<tr><td><strong>${g.ticker}</strong></td><td>$${g.price}</td><td>${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td></tr>`; });
+        html += '<div class="result-section"><h4>Most Active</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Volume</th><th></th></tr></thead><tbody>';
+        d.most_actively_traded.forEach(g => { html += `<tr><td>${tickerLink(g.ticker)}</td><td>$${g.price}</td><td>${g.change_percentage}</td><td>${parseInt(g.volume || 0).toLocaleString()}</td><td><button class="btn-watch" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="addToWatchlist('${g.ticker}')">+</button></td></tr>`; });
         html += '</tbody></table></div></div>';
     }
+    html += renderWatchlistPanel();
     return html || '<div class="result-section"><p>No market mover data available.</p></div>';
+}
+
+function launchDeepDive(symbol) {
+    selectModule('deep_dive');
+    setTimeout(() => {
+        const symInput = document.getElementById('param_symbol');
+        if (symInput) symInput.value = symbol;
+        runAnalysis();
+    }, 100);
+}
+
+function renderDeepDive(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    const sig = d.signals || {};
+    const rec = sig.recommendation || 'HOLD';
+    const recClass = rec.includes('BUY') ? 'buy' : (rec.includes('SELL') ? 'sell' : 'hold');
+    const ov = d.overview || {};
+    const tech = d.technicals || {};
+    const bars = (d.chart_data || {}).bars || [];
+
+    // Timeframe selector buttons
+    let html = `<div class="result-section" style="text-align:center;padding:1.5rem;">
+        <h4>${d.symbol} — ${d.name || ''}</h4>
+        <div style="font-size:2.2rem;font-weight:700;margin:0.5rem 0;">$${d.price || 'N/A'}</div>
+        <div class="value ${parseFloat(d.change_percent||0)>=0?'positive':'negative'}" style="font-size:1.1rem;">${d.change_percent?((parseFloat(d.change_percent)>=0?'+':'')+d.change_percent+'%'):'—'}</div>
+        <div class="recommendation-badge ${recClass}" style="margin-top:0.75rem;">${rec}</div>
+        <div style="color:var(--text-secondary);font-size:0.82rem;margin-top:0.3rem;">Score: ${sig.composite_score || 0}</div>
+    </div>`;
+
+    // Timeframe buttons
+    html += `<div class="result-section"><h4>Chart — ${d.timeframe}</h4>
+        <div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap;">`;
+    (d.available_timeframes || ['1D','1W','1M','3M','1Y','5Y']).forEach(tf => {
+        const active = tf === d.timeframe ? 'background:var(--gold);color:#000;font-weight:700;' : 'background:var(--bg-hover);color:var(--text-secondary);';
+        html += `<button onclick="switchTimeframe('${d.symbol}','${tf}')" style="padding:0.4rem 0.8rem;border:none;border-radius:6px;cursor:pointer;font-size:0.82rem;${active}">${tf}</button>`;
+    });
+    html += `</div><canvas id="deepDiveChart" class="chart-canvas" style="height:220px;"></canvas></div>`;
+
+    // Fundamentals
+    html += '<div class="result-section"><h4>Fundamentals</h4><div class="kv-grid">';
+    html += kvItem('Sector', ov.sector);
+    html += kvItem('Industry', ov.industry);
+    html += kvItem('P/E Ratio', ov.pe_ratio);
+    html += kvItem('Forward P/E', ov.forward_pe);
+    html += kvItem('EPS', ov.eps);
+    html += kvItem('Beta', ov.beta);
+    html += kvItem('Dividend Yield', ov.dividend_yield ? (ov.dividend_yield*100).toFixed(2)+'%' : '-');
+    html += kvItem('Market Cap', ov.market_cap ? '$'+(ov.market_cap/1e9).toFixed(1)+'B' : '-');
+    html += kvItem('52W High', ov['52_week_high'] ? '$'+ov['52_week_high'] : '-');
+    html += kvItem('52W Low', ov['52_week_low'] ? '$'+ov['52_week_low'] : '-');
+    html += kvItem('Analyst Target', ov.analyst_target ? '$'+ov.analyst_target : '-');
+    html += kvItem('Profit Margin', ov.profit_margin ? (ov.profit_margin*100).toFixed(1)+'%' : '-');
+    html += '</div></div>';
+
+    // Technicals
+    html += '<div class="result-section"><h4>Technical Indicators</h4><div class="kv-grid">';
+    html += kvItem('RSI(14)', tech.rsi, tech.rsi<30?'positive':(tech.rsi>70?'negative':''));
+    html += kvItem('SMA 50', tech.sma_50 ? '$'+parseFloat(tech.sma_50).toFixed(2) : '-');
+    html += kvItem('SMA 200', tech.sma_200 ? '$'+parseFloat(tech.sma_200).toFixed(2) : '-');
+    html += kvItem('ADX', tech.adx);
+    html += kvItem('ATR', tech.atr ? parseFloat(tech.atr).toFixed(2) : '-');
+    if (tech.macd) { html += kvItem('MACD Hist', tech.macd.histogram, (tech.macd.histogram||0)>0?'positive':'negative'); }
+    html += '</div></div>';
+
+    // Signal details
+    if (sig.details && sig.details.length) {
+        html += '<div class="result-section"><h4>AI Signal Breakdown</h4><ul class="list-items">';
+        sig.details.forEach(s => { html += `<li><span class="tag ${s.bias==='bullish'?'success':(s.bias==='bearish'?'danger':'')}">${s.bias||'neutral'}</span> ${s.signal} ${s.value!==undefined?'('+s.value+')':''}</li>`; });
+        html += '</ul></div>';
+    }
+
+    // News
+    if (d.news && d.news.length) {
+        html += '<div class="result-section"><h4>Related News</h4>';
+        d.news.forEach(a => {
+            const sc = a.overall_sentiment_score||0;
+            html += `<div style="padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.85rem;">
+                <a href="${a.url||'#'}" target="_blank" style="color:var(--text-primary);text-decoration:none;">${a.title||''}</a>
+                <span class="tag ${sc>0.1?'success':(sc<-0.1?'danger':'')}" style="margin-left:0.5rem;">${a.overall_sentiment_label||'Neutral'}</span>
+            </div>`;
+        });
+        html += '</div>';
+    }
+
+    // Trade actions
+    html += `<div class="quick-trade"><h4>Trade ${d.symbol}</h4><div class="trade-row">
+        <button class="btn-buy" onclick="alert('BUY signal for ${d.symbol}: ${rec}. Connect to Algo Trading for execution.')">Buy ${d.symbol}</button>
+        <button class="btn-sell" onclick="alert('SELL signal for ${d.symbol}: ${rec}')">Sell ${d.symbol}</button>
+        <button class="btn-watch" onclick="addToWatchlist('${d.symbol}')">+ Watchlist</button>
+        <button class="btn-watch" style="background:linear-gradient(135deg,#8b5cf6,#6366f1);" onclick="launchCompare('${d.symbol}')">Compare</button>
+        <a href="/algo-trading.html" class="btn-watch" style="background:linear-gradient(135deg,#f97316,#ea580c);text-decoration:none;text-align:center;">Open Algo Trading</a>
+    </div></div>`;
+    html += renderWatchlistPanel();
+    setTimeout(() => drawPriceChart('deepDiveChart', bars, d.symbol + ' ' + d.timeframe), 50);
+    return html;
+}
+
+function switchTimeframe(symbol, tf) {
+    selectModule('deep_dive');
+    setTimeout(() => {
+        document.getElementById('param_symbol').value = symbol;
+        document.getElementById('param_timeframe').value = tf;
+        runAnalysis();
+    }, 50);
+}
+
+function launchCompare(symbol) {
+    selectModule('compare_stocks');
+    setTimeout(() => {
+        document.getElementById('param_symbols').value = symbol + ',SPY';
+        runAnalysis();
+    }, 100);
+}
+
+function renderCompareStocks(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    const stocks = d.stocks || [];
+    if (stocks.length < 2) return '<div class="result-section"><p>Need at least 2 stocks to compare.</p></div>';
+
+    const colors = ['#10b981','#6366f1','#f59e0b','#ef4444','#0ea5e9'];
+
+    // Timeframe buttons
+    let html = `<div class="result-section"><h4>Performance Comparison — ${d.timeframe}</h4>
+        <div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap;">`;
+    (d.available_timeframes || ['1D','1W','1M','3M','1Y','5Y']).forEach(tf => {
+        const active = tf === d.timeframe ? 'background:var(--gold);color:#000;font-weight:700;' : 'background:var(--bg-hover);color:var(--text-secondary);';
+        const syms = stocks.map(s=>s.symbol).join(',');
+        html += `<button onclick="switchCompareTimeframe('${syms}','${tf}')" style="padding:0.4rem 0.8rem;border:none;border-radius:6px;cursor:pointer;font-size:0.82rem;${active}">${tf}</button>`;
+    });
+
+    // Legend
+    html += '</div><div style="display:flex;gap:1rem;margin-bottom:0.5rem;flex-wrap:wrap;">';
+    stocks.forEach((s, i) => { html += `<span style="font-size:0.82rem;"><span style="color:${colors[i%5]};">●</span> ${s.symbol} <span class="value ${s.period_return>=0?'positive':'negative'}">${s.period_return>=0?'+':''}${s.period_return}%</span></span>`; });
+    html += '</div>';
+
+    // Comparison chart canvas
+    html += '<canvas id="compareChart" class="chart-canvas" style="height:220px;"></canvas></div>';
+
+    // Comparison table
+    html += '<div class="result-section"><h4>Side-by-Side</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Metric</th>';
+    stocks.forEach(s => { html += `<th>${s.symbol}</th>`; });
+    html += '</tr></thead><tbody>';
+    const metrics = [
+        ['Price', s => '$'+(s.price||'-')],
+        ['Period Return', s => {const v=s.period_return; return `<span class="value ${v>=0?'positive':'negative'}">${v>=0?'+':''}${v}%</span>`;}],
+        ['P/E Ratio', s => s.pe_ratio || '-'],
+        ['EPS', s => s.eps ? '$'+s.eps : '-'],
+        ['Beta', s => s.beta || '-'],
+        ['Div Yield', s => s.dividend_yield ? (s.dividend_yield*100).toFixed(2)+'%' : '-'],
+        ['Sector', s => s.sector || '-'],
+        ['Market Cap', s => s.market_cap ? '$'+(s.market_cap/1e9).toFixed(1)+'B' : '-'],
+    ];
+    metrics.forEach(([label, fn]) => {
+        html += `<tr><td><strong>${label}</strong></td>`;
+        stocks.forEach(s => { html += `<td>${fn(s)}</td>`; });
+        html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+
+    // Quick actions
+    html += '<div class="quick-trade"><h4>Actions</h4><div class="trade-row">';
+    stocks.forEach(s => {
+        html += `<button class="btn-watch" onclick="launchDeepDive('${s.symbol}')" style="font-size:0.8rem;">Analyze ${s.symbol}</button>`;
+    });
+    html += '</div></div>';
+
+    setTimeout(() => drawComparisonChart('compareChart', stocks, colors), 50);
+    return html;
+}
+
+function switchCompareTimeframe(symbols, tf) {
+    selectModule('compare_stocks');
+    setTimeout(() => {
+        document.getElementById('param_symbols').value = symbols;
+        document.getElementById('param_timeframe').value = tf;
+        runAnalysis();
+    }, 50);
+}
+
+function drawComparisonChart(canvasId, stocks, colors) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || stocks.length < 2) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = canvas.parentElement.clientWidth - 32;
+    const H = canvas.height = 220;
+    ctx.clearRect(0, 0, W, H);
+
+    // Grid and zero line
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(0, (H/5)*i); ctx.lineTo(W, (H/5)*i); ctx.stroke(); }
+
+    let allVals = [];
+    stocks.forEach(s => { (s.chart_data||[]).forEach(p => allVals.push(p.value)); });
+    if (allVals.length === 0) return;
+    const minV = Math.min(...allVals, 0);
+    const maxV = Math.max(...allVals, 0);
+    const range = (maxV - minV) || 1;
+
+    // Zero line
+    const zeroY = H - ((0 - minV) / range) * (H - 20) - 10;
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(W, zeroY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '10px sans-serif'; ctx.fillText('0%', 4, zeroY - 3);
+
+    stocks.forEach((s, si) => {
+        const pts = s.chart_data || [];
+        if (pts.length < 2) return;
+        const stepX = W / (pts.length - 1);
+        ctx.beginPath();
+        pts.forEach((p, i) => {
+            const x = i * stepX;
+            const y = H - ((p.value - minV) / range) * (H - 20) - 10;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = colors[si % colors.length];
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        const lastPt = pts[pts.length-1];
+        const lastY = H - ((lastPt.value - minV) / range) * (H - 20) - 10;
+        ctx.fillStyle = colors[si % colors.length];
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(s.symbol + ' ' + lastPt.value + '%', W - 90, lastY - 5 + si * 14);
+    });
+}
+
+function renderAlgoBridge(d) {
+    if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
+    let html = '';
+
+    if (d.action === 'signal' && d.symbol) {
+        const rec = d.ai_recommendation || 'HOLD';
+        const recClass = rec.includes('BUY') ? 'buy' : (rec.includes('SELL') ? 'sell' : 'hold');
+        html += `<div class="result-section" style="text-align:center;padding:1.5rem;">
+            <h4>AI Signal: ${d.symbol}</h4>
+            <div style="font-size:1.5rem;margin:0.5rem 0;">$${d.price || 'N/A'}</div>
+            <div class="recommendation-badge ${recClass}">${rec}</div>
+            <div style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.85rem;">Suggested Algo Action: <strong>${d.suggested_algo_action}</strong></div>
+        </div>`;
+        if (d.suggested_strategies && d.suggested_strategies.length) {
+            html += '<div class="result-section"><h4>Recommended Algo Strategies</h4>';
+            d.suggested_strategies.forEach(s => {
+                html += `<div style="padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <strong style="color:var(--gold);">${s.strategy}</strong> <span class="tag ${s.confidence==='high'?'success':''}">${s.confidence}</span>
+                    <p style="font-size:0.82rem;color:var(--text-secondary);">${s.reason}</p></div>`;
+            });
+            html += '</div>';
+        }
+        if (d.risk_assessment) {
+            const ra = d.risk_assessment;
+            html += '<div class="result-section"><h4>Risk Assessment</h4><div class="kv-grid">';
+            html += kvItem('Risk Level', ra.risk_level, ra.risk_level==='low'?'positive':(ra.risk_level==='high'?'negative':'highlight'));
+            html += kvItem('Beta', ra.beta);
+            html += kvItem('Signal Strength', ra.signal_strength);
+            html += kvItem('Max Allocation', ra.max_suggested_allocation);
+            html += kvItem('Stop Loss', ra.stop_loss_suggestion);
+            html += '</div></div>';
+        }
+        html += `<div class="quick-trade"><h4>Execute</h4><div class="trade-row">
+            <button class="btn-buy" onclick="alert('Route to algo: BUY ${d.symbol} via ${(d.suggested_strategies||[{}])[0].strategy||'momentum'}')">Execute via Algo Bot</button>
+            <button class="btn-watch" onclick="launchDeepDive('${d.symbol}')">Deep Dive</button>
+            <a href="/algo-trading.html" class="btn-watch" style="background:linear-gradient(135deg,#f97316,#ea580c);text-decoration:none;text-align:center;">Algo Dashboard</a>
+            <a href="/savings-portfolio.html" class="btn-watch" style="background:linear-gradient(135deg,#10b981,#059669);text-decoration:none;text-align:center;">Portfolio</a>
+        </div></div>`;
+
+    } else if (d.action === 'recommend_allocation') {
+        if (d.portfolio_recommendations) {
+            html += '<div class="result-section"><h4>AI Portfolio Allocation</h4><div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Category</th><th>Allocation</th><th>Rationale</th><th>Top Picks</th></tr></thead><tbody>';
+            d.portfolio_recommendations.forEach(r => {
+                html += `<tr><td><strong>${r.category}</strong></td><td style="color:var(--gold);">${r.allocation}</td><td style="font-size:0.82rem;">${r.rationale}</td><td><div class="tag-list">${(r.suggested||[]).map(s=>`<span class="tag" style="cursor:pointer;" onclick="launchDeepDive('${s}')">${s}</span>`).join('')}</div></td></tr>`;
+            });
+            html += '</tbody></table></div></div>';
+        }
+        if (d.algo_strategies) {
+            html += '<div class="result-section"><h4>Algo Strategy Recommendations</h4>';
+            d.algo_strategies.forEach(s => {
+                html += `<div style="padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.05);"><strong style="color:var(--gold);">${s.strategy}</strong><p style="font-size:0.82rem;color:var(--text-secondary);">${s.best_for}</p></div>`;
+            });
+            html += '</div>';
+        }
+
+    } else {
+        html += '<div class="result-section"><h4>Algo-Investment Bridge</h4><div class="kv-grid">';
+        html += kvItem('Status', d.bridge_status || 'active', 'positive');
+        html += '</div>';
+        if (d.capabilities) {
+            html += '<ul class="list-items">';
+            d.capabilities.forEach(c => { html += `<li>${c}</li>`; });
+            html += '</ul>';
+        }
+        html += '</div>';
+    }
+    return html;
 }
 
 function renderWatchlistPanel() {
