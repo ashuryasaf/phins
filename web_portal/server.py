@@ -17500,6 +17500,63 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
+        if path == '/api/investment-ai/wallet':
+            if not investment_ai_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not validate_investment_ai_access(ai_key):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
+                return
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            sess = validate_session(token) if token else None
+            customer_id = qs.get('customer_id', [''])[0]
+            if sess and sess.get('customer_id'):
+                customer_id = customer_id or sess['customer_id']
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required (login or pass as parameter)'}).encode('utf-8'))
+                return
+            inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
+            hw = HEALTH_WALLETS.get(customer_id, {})
+            allocation = {}
+            distribution = {}
+            try:
+                distribution = calculate_monthly_distribution(customer_id)
+                allocation = distribution.get('allocation', {})
+            except Exception:
+                pass
+            total_balance = safe_float(inv_account.get('balance', 0))
+            index_balance = safe_float(inv_account.get('index_balance', 0))
+            bonds_balance = safe_float(inv_account.get('bonds_balance', 0))
+            crypto_balance = safe_float(inv_account.get('crypto_balance', 0))
+            invested = index_balance + bonds_balance + crypto_balance
+            cash_balance = total_balance - invested
+            wallet_data = {
+                'customer_id': customer_id,
+                'investment_account': {
+                    'total_balance': total_balance,
+                    'cash_available': cash_balance,
+                    'invested_assets': invested,
+                    'index_funds': index_balance,
+                    'bonds': bonds_balance,
+                    'crypto': crypto_balance,
+                },
+                'health_wallet': {
+                    'balance': safe_float(hw.get('balance', 0)),
+                    'monthly_deposit': safe_float(hw.get('monthly_deposit', 0)),
+                },
+                'allocation': allocation,
+                'monthly_distribution': distribution.get('distribution', {}),
+                'total_monthly_premium': distribution.get('total_monthly_premium', 0),
+            }
+            self._set_json_headers()
+            self.wfile.write(json.dumps(wallet_data, default=str).encode('utf-8'))
+            return
+
         # ========== END INVESTMENT AI TOOL API (GET) ==========
         
         # Reconcile balances
