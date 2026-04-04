@@ -380,6 +380,307 @@ class TradingPlatformService:
         return result
 
     # ==================================================================
+    # PORTFOLIO HISTORY (equity curve, P&L timeline)
+    # ==================================================================
+
+    def get_portfolio_history(self, period: str = "1M", timeframe: str = "1D") -> Dict[str, Any]:
+        """
+        Account portfolio history — equity curve and P&L over time.
+        period: 1D, 1W, 1M, 3M, 1A, 5A
+        timeframe: 1Min, 5Min, 15Min, 1H, 1D
+        """
+        if not self._connected:
+            return self._demo_portfolio_history(period)
+        cache_key = f"port_hist:{period}:{timeframe}"
+        cached = self._cached(cache_key, 120.0)
+        if cached:
+            return cached
+        raw = self._trade_request("GET", f"/account/portfolio/history?period={period}&timeframe={timeframe}")
+        if not raw or "error" in raw:
+            return self._demo_portfolio_history(period)
+        timestamps = raw.get("timestamp", [])
+        equity = raw.get("equity", [])
+        pnl = raw.get("profit_loss", [])
+        pnl_pct = raw.get("profit_loss_pct", [])
+        base_value = raw.get("base_value", 0)
+        points = []
+        for i in range(len(timestamps)):
+            points.append({
+                "timestamp": timestamps[i],
+                "date": datetime.fromtimestamp(timestamps[i], tz=timezone.utc).isoformat() if timestamps[i] else None,
+                "equity": equity[i] if i < len(equity) else None,
+                "pnl": pnl[i] if i < len(pnl) else None,
+                "pnl_pct": pnl_pct[i] if i < len(pnl_pct) else None,
+            })
+        result = {
+            "period": period,
+            "timeframe": timeframe,
+            "base_value": _sf(base_value),
+            "points": points,
+            "count": len(points),
+            "current_equity": equity[-1] if equity else None,
+            "total_pnl": pnl[-1] if pnl else None,
+            "total_pnl_pct": pnl_pct[-1] if pnl_pct else None,
+        }
+        self._set_cache(cache_key, result)
+        return result
+
+    def _demo_portfolio_history(self, period: str) -> Dict[str, Any]:
+        import random
+        rng = random.Random(42)
+        days = {"1D": 1, "1W": 5, "1M": 22, "3M": 65, "1A": 252, "5A": 1260}.get(period, 22)
+        base = 250000.0
+        equity_vals = [base]
+        for _ in range(days - 1):
+            equity_vals.append(equity_vals[-1] * (1 + rng.gauss(0.0004, 0.012)))
+        now = datetime.now(timezone.utc)
+        points = []
+        for i, eq in enumerate(equity_vals):
+            dt = now - timedelta(days=days - i)
+            points.append({
+                "timestamp": int(dt.timestamp()),
+                "date": dt.isoformat(),
+                "equity": round(eq, 2),
+                "pnl": round(eq - base, 2),
+                "pnl_pct": round((eq - base) / base, 6),
+            })
+        return {
+            "period": period, "timeframe": "1D", "base_value": base,
+            "points": points, "count": len(points),
+            "current_equity": round(equity_vals[-1], 2),
+            "total_pnl": round(equity_vals[-1] - base, 2),
+            "total_pnl_pct": round((equity_vals[-1] - base) / base, 6),
+        }
+
+    # ==================================================================
+    # MARKET BARS (OHLCV via Alpaca Data API)
+    # ==================================================================
+
+    def get_bars(self, symbol: str, timeframe: str = "1Day", limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Historical bars from Alpaca Data API.
+        timeframe: 1Min, 5Min, 15Min, 1Hour, 1Day, 1Week, 1Month
+        """
+        cache_key = f"bars:{symbol}:{timeframe}:{limit}"
+        cached = self._cached(cache_key, 60.0)
+        if cached:
+            return cached
+        raw = self._data_request(f"/v2/stocks/{symbol.upper()}/bars", {
+            "timeframe": timeframe,
+            "limit": str(limit),
+            "feed": "iex",
+        })
+        if not raw or "bars" not in raw:
+            return []
+        bars = []
+        for b in raw.get("bars", []):
+            bars.append({
+                "date": b.get("t"),
+                "open": _sf(b.get("o")),
+                "high": _sf(b.get("h")),
+                "low": _sf(b.get("l")),
+                "close": _sf(b.get("c")),
+                "volume": b.get("v"),
+                "vwap": _sf(b.get("vw")),
+                "trade_count": b.get("n"),
+            })
+        self._set_cache(cache_key, bars)
+        return bars
+
+    def get_latest_trade(self, symbol: str) -> Optional[Dict[str, Any]]:
+        raw = self._data_request(f"/v2/stocks/{symbol.upper()}/trades/latest", {"feed": "iex"})
+        if not raw or "trade" not in raw:
+            return None
+        t = raw["trade"]
+        return {"symbol": symbol.upper(), "price": _sf(t.get("p")), "size": t.get("s"), "timestamp": t.get("t"), "exchange": t.get("x")}
+
+    def get_latest_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+        raw = self._data_request(f"/v2/stocks/{symbol.upper()}/quotes/latest", {"feed": "iex"})
+        if not raw or "quote" not in raw:
+            return None
+        q = raw["quote"]
+        return {"symbol": symbol.upper(), "bid": _sf(q.get("bp")), "bid_size": q.get("bs"), "ask": _sf(q.get("ap")), "ask_size": q.get("as"), "timestamp": q.get("t")}
+
+    # ==================================================================
+    # WATCHLISTS (server-side via Alpaca)
+    # ==================================================================
+
+    def get_watchlists(self) -> List[Dict[str, Any]]:
+        if not self._connected:
+            return [{"id": "demo", "name": "My Watchlist", "symbols": ["AAPL", "NVDA", "MSFT", "GOOGL", "TSLA"]}]
+        raw = self._trade_request("GET", "/watchlists")
+        if not raw or not isinstance(raw, list):
+            return []
+        return [{"id": w.get("id"), "name": w.get("name"), "symbols": [a.get("symbol") for a in w.get("assets", [])]} for w in raw]
+
+    def create_watchlist(self, name: str, symbols: List[str]) -> Dict[str, Any]:
+        if not self._connected:
+            return {"id": "demo-new", "name": name, "symbols": symbols}
+        return self._trade_request("POST", "/watchlists", {"name": name, "symbols": symbols}) or {}
+
+    def add_to_watchlist(self, watchlist_id: str, symbol: str) -> Dict[str, Any]:
+        if not self._connected:
+            return {"success": True}
+        return self._trade_request("POST", f"/watchlists/{watchlist_id}", {"symbol": symbol}) or {}
+
+    def remove_from_watchlist(self, watchlist_id: str, symbol: str) -> Dict[str, Any]:
+        if not self._connected:
+            return {"success": True}
+        return self._trade_request("DELETE", f"/watchlists/{watchlist_id}/{symbol}") or {}
+
+    # ==================================================================
+    # MARKET CLOCK & ASSETS
+    # ==================================================================
+
+    def get_clock(self) -> Dict[str, Any]:
+        if not self._connected:
+            now = datetime.now(timezone.utc)
+            hour = now.hour
+            is_open = 13 <= hour < 20 and now.weekday() < 5
+            return {"is_open": is_open, "timestamp": now.isoformat(), "next_open": "09:30 ET", "next_close": "16:00 ET"}
+        cached = self._cached("clock", 30.0)
+        if cached:
+            return cached
+        raw = self._trade_request("GET", "/clock")
+        if not raw or "error" in raw:
+            return {"is_open": False, "timestamp": datetime.now(timezone.utc).isoformat()}
+        result = {"is_open": raw.get("is_open", False), "timestamp": raw.get("timestamp"), "next_open": raw.get("next_open"), "next_close": raw.get("next_close")}
+        self._set_cache("clock", result)
+        return result
+
+    def search_assets(self, query: str = "", asset_class: str = "us_equity", status: str = "active") -> List[Dict[str, Any]]:
+        if not self._connected:
+            from services.investment_ai_tool_service import STOCK_DATABASE
+            return [{"symbol": k, "name": v.get("name", k), "asset_class": "us_equity", "tradable": True} for k, v in STOCK_DATABASE.items() if query.upper() in k or query.lower() in v.get("name", "").lower()][:20]
+        cache_key = f"assets:{query}:{asset_class}"
+        cached = self._cached(cache_key, 300.0)
+        if cached:
+            return cached
+        raw = self._trade_request("GET", f"/assets?status={status}&asset_class={asset_class}")
+        if not raw or not isinstance(raw, list):
+            return []
+        results = []
+        q = query.upper()
+        for a in raw:
+            sym = a.get("symbol", "")
+            name = a.get("name", "")
+            if q and q not in sym and q not in name.upper():
+                continue
+            results.append({
+                "symbol": sym,
+                "name": name,
+                "asset_class": a.get("class"),
+                "exchange": a.get("exchange"),
+                "tradable": a.get("tradable", False),
+                "fractionable": a.get("fractionable", False),
+                "shortable": a.get("shortable", False),
+            })
+            if len(results) >= 20:
+                break
+        self._set_cache(cache_key, results)
+        return results
+
+    # ==================================================================
+    # ACCOUNT ACTIVITIES (fills, dividends, transfers)
+    # ==================================================================
+
+    def get_activities(self, activity_type: str = "", limit: int = 20) -> List[Dict[str, Any]]:
+        if not self._connected:
+            return self._demo_activities()
+        params = f"?page_size={limit}"
+        if activity_type:
+            params += f"&activity_type={activity_type}"
+        raw = self._trade_request("GET", f"/account/activities{params}")
+        if not raw or not isinstance(raw, list):
+            return self._demo_activities()
+        activities = []
+        for a in raw[:limit]:
+            activities.append({
+                "id": a.get("id"),
+                "activity_type": a.get("activity_type"),
+                "symbol": a.get("symbol"),
+                "side": a.get("side"),
+                "qty": a.get("qty"),
+                "price": a.get("price"),
+                "net_amount": a.get("net_amount"),
+                "date": a.get("date") or a.get("transaction_time"),
+                "status": a.get("status"),
+                "description": a.get("description"),
+            })
+        return activities
+
+    def _demo_activities(self) -> List[Dict[str, Any]]:
+        now = datetime.now(timezone.utc)
+        return [
+            {"id": "act-1", "activity_type": "FILL", "symbol": "NVDA", "side": "buy", "qty": "25", "price": "135.20", "date": (now - timedelta(hours=2)).isoformat()},
+            {"id": "act-2", "activity_type": "FILL", "symbol": "AAPL", "side": "buy", "qty": "10", "price": "225.50", "date": (now - timedelta(hours=5)).isoformat()},
+            {"id": "act-3", "activity_type": "DIV", "symbol": "MSFT", "net_amount": "18.60", "date": (now - timedelta(days=15)).isoformat(), "description": "Dividend payment"},
+            {"id": "act-4", "activity_type": "FILL", "symbol": "SPY", "side": "buy", "qty": "20", "price": "540.00", "date": (now - timedelta(days=30)).isoformat()},
+        ]
+
+    # ==================================================================
+    # ADVANCED ORDERS (bracket, OCO)
+    # ==================================================================
+
+    def submit_bracket_order(
+        self, symbol: str, side: str, qty: float,
+        take_profit_price: float, stop_loss_price: float,
+        limit_price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Submit a bracket order (entry + take profit + stop loss).
+        """
+        body: Dict[str, Any] = {
+            "symbol": symbol.upper(),
+            "side": side.lower(),
+            "qty": str(qty),
+            "type": "limit" if limit_price else "market",
+            "time_in_force": "gtc",
+            "order_class": "bracket",
+            "take_profit": {"limit_price": str(take_profit_price)},
+            "stop_loss": {"stop_price": str(stop_loss_price)},
+        }
+        if limit_price:
+            body["limit_price"] = str(limit_price)
+        if not self._connected:
+            return self._demo_order(body)
+        raw = self._trade_request("POST", "/orders", body)
+        if not raw:
+            return {"error": "Bracket order failed"}
+        if "error" in raw:
+            return raw
+        self._cache.pop("positions", None)
+        self._cache.pop("account", None)
+        return {"order_id": raw.get("id"), "symbol": raw.get("symbol"), "side": raw.get("side"), "qty": raw.get("qty"), "type": "bracket", "status": raw.get("status"), "legs": raw.get("legs", []), "broker": "alpaca"}
+
+    def submit_oco_order(
+        self, symbol: str, qty: float,
+        take_profit_price: float, stop_loss_price: float,
+    ) -> Dict[str, Any]:
+        """
+        Submit an OCO (One-Cancels-Other) order for an existing position.
+        """
+        body: Dict[str, Any] = {
+            "symbol": symbol.upper(),
+            "side": "sell",
+            "qty": str(qty),
+            "type": "limit",
+            "time_in_force": "gtc",
+            "order_class": "oco",
+            "take_profit": {"limit_price": str(take_profit_price)},
+            "stop_loss": {"stop_price": str(stop_loss_price)},
+        }
+        if not self._connected:
+            return self._demo_order(body)
+        raw = self._trade_request("POST", "/orders", body)
+        if not raw:
+            return {"error": "OCO order failed"}
+        if "error" in raw:
+            return raw
+        self._cache.pop("positions", None)
+        return {"order_id": raw.get("id"), "symbol": raw.get("symbol"), "type": "oco", "status": raw.get("status"), "legs": raw.get("legs", []), "broker": "alpaca"}
+
+    # ==================================================================
     # GLOBAL BENCHMARKS
     # ==================================================================
 

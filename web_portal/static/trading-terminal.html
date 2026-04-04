@@ -104,12 +104,23 @@
 <div class="terminal-grid">
     <!-- LEFT: Account + Positions -->
     <div class="panel" style="grid-row:1/3;">
-        <div class="panel-title">Account</div>
+        <div class="panel-title" style="display:flex;justify-content:space-between;">Account <span id="marketClock" style="color:var(--muted);font-size:9px;"></span></div>
         <div id="accountPanel">Loading...</div>
-        <div class="panel-title" style="margin-top:10px;">Positions</div>
+        <div class="panel-title" style="margin-top:6px;">Equity Curve</div>
+        <canvas id="equityChart" style="width:100%;height:80px;display:block;margin-bottom:4px;"></canvas>
+        <div style="display:flex;gap:2px;margin-bottom:6px;" id="eqTimeframes">
+            <button class="chart-tf active" onclick="loadEquity('1D')">1D</button>
+            <button class="chart-tf" onclick="loadEquity('1W')">1W</button>
+            <button class="chart-tf" onclick="loadEquity('1M')">1M</button>
+            <button class="chart-tf" onclick="loadEquity('3M')">3M</button>
+            <button class="chart-tf" onclick="loadEquity('1A')">1Y</button>
+        </div>
+        <div class="panel-title">Positions</div>
         <div id="positionsPanel">Loading...</div>
-        <div class="panel-title" style="margin-top:10px;">Recent Orders</div>
-        <div id="ordersPanel">Loading...</div>
+        <div class="panel-title" style="margin-top:6px;">Watchlist</div>
+        <div id="watchlistPanel" style="margin-bottom:6px;"></div>
+        <div class="panel-title" style="margin-top:6px;">Activity</div>
+        <div id="activityPanel" style="max-height:100px;overflow-y:auto;"></div>
     </div>
 
     <!-- CENTER: Chart -->
@@ -121,8 +132,9 @@
             <button class="chart-tf" onclick="setChartTF('3M')">3M</button>
             <button class="chart-tf" onclick="setChartTF('1Y')">1Y</button>
         </div>
-        <div class="chart-symbol">
-            <input type="text" id="chartSymbol" value="SPY" onkeydown="if(event.key==='Enter')loadChart()">
+        <div class="chart-symbol" style="display:flex;gap:4px;align-items:center;">
+            <input type="text" id="chartSymbol" value="SPY" placeholder="Symbol" onkeydown="if(event.key==='Enter')loadChart()" oninput="searchSymbol(this.value)">
+            <div id="searchResults" style="position:absolute;top:28px;right:0;background:var(--panel);border:1px solid var(--border);border-radius:4px;max-height:200px;overflow-y:auto;width:220px;display:none;z-index:20;"></div>
         </div>
         <canvas id="terminalChart"></canvas>
     </div>
@@ -144,8 +156,10 @@
         <div class="order-form">
             <div class="order-row"><label>Symbol</label><input type="text" id="orderSymbol" value="AAPL" style="text-transform:uppercase;"></div>
             <div class="order-row"><label>Qty</label><input type="number" id="orderQty" value="1" min="1"></div>
-            <div class="order-row"><label>Type</label><select id="orderType"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option><option value="trailing_stop">Trailing Stop</option></select></div>
+            <div class="order-row"><label>Type</label><select id="orderType"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option><option value="trailing_stop">Trail Stop</option><option value="bracket">Bracket (TP+SL)</option></select></div>
             <div class="order-row" id="limitRow" style="display:none;"><label>Price</label><input type="number" id="orderPrice" step="0.01" placeholder="Limit price"></div>
+            <div class="order-row" id="tpRow" style="display:none;"><label>TP $</label><input type="number" id="orderTP" step="0.01" placeholder="Take profit"></div>
+            <div class="order-row" id="slRow" style="display:none;"><label>SL $</label><input type="number" id="orderSL" step="0.01" placeholder="Stop loss"></div>
             <div class="order-row" style="gap:6px;margin-top:6px;">
                 <button class="btn-exec-buy" onclick="executeOrder('buy')">BUY</button>
                 <button class="btn-exec-sell" onclick="executeOrder('sell')">SELL</button>
@@ -168,7 +182,10 @@ let chartSym = 'SPY';
 let refreshInterval = null;
 
 document.getElementById('orderType').addEventListener('change', function() {
-    document.getElementById('limitRow').style.display = ['limit','stop'].includes(this.value) ? 'flex' : 'none';
+    const v = this.value;
+    document.getElementById('limitRow').style.display = ['limit','stop'].includes(v) ? 'flex' : 'none';
+    document.getElementById('tpRow').style.display = v === 'bracket' ? 'flex' : 'none';
+    document.getElementById('slRow').style.display = v === 'bracket' ? 'flex' : 'none';
 });
 
 function promptKey() {
@@ -203,15 +220,111 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
+let searchTimeout = null;
+async function searchSymbol(q) {
+    clearTimeout(searchTimeout);
+    if (!q || q.length < 1) { $('searchResults').style.display = 'none'; return; }
+    searchTimeout = setTimeout(async () => {
+        try {
+            const d = await apiFetch('/api/terminal/search?q=' + encodeURIComponent(q));
+            if (!Array.isArray(d) || d.length === 0) { $('searchResults').style.display = 'none'; return; }
+            let html = '';
+            d.slice(0, 10).forEach(a => {
+                html += `<div style="padding:4px 8px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''" onclick="$('chartSymbol').value='${a.symbol}';$('orderSymbol').value='${a.symbol}';$('copilotSymbol').value='${a.symbol}';$('searchResults').style.display='none';loadChart();">
+                    <span style="color:var(--gold);font-weight:700;">${a.symbol}</span> <span style="color:var(--muted);">${(a.name||'').substring(0,30)}</span>
+                </div>`;
+            });
+            $('searchResults').innerHTML = html;
+            $('searchResults').style.display = 'block';
+        } catch(e) {}
+    }, 300);
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('.chart-symbol')) $('searchResults').style.display = 'none'; });
+
+async function loadEquity(period) {
+    document.querySelectorAll('#eqTimeframes .chart-tf').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    try {
+        const d = await apiFetch('/api/terminal/portfolio-history?period=' + period);
+        const pts = d.points || [];
+        const canvas = $('equityChart');
+        const W = canvas.width = canvas.parentElement.clientWidth - 16;
+        const H = canvas.height = 80;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, W, H);
+        if (pts.length < 2) return;
+        const eqs = pts.map(p => p.equity || 0);
+        const mn = Math.min(...eqs) * 0.999;
+        const mx = Math.max(...eqs) * 1.001;
+        const rng = mx - mn || 1;
+        const step = W / (eqs.length - 1);
+        const isUp = eqs[eqs.length-1] >= eqs[0];
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, isUp ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath();
+        eqs.forEach((e,i) => { const x=i*step; const y=H-((e-mn)/rng)*(H-10)-5; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+        ctx.strokeStyle = isUp ? '#10b981' : '#ef4444'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.lineTo((eqs.length-1)*step, H); ctx.lineTo(0, H); ctx.closePath();
+        ctx.fillStyle = grad; ctx.fill();
+        ctx.fillStyle = isUp ? '#10b981' : '#ef4444'; ctx.font = 'bold 10px monospace';
+        const pnl = d.total_pnl || 0;
+        ctx.fillText('$' + eqs[eqs.length-1].toLocaleString(undefined,{maximumFractionDigits:0}) + ' (' + (pnl>=0?'+':'') + pnl.toLocaleString(undefined,{maximumFractionDigits:0}) + ')', 4, 12);
+    } catch(e) {}
+}
+
+async function loadWatchlists() {
+    try {
+        const d = await apiFetch('/api/terminal/watchlists');
+        if (!Array.isArray(d) || d.length === 0) { $('watchlistPanel').innerHTML = '<div style="color:var(--muted);font-size:10px;">No watchlists</div>'; return; }
+        let html = '';
+        d.forEach(w => {
+            (w.symbols || []).forEach(s => {
+                html += `<span style="display:inline-block;padding:2px 6px;margin:1px;background:var(--bg);border:1px solid var(--border);border-radius:2px;cursor:pointer;font-size:10px;color:var(--gold);" onclick="$('chartSymbol').value='${s}';$('copilotSymbol').value='${s}';loadChart();">${s}</span>`;
+            });
+        });
+        $('watchlistPanel').innerHTML = html || '<div style="color:var(--muted);font-size:10px;">Empty</div>';
+    } catch(e) {}
+}
+
+async function loadActivities() {
+    try {
+        const d = await apiFetch('/api/terminal/activities');
+        if (!Array.isArray(d) || d.length === 0) { $('activityPanel').innerHTML = '<div style="color:var(--muted);font-size:10px;">No recent activity</div>'; return; }
+        let html = '';
+        d.slice(0, 6).forEach(a => {
+            const color = a.side === 'buy' ? 'var(--green)' : (a.side === 'sell' ? 'var(--red)' : 'var(--muted)');
+            html += `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03);font-size:10px;">
+                <span style="color:${color};width:30px;">${(a.activity_type||'').substring(0,4)}</span>
+                <span style="color:var(--gold);width:40px;">${a.symbol||''}</span>
+                <span>${a.qty||a.net_amount||''}</span>
+                <span style="color:var(--muted);">${a.price?'$'+a.price:''}</span>
+            </div>`;
+        });
+        $('activityPanel').innerHTML = html;
+    } catch(e) {}
+}
+
+async function loadMarketClock() {
+    try {
+        const d = await apiFetch('/api/terminal/clock');
+        const dot = d.is_open ? '🟢' : '🔴';
+        $('marketClock').textContent = dot + (d.is_open ? ' OPEN' : ' CLOSED');
+    } catch(e) {}
+}
+
 async function initTerminal() {
     if (!apiKey) { promptKey(); return; }
     loadAccount();
     loadPositions();
-    loadOrders();
     loadGlobalDashboard();
     loadChart();
+    loadWatchlists();
+    loadActivities();
+    loadMarketClock();
+    loadEquity('1M');
     if (refreshInterval) clearInterval(refreshInterval);
-    refreshInterval = setInterval(() => { loadAccount(); loadPositions(); }, 30000);
+    refreshInterval = setInterval(() => { loadAccount(); loadPositions(); loadMarketClock(); }, 30000);
 }
 
 async function loadAccount() {
@@ -456,15 +569,22 @@ async function executeOrder(side) {
 
     if (!symbol || !qty) { alert('Symbol and qty required'); return; }
 
-    const body = { symbol, side, qty, order_type: type, time_in_force: 'day' };
-    if (limitPrice) body.limit_price = limitPrice;
-    if (stopPrice) body.stop_price = stopPrice;
-
+    let d;
     try {
-        const d = await apiPost('/api/terminal/order', body);
+        if (type === 'bracket') {
+            const tp = parseFloat($('orderTP').value);
+            const sl = parseFloat($('orderSL').value);
+            if (!tp || !sl) { alert('Take Profit and Stop Loss prices required for bracket order'); return; }
+            d = await apiPost('/api/terminal/bracket-order', { symbol, side, qty, take_profit_price: tp, stop_loss_price: sl });
+        } else {
+            const body = { symbol, side, qty, order_type: type, time_in_force: 'day' };
+            if (limitPrice) body.limit_price = limitPrice;
+            if (stopPrice) body.stop_price = stopPrice;
+            d = await apiPost('/api/terminal/order', body);
+        }
         if (d.error) { $('orderResult').innerHTML = `<div style="color:var(--red);padding:4px;">${JSON.stringify(d.error)}</div>`; return; }
-        $('orderResult').innerHTML = `<div style="color:var(--green);padding:4px;">Order ${d.status}: ${d.side?.toUpperCase()} ${d.qty||''} ${d.symbol} (${d.broker||''})</div>`;
-        setTimeout(() => { loadPositions(); loadOrders(); loadAccount(); }, 1000);
+        $('orderResult').innerHTML = `<div style="color:var(--green);padding:4px;">${type==='bracket'?'Bracket':'Order'} ${d.status}: ${d.side?.toUpperCase()||side.toUpperCase()} ${d.qty||qty} ${d.symbol||symbol}</div>`;
+        setTimeout(() => { loadPositions(); loadActivities(); loadAccount(); }, 1000);
     } catch(e) { $('orderResult').innerHTML = `<div style="color:var(--red);padding:4px;">${e.message}</div>`; }
 }
 
