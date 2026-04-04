@@ -5434,10 +5434,22 @@ try:
     investment_ai_enabled = True
     _ai_key = get_access_key_display()
     _live_str = "LIVE (Alpha Vantage)" if LIVE_DATA_AVAILABLE else "static fallback"
-    print(f"✓ Investment AI Tool enabled (14 AI modules, data: {_live_str})")
+    print(f"✓ Investment AI Tool enabled (17 AI modules, data: {_live_str})")
     print(f"  Investment AI Access Key: {_ai_key}")
 except ImportError as e:
     print(f"Warning: Investment AI Tool not available: {e}")
+
+# Trading Platform Service for live broker connections
+trading_platform_enabled = False
+try:
+    from services.trading_platform_service import get_trading_platform, ALPACA_API_KEY
+    _trading_platform = get_trading_platform()
+    trading_platform_enabled = True
+    _broker_str = "LIVE (Alpaca)" if _trading_platform.is_connected else "Demo mode"
+    _paper_str = " [PAPER]" if _trading_platform.is_paper else " [LIVE]"
+    print(f"✓ Trading Platform enabled ({_broker_str}{_paper_str if _trading_platform.is_connected else ''})")
+except ImportError as e:
+    print(f"Warning: Trading Platform not available: {e}")
 
 # Unified Balance Service for cross-system balance management
 unified_balance_service = None
@@ -17557,6 +17569,82 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(wallet_data, default=str).encode('utf-8'))
             return
 
+        # ========== TRADING TERMINAL API (GET) ==========
+        if path == '/api/terminal/account':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.get_account(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/positions':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.get_positions(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/orders':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.get_orders(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/dashboard':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.get_global_dashboard(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/copilot':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            symbol = qs.get('symbol', [''])[0]
+            if not symbol:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'symbol parameter required'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.ai_copilot_analyze(symbol), default=str).encode('utf-8'))
+            return
+
         # ========== END INVESTMENT AI TOOL API (GET) ==========
         
         # Reconcile balances
@@ -22258,6 +22346,98 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
         # ========== END INVESTMENT AI TOOL API (POST) ==========
+
+        # ========== TRADING TERMINAL API (POST) ==========
+        if path == '/api/terminal/order':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            symbol = body_data.get('symbol', '')
+            side = body_data.get('side', '')
+            if not symbol or not side:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'symbol and side are required'}).encode('utf-8'))
+                return
+            result = _trading_platform.submit_order(
+                symbol=symbol,
+                side=side,
+                qty=body_data.get('qty'),
+                notional=body_data.get('notional'),
+                order_type=body_data.get('order_type', 'market'),
+                time_in_force=body_data.get('time_in_force', 'day'),
+                limit_price=body_data.get('limit_price'),
+                stop_price=body_data.get('stop_price'),
+                trail_percent=body_data.get('trail_percent'),
+            )
+            status_code = 200 if 'error' not in result else 400
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/cancel-order':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            order_id = body_data.get('order_id', '')
+            if not order_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'order_id required'}).encode('utf-8'))
+                return
+            result = _trading_platform.cancel_order(order_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/close-position':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            symbol = body_data.get('symbol', '')
+            if not symbol:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'symbol required'}).encode('utf-8'))
+                return
+            result = _trading_platform.close_position(symbol)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        # ========== END TRADING TERMINAL API (POST) ==========
 
         # Demo login endpoint with secure password verification
         if path == '/api/login':
