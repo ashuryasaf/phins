@@ -567,6 +567,21 @@ class TestInvestmentAiApi:
         data, status = _get_error("/api/investment-ai/access-key")
         assert status == 403
 
+    def test_wallet_endpoint_requires_customer_id(self):
+        data, status = _get_error(
+            f"/api/investment-ai/wallet?api_key={self.api_key}"
+        )
+        assert status == 400
+        assert "customer_id" in data.get("error", "")
+
+    def test_wallet_endpoint_returns_data(self):
+        data, status = _get(
+            f"/api/investment-ai/wallet?api_key={self.api_key}&customer_id=CUST001"
+        )
+        assert status == 200
+        assert "investment_account" in data
+        assert "health_wallet" in data
+
     def test_static_page_served(self):
         req = Request(BASE_URL + "/investment-ai.html")
         with urlopen(req) as resp:

@@ -493,10 +493,63 @@
     </div>
 </header>
 
+<!-- Breaking News Ticker -->
+<div id="newsTicker" style="background:linear-gradient(90deg,#1e1b4b,#312e81);padding:0.4rem 0;overflow:hidden;border-bottom:1px solid rgba(251,191,36,0.3);display:none;">
+    <div id="newsTickerContent" style="display:flex;gap:3rem;animation:tickerScroll 40s linear infinite;white-space:nowrap;font-size:0.82rem;color:#fde68a;padding:0 2rem;">
+    </div>
+</div>
+<style>
+@keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+.wallet-bar { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0.75rem; margin-bottom:1.5rem; }
+.wallet-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:1rem; }
+.wallet-card .wlabel { font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.25rem; }
+.wallet-card .wvalue { font-size:1.2rem; font-weight:700; }
+.wallet-card .wvalue.green { color:var(--success); }
+.chart-container { background:var(--bg-dark); border:1px solid var(--border); border-radius:12px; padding:1rem; margin-bottom:1rem; position:relative; }
+.chart-canvas { width:100%; height:200px; display:block; }
+.quick-trade { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:1rem; margin-bottom:1rem; }
+.quick-trade h4 { font-size:0.9rem; color:var(--gold); margin-bottom:0.75rem; }
+.trade-row { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end; }
+.trade-row input,.trade-row select { padding:0.5rem; background:var(--bg-input); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:0.85rem; }
+.trade-row input { width:120px; }
+.btn-buy { padding:0.5rem 1rem; background:linear-gradient(135deg,#10b981,#059669); border:none; border-radius:6px; color:white; font-weight:600; cursor:pointer; }
+.btn-sell { padding:0.5rem 1rem; background:linear-gradient(135deg,#ef4444,#dc2626); border:none; border-radius:6px; color:white; font-weight:600; cursor:pointer; }
+.btn-watch { padding:0.5rem 1rem; background:linear-gradient(135deg,#f59e0b,#d97706); border:none; border-radius:6px; color:white; font-weight:600; cursor:pointer; }
+.watchlist { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:1rem; margin-bottom:1rem; }
+.watchlist h4 { font-size:0.9rem; color:var(--gold); margin-bottom:0.5rem; }
+.wl-item { display:flex; justify-content:space-between; align-items:center; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.85rem; }
+.wl-item:last-child { border-bottom:none; }
+.wl-remove { background:none; border:none; color:var(--danger); cursor:pointer; font-size:0.85rem; padding:0.2rem 0.4rem; }
+</style>
+
 <main class="main">
+    <!-- Wallet Summary Bar -->
+    <div class="wallet-bar" id="walletBar" style="display:none;">
+        <div class="wallet-card">
+            <div class="wlabel">Investment Account</div>
+            <div class="wvalue green" id="wInvBalance">$0.00</div>
+        </div>
+        <div class="wallet-card">
+            <div class="wlabel">Cash Available</div>
+            <div class="wvalue" id="wCash">$0.00</div>
+        </div>
+        <div class="wallet-card">
+            <div class="wlabel">Invested Assets</div>
+            <div class="wvalue green" id="wInvested">$0.00</div>
+        </div>
+        <div class="wallet-card">
+            <div class="wlabel">Health Wallet</div>
+            <div class="wvalue" id="wHealth">$0.00</div>
+        </div>
+        <div class="wallet-card">
+            <div class="wlabel">Monthly Premium</div>
+            <div class="wvalue" id="wPremium">$0.00</div>
+        </div>
+    </div>
+
     <div class="hero">
         <h1>Investment AI Super Tool</h1>
-        <p>14 AI-powered modules with live Alpha Vantage market data for real-time quotes, technical analysis, portfolio optimization, backtesting, news sentiment, and automated trading strategies.</p>
+        <p>14 AI-powered modules with live Alpha Vantage data — real-time quotes, interactive charts, trading tools, news sentiment, and direct wallet integration.</p>
         <div id="liveDataBadge" style="margin-top:0.75rem;display:inline-block;padding:0.35rem 1rem;border-radius:8px;font-size:0.82rem;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#10b981;">Checking live data connection...</div>
     </div>
 
@@ -613,6 +666,8 @@
 let apiKey = localStorage.getItem('investmentAiKey') || '';
 let currentModule = null;
 let lastResult = null;
+let watchlist = JSON.parse(localStorage.getItem('investAiWatchlist') || '[]');
+let walletData = null;
 
 const MODULE_PARAMS = {
     market_research: [
@@ -713,6 +768,130 @@ async function autoFetchKeyIfAdmin() {
 }
 autoFetchKeyIfAdmin();
 
+// --- Breaking News Ticker ---
+async function loadNewsTicker() {
+    if (!apiKey) return;
+    try {
+        const res = await fetch('/api/investment-ai/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Investment-AI-Key': apiKey },
+            body: JSON.stringify({ module: 'news_sentiment', params: {} }),
+        });
+        const data = await res.json();
+        const articles = data.articles || [];
+        if (articles.length > 0) {
+            const ticker = document.getElementById('newsTicker');
+            const content = document.getElementById('newsTickerContent');
+            let html = '';
+            articles.forEach(a => {
+                const sent = a.overall_sentiment_label || 'Neutral';
+                const color = (a.overall_sentiment_score || 0) > 0.1 ? '#10b981' : ((a.overall_sentiment_score || 0) < -0.1 ? '#ef4444' : '#fde68a');
+                html += `<span style="color:${color};">● ${sent.toUpperCase()}</span> <span>${a.title || ''}</span><span style="color:var(--text-secondary);margin-left:0.5rem;">${a.source || ''}</span>`;
+                html += '<span style="margin:0 1rem;color:rgba(255,255,255,0.2);">|</span>';
+            });
+            content.innerHTML = html + html;
+            ticker.style.display = 'block';
+        }
+    } catch (e) { /* silent */ }
+}
+
+// --- Wallet Loading ---
+async function loadWallet() {
+    const token = localStorage.getItem('token');
+    if (!apiKey) return;
+    try {
+        const headers = { 'X-Investment-AI-Key': apiKey };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        const res = await fetch('/api/investment-ai/wallet?api_key=' + encodeURIComponent(apiKey), { headers });
+        if (res.ok) {
+            walletData = await res.json();
+            const bar = document.getElementById('walletBar');
+            const ia = walletData.investment_account || {};
+            document.getElementById('wInvBalance').textContent = '$' + (ia.total_balance || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('wCash').textContent = '$' + (ia.cash_available || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('wInvested').textContent = '$' + (ia.invested_assets || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('wHealth').textContent = '$' + ((walletData.health_wallet || {}).balance || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('wPremium').textContent = '$' + (walletData.total_monthly_premium || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+            bar.style.display = 'grid';
+        }
+    } catch (e) { /* silent */ }
+}
+
+// --- Chart Drawing (pure canvas, no library needed) ---
+function drawPriceChart(canvasId, bars, label) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !bars || bars.length < 2) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = canvas.parentElement.clientWidth - 32;
+    const H = canvas.height = 200;
+    ctx.clearRect(0, 0, W, H);
+
+    const closes = bars.map(b => b.close || b.price || 0).reverse();
+    const dates = bars.map(b => b.date || '').reverse();
+    const min = Math.min(...closes) * 0.998;
+    const max = Math.max(...closes) * 1.002;
+    const range = max - min || 1;
+    const stepX = W / (closes.length - 1);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+        const y = (H / 5) * i;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Price line
+    const gradient = ctx.createLinearGradient(0, 0, 0, H);
+    const isUp = closes[closes.length-1] >= closes[0];
+    gradient.addColorStop(0, isUp ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    closes.forEach((c, i) => { const x = i * stepX; const y = H - ((c - min) / range) * (H - 20) - 10; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.strokeStyle = isUp ? '#10b981' : '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Fill area
+    const lastX = (closes.length - 1) * stepX;
+    ctx.lineTo(lastX, H); ctx.lineTo(0, H); ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Price labels
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.fillText('$' + max.toFixed(2), 4, 12);
+    ctx.fillText('$' + min.toFixed(2), 4, H - 4);
+    const latest = closes[closes.length-1];
+    ctx.fillStyle = isUp ? '#10b981' : '#ef4444';
+    ctx.font = 'bold 12px Inter, sans-serif';
+    ctx.fillText('$' + latest.toFixed(2), W - 80, 16);
+    if (label) { ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = 'bold 11px Inter, sans-serif'; ctx.fillText(label, W - 80, 30); }
+}
+
+// --- Watchlist ---
+function addToWatchlist(symbol) {
+    if (!symbol) return;
+    symbol = symbol.toUpperCase();
+    if (!watchlist.includes(symbol)) {
+        watchlist.push(symbol);
+        localStorage.setItem('investAiWatchlist', JSON.stringify(watchlist));
+    }
+    renderWatchlist();
+}
+function removeFromWatchlist(symbol) {
+    watchlist = watchlist.filter(s => s !== symbol);
+    localStorage.setItem('investAiWatchlist', JSON.stringify(watchlist));
+    renderWatchlist();
+}
+function renderWatchlist() {
+    const el = document.getElementById('watchlistItems');
+    if (!el) return;
+    if (watchlist.length === 0) { el.innerHTML = '<div style="color:var(--text-secondary);font-size:0.82rem;">No stocks in watchlist. Use the + button to add.</div>'; return; }
+    el.innerHTML = watchlist.map(s => `<div class="wl-item"><span style="cursor:pointer;" onclick="selectModule('technical_analysis');document.getElementById('param_stock').value='${s}';runAnalysis();">${s}</span><button class="wl-remove" onclick="removeFromWatchlist('${s}')">✕</button></div>`).join('');
+}
+
 function connectWithKey() {
     apiKey = document.getElementById('apiKeyInput').value.trim();
     if (!apiKey) return;
@@ -742,6 +921,8 @@ async function validateKey(silent) {
                 badge.style.borderColor = 'rgba(245,158,11,0.3)';
                 badge.style.color = '#f59e0b';
             }
+            loadNewsTicker();
+            loadWallet();
         } else {
             if (!silent) alert('Invalid access key. Contact your admin.');
             const status = document.getElementById('connectionStatus');
@@ -884,6 +1065,7 @@ function renderResults(data) {
     }
 
     c.innerHTML = html;
+    renderWatchlist();
 }
 
 function renderTechnicalAnalysis(d) {
@@ -1192,28 +1374,46 @@ function renderLiveQuote(d) {
     html += kvItem('Change', '$' + d.change, changeClass);
     html += kvItem('Volume', d.volume ? d.volume.toLocaleString() : '-');
     html += '</div></div>';
+    // Quick trade + watchlist
+    html += `<div class="quick-trade"><h4>Quick Actions — ${d.symbol}</h4><div class="trade-row">
+        <button class="btn-buy" onclick="alert('Trade simulation: BUY ${d.symbol} — connect to algo trading for live execution')">Buy ${d.symbol}</button>
+        <button class="btn-sell" onclick="alert('Trade simulation: SELL ${d.symbol} — connect to algo trading for live execution')">Sell ${d.symbol}</button>
+        <button class="btn-watch" onclick="addToWatchlist('${d.symbol}')">+ Watchlist</button>
+        <button class="btn-watch" style="background:linear-gradient(135deg,var(--primary),var(--secondary));" onclick="selectModule('technical_analysis');setTimeout(()=>{document.getElementById('param_stock').value='${d.symbol}';runAnalysis();},100);">Full Analysis</button>
+    </div></div>`;
+    html += renderWatchlistPanel();
     return html;
 }
 
 function renderLiveHistory(d) {
     if (d.error) return `<div class="result-section"><h4>Error</h4><p style="color:var(--danger)">${d.error}</p></div>`;
     const bars = d.bars || [];
-    let html = `<div class="result-section"><h4>${d.symbol} — ${d.bar_count} Trading Days</h4>`;
+    let html = '';
+    // Price chart
+    html += `<div class="chart-container"><h4 style="font-size:0.9rem;color:var(--gold);margin-bottom:0.5rem;">${d.symbol} Price Chart — ${bars.length} Days</h4><canvas id="historyChart" class="chart-canvas"></canvas></div>`;
     if (d.latest) {
-        html += '<div class="kv-grid" style="margin-bottom:1rem;">';
-        html += kvItem('Latest Date', d.latest.date);
+        html += '<div class="result-section"><h4>Latest Data</h4><div class="kv-grid">';
+        html += kvItem('Date', d.latest.date);
         html += kvItem('Close', '$' + d.latest.close);
         html += kvItem('Open', '$' + d.latest.open);
         html += kvItem('High', '$' + d.latest.high);
         html += kvItem('Low', '$' + d.latest.low);
         html += kvItem('Volume', d.latest.volume ? d.latest.volume.toLocaleString() : '-');
-        html += '</div>';
+        html += '</div></div>';
     }
-    html += '<div style="overflow-x:auto;"><table class="stock-table"><thead><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>';
-    bars.slice(0, 30).forEach(b => {
+    // Quick trade
+    html += `<div class="quick-trade"><h4>Trade ${d.symbol}</h4><div class="trade-row">
+        <button class="btn-buy" onclick="alert('Simulated BUY order for ${d.symbol}')">Buy</button>
+        <button class="btn-sell" onclick="alert('Simulated SELL order for ${d.symbol}')">Sell</button>
+        <button class="btn-watch" onclick="addToWatchlist('${d.symbol}')">+ Watchlist</button>
+    </div></div>`;
+    html += '<div class="result-section"><h4>Price History</h4><div style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table class="stock-table"><thead><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>';
+    bars.slice(0, 60).forEach(b => {
         html += `<tr><td>${b.date}</td><td>$${b.open}</td><td>$${b.high}</td><td>$${b.low}</td><td><strong>$${b.close}</strong></td><td>${b.volume ? b.volume.toLocaleString() : '-'}</td></tr>`;
     });
     html += '</tbody></table></div></div>';
+    html += renderWatchlistPanel();
+    setTimeout(() => drawPriceChart('historyChart', bars, d.symbol), 50);
     return html;
 }
 
@@ -1257,6 +1457,10 @@ function renderMarketMovers(d) {
         html += '</tbody></table></div></div>';
     }
     return html || '<div class="result-section"><p>No market mover data available.</p></div>';
+}
+
+function renderWatchlistPanel() {
+    return `<div class="watchlist"><h4>Watchlist</h4><div id="watchlistItems"></div></div>`;
 }
 
 function renderGeneric(d) {
