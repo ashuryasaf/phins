@@ -1,0 +1,8 @@
+title = "Gitleaks Configuration"
+
+[allowlist]
+  description = "Allowlist test/example database fixtures"
+  paths = [
+    '''database\/dynamic_customers\.json''',
+    '''database\/invitation_codes\.json''',
+  ]
