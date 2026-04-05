@@ -1026,10 +1026,6 @@ class TradingPlatformService:
 
         # Source 2: Alpaca Data API crypto snapshots (ONE call, all crypto)
         try:
-            crypto_api_syms = ",".join(
-                s.replace("/", "%2F") if "/" in s else f"{s}%2FUSD"
-                for s in crypto_syms
-            )
             crypto_data = self._data_request(
                 f"/v1beta3/crypto/us/snapshots",
                 {"symbols": ",".join(s if "/" in s else f"{s}/USD" for s in crypto_syms)},
