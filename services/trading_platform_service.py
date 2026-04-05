@@ -357,13 +357,74 @@ class TradingPlatformService:
 
     def cancel_order(self, order_id: str) -> Dict[str, Any]:
         if not self._connected:
-            return {"success": True, "message": "Demo: order cancelled"}
+            return self._not_connected_error()
         return self._trade_request("DELETE", f"/orders/{order_id}") or {"error": "Cancel failed"}
 
-    def close_position(self, symbol: str) -> Dict[str, Any]:
+    def cancel_all_orders(self) -> Dict[str, Any]:
         if not self._connected:
-            return {"success": True, "message": f"Demo: closed {symbol} position"}
-        return self._trade_request("DELETE", f"/positions/{symbol}") or {"error": "Close failed"}
+            return self._not_connected_error()
+        return self._trade_request("DELETE", "/orders") or {"error": "Cancel all failed"}
+
+    def close_position(self, symbol: str, qty: Optional[float] = None) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        params = f"/{symbol}"
+        if qty is not None:
+            params += f"?qty={qty}"
+        result = self._trade_request("DELETE", f"/positions{params}") or {"error": "Close failed"}
+        if "error" not in result:
+            self._record_trade_to_ledger({"symbol": symbol, "side": "sell", "qty": str(qty or "all"), "status": "closed", "broker": "alpaca"})
+        return result
+
+    def close_all_positions(self) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        return self._trade_request("DELETE", "/positions") or {"error": "Close all failed"}
+
+    def get_open_position(self, symbol: str) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        raw = self._trade_request("GET", f"/positions/{symbol}")
+        if not raw or "error" in raw:
+            return raw or {"error": f"Position {symbol} not found"}
+        return {
+            "symbol": raw.get("symbol"),
+            "qty": _sf(raw.get("qty")),
+            "side": raw.get("side"),
+            "avg_entry_price": _sf(raw.get("avg_entry_price")),
+            "current_price": _sf(raw.get("current_price")),
+            "market_value": _sf(raw.get("market_value")),
+            "cost_basis": _sf(raw.get("cost_basis")),
+            "unrealized_pl": _sf(raw.get("unrealized_pl")),
+            "unrealized_pl_pct": _sf(raw.get("unrealized_plpc")),
+            "asset_class": raw.get("asset_class"),
+            "asset_id": raw.get("asset_id"),
+        }
+
+    # ------------------------------------------------------------------
+    # ASSET LOOKUP
+    # ------------------------------------------------------------------
+
+    def get_asset(self, symbol: str) -> Dict[str, Any]:
+        if not self._connected:
+            try:
+                from services.investment_ai_tool_service import STOCK_DATABASE
+                s = STOCK_DATABASE.get(symbol.upper())
+                if s:
+                    return {"symbol": symbol.upper(), "name": s.get("name"), "class": "us_equity", "tradable": True, "fractionable": True, "source": "static"}
+            except Exception:
+                pass
+            return {"error": f"Asset {symbol} not found"}
+        raw = self._trade_request("GET", f"/assets/{symbol.upper()}")
+        if not raw or "error" in raw:
+            return raw or {"error": f"Asset {symbol} not found"}
+        return {
+            "id": raw.get("id"), "symbol": raw.get("symbol"), "name": raw.get("name"),
+            "class": raw.get("class"), "exchange": raw.get("exchange"),
+            "status": raw.get("status"), "tradable": raw.get("tradable"),
+            "marginable": raw.get("marginable"), "shortable": raw.get("shortable"),
+            "fractionable": raw.get("fractionable"), "easy_to_borrow": raw.get("easy_to_borrow"),
+        }
 
     # ==================================================================
     # MARKET DATA (via Alpaca Data API)
@@ -543,8 +604,31 @@ class TradingPlatformService:
 
     def remove_from_watchlist(self, watchlist_id: str, symbol: str) -> Dict[str, Any]:
         if not self._connected:
-            return {"success": True}
+            return self._not_connected_error()
         return self._trade_request("DELETE", f"/watchlists/{watchlist_id}/{symbol}") or {}
+
+    def get_watchlist_by_id(self, watchlist_id: str) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        raw = self._trade_request("GET", f"/watchlists/{watchlist_id}")
+        if not raw or "error" in raw:
+            return raw or {}
+        return {"id": raw.get("id"), "name": raw.get("name"), "symbols": [a.get("symbol") for a in raw.get("assets", [])]}
+
+    def update_watchlist(self, watchlist_id: str, name: Optional[str] = None, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        body: Dict[str, Any] = {}
+        if name:
+            body["name"] = name
+        if symbols is not None:
+            body["symbols"] = symbols
+        return self._trade_request("PUT", f"/watchlists/{watchlist_id}", body) or {}
+
+    def delete_watchlist(self, watchlist_id: str) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        return self._trade_request("DELETE", f"/watchlists/{watchlist_id}") or {}
 
     # ==================================================================
     # MARKET CLOCK & ASSETS
@@ -565,6 +649,144 @@ class TradingPlatformService:
         result = {"is_open": raw.get("is_open", False), "timestamp": raw.get("timestamp"), "next_open": raw.get("next_open"), "next_close": raw.get("next_close")}
         self._set_cache("clock", result)
         return result
+
+    def get_calendar(self, start: str = "", end: str = "") -> List[Dict[str, Any]]:
+        if not self._connected:
+            return []
+        params = "?"
+        if start:
+            params += f"start={start}&"
+        if end:
+            params += f"end={end}&"
+        raw = self._trade_request("GET", f"/calendar{params.rstrip('&?')}")
+        return raw if isinstance(raw, list) else []
+
+    def get_corporate_actions(self, symbols: str = "", types: str = "", limit: int = 20) -> List[Dict[str, Any]]:
+        if not self._connected:
+            return []
+        params = f"?limit={limit}"
+        if symbols:
+            params += f"&symbols={symbols}"
+        if types:
+            params += f"&types={types}"
+        raw = self._trade_request("GET", f"/corporate-actions/announcements{params}")
+        return raw if isinstance(raw, list) else []
+
+    # ------------------------------------------------------------------
+    # STOCK MARKET DATA (full MCP alignment)
+    # ------------------------------------------------------------------
+
+    def get_stock_quote(self, symbol: str, start: str = "", end: str = "", limit: int = 100) -> Optional[Dict]:
+        params: Dict[str, str] = {"limit": str(limit), "feed": "iex"}
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        return self._data_request(f"/v2/stocks/{symbol.upper()}/quotes", params)
+
+    def get_stock_trades(self, symbol: str, start: str = "", end: str = "", limit: int = 100) -> Optional[Dict]:
+        params: Dict[str, str] = {"limit": str(limit), "feed": "iex"}
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        return self._data_request(f"/v2/stocks/{symbol.upper()}/trades", params)
+
+    def get_stock_latest_bar(self, symbol: str) -> Optional[Dict]:
+        return self._data_request(f"/v2/stocks/{symbol.upper()}/bars/latest", {"feed": "iex"})
+
+    # ------------------------------------------------------------------
+    # CRYPTO MARKET DATA (full MCP alignment)
+    # ------------------------------------------------------------------
+
+    def get_crypto_bars(self, symbol: str, timeframe: str = "1Day", limit: int = 100) -> Optional[Dict]:
+        loc = symbol.upper().replace("/", "%2F") if "/" in symbol else f"{symbol.upper()}%2FUSD"
+        return self._data_request(f"/v1beta3/crypto/us/bars", {"symbols": symbol.upper().replace("/", "%2F") if "/" in symbol else f"{symbol.upper()}/USD", "timeframe": timeframe, "limit": str(limit)})
+
+    def get_crypto_quotes(self, symbol: str, limit: int = 100) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/quotes", {"symbols": sym, "limit": str(limit)})
+
+    def get_crypto_trades(self, symbol: str, limit: int = 100) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/trades", {"symbols": sym, "limit": str(limit)})
+
+    def get_crypto_latest_quote(self, symbol: str) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/latest/quotes", {"symbols": sym})
+
+    def get_crypto_latest_bar(self, symbol: str) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/latest/bars", {"symbols": sym})
+
+    def get_crypto_latest_trade(self, symbol: str) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/latest/trades", {"symbols": sym})
+
+    def get_crypto_snapshot(self, symbol: str) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/snapshots", {"symbols": sym})
+
+    def get_crypto_orderbook(self, symbol: str) -> Optional[Dict]:
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        return self._data_request(f"/v1beta3/crypto/us/latest/orderbooks", {"symbols": sym})
+
+    # ------------------------------------------------------------------
+    # OPTIONS MARKET DATA (full MCP alignment)
+    # ------------------------------------------------------------------
+
+    def get_option_contracts(self, underlying_symbol: str = "", expiration_date: str = "", option_type: str = "", strike_price_gte: Optional[float] = None, strike_price_lte: Optional[float] = None, limit: int = 50) -> Optional[Dict]:
+        params: Dict[str, str] = {"limit": str(limit)}
+        if underlying_symbol:
+            params["underlying_symbols"] = underlying_symbol.upper()
+        if expiration_date:
+            params["expiration_date"] = expiration_date
+        if option_type:
+            params["type"] = option_type
+        if strike_price_gte is not None:
+            params["strike_price_gte"] = str(strike_price_gte)
+        if strike_price_lte is not None:
+            params["strike_price_lte"] = str(strike_price_lte)
+        return self._data_request(f"/v2/options/contracts", params)
+
+    def get_option_latest_quote(self, symbol: str) -> Optional[Dict]:
+        return self._data_request(f"/v2/options/quotes/latest", {"symbols": symbol.upper(), "feed": "indicative"})
+
+    def get_option_snapshot(self, symbol: str) -> Optional[Dict]:
+        return self._data_request(f"/v2/options/snapshots", {"symbols": symbol.upper(), "feed": "indicative"})
+
+    # ------------------------------------------------------------------
+    # CRYPTO + OPTIONS TRADING (full MCP alignment)
+    # ------------------------------------------------------------------
+
+    def place_crypto_order(self, symbol: str, side: str, qty: Optional[float] = None, notional: Optional[float] = None, order_type: str = "market", time_in_force: str = "gtc", limit_price: Optional[float] = None) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
+        body: Dict[str, Any] = {"symbol": sym, "side": side.lower(), "type": order_type, "time_in_force": time_in_force}
+        if qty is not None:
+            body["qty"] = str(qty)
+        elif notional is not None:
+            body["notional"] = str(notional)
+        if limit_price is not None:
+            body["limit_price"] = str(limit_price)
+        raw = self._trade_request("POST", "/orders", body)
+        if raw and "error" not in raw:
+            self._record_trade_to_ledger({"symbol": sym, "side": side, "qty": str(qty or ""), "status": raw.get("status"), "broker": "alpaca", "order_id": raw.get("id")})
+            self._cache.pop("positions", None)
+        return raw or {"error": "Crypto order failed"}
+
+    def place_option_order(self, symbol: str, side: str, qty: float, order_type: str = "market", time_in_force: str = "day", limit_price: Optional[float] = None) -> Dict[str, Any]:
+        if not self._connected:
+            return self._not_connected_error()
+        body: Dict[str, Any] = {"symbol": symbol.upper(), "side": side.lower(), "qty": str(qty), "type": order_type, "time_in_force": time_in_force}
+        if limit_price is not None:
+            body["limit_price"] = str(limit_price)
+        raw = self._trade_request("POST", "/orders", body)
+        if raw and "error" not in raw:
+            self._record_trade_to_ledger({"symbol": symbol, "side": side, "qty": str(qty), "status": raw.get("status"), "broker": "alpaca", "order_id": raw.get("id"), "type": "option"})
+            self._cache.pop("positions", None)
+        return raw or {"error": "Option order failed"}
 
     def search_assets(self, query: str = "", asset_class: str = "us_equity", status: str = "active") -> List[Dict[str, Any]]:
         if not self._connected:
