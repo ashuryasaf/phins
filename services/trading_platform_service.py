@@ -38,12 +38,17 @@ import requests
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 ALPACA_PAPER = os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
+ALPACA_BROKER_MODE = os.environ.get("ALPACA_BROKER_MODE", "false").lower() in ("1", "true", "yes")
 
 ALPACA_TRADE_URL = (
     "https://paper-api.alpaca.markets" if ALPACA_PAPER
     else "https://api.alpaca.markets"
 )
 ALPACA_DATA_URL = "https://data.alpaca.markets"
+ALPACA_BROKER_URL = (
+    "https://broker-api.sandbox.alpaca.markets" if ALPACA_PAPER
+    else "https://broker-api.alpaca.markets"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -893,6 +898,304 @@ class TradingPlatformService:
             "status": "accepted",
             "broker": "demo",
             "note": "Demo mode order. Set ALPACA_API_KEY for live execution.",
+        }
+
+    # ==================================================================
+    # BROKER API v1 (Account creation, ACH, transfers, journaling)
+    # ==================================================================
+
+    def _broker_headers(self) -> Dict[str, str]:
+        import base64
+        creds = base64.b64encode(f"{self._api_key}:{self._secret_key}".encode()).decode()
+        return {"Authorization": f"Basic {creds}", "Content-Type": "application/json"}
+
+    def _broker_request(self, method: str, path: str, body: Optional[Dict] = None) -> Optional[Dict]:
+        url = f"{ALPACA_BROKER_URL}/v1{path}"
+        try:
+            resp = requests.request(method, url, headers=self._broker_headers(), json=body, timeout=self._timeout)
+            if resp.status_code == 204:
+                return {"success": True}
+            if resp.status_code >= 400:
+                try:
+                    return {"error": resp.json(), "status": resp.status_code}
+                except Exception:
+                    return {"error": resp.text, "status": resp.status_code}
+            return resp.json()
+        except Exception as e:
+            return {"error": str(e)}
+
+    def broker_create_account(self, account_data: Dict) -> Dict[str, Any]:
+        """Create a brokerage account for an end user (Broker API v1)."""
+        if not self._connected:
+            return {"id": "demo-acct-001", "account_number": "900000001", "status": "APPROVED", "currency": "USD", "note": "Demo mode"}
+        return self._broker_request("POST", "/accounts", account_data) or {"error": "Account creation failed"}
+
+    def broker_get_accounts(self) -> List[Dict[str, Any]]:
+        if not self._connected:
+            return [{"id": "demo-acct-001", "account_number": "900000001", "status": "ACTIVE", "currency": "USD"}]
+        raw = self._broker_request("GET", "/accounts")
+        if isinstance(raw, list):
+            return raw
+        return [raw] if raw and "error" not in raw else []
+
+    def broker_get_account(self, account_id: str) -> Dict[str, Any]:
+        if not self._connected:
+            return {"id": account_id, "status": "ACTIVE", "currency": "USD"}
+        return self._broker_request("GET", f"/accounts/{account_id}") or {}
+
+    def broker_create_ach_relationship(self, account_id: str, ach_data: Dict) -> Dict[str, Any]:
+        """Establish ACH bank relationship for funding."""
+        if not self._connected:
+            return {"id": "demo-ach-001", "account_id": account_id, "status": "APPROVED", "note": "Demo mode"}
+        return self._broker_request("POST", f"/accounts/{account_id}/ach_relationships", ach_data) or {"error": "ACH setup failed"}
+
+    def broker_get_ach_relationships(self, account_id: str) -> List[Dict]:
+        if not self._connected:
+            return [{"id": "demo-ach-001", "status": "APPROVED", "nickname": "Demo Bank"}]
+        raw = self._broker_request("GET", f"/accounts/{account_id}/ach_relationships")
+        return raw if isinstance(raw, list) else []
+
+    def broker_create_transfer(self, account_id: str, transfer_data: Dict) -> Dict[str, Any]:
+        """Fund account via ACH transfer."""
+        if not self._connected:
+            return {"id": "demo-xfer-001", "status": "QUEUED", "amount": transfer_data.get("amount"), "direction": transfer_data.get("direction"), "note": "Demo mode"}
+        return self._broker_request("POST", f"/accounts/{account_id}/transfers", transfer_data) or {"error": "Transfer failed"}
+
+    def broker_create_journal(self, journal_data: Dict) -> Dict[str, Any]:
+        """Journal cash/securities between accounts (instant funding)."""
+        if not self._connected:
+            return {"id": "demo-jnl-001", "entry_type": journal_data.get("entry_type"), "status": "executed", "note": "Demo mode"}
+        return self._broker_request("POST", "/journals", journal_data) or {"error": "Journal failed"}
+
+    def broker_submit_order(self, account_id: str, order_data: Dict) -> Dict[str, Any]:
+        """Submit order for a specific broker account (v1 Broker API)."""
+        if not self._connected:
+            return self._demo_order(order_data)
+        raw = self._broker_request("POST", f"/trading/accounts/{account_id}/orders", order_data)
+        return raw or {"error": "Order failed"}
+
+    def broker_get_assets(self, status: str = "active", asset_class: str = "") -> List[Dict]:
+        """Get all tradable assets from Broker API."""
+        cache_key = f"broker_assets:{status}:{asset_class}"
+        cached = self._cached(cache_key, 3600.0)
+        if cached:
+            return cached
+        if not self._connected:
+            try:
+                from services.investment_ai_tool_service import STOCK_DATABASE
+                return [{"symbol": k, "name": v.get("name", k), "class": "us_equity", "tradable": True, "fractionable": True} for k, v in STOCK_DATABASE.items()]
+            except Exception:
+                return []
+        raw = self._broker_request("GET", f"/assets?status={status}" + (f"&asset_class={asset_class}" if asset_class else ""))
+        result = raw if isinstance(raw, list) else []
+        self._set_cache(cache_key, result)
+        return result
+
+    # ==================================================================
+    # BI ANALYTICS ENGINE
+    # ==================================================================
+
+    def get_bi_analytics(self) -> Dict[str, Any]:
+        """
+        Business Intelligence analytics computed from positions,
+        portfolio history, and account data.
+        """
+        positions = self.get_positions()
+        account = self.get_account()
+        history = self.get_portfolio_history("1M", "1D")
+
+        total_pl = sum(_sf(p.get("unrealized_pl")) or 0 for p in positions)
+        total_value = sum(_sf(p.get("market_value")) or 0 for p in positions)
+        total_cost = sum(_sf(p.get("cost_basis")) or 0 for p in positions)
+
+        winners = [p for p in positions if (_sf(p.get("unrealized_pl")) or 0) > 0]
+        losers = [p for p in positions if (_sf(p.get("unrealized_pl")) or 0) < 0]
+        win_rate = len(winners) / max(1, len(positions)) * 100
+
+        best = max(positions, key=lambda p: _sf(p.get("unrealized_pl")) or 0) if positions else None
+        worst = min(positions, key=lambda p: _sf(p.get("unrealized_pl")) or 0) if positions else None
+
+        # Sector exposure
+        sectors: Dict[str, float] = {}
+        for p in positions:
+            sec = p.get("asset_class", "unknown")
+            sectors[sec] = sectors.get(sec, 0) + (_sf(p.get("market_value")) or 0)
+
+        # Concentration risk
+        max_pct = 0
+        if total_value > 0:
+            max_pct = max((_sf(p.get("market_value")) or 0) / total_value * 100 for p in positions) if positions else 0
+
+        # Equity curve stats from portfolio history
+        points = history.get("points", [])
+        equities = [p.get("equity") for p in points if p.get("equity")]
+
+        peak = max(equities) if equities else 0
+        drawdown = 0
+        if peak > 0 and equities:
+            current_eq = equities[-1]
+            drawdown = round((peak - current_eq) / peak * 100, 2)
+
+        # Sharpe estimate (annualized from daily returns)
+        daily_returns = []
+        for i in range(1, len(equities)):
+            if equities[i-1] and equities[i-1] > 0:
+                daily_returns.append((equities[i] - equities[i-1]) / equities[i-1])
+
+        sharpe = 0
+        if daily_returns:
+            avg_ret = sum(daily_returns) / len(daily_returns)
+            std_ret = (sum((r - avg_ret)**2 for r in daily_returns) / max(1, len(daily_returns)-1)) ** 0.5
+            if std_ret > 0:
+                sharpe = round((avg_ret / std_ret) * (252 ** 0.5), 2)
+
+        # Sortino (downside deviation only)
+        sortino = 0
+        down_returns = [r for r in daily_returns if r < 0]
+        if down_returns:
+            down_std = (sum(r**2 for r in down_returns) / len(down_returns)) ** 0.5
+            if down_std > 0:
+                avg_ret = sum(daily_returns) / len(daily_returns)
+                sortino = round((avg_ret / down_std) * (252 ** 0.5), 2)
+
+        # Beta estimate vs SPY
+        beta = sum(p.get("beta", 1.0) or 1.0 for p in positions) / max(1, len(positions)) if positions else 1.0
+
+        portfolio_val = _sf(account.get("portfolio_value")) or 0
+
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "summary": {
+                "portfolio_value": portfolio_val,
+                "total_cost_basis": round(total_cost, 2),
+                "total_unrealized_pl": round(total_pl, 2),
+                "total_return_pct": round(total_pl / max(1, total_cost) * 100, 2) if total_cost else 0,
+                "cash": _sf(account.get("cash")),
+                "buying_power": _sf(account.get("buying_power")),
+                "position_count": len(positions),
+            },
+            "performance": {
+                "win_rate": round(win_rate, 1),
+                "winners": len(winners),
+                "losers": len(losers),
+                "best_position": {"symbol": best.get("symbol"), "pl": _sf(best.get("unrealized_pl"))} if best else None,
+                "worst_position": {"symbol": worst.get("symbol"), "pl": _sf(worst.get("unrealized_pl"))} if worst else None,
+                "sharpe_ratio": sharpe,
+                "sortino_ratio": sortino,
+                "max_drawdown_pct": drawdown,
+                "peak_equity": peak,
+                "portfolio_beta": round(beta, 2),
+            },
+            "risk": {
+                "max_concentration_pct": round(max_pct, 1),
+                "concentration_symbol": max(positions, key=lambda p: _sf(p.get("market_value")) or 0).get("symbol") if positions else None,
+                "sector_exposure": {k: round(v, 2) for k, v in sorted(sectors.items(), key=lambda x: -x[1])},
+                "total_invested": round(total_value, 2),
+                "cash_ratio": round((_sf(account.get("cash")) or 0) / max(1, portfolio_val) * 100, 1),
+            },
+            "positions_detail": [
+                {
+                    "symbol": p.get("symbol"),
+                    "qty": _sf(p.get("qty")),
+                    "value": _sf(p.get("market_value")),
+                    "cost": _sf(p.get("cost_basis")),
+                    "pl": _sf(p.get("unrealized_pl")),
+                    "pl_pct": round((_sf(p.get("unrealized_pl_pct")) or 0) * 100, 2),
+                    "weight": round((_sf(p.get("market_value")) or 0) / max(1, total_value) * 100, 1),
+                    "change_today": _sf(p.get("change_today")),
+                }
+                for p in sorted(positions, key=lambda x: _sf(x.get("market_value")) or 0, reverse=True)
+            ],
+        }
+
+    # ==================================================================
+    # AI OPTIMIZATION ENGINE
+    # ==================================================================
+
+    def ai_optimize_portfolio(self) -> Dict[str, Any]:
+        """
+        AI-driven portfolio optimization: identifies rebalancing opportunities,
+        risk reduction, and signal-based trade suggestions.
+        """
+        positions = self.get_positions()
+        account = self.get_account()
+        analytics = self.get_bi_analytics()
+
+        total_value = analytics["summary"]["portfolio_value"] or 0
+        suggestions: List[Dict] = []
+        risk_alerts: List[Dict] = []
+        rebalance_actions: List[Dict] = []
+
+        # Concentration risk check
+        max_conc = analytics["risk"]["max_concentration_pct"]
+        if max_conc > 25:
+            risk_alerts.append({
+                "level": "high",
+                "message": f"Position concentration risk: {analytics['risk']['concentration_symbol']} is {max_conc:.0f}% of portfolio",
+                "action": f"Consider trimming {analytics['risk']['concentration_symbol']} to reduce single-stock risk",
+            })
+
+        # Cash drag check
+        cash_ratio = analytics["risk"]["cash_ratio"]
+        if cash_ratio > 30:
+            risk_alerts.append({
+                "level": "medium",
+                "message": f"Cash drag: {cash_ratio:.0f}% of portfolio in cash",
+                "action": "Deploy cash into diversified positions for better returns",
+            })
+
+        # Drawdown alert
+        if analytics["performance"]["max_drawdown_pct"] > 10:
+            risk_alerts.append({
+                "level": "high",
+                "message": f"Drawdown: {analytics['performance']['max_drawdown_pct']}% from peak",
+                "action": "Review losing positions and consider tightening stop-losses",
+            })
+
+        # Run AI signals for each position
+        try:
+            from services.investment_ai_tool_service import _get_live_technical_profile, STOCK_DATABASE
+        except ImportError:
+            _get_live_technical_profile = None
+            STOCK_DATABASE = {}
+
+        for p in positions:
+            sym = p.get("symbol", "")
+            pl_pct = (_sf(p.get("unrealized_pl_pct")) or 0) * 100
+            weight = (_sf(p.get("market_value")) or 0) / max(1, total_value) * 100
+
+            profile = None
+            if _get_live_technical_profile:
+                profile = _get_live_technical_profile(sym)
+
+            signals = (profile or {}).get("signals", {})
+            rec = signals.get("recommendation", "HOLD")
+            score = signals.get("composite_score", 0)
+
+            if "SELL" in rec and pl_pct > 5:
+                suggestions.append({"symbol": sym, "action": "take_profit", "reason": f"AI signals SELL and position is +{pl_pct:.1f}%. Lock in gains.", "priority": "high", "score": score})
+            elif "SELL" in rec and pl_pct < -5:
+                suggestions.append({"symbol": sym, "action": "cut_loss", "reason": f"AI signals SELL and position is {pl_pct:.1f}%. Cut losses.", "priority": "high", "score": score})
+            elif "BUY" in rec and weight < 5:
+                suggestions.append({"symbol": sym, "action": "add", "reason": f"AI signals BUY but position is only {weight:.1f}% of portfolio.", "priority": "medium", "score": score})
+
+            if weight > 20:
+                rebalance_actions.append({"symbol": sym, "action": "reduce", "current_weight": round(weight, 1), "target_weight": 10, "reason": "Over-concentrated"})
+
+        # Diversification suggestions
+        held_symbols = {p.get("symbol") for p in positions}
+        diversify_candidates = ["SPY", "QQQ", "BND", "GLD", "VTI"]
+        for sym in diversify_candidates:
+            if sym not in held_symbols:
+                suggestions.append({"symbol": sym, "action": "diversify", "reason": f"Portfolio lacks {sym} exposure for broad diversification.", "priority": "low", "score": 0})
+
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "risk_alerts": risk_alerts,
+            "trade_suggestions": sorted(suggestions, key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(x.get("priority", "low"), 3)),
+            "rebalance_actions": rebalance_actions,
+            "optimization_score": max(0, min(100, 80 - len(risk_alerts) * 15 + (analytics["performance"]["sharpe_ratio"] or 0) * 10)),
+            "portfolio_health": "good" if not risk_alerts else ("fair" if len(risk_alerts) <= 2 else "needs_attention"),
         }
 
 

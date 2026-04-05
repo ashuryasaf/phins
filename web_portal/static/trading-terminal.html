@@ -227,6 +227,8 @@
             <button class="bottom-tab active" onclick="switchBottomTab('global',this)">Global</button>
             <button class="bottom-tab" onclick="switchBottomTab('report',this)">Report</button>
             <button class="bottom-tab" onclick="switchBottomTab('scanner',this)">Scanner</button>
+            <button class="bottom-tab" onclick="switchBottomTab('bi',this)">BI Analytics</button>
+            <button class="bottom-tab" onclick="switchBottomTab('aiopt',this)">AI Optimize</button>
         </div>
         <div id="tab-global" class="tab-content active">
             <div id="globalPanel" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;">Loading...</div>
@@ -236,6 +238,12 @@
         </div>
         <div id="tab-scanner" class="tab-content">
             <div id="scannerPanel" style="overflow-y:auto;max-height:250px;">Loading scanner...</div>
+        </div>
+        <div id="tab-bi" class="tab-content">
+            <div id="biPanel" style="overflow-y:auto;max-height:260px;">Click BI Analytics tab to load...</div>
+        </div>
+        <div id="tab-aiopt" class="tab-content">
+            <div id="aiOptPanel" style="overflow-y:auto;max-height:260px;">Click AI Optimize tab to load...</div>
         </div>
     </div>
     </div><!-- end terminal-bottom -->
@@ -436,6 +444,98 @@ function switchBottomTab(tab, btn) {
     $('tab-' + tab).classList.add('active');
     if (tab === 'report') loadReport();
     if (tab === 'scanner') loadScanner();
+    if (tab === 'bi') loadBiAnalytics();
+    if (tab === 'aiopt') loadAiOptimize();
+}
+
+async function loadBiAnalytics() {
+    $('biPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Loading BI analytics...</div>';
+    try {
+        const d = await apiFetch('/api/terminal/bi-analytics');
+        if (d.error) { $('biPanel').innerHTML = `<div style="color:var(--red)">${d.error}</div>`; return; }
+        const s = d.summary || {};
+        const p = d.performance || {};
+        const r = d.risk || {};
+        let html = '<div class="report-grid">';
+        html += rCard('Portfolio Value', '$' + fmt(s.portfolio_value), s.total_unrealized_pl >= 0 ? 'up' : 'down');
+        html += rCard('Total P&L', '$' + fmt(s.total_unrealized_pl), s.total_unrealized_pl >= 0 ? 'up' : 'down');
+        html += rCard('Total Return', s.total_return_pct + '%', s.total_return_pct >= 0 ? 'up' : 'down');
+        html += rCard('Positions', s.position_count);
+        html += rCard('Win Rate', p.win_rate + '%', p.win_rate >= 50 ? 'up' : 'down');
+        html += rCard('Sharpe Ratio', p.sharpe_ratio, p.sharpe_ratio >= 1 ? 'up' : 'down');
+        html += rCard('Sortino Ratio', p.sortino_ratio, p.sortino_ratio >= 1 ? 'up' : '');
+        html += rCard('Max Drawdown', p.max_drawdown_pct + '%', 'down');
+        html += rCard('Portfolio Beta', p.portfolio_beta);
+        html += rCard('Cash Ratio', r.cash_ratio + '%');
+        html += rCard('Max Concentration', r.max_concentration_pct + '% (' + (r.concentration_symbol||'') + ')', r.max_concentration_pct > 25 ? 'down' : '');
+        if (p.best_position) html += rCard('Best Position', p.best_position.symbol + ' $' + fmt(p.best_position.pl), 'up');
+        if (p.worst_position) html += rCard('Worst Position', p.worst_position.symbol + ' $' + fmt(p.worst_position.pl), 'down');
+        html += '</div>';
+
+        if (d.positions_detail && d.positions_detail.length) {
+            html += '<div style="margin-top:10px;"><table class="scanner-table"><thead><tr><th>Symbol</th><th>Value</th><th>P&L</th><th>P&L%</th><th>Weight</th><th>Today</th></tr></thead><tbody>';
+            d.positions_detail.forEach(pos => {
+                const cls = (pos.pl || 0) >= 0 ? 'up' : 'down';
+                html += `<tr onclick="$('copilotSymbol').value='${pos.symbol}';runCopilot();"><td style="color:var(--gold);font-weight:700;">${pos.symbol}</td><td>$${fmt(pos.value)}</td><td class="acct-val ${cls}">$${fmt(pos.pl)}</td><td class="acct-val ${cls}">${pos.pl_pct}%</td><td>${pos.weight}%</td><td>${pos.change_today ? (pos.change_today*100).toFixed(2)+'%' : '—'}</td></tr>`;
+            });
+            html += '</tbody></table></div>';
+        }
+
+        if (r.sector_exposure) {
+            html += '<div style="margin-top:10px;color:var(--gold);font-size:16px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Sector Exposure</div>';
+            const maxSec = Math.max(...Object.values(r.sector_exposure));
+            for (const [sec, val] of Object.entries(r.sector_exposure)) {
+                const pct = (val / (s.portfolio_value || 1) * 100).toFixed(1);
+                const barW = (val / maxSec * 100).toFixed(0);
+                html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;"><span style="width:100px;color:var(--muted);font-size:18px;">${sec}</span><div style="flex:1;background:var(--bg);border-radius:2px;height:16px;"><div style="width:${barW}%;height:100%;background:var(--gold);border-radius:2px;"></div></div><span style="font-size:18px;">${pct}%</span></div>`;
+            }
+        }
+        $('biPanel').innerHTML = html;
+    } catch(e) { $('biPanel').innerHTML = `<div style="color:var(--red)">Error: ${e.message}</div>`; }
+}
+
+function rCard(label, value, cls) {
+    return `<div class="report-card"><div class="rl">${label}</div><div class="rv ${cls||''}" style="color:${cls==='up'?'var(--green)':(cls==='down'?'var(--red)':'var(--text)')}">${value}</div></div>`;
+}
+
+async function loadAiOptimize() {
+    $('aiOptPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Running AI portfolio optimization...</div>';
+    try {
+        const d = await apiFetch('/api/terminal/ai-optimize');
+        if (d.error) { $('aiOptPanel').innerHTML = `<div style="color:var(--red)">${d.error}</div>`; return; }
+        let html = '';
+        const health = d.portfolio_health || 'unknown';
+        const healthColor = health === 'good' ? 'var(--green)' : (health === 'fair' ? 'var(--gold)' : 'var(--red)');
+        html += `<div style="text-align:center;padding:12px;margin-bottom:10px;background:var(--bg);border-radius:5px;border:1px solid ${healthColor};"><div style="font-size:16px;color:var(--muted);text-transform:uppercase;">Portfolio Health</div><div style="font-size:28px;font-weight:700;color:${healthColor};text-transform:uppercase;">${health}</div><div style="font-size:18px;color:var(--muted);">Optimization Score: ${d.optimization_score || 0}/100</div></div>`;
+
+        if (d.risk_alerts && d.risk_alerts.length) {
+            html += '<div style="margin-bottom:10px;">';
+            d.risk_alerts.forEach(a => {
+                const color = a.level === 'high' ? 'var(--red)' : 'var(--gold)';
+                html += `<div style="padding:8px;margin-bottom:4px;background:var(--bg);border-left:3px solid ${color};border-radius:3px;"><div style="color:${color};font-weight:700;font-size:16px;">${a.level.toUpperCase()} RISK</div><div style="font-size:20px;">${a.message}</div><div style="color:var(--muted);font-size:18px;">${a.action}</div></div>`;
+            });
+            html += '</div>';
+        }
+
+        if (d.trade_suggestions && d.trade_suggestions.length) {
+            html += '<div style="color:var(--gold);font-size:16px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">AI Trade Suggestions</div>';
+            html += '<table class="scanner-table"><thead><tr><th>Symbol</th><th>Action</th><th>Priority</th><th>Reason</th></tr></thead><tbody>';
+            d.trade_suggestions.forEach(s => {
+                const aColor = s.action === 'take_profit' ? 'var(--green)' : (s.action === 'cut_loss' ? 'var(--red)' : (s.action === 'add' ? 'var(--blue)' : 'var(--muted)'));
+                const pColor = s.priority === 'high' ? 'var(--red)' : (s.priority === 'medium' ? 'var(--gold)' : 'var(--muted)');
+                html += `<tr onclick="$('copilotSymbol').value='${s.symbol}';runCopilot();"><td style="color:var(--gold);font-weight:700;cursor:pointer;">${s.symbol}</td><td style="color:${aColor};font-weight:600;">${s.action}</td><td style="color:${pColor};">${s.priority}</td><td style="font-size:18px;color:var(--muted);">${s.reason}</td></tr>`;
+            });
+            html += '</tbody></table>';
+        }
+
+        if (d.rebalance_actions && d.rebalance_actions.length) {
+            html += '<div style="color:var(--gold);font-size:16px;text-transform:uppercase;letter-spacing:1px;margin:10px 0 6px;">Rebalance Actions</div>';
+            d.rebalance_actions.forEach(r => {
+                html += `<div style="padding:6px;background:var(--bg);border-radius:3px;margin-bottom:3px;"><span style="color:var(--gold);font-weight:700;">${r.symbol}</span> <span style="color:var(--muted);">${r.current_weight}% → ${r.target_weight}%</span> <span style="font-size:18px;color:var(--orange);">${r.reason}</span></div>`;
+            });
+        }
+        $('aiOptPanel').innerHTML = html;
+    } catch(e) { $('aiOptPanel').innerHTML = `<div style="color:var(--red)">Error: ${e.message}</div>`; }
 }
 
 // --- Linear Regression Forecasting ---
