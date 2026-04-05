@@ -256,6 +256,12 @@ class TradingPlatformService:
         self._set_cache("positions", positions)
         return positions
 
+    def _get_position_snapshot(self, symbol: str) -> Optional[Dict[str, Any]]:
+        for position in self.get_positions():
+            if position.get("symbol") == symbol.upper():
+                return position
+        return None
+
     # ==================================================================
     # ORDERS
     # ==================================================================
@@ -293,6 +299,8 @@ class TradingPlatformService:
         if trail_percent is not None:
             body["trail_percent"] = str(trail_percent)
 
+        position_snapshot = self._get_position_snapshot(symbol) if side.lower() == "sell" else None
+
         if not self._connected:
             return self._not_connected_error()
 
@@ -321,7 +329,7 @@ class TradingPlatformService:
             "created_at": raw.get("created_at"),
             "broker": "alpaca",
         }
-        self._record_trade_to_ledger(result)
+        self._record_trade_to_ledger(result, position_snapshot=position_snapshot)
         return result
 
     def get_orders(self, status: str = "all", limit: int = 20) -> List[Dict[str, Any]]:
@@ -645,6 +653,7 @@ class TradingPlatformService:
         }
         if limit_price:
             body["limit_price"] = str(limit_price)
+        position_snapshot = self._get_position_snapshot(symbol) if side.lower() == "sell" else None
         if not self._connected:
             return self._not_connected_error()
         raw = self._trade_request("POST", "/orders", body)
@@ -654,7 +663,19 @@ class TradingPlatformService:
             return raw
         self._cache.pop("positions", None)
         self._cache.pop("account", None)
-        return {"order_id": raw.get("id"), "symbol": raw.get("symbol"), "side": raw.get("side"), "qty": raw.get("qty"), "type": "bracket", "status": raw.get("status"), "legs": raw.get("legs", []), "broker": "alpaca"}
+        result = {
+            "order_id": raw.get("id"),
+            "symbol": raw.get("symbol"),
+            "side": raw.get("side"),
+            "qty": raw.get("qty"),
+            "type": "bracket",
+            "status": raw.get("status"),
+            "filled_avg_price": raw.get("filled_avg_price"),
+            "legs": raw.get("legs", []),
+            "broker": "alpaca",
+        }
+        self._record_trade_to_ledger(result, position_snapshot=position_snapshot)
+        return result
 
     def submit_oco_order(
         self, symbol: str, qty: float,
@@ -675,13 +696,27 @@ class TradingPlatformService:
         }
         if not self._connected:
             return self._not_connected_error()
+        position_snapshot = self._get_position_snapshot(symbol)
         raw = self._trade_request("POST", "/orders", body)
         if not raw:
             return {"error": "OCO order failed"}
         if "error" in raw:
             return raw
         self._cache.pop("positions", None)
-        return {"order_id": raw.get("id"), "symbol": raw.get("symbol"), "type": "oco", "status": raw.get("status"), "legs": raw.get("legs", []), "broker": "alpaca"}
+        self._cache.pop("account", None)
+        result = {
+            "order_id": raw.get("id"),
+            "symbol": raw.get("symbol"),
+            "side": raw.get("side"),
+            "qty": raw.get("qty"),
+            "type": "oco",
+            "status": raw.get("status"),
+            "filled_avg_price": raw.get("filled_avg_price"),
+            "legs": raw.get("legs", []),
+            "broker": "alpaca",
+        }
+        self._record_trade_to_ledger(result, position_snapshot=position_snapshot)
+        return result
 
     # ==================================================================
     # GLOBAL BENCHMARKS
@@ -920,7 +955,12 @@ class TradingPlatformService:
     # LEDGER INTEGRATION — record all trades to PHINS transaction ledger
     # ==================================================================
 
-    def _record_trade_to_ledger(self, order_result: Dict, customer_id: str = "TERMINAL") -> None:
+    def _record_trade_to_ledger(
+        self,
+        order_result: Dict,
+        customer_id: str = "TERMINAL",
+        position_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Record a completed trade to TRANSACTION_LEDGER + NFT ledger."""
         if not order_result or "error" in order_result:
             return
@@ -930,7 +970,21 @@ class TradingPlatformService:
             side = order_result.get("side", "")
             qty = order_result.get("qty") or order_result.get("filled_qty") or "0"
             price = order_result.get("filled_avg_price") or "0"
-            amount = float(qty) * float(price) if price and qty else 0
+            qty_float = _sf(qty) or 0
+            price_float = _sf(price) or 0
+            amount = qty_float * price_float if qty_float and price_float else 0
+            realized_gain = 0.0
+            estimated_cost_basis = 0.0
+
+            if side == "sell" and position_snapshot and position_snapshot.get("side") != "short":
+                position_qty = abs(_sf(position_snapshot.get("qty")) or 0)
+                matched_qty = min(qty_float, position_qty)
+                avg_entry_price = _sf(position_snapshot.get("avg_entry_price"))
+                if avg_entry_price is None and position_qty > 0:
+                    avg_entry_price = (_sf(position_snapshot.get("cost_basis")) or 0) / position_qty
+                avg_entry_price = avg_entry_price or 0
+                estimated_cost_basis = matched_qty * avg_entry_price
+                realized_gain = (matched_qty * price_float) - estimated_cost_basis
 
             portal.record_transaction(
                 customer_id=customer_id,
@@ -943,6 +997,8 @@ class TradingPlatformService:
                     "side": side,
                     "qty": qty,
                     "price": price,
+                    "estimated_cost_basis": round(estimated_cost_basis, 2),
+                    "realized_gain": round(realized_gain, 2),
                     "order_type": order_result.get("type"),
                     "status": order_result.get("status"),
                     "broker": order_result.get("broker", "alpaca"),
@@ -982,7 +1038,8 @@ class TradingPlatformService:
             import web_portal.server as portal
             for tx in portal.TRANSACTION_LEDGER.values():
                 if tx.get("type") in ("trade_sell",) and tx.get("customer_id") == customer_id:
-                    realized_gains += float(tx.get("amount", 0))
+                    metadata = tx.get("metadata", {}) if isinstance(tx.get("metadata"), dict) else {}
+                    realized_gains += _sf(metadata.get("realized_gain")) or 0
                     realized_count += 1
         except Exception:
             pass
