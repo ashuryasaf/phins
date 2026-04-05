@@ -733,7 +733,11 @@ async function loadAccount() {
         const dot = $('brokerDot');
         const st = $('brokerStatus');
         dot.className = 'status-dot ' + (d.connected ? 'on' : 'off');
-        st.textContent = d.connected ? (d.paper ? 'Paper' : 'Live') : 'Demo';
+        st.textContent = d.connected ? (d.paper ? 'Paper' : 'Live') : 'No Broker';
+        if (!d.connected && d.message) {
+            $('accountPanel').innerHTML = `<div style="padding:10px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:5px;margin-bottom:8px;"><div style="color:var(--red);font-weight:700;">Broker Not Connected</div><div style="color:var(--muted);font-size:18px;margin-top:4px;">${d.message}</div></div>`;
+            return;
+        }
         $('dataDot').className = 'status-dot on';
         $('dataStatus').textContent = 'AV';
         let html = '';

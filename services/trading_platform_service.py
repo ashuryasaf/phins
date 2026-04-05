@@ -193,13 +193,13 @@ class TradingPlatformService:
 
     def get_account(self) -> Dict[str, Any]:
         if not self._connected:
-            return self._demo_account()
+            return self._not_connected_account()
         cached = self._cached("account", 15.0)
         if cached:
             return cached
         raw = self._trade_request("GET", "/account")
         if not raw or "error" in raw:
-            return self._demo_account()
+            return self._not_connected_account()
         result = {
             "account_id": raw.get("id"),
             "status": raw.get("status"),
@@ -229,15 +229,15 @@ class TradingPlatformService:
 
     def get_positions(self) -> List[Dict[str, Any]]:
         if not self._connected:
-            return self._demo_positions()
+            return []
         cached = self._cached("positions", 10.0)
         if cached:
             return cached
         raw = self._trade_request("GET", "/positions")
         if not raw or isinstance(raw, dict) and "error" in raw:
-            return self._demo_positions()
+            return []
         if not isinstance(raw, list):
-            return self._demo_positions()
+            return []
         positions = []
         for p in raw:
             positions.append({
@@ -294,7 +294,7 @@ class TradingPlatformService:
             body["trail_percent"] = str(trail_percent)
 
         if not self._connected:
-            return self._demo_order(body)
+            return self._not_connected_error()
 
         raw = self._trade_request("POST", "/orders", body)
         if not raw:
@@ -305,7 +305,7 @@ class TradingPlatformService:
         self._cache.pop("positions", None)
         self._cache.pop("account", None)
 
-        return {
+        result = {
             "order_id": raw.get("id"),
             "symbol": raw.get("symbol"),
             "side": raw.get("side"),
@@ -321,13 +321,15 @@ class TradingPlatformService:
             "created_at": raw.get("created_at"),
             "broker": "alpaca",
         }
+        self._record_trade_to_ledger(result)
+        return result
 
     def get_orders(self, status: str = "all", limit: int = 20) -> List[Dict[str, Any]]:
         if not self._connected:
-            return self._demo_orders()
+            return []
         raw = self._trade_request("GET", f"/orders?status={status}&limit={limit}")
         if not raw or not isinstance(raw, list):
-            return self._demo_orders()
+            return []
         orders = []
         for o in raw:
             orders.append({
@@ -423,14 +425,14 @@ class TradingPlatformService:
         timeframe: 1Min, 5Min, 15Min, 1H, 1D
         """
         if not self._connected:
-            return self._demo_portfolio_history(period)
+            return {"period": period, "timeframe": "1D", "base_value": 0, "points": [], "count": 0, "current_equity": 0, "total_pnl": 0, "total_pnl_pct": 0, "connected": False}
         cache_key = f"port_hist:{period}:{timeframe}"
         cached = self._cached(cache_key, 120.0)
         if cached:
             return cached
         raw = self._trade_request("GET", f"/account/portfolio/history?period={period}&timeframe={timeframe}")
         if not raw or "error" in raw:
-            return self._demo_portfolio_history(period)
+            return {"period": period, "timeframe": "1D", "base_value": 0, "points": [], "count": 0, "current_equity": 0, "total_pnl": 0, "total_pnl_pct": 0, "connected": False}
         timestamps = raw.get("timestamp", [])
         equity = raw.get("equity", [])
         pnl = raw.get("profit_loss", [])
@@ -458,32 +460,7 @@ class TradingPlatformService:
         self._set_cache(cache_key, result)
         return result
 
-    def _demo_portfolio_history(self, period: str) -> Dict[str, Any]:
-        import random
-        rng = random.Random(42)
-        days = {"1D": 1, "1W": 5, "1M": 22, "3M": 65, "1A": 252, "5A": 1260}.get(period, 22)
-        base = 250000.0
-        equity_vals = [base]
-        for _ in range(days - 1):
-            equity_vals.append(equity_vals[-1] * (1 + rng.gauss(0.0004, 0.012)))
-        now = datetime.now(timezone.utc)
-        points = []
-        for i, eq in enumerate(equity_vals):
-            dt = now - timedelta(days=days - i)
-            points.append({
-                "timestamp": int(dt.timestamp()),
-                "date": dt.isoformat(),
-                "equity": round(eq, 2),
-                "pnl": round(eq - base, 2),
-                "pnl_pct": round((eq - base) / base, 6),
-            })
-        return {
-            "period": period, "timeframe": "1D", "base_value": base,
-            "points": points, "count": len(points),
-            "current_equity": round(equity_vals[-1], 2),
-            "total_pnl": round(equity_vals[-1] - base, 2),
-            "total_pnl_pct": round((equity_vals[-1] - base) / base, 6),
-        }
+    # _demo_portfolio_history removed — live data only
 
     # ==================================================================
     # MARKET BARS (OHLCV via Alpaca Data API)
@@ -540,7 +517,7 @@ class TradingPlatformService:
 
     def get_watchlists(self) -> List[Dict[str, Any]]:
         if not self._connected:
-            return [{"id": "demo", "name": "My Watchlist", "symbols": ["AAPL", "NVDA", "MSFT", "GOOGL", "TSLA"]}]
+            return []
         raw = self._trade_request("GET", "/watchlists")
         if not raw or not isinstance(raw, list):
             return []
@@ -548,7 +525,7 @@ class TradingPlatformService:
 
     def create_watchlist(self, name: str, symbols: List[str]) -> Dict[str, Any]:
         if not self._connected:
-            return {"id": "demo-new", "name": name, "symbols": symbols}
+            return self._not_connected_error()
         return self._trade_request("POST", "/watchlists", {"name": name, "symbols": symbols}) or {}
 
     def add_to_watchlist(self, watchlist_id: str, symbol: str) -> Dict[str, Any]:
@@ -619,13 +596,13 @@ class TradingPlatformService:
 
     def get_activities(self, activity_type: str = "", limit: int = 20) -> List[Dict[str, Any]]:
         if not self._connected:
-            return self._demo_activities()
+            return []
         params = f"?page_size={limit}"
         if activity_type:
             params += f"&activity_type={activity_type}"
         raw = self._trade_request("GET", f"/account/activities{params}")
         if not raw or not isinstance(raw, list):
-            return self._demo_activities()
+            return []
         activities = []
         for a in raw[:limit]:
             activities.append({
@@ -642,14 +619,7 @@ class TradingPlatformService:
             })
         return activities
 
-    def _demo_activities(self) -> List[Dict[str, Any]]:
-        now = datetime.now(timezone.utc)
-        return [
-            {"id": "act-1", "activity_type": "FILL", "symbol": "NVDA", "side": "buy", "qty": "25", "price": "135.20", "date": (now - timedelta(hours=2)).isoformat()},
-            {"id": "act-2", "activity_type": "FILL", "symbol": "AAPL", "side": "buy", "qty": "10", "price": "225.50", "date": (now - timedelta(hours=5)).isoformat()},
-            {"id": "act-3", "activity_type": "DIV", "symbol": "MSFT", "net_amount": "18.60", "date": (now - timedelta(days=15)).isoformat(), "description": "Dividend payment"},
-            {"id": "act-4", "activity_type": "FILL", "symbol": "SPY", "side": "buy", "qty": "20", "price": "540.00", "date": (now - timedelta(days=30)).isoformat()},
-        ]
+    # _demo_activities removed — live data only
 
     # ==================================================================
     # ADVANCED ORDERS (bracket, OCO)
@@ -676,7 +646,7 @@ class TradingPlatformService:
         if limit_price:
             body["limit_price"] = str(limit_price)
         if not self._connected:
-            return self._demo_order(body)
+            return self._not_connected_error()
         raw = self._trade_request("POST", "/orders", body)
         if not raw:
             return {"error": "Bracket order failed"}
@@ -704,7 +674,7 @@ class TradingPlatformService:
             "stop_loss": {"stop_price": str(stop_loss_price)},
         }
         if not self._connected:
-            return self._demo_order(body)
+            return self._not_connected_error()
         raw = self._trade_request("POST", "/orders", body)
         if not raw:
             return {"error": "OCO order failed"}
@@ -923,57 +893,201 @@ class TradingPlatformService:
         }
 
     # ==================================================================
-    # DEMO MODE (when broker not connected)
+    # LIVE-ONLY MODE (no mock data — broker connection required)
     # ==================================================================
 
-    def _demo_account(self) -> Dict[str, Any]:
+    def _not_connected_account(self) -> Dict[str, Any]:
         return {
-            "account_id": "demo",
-            "status": "ACTIVE",
+            "account_id": None,
+            "status": "NOT_CONNECTED",
             "currency": "USD",
-            "buying_power": 250000.0,
-            "cash": 125000.0,
-            "portfolio_value": 250000.0,
-            "equity": 250000.0,
-            "last_equity": 248500.0,
-            "long_market_value": 125000.0,
-            "short_market_value": 0.0,
-            "unrealized_pl": 3250.0,
-            "unrealized_pl_pct": 0.026,
-            "day_trade_count": 0,
-            "pattern_day_trader": False,
-            "trading_blocked": False,
-            "paper": True,
-            "broker": "demo",
-            "connected": False,
-            "note": "Demo mode. Set ALPACA_API_KEY and ALPACA_SECRET_KEY for live trading.",
+            "buying_power": 0, "cash": 0, "portfolio_value": 0, "equity": 0,
+            "last_equity": 0, "long_market_value": 0, "short_market_value": 0,
+            "unrealized_pl": 0, "unrealized_pl_pct": 0,
+            "day_trade_count": 0, "pattern_day_trader": False,
+            "trading_blocked": True,
+            "paper": False, "broker": "none", "connected": False,
+            "message": "Connect broker: set ALPACA_API_KEY and ALPACA_SECRET_KEY in environment variables.",
         }
 
-    def _demo_positions(self) -> List[Dict[str, Any]]:
-        return [
-            {"symbol": "AAPL", "qty": 50, "side": "long", "avg_entry_price": 220.0, "current_price": 227.5, "market_value": 11375.0, "cost_basis": 11000.0, "unrealized_pl": 375.0, "unrealized_pl_pct": 0.034, "change_today": 0.012, "asset_class": "us_equity"},
-            {"symbol": "NVDA", "qty": 100, "side": "long", "avg_entry_price": 125.0, "current_price": 138.5, "market_value": 13850.0, "cost_basis": 12500.0, "unrealized_pl": 1350.0, "unrealized_pl_pct": 0.108, "change_today": 0.034, "asset_class": "us_equity"},
-            {"symbol": "MSFT", "qty": 30, "side": "long", "avg_entry_price": 430.0, "current_price": 442.3, "market_value": 13269.0, "cost_basis": 12900.0, "unrealized_pl": 369.0, "unrealized_pl_pct": 0.029, "change_today": 0.008, "asset_class": "us_equity"},
-            {"symbol": "GOOGL", "qty": 40, "side": "long", "avg_entry_price": 170.0, "current_price": 178.9, "market_value": 7156.0, "cost_basis": 6800.0, "unrealized_pl": 356.0, "unrealized_pl_pct": 0.052, "change_today": -0.005, "asset_class": "us_equity"},
-            {"symbol": "SPY", "qty": 20, "side": "long", "avg_entry_price": 540.0, "current_price": 555.0, "market_value": 11100.0, "cost_basis": 10800.0, "unrealized_pl": 300.0, "unrealized_pl_pct": 0.028, "change_today": 0.003, "asset_class": "us_equity"},
-        ]
-
-    def _demo_orders(self) -> List[Dict[str, Any]]:
-        return [
-            {"order_id": "demo-001", "symbol": "NVDA", "side": "buy", "qty": "25", "type": "market", "status": "filled", "filled_qty": "25", "filled_avg_price": "135.20", "created_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()},
-            {"order_id": "demo-002", "symbol": "AAPL", "side": "buy", "qty": "10", "type": "limit", "status": "filled", "filled_qty": "10", "filled_avg_price": "225.50", "limit_price": "226.00", "created_at": (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()},
-        ]
-
-    def _demo_order(self, body: Dict) -> Dict[str, Any]:
+    def _not_connected_error(self) -> Dict[str, Any]:
         return {
-            "order_id": f"demo-{int(time.time())}",
-            "symbol": body.get("symbol"),
-            "side": body.get("side"),
-            "qty": body.get("qty"),
-            "type": body.get("type"),
-            "status": "accepted",
-            "broker": "demo",
-            "note": "Demo mode order. Set ALPACA_API_KEY for live execution.",
+            "error": "Broker not connected. Set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable live trading.",
+            "connected": False,
+        }
+
+    # ==================================================================
+    # LEDGER INTEGRATION — record all trades to PHINS transaction ledger
+    # ==================================================================
+
+    def _record_trade_to_ledger(self, order_result: Dict, customer_id: str = "TERMINAL") -> None:
+        """Record a completed trade to TRANSACTION_LEDGER + NFT ledger."""
+        if not order_result or "error" in order_result:
+            return
+        try:
+            import web_portal.server as portal
+            symbol = order_result.get("symbol", "")
+            side = order_result.get("side", "")
+            qty = order_result.get("qty") or order_result.get("filled_qty") or "0"
+            price = order_result.get("filled_avg_price") or "0"
+            amount = float(qty) * float(price) if price and qty else 0
+
+            portal.record_transaction(
+                customer_id=customer_id,
+                tx_type=f"trade_{side}",
+                amount=amount,
+                description=f"Terminal trade: {side.upper()} {qty} {symbol} @ ${price}",
+                metadata={
+                    "order_id": order_result.get("order_id"),
+                    "symbol": symbol,
+                    "side": side,
+                    "qty": qty,
+                    "price": price,
+                    "order_type": order_result.get("type"),
+                    "status": order_result.get("status"),
+                    "broker": order_result.get("broker", "alpaca"),
+                    "source_system": "trading_terminal",
+                    "actor": customer_id,
+                },
+            )
+        except Exception as e:
+            print(f"[TradingPlatform] Ledger record failed: {e}")
+
+    # ==================================================================
+    # PRE-TAX BALANCE SHEET
+    # ==================================================================
+
+    def get_pretax_balance_sheet(self, customer_id: str = "TERMINAL") -> Dict[str, Any]:
+        """
+        Individual pre-tax balance sheet from live broker data + ledger.
+        Assets: cash + positions at market value.
+        Liabilities: short positions (if any).
+        Income: realized gains from ledger.
+        """
+        account = self.get_account()
+        positions = self.get_positions()
+
+        cash = _sf(account.get("cash")) or 0
+        long_value = sum(_sf(p.get("market_value")) or 0 for p in positions if p.get("side") != "short")
+        short_value = abs(sum(_sf(p.get("market_value")) or 0 for p in positions if p.get("side") == "short"))
+        total_cost = sum(_sf(p.get("cost_basis")) or 0 for p in positions)
+        unrealized_gains = sum(_sf(p.get("unrealized_pl")) or 0 for p in positions)
+        unrealized_gains_positive = sum(_sf(p.get("unrealized_pl")) or 0 for p in positions if (_sf(p.get("unrealized_pl")) or 0) > 0)
+        unrealized_losses = sum(_sf(p.get("unrealized_pl")) or 0 for p in positions if (_sf(p.get("unrealized_pl")) or 0) < 0)
+
+        # Realized gains from ledger
+        realized_gains = 0
+        realized_count = 0
+        try:
+            import web_portal.server as portal
+            for tx in portal.TRANSACTION_LEDGER.values():
+                if tx.get("type") in ("trade_sell",) and tx.get("customer_id") == customer_id:
+                    realized_gains += float(tx.get("amount", 0))
+                    realized_count += 1
+        except Exception:
+            pass
+
+        total_assets = cash + long_value
+        total_liabilities = short_value
+        net_worth = total_assets - total_liabilities
+        equity = _sf(account.get("equity")) or net_worth
+
+        # Tax estimates (simplified US rates)
+        short_term_rate = 0.37
+        long_term_rate = 0.20
+        est_tax_on_unrealized = unrealized_gains_positive * short_term_rate if unrealized_gains_positive > 0 else 0
+        est_tax_on_realized = realized_gains * short_term_rate if realized_gains > 0 else 0
+
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "customer_id": customer_id,
+            "assets": {
+                "cash": round(cash, 2),
+                "long_positions_value": round(long_value, 2),
+                "total_assets": round(total_assets, 2),
+            },
+            "liabilities": {
+                "short_positions_value": round(short_value, 2),
+                "total_liabilities": round(total_liabilities, 2),
+            },
+            "equity": {
+                "net_worth": round(net_worth, 2),
+                "broker_equity": round(equity, 2),
+                "cost_basis": round(total_cost, 2),
+            },
+            "gains_losses": {
+                "unrealized_total": round(unrealized_gains, 2),
+                "unrealized_gains": round(unrealized_gains_positive, 2),
+                "unrealized_losses": round(unrealized_losses, 2),
+                "realized_total": round(realized_gains, 2),
+                "realized_trade_count": realized_count,
+            },
+            "tax_estimates": {
+                "short_term_rate": f"{short_term_rate*100}%",
+                "long_term_rate": f"{long_term_rate*100}%",
+                "est_tax_unrealized": round(est_tax_on_unrealized, 2),
+                "est_tax_realized": round(est_tax_on_realized, 2),
+                "total_est_tax": round(est_tax_on_unrealized + est_tax_on_realized, 2),
+                "after_tax_equity": round(net_worth - est_tax_on_unrealized - est_tax_on_realized, 2),
+            },
+            "positions": [
+                {
+                    "symbol": p.get("symbol"),
+                    "qty": _sf(p.get("qty")),
+                    "side": p.get("side"),
+                    "cost_basis": _sf(p.get("cost_basis")),
+                    "market_value": _sf(p.get("market_value")),
+                    "unrealized_pl": _sf(p.get("unrealized_pl")),
+                }
+                for p in positions
+            ],
+            "connected": self._connected,
+        }
+
+    # ==================================================================
+    # DATA INTEGRITY — reconcile broker vs ledger
+    # ==================================================================
+
+    def reconcile_integrity(self, customer_id: str = "TERMINAL") -> Dict[str, Any]:
+        """
+        Validate data integrity: compare broker positions with ledger entries.
+        """
+        positions = self.get_positions()
+        account = self.get_account()
+
+        ledger_trades = []
+        try:
+            import web_portal.server as portal
+            for tx_id, tx in portal.TRANSACTION_LEDGER.items():
+                if tx.get("customer_id") == customer_id and tx.get("type", "").startswith("trade_"):
+                    ledger_trades.append(tx)
+        except Exception:
+            pass
+
+        broker_symbols = {p.get("symbol") for p in positions}
+        ledger_symbols = {tx.get("metadata", {}).get("symbol") for tx in ledger_trades if tx.get("metadata")}
+
+        in_broker_not_ledger = broker_symbols - ledger_symbols
+        in_ledger_not_broker = ledger_symbols - broker_symbols - {None, ""}
+
+        issues = []
+        if in_broker_not_ledger:
+            issues.append({"type": "broker_only", "symbols": list(in_broker_not_ledger), "message": "Positions in broker but no ledger entry — may predate ledger integration"})
+        if in_ledger_not_broker:
+            issues.append({"type": "ledger_only", "symbols": list(in_ledger_not_broker), "message": "Ledger entries but no broker position — positions may have been closed"})
+
+        broker_value = sum(_sf(p.get("market_value")) or 0 for p in positions)
+        broker_equity = _sf(account.get("equity")) or 0
+
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": "clean" if not issues else "discrepancies_found",
+            "broker_positions": len(positions),
+            "ledger_trades": len(ledger_trades),
+            "broker_equity": round(broker_equity, 2),
+            "broker_position_value": round(broker_value, 2),
+            "issues": issues,
+            "connected": self._connected,
         }
 
     # ==================================================================
@@ -1003,12 +1117,12 @@ class TradingPlatformService:
     def broker_create_account(self, account_data: Dict) -> Dict[str, Any]:
         """Create a brokerage account for an end user (Broker API v1)."""
         if not self._connected:
-            return {"id": "demo-acct-001", "account_number": "900000001", "status": "APPROVED", "currency": "USD", "note": "Demo mode"}
+            return self._not_connected_error()
         return self._broker_request("POST", "/accounts", account_data) or {"error": "Account creation failed"}
 
     def broker_get_accounts(self) -> List[Dict[str, Any]]:
         if not self._connected:
-            return [{"id": "demo-acct-001", "account_number": "900000001", "status": "ACTIVE", "currency": "USD"}]
+            return []
         raw = self._broker_request("GET", "/accounts")
         if isinstance(raw, list):
             return raw
@@ -1022,31 +1136,31 @@ class TradingPlatformService:
     def broker_create_ach_relationship(self, account_id: str, ach_data: Dict) -> Dict[str, Any]:
         """Establish ACH bank relationship for funding."""
         if not self._connected:
-            return {"id": "demo-ach-001", "account_id": account_id, "status": "APPROVED", "note": "Demo mode"}
+            return self._not_connected_error()
         return self._broker_request("POST", f"/accounts/{account_id}/ach_relationships", ach_data) or {"error": "ACH setup failed"}
 
     def broker_get_ach_relationships(self, account_id: str) -> List[Dict]:
         if not self._connected:
-            return [{"id": "demo-ach-001", "status": "APPROVED", "nickname": "Demo Bank"}]
+            return []
         raw = self._broker_request("GET", f"/accounts/{account_id}/ach_relationships")
         return raw if isinstance(raw, list) else []
 
     def broker_create_transfer(self, account_id: str, transfer_data: Dict) -> Dict[str, Any]:
         """Fund account via ACH transfer."""
         if not self._connected:
-            return {"id": "demo-xfer-001", "status": "QUEUED", "amount": transfer_data.get("amount"), "direction": transfer_data.get("direction"), "note": "Demo mode"}
+            return self._not_connected_error()
         return self._broker_request("POST", f"/accounts/{account_id}/transfers", transfer_data) or {"error": "Transfer failed"}
 
     def broker_create_journal(self, journal_data: Dict) -> Dict[str, Any]:
         """Journal cash/securities between accounts (instant funding)."""
         if not self._connected:
-            return {"id": "demo-jnl-001", "entry_type": journal_data.get("entry_type"), "status": "executed", "note": "Demo mode"}
+            return self._not_connected_error()
         return self._broker_request("POST", "/journals", journal_data) or {"error": "Journal failed"}
 
     def broker_submit_order(self, account_id: str, order_data: Dict) -> Dict[str, Any]:
         """Submit order for a specific broker account (v1 Broker API)."""
         if not self._connected:
-            return self._demo_order(order_data)
+            return self._not_connected_error()
         raw = self._broker_request("POST", f"/trading/accounts/{account_id}/orders", order_data)
         return raw or {"error": "Order failed"}
 
