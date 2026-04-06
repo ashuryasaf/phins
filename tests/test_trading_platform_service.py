@@ -155,3 +155,155 @@ def test_get_pretax_balance_sheet_uses_realized_gain_metadata(monkeypatch):
 
     assert result["gains_losses"]["realized_total"] == 200
     assert result["tax_estimates"]["est_tax_realized"] == 74
+
+
+def test_get_account_reloads_before_not_connected_fallback(monkeypatch):
+    service = TradingPlatformService()
+    service._connected = False
+
+    reload_calls = {"count": 0}
+
+    def fake_reload_keys():
+        reload_calls["count"] += 1
+        service._connected = True
+
+    def fail_not_connected_account():
+        raise AssertionError("get_account should not return the disconnected fallback after a successful reload")
+
+    def fake_trade_request(method, path, body=None):
+        assert method == "GET"
+        assert path == "/account"
+        return {
+            "id": "acct-1",
+            "status": "ACTIVE",
+            "currency": "USD",
+            "buying_power": "1000",
+            "cash": "750",
+            "portfolio_value": "1250",
+            "equity": "1250",
+            "last_equity": "1200",
+            "long_market_value": "500",
+            "short_market_value": "0",
+            "unrealized_pl": "50",
+            "unrealized_plpc": "0.04",
+            "daytrade_count": 1,
+            "pattern_day_trader": False,
+            "trading_blocked": False,
+        }
+
+    monkeypatch.setattr(service, "_reload_keys", fake_reload_keys)
+    monkeypatch.setattr(service, "_not_connected_account", fail_not_connected_account)
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+
+    result = service.get_account()
+
+    assert reload_calls["count"] == 1
+    assert result["account_id"] == "acct-1"
+    assert result["connected"] is True
+
+
+def test_positions_and_orders_reload_before_returning_empty_results(monkeypatch):
+    service = TradingPlatformService()
+    service._connected = False
+
+    reload_calls = {"count": 0}
+
+    def fake_reload_keys():
+        reload_calls["count"] += 1
+        service._connected = True
+
+    def fake_trade_request(method, path, body=None):
+        assert method == "GET"
+        if path == "/positions":
+            return [{
+                "symbol": "AAPL",
+                "qty": "2",
+                "side": "long",
+                "avg_entry_price": "180",
+                "current_price": "200",
+                "market_value": "400",
+                "cost_basis": "360",
+                "unrealized_pl": "40",
+                "unrealized_plpc": "0.11",
+                "change_today": "0.01",
+                "asset_class": "us_equity",
+            }]
+        assert path == "/orders?status=all&limit=20"
+        return [{
+            "id": "ord-1",
+            "symbol": "AAPL",
+            "side": "buy",
+            "qty": "2",
+            "type": "market",
+            "status": "filled",
+            "filled_qty": "2",
+            "filled_avg_price": "200",
+            "limit_price": None,
+            "created_at": "2026-04-06T00:00:00Z",
+            "updated_at": "2026-04-06T00:00:01Z",
+        }]
+
+    monkeypatch.setattr(service, "_reload_keys", fake_reload_keys)
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+
+    positions = service.get_positions()
+    service._connected = False
+    orders = service.get_orders()
+
+    assert reload_calls["count"] == 2
+    assert positions[0]["symbol"] == "AAPL"
+    assert orders[0]["order_id"] == "ord-1"
+
+
+def test_submit_order_reloads_before_fetching_sell_snapshot(monkeypatch):
+    service = TradingPlatformService()
+    service._connected = False
+
+    sequence = []
+    recorded = {}
+
+    def fake_reload_keys():
+        sequence.append("reload")
+        service._connected = True
+
+    def fake_get_position_snapshot(symbol):
+        sequence.append("snapshot")
+        assert service._connected is True
+        assert symbol == "AAPL"
+        return {"symbol": "AAPL", "qty": 5, "avg_entry_price": 180, "cost_basis": 900}
+
+    def fake_trade_request(method, path, body=None):
+        sequence.append("trade")
+        assert method == "POST"
+        assert path == "/orders"
+        assert body["side"] == "sell"
+        return {
+            "id": "ord-sell",
+            "symbol": "AAPL",
+            "side": "sell",
+            "qty": "5",
+            "notional": None,
+            "type": "market",
+            "time_in_force": "day",
+            "status": "filled",
+            "filled_qty": "5",
+            "filled_avg_price": "200",
+            "limit_price": None,
+            "stop_price": None,
+            "created_at": "2026-04-06T00:00:00Z",
+        }
+
+    def fake_record_trade(order_result, customer_id="TERMINAL", position_snapshot=None):
+        recorded["order_result"] = order_result
+        recorded["position_snapshot"] = position_snapshot
+
+    monkeypatch.setattr(service, "_reload_keys", fake_reload_keys)
+    monkeypatch.setattr(service, "_get_position_snapshot", fake_get_position_snapshot)
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+    monkeypatch.setattr(service, "_record_trade_to_ledger", fake_record_trade)
+
+    result = service.submit_order("AAPL", "sell", qty=5)
+
+    assert sequence == ["reload", "snapshot", "trade"]
+    assert result["order_id"] == "ord-sell"
+    assert recorded["position_snapshot"]["cost_basis"] == 900
