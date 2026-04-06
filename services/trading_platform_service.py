@@ -118,22 +118,45 @@ class TradingPlatformService:
     """
 
     def __init__(self):
-        self._api_key = ALPACA_API_KEY
-        self._secret_key = ALPACA_SECRET_KEY
-        self._trade_url = ALPACA_TRADE_URL
+        self._reload_keys()
         self._data_url = ALPACA_DATA_URL
         self._timeout = 10
-        self._connected = bool(self._api_key and self._secret_key)
         self._cache: Dict[str, Any] = {}
         self._cache_ts: Dict[str, float] = {}
 
+    def _reload_keys(self) -> None:
+        """Re-read API keys from environment (supports hot-reload after Railway redeploy)."""
+        self._api_key = os.environ.get("ALPACA_API_KEY", "") or ALPACA_API_KEY
+        self._secret_key = os.environ.get("ALPACA_SECRET_KEY", "") or ALPACA_SECRET_KEY
+        is_paper = os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
+        self._trade_url = "https://paper-api.alpaca.markets" if is_paper else "https://api.alpaca.markets"
+        self._connected = bool(self._api_key and self._secret_key)
+
     @property
     def is_connected(self) -> bool:
+        if not self._connected:
+            self._reload_keys()
         return self._connected
 
     @property
     def is_paper(self) -> bool:
-        return ALPACA_PAPER
+        return os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
+
+    def get_connection_status(self) -> Dict[str, Any]:
+        """Diagnostic: show connection state and key configuration."""
+        self._reload_keys()
+        return {
+            "connected": self._connected,
+            "api_key_set": bool(self._api_key),
+            "api_key_prefix": self._api_key[:8] + "..." if len(self._api_key) > 8 else ("(empty)" if not self._api_key else "(short)"),
+            "secret_key_set": bool(self._secret_key),
+            "paper_mode": self.is_paper,
+            "trade_url": self._trade_url,
+            "data_url": self._data_url,
+            "env_ALPACA_API_KEY": "(set)" if os.environ.get("ALPACA_API_KEY") else "(not set)",
+            "env_ALPACA_SECRET_KEY": "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(not set)",
+            "env_ALPACA_PAPER": os.environ.get("ALPACA_PAPER", "(not set)"),
+        }
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -301,6 +324,7 @@ class TradingPlatformService:
 
         position_snapshot = self._get_position_snapshot(symbol) if side.lower() == "sell" else None
 
+        self._reload_keys()
         if not self._connected:
             return self._not_connected_error()
 
@@ -1190,6 +1214,9 @@ class TradingPlatformService:
     # ==================================================================
 
     def _not_connected_account(self) -> Dict[str, Any]:
+        self._reload_keys()
+        api_key_status = "(set)" if os.environ.get("ALPACA_API_KEY") else "(NOT SET)"
+        secret_status = "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(NOT SET)"
         return {
             "account_id": None,
             "status": "NOT_CONNECTED",
@@ -1200,13 +1227,28 @@ class TradingPlatformService:
             "day_trade_count": 0, "pattern_day_trader": False,
             "trading_blocked": True,
             "paper": False, "broker": "none", "connected": False,
-            "message": "Connect broker: set ALPACA_API_KEY and ALPACA_SECRET_KEY in environment variables.",
+            "message": f"Broker not connected. ALPACA_API_KEY {api_key_status}, ALPACA_SECRET_KEY {secret_status}.",
+            "debug": {
+                "api_key_env": api_key_status,
+                "secret_key_env": secret_status,
+                "api_key_len": len(os.environ.get("ALPACA_API_KEY", "")),
+                "secret_key_len": len(os.environ.get("ALPACA_SECRET_KEY", "")),
+            },
         }
 
     def _not_connected_error(self) -> Dict[str, Any]:
+        api_key_status = "(set)" if os.environ.get("ALPACA_API_KEY") else "(NOT SET)"
+        secret_status = "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(NOT SET)"
         return {
-            "error": "Broker not connected. Set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable live trading.",
+            "error": f"Broker not connected. ALPACA_API_KEY {api_key_status}, ALPACA_SECRET_KEY {secret_status}. "
+                     f"Add both as Railway environment variables and redeploy.",
             "connected": False,
+            "debug": {
+                "api_key_env": api_key_status,
+                "secret_key_env": secret_status,
+                "api_key_len": len(os.environ.get("ALPACA_API_KEY", "")),
+                "secret_key_len": len(os.environ.get("ALPACA_SECRET_KEY", "")),
+            },
         }
 
     # ==================================================================
