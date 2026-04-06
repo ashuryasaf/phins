@@ -17570,6 +17570,20 @@ For claims or questions, please contact:
             return
 
         # ========== TRADING TERMINAL API (GET) ==========
+        if path == '/api/terminal/connection-status':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.get_connection_status(), default=str).encode('utf-8'))
+            return
+
         if path == '/api/terminal/account':
             if not trading_platform_enabled:
                 self._set_json_headers(503)

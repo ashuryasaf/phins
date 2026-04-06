@@ -118,22 +118,45 @@ class TradingPlatformService:
     """
 
     def __init__(self):
-        self._api_key = ALPACA_API_KEY
-        self._secret_key = ALPACA_SECRET_KEY
-        self._trade_url = ALPACA_TRADE_URL
+        self._reload_keys()
         self._data_url = ALPACA_DATA_URL
         self._timeout = 10
-        self._connected = bool(self._api_key and self._secret_key)
         self._cache: Dict[str, Any] = {}
         self._cache_ts: Dict[str, float] = {}
 
+    def _reload_keys(self) -> None:
+        """Re-read API keys from environment (supports hot-reload after Railway redeploy)."""
+        self._api_key = os.environ.get("ALPACA_API_KEY", "") or ALPACA_API_KEY
+        self._secret_key = os.environ.get("ALPACA_SECRET_KEY", "") or ALPACA_SECRET_KEY
+        is_paper = os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
+        self._trade_url = "https://paper-api.alpaca.markets" if is_paper else "https://api.alpaca.markets"
+        self._connected = bool(self._api_key and self._secret_key)
+
     @property
     def is_connected(self) -> bool:
+        if not self._connected:
+            self._reload_keys()
         return self._connected
 
     @property
     def is_paper(self) -> bool:
-        return ALPACA_PAPER
+        return os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
+
+    def get_connection_status(self) -> Dict[str, Any]:
+        """Diagnostic: show connection state and key configuration."""
+        self._reload_keys()
+        return {
+            "connected": self._connected,
+            "api_key_set": bool(self._api_key),
+            "api_key_prefix": self._api_key[:8] + "..." if len(self._api_key) > 8 else ("(empty)" if not self._api_key else "(short)"),
+            "secret_key_set": bool(self._secret_key),
+            "paper_mode": self.is_paper,
+            "trade_url": self._trade_url,
+            "data_url": self._data_url,
+            "env_ALPACA_API_KEY": "(set)" if os.environ.get("ALPACA_API_KEY") else "(not set)",
+            "env_ALPACA_SECRET_KEY": "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(not set)",
+            "env_ALPACA_PAPER": os.environ.get("ALPACA_PAPER", "(not set)"),
+        }
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -192,7 +215,7 @@ class TradingPlatformService:
     # ==================================================================
 
     def get_account(self) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_account()
         cached = self._cached("account", 15.0)
         if cached:
@@ -228,7 +251,7 @@ class TradingPlatformService:
     # ==================================================================
 
     def get_positions(self) -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         cached = self._cached("positions", 10.0)
         if cached:
@@ -299,10 +322,9 @@ class TradingPlatformService:
         if trail_percent is not None:
             body["trail_percent"] = str(trail_percent)
 
-        position_snapshot = self._get_position_snapshot(symbol) if side.lower() == "sell" else None
-
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
+        position_snapshot = self._get_position_snapshot(symbol) if side.lower() == "sell" else None
 
         raw = self._trade_request("POST", "/orders", body)
         if not raw:
@@ -333,7 +355,7 @@ class TradingPlatformService:
         return result
 
     def get_orders(self, status: str = "all", limit: int = 20) -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         raw = self._trade_request("GET", f"/orders?status={status}&limit={limit}")
         if not raw or not isinstance(raw, list):
@@ -356,17 +378,17 @@ class TradingPlatformService:
         return orders
 
     def cancel_order(self, order_id: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._trade_request("DELETE", f"/orders/{order_id}") or {"error": "Cancel failed"}
 
     def cancel_all_orders(self) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._trade_request("DELETE", "/orders") or {"error": "Cancel all failed"}
 
     def close_position(self, symbol: str, qty: Optional[float] = None) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         params = f"/{symbol}"
         if qty is not None:
@@ -377,12 +399,12 @@ class TradingPlatformService:
         return result
 
     def close_all_positions(self) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._trade_request("DELETE", "/positions") or {"error": "Close all failed"}
 
     def get_open_position(self, symbol: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         raw = self._trade_request("GET", f"/positions/{symbol}")
         if not raw or "error" in raw:
@@ -406,7 +428,7 @@ class TradingPlatformService:
     # ------------------------------------------------------------------
 
     def get_asset(self, symbol: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             try:
                 from services.investment_ai_tool_service import STOCK_DATABASE
                 s = STOCK_DATABASE.get(symbol.upper())
@@ -493,7 +515,7 @@ class TradingPlatformService:
         period: 1D, 1W, 1M, 3M, 1A, 5A
         timeframe: 1Min, 5Min, 15Min, 1H, 1D
         """
-        if not self._connected:
+        if not self.is_connected:
             return {"period": period, "timeframe": "1D", "base_value": 0, "points": [], "count": 0, "current_equity": 0, "total_pnl": 0, "total_pnl_pct": 0, "connected": False}
         cache_key = f"port_hist:{period}:{timeframe}"
         cached = self._cached(cache_key, 120.0)
@@ -585,7 +607,7 @@ class TradingPlatformService:
     # ==================================================================
 
     def get_watchlists(self) -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         raw = self._trade_request("GET", "/watchlists")
         if not raw or not isinstance(raw, list):
@@ -593,22 +615,22 @@ class TradingPlatformService:
         return [{"id": w.get("id"), "name": w.get("name"), "symbols": [a.get("symbol") for a in w.get("assets", [])]} for w in raw]
 
     def create_watchlist(self, name: str, symbols: List[str]) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._trade_request("POST", "/watchlists", {"name": name, "symbols": symbols}) or {}
 
     def add_to_watchlist(self, watchlist_id: str, symbol: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return {"success": True}
         return self._trade_request("POST", f"/watchlists/{watchlist_id}", {"symbol": symbol}) or {}
 
     def remove_from_watchlist(self, watchlist_id: str, symbol: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._trade_request("DELETE", f"/watchlists/{watchlist_id}/{symbol}") or {}
 
     def get_watchlist_by_id(self, watchlist_id: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         raw = self._trade_request("GET", f"/watchlists/{watchlist_id}")
         if not raw or "error" in raw:
@@ -616,7 +638,7 @@ class TradingPlatformService:
         return {"id": raw.get("id"), "name": raw.get("name"), "symbols": [a.get("symbol") for a in raw.get("assets", [])]}
 
     def update_watchlist(self, watchlist_id: str, name: Optional[str] = None, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         body: Dict[str, Any] = {}
         if name:
@@ -626,7 +648,7 @@ class TradingPlatformService:
         return self._trade_request("PUT", f"/watchlists/{watchlist_id}", body) or {}
 
     def delete_watchlist(self, watchlist_id: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._trade_request("DELETE", f"/watchlists/{watchlist_id}") or {}
 
@@ -635,7 +657,7 @@ class TradingPlatformService:
     # ==================================================================
 
     def get_clock(self) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             now = datetime.now(timezone.utc)
             hour = now.hour
             is_open = 13 <= hour < 20 and now.weekday() < 5
@@ -651,7 +673,7 @@ class TradingPlatformService:
         return result
 
     def get_calendar(self, start: str = "", end: str = "") -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         params = "?"
         if start:
@@ -662,7 +684,7 @@ class TradingPlatformService:
         return raw if isinstance(raw, list) else []
 
     def get_corporate_actions(self, symbols: str = "", types: str = "", limit: int = 20) -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         params = f"?limit={limit}"
         if symbols:
@@ -760,7 +782,7 @@ class TradingPlatformService:
     # ------------------------------------------------------------------
 
     def place_crypto_order(self, symbol: str, side: str, qty: Optional[float] = None, notional: Optional[float] = None, order_type: str = "market", time_in_force: str = "gtc", limit_price: Optional[float] = None) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         sym = symbol.upper() if "/" in symbol else f"{symbol.upper()}/USD"
         body: Dict[str, Any] = {"symbol": sym, "side": side.lower(), "type": order_type, "time_in_force": time_in_force}
@@ -777,7 +799,7 @@ class TradingPlatformService:
         return raw or {"error": "Crypto order failed"}
 
     def place_option_order(self, symbol: str, side: str, qty: float, order_type: str = "market", time_in_force: str = "day", limit_price: Optional[float] = None) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         body: Dict[str, Any] = {"symbol": symbol.upper(), "side": side.lower(), "qty": str(qty), "type": order_type, "time_in_force": time_in_force}
         if limit_price is not None:
@@ -789,7 +811,7 @@ class TradingPlatformService:
         return raw or {"error": "Option order failed"}
 
     def search_assets(self, query: str = "", asset_class: str = "us_equity", status: str = "active") -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             from services.investment_ai_tool_service import STOCK_DATABASE
             return [{"symbol": k, "name": v.get("name", k), "asset_class": "us_equity", "tradable": True} for k, v in STOCK_DATABASE.items() if query.upper() in k or query.lower() in v.get("name", "").lower()][:20]
         cache_key = f"assets:{query}:{asset_class}"
@@ -825,7 +847,7 @@ class TradingPlatformService:
     # ==================================================================
 
     def get_activities(self, activity_type: str = "", limit: int = 20) -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         params = f"?page_size={limit}"
         if activity_type:
@@ -876,7 +898,7 @@ class TradingPlatformService:
         if limit_price:
             body["limit_price"] = str(limit_price)
         position_snapshot = self._get_position_snapshot(symbol) if side.lower() == "sell" else None
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         raw = self._trade_request("POST", "/orders", body)
         if not raw:
@@ -916,7 +938,7 @@ class TradingPlatformService:
             "take_profit": {"limit_price": str(take_profit_price)},
             "stop_loss": {"stop_price": str(stop_loss_price)},
         }
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         position_snapshot = self._get_position_snapshot(symbol)
         raw = self._trade_request("POST", "/orders", body)
@@ -1190,6 +1212,9 @@ class TradingPlatformService:
     # ==================================================================
 
     def _not_connected_account(self) -> Dict[str, Any]:
+        self._reload_keys()
+        api_key_status = "(set)" if os.environ.get("ALPACA_API_KEY") else "(NOT SET)"
+        secret_status = "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(NOT SET)"
         return {
             "account_id": None,
             "status": "NOT_CONNECTED",
@@ -1200,13 +1225,28 @@ class TradingPlatformService:
             "day_trade_count": 0, "pattern_day_trader": False,
             "trading_blocked": True,
             "paper": False, "broker": "none", "connected": False,
-            "message": "Connect broker: set ALPACA_API_KEY and ALPACA_SECRET_KEY in environment variables.",
+            "message": f"Broker not connected. ALPACA_API_KEY {api_key_status}, ALPACA_SECRET_KEY {secret_status}.",
+            "debug": {
+                "api_key_env": api_key_status,
+                "secret_key_env": secret_status,
+                "api_key_len": len(os.environ.get("ALPACA_API_KEY", "")),
+                "secret_key_len": len(os.environ.get("ALPACA_SECRET_KEY", "")),
+            },
         }
 
     def _not_connected_error(self) -> Dict[str, Any]:
+        api_key_status = "(set)" if os.environ.get("ALPACA_API_KEY") else "(NOT SET)"
+        secret_status = "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(NOT SET)"
         return {
-            "error": "Broker not connected. Set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable live trading.",
+            "error": f"Broker not connected. ALPACA_API_KEY {api_key_status}, ALPACA_SECRET_KEY {secret_status}. "
+                     f"Add both as Railway environment variables and redeploy.",
             "connected": False,
+            "debug": {
+                "api_key_env": api_key_status,
+                "secret_key_env": secret_status,
+                "api_key_len": len(os.environ.get("ALPACA_API_KEY", "")),
+                "secret_key_len": len(os.environ.get("ALPACA_SECRET_KEY", "")),
+            },
         }
 
     # ==================================================================
@@ -1431,12 +1471,12 @@ class TradingPlatformService:
 
     def broker_create_account(self, account_data: Dict) -> Dict[str, Any]:
         """Create a brokerage account for an end user (Broker API v1)."""
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._broker_request("POST", "/accounts", account_data) or {"error": "Account creation failed"}
 
     def broker_get_accounts(self) -> List[Dict[str, Any]]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         raw = self._broker_request("GET", "/accounts")
         if isinstance(raw, list):
@@ -1444,37 +1484,37 @@ class TradingPlatformService:
         return [raw] if raw and "error" not in raw else []
 
     def broker_get_account(self, account_id: str) -> Dict[str, Any]:
-        if not self._connected:
+        if not self.is_connected:
             return {"id": account_id, "status": "ACTIVE", "currency": "USD"}
         return self._broker_request("GET", f"/accounts/{account_id}") or {}
 
     def broker_create_ach_relationship(self, account_id: str, ach_data: Dict) -> Dict[str, Any]:
         """Establish ACH bank relationship for funding."""
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._broker_request("POST", f"/accounts/{account_id}/ach_relationships", ach_data) or {"error": "ACH setup failed"}
 
     def broker_get_ach_relationships(self, account_id: str) -> List[Dict]:
-        if not self._connected:
+        if not self.is_connected:
             return []
         raw = self._broker_request("GET", f"/accounts/{account_id}/ach_relationships")
         return raw if isinstance(raw, list) else []
 
     def broker_create_transfer(self, account_id: str, transfer_data: Dict) -> Dict[str, Any]:
         """Fund account via ACH transfer."""
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._broker_request("POST", f"/accounts/{account_id}/transfers", transfer_data) or {"error": "Transfer failed"}
 
     def broker_create_journal(self, journal_data: Dict) -> Dict[str, Any]:
         """Journal cash/securities between accounts (instant funding)."""
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         return self._broker_request("POST", "/journals", journal_data) or {"error": "Journal failed"}
 
     def broker_submit_order(self, account_id: str, order_data: Dict) -> Dict[str, Any]:
         """Submit order for a specific broker account (v1 Broker API)."""
-        if not self._connected:
+        if not self.is_connected:
             return self._not_connected_error()
         raw = self._broker_request("POST", f"/trading/accounts/{account_id}/orders", order_data)
         return raw or {"error": "Order failed"}
@@ -1485,7 +1525,7 @@ class TradingPlatformService:
         cached = self._cached(cache_key, 3600.0)
         if cached:
             return cached
-        if not self._connected:
+        if not self.is_connected:
             try:
                 from services.investment_ai_tool_service import STOCK_DATABASE
                 return [{"symbol": k, "name": v.get("name", k), "class": "us_equity", "tradable": True, "fractionable": True} for k, v in STOCK_DATABASE.items()]
