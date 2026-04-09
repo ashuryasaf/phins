@@ -206,7 +206,7 @@
         <div class="order-form">
             <div class="order-row"><label>Symbol</label><input type="text" id="orderSymbol" value="AAPL" style="text-transform:uppercase;"></div>
             <div class="order-row"><label>Qty</label><input type="number" id="orderQty" value="1" min="1"></div>
-            <div class="order-row"><label>Type</label><select id="orderType"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option><option value="trailing_stop">Trail Stop</option><option value="bracket">Bracket (TP+SL)</option></select></div>
+            <div class="order-row"><label>Type</label><select id="orderType"><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option><option value="trailing_stop">Trail Stop</option><option value="bracket">Bracket (TP+SL)</option><option value="crypto">Crypto</option></select></div>
             <div class="order-row" id="limitRow" style="display:none;"><label>Price</label><input type="number" id="orderPrice" step="0.01" placeholder="Limit price"></div>
             <div class="order-row" id="tpRow" style="display:none;"><label>TP $</label><input type="number" id="orderTP" step="0.01" placeholder="Take profit"></div>
             <div class="order-row" id="slRow" style="display:none;"><label>SL $</label><input type="number" id="orderSL" step="0.01" placeholder="Stop loss"></div>
@@ -225,13 +225,25 @@
     <div class="panel panel-bottom-inner" id="panelBottom">
         <div class="bottom-tabs">
             <button class="bottom-tab active" onclick="switchBottomTab('global',this)">Global</button>
+            <button class="bottom-tab" onclick="switchBottomTab('options',this)">Options</button>
             <button class="bottom-tab" onclick="switchBottomTab('report',this)">Report</button>
             <button class="bottom-tab" onclick="switchBottomTab('scanner',this)">Scanner</button>
             <button class="bottom-tab" onclick="switchBottomTab('bi',this)">BI Analytics</button>
             <button class="bottom-tab" onclick="switchBottomTab('aiopt',this)">AI Optimize</button>
         </div>
         <div id="tab-global" class="tab-content active">
-            <div id="globalPanel" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;">Loading...</div>
+            <div id="globalPanel" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;">Loading...</div>
+        </div>
+        <div id="tab-options" class="tab-content">
+            <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap;">
+                <div><label style="color:var(--muted);font-size:16px;display:block;">Underlying</label><input type="text" id="optSymbol" value="AAPL" style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:20px;width:100px;text-transform:uppercase;font-family:inherit;border-radius:3px;"></div>
+                <div><label style="color:var(--muted);font-size:16px;display:block;">Expiration</label><input type="date" id="optExpiry" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:18px;font-family:inherit;border-radius:3px;"></div>
+                <div><label style="color:var(--muted);font-size:16px;display:block;">Type</label><select id="optType" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:18px;font-family:inherit;border-radius:3px;"><option value="">All</option><option value="call">Calls</option><option value="put">Puts</option></select></div>
+                <button onclick="loadOptionsChain()" style="background:var(--gold);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">Load Chain</button>
+            </div>
+            <div id="optionsChainPanel" style="overflow-y:auto;max-height:220px;">
+                <div style="color:var(--muted);text-align:center;padding:20px;">Enter an underlying symbol and click Load Chain to view options</div>
+            </div>
         </div>
         <div id="tab-report" class="tab-content">
             <div id="reportPanel" class="report-grid">Loading report...</div>
@@ -446,6 +458,93 @@ function switchBottomTab(tab, btn) {
     if (tab === 'scanner') loadScanner();
     if (tab === 'bi') loadBiAnalytics();
     if (tab === 'aiopt') loadAiOptimize();
+    if (tab === 'options') { /* loaded on button click */ }
+}
+
+async function loadOptionsChain() {
+    const sym = $('optSymbol').value.toUpperCase();
+    const expiry = $('optExpiry').value;
+    const optType = $('optType').value;
+    if (!sym) { alert('Enter underlying symbol'); return; }
+    $('optionsChainPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Loading options chain for ' + sym + '...</div>';
+
+    try {
+        let url = '/api/terminal/options/chain?symbol=' + sym;
+        if (expiry) url += '&expiration=' + expiry;
+        if (optType) url += '&type=' + optType;
+        const d = await apiFetch(url);
+
+        if (!d || d.error) {
+            $('optionsChainPanel').innerHTML = `<div style="color:var(--red);padding:10px;">${d?.error || 'No options data available. Requires Alpaca connection with options enabled.'}</div>`;
+            return;
+        }
+
+        const contracts = d.option_contracts || d.contracts || d || [];
+        const list = Array.isArray(contracts) ? contracts : (contracts.option_contracts || []);
+
+        if (list.length === 0) {
+            $('optionsChainPanel').innerHTML = '<div style="color:var(--muted);padding:10px;">No contracts found for ' + sym + '. Try different expiration or check that options are enabled on your Alpaca account.</div>';
+            return;
+        }
+
+        let calls = list.filter(c => c.type === 'call' || c.symbol?.includes('C'));
+        let puts = list.filter(c => c.type === 'put' || c.symbol?.includes('P'));
+        if (calls.length === 0 && puts.length === 0) { calls = list; }
+
+        let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+
+        // Calls
+        html += '<div><div style="color:var(--green);font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">CALLS</div>';
+        html += '<table class="scanner-table"><thead><tr><th>Strike</th><th>Expiry</th><th>Bid</th><th>Ask</th><th></th></tr></thead><tbody>';
+        (calls.length > 0 ? calls : list).slice(0, 20).forEach(c => {
+            const strike = c.strike_price || c.strike || '—';
+            const exp = c.expiration_date || c.expiry || '—';
+            const bid = c.close_price || c.bid || '—';
+            const ask = c.open_price || c.ask || '—';
+            const csym = c.symbol || c.id || '';
+            html += `<tr><td>$${strike}</td><td style="font-size:16px;">${exp}</td><td style="color:var(--green);">$${bid}</td><td>$${ask}</td><td><button style="background:var(--green);color:#000;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;" onclick="placeOptionTrade('${csym}','buy',1)">BUY</button></td></tr>`;
+        });
+        html += '</tbody></table></div>';
+
+        // Puts
+        html += '<div><div style="color:var(--red);font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">PUTS</div>';
+        html += '<table class="scanner-table"><thead><tr><th>Strike</th><th>Expiry</th><th>Bid</th><th>Ask</th><th></th></tr></thead><tbody>';
+        (puts.length > 0 ? puts : []).slice(0, 20).forEach(c => {
+            const strike = c.strike_price || c.strike || '—';
+            const exp = c.expiration_date || c.expiry || '—';
+            const bid = c.close_price || c.bid || '—';
+            const ask = c.open_price || c.ask || '—';
+            const csym = c.symbol || c.id || '';
+            html += `<tr><td>$${strike}</td><td style="font-size:16px;">${exp}</td><td style="color:var(--red);">$${bid}</td><td>$${ask}</td><td><button style="background:var(--red);color:#fff;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;" onclick="placeOptionTrade('${csym}','buy',1)">BUY</button></td></tr>`;
+        });
+        html += '</tbody></table></div>';
+
+        html += '</div>';
+        $('optionsChainPanel').innerHTML = html;
+    } catch(e) {
+        $('optionsChainPanel').innerHTML = `<div style="color:var(--red);padding:10px;">Error: ${e.message}</div>`;
+    }
+}
+
+async function placeOptionTrade(contractSymbol, side, qty) {
+    if (!confirm(side.toUpperCase() + ' ' + qty + ' contract(s) of ' + contractSymbol + '?')) return;
+    try {
+        const d = await apiPost('/api/terminal/options/order', {
+            symbol: contractSymbol,
+            side: side,
+            qty: qty,
+            order_type: 'market',
+        });
+        if (d.error) {
+            alert('Option order error: ' + JSON.stringify(d.error));
+        } else {
+            alert('Option order ' + (d.status || 'submitted') + ': ' + side.toUpperCase() + ' ' + contractSymbol);
+            loadPositions();
+            loadAccount();
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
 }
 
 async function loadBiAnalytics() {
@@ -1241,6 +1340,9 @@ async function executeOrder(side) {
             const sl = parseFloat($('orderSL').value);
             if (!tp || !sl) { alert('Take Profit and Stop Loss prices required for bracket order'); return; }
             d = await apiPost('/api/terminal/bracket-order', { symbol, side, qty, take_profit_price: tp, stop_loss_price: sl });
+        } else if (type === 'crypto') {
+            const cryptoSym = symbol.includes('/') ? symbol : symbol + '/USD';
+            d = await apiPost('/api/terminal/order', { symbol: cryptoSym, side, qty, order_type: 'market', time_in_force: 'gtc' });
         } else {
             const body = { symbol, side, qty, order_type: type, time_in_force: 'day' };
             if (limitPrice) body.limit_price = limitPrice;
