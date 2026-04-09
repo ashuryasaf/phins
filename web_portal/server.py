@@ -17808,6 +17808,48 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(_trading_platform.reconcile_integrity(customer_id), default=str).encode('utf-8'))
             return
 
+        if path == '/api/terminal/options/chain':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            symbol = qs.get('symbol', [''])[0]
+            expiry = qs.get('expiration', [''])[0]
+            opt_type = qs.get('type', [''])[0]
+            strike_gte = qs.get('strike_gte', [''])[0]
+            strike_lte = qs.get('strike_lte', [''])[0]
+            self._set_json_headers()
+            self.wfile.write(json.dumps(
+                _trading_platform.get_option_contracts(
+                    underlying_symbol=symbol,
+                    expiration_date=expiry,
+                    option_type=opt_type,
+                    strike_price_gte=float(strike_gte) if strike_gte else None,
+                    strike_price_lte=float(strike_lte) if strike_lte else None,
+                ), default=str
+            ).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/options/quote':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            symbol = qs.get('symbol', [''])[0]
+            self._set_json_headers()
+            self.wfile.write(json.dumps(_trading_platform.get_option_snapshot(symbol) or {}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/terminal/broker/assets':
             if not trading_platform_enabled:
                 self._set_json_headers(503)
@@ -22751,6 +22793,32 @@ For claims or questions, please contact:
             account_id = body_data.get('account_id', '')
             order_data = body_data.get('order_data', body_data)
             result = _trading_platform.broker_submit_order(account_id, order_data)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        if path == '/api/terminal/options/order':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            result = _trading_platform.place_option_order(
+                symbol=body_data.get('symbol', ''),
+                side=body_data.get('side', 'buy'),
+                qty=float(body_data.get('qty', 1)),
+                order_type=body_data.get('order_type', 'market'),
+                limit_price=float(body_data['limit_price']) if body_data.get('limit_price') else None,
+            )
             self._set_json_headers()
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return

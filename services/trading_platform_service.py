@@ -61,46 +61,98 @@ GLOBAL_BENCHMARKS = {
         "QQQ": {"name": "NASDAQ 100", "region": "US"},
         "DIA": {"name": "Dow Jones", "region": "US"},
         "IWM": {"name": "Russell 2000", "region": "US"},
+        "VTI": {"name": "Total Market", "region": "US"},
         "EFA": {"name": "MSCI EAFE", "region": "International"},
         "EEM": {"name": "Emerging Markets", "region": "International"},
         "VGK": {"name": "FTSE Europe", "region": "Europe"},
+        "EWJ": {"name": "Japan (Nikkei)", "region": "Asia"},
+        "FXI": {"name": "China Large-Cap", "region": "Asia"},
+    },
+    "mega_caps": {
+        "AAPL": {"name": "Apple"},
+        "MSFT": {"name": "Microsoft"},
+        "NVDA": {"name": "NVIDIA"},
+        "GOOGL": {"name": "Alphabet"},
+        "AMZN": {"name": "Amazon"},
+        "META": {"name": "Meta"},
+        "TSLA": {"name": "Tesla"},
     },
     "crypto": {
         "BTC/USD": {"name": "Bitcoin"},
         "ETH/USD": {"name": "Ethereum"},
         "SOL/USD": {"name": "Solana"},
+        "DOGE/USD": {"name": "Dogecoin"},
+        "AVAX/USD": {"name": "Avalanche"},
     },
     "commodities": {
         "GLD": {"name": "Gold"},
         "SLV": {"name": "Silver"},
         "USO": {"name": "Crude Oil"},
+        "UNG": {"name": "Natural Gas"},
+        "CPER": {"name": "Copper"},
     },
     "bonds": {
         "TLT": {"name": "20+ Year Treasury"},
+        "IEF": {"name": "7-10 Year Treasury"},
         "BND": {"name": "Total Bond Market"},
         "HYG": {"name": "High Yield Corporate"},
+        "LQD": {"name": "Investment Grade"},
+    },
+    "sectors": {
+        "XLK": {"name": "Technology"},
+        "XLF": {"name": "Financials"},
+        "XLE": {"name": "Energy"},
+        "XLV": {"name": "Healthcare"},
+        "XLI": {"name": "Industrials"},
     },
 }
 
 # Baseline prices so the dashboard is never empty.
 # Updated from recent market data; overwritten by live quotes when available.
 _BASELINE_PRICES: Dict[str, Dict[str, Any]] = {
+    # Indices
     "SPY": {"price": 655.83, "change_pct": "+0.09"},
     "QQQ": {"price": 584.98, "change_pct": "+0.11"},
     "DIA": {"price": 465.06, "change_pct": "-0.09"},
     "IWM": {"price": 251.29, "change_pct": "+0.69"},
+    "VTI": {"price": 288.50, "change_pct": "+0.15"},
     "EFA": {"price": 98.00, "change_pct": "-0.62"},
     "EEM": {"price": 47.15, "change_pct": "+0.32"},
     "VGK": {"price": 70.85, "change_pct": "+0.18"},
+    "EWJ": {"price": 72.40, "change_pct": "+0.45"},
+    "FXI": {"price": 30.20, "change_pct": "+1.10"},
+    # Mega caps
+    "AAPL": {"price": 227.50, "change_pct": "+0.85"},
+    "MSFT": {"price": 442.30, "change_pct": "+0.52"},
+    "NVDA": {"price": 138.50, "change_pct": "+3.20"},
+    "GOOGL": {"price": 178.90, "change_pct": "+0.65"},
+    "AMZN": {"price": 205.70, "change_pct": "+0.92"},
+    "META": {"price": 612.40, "change_pct": "+1.15"},
+    "TSLA": {"price": 272.80, "change_pct": "-1.50"},
+    # Crypto
     "BTC/USD": {"price": 67594.00, "change_pct": "-1.25"},
     "ETH/USD": {"price": 2069.21, "change_pct": "-2.40"},
     "SOL/USD": {"price": 80.24, "change_pct": "-3.15"},
+    "DOGE/USD": {"price": 0.185, "change_pct": "+2.80"},
+    "AVAX/USD": {"price": 22.50, "change_pct": "+1.45"},
+    # Commodities
     "GLD": {"price": 305.20, "change_pct": "+0.85"},
     "SLV": {"price": 33.45, "change_pct": "+1.20"},
     "USO": {"price": 62.80, "change_pct": "-2.15"},
+    "UNG": {"price": 14.20, "change_pct": "-0.70"},
+    "CPER": {"price": 28.90, "change_pct": "+0.55"},
+    # Bonds
     "TLT": {"price": 88.50, "change_pct": "+0.42"},
+    "IEF": {"price": 95.80, "change_pct": "+0.18"},
     "BND": {"price": 71.20, "change_pct": "+0.15"},
     "HYG": {"price": 77.85, "change_pct": "+0.08"},
+    "LQD": {"price": 108.30, "change_pct": "+0.12"},
+    # Sectors
+    "XLK": {"price": 228.50, "change_pct": "+0.72"},
+    "XLF": {"price": 48.20, "change_pct": "+0.35"},
+    "XLE": {"price": 82.10, "change_pct": "-1.20"},
+    "XLV": {"price": 145.60, "change_pct": "+0.28"},
+    "XLI": {"price": 128.90, "change_pct": "+0.42"},
 }
 
 # Map Alpha Vantage lookup symbols for items that need translation
@@ -108,6 +160,8 @@ _AV_SYMBOL_MAP: Dict[str, str] = {
     "BTC/USD": "BTC",
     "ETH/USD": "ETH",
     "SOL/USD": "SOL",
+    "DOGE/USD": "DOGE",
+    "AVAX/USD": "AVAX",
 }
 
 
