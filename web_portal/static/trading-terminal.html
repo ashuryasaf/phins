@@ -487,8 +487,16 @@ async function loadOptionsChain() {
             return;
         }
 
-        let calls = list.filter(c => c.type === 'call' || c.symbol?.includes('C'));
-        let puts = list.filter(c => c.type === 'put' || c.symbol?.includes('P'));
+        const getOptionSide = (contract) => {
+            const declaredType = (contract.type || '').toLowerCase();
+            if (declaredType === 'call' || declaredType === 'put') return declaredType;
+            const match = (contract.symbol || '').match(/\d{6}([CP])\d{8}$/);
+            if (!match) return '';
+            return match[1] === 'C' ? 'call' : 'put';
+        };
+
+        let calls = list.filter(c => getOptionSide(c) === 'call');
+        let puts = list.filter(c => getOptionSide(c) === 'put');
         if (calls.length === 0 && puts.length === 0) { calls = list; }
 
         let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
@@ -891,12 +899,8 @@ async function loadGlobalDashboard() {
         const d = await apiFetch('/api/terminal/dashboard');
         if (!d.dashboard) return;
         let html = '';
-        const categories = [
-            ['Indices', d.dashboard.indices],
-            ['Crypto', d.dashboard.crypto],
-            ['Commodities', d.dashboard.commodities],
-            ['Bonds', d.dashboard.bonds],
-        ];
+        const formatCategoryName = (key) => key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+        const categories = Object.entries(d.dashboard).map(([key, items]) => [formatCategoryName(key), items]);
         categories.forEach(([cat, items]) => {
             if (!items) return;
             html += `<div style="grid-column:1/-1;color:var(--gold);font-size:16px;text-transform:uppercase;letter-spacing:1.5px;margin-top:6px;">${cat}</div>`;

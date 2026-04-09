@@ -3,7 +3,7 @@ import types
 
 import web_portal
 
-from services.trading_platform_service import TradingPlatformService
+from services.trading_platform_service import GLOBAL_BENCHMARKS, TradingPlatformService
 
 
 def test_submit_bracket_order_records_to_ledger(monkeypatch):
@@ -307,3 +307,15 @@ def test_submit_order_reloads_before_fetching_sell_snapshot(monkeypatch):
     assert sequence == ["reload", "snapshot", "trade"]
     assert result["order_id"] == "ord-sell"
     assert recorded["position_snapshot"]["cost_basis"] == 900
+
+
+def test_get_global_dashboard_initializes_all_benchmark_categories(monkeypatch):
+    service = TradingPlatformService()
+
+    monkeypatch.setattr(service, "_fetch_global_prices", lambda: {})
+
+    result = service.get_global_dashboard()
+
+    assert set(result["dashboard"]) == set(GLOBAL_BENCHMARKS)
+    assert result["dashboard"]["mega_caps"][0]["symbol"] == "AAPL"
+    assert result["dashboard"]["sectors"][0]["symbol"] == "XLK"

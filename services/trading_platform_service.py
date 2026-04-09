@@ -1031,7 +1031,9 @@ class TradingPlatformService:
 
         live_prices = self._fetch_global_prices()
 
-        dashboard: Dict[str, List[Dict]] = {"indices": [], "crypto": [], "commodities": [], "bonds": []}
+        dashboard: Dict[str, List[Dict]] = {
+            category_key: [] for category_key in GLOBAL_BENCHMARKS
+        }
 
         for category_key, category_data in GLOBAL_BENCHMARKS.items():
             for sym, meta in category_data.items():
