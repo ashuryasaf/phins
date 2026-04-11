@@ -2298,6 +2298,18 @@
       try { store.setItem(key, value); } catch (e) { /* ignore */ }
     }
 
+    function safeStorageRemove(store, key) {
+      if (!store) return;
+      try { store.removeItem(key); } catch (e) { /* ignore */ }
+    }
+
+    function clearCachedAuthState() {
+      authToken = '';
+      safeStorageRemove(localStorage, 'phins_token');
+      safeStorageRemove(sessionStorage, 'phins_token');
+      safeStorageRemove(localStorage, 'session');
+    }
+
     let authToken = normalizeAuthToken(
       safeStorageGet(localStorage, 'phins_token') ||
       safeStorageGet(sessionStorage, 'phins_token')
@@ -2372,13 +2384,13 @@
               }
             } else {
               console.error('[Foundation] Session invalid:', info);
-              localStorage.removeItem('phins_token');
+              clearCachedAuthState();
               window.location.href = '/login.html';
               return;
             }
           } else {
             console.error('[Foundation] Session validate failed:', validateRes.status);
-            localStorage.removeItem('phins_token');
+            clearCachedAuthState();
             window.location.href = '/login.html';
             return;
           }
