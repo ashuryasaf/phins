@@ -444,12 +444,24 @@ class TradingPlatformService:
     def close_position(self, symbol: str, qty: Optional[float] = None) -> Dict[str, Any]:
         if not self.is_connected:
             return self._not_connected_error()
+        position_snapshot = self._get_position_snapshot(symbol)
         params = f"/{symbol}"
         if qty is not None:
             params += f"?qty={qty}"
         result = self._trade_request("DELETE", f"/positions{params}") or {"error": "Close failed"}
         if "error" not in result:
-            self._record_trade_to_ledger({"symbol": symbol, "side": "sell", "qty": str(qty or "all"), "status": "closed", "broker": "alpaca"})
+            self._record_trade_to_ledger(
+                {
+                    "order_id": result.get("id") or result.get("order_id"),
+                    "symbol": result.get("symbol") or symbol.upper(),
+                    "side": result.get("side") or "sell",
+                    "qty": result.get("qty") or result.get("filled_qty") or str(qty or "all"),
+                    "status": result.get("status") or "closed",
+                    "filled_avg_price": result.get("filled_avg_price"),
+                    "broker": "alpaca",
+                },
+                position_snapshot=position_snapshot,
+            )
         return result
 
     def close_all_positions(self) -> Dict[str, Any]:

@@ -520,3 +520,42 @@ def test_submit_order_reloads_before_fetching_sell_snapshot(monkeypatch):
     assert sequence == ["reload", "snapshot", "trade"]
     assert result["order_id"] == "ord-sell"
     assert recorded["position_snapshot"]["cost_basis"] == 900
+
+
+def test_close_position_passes_order_id_to_ledger(monkeypatch):
+    service = TradingPlatformService()
+    service._connected = True
+
+    recorded = {}
+
+    def fake_get_position_snapshot(symbol):
+        assert symbol == "AAPL"
+        return {"symbol": "AAPL", "qty": 5, "avg_entry_price": 180, "cost_basis": 900}
+
+    def fake_trade_request(method, path, body=None):
+        assert method == "DELETE"
+        assert path == "/positions/AAPL"
+        return {
+            "id": "ord-close",
+            "symbol": "AAPL",
+            "side": "sell",
+            "qty": "5",
+            "status": "accepted",
+            "filled_avg_price": None,
+        }
+
+    def fake_record_trade(order_result, customer_id="TERMINAL", position_snapshot=None):
+        recorded["order_result"] = order_result
+        recorded["position_snapshot"] = position_snapshot
+
+    monkeypatch.setattr(service, "_get_position_snapshot", fake_get_position_snapshot)
+    monkeypatch.setattr(service, "_trade_request", fake_trade_request)
+    monkeypatch.setattr(service, "_record_trade_to_ledger", fake_record_trade)
+
+    result = service.close_position("AAPL")
+
+    assert result["id"] == "ord-close"
+    assert recorded["order_result"]["order_id"] == "ord-close"
+    assert recorded["order_result"]["filled_avg_price"] is None
+    assert recorded["order_result"]["qty"] == "5"
+    assert recorded["position_snapshot"]["cost_basis"] == 900
