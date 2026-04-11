@@ -2390,7 +2390,7 @@
             }
           } else {
             console.error('[Foundation] Session validate failed:', validateRes.status);
-            clearCachedAuthState();
+            safeStorageRemove(localStorage, 'phins_token');
             window.location.href = '/login.html';
             return;
           }
