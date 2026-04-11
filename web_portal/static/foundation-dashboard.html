@@ -2267,10 +2267,54 @@
     let validatedFoundation = null;
     let ledgerEntries = [];
     let activityLog = [];
-    
+
+    // --- Auth helpers (consistent with platform dashboard pattern) ---
+    function readSessionCache() {
+      const raw = localStorage.getItem('session');
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        console.warn('[Foundation] Invalid session cache - clearing', err);
+        localStorage.removeItem('session');
+        return {};
+      }
+    }
+
+    function normalizeAuthToken(token) {
+      if (!token) return '';
+      const trimmed = String(token).trim();
+      if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return '';
+      return trimmed;
+    }
+
+    function safeStorageGet(store, key) {
+      if (!store) return null;
+      try { return store.getItem(key); } catch (e) { return null; }
+    }
+
+    function safeStorageSet(store, key, value) {
+      if (!store) return;
+      try { store.setItem(key, value); } catch (e) { /* ignore */ }
+    }
+
+    let authToken = normalizeAuthToken(
+      safeStorageGet(localStorage, 'phins_token') ||
+      safeStorageGet(sessionStorage, 'phins_token')
+    );
+    const cachedSession = readSessionCache();
+    if (!authToken && cachedSession.token) {
+      authToken = normalizeAuthToken(cachedSession.token);
+      if (authToken) {
+        safeStorageSet(localStorage, 'phins_token', authToken);
+        safeStorageSet(sessionStorage, 'phins_token', authToken);
+      }
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', async function() {
       await loadUserInfo();
+      if (!currentUser) return;
       await Promise.all([
         loadFoundations(),
         loadInvitations(),
@@ -2280,36 +2324,89 @@
       updateDashboardStats();
       updateAIInsights();
     });
-    
-    // Load user info
+
+    // Load user info with robust token resolution matching platform pattern
     async function loadUserInfo() {
       try {
-        const session = JSON.parse(localStorage.getItem('session') || '{}');
-        const customerId = localStorage.getItem('customer_id');
-        
-        if (!session.token) {
+        const sessionData = readSessionCache();
+        const sessionToken = normalizeAuthToken(sessionData.token);
+        if (!authToken && sessionToken) {
+          authToken = sessionToken;
+          safeStorageSet(localStorage, 'phins_token', authToken);
+          safeStorageSet(sessionStorage, 'phins_token', authToken);
+        }
+
+        if (!authToken) {
+          console.error('[Foundation] No auth token found - redirecting to login');
           window.location.href = '/login.html';
           return;
         }
-        
-        currentUser = {
-          id: customerId || session.customer_id,
-          name: session.name || session.username,
-          type: 'customer'
-        };
-        
-        document.getElementById('user-name').textContent = currentUser.name;
-        document.getElementById('user-avatar').textContent = currentUser.name.charAt(0).toUpperCase();
+
+        const customerId =
+          safeStorageGet(sessionStorage, 'customer_id') ||
+          safeStorageGet(localStorage, 'customer_id') ||
+          safeStorageGet(localStorage, 'phins_customer_id') ||
+          sessionData.customer_id ||
+          null;
+
+        // Validate session with the server
+        try {
+          const validateRes = await fetch('/api/session/validate', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+          });
+
+          if (validateRes.ok) {
+            const info = await validateRes.json();
+            if (info.valid) {
+              const resolvedId = info.customer_id || customerId;
+              currentUser = {
+                id: resolvedId,
+                name: info.name || info.username || sessionData.name || sessionData.username || 'User',
+                role: info.role || sessionData.role || 'customer',
+                type: 'customer'
+              };
+
+              if (resolvedId) {
+                safeStorageSet(localStorage, 'customer_id', resolvedId);
+                safeStorageSet(sessionStorage, 'customer_id', resolvedId);
+              }
+            } else {
+              console.error('[Foundation] Session invalid:', info);
+              localStorage.removeItem('phins_token');
+              window.location.href = '/login.html';
+              return;
+            }
+          } else {
+            console.error('[Foundation] Session validate failed:', validateRes.status);
+            localStorage.removeItem('phins_token');
+            window.location.href = '/login.html';
+            return;
+          }
+        } catch (networkErr) {
+          console.warn('[Foundation] Session validate unreachable, using local session data');
+          currentUser = {
+            id: customerId || sessionData.customer_id,
+            name: sessionData.name || sessionData.username || 'User',
+            role: sessionData.role || 'customer',
+            type: 'customer'
+          };
+        }
+
+        const displayName = currentUser.name || 'User';
+        document.getElementById('user-name').textContent = displayName;
+        document.getElementById('user-avatar').textContent = displayName.charAt(0).toUpperCase();
       } catch (e) {
-        console.error('Error loading user info:', e);
-        window.location.href = '/login.html';
+        console.error('[Foundation] Error loading user info:', e);
+        if (!currentUser) {
+          window.location.href = '/login.html';
+        }
       }
     }
     
     // Load foundations
     async function loadFoundations() {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundations', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -2329,7 +2426,7 @@
     // Load invitations
     async function loadInvitations() {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundation-invitations', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -2349,7 +2446,7 @@
     
     async function loadLedgerEntries() {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         // Use comprehensive ledger endpoint for full transaction data
         const response = await fetch('/api/foundation-ledger/comprehensive?limit=100', {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -2375,7 +2472,7 @@
     // Load activity log
     async function loadActivityLog() {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundation-activity', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -2725,7 +2822,7 @@
       `;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundation-invitations/validate/${encodeURIComponent(code)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -2830,7 +2927,7 @@
       joinBtn.innerHTML = '🔄 Joining...';
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundations/join', {
           method: 'POST',
           headers: {
@@ -2910,7 +3007,7 @@
       };
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${foundationId}/invite`, {
           method: 'POST',
           headers: {
@@ -3017,7 +3114,7 @@
       }
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundations', {
           method: 'POST',
           headers: {
@@ -3057,7 +3154,7 @@
     
     async function viewFoundation(id) {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -3164,7 +3261,7 @@
     
     async function makeContribution(foundationId, amount) {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${foundationId}/contribute`, {
           method: 'POST',
           headers: {
@@ -3213,7 +3310,7 @@
     
     async function loadFoundationMembers(foundationId) {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${foundationId}/members?include_pending=true`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -3320,7 +3417,7 @@
       if (!confirm('Approve this member to join the foundation?')) return;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/approve`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
@@ -3346,7 +3443,7 @@
       if (reason === null) return;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/reject`, {
           method: 'POST',
           headers: {
@@ -3376,7 +3473,7 @@
       if (reason === null) return;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/remove`, {
           method: 'POST',
           headers: {
@@ -3410,7 +3507,7 @@
       }
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/role`, {
           method: 'POST',
           headers: {
@@ -3468,7 +3565,7 @@
     
     async function loadFoundationVotes(foundationId) {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${foundationId}/votes`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -3635,7 +3732,7 @@
       if (reason === null) return;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentVotesFoundationId}/votes/${voteId}/cast`, {
           method: 'POST',
           headers: {
@@ -3663,7 +3760,7 @@
       if (!confirm('Approve this vote proposal? It will open for voting.')) return;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentVotesFoundationId}/votes/${voteId}/approve`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
@@ -3724,7 +3821,7 @@
       }
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentVotesFoundationId}/votes`, {
           method: 'POST',
           headers: {
@@ -3772,7 +3869,7 @@
     
     async function loadBillingData(foundationId) {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const [billingResponse, reportResponse] = await Promise.all([
           fetch(`/api/foundations/${foundationId}/billing`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -3938,7 +4035,7 @@
     // Invitation actions
     async function acceptInvitation(code) {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundations/join', {
           method: 'POST',
           headers: {
@@ -3969,7 +4066,7 @@
       if (!confirm('Are you sure you want to decline this invitation?')) return;
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         await fetch(`/api/foundation-invitations/${code}/decline`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
@@ -4213,7 +4310,7 @@
     
     async function loadWalletBalance() {
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundation-wallet/balance', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -4365,7 +4462,7 @@
       submitBtn.textContent = '⏳ Processing...';
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         
         // Build request body based on payment method
         const requestBody = {
@@ -4515,7 +4612,7 @@
       }
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundation-wallet/deposit', {
           method: 'POST',
           headers: {
@@ -4552,7 +4649,7 @@
       }
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch(`/api/foundations/${currentBillingFoundationId}/export/csv?type=${reportType}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -4587,7 +4684,7 @@
       document.getElementById('vote-stats-content').innerHTML = '<div style="text-align: center; padding: 40px;">Loading voting statistics...</div>';
       
       try {
-        const token = localStorage.getItem('phins_token');
+        const token = authToken;
         const response = await fetch('/api/foundation-votes/statistics', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
