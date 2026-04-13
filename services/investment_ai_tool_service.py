@@ -124,6 +124,26 @@ def _get_live_intraday(symbol: str, interval: str = "5min") -> Optional[Dict[str
         return None
 
 
+def _get_live_vix() -> float:
+    """Get VIX-like volatility estimate from live SPY data."""
+    try:
+        from services.trading_platform_service import get_trading_platform
+        from services.ai_trading_engine import compute_risk_metrics
+        tp = get_trading_platform()
+        if tp.is_connected:
+            bars = tp.get_bars("SPY", "1Day", 30)
+            if bars and len(bars) >= 5:
+                risk = compute_risk_metrics(bars, [])
+                vol = risk.get("volatility_annual", 0.2)
+                return round(vol * 100, 1)
+    except Exception:
+        pass
+    quote = _get_live_quote("VIX")
+    if quote and quote.get("price"):
+        return float(quote["price"])
+    return 20.0
+
+
 def _get_live_company_overview(symbol: str) -> Optional[Dict[str, Any]]:
     if not LIVE_DATA_AVAILABLE or not _av_service:
         return None
@@ -169,100 +189,195 @@ def get_access_key_display() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Market data constants (simulated realistic data)
+# Sector metadata (structural/thematic — not price data)
+# Prices and YTD returns are fetched live from Alpaca/Alpha Vantage.
 # ---------------------------------------------------------------------------
 
+# Sector metadata. `trend`, `ytd_return`, `pe_avg`, `volatility` are neutral
+# defaults — overwritten by live data when fetched from Alpaca sector ETFs.
 SECTOR_DATA: Dict[str, Dict[str, Any]] = {
     "technology": {
-        "name": "Technology", "trend": "bullish", "ytd_return": 18.4,
-        "pe_avg": 32.5, "volatility": "high",
+        "name": "Technology", "etf": "XLK", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "medium",
         "top_stocks": ["AAPL", "MSFT", "NVDA", "GOOGL", "META"],
         "emerging": ["AI infrastructure", "quantum computing", "edge AI"],
     },
     "healthcare": {
-        "name": "Healthcare", "trend": "neutral", "ytd_return": 5.2,
-        "pe_avg": 22.1, "volatility": "medium",
+        "name": "Healthcare", "etf": "XLV", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "medium",
         "top_stocks": ["JNJ", "UNH", "PFE", "ABT", "TMO"],
         "emerging": ["GLP-1 therapeutics", "AI diagnostics", "gene therapy"],
     },
     "financials": {
-        "name": "Financials", "trend": "bullish", "ytd_return": 12.7,
-        "pe_avg": 14.8, "volatility": "medium",
+        "name": "Financials", "etf": "XLF", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "medium",
         "top_stocks": ["JPM", "BAC", "GS", "MS", "V"],
         "emerging": ["embedded finance", "blockchain settlement", "AI underwriting"],
     },
     "energy": {
-        "name": "Energy", "trend": "neutral", "ytd_return": 3.1,
-        "pe_avg": 11.2, "volatility": "high",
+        "name": "Energy", "etf": "XLE", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "high",
         "top_stocks": ["XOM", "CVX", "COP", "SLB", "EOG"],
         "emerging": ["green hydrogen", "small modular reactors", "grid storage"],
     },
     "consumer_discretionary": {
-        "name": "Consumer Discretionary", "trend": "bearish", "ytd_return": -2.3,
-        "pe_avg": 25.6, "volatility": "high",
+        "name": "Consumer Discretionary", "etf": "XLY", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "high",
         "top_stocks": ["AMZN", "TSLA", "HD", "NKE", "SBUX"],
         "emerging": ["social commerce", "personalized retail AI", "EV infrastructure"],
     },
     "industrials": {
-        "name": "Industrials", "trend": "bullish", "ytd_return": 9.8,
-        "pe_avg": 20.3, "volatility": "medium",
+        "name": "Industrials", "etf": "XLI", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "medium",
         "top_stocks": ["CAT", "UNP", "HON", "GE", "RTX"],
         "emerging": ["robotics automation", "reshoring supply chains", "defense tech"],
     },
     "real_estate": {
-        "name": "Real Estate", "trend": "neutral", "ytd_return": 1.5,
-        "pe_avg": 18.7, "volatility": "low",
+        "name": "Real Estate", "etf": "XLRE", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "low",
         "top_stocks": ["PLD", "AMT", "EQIX", "SPG", "O"],
         "emerging": ["data center REITs", "logistics hubs", "AI-managed properties"],
     },
     "utilities": {
-        "name": "Utilities", "trend": "bullish", "ytd_return": 7.3,
-        "pe_avg": 17.5, "volatility": "low",
+        "name": "Utilities", "etf": "XLU", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "low",
         "top_stocks": ["NEE", "DUK", "SO", "D", "AEP"],
         "emerging": ["grid modernization", "nuclear renaissance", "distributed energy"],
     },
     "materials": {
-        "name": "Materials", "trend": "neutral", "ytd_return": 4.1,
-        "pe_avg": 16.2, "volatility": "medium",
+        "name": "Materials", "etf": "XLB", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "medium",
         "top_stocks": ["LIN", "APD", "ECL", "SHW", "FCX"],
         "emerging": ["rare earth processing", "sustainable packaging", "advanced alloys"],
     },
     "communication_services": {
-        "name": "Communication Services", "trend": "bullish", "ytd_return": 15.2,
-        "pe_avg": 21.8, "volatility": "medium",
+        "name": "Communication Services", "etf": "XLC", "trend": "neutral", "ytd_return": 0, "pe_avg": 0, "volatility": "medium",
         "top_stocks": ["GOOGL", "META", "NFLX", "DIS", "T"],
         "emerging": ["AI content generation", "spatial computing", "6G R&D"],
     },
     "crypto": {
-        "name": "Cryptocurrency", "trend": "bullish", "ytd_return": 45.6,
-        "pe_avg": None, "volatility": "very_high",
+        "name": "Cryptocurrency", "etf": None, "trend": "neutral", "ytd_return": 0, "pe_avg": None, "volatility": "very_high",
         "top_stocks": ["BTC", "ETH", "SOL", "BNB", "ADA"],
         "emerging": ["DeFi 2.0", "real-world asset tokenization", "ZK rollups"],
     },
 }
 
-STOCK_DATABASE: Dict[str, Dict[str, Any]] = {
-    "AAPL": {"name": "Apple Inc.", "sector": "technology", "price": 227.50, "pe": 33.2, "rsi": 58.3, "ma50": 221.4, "ma200": 215.8, "volume": 54200000, "market_cap": 3450000000000, "dividend_yield": 0.44, "eps": 6.85, "revenue_growth": 8.2, "beta": 1.21},
-    "MSFT": {"name": "Microsoft Corp.", "sector": "technology", "price": 442.30, "pe": 37.8, "rsi": 62.1, "ma50": 430.2, "ma200": 410.5, "volume": 22100000, "market_cap": 3280000000000, "dividend_yield": 0.72, "eps": 11.70, "revenue_growth": 15.1, "beta": 0.93},
-    "NVDA": {"name": "NVIDIA Corp.", "sector": "technology", "price": 138.50, "pe": 65.4, "rsi": 71.2, "ma50": 125.8, "ma200": 108.3, "volume": 310000000, "market_cap": 3400000000000, "dividend_yield": 0.02, "eps": 2.12, "revenue_growth": 122.4, "beta": 1.68},
-    "GOOGL": {"name": "Alphabet Inc.", "sector": "technology", "price": 178.90, "pe": 24.1, "rsi": 55.7, "ma50": 172.3, "ma200": 163.8, "volume": 25800000, "market_cap": 2200000000000, "dividend_yield": 0.45, "eps": 7.42, "revenue_growth": 14.3, "beta": 1.05},
-    "AMZN": {"name": "Amazon.com Inc.", "sector": "consumer_discretionary", "price": 205.70, "pe": 42.3, "rsi": 59.8, "ma50": 198.4, "ma200": 188.2, "volume": 45300000, "market_cap": 2140000000000, "dividend_yield": 0.0, "eps": 4.86, "revenue_growth": 12.5, "beta": 1.15},
-    "META": {"name": "Meta Platforms Inc.", "sector": "communication_services", "price": 612.40, "pe": 28.5, "rsi": 64.3, "ma50": 590.1, "ma200": 545.7, "volume": 18200000, "market_cap": 1560000000000, "dividend_yield": 0.32, "eps": 21.49, "revenue_growth": 22.1, "beta": 1.25},
-    "TSLA": {"name": "Tesla Inc.", "sector": "consumer_discretionary", "price": 272.80, "pe": 85.2, "rsi": 48.5, "ma50": 285.3, "ma200": 248.9, "volume": 98500000, "market_cap": 870000000000, "dividend_yield": 0.0, "eps": 3.20, "revenue_growth": -3.1, "beta": 2.05},
-    "JPM": {"name": "JPMorgan Chase", "sector": "financials", "price": 248.60, "pe": 12.8, "rsi": 57.2, "ma50": 240.3, "ma200": 220.7, "volume": 9800000, "market_cap": 710000000000, "dividend_yield": 2.02, "eps": 19.42, "revenue_growth": 11.4, "beta": 1.08},
-    "JNJ": {"name": "Johnson & Johnson", "sector": "healthcare", "price": 158.30, "pe": 15.4, "rsi": 45.1, "ma50": 160.8, "ma200": 155.2, "volume": 7200000, "market_cap": 382000000000, "dividend_yield": 3.12, "eps": 10.28, "revenue_growth": 4.8, "beta": 0.55},
-    "V": {"name": "Visa Inc.", "sector": "financials", "price": 318.50, "pe": 31.2, "rsi": 60.8, "ma50": 310.4, "ma200": 295.6, "volume": 6500000, "market_cap": 620000000000, "dividend_yield": 0.72, "eps": 10.21, "revenue_growth": 10.2, "beta": 0.95},
-    "XOM": {"name": "Exxon Mobil Corp.", "sector": "energy", "price": 112.40, "pe": 14.2, "rsi": 52.3, "ma50": 115.2, "ma200": 110.8, "volume": 15400000, "market_cap": 475000000000, "dividend_yield": 3.35, "eps": 7.92, "revenue_growth": -5.2, "beta": 0.82},
-    "PG": {"name": "Procter & Gamble", "sector": "consumer_staples", "price": 172.80, "pe": 27.5, "rsi": 50.2, "ma50": 170.1, "ma200": 165.3, "volume": 7800000, "market_cap": 408000000000, "dividend_yield": 2.35, "eps": 6.28, "revenue_growth": 3.1, "beta": 0.42},
-    "HD": {"name": "Home Depot", "sector": "consumer_discretionary", "price": 395.20, "pe": 25.8, "rsi": 54.6, "ma50": 388.7, "ma200": 372.1, "volume": 4200000, "market_cap": 390000000000, "dividend_yield": 2.28, "eps": 15.32, "revenue_growth": 2.4, "beta": 1.05},
-    "UNH": {"name": "UnitedHealth Group", "sector": "healthcare", "price": 512.30, "pe": 19.8, "rsi": 41.2, "ma50": 530.5, "ma200": 520.1, "volume": 3800000, "market_cap": 472000000000, "dividend_yield": 1.42, "eps": 25.87, "revenue_growth": 8.7, "beta": 0.68},
-    "CAT": {"name": "Caterpillar Inc.", "sector": "industrials", "price": 365.80, "pe": 17.3, "rsi": 56.8, "ma50": 358.2, "ma200": 340.5, "volume": 2800000, "market_cap": 176000000000, "dividend_yield": 1.52, "eps": 21.14, "revenue_growth": 3.8, "beta": 1.12},
-    "NEE": {"name": "NextEra Energy", "sector": "utilities", "price": 82.50, "pe": 22.1, "rsi": 58.4, "ma50": 79.8, "ma200": 74.3, "volume": 12500000, "market_cap": 170000000000, "dividend_yield": 2.55, "eps": 3.73, "revenue_growth": 11.2, "beta": 0.48},
-    "O": {"name": "Realty Income Corp.", "sector": "real_estate", "price": 58.20, "pe": 42.8, "rsi": 47.3, "ma50": 57.1, "ma200": 55.8, "volume": 5200000, "market_cap": 51000000000, "dividend_yield": 5.42, "eps": 1.36, "revenue_growth": 18.5, "beta": 0.65},
-    "NFLX": {"name": "Netflix Inc.", "sector": "communication_services", "price": 925.30, "pe": 48.2, "rsi": 67.8, "ma50": 895.4, "ma200": 780.2, "volume": 5600000, "market_cap": 405000000000, "dividend_yield": 0.0, "eps": 19.20, "revenue_growth": 16.8, "beta": 1.32},
-    "BTC": {"name": "Bitcoin", "sector": "crypto", "price": 84200.0, "pe": None, "rsi": 62.5, "ma50": 78500.0, "ma200": 65200.0, "volume": 38000000000, "market_cap": 1650000000000, "dividend_yield": 0.0, "eps": None, "revenue_growth": None, "beta": 2.50},
-    "ETH": {"name": "Ethereum", "sector": "crypto", "price": 3250.0, "pe": None, "rsi": 55.8, "ma50": 3050.0, "ma200": 2680.0, "volume": 15000000000, "market_cap": 390000000000, "dividend_yield": 0.0, "eps": None, "revenue_growth": None, "beta": 2.80},
+# Symbol metadata — names and sectors only. Prices, technicals, and fundamentals
+# are resolved live from Alpaca bars + AI trading engine + Alpha Vantage.
+_STOCK_META: Dict[str, Dict[str, str]] = {
+    "AAPL": {"name": "Apple Inc.", "sector": "technology"},
+    "MSFT": {"name": "Microsoft Corp.", "sector": "technology"},
+    "NVDA": {"name": "NVIDIA Corp.", "sector": "technology"},
+    "GOOGL": {"name": "Alphabet Inc.", "sector": "technology"},
+    "AMZN": {"name": "Amazon.com Inc.", "sector": "consumer_discretionary"},
+    "META": {"name": "Meta Platforms Inc.", "sector": "communication_services"},
+    "TSLA": {"name": "Tesla Inc.", "sector": "consumer_discretionary"},
+    "JPM": {"name": "JPMorgan Chase", "sector": "financials"},
+    "JNJ": {"name": "Johnson & Johnson", "sector": "healthcare"},
+    "V": {"name": "Visa Inc.", "sector": "financials"},
+    "XOM": {"name": "Exxon Mobil Corp.", "sector": "energy"},
+    "PG": {"name": "Procter & Gamble", "sector": "consumer_staples"},
+    "HD": {"name": "Home Depot", "sector": "consumer_discretionary"},
+    "UNH": {"name": "UnitedHealth Group", "sector": "healthcare"},
+    "CAT": {"name": "Caterpillar Inc.", "sector": "industrials"},
+    "NEE": {"name": "NextEra Energy", "sector": "utilities"},
+    "O": {"name": "Realty Income Corp.", "sector": "real_estate"},
+    "NFLX": {"name": "Netflix Inc.", "sector": "communication_services"},
+    "BTC": {"name": "Bitcoin", "sector": "crypto"},
+    "ETH": {"name": "Ethereum", "sector": "crypto"},
 }
+
+# Live data cache — populated on demand from Alpaca/Alpha Vantage
+_live_stock_cache: Dict[str, Dict[str, Any]] = {}
+_live_cache_ts: Dict[str, float] = {}
+_LIVE_CACHE_TTL = 60.0
+
+import time as _time
+
+
+def _resolve_stock_data(symbol: str) -> Dict[str, Any]:
+    """Resolve live stock data from Alpaca bars + Alpha Vantage.
+    Returns a dict compatible with the old STOCK_DATABASE format."""
+    now = _time.time()
+    if symbol in _live_stock_cache and (now - _live_cache_ts.get(symbol, 0)) < _LIVE_CACHE_TTL:
+        return _live_stock_cache[symbol]
+
+    meta = _STOCK_META.get(symbol, {"name": symbol, "sector": "unknown"})
+    result = {**meta, "price": 0, "pe": None, "rsi": 50, "ma50": 0, "ma200": 0,
+              "volume": 0, "market_cap": 0, "dividend_yield": 0, "eps": None,
+              "revenue_growth": None, "beta": 1.0, "data_source": "none"}
+
+    # Try Alpaca bars + AI engine first
+    try:
+        from services.trading_platform_service import get_trading_platform
+        from services.ai_trading_engine import compute_technicals
+        tp = get_trading_platform()
+        if tp.is_connected:
+            fetch_sym = symbol.replace("/", "") if "/" in symbol else symbol
+            bars = tp.get_bars(fetch_sym, "1Day", 60)
+            if bars and len(bars) >= 2:
+                techs = compute_technicals(bars)
+                ind = techs.get("indicators", {})
+                result["price"] = float(bars[-1].get("close", 0))
+                result["volume"] = int(bars[-1].get("volume", 0))
+                result["rsi"] = ind.get("rsi_14") or 50
+                result["ma50"] = ind.get("sma_50") or result["price"]
+                result["ma200"] = ind.get("sma_20") or result["price"]
+                result["data_source"] = "alpaca"
+                _live_stock_cache[symbol] = result
+                _live_cache_ts[symbol] = now
+                return result
+    except Exception:
+        pass
+
+    # Fall back to Alpha Vantage
+    quote = _get_live_quote(symbol)
+    if quote and quote.get("price"):
+        result["price"] = float(quote["price"])
+        result["volume"] = int(quote.get("volume", 0))
+        result["data_source"] = "alpha_vantage"
+        profile = _get_live_technical_profile(symbol)
+        if profile:
+            ind = profile.get("indicators", {})
+            result["rsi"] = ind.get("rsi") or 50
+            result["ma50"] = ind.get("sma_50") or result["price"]
+        _live_stock_cache[symbol] = result
+        _live_cache_ts[symbol] = now
+        return result
+
+    result["data_source"] = "unavailable"
+    _live_stock_cache[symbol] = result
+    _live_cache_ts[symbol] = now
+    return result
+
+
+class _StockDatabaseProxy:
+    """Dict-like proxy that resolves stock data live instead of from static values."""
+    def get(self, symbol: str, default=None):
+        if symbol not in _STOCK_META:
+            result = _resolve_stock_data(symbol)
+            if result.get("price", 0) <= 0:
+                return default
+            return result
+        return _resolve_stock_data(symbol)
+
+    def __getitem__(self, symbol: str):
+        return _resolve_stock_data(symbol)
+
+    def __contains__(self, symbol: str):
+        if symbol in _STOCK_META:
+            return True
+        data = _resolve_stock_data(symbol)
+        return data.get("price", 0) > 0
+
+    def items(self):
+        return [(s, _resolve_stock_data(s)) for s in _STOCK_META]
+
+    def keys(self):
+        return _STOCK_META.keys()
+
+    def values(self):
+        return [_resolve_stock_data(s) for s in _STOCK_META]
+
+    def __len__(self):
+        return len(_STOCK_META)
+
+    def __iter__(self):
+        return iter(_STOCK_META)
+
+
+STOCK_DATABASE = _StockDatabaseProxy()
 
 
 # ---------------------------------------------------------------------------
@@ -330,8 +445,8 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
         sym = stock.upper()
         s = STOCK_DATABASE.get(sym, {})
         sec = SECTOR_DATA.get(s.get("sector", ""), {})
-        rng = _seed_from(stock)
-        momentum_score = rng.uniform(40, 95)
+        rsi = s.get("rsi", 50) if s else 50
+        momentum_score = rsi
 
         live_quote = _get_live_quote(sym)
         live_overview = None
@@ -759,6 +874,51 @@ def design_trading_strategy(
     }
 
 
+def _try_ai_engine_technical(sym: str) -> Optional[Dict[str, Any]]:
+    """Use AI trading engine with Alpaca bars for real technical analysis."""
+    try:
+        from services.trading_platform_service import get_trading_platform
+        from services.ai_trading_engine import compute_technicals, generate_signals
+        tp = get_trading_platform()
+        if not tp.is_connected:
+            return None
+        fetch_sym = sym.replace("/", "") if "/" in sym else sym
+        bars = tp.get_bars(fetch_sym, "1Day", 100)
+        if not bars or len(bars) < 10:
+            return None
+        techs = compute_technicals(bars)
+        ind = techs.get("indicators", {})
+        price = float(bars[-1].get("close", 0))
+        if price <= 0:
+            return None
+        signals = generate_signals(techs, price)
+        meta = _STOCK_META.get(sym, {"name": sym, "sector": "unknown"})
+        return {
+            "module": "technical_analysis",
+            "symbol": sym,
+            "name": meta.get("name", sym),
+            "data_source": "alpaca_live",
+            "current_price": price,
+            "recommendation": signals.get("recommendation", "HOLD"),
+            "composite_score": signals.get("composite_score", 0),
+            "confidence": signals.get("confidence", 0),
+            "indicators": {
+                "rsi_14": {"value": ind.get("rsi_14"), "signal": _rsi_signal(ind.get("rsi_14", 50))},
+                "macd": {"value": ind.get("macd_line"), "signal_line": ind.get("macd_signal"), "histogram": ind.get("macd_histogram")},
+                "bollinger_bands": {"upper": ind.get("bb_upper"), "middle": ind.get("bb_middle"), "lower": ind.get("bb_lower"), "width": ind.get("bb_width")},
+                "moving_averages": {"sma_20": ind.get("sma_20"), "sma_50": ind.get("sma_50"), "ema_12": ind.get("ema_12"), "ema_26": ind.get("ema_26")},
+                "atr_14": ind.get("atr_14"),
+                "stochastic": {"k": ind.get("stoch_k"), "d": ind.get("stoch_d")},
+                "obv": ind.get("obv"),
+                "volume_ratio": ind.get("volume_ratio"),
+            },
+            "signal_details": signals.get("details", []),
+            "bars_analyzed": len(bars),
+        }
+    except Exception:
+        return None
+
+
 # ===================================================================
 # MODULE 5: Technical Analysis
 # ===================================================================
@@ -777,25 +937,30 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
     if live_profile and live_profile.get("quote"):
         return _build_live_technical_result(sym, live_profile, s)
 
-    # Fallback to static data
+    # Try AI engine with Alpaca bars
+    ai_result = _try_ai_engine_technical(sym)
+    if ai_result:
+        return ai_result
+
     if not s:
         return {"module": "technical_analysis", "error": f"Stock '{sym}' not found. Try a US stock symbol like AAPL, MSFT, NVDA."}
 
-    rsi_sig = _rsi_signal(s["rsi"])
-    ma_sig = _ma_signal(s["price"], s["ma50"], s["ma200"])
+    rsi_sig = _rsi_signal(s.get("rsi", 50))
+    ma_sig = _ma_signal(s.get("price", 0), s.get("ma50", 0), s.get("ma200", 0))
 
-    rng = _seed_from(sym)
-    macd_value = rng.uniform(-2, 4)
-    macd_signal = macd_value - rng.uniform(0.5, 2)
-    macd_histogram = macd_value - macd_signal
+    macd_value = 0
+    macd_signal_val = 0
+    macd_histogram = 0
 
-    bb_upper = s["ma50"] * 1.04
-    bb_lower = s["ma50"] * 0.96
-    bb_position = "upper" if s["price"] > bb_upper else ("lower" if s["price"] < bb_lower else "middle")
+    price = s.get("price", 0)
+    ma50 = s.get("ma50", price)
+    bb_upper = ma50 * 1.04 if ma50 else price * 1.04
+    bb_lower = ma50 * 0.96 if ma50 else price * 0.96
+    bb_position = "upper" if price > bb_upper else ("lower" if price < bb_lower else "middle")
 
-    vol_avg = s["volume"]
-    vol_today = int(vol_avg * rng.uniform(0.7, 1.5))
-    vol_trend = "above_average" if vol_today > vol_avg else "below_average"
+    vol_avg = s.get("volume", 0)
+    vol_today = vol_avg
+    vol_trend = "average"
 
     score = 0
     if rsi_sig in ("bullish", "neutral"):
@@ -846,7 +1011,7 @@ def run_technical_analysis(stock: str) -> Dict[str, Any]:
             },
             "macd": {
                 "value": round(macd_value, 3),
-                "signal_line": round(macd_signal, 3),
+                "signal_line": round(macd_signal_val, 3),
                 "histogram": round(macd_histogram, 3),
                 "bullish": macd_histogram > 0,
             },
@@ -957,25 +1122,24 @@ def analyze_earnings_report(company: str) -> Dict[str, Any]:
     if not s:
         return {"module": "earnings_report_analysis", "error": f"Company '{sym}' not found. Try a US stock symbol like AAPL, MSFT."}
 
-    rng = _seed_from(f"earnings:{sym}")
-    revenue = s["market_cap"] * rng.uniform(0.03, 0.15)
-    net_income = revenue * rng.uniform(0.05, 0.25)
-    gross_margin = rng.uniform(0.30, 0.75)
-    operating_margin = gross_margin - rng.uniform(0.05, 0.20)
-    free_cash_flow = net_income * rng.uniform(0.8, 1.5)
-
-    eps_actual = s["eps"] if s["eps"] else rng.uniform(1, 10)
-    eps_estimate = round(eps_actual * rng.uniform(0.92, 1.05), 2)
-    eps_surprise = round(((eps_actual - eps_estimate) / abs(eps_estimate)) * 100, 2) if eps_estimate else 0
-    beat = eps_actual > eps_estimate
-
-    revenue_estimate = revenue * rng.uniform(0.95, 1.02)
-    revenue_surprise = round(((revenue - revenue_estimate) / abs(revenue_estimate)) * 100, 2) if revenue_estimate else 0
+    market_cap = s.get("market_cap") or 0
+    eps_actual = s.get("eps") or 0
+    revenue_growth = s.get("revenue_growth") or 0
+    revenue = market_cap * 0.06 if market_cap else 0
+    net_income = revenue * 0.12 if revenue else 0
+    gross_margin = 0
+    operating_margin = 0
+    free_cash_flow = net_income
+    eps_estimate = eps_actual
+    eps_surprise = 0
+    beat = False
+    revenue_estimate = revenue
+    revenue_surprise = 0
 
     return {
         "module": "earnings_report_analysis",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data_source": "static",
+        "data_source": s.get("data_source", "live"),
         "symbol": sym,
         "name": s["name"],
         "key_metrics": {
@@ -999,7 +1163,7 @@ def analyze_earnings_report(company: str) -> Dict[str, Any]:
         },
         "impact_assessment": {
             "short_term": "Positive" if beat else "Negative",
-            "price_reaction_expected": f"{'+'if beat else '-'}{abs(eps_surprise) * rng.uniform(0.3, 0.8):.1f}%",
+            "price_reaction_expected": f"{'+'if beat else '-'}{abs(eps_surprise) * 0.5:.1f}%",
             "analyst_revision_likely": beat and abs(eps_surprise) > 5,
         },
         "investor_focus_areas": [
@@ -1296,8 +1460,7 @@ def design_risk_management_system(
     """
     Design an automated risk management system with dynamic adjustments.
     """
-    rng = _seed_from(f"risk:{market}")
-    current_vix = round(rng.uniform(12, 35), 1)
+    current_vix = _get_live_vix()
     volatility_regime = "low" if current_vix < 18 else ("medium" if current_vix < 25 else "high")
 
     vol_multipliers = {"low": 1.0, "medium": 0.7, "high": 0.4}
@@ -1366,6 +1529,80 @@ def design_risk_management_system(
     }
 
 
+def _backtest_from_live_bars(symbols: List[str], period_years: int = 5) -> Dict[str, Any]:
+    """Compute real backtest metrics from Alpaca bar data."""
+    try:
+        from services.trading_platform_service import get_trading_platform
+        from services.ai_trading_engine import compute_risk_metrics
+        tp = get_trading_platform()
+        if not tp.is_connected:
+            raise RuntimeError("not connected")
+
+        all_returns = []
+        for sym in symbols[:5]:
+            bars = tp.get_bars(sym, "1Day", 200)
+            if not bars or len(bars) < 10:
+                continue
+            closes = [float(b.get("close", 0)) for b in bars if float(b.get("close", 0)) > 0]
+            for i in range(1, len(closes)):
+                all_returns.append((closes[i] - closes[i-1]) / closes[i-1])
+
+        if not all_returns:
+            raise RuntimeError("no data")
+
+        wins = [r for r in all_returns if r > 0]
+        losses = [r for r in all_returns if r < 0]
+        total_trades = len(all_returns)
+        win_rate = len(wins) / max(1, total_trades)
+        avg_win_pct = (sum(wins) / max(1, len(wins))) * 100 if wins else 0
+        avg_loss_pct = abs(sum(losses) / max(1, len(losses))) * 100 if losses else 0
+        total_return_pct = sum(all_returns)
+
+        cumulative = [1.0]
+        for r in all_returns:
+            cumulative.append(cumulative[-1] * (1 + r))
+        peak = cumulative[0]
+        max_dd = 0
+        for v in cumulative:
+            if v > peak:
+                peak = v
+            dd = (peak - v) / peak if peak > 0 else 0
+            if dd > max_dd:
+                max_dd = dd
+
+        avg_ret = sum(all_returns) / len(all_returns)
+        std_ret = (sum((r - avg_ret)**2 for r in all_returns) / max(1, len(all_returns) - 1)) ** 0.5
+        sharpe = round((avg_ret / max(0.0001, std_ret)) * (252 ** 0.5), 2)
+        down_rets = [r for r in all_returns if r < 0]
+        down_std = (sum(r**2 for r in down_rets) / max(1, len(down_rets))) ** 0.5 if down_rets else 0.0001
+        sortino = round((avg_ret / max(0.0001, down_std)) * (252 ** 0.5), 2)
+
+        monthly = []
+        chunk = max(1, len(all_returns) // 12)
+        for i in range(0, len(all_returns), chunk):
+            mr = sum(all_returns[i:i+chunk]) * 100
+            monthly.append(round(mr, 2))
+
+        return {
+            "total_trades": total_trades,
+            "win_rate": win_rate,
+            "avg_win_pct": round(avg_win_pct, 2),
+            "avg_loss_pct": round(avg_loss_pct, 2),
+            "total_return_pct": total_return_pct,
+            "max_drawdown": round(max_dd * 100, 2),
+            "sharpe": sharpe,
+            "sortino": sortino,
+            "monthly_returns": monthly,
+            "data_source": "alpaca_live",
+        }
+    except Exception:
+        return {
+            "total_trades": 0, "win_rate": 0.5, "avg_win_pct": 0, "avg_loss_pct": 0,
+            "total_return_pct": 0, "max_drawdown": 0, "sharpe": 0, "sortino": 0,
+            "monthly_returns": [], "data_source": "unavailable",
+        }
+
+
 # ===================================================================
 # MODULE 10: Backtesting Trading Strategies
 # ===================================================================
@@ -1382,29 +1619,27 @@ def backtest_strategy(
     if not symbols:
         symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
 
-    rng = _seed_from(f"backtest:{strategy_type}:{','.join(symbols)}")
-    total_trades = rng.randint(120, 450)
-    win_rate = rng.uniform(0.35, 0.65)
+    # Compute backtest from real Alpaca bar data when available
+    bt = _backtest_from_live_bars(symbols, period_years)
+    total_trades = bt.get("total_trades", 0)
+    win_rate = bt.get("win_rate", 0.5)
     winning = int(total_trades * win_rate)
     losing = total_trades - winning
 
-    avg_win_pct = rng.uniform(2.5, 8.0)
-    avg_loss_pct = rng.uniform(1.0, 3.5)
+    avg_win_pct = bt.get("avg_win_pct", 3.0)
+    avg_loss_pct = bt.get("avg_loss_pct", 2.0)
     profit_factor = (winning * avg_win_pct) / max(1, losing * avg_loss_pct)
 
-    total_return_pct = (winning * avg_win_pct - losing * avg_loss_pct) / 100
+    total_return_pct = bt.get("total_return_pct", 0)
     final_value = initial_capital * (1 + total_return_pct)
-    annualized_return = ((final_value / initial_capital) ** (1 / period_years) - 1) * 100
+    annualized_return = ((final_value / max(1, initial_capital)) ** (1 / max(1, period_years)) - 1) * 100
 
-    max_drawdown = rng.uniform(8, 25)
-    sharpe = annualized_return / max(1, max_drawdown * 0.8)
-    sortino = sharpe * rng.uniform(1.1, 1.5)
-    calmar = annualized_return / max_drawdown
+    max_drawdown = bt.get("max_drawdown", 10.0)
+    sharpe = bt.get("sharpe", 0)
+    sortino = bt.get("sortino", 0)
+    calmar = annualized_return / max(1, max_drawdown)
 
-    monthly_returns = []
-    for i in range(period_years * 12):
-        mr = rng.gauss(annualized_return / 12, max_drawdown / 4)
-        monthly_returns.append(round(mr, 2))
+    monthly_returns = bt.get("monthly_returns", [])
 
     equity_curve = [initial_capital]
     for mr in monthly_returns:

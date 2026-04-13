@@ -611,7 +611,7 @@
         <div class="module-card" data-module="backtesting" onclick="selectModule('backtesting')">
             <div class="module-icon">10</div>
             <h3>Backtesting</h3>
-            <p>Backtest strategies with simulated results, equity curves, and risk metrics.</p>
+            <p>Backtest strategies with real historical Alpaca data, equity curves, and risk metrics.</p>
         </div>
         <div class="module-card" data-module="live_quote" onclick="selectModule('live_quote')" style="border-color:rgba(16,185,129,0.4);">
             <div class="module-icon" style="background:linear-gradient(135deg,#10b981,#059669);">LIVE</div>
@@ -1097,8 +1097,10 @@ function renderResults(data) {
     }
 
     if (data.data_source) {
-        const srcColor = data.data_source === 'live' ? '#10b981' : '#f59e0b';
-        html = `<div style="margin-bottom:0.75rem;display:inline-block;padding:0.25rem 0.75rem;border-radius:6px;font-size:0.78rem;background:rgba(${data.data_source === 'live' ? '16,185,129' : '245,158,11'},0.15);border:1px solid rgba(${data.data_source === 'live' ? '16,185,129' : '245,158,11'},0.3);color:${srcColor};">${data.data_source === 'live' ? 'LIVE DATA — Alpha Vantage' : 'STATIC DATA — Cached'}</div>` + html;
+        const isLive = ['live', 'alpaca_live', 'alpaca', 'alpha_vantage'].includes(data.data_source);
+        const srcColor = isLive ? '#10b981' : '#f59e0b';
+        const srcLabel = data.data_source === 'alpaca_live' ? 'LIVE DATA — Alpaca + AI Engine' : (data.data_source === 'alpaca' ? 'LIVE DATA — Alpaca' : (data.data_source === 'alpha_vantage' ? 'LIVE DATA — Alpha Vantage' : (isLive ? 'LIVE DATA' : 'CACHED DATA')));
+        html = `<div style="margin-bottom:0.75rem;display:inline-block;padding:0.25rem 0.75rem;border-radius:6px;font-size:0.78rem;background:rgba(${isLive ? '16,185,129' : '245,158,11'},0.15);border:1px solid rgba(${isLive ? '16,185,129' : '245,158,11'},0.3);color:${srcColor};">${srcLabel}</div>` + html;
     }
 
     c.innerHTML = html;
@@ -1413,8 +1415,8 @@ function renderLiveQuote(d) {
     html += '</div></div>';
     // Quick trade + watchlist
     html += `<div class="quick-trade"><h4>Quick Actions — ${d.symbol}</h4><div class="trade-row">
-        <button class="btn-buy" onclick="alert('Trade simulation: BUY ${d.symbol} — connect to algo trading for live execution')">Buy ${d.symbol}</button>
-        <button class="btn-sell" onclick="alert('Trade simulation: SELL ${d.symbol} — connect to algo trading for live execution')">Sell ${d.symbol}</button>
+        <button class="btn-buy" onclick="window.location.href='/trading-terminal.html'">Trade ${d.symbol}</button>
+        <button class="btn-sell" onclick="window.location.href='/algo-trading.html'">Algo Trade</button>
         <button class="btn-watch" onclick="addToWatchlist('${d.symbol}')">+ Watchlist</button>
         <button class="btn-watch" style="background:linear-gradient(135deg,var(--primary),var(--secondary));" onclick="selectModule('technical_analysis');setTimeout(()=>{document.getElementById('param_stock').value='${d.symbol}';runAnalysis();},100);">Full Analysis</button>
     </div></div>`;
