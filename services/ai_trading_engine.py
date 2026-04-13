@@ -1301,6 +1301,20 @@ class AutoPilotEngine:
         self._lock = threading.Lock()
         self._bots: Dict[str, Dict[str, Any]] = {}
 
+    @staticmethod
+    def available_strategies() -> List[Dict[str, Any]]:
+        """Return metadata about all registered strategies."""
+        result = []
+        for name, cls in STRATEGY_REGISTRY.items():
+            inst = cls()
+            result.append({
+                "name": name,
+                "display_name": inst.name,
+                "description": inst.description,
+                "asset_classes": inst.asset_classes,
+            })
+        return result
+
     def create_bot(
         self,
         strategy_name: str,
