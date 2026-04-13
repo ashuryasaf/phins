@@ -314,6 +314,46 @@ def test_submit_order_reloads_before_fetching_sell_snapshot(monkeypatch):
     assert recorded["position_snapshot"]["cost_basis"] == 900
 
 
+def test_ai_copilot_analyze_uses_atr_for_trade_levels(monkeypatch):
+    service = TradingPlatformService()
+
+    import services.ai_trading_engine as ai_trading_engine
+
+    monkeypatch.setattr(
+        service,
+        "get_bars",
+        lambda symbol, timeframe="1Day", limit=100: [{"close": 100.0}],
+    )
+    monkeypatch.setattr(service, "get_positions", lambda: [])
+    monkeypatch.setattr(
+        service,
+        "get_account",
+        lambda: {"buying_power": 10000, "portfolio_value": 10000},
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "compute_technicals",
+        lambda bars: {"indicators": {"atr_14": 2.5}},
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "generate_signals",
+        lambda technicals, price: {
+            "recommendation": "BUY",
+            "composite_score": 2,
+            "confidence": 0.6,
+            "details": [],
+        },
+    )
+    monkeypatch.setattr(ai_trading_engine, "compute_risk_metrics", lambda bars, positions: {})
+
+    result = service.ai_copilot_analyze("AAPL")
+
+    assert result["technicals"]["atr"] == 2.5
+    assert result["trade_suggestion"]["stop_loss"] == 95.0
+    assert result["trade_suggestion"]["take_profit"] == 107.5
+
+
 # ==================================================================
 # INPUT VALIDATION TESTS
 # ==================================================================

@@ -1262,7 +1262,7 @@ class TradingPlatformService:
             if (_sf(current_position.get("unrealized_pl")) or 0) > 0:
                 copilot_action = "take_profit"
 
-        atr = _sf(indicators.get("atr"))
+        atr = _sf(indicators.get("atr_14"))
         stop_loss = round(price - (atr * 2), 2) if atr and atr > 0 else round(price * 0.97, 2)
         take_profit = round(price + (atr * 3), 2) if atr and atr > 0 else round(price * 1.06, 2)
 

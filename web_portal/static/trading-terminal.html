@@ -1522,10 +1522,10 @@ async function runCopilot() {
             const rm = d.risk_metrics;
             html += `<div class="copilot-card"><div class="card-label">RISK METRICS</div>`;
             html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:18px;">`;
-            if (rm.volatility != null) html += `<span style="color:var(--muted);">Volatility</span><span>${(rm.volatility*100).toFixed(1)}%</span>`;
-            if (rm.var_95 != null) html += `<span style="color:var(--muted);">VaR 95%</span><span style="color:var(--red);">${(rm.var_95*100).toFixed(2)}%</span>`;
-            if (rm.max_drawdown != null) html += `<span style="color:var(--muted);">Max DD</span><span style="color:var(--red);">${(rm.max_drawdown*100).toFixed(2)}%</span>`;
-            if (rm.sharpe != null) html += `<span style="color:var(--muted);">Sharpe</span><span>${rm.sharpe.toFixed(2)}</span>`;
+            if (rm.volatility_annual != null) html += `<span style="color:var(--muted);">Volatility</span><span>${Number(rm.volatility_annual).toFixed(1)}%</span>`;
+            if (rm.var_95 != null) html += `<span style="color:var(--muted);">VaR 95%</span><span style="color:var(--red);">${Number(rm.var_95).toFixed(2)}%</span>`;
+            if (rm.max_drawdown != null) html += `<span style="color:var(--muted);">Max DD</span><span style="color:var(--red);">${Number(rm.max_drawdown).toFixed(2)}%</span>`;
+            if (rm.sharpe_ratio != null) html += `<span style="color:var(--muted);">Sharpe</span><span>${Number(rm.sharpe_ratio).toFixed(2)}</span>`;
             html += `</div></div>`;
         }
 
@@ -1840,13 +1840,13 @@ async function loadSectorHeatmap() {
         const d = await apiFetch('/api/terminal/screener/sectors');
         if (!d || d.error) { $('screenerPanel').innerHTML = `<div style="color:var(--red)">${d?.error||'No data'}</div>`; return; }
         let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">';
-        (d.sectors || []).forEach(s => {
+        Object.entries(d.sectors || {}).forEach(([name, s]) => {
             const chg = parseFloat(s.change_pct || 0);
             const bgColor = chg > 1 ? 'rgba(16,185,129,0.3)' : (chg > 0 ? 'rgba(16,185,129,0.15)' : (chg < -1 ? 'rgba(239,68,68,0.3)' : (chg < 0 ? 'rgba(239,68,68,0.15)' : 'rgba(107,114,128,0.1)')));
             const textColor = chg > 0 ? 'var(--green)' : (chg < 0 ? 'var(--red)' : 'var(--muted)');
             html += `<div style="background:${bgColor};padding:10px;border-radius:4px;text-align:center;cursor:pointer;" onclick="$('screenerSector').value='sector_etfs';loadLiveScreener();">
                 <div style="color:var(--gold);font-weight:700;font-size:18px;">${s.symbol}</div>
-                <div style="color:var(--muted);font-size:16px;">${s.name || ''}</div>
+                <div style="color:var(--muted);font-size:16px;">${name}</div>
                 <div style="font-size:22px;font-weight:700;">${s.price ? '$'+Number(s.price).toFixed(2) : '—'}</div>
                 <div style="color:${textColor};font-weight:700;font-size:20px;">${chg ? (chg>0?'+':'')+chg.toFixed(2)+'%' : '—'}</div>
             </div>`;
