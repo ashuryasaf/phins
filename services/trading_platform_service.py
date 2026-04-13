@@ -277,7 +277,9 @@ class TradingPlatformService:
                 if resp.status_code == 204:
                     return {"success": True}
                 if resp.status_code == 429:
-                    time.sleep(_RETRY_BACKOFF * (attempt + 1))
+                    last_err = "HTTP 429 rate limited"
+                    if attempt < _MAX_RETRIES:
+                        time.sleep(_RETRY_BACKOFF * (attempt + 1))
                     continue
                 if resp.status_code >= 400:
                     return {"error": resp.json() if resp.text else resp.reason, "status": resp.status_code}

@@ -544,3 +544,28 @@ def test_trade_request_returns_error_after_max_retries(monkeypatch):
     result = service._trade_request("GET", "/account")
     assert "error" in result
     assert "persistent failure" in result["error"]
+
+
+def test_trade_request_surfaces_rate_limit_after_retry_exhaustion(monkeypatch):
+    service = TradingPlatformService()
+    service._connected = True
+    service._api_key = "test"
+    service._secret_key = "test"
+
+    import requests as _requests
+
+    class FakeResp:
+        status_code = 429
+        text = ""
+        reason = "Too Many Requests"
+
+    def fake_request(method, url, headers=None, json=None, timeout=None):
+        return FakeResp()
+
+    monkeypatch.setattr(_requests, "request", fake_request)
+
+    from services import trading_platform_service as mod
+    monkeypatch.setattr(mod, "_RETRY_BACKOFF", 0.01)
+
+    result = service._trade_request("GET", "/account")
+    assert result["error"] == "Request failed after 3 attempts: HTTP 429 rate limited"

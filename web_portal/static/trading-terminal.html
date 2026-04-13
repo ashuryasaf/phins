@@ -1517,7 +1517,7 @@ async function executeOrder(side) {
     if (!brokerAlive) confirmMsg += '\n\n⚠ Broker connection may be down!';
 
     if (!confirm(confirmMsg)) return;
-    lastOrderNonce = now;
+    lastOrderNonce = Date.now();
 
     $('orderResult').innerHTML = '<div style="color:var(--gold);padding:6px;font-size:18px;">Submitting order...</div>';
 
