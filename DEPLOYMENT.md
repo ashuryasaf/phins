@@ -195,6 +195,25 @@ PORT = int(os.environ.get('PORT', 8000))
 
 Then set `PORT` environment variable in your hosting platform.
 
+### Alpaca Trading Terminal environment variables
+
+To enable the live trading terminal with Alpaca Markets, set these environment
+variables in Railway (or Render / your hosting platform):
+
+| Variable | Required | Description |
+|---|---|---|
+| `ALPACA_API_KEY` | Yes | Alpaca API key ID (from [app.alpaca.markets](https://app.alpaca.markets)) |
+| `ALPACA_SECRET_KEY` | Yes | Alpaca secret key (also accepted as `ALPACA_API_SECRET`) |
+| `ALPACA_PAPER` | No | `true` (default) for paper trading, `false` for live |
+| `ALPACA_BROKER_MODE` | No | `true` to enable Broker API endpoints (account creation, funding) |
+| `INVESTMENT_AI_ACCESS_KEY` | Yes | Access key for the trading terminal UI authentication |
+
+**Paper trading** is enabled by default. To switch to live trading, set
+`ALPACA_PAPER=false`. The terminal will show "Paper" or "Live" in the header.
+
+The trading terminal is accessible at `/trading-terminal.html` and requires the
+Investment AI access key to authenticate API calls.
+
 ### Monthly auto-pay environment variables
 
 Set these for production auto-pay automation:
