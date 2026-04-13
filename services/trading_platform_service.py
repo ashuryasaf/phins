@@ -1225,11 +1225,11 @@ class TradingPlatformService:
         confidence = signals.get("confidence", 0)
 
         # Risk metrics from real data
-        risk = compute_risk_metrics(bars_raw, self.get_positions())
+        positions = self.get_positions()
+        risk = compute_risk_metrics(bars_raw, positions)
 
         # Current position
         current_position = None
-        positions = self.get_positions()
         for pos in positions:
             if pos.get("symbol") == sym:
                 current_position = pos
