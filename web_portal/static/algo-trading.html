@@ -936,7 +936,7 @@
                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                     <span style="font-size: 1.2rem;">🧠</span>
                     <span style="font-weight: 600;">AI Recommendation</span>
-                    <span style="background: rgba(139, 92, 246, 0.3); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">85% confidence</span>
+                    <span id="aiConfBadge" style="background: rgba(139, 92, 246, 0.3); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">Live AI</span>
                 </div>
                 <p id="aiRecommendationText" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
                     Analyzing your portfolio... Loading AI recommendations.
@@ -1109,20 +1109,15 @@
                     </div>
                 </div>
                 
-                <!-- Demo Data Activation -->
-                <div class="section" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%); border: 1px dashed var(--primary);">
+                <!-- Data Source Indicator -->
+                <div class="section" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%); border: 1px solid var(--success);">
                     <div class="section-header">
-                        <h2 class="section-title">🚀 Quick Start</h2>
+                        <h2 class="section-title" style="color: var(--success);">Live Data</h2>
                     </div>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
-                        No trading history yet? Activate demo bots with simulated trading data to explore all features!
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">
+                        All signals, indicators, and trades are computed from <strong>live Alpaca market data</strong>. No simulated or mock data.
                     </p>
-                    <button class="btn btn-primary" style="width: 100%;" onclick="activateDemoData()">
-                        🎯 Activate Demo Bots
-                    </button>
-                    <p style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 0.5rem; text-align: center;">
-                        Creates 3 smart bots with 30 days of simulated history
-                    </p>
+                    <div id="dataSourceBadge" style="text-align:center;padding:6px;font-size:0.8rem;color:var(--text-secondary);">Checking connection...</div>
                 </div>
 
                 <!-- Quick Trade -->
@@ -1509,8 +1504,20 @@
                 loadExtendedMarket('')
             ]);
 
-            // Ensure quick trade symbol list follows selected asset class.
             updateQuickTradeSymbols();
+
+            // Check data source
+            try {
+                const mkt = await authFetch('/api/algo/market-overview');
+                const mktData = await mkt.json();
+                const srcBadge = document.getElementById('dataSourceBadge');
+                if (srcBadge) {
+                    const src = mktData.data_source || 'synced';
+                    srcBadge.innerHTML = src === 'alpaca'
+                        ? '<span style="color:var(--success);">&#x2714; Connected to Alpaca — Live Market Data</span>'
+                        : '<span style="color:var(--warning);">Synced data — connect Alpaca for real-time</span>';
+                }
+            } catch(e) {}
             
             // Update stats with advanced metrics
             await updateStats();
@@ -1790,7 +1797,7 @@
                 const signalIcon = signal.signal_type === 'strong_buy' ? '🟢' : signal.signal_type === 'buy' ? '📈' : signal.signal_type === 'strong_sell' ? '🔴' : '📉';
                 
                 // Calculate risk/reward ratio
-                const currentPrice = signal.current_price || signal.price_target * 0.98;
+                const currentPrice = signal.current_price || signal.indicators?.current_price || signal.price_target || 0;
                 const targetGain = Math.abs(signal.price_target - currentPrice);
                 const stopLossRisk = Math.abs(currentPrice - signal.stop_loss);
                 const riskReward = stopLossRisk > 0 ? (targetGain / stopLossRisk).toFixed(1) : 'N/A';
@@ -2167,7 +2174,8 @@
             
             document.getElementById('totalPnl').textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
             document.getElementById('pnlChange').className = `stat-change ${totalPnl >= 0 ? 'positive' : 'negative'}`;
-            document.getElementById('pnlChange').textContent = `${totalPnl >= 0 ? '+' : ''}${((totalPnl / 10000) * 100).toFixed(2)}% return`;
+            const capitalBase = bots.reduce((sum, b) => sum + (b.max_position_size || 0), 0) || 1;
+            document.getElementById('pnlChange').textContent = `${totalPnl >= 0 ? '+' : ''}${((totalPnl / capitalBase) * 100).toFixed(2)}% return`;
             document.getElementById('winRate').textContent = `${winRate.toFixed(1)}%`;
             document.getElementById('winRateChange').textContent = `${winningTrades}/${totalTrades} trades`;
             document.getElementById('activeBots').textContent = activeBots;
@@ -2713,7 +2721,7 @@
                         customer_id: customerId,
                         symbol,
                         side,
-                        amount: 500,
+                        amount: parseFloat(prompt('Trade amount ($):', '100') || '100'),
                         signal_id: signalId,
                         stop_loss_pct: 5,
                         take_profit_pct: 10
@@ -3107,12 +3115,12 @@
         
         async function activateProfitTrading() {
             const riskLevel = prompt(
-                '⚡ Activate Auto-Profit Trading\n\n' +
-                'Choose your risk level:\n' +
-                '• low - Conservative DCA (8-12% annual)\n' +
-                '• medium - AI Adaptive (15-25% annual)\n' +
-                '• high - Momentum Trading (30-50% annual)\n' +
-                '• very_high - Scalping (50%+ potential)\n\n' +
+                'Activate AI-Driven Trading\n\n' +
+                'Choose risk level (all based on live Alpaca signals):\n' +
+                '  low - Conservative DCA on index ETFs\n' +
+                '  medium - AI Adaptive momentum\n' +
+                '  high - Trend following with higher exposure\n' +
+                '  very_high - Scalping (tight risk controls)\n\n' +
                 'Enter risk level:', 
                 'medium'
             );
@@ -3130,7 +3138,7 @@
                     
                     body: JSON.stringify({ 
                         customer_id: customerId,
-                        initial_capital: 1000,
+                        initial_capital: parseFloat(prompt('Initial capital ($):', '500') || '500'),
                         risk_level: riskLevel
                     })
                 });

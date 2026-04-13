@@ -34484,18 +34484,8 @@ For claims or questions, please contact:
                     profit_engine = get_profit_engine()
                     
                     if profit_engine and customer_id:
-                        # Simulate trade outcome using the profit engine's strategy edge
-                        # Note: random is imported at the top of the file (line 19)
-                        
-                        # Get strategy edge (default to 60% win rate)
-                        win_rate = profit_engine.strategy_edge.get(TradingStrategy.AI_ADAPTIVE, 0.60)
-                        is_winner = random.random() < win_rate
-                        
-                        # Calculate P&L based on outcome
-                        if is_winner:
-                            realized_pnl = amount * 0.024  # ~2.4% profit on winning trades
-                        else:
-                            realized_pnl = -amount * 0.016  # ~1.6% loss on losing trades
+                        realized_pnl = 0.0
+                        is_winner = False
                         
                         # Record in profit engine
                         trade_record = {
