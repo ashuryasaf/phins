@@ -13,10 +13,12 @@ import unittest
 import json
 import threading
 import time
+import types
 import urllib.request
 from http.server import HTTPServer
 import sys
 import os
+from unittest.mock import patch
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -132,6 +134,89 @@ class TestAlgoTradingService(unittest.TestCase):
             self.assertIn('confidence', asset)
         
         print(f"✓ Market Overview: {len(overview['assets'])} assets analyzed")
+
+    def test_market_overview_uses_positive_fallback_prices(self):
+        """Test market overview falls back to synced prices instead of emitting zero-price assets."""
+        from services.algo_trading_service import TechnicalIndicators, TradingSignal, SignalType
+
+        original_calculate_indicators = self.algo_service.calculate_indicators
+        original_generate_signal = self.algo_service.generate_signal
+
+        def fake_indicators(symbol):
+            return TechnicalIndicators(symbol=symbol, timestamp='test', current_price=0.0)
+
+        def fake_signal(symbol, strategy):
+            return TradingSignal(
+                signal_id=f'SIG-{symbol}',
+                symbol=symbol,
+                signal_type=SignalType.HOLD,
+                strategy=strategy,
+                confidence=0.5,
+                price_target=0.0,
+                stop_loss=0.0,
+                take_profit=0.0,
+                reasoning='test'
+            )
+
+        self.algo_service.calculate_indicators = fake_indicators
+        self.algo_service.generate_signal = fake_signal
+
+        try:
+            overview = self.algo_service.get_market_overview()
+        finally:
+            self.algo_service.calculate_indicators = original_calculate_indicators
+            self.algo_service.generate_signal = original_generate_signal
+
+        self.assertGreater(len(overview['assets']), 0)
+        self.assertTrue(all(asset['price'] > 0 for asset in overview['assets']))
+        symbols = {asset['symbol'] for asset in overview['assets']}
+        self.assertIn('BTC/USD', symbols)
+        self.assertIn('ETH/USD', symbols)
+
+    def test_ai_indicator_rsi_zero_is_preserved(self):
+        """Test AI indicator path preserves an RSI reading of exactly zero."""
+        tp_module = types.ModuleType('services.trading_platform_service')
+        ai_module = types.ModuleType('services.ai_trading_engine')
+
+        bars = [
+            {
+                'close': 100.0 - i,
+                'open': 100.5 - i,
+                'high': 101.0 - i,
+                'low': 99.5 - i,
+                'volume': 1000 + i,
+            }
+            for i in range(7)
+        ]
+        tp_module.get_trading_platform = lambda: types.SimpleNamespace(
+            is_connected=True,
+            get_bars=lambda symbol, timeframe, limit: bars
+        )
+        ai_module.compute_technicals = lambda fetched_bars: {'indicators': {'rsi_14': 0.0}}
+
+        with patch.dict(sys.modules, {
+            'services.trading_platform_service': tp_module,
+            'services.ai_trading_engine': ai_module,
+        }):
+            indicators = self.algo_service._try_ai_engine_indicators('SPY')
+
+        self.assertIsNotNone(indicators)
+        self.assertEqual(indicators.rsi_14, 0.0)
+
+    def test_simulate_bot_trades_counts_crypto_alias_history(self):
+        """Test backtests count trades and support crypto symbols with quote suffixes."""
+        bot = self.algo_service.create_bot(
+            account_id='TEST-CRYPTO-SIM',
+            name='Crypto Alias Simulation Bot',
+            strategy=self.TradingStrategy.MOMENTUM,
+            symbols=['BTC/USD']
+        )
+
+        result = self.algo_service.simulate_bot_trades(bot.bot_id, days=5)
+
+        self.assertTrue(result['success'])
+        self.assertGreater(result['trades_simulated'], 0)
+        self.assertGreater(result['performance']['performance']['total_trades'], 0)
     
     def test_order_history(self):
         """Test order history retrieval"""
@@ -314,6 +399,36 @@ class TestAlgoTradingAPI(unittest.TestCase):
         self.assertTrue(result['body']['success'])
         self.assertIn('order', result['body'])
         print(f"✓ POST /api/algo/trade: Order {result['body']['order']['order_id']}")
+
+    def test_quick_trade_records_flat_manual_pnl(self):
+        """Test manual trades record a neutral close when realized PnL is zero."""
+        from services.algo_trading_service import get_profit_engine
+        from web_portal.server import TRANSACTION_LEDGER
+
+        customer_id = 'TRADE-FLAT-TEST'
+        result = self._request('POST', '/api/algo/trade', {
+            'account_id': customer_id,
+            'customer_id': customer_id,
+            'symbol': 'SPY',
+            'side': 'buy',
+            'amount': 100
+        })
+
+        self.assertEqual(result['status'], 200)
+        self.assertTrue(result['body']['success'])
+
+        profit_engine = get_profit_engine()
+        trade_record = [t for t in profit_engine.trade_history if t.get('customer_id') == customer_id][-1]
+        self.assertEqual(trade_record['realized_pnl'], 0.0)
+        self.assertEqual(trade_record['entry_price'], trade_record['exit_price'])
+        self.assertEqual(trade_record['status'], 'closed_at_market')
+
+        tx_entry = [
+            tx for tx in TRANSACTION_LEDGER.values()
+            if tx.get('customer_id') == customer_id and tx.get('type') == 'algo_manual_trade'
+        ][-1]
+        description = (tx_entry.get('payload') or {}).get('description', tx_entry.get('description', ''))
+        self.assertIn('FLAT', description)
     
     def test_generate_signal(self):
         """Test GET /api/algo/generate-signal"""

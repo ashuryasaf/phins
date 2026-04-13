@@ -34485,7 +34485,10 @@ For claims or questions, please contact:
                     
                     if profit_engine and customer_id:
                         realized_pnl = 0.0
-                        is_winner = False
+                        is_winner = realized_pnl > 0
+                        exit_price = order.price
+                        trade_status = "closed_at_market"
+                        outcome_label = "FLAT"
                         
                         # Record in profit engine
                         trade_record = {
@@ -34495,11 +34498,11 @@ For claims or questions, please contact:
                             "symbol": symbol,
                             "side": side,
                             "entry_price": order.price,
-                            "exit_price": order.price * (1.024 if is_winner else 0.984),
+                            "exit_price": exit_price,
                             "quantity": order.quantity,
                             "realized_pnl": round(realized_pnl, 2),
                             "return_pct": round((realized_pnl / amount) * 100, 2),
-                            "status": "take_profit_hit" if is_winner else "stopped_out",
+                            "status": trade_status,
                             "strategy": "manual",
                             "entry_time": order.created_at,
                             "exit_time": datetime.now().isoformat(),
@@ -34536,7 +34539,7 @@ For claims or questions, please contact:
                             customer_id=customer_id,
                             tx_type='algo_manual_trade',
                             amount=realized_pnl,
-                            description=f"Manual trade: {side.upper()} {symbol} @ ${order.price:.2f} - {'WIN' if is_winner else 'LOSS'}",
+                            description=f"Manual trade: {side.upper()} {symbol} @ ${order.price:.2f} - {outcome_label}",
                             metadata={
                                 'order_id': order.order_id,
                                 'symbol': symbol,

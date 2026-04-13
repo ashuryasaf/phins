@@ -426,6 +426,28 @@ class AlgoTradingService:
                 history[-1]["price"] = current_price
             self.price_history[symbol] = history
 
+    def _get_symbol_aliases(self, symbol: str) -> List[str]:
+        """Return known lookup aliases for symbols that differ by quote format."""
+        aliases = [symbol]
+        if "/" in symbol:
+            base_symbol = symbol.split("/", 1)[0]
+            if base_symbol not in aliases:
+                aliases.append(base_symbol)
+        elif self.portfolio_service:
+            market_data = getattr(self.portfolio_service, "MARKET_DATA", {})
+            asset_class = getattr(market_data.get(symbol, {}).get("class"), "value", None)
+            quoted_symbol = f"{symbol}/USD"
+            if asset_class == "crypto" and quoted_symbol not in aliases:
+                aliases.append(quoted_symbol)
+        return aliases
+
+    def _resolve_symbol_key(self, symbol: str, mapping: Dict[str, Any]) -> Optional[str]:
+        """Find the first available key for a symbol in a mapping."""
+        for candidate in self._get_symbol_aliases(symbol):
+            if candidate in mapping:
+                return candidate
+        return None
+
     def sync_market_prices(self, prices: Dict[str, float]) -> Dict[str, Any]:
         """
         Sync externally validated prices into portfolio + indicator history.
@@ -478,10 +500,11 @@ class AlgoTradingService:
         if ai_result:
             return ai_result
 
-        if symbol not in self.price_history:
+        history_symbol = self._resolve_symbol_key(symbol, self.price_history)
+        if not history_symbol:
             return TechnicalIndicators(symbol=symbol, timestamp=datetime.now().isoformat())
 
-        history = list(self.price_history[symbol])
+        history = list(self.price_history[history_symbol])
         prices = [h["price"] for h in history]
         volumes = [h.get("volume", 0) for h in history]
 
@@ -580,7 +603,7 @@ class AlgoTradingService:
                 sma_200=0,
                 ema_12=ind.get("ema_12") or 0,
                 ema_26=ind.get("ema_26") or 0,
-                rsi_14=ind.get("rsi_14") or 50.0,
+                rsi_14=ind.get("rsi_14") if ind.get("rsi_14") is not None else 50.0,
                 macd_line=ind.get("macd_line") or 0,
                 macd_signal=ind.get("macd_signal") or 0,
                 macd_histogram=ind.get("macd_histogram") or 0,
@@ -1062,8 +1085,12 @@ class AlgoTradingService:
         if not self.portfolio_service:
             raise ValueError("Portfolio service not initialized")
         
-        market_data = self.portfolio_service.MARKET_DATA.get(symbol, {})
+        market_key = self._resolve_symbol_key(symbol, self.portfolio_service.MARKET_DATA)
+        market_data = self.portfolio_service.MARKET_DATA.get(market_key, {}) if market_key else {}
         price = market_data.get("price", 0)
+        if price <= 0:
+            indicators = self.calculate_indicators(symbol)
+            price = indicators.current_price if indicators.current_price > 0 else 0
         quantity = amount / price if price > 0 else 0
         
         stop_loss = None
@@ -1482,8 +1509,10 @@ class AlgoTradingService:
         if not bot:
             return {"error": "Bot not found"}
 
+        total_simulated_trades = 0
         for symbol in bot.symbols:
-            history = self.price_history.get(symbol)
+            history_key = self._resolve_symbol_key(symbol, self.price_history)
+            history = self.price_history.get(history_key) if history_key else None
             if not history or len(history) < 20:
                 continue
             prices = [h["price"] for h in history]
@@ -1498,6 +1527,7 @@ class AlgoTradingService:
                 ret = (curr - prev) / prev
                 pnl = bot.max_position_size * ret
                 bot.update_metrics(pnl, ret)
+                total_simulated_trades += 1
 
         bot.last_trade_at = datetime.now().isoformat()
         
@@ -1593,15 +1623,23 @@ class AlgoTradingService:
 
         for symbol in overview_symbols:
             indicators = self.calculate_indicators(symbol)
+            market_symbol = None
             if indicators.current_price <= 0:
-                if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
-                    pass
+                market_data = getattr(self.portfolio_service, "MARKET_DATA", {}) if self.portfolio_service else {}
+                market_symbol = self._resolve_symbol_key(symbol, market_data)
+                fallback_price = market_data.get(market_symbol, {}).get("price", 0) if market_symbol else 0
+                if fallback_price > 0:
+                    indicators.current_price = fallback_price
                 else:
                     continue
             signal = self.generate_signal(symbol, TradingStrategy.MOMENTUM)
             name = names.get(symbol, symbol)
-            if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
-                name = self.portfolio_service.MARKET_DATA[symbol].get("name", name)
+            if self.portfolio_service:
+                market_data = getattr(self.portfolio_service, "MARKET_DATA", {})
+                if market_symbol is None:
+                    market_symbol = self._resolve_symbol_key(symbol, market_data)
+                if market_symbol:
+                    name = self.portfolio_service.MARKET_DATA[market_symbol].get("name", name)
 
             overview["assets"].append({
                 "symbol": symbol,
@@ -1705,7 +1743,13 @@ class ProfitEngine:
         if not self.algo_service.portfolio_service:
             return {"success": False, "error": "Portfolio service not available"}
         
-        market_data = self.algo_service.portfolio_service.MARKET_DATA.get(symbol, {})
+        market_key = self.algo_service._resolve_symbol_key(
+            symbol, self.algo_service.portfolio_service.MARKET_DATA
+        )
+        market_data = (
+            self.algo_service.portfolio_service.MARKET_DATA.get(market_key, {})
+            if market_key else {}
+        )
         current_price = market_data.get("price", 0)
         if current_price <= 0:
             indicators = self.algo_service.calculate_indicators(symbol)
