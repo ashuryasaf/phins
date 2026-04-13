@@ -355,28 +355,75 @@ class AlgoTradingService:
         self._init_price_history()
     
     def _init_price_history(self):
-        """Initialize price history for technical analysis"""
+        """Initialize price history from live Alpaca bars when available, fallback to portfolio data."""
+        self._try_load_live_history()
+        self._fill_from_portfolio_data()
+
+    def _try_load_live_history(self):
+        """Fetch real OHLCV bars from Alpaca for all known symbols."""
+        try:
+            from services.trading_platform_service import get_trading_platform
+            tp = get_trading_platform()
+            if not tp.is_connected:
+                return
+        except Exception:
+            return
+
+        symbols_to_fetch = set()
+        if self.portfolio_service and hasattr(self.portfolio_service, 'MARKET_DATA'):
+            symbols_to_fetch.update(self.portfolio_service.MARKET_DATA.keys())
+        symbols_to_fetch.update(["SPY", "QQQ", "BTC/USD", "ETH/USD", "GLD", "BND"])
+
+        for symbol in symbols_to_fetch:
+            try:
+                is_crypto = "/" in symbol
+                if is_crypto:
+                    bars = tp.get_bars(symbol.replace("/", ""), "1Day", 200)
+                else:
+                    bars = tp.get_bars(symbol, "1Day", 200)
+                if not bars:
+                    continue
+                history = deque(maxlen=200)
+                for bar in bars:
+                    history.append({
+                        "price": float(bar.get("close", 0)),
+                        "open": float(bar.get("open", 0)),
+                        "high": float(bar.get("high", 0)),
+                        "low": float(bar.get("low", 0)),
+                        "volume": float(bar.get("volume", 0)),
+                        "timestamp": bar.get("date", datetime.now().isoformat()),
+                        "source": "alpaca",
+                    })
+                if history:
+                    self.price_history[symbol] = history
+                    if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
+                        self.portfolio_service.MARKET_DATA[symbol]["price"] = history[-1]["price"]
+            except Exception as e:
+                print(f"[AlgoTrading] Failed to load bars for {symbol}: {e}")
+
+    def _fill_from_portfolio_data(self):
+        """Seed price history from portfolio service data for symbols not yet loaded from Alpaca.
+        Creates a minimal series so indicators can compute."""
         if not self.portfolio_service:
             return
-            
-        market_data = self.portfolio_service.MARKET_DATA
+        market_data = getattr(self.portfolio_service, 'MARKET_DATA', {})
         for symbol, data in market_data.items():
-            current_price = data["price"]
-            volatility = 0.02 if data["class"].value != "crypto" else 0.05
-            
-            # Generate 200 days of historical prices
-            history = deque(maxlen=200)
-            price = current_price * 0.85  # Start lower
-            for i in range(200):
-                change = random.gauss(0.0003, volatility / math.sqrt(365))
-                price = price * (1 + change)
-                history.append({
-                    "price": price,
-                    "volume": random.uniform(1000000, 10000000),
-                    "timestamp": (datetime.now() - timedelta(days=200-i)).isoformat()
-                })
-            # Adjust last price to match current
-            history[-1]["price"] = current_price
+            if symbol in self.price_history and len(self.price_history[symbol]) >= 20:
+                continue
+            current_price = data.get("price", 0)
+            if current_price <= 0:
+                continue
+            history = self.price_history.get(symbol, deque(maxlen=200))
+            if len(history) < 20:
+                for i in range(50):
+                    drift = 1 + (i - 25) * 0.001
+                    history.append({
+                        "price": current_price * drift,
+                        "volume": 0,
+                        "timestamp": (datetime.now() - timedelta(days=50 - i)).isoformat(),
+                        "source": "portfolio_seed",
+                    })
+                history[-1]["price"] = current_price
             self.price_history[symbol] = history
 
     def sync_market_prices(self, prices: Dict[str, float]) -> Dict[str, Any]:
@@ -412,7 +459,7 @@ class AlgoTradingService:
             volume = (
                 float(last_volume)
                 if isinstance(last_volume, (int, float)) and last_volume > 0
-                else random.uniform(1000000, 10000000)
+                else 0
             )
             history.append(
                 {
@@ -426,55 +473,54 @@ class AlgoTradingService:
         return {"updated": updated, "ignored": ignored, "timestamp": now_iso}
     
     def calculate_indicators(self, symbol: str) -> TechnicalIndicators:
-        """Calculate all technical indicators for a symbol"""
+        """Calculate technical indicators — uses AI trading engine with real data when available."""
+        ai_result = self._try_ai_engine_indicators(symbol)
+        if ai_result:
+            return ai_result
+
         if symbol not in self.price_history:
             return TechnicalIndicators(symbol=symbol, timestamp=datetime.now().isoformat())
-        
+
         history = list(self.price_history[symbol])
         prices = [h["price"] for h in history]
         volumes = [h.get("volume", 0) for h in history]
-        
+
         current_price = prices[-1] if prices else 0
-        
-        # Calculate Moving Averages
+        if current_price <= 0:
+            return TechnicalIndicators(symbol=symbol, timestamp=datetime.now().isoformat())
+
         sma_20 = sum(prices[-20:]) / 20 if len(prices) >= 20 else current_price
         sma_50 = sum(prices[-50:]) / 50 if len(prices) >= 50 else current_price
         sma_200 = sum(prices[-200:]) / 200 if len(prices) >= 200 else current_price
-        
-        # Calculate EMA
+
         ema_12 = self._calculate_ema(prices, 12)
         ema_26 = self._calculate_ema(prices, 26)
-        
-        # Calculate RSI
         rsi = self._calculate_rsi(prices, 14)
-        
-        # Calculate MACD
+
         macd_line = ema_12 - ema_26
-        macd_signal = self._calculate_ema([macd_line] * 9, 9)  # Simplified
+        macd_signal = self._calculate_ema([macd_line] * 9, 9)
         macd_histogram = macd_line - macd_signal
-        
-        # Calculate Bollinger Bands
+
         std_20 = self._calculate_std(prices[-20:]) if len(prices) >= 20 else 0
         bb_upper = sma_20 + (2 * std_20)
         bb_lower = sma_20 - (2 * std_20)
-        
-        # Calculate ATR
+
         atr = self._calculate_atr(prices, 14)
-        
-        # Calculate volatility
-        returns = [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices))]
-        volatility = self._calculate_std(returns[-30:]) * math.sqrt(365) if len(returns) >= 30 else 0.2
-        
-        # Support/Resistance (simplified)
+
+        returns = [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices)) if prices[i-1] > 0]
+        volatility = self._calculate_std(returns[-30:]) * math.sqrt(365) if len(returns) >= 30 else 0.0
+
         recent_lows = min(prices[-20:]) if len(prices) >= 20 else current_price * 0.95
         recent_highs = max(prices[-20:]) if len(prices) >= 20 else current_price * 1.05
-        
+
+        data_source = "alpaca" if (history and history[-1].get("source") == "alpaca") else "synced"
+
         indicators = TechnicalIndicators(
             symbol=symbol,
             timestamp=datetime.now().isoformat(),
             current_price=current_price,
-            price_change_24h=((current_price / prices[-2]) - 1) * 100 if len(prices) >= 2 else 0,
-            price_change_7d=((current_price / prices[-7]) - 1) * 100 if len(prices) >= 7 else 0,
+            price_change_24h=((current_price / prices[-2]) - 1) * 100 if len(prices) >= 2 and prices[-2] > 0 else 0,
+            price_change_7d=((current_price / prices[-7]) - 1) * 100 if len(prices) >= 7 and prices[-7] > 0 else 0,
             sma_20=sma_20,
             sma_50=sma_50,
             sma_200=sma_200,
@@ -488,15 +534,68 @@ class AlgoTradingService:
             bb_middle=sma_20,
             bb_lower=bb_lower,
             volume_24h=volumes[-1] if volumes else 0,
-            volume_change=((volumes[-1] / volumes[-2]) - 1) * 100 if len(volumes) >= 2 else 0,
+            volume_change=((volumes[-1] / volumes[-2]) - 1) * 100 if len(volumes) >= 2 and volumes[-2] > 0 else 0,
             volatility=volatility,
             atr_14=atr,
             support_level=recent_lows,
             resistance_level=recent_highs
         )
-        
+
         self.indicators_cache[symbol] = indicators
         return indicators
+
+    def _try_ai_engine_indicators(self, symbol: str) -> TechnicalIndicators | None:
+        """Use the AI trading engine from trading-terminal for live Alpaca indicators."""
+        try:
+            from services.trading_platform_service import get_trading_platform
+            from services.ai_trading_engine import compute_technicals
+
+            tp = get_trading_platform()
+            if not tp.is_connected:
+                return None
+
+            is_crypto = "/" in symbol
+            fetch_sym = symbol.replace("/", "") if is_crypto else symbol
+            bars = tp.get_bars(fetch_sym, "1Day", 100)
+            if not bars or len(bars) < 5:
+                return None
+
+            techs = compute_technicals(bars)
+            ind = techs.get("indicators", {})
+            if not ind:
+                return None
+
+            current_price = float(bars[-1].get("close", 0))
+            prev_price = float(bars[-2].get("close", 0)) if len(bars) >= 2 else current_price
+            week_price = float(bars[-7].get("close", 0)) if len(bars) >= 7 else current_price
+
+            return TechnicalIndicators(
+                symbol=symbol,
+                timestamp=datetime.now().isoformat(),
+                current_price=current_price,
+                price_change_24h=((current_price / prev_price) - 1) * 100 if prev_price > 0 else 0,
+                price_change_7d=((current_price / week_price) - 1) * 100 if week_price > 0 else 0,
+                sma_20=ind.get("sma_20") or 0,
+                sma_50=ind.get("sma_50") or 0,
+                sma_200=0,
+                ema_12=ind.get("ema_12") or 0,
+                ema_26=ind.get("ema_26") or 0,
+                rsi_14=ind.get("rsi_14") or 50.0,
+                macd_line=ind.get("macd_line") or 0,
+                macd_signal=ind.get("macd_signal") or 0,
+                macd_histogram=ind.get("macd_histogram") or 0,
+                bb_upper=ind.get("bb_upper") or 0,
+                bb_middle=ind.get("bb_middle") or 0,
+                bb_lower=ind.get("bb_lower") or 0,
+                volume_24h=float(bars[-1].get("volume", 0)),
+                volume_change=0,
+                volatility=0,
+                atr_14=ind.get("atr_14") or 0,
+                support_level=ind.get("bb_lower") or current_price * 0.95,
+                resistance_level=ind.get("bb_upper") or current_price * 1.05,
+            )
+        except Exception:
+            return None
     
     def _calculate_ema(self, prices: List[float], period: int) -> float:
         """Calculate Exponential Moving Average"""
@@ -1143,38 +1242,62 @@ class AlgoTradingService:
             service = get_advanced_market_service()
             return service.get_smart_bot_templates(risk_level)
         
-        # Fallback templates
         templates = [
             {
                 "bot_id": "conservative_dca",
                 "name": "Conservative DCA Bot",
-                "description": "Dollar-cost averaging into blue-chip assets",
+                "description": "Dollar-cost averaging into index ETFs and safe havens",
                 "strategy": "dollar_cost_averaging",
                 "risk_level": "low",
-                "expected_return": "8-12% annually",
+                "expected_return": "Tracks broad market performance",
                 "symbols": ["SPY", "BND", "GLD"],
-                "settings": {"max_drawdown_pct": 8, "stop_loss_pct": 5}
+                "settings": {"max_drawdown_pct": 8, "stop_loss_pct": 5},
+                "data_source": "alpaca_live",
             },
             {
                 "bot_id": "balanced_momentum",
                 "name": "Balanced Momentum Trader",
-                "description": "Momentum-based trading with balanced risk",
+                "description": "AI-driven momentum signals from live Alpaca technicals",
                 "strategy": "momentum",
                 "risk_level": "medium",
-                "expected_return": "15-25% annually",
-                "symbols": ["QQQ", "AAPL", "MSFT"],
-                "settings": {"max_drawdown_pct": 12, "stop_loss_pct": 7}
+                "expected_return": "Based on live signal performance",
+                "symbols": ["QQQ", "AAPL", "MSFT", "NVDA"],
+                "settings": {"max_drawdown_pct": 12, "stop_loss_pct": 7},
+                "data_source": "alpaca_live",
             },
             {
                 "bot_id": "crypto_swing",
                 "name": "Crypto Swing Trader",
-                "description": "Swing trading top cryptocurrencies",
+                "description": "Mean-reversion on crypto using real-time Alpaca data",
                 "strategy": "mean_reversion",
                 "risk_level": "high",
-                "expected_return": "30-60% annually",
-                "symbols": ["BTC", "ETH", "SOL"],
-                "settings": {"max_drawdown_pct": 20, "stop_loss_pct": 10}
-            }
+                "expected_return": "Based on live signal performance",
+                "symbols": ["BTC/USD", "ETH/USD", "SOL/USD"],
+                "settings": {"max_drawdown_pct": 20, "stop_loss_pct": 10},
+                "data_source": "alpaca_live",
+            },
+            {
+                "bot_id": "energy_macro",
+                "name": "Energy & Macro Sentiment",
+                "description": "Trend-following on energy and commodities via Alpaca",
+                "strategy": "trend_following",
+                "risk_level": "medium",
+                "expected_return": "Based on live signal performance",
+                "symbols": ["USO", "UNG", "XLE", "GLD"],
+                "settings": {"max_drawdown_pct": 15, "stop_loss_pct": 8},
+                "data_source": "alpaca_live",
+            },
+            {
+                "bot_id": "quantum_scalp",
+                "name": "Quantum Scalp AI",
+                "description": "High-frequency mean-reversion with AI-optimized entry/exit",
+                "strategy": "scalping",
+                "risk_level": "very_high",
+                "expected_return": "Based on live signal performance",
+                "symbols": ["SPY", "QQQ", "AAPL"],
+                "settings": {"max_drawdown_pct": 10, "stop_loss_pct": 3},
+                "data_source": "alpaca_live",
+            },
         ]
         
         if risk_level:
@@ -1354,41 +1477,28 @@ class AlgoTradingService:
         ]
     
     def simulate_bot_trades(self, bot_id: str, days: int = 30) -> Dict:
-        """Simulate historical trades for a bot to generate realistic metrics"""
+        """Back-test a bot using real historical price data from Alpaca bars."""
         bot = self.bots.get(bot_id)
         if not bot:
             return {"error": "Bot not found"}
-        
-        # Generate simulated trades based on strategy risk level
-        risk_multipliers = {
-            "low": (0.5, 0.015, 0.6),      # avg return %, volatility, win rate
-            "medium": (0.8, 0.025, 0.55),
-            "high": (1.2, 0.04, 0.50),
-            "very_high": (1.8, 0.06, 0.45)
-        }
-        
-        avg_return, volatility, base_win_rate = risk_multipliers.get(
-            bot.risk_level, (0.8, 0.025, 0.55)
-        )
-        
-        trades_per_day = min(bot.max_daily_trades, 3)
-        total_simulated_trades = days * trades_per_day
-        
-        for _ in range(total_simulated_trades):
-            # Generate trade outcome
-            is_winner = random.random() < base_win_rate
-            
-            if is_winner:
-                # Winning trade
-                return_pct = abs(random.gauss(avg_return, volatility))
-                pnl = bot.max_position_size * (return_pct / 100)
-            else:
-                # Losing trade (limited by stop loss)
-                return_pct = -min(abs(random.gauss(avg_return * 0.8, volatility)), bot.stop_loss_pct)
-                pnl = bot.max_position_size * (return_pct / 100)
-            
-            bot.update_metrics(pnl, return_pct / 100)
-        
+
+        for symbol in bot.symbols:
+            history = self.price_history.get(symbol)
+            if not history or len(history) < 20:
+                continue
+            prices = [h["price"] for h in history]
+            lookback = min(days, len(prices) - 1)
+            for i in range(len(prices) - lookback, len(prices)):
+                if i < 1:
+                    continue
+                prev = prices[i - 1]
+                curr = prices[i]
+                if prev <= 0:
+                    continue
+                ret = (curr - prev) / prev
+                pnl = bot.max_position_size * ret
+                bot.update_metrics(pnl, ret)
+
         bot.last_trade_at = datetime.now().isoformat()
         
         return {
@@ -1465,30 +1575,53 @@ class AlgoTradingService:
         return rebalance_actions
     
     def get_market_overview(self) -> Dict:
-        """Get market overview with signals for major assets"""
-        if not self.portfolio_service:
-            return {"error": "Portfolio service not available"}
-        
+        """Get market overview with real data from Alpaca/synced prices."""
+        overview_symbols = ["SPY", "QQQ", "BTC/USD", "ETH/USD", "GLD", "BND",
+                           "AAPL", "MSFT", "NVDA", "XLE", "USO", "TLT"]
         overview = {
             "timestamp": datetime.now().isoformat(),
-            "assets": []
+            "assets": [],
+            "data_source": "alpaca" if self._has_live_data() else "synced",
         }
-        
-        for symbol in ["SPY", "QQQ", "BTC", "ETH", "GLD", "BND"]:
+
+        names = {
+            "SPY": "S&P 500", "QQQ": "NASDAQ 100", "BTC/USD": "Bitcoin",
+            "ETH/USD": "Ethereum", "GLD": "Gold", "BND": "Total Bond",
+            "AAPL": "Apple", "MSFT": "Microsoft", "NVDA": "NVIDIA",
+            "XLE": "Energy", "USO": "Crude Oil", "TLT": "20Y Treasury",
+        }
+
+        for symbol in overview_symbols:
             indicators = self.calculate_indicators(symbol)
+            if indicators.current_price <= 0:
+                if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
+                    pass
+                else:
+                    continue
             signal = self.generate_signal(symbol, TradingStrategy.MOMENTUM)
-            
+            name = names.get(symbol, symbol)
+            if self.portfolio_service and symbol in getattr(self.portfolio_service, 'MARKET_DATA', {}):
+                name = self.portfolio_service.MARKET_DATA[symbol].get("name", name)
+
             overview["assets"].append({
                 "symbol": symbol,
-                "name": self.portfolio_service.MARKET_DATA.get(symbol, {}).get("name", symbol),
+                "name": name,
                 "price": indicators.current_price,
                 "change_24h": indicators.price_change_24h,
                 "rsi": indicators.rsi_14,
+                "macd": indicators.macd_line,
                 "signal": signal.signal_type.value,
-                "confidence": signal.confidence
+                "confidence": signal.confidence,
             })
-        
+
         return overview
+
+    def _has_live_data(self) -> bool:
+        """Check if any price history comes from live Alpaca data."""
+        for sym, history in self.price_history.items():
+            if history and history[-1].get("source") == "alpaca":
+                return True
+        return False
 
 
 # =============================================================================
@@ -1573,18 +1706,21 @@ class ProfitEngine:
             return {"success": False, "error": "Portfolio service not available"}
         
         market_data = self.algo_service.portfolio_service.MARKET_DATA.get(symbol, {})
-        current_price = market_data.get("price", 100)
-        
-        # Determine trade direction
+        current_price = market_data.get("price", 0)
+        if current_price <= 0:
+            indicators = self.algo_service.calculate_indicators(symbol)
+            current_price = indicators.current_price if indicators.current_price > 0 else 0
+        if current_price <= 0:
+            return {"success": False, "error": f"No live price for {symbol}"}
+
         is_buy_signal = signal.signal_type in [SignalType.BUY, SignalType.STRONG_BUY]
         side = 'long' if is_buy_signal else 'short'
-        
-        # Calculate position size (risk-adjusted)
+
         position_value = min(bot.max_position_size, bot.dca_amount * 2)
         quantity = position_value / current_price
-        
-        # Calculate stop-loss and take-profit
-        atr_estimate = current_price * 0.02  # 2% ATR estimate
+
+        indicators = self.algo_service.calculate_indicators(symbol)
+        atr_estimate = indicators.atr_14 if indicators.atr_14 > 0 else current_price * 0.02
         if side == 'long':
             stop_loss = current_price - (atr_estimate * 2)
             take_profit = current_price + (atr_estimate * 3)
@@ -1629,28 +1765,43 @@ class ProfitEngine:
     
     def process_trade_outcome(self, trade: ActiveTrade) -> Dict:
         """
-        Process trade outcome using strategy edge probability.
-        This determines if the trade hits take-profit or stop-loss.
+        Process trade outcome using real market price data.
+        Compares current market price against entry to determine P&L.
         """
-        # Get strategy win rate
-        win_rate = self.strategy_edge.get(trade.strategy, 0.55)
-        
-        # Add signal confidence boost
-        # Higher confidence signals have better outcomes
-        confidence_boost = 0.05  # Base boost for executed trades
-        effective_win_rate = min(0.85, win_rate + confidence_boost)
-        
-        # Determine outcome
-        is_winner = random.random() < effective_win_rate
-        
-        if is_winner:
-            # Trade hits take-profit
-            exit_price = trade.take_profit
-            trade.status = "take_profit_hit"
+        current_price = trade.current_price
+        try:
+            indicators = self.algo_service.calculate_indicators(trade.symbol)
+            if indicators.current_price > 0:
+                current_price = indicators.current_price
+        except Exception:
+            pass
+
+        if trade.side == 'long':
+            if current_price >= trade.take_profit:
+                exit_price = trade.take_profit
+                trade.status = "take_profit_hit"
+                is_winner = True
+            elif current_price <= trade.stop_loss:
+                exit_price = trade.stop_loss
+                trade.status = "stopped_out"
+                is_winner = False
+            else:
+                exit_price = current_price
+                trade.status = "closed_at_market"
+                is_winner = exit_price > trade.entry_price
         else:
-            # Trade hits stop-loss
-            exit_price = trade.stop_loss
-            trade.status = "stopped_out"
+            if current_price <= trade.take_profit:
+                exit_price = trade.take_profit
+                trade.status = "take_profit_hit"
+                is_winner = True
+            elif current_price >= trade.stop_loss:
+                exit_price = trade.stop_loss
+                trade.status = "stopped_out"
+                is_winner = False
+            else:
+                exit_price = current_price
+                trade.status = "closed_at_market"
+                is_winner = exit_price < trade.entry_price
         
         # Calculate realized PnL
         if trade.side == 'long':
@@ -1729,11 +1880,14 @@ class ProfitEngine:
         
         if not customer_bots:
             # Create a default bot if none exists
+            available_symbols = list(self.algo_service.price_history.keys())[:6]
+            if not available_symbols:
+                available_symbols = ["SPY", "QQQ"]
             default_bot = self.algo_service.create_bot(
                 account_id=account_id,
                 name="Auto-Profit Bot",
                 strategy=TradingStrategy.AI_ADAPTIVE,
-                symbols=["BTC", "ETH", "SPY", "QQQ"],
+                symbols=available_symbols,
                 max_position_size=500,
                 stop_loss_pct=3.0,
                 take_profit_pct=6.0
