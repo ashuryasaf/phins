@@ -3587,8 +3587,8 @@ REAL_TIME_CONFIG = {
         'alpaca': {
             'enabled': os.environ.get('ALPACA_ENABLED', 'false').lower() == 'true',
             'api_key': os.environ.get('ALPACA_API_KEY', ''),
-            'api_secret': os.environ.get('ALPACA_API_SECRET', ''),
-            'base_url': os.environ.get('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets'),  # paper or live
+            'api_secret': os.environ.get('ALPACA_SECRET_KEY', '') or os.environ.get('ALPACA_API_SECRET', ''),
+            'base_url': os.environ.get('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets'),
             'data_url': 'https://data.alpaca.markets',
             'supported_markets': ['US_EQUITY', 'CRYPTO']
         },
@@ -17582,6 +17582,22 @@ For claims or questions, please contact:
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps(_trading_platform.get_connection_status(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/health':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            status = _trading_platform.get_connection_status()
+            code = 200 if status.get('alive') else 503
+            self._set_json_headers(code)
+            self.wfile.write(json.dumps(status, default=str).encode('utf-8'))
             return
 
         if path == '/api/terminal/account':

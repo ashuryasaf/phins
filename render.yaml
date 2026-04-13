@@ -9,6 +9,12 @@ services:
         value: 3.11.0
       - key: PORT
         value: 8000
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: ALPACA_PAPER
+        value: "true"
   - type: cron
     name: phins-monthly-auto-pay
     env: python

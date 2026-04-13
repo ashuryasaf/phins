@@ -137,9 +137,11 @@
     </div>
     <div class="status">
         <span><span class="status-dot" id="brokerDot"></span><span id="brokerStatus">Connecting...</span></span>
-        <span><span class="status-dot" id="dataDot"></span><span id="dataStatus">Data</span></span>
+        <span title="Broker API latency"><span class="status-dot" id="dataDot"></span><span id="dataStatus">Data</span></span>
+        <span id="latencyBadge" style="color:var(--muted);font-size:16px;" title="Alpaca API latency"></span>
         <span id="clock" style="color:var(--gold);"></span>
         <button class="hdr-btn" id="keyBtn" onclick="promptKey()">KEY</button>
+        <button class="hdr-btn" onclick="reconnectBroker()" title="Reconnect to Alpaca">RECONNECT</button>
     </div>
 </div>
 
@@ -230,6 +232,7 @@
             <button class="bottom-tab" onclick="switchBottomTab('scanner',this)">Scanner</button>
             <button class="bottom-tab" onclick="switchBottomTab('bi',this)">BI Analytics</button>
             <button class="bottom-tab" onclick="switchBottomTab('aiopt',this)">AI Optimize</button>
+            <button class="bottom-tab" onclick="switchBottomTab('integrity',this)">Integrity</button>
         </div>
         <div id="tab-global" class="tab-content active">
             <div id="globalPanel" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;">Loading...</div>
@@ -257,6 +260,9 @@
         <div id="tab-aiopt" class="tab-content">
             <div id="aiOptPanel" style="overflow-y:auto;max-height:260px;">Click AI Optimize tab to load...</div>
         </div>
+        <div id="tab-integrity" class="tab-content">
+            <div id="integrityPanel" style="overflow-y:auto;max-height:260px;">Click Integrity tab to verify broker-ledger reconciliation...</div>
+        </div>
     </div>
     </div><!-- end terminal-bottom -->
 </div>
@@ -266,6 +272,11 @@ let apiKey = localStorage.getItem('investmentAiKey') || '';
 let chartTF = '1M';
 let chartSym = 'SPY';
 let refreshInterval = null;
+let healthInterval = null;
+let brokerAlive = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+let lastOrderNonce = 0;
 
 // --- Resizable splitters ---
 (function initSplitters() {
@@ -423,19 +434,103 @@ function promptKey() {
 }
 
 async function apiFetch(path) {
-    const res = await fetch(path + (path.includes('?') ? '&' : '?') + 'api_key=' + encodeURIComponent(apiKey), {
-        headers: { 'X-Investment-AI-Key': apiKey }
-    });
-    return await res.json();
+    try {
+        const res = await fetch(path + (path.includes('?') ? '&' : '?') + 'api_key=' + encodeURIComponent(apiKey), {
+            headers: { 'X-Investment-AI-Key': apiKey }
+        });
+        if (!res.ok && res.status === 401) {
+            showToast('Access key expired or invalid. Click KEY to re-enter.', 'error');
+            return { error: 'Invalid access key' };
+        }
+        return await res.json();
+    } catch(e) {
+        console.error('API fetch error:', path, e);
+        return { error: 'Network error: ' + e.message };
+    }
 }
 
 async function apiPost(path, body) {
-    const res = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Investment-AI-Key': apiKey },
-        body: JSON.stringify({ ...body, api_key: apiKey }),
-    });
-    return await res.json();
+    try {
+        const res = await fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Investment-AI-Key': apiKey },
+            body: JSON.stringify({ ...body, api_key: apiKey }),
+        });
+        if (!res.ok && res.status === 401) {
+            showToast('Access key expired or invalid. Click KEY to re-enter.', 'error');
+            return { error: 'Invalid access key' };
+        }
+        return await res.json();
+    } catch(e) {
+        console.error('API post error:', path, e);
+        return { error: 'Network error: ' + e.message };
+    }
+}
+
+function showToast(msg, type) {
+    let toast = document.getElementById('toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast';
+        toast.style.cssText = 'position:fixed;top:60px;right:20px;z-index:9999;padding:12px 20px;border-radius:6px;font-size:18px;font-family:inherit;max-width:400px;transition:opacity 0.3s;pointer-events:none;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.background = type === 'error' ? 'rgba(239,68,68,0.95)' : (type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(251,191,36,0.95)');
+    toast.style.color = type === 'warn' ? '#000' : '#fff';
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+}
+
+async function checkBrokerHealth() {
+    try {
+        const d = await apiFetch('/api/terminal/health');
+        brokerAlive = d.alive === true;
+        const dot = $('brokerDot');
+        const st = $('brokerStatus');
+        const lat = $('latencyBadge');
+        if (brokerAlive) {
+            dot.className = 'status-dot on';
+            st.textContent = d.paper_mode ? 'Paper' : 'Live';
+            st.style.color = d.paper_mode ? 'var(--gold)' : 'var(--green)';
+            lat.textContent = d.latency_ms ? d.latency_ms + 'ms' : '';
+            lat.style.color = (d.latency_ms || 0) > 500 ? 'var(--red)' : 'var(--green)';
+            reconnectAttempts = 0;
+        } else if (d.connected) {
+            dot.className = 'status-dot off';
+            st.textContent = 'Unreachable';
+            st.style.color = 'var(--red)';
+            lat.textContent = d.latency_ms ? d.latency_ms + 'ms' : 'timeout';
+            lat.style.color = 'var(--red)';
+        } else {
+            dot.className = 'status-dot off';
+            st.textContent = 'No Keys';
+            st.style.color = 'var(--red)';
+            lat.textContent = '';
+        }
+        $('dataDot').className = 'status-dot ' + (d.connected ? 'on' : 'off');
+        $('dataStatus').textContent = d.connected ? 'Alpaca' : 'Offline';
+    } catch(e) {
+        brokerAlive = false;
+    }
+}
+
+async function reconnectBroker() {
+    showToast('Reconnecting to Alpaca...', 'warn');
+    reconnectAttempts++;
+    await checkBrokerHealth();
+    if (brokerAlive) {
+        showToast('Connected to Alpaca successfully!', 'success');
+        loadAccount();
+        loadPositions();
+    } else if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        showToast('Connection failed. Retrying... (' + reconnectAttempts + '/' + MAX_RECONNECT_ATTEMPTS + ')', 'error');
+        setTimeout(reconnectBroker, 2000 * reconnectAttempts);
+    } else {
+        showToast('Could not connect to Alpaca. Check API keys in Railway env vars.', 'error');
+        reconnectAttempts = 0;
+    }
 }
 
 function $(id) { return document.getElementById(id); }
@@ -458,7 +553,62 @@ function switchBottomTab(tab, btn) {
     if (tab === 'scanner') loadScanner();
     if (tab === 'bi') loadBiAnalytics();
     if (tab === 'aiopt') loadAiOptimize();
+    if (tab === 'integrity') loadIntegrity();
     if (tab === 'options') { /* loaded on button click */ }
+}
+
+async function loadIntegrity() {
+    $('integrityPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Running data integrity check...</div>';
+    try {
+        const [integrity, balanceSheet] = await Promise.all([
+            apiFetch('/api/terminal/integrity'),
+            apiFetch('/api/terminal/balance-sheet')
+        ]);
+        let html = '';
+        const statusColor = integrity.status === 'clean' ? 'var(--green)' : 'var(--red)';
+        const statusIcon = integrity.status === 'clean' ? '✓' : '⚠';
+        html += `<div style="display:flex;gap:16px;margin-bottom:12px;">`;
+        html += `<div style="flex:1;text-align:center;padding:12px;background:var(--bg);border-radius:5px;border:1px solid ${statusColor};">
+            <div style="font-size:28px;font-weight:700;color:${statusColor};">${statusIcon} ${(integrity.status||'unknown').toUpperCase().replace('_',' ')}</div>
+            <div style="color:var(--muted);font-size:16px;margin-top:4px;">Broker-Ledger Reconciliation</div>
+        </div>`;
+        html += `<div style="flex:1;text-align:center;padding:12px;background:var(--bg);border-radius:5px;border:1px solid var(--border);">
+            <div style="font-size:20px;font-weight:700;color:var(--text);">Broker: ${integrity.broker_positions || 0} positions</div>
+            <div style="font-size:20px;color:var(--muted);margin-top:4px;">Ledger: ${integrity.ledger_trades || 0} trades</div>
+        </div>`;
+        html += `</div>`;
+
+        if (integrity.issues && integrity.issues.length) {
+            html += '<div style="margin-bottom:10px;">';
+            integrity.issues.forEach(issue => {
+                const color = issue.type === 'broker_only' ? 'var(--gold)' : 'var(--orange)';
+                html += `<div style="padding:8px;margin-bottom:4px;background:var(--bg);border-left:3px solid ${color};border-radius:3px;">
+                    <div style="color:${color};font-weight:700;font-size:16px;">${issue.type.toUpperCase().replace('_',' ')}</div>
+                    <div style="font-size:18px;">${issue.message}</div>
+                    <div style="color:var(--muted);font-size:16px;">Symbols: ${(issue.symbols||[]).join(', ')}</div>
+                </div>`;
+            });
+            html += '</div>';
+        }
+
+        if (balanceSheet && !balanceSheet.error) {
+            const bs = balanceSheet;
+            html += '<div class="report-grid" style="margin-top:8px;">';
+            html += rCard('Total Assets', '$' + fmt(bs.assets?.total_assets), '');
+            html += rCard('Cash', '$' + fmt(bs.assets?.cash), '');
+            html += rCard('Long Positions', '$' + fmt(bs.assets?.long_positions_value), '');
+            html += rCard('Net Worth', '$' + fmt(bs.equity?.net_worth), (bs.equity?.net_worth||0) >= 0 ? 'up' : 'down');
+            html += rCard('Unrealized P&L', '$' + fmt(bs.gains_losses?.unrealized_total), (bs.gains_losses?.unrealized_total||0) >= 0 ? 'up' : 'down');
+            html += rCard('Realized P&L', '$' + fmt(bs.gains_losses?.realized_total), (bs.gains_losses?.realized_total||0) >= 0 ? 'up' : 'down');
+            html += rCard('Est. Tax', '$' + fmt(bs.tax_estimates?.total_est_tax), 'down');
+            html += rCard('After-Tax Equity', '$' + fmt(bs.tax_estimates?.after_tax_equity), '');
+            html += '</div>';
+        }
+        html += `<div style="color:var(--muted);font-size:16px;margin-top:8px;text-align:right;">Last checked: ${new Date().toLocaleTimeString()}</div>`;
+        $('integrityPanel').innerHTML = html;
+    } catch(e) {
+        $('integrityPanel').innerHTML = `<div style="color:var(--red)">Error: ${e.message}</div>`;
+    }
 }
 
 async function loadOptionsChain() {
@@ -812,6 +962,7 @@ async function loadMarketClock() {
 async function initTerminal() {
     if (!apiKey) { promptKey(); return; }
     setupCrosshair($('terminalChart'));
+    checkBrokerHealth();
     loadAccount();
     loadPositions();
     loadGlobalDashboard();
@@ -822,32 +973,44 @@ async function initTerminal() {
     loadEquity('1M');
     if (refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(() => { loadAccount(); loadPositions(); loadMarketClock(); }, 30000);
+    if (healthInterval) clearInterval(healthInterval);
+    healthInterval = setInterval(checkBrokerHealth, 60000);
 }
 
 // --- Account ---
 async function loadAccount() {
     try {
         const d = await apiFetch('/api/terminal/account');
-        if (d.error) { $('accountPanel').innerHTML = `<div style="color:var(--red)">${d.error}</div>`; return; }
-        const dot = $('brokerDot');
-        const st = $('brokerStatus');
-        dot.className = 'status-dot ' + (d.connected ? 'on' : 'off');
-        st.textContent = d.connected ? (d.paper ? 'Paper' : 'Live') : 'No Broker';
-        if (!d.connected && d.message) {
-            $('accountPanel').innerHTML = `<div style="padding:10px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:5px;margin-bottom:8px;"><div style="color:var(--red);font-weight:700;">Broker Not Connected</div><div style="color:var(--muted);font-size:18px;margin-top:4px;">${d.message}</div></div>`;
+        if (d.error) {
+            $('accountPanel').innerHTML = `<div style="color:var(--red);font-size:18px;padding:6px;">${d.error}</div>`;
             return;
         }
-        $('dataDot').className = 'status-dot on';
-        $('dataStatus').textContent = 'AV';
+        if (!d.connected && d.message) {
+            $('accountPanel').innerHTML = `<div style="padding:10px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:5px;margin-bottom:8px;">
+                <div style="color:var(--red);font-weight:700;">Broker Not Connected</div>
+                <div style="color:var(--muted);font-size:18px;margin-top:4px;">${d.message}</div>
+                <div style="margin-top:8px;font-size:16px;color:var(--muted);">
+                    Set <code>ALPACA_API_KEY</code> and <code>ALPACA_SECRET_KEY</code> in Railway environment variables.
+                </div>
+                <button onclick="reconnectBroker()" style="margin-top:8px;background:var(--gold);color:#000;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:18px;font-weight:700;">RECONNECT</button>
+            </div>`;
+            return;
+        }
         let html = '';
+        const mode = d.paper ? '<span style="color:var(--gold);font-size:16px;">PAPER</span>' : '<span style="color:var(--green);font-size:16px;">LIVE</span>';
+        html += `<div style="text-align:right;margin-bottom:4px;">${mode}</div>`;
         html += acctRow('Portfolio', '$' + fmt(d.portfolio_value));
         html += acctRow('Equity', '$' + fmt(d.equity));
         html += acctRow('Cash', '$' + fmt(d.cash));
         html += acctRow('Buying Power', '$' + fmt(d.buying_power), 'up');
-        html += acctRow('Day P&L', '$' + fmt(d.unrealized_pl), plClass(d.unrealized_pl));
-        html += acctRow('Day P&L %', (d.unrealized_pl_pct ? (d.unrealized_pl_pct*100).toFixed(2)+'%' : '—'), plClass(d.unrealized_pl_pct));
+        html += acctRow('Unrealized P&L', '$' + fmt(d.unrealized_pl), plClass(d.unrealized_pl));
+        html += acctRow('P&L %', (d.unrealized_pl_pct ? (d.unrealized_pl_pct*100).toFixed(2)+'%' : '—'), plClass(d.unrealized_pl_pct));
+        if (d.day_trade_count > 0) html += acctRow('Day Trades', d.day_trade_count.toString(), d.day_trade_count >= 3 ? 'down' : '');
+        if (d.trading_blocked) html += `<div style="color:var(--red);padding:4px 0;font-weight:700;">⚠ TRADING BLOCKED</div>`;
         $('accountPanel').innerHTML = html;
-    } catch(e) { $('accountPanel').innerHTML = '<div style="color:var(--red)">Connection error</div>'; }
+    } catch(e) {
+        $('accountPanel').innerHTML = '<div style="color:var(--red);font-size:18px;">Connection error — click RECONNECT</div>';
+    }
 }
 
 function acctRow(label, val, cls) {
@@ -1325,20 +1488,45 @@ async function runCopilot() {
 
 // --- Order Execution ---
 async function executeOrder(side) {
-    const symbol = $('orderSymbol').value.toUpperCase();
+    const symbol = $('orderSymbol').value.toUpperCase().trim();
     const qty = parseFloat($('orderQty').value);
     const type = $('orderType').value;
     const limitPrice = type === 'limit' ? parseFloat($('orderPrice').value) : undefined;
     const stopPrice = type === 'stop' ? parseFloat($('orderPrice').value) : undefined;
 
-    if (!symbol || !qty) { alert('Symbol and qty required'); return; }
+    if (!symbol) { showToast('Symbol is required', 'error'); return; }
+    if (!qty || qty <= 0) { showToast('Quantity must be positive', 'error'); return; }
+    if (type === 'limit' && (!limitPrice || limitPrice <= 0)) { showToast('Valid limit price required', 'error'); return; }
+    if (type === 'stop' && (!stopPrice || stopPrice <= 0)) { showToast('Valid stop price required', 'error'); return; }
+
+    const now = Date.now();
+    if (now - lastOrderNonce < 2000) {
+        showToast('Please wait before submitting another order', 'warn');
+        return;
+    }
+
+    const typeLabel = type === 'bracket' ? 'BRACKET' : (type === 'crypto' ? 'CRYPTO' : type.toUpperCase());
+    let confirmMsg = `Confirm ${side.toUpperCase()} ${qty} ${symbol}\nType: ${typeLabel}`;
+    if (limitPrice) confirmMsg += `\nLimit: $${limitPrice}`;
+    if (stopPrice) confirmMsg += `\nStop: $${stopPrice}`;
+    if (type === 'bracket') {
+        const tp = parseFloat($('orderTP').value);
+        const sl = parseFloat($('orderSL').value);
+        confirmMsg += `\nTake Profit: $${tp}\nStop Loss: $${sl}`;
+    }
+    if (!brokerAlive) confirmMsg += '\n\n⚠ Broker connection may be down!';
+
+    if (!confirm(confirmMsg)) return;
+    lastOrderNonce = now;
+
+    $('orderResult').innerHTML = '<div style="color:var(--gold);padding:6px;font-size:18px;">Submitting order...</div>';
 
     let d;
     try {
         if (type === 'bracket') {
             const tp = parseFloat($('orderTP').value);
             const sl = parseFloat($('orderSL').value);
-            if (!tp || !sl) { alert('Take Profit and Stop Loss prices required for bracket order'); return; }
+            if (!tp || !sl || tp <= 0 || sl <= 0) { showToast('Take Profit and Stop Loss prices required for bracket order', 'error'); return; }
             d = await apiPost('/api/terminal/bracket-order', { symbol, side, qty, take_profit_price: tp, stop_loss_price: sl });
         } else if (type === 'crypto') {
             const cryptoSym = symbol.includes('/') ? symbol : symbol + '/USD';
@@ -1349,18 +1537,41 @@ async function executeOrder(side) {
             if (stopPrice) body.stop_price = stopPrice;
             d = await apiPost('/api/terminal/order', body);
         }
-        if (d.error) { $('orderResult').innerHTML = `<div style="color:var(--red);padding:6px;font-size:18px;">${JSON.stringify(d.error)}</div>`; return; }
-        $('orderResult').innerHTML = `<div style="color:var(--green);padding:6px;font-size:18px;">${type==='bracket'?'Bracket':'Order'} ${d.status}: ${d.side?.toUpperCase()||side.toUpperCase()} ${d.qty||qty} ${d.symbol||symbol}</div>`;
+        if (d.error) {
+            $('orderResult').innerHTML = `<div style="color:var(--red);padding:6px;font-size:18px;word-break:break-word;">${typeof d.error === 'object' ? JSON.stringify(d.error) : d.error}</div>`;
+            showToast('Order failed: ' + (typeof d.error === 'string' ? d.error : 'See details'), 'error');
+            return;
+        }
+        const statusMsg = `${type==='bracket'?'Bracket':'Order'} ${d.status || 'submitted'}: ${(d.side||side).toUpperCase()} ${d.qty||qty} ${d.symbol||symbol}`;
+        $('orderResult').innerHTML = `<div style="color:var(--green);padding:6px;font-size:18px;">${statusMsg}</div>`;
+        showToast(statusMsg, 'success');
         setTimeout(() => { loadPositions(); loadActivities(); loadAccount(); }, 1000);
-    } catch(e) { $('orderResult').innerHTML = `<div style="color:var(--red);padding:6px;font-size:18px;">${e.message}</div>`; }
+    } catch(e) {
+        $('orderResult').innerHTML = `<div style="color:var(--red);padding:6px;font-size:18px;">${e.message}</div>`;
+        showToast('Order error: ' + e.message, 'error');
+    }
 }
 
 async function closePos(symbol) {
-    if (!confirm('Close entire ' + symbol + ' position?')) return;
+    const pos = cachedPositions.find(p => p.symbol === symbol);
+    let msg = `Close entire ${symbol} position?`;
+    if (pos) {
+        const pl = pos.unrealized_pl || 0;
+        msg += `\nQty: ${pos.qty} | P&L: $${pl.toFixed(2)}`;
+        if (pl < 0) msg += ' (LOSS)';
+    }
+    if (!confirm(msg)) return;
     try {
-        await apiPost('/api/terminal/close-position', { symbol });
+        const d = await apiPost('/api/terminal/close-position', { symbol });
+        if (d.error) {
+            showToast('Close failed: ' + (typeof d.error === 'string' ? d.error : JSON.stringify(d.error)), 'error');
+        } else {
+            showToast(symbol + ' position closed', 'success');
+        }
         loadPositions(); loadOrders(); loadAccount();
-    } catch(e) {}
+    } catch(e) {
+        showToast('Error closing position: ' + e.message, 'error');
+    }
 }
 
 function analyzeFromPos(symbol) {

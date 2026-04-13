@@ -36,7 +36,11 @@ import requests
 # ---------------------------------------------------------------------------
 
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
-ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
+# Support both env var names for secret key (align server.py and service)
+ALPACA_SECRET_KEY = (
+    os.environ.get("ALPACA_SECRET_KEY", "")
+    or os.environ.get("ALPACA_API_SECRET", "")
+)
 ALPACA_PAPER = os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
 ALPACA_BROKER_MODE = os.environ.get("ALPACA_BROKER_MODE", "false").lower() in ("1", "true", "yes")
 
@@ -49,6 +53,12 @@ ALPACA_BROKER_URL = (
     "https://broker-api.sandbox.alpaca.markets" if ALPACA_PAPER
     else "https://broker-api.alpaca.markets"
 )
+
+_VALID_SIDES = {"buy", "sell"}
+_VALID_ORDER_TYPES = {"market", "limit", "stop", "stop_limit", "trailing_stop"}
+_VALID_TIF = {"day", "gtc", "opg", "cls", "ioc", "fok"}
+_MAX_RETRIES = 2
+_RETRY_BACKOFF = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +191,11 @@ class TradingPlatformService:
     def _reload_keys(self) -> None:
         """Re-read API keys from environment (supports hot-reload after Railway redeploy)."""
         self._api_key = os.environ.get("ALPACA_API_KEY", "") or ALPACA_API_KEY
-        self._secret_key = os.environ.get("ALPACA_SECRET_KEY", "") or ALPACA_SECRET_KEY
+        self._secret_key = (
+            os.environ.get("ALPACA_SECRET_KEY", "")
+            or os.environ.get("ALPACA_API_SECRET", "")
+            or ALPACA_SECRET_KEY
+        )
         is_paper = os.environ.get("ALPACA_PAPER", "true").lower() in ("1", "true", "yes")
         self._trade_url = "https://paper-api.alpaca.markets" if is_paper else "https://api.alpaca.markets"
         self._connected = bool(self._api_key and self._secret_key)
@@ -199,8 +213,16 @@ class TradingPlatformService:
     def get_connection_status(self) -> Dict[str, Any]:
         """Diagnostic: show connection state and key configuration."""
         self._reload_keys()
+        alive = False
+        latency_ms = None
+        account_status = None
+        if self._connected:
+            alive, latency_ms, account_status = self._ping_broker()
         return {
             "connected": self._connected,
+            "alive": alive,
+            "latency_ms": latency_ms,
+            "account_status": account_status,
             "api_key_set": bool(self._api_key),
             "api_key_prefix": self._api_key[:8] + "..." if len(self._api_key) > 8 else ("(empty)" if not self._api_key else "(short)"),
             "secret_key_set": bool(self._secret_key),
@@ -211,6 +233,24 @@ class TradingPlatformService:
             "env_ALPACA_SECRET_KEY": "(set)" if os.environ.get("ALPACA_SECRET_KEY") else "(not set)",
             "env_ALPACA_PAPER": os.environ.get("ALPACA_PAPER", "(not set)"),
         }
+
+    def _ping_broker(self) -> Tuple[bool, Optional[float], Optional[str]]:
+        """Lightweight health check: GET /v2/account and measure latency."""
+        t0 = time.time()
+        try:
+            resp = requests.get(
+                f"{self._trade_url}/v2/account",
+                headers=self._headers(),
+                timeout=5,
+            )
+            latency_ms = round((time.time() - t0) * 1000, 1)
+            if resp.status_code == 200:
+                data = resp.json()
+                return True, latency_ms, data.get("status")
+            return False, latency_ms, f"HTTP {resp.status_code}"
+        except Exception as e:
+            latency_ms = round((time.time() - t0) * 1000, 1)
+            return False, latency_ms, str(e)
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -225,20 +265,30 @@ class TradingPlatformService:
 
     def _trade_request(self, method: str, path: str, body: Optional[Dict] = None) -> Optional[Dict]:
         url = f"{self._trade_url}/v2{path}"
-        try:
-            resp = requests.request(
-                method, url,
-                headers=self._headers(),
-                json=body,
-                timeout=self._timeout,
-            )
-            if resp.status_code == 204:
-                return {"success": True}
-            if resp.status_code >= 400:
-                return {"error": resp.json() if resp.text else resp.reason, "status": resp.status_code}
-            return resp.json()
-        except Exception as e:
-            return {"error": str(e)}
+        last_err = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                resp = requests.request(
+                    method, url,
+                    headers=self._headers(),
+                    json=body,
+                    timeout=self._timeout,
+                )
+                if resp.status_code == 204:
+                    return {"success": True}
+                if resp.status_code == 429:
+                    time.sleep(_RETRY_BACKOFF * (attempt + 1))
+                    continue
+                if resp.status_code >= 400:
+                    return {"error": resp.json() if resp.text else resp.reason, "status": resp.status_code}
+                return resp.json()
+            except requests.exceptions.ConnectionError as e:
+                last_err = str(e)
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_RETRY_BACKOFF * (attempt + 1))
+            except Exception as e:
+                return {"error": str(e)}
+        return {"error": f"Request failed after {_MAX_RETRIES + 1} attempts: {last_err}"}
 
     def _data_request(self, path: str, params: Optional[Dict] = None) -> Optional[Dict]:
         url = f"{self._data_url}{path}"
@@ -355,9 +405,35 @@ class TradingPlatformService:
         stop_price: Optional[float] = None,
         trail_percent: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Submit a live order to the broker."""
+        """Submit a live order to the broker with input validation."""
+        if not symbol or not symbol.strip():
+            return {"error": "symbol is required"}
+        if side.lower() not in _VALID_SIDES:
+            return {"error": f"Invalid side '{side}'. Must be 'buy' or 'sell'."}
+        if order_type.lower() not in _VALID_ORDER_TYPES:
+            return {"error": f"Invalid order_type '{order_type}'. Must be one of: {', '.join(sorted(_VALID_ORDER_TYPES))}"}
+        if time_in_force.lower() not in _VALID_TIF:
+            return {"error": f"Invalid time_in_force '{time_in_force}'. Must be one of: {', '.join(sorted(_VALID_TIF))}"}
+
+        if qty is not None:
+            qty_f = _sf(qty)
+            if qty_f is None or qty_f <= 0:
+                return {"error": "qty must be a positive number"}
+        if notional is not None:
+            notional_f = _sf(notional)
+            if notional_f is None or notional_f <= 0:
+                return {"error": "notional must be a positive number"}
+        if limit_price is not None:
+            lp = _sf(limit_price)
+            if lp is None or lp <= 0:
+                return {"error": "limit_price must be a positive number"}
+        if stop_price is not None:
+            sp = _sf(stop_price)
+            if sp is None or sp <= 0:
+                return {"error": "stop_price must be a positive number"}
+
         body: Dict[str, Any] = {
-            "symbol": symbol.upper(),
+            "symbol": symbol.upper().strip(),
             "side": side.lower(),
             "type": order_type.lower(),
             "time_in_force": time_in_force.lower(),
