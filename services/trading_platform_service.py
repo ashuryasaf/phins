@@ -117,53 +117,9 @@ GLOBAL_BENCHMARKS = {
     },
 }
 
-# Baseline prices so the dashboard is never empty.
-# Updated from recent market data; overwritten by live quotes when available.
-_BASELINE_PRICES: Dict[str, Dict[str, Any]] = {
-    # Indices
-    "SPY": {"price": 655.83, "change_pct": "+0.09"},
-    "QQQ": {"price": 584.98, "change_pct": "+0.11"},
-    "DIA": {"price": 465.06, "change_pct": "-0.09"},
-    "IWM": {"price": 251.29, "change_pct": "+0.69"},
-    "VTI": {"price": 288.50, "change_pct": "+0.15"},
-    "EFA": {"price": 98.00, "change_pct": "-0.62"},
-    "EEM": {"price": 47.15, "change_pct": "+0.32"},
-    "VGK": {"price": 70.85, "change_pct": "+0.18"},
-    "EWJ": {"price": 72.40, "change_pct": "+0.45"},
-    "FXI": {"price": 30.20, "change_pct": "+1.10"},
-    # Mega caps
-    "AAPL": {"price": 227.50, "change_pct": "+0.85"},
-    "MSFT": {"price": 442.30, "change_pct": "+0.52"},
-    "NVDA": {"price": 138.50, "change_pct": "+3.20"},
-    "GOOGL": {"price": 178.90, "change_pct": "+0.65"},
-    "AMZN": {"price": 205.70, "change_pct": "+0.92"},
-    "META": {"price": 612.40, "change_pct": "+1.15"},
-    "TSLA": {"price": 272.80, "change_pct": "-1.50"},
-    # Crypto
-    "BTC/USD": {"price": 67594.00, "change_pct": "-1.25"},
-    "ETH/USD": {"price": 2069.21, "change_pct": "-2.40"},
-    "SOL/USD": {"price": 80.24, "change_pct": "-3.15"},
-    "DOGE/USD": {"price": 0.185, "change_pct": "+2.80"},
-    "AVAX/USD": {"price": 22.50, "change_pct": "+1.45"},
-    # Commodities
-    "GLD": {"price": 305.20, "change_pct": "+0.85"},
-    "SLV": {"price": 33.45, "change_pct": "+1.20"},
-    "USO": {"price": 62.80, "change_pct": "-2.15"},
-    "UNG": {"price": 14.20, "change_pct": "-0.70"},
-    "CPER": {"price": 28.90, "change_pct": "+0.55"},
-    # Bonds
-    "TLT": {"price": 88.50, "change_pct": "+0.42"},
-    "IEF": {"price": 95.80, "change_pct": "+0.18"},
-    "BND": {"price": 71.20, "change_pct": "+0.15"},
-    "HYG": {"price": 77.85, "change_pct": "+0.08"},
-    "LQD": {"price": 108.30, "change_pct": "+0.12"},
-    # Sectors
-    "XLK": {"price": 228.50, "change_pct": "+0.72"},
-    "XLF": {"price": 48.20, "change_pct": "+0.35"},
-    "XLE": {"price": 82.10, "change_pct": "-1.20"},
-    "XLV": {"price": 145.60, "change_pct": "+0.28"},
-    "XLI": {"price": 128.90, "change_pct": "+0.42"},
-}
+# Live price cache — populated exclusively from Alpaca API data.
+# No static/mock prices. Missing data is reported as None.
+_LIVE_PRICE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 # Map Alpha Vantage lookup symbols for items that need translation
 _AV_SYMBOL_MAP: Dict[str, str] = {
@@ -944,8 +900,10 @@ class TradingPlatformService:
 
     def search_assets(self, query: str = "", asset_class: str = "us_equity", status: str = "active") -> List[Dict[str, Any]]:
         if not self.is_connected:
-            from services.investment_ai_tool_service import STOCK_DATABASE
-            return [{"symbol": k, "name": v.get("name", k), "asset_class": "us_equity", "tradable": True} for k, v in STOCK_DATABASE.items() if query.upper() in k or query.lower() in v.get("name", "").lower()][:20]
+            from services.ai_trading_engine import UNIVERSE
+            all_syms = [s for syms in UNIVERSE.values() for s in syms if "/" not in s]
+            q = query.upper()
+            return [{"symbol": s, "name": s, "asset_class": "us_equity", "tradable": True} for s in all_syms if q in s][:20]
         cache_key = f"assets:{query}:{asset_class}"
         cached = self._cached(cache_key, 300.0)
         if cached:
@@ -1100,33 +1058,31 @@ class TradingPlatformService:
 
     def get_global_dashboard(self) -> Dict[str, Any]:
         """
-        Bloomberg-style global market overview.
-        Always returns data: live > cached > baseline. Never shows '—'.
+        Bloomberg-style global market overview — 100% live Alpaca data.
+        Returns only what we can fetch in real-time. No mock/baseline fallback.
         """
-        cached = self._cached("global_dash", 180.0)
+        cached = self._cached("global_dash", 60.0)
         if cached:
             return cached
 
         live_prices = self._fetch_global_prices()
 
-        dashboard: Dict[str, List[Dict]] = {"indices": [], "crypto": [], "commodities": [], "bonds": []}
+        dashboard: Dict[str, List[Dict]] = {}
+        for category_key in GLOBAL_BENCHMARKS:
+            dashboard[category_key] = []
 
         for category_key, category_data in GLOBAL_BENCHMARKS.items():
             for sym, meta in category_data.items():
                 live = live_prices.get(sym, {})
-                baseline = _BASELINE_PRICES.get(sym, {})
-
-                price = live.get("price") or baseline.get("price")
-                change = live.get("change_pct") or baseline.get("change_pct")
-                source = "live" if live.get("price") else "baseline"
-
+                price = live.get("price")
+                change = live.get("change_pct")
                 dashboard[category_key].append({
                     "symbol": sym,
                     "name": meta["name"],
                     "price": price,
                     "change_pct": change,
                     "region": meta.get("region"),
-                    "source": source,
+                    "source": "live" if price else "unavailable",
                 })
 
         result = {
@@ -1228,13 +1184,10 @@ class TradingPlatformService:
                             pass
                     time.sleep(0.8)
 
-        # Update baselines with any live data we got
+        # Cache live prices for cross-module access
         for sym, data in prices.items():
             if data.get("price"):
-                _BASELINE_PRICES[sym] = {
-                    "price": data["price"],
-                    "change_pct": data.get("change_pct") or _BASELINE_PRICES.get(sym, {}).get("change_pct"),
-                }
+                _LIVE_PRICE_CACHE[sym] = data
 
         return prices
 
@@ -1244,47 +1197,56 @@ class TradingPlatformService:
 
     def ai_copilot_analyze(self, symbol: str, context: str = "") -> Dict[str, Any]:
         """
-        AI Copilot: real-time analysis for a trade decision.
-        Combines: live quote, technicals, fundamentals, news, position info.
+        AI Copilot: real-time analysis powered by live Alpaca data.
+        Uses ai_trading_engine for technicals and signals — zero mock data.
         """
-        try:
-            from services.investment_ai_tool_service import (
-                deep_dive_analysis, _get_live_quote, _get_live_technical_profile,
-                STOCK_DATABASE, _get_live_news,
-            )
-        except ImportError:
-            return {"error": "Investment AI service unavailable"}
+        from services.ai_trading_engine import compute_technicals, generate_signals, compute_risk_metrics
 
         sym = symbol.upper()
-        quote = _get_live_quote(sym)
-        profile = _get_live_technical_profile(sym)
-        news = _get_live_news(sym)
-        static = STOCK_DATABASE.get(sym, {})
 
-        price = (quote or {}).get("price") or static.get("price")
-        signals = (profile or {}).get("signals", {})
+        # Fetch live bars from Alpaca
+        bars_raw = self.get_bars(sym, timeframe="1Day", limit=100)
+        if not bars_raw:
+            return {"error": f"No market data available for {sym}. Verify symbol and Alpaca connection."}
+
+        # Compute real technicals from live bars
+        technicals = compute_technicals(bars_raw)
+        indicators = technicals.get("indicators", {})
+
+        latest_bar = bars_raw[-1] if bars_raw else {}
+        price = _sf(latest_bar.get("close")) or 0
+        if not price or price <= 0:
+            return {"error": f"No live price for {sym}"}
+
+        # Generate AI signals from real technicals
+        signals = generate_signals(technicals, price)
         recommendation = signals.get("recommendation", "HOLD")
         score = signals.get("composite_score", 0)
+        confidence = signals.get("confidence", 0)
 
-        current_position = None
+        # Risk metrics from real data
         positions = self.get_positions()
+        risk = compute_risk_metrics(bars_raw, positions)
+
+        # Current position
+        current_position = None
         for pos in positions:
             if pos.get("symbol") == sym:
                 current_position = pos
                 break
 
         account = self.get_account()
-        buying_power = account.get("buying_power", 0)
+        buying_power = _sf(account.get("buying_power")) or 0
 
         risk_pct = 0.02
-        if abs(score) >= 4:
+        if abs(score) >= 3:
             risk_pct = 0.03
         elif abs(score) <= 1:
             risk_pct = 0.01
 
-        portfolio_val = account.get("portfolio_value", 0) or account.get("equity", 100000)
-        max_trade_value = portfolio_val * risk_pct
-        suggested_qty = int(max_trade_value / price) if price and price > 0 else 0
+        portfolio_val = _sf(account.get("portfolio_value")) or _sf(account.get("equity")) or 0
+        max_trade_value = portfolio_val * risk_pct if portfolio_val > 0 else 0
+        suggested_qty = int(max_trade_value / price) if price > 0 else 0
 
         copilot_action = "hold"
         if "STRONG BUY" in recommendation:
@@ -1297,17 +1259,29 @@ class TradingPlatformService:
             copilot_action = "sell"
 
         if current_position and copilot_action in ("strong_sell", "sell"):
-            if (current_position.get("unrealized_pl") or 0) > 0:
+            if (_sf(current_position.get("unrealized_pl")) or 0) > 0:
                 copilot_action = "take_profit"
 
-        stop_loss = round(price * 0.97, 2) if price else None
-        take_profit = round(price * 1.06, 2) if price else None
+        atr = _sf(indicators.get("atr_14"))
+        stop_loss = round(price - (atr * 2), 2) if atr and atr > 0 else round(price * 0.97, 2)
+        take_profit = round(price + (atr * 3), 2) if atr and atr > 0 else round(price * 1.06, 2)
 
-        news_articles = (news or {}).get("articles", [])[:3]
-        sentiment_avg = 0
-        if news_articles:
-            scores = [a.get("overall_sentiment_score", 0) for a in news_articles if a.get("overall_sentiment_score")]
-            sentiment_avg = sum(scores) / len(scores) if scores else 0
+        # Try to get news from investment AI if available
+        news_data = {}
+        try:
+            from services.investment_ai_tool_service import _get_live_news
+            news_raw = _get_live_news(sym)
+            if news_raw:
+                articles = (news_raw or {}).get("articles", [])[:3]
+                scores_list = [a.get("overall_sentiment_score", 0) for a in articles if a.get("overall_sentiment_score")]
+                sentiment_avg = sum(scores_list) / len(scores_list) if scores_list else 0
+                news_data = {
+                    "avg_score": round(sentiment_avg, 3),
+                    "label": "bullish" if sentiment_avg > 0.1 else ("bearish" if sentiment_avg < -0.1 else "neutral"),
+                    "articles": articles,
+                }
+        except Exception:
+            news_data = {"avg_score": 0, "label": "unavailable", "articles": []}
 
         return {
             "symbol": sym,
@@ -1315,8 +1289,30 @@ class TradingPlatformService:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "ai_recommendation": recommendation,
             "composite_score": score,
+            "confidence": round(confidence, 2),
             "copilot_action": copilot_action,
             "signal_details": signals.get("details", []),
+            "technicals": {
+                "rsi": indicators.get("rsi_14"),
+                "macd": indicators.get("macd_line"),
+                "macd_signal": indicators.get("macd_signal"),
+                "macd_histogram": indicators.get("macd_histogram"),
+                "bb_upper": indicators.get("bb_upper"),
+                "bb_middle": indicators.get("bb_middle"),
+                "bb_lower": indicators.get("bb_lower"),
+                "bb_width": indicators.get("bb_width"),
+                "sma_20": indicators.get("sma_20"),
+                "sma_50": indicators.get("sma_50"),
+                "ema_12": indicators.get("ema_12"),
+                "ema_26": indicators.get("ema_26"),
+                "atr": indicators.get("atr_14"),
+                "obv": indicators.get("obv"),
+                "vwap": indicators.get("vwap"),
+                "stoch_k": indicators.get("stoch_k"),
+                "stoch_d": indicators.get("stoch_d"),
+                "volume_ratio": indicators.get("volume_ratio"),
+            },
+            "risk_metrics": risk,
             "trade_suggestion": {
                 "action": copilot_action,
                 "qty": suggested_qty,
@@ -1332,11 +1328,9 @@ class TradingPlatformService:
                 "portfolio_value": portfolio_val,
                 "paper": self.is_paper,
             },
-            "news_sentiment": {
-                "avg_score": round(sentiment_avg, 3),
-                "label": "bullish" if sentiment_avg > 0.1 else ("bearish" if sentiment_avg < -0.1 else "neutral"),
-                "articles": news_articles,
-            },
+            "news_sentiment": news_data,
+            "bars_count": len(bars_raw),
+            "data_source": "alpaca_live",
         }
 
     # ==================================================================
@@ -1884,6 +1878,36 @@ def _sf(val: Any) -> Optional[float]:
         return f if math.isfinite(f) else None
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Auto-Pilot Engine singleton
+# ---------------------------------------------------------------------------
+
+_autopilot_engine = None
+
+
+def get_autopilot_engine():
+    global _autopilot_engine
+    if _autopilot_engine is None:
+        from services.ai_trading_engine import AutoPilotEngine
+        _autopilot_engine = AutoPilotEngine()
+    return _autopilot_engine
+
+
+# ---------------------------------------------------------------------------
+# Live Screener singleton
+# ---------------------------------------------------------------------------
+
+_live_screener = None
+
+
+def get_live_screener():
+    global _live_screener
+    if _live_screener is None:
+        from services.ai_trading_engine import LiveScreener
+        _live_screener = LiveScreener()
+    return _live_screener
 
 
 # ---------------------------------------------------------------------------

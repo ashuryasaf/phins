@@ -17894,6 +17894,154 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(_trading_platform.broker_get_accounts(), default=str).encode('utf-8'))
             return
 
+        # ========== AUTO-PILOT & SCREENER API (GET) ==========
+
+        if path == '/api/terminal/autopilot/bots':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(engine.get_bots(), default=str).encode('utf-8'))
+            return
+
+        if path.startswith('/api/terminal/autopilot/bot/') and path.endswith('/evaluate'):
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            bot_id = path.split('/')[5]
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            bot_info = next((b for b in engine.get_bots() if b.get('id') == bot_id), None)
+            bars_map = {}
+            if bot_info:
+                for sym in bot_info.get('symbols', []):
+                    bars_map[sym] = _trading_platform.get_bars(sym, '1Day', 100)
+            result = engine.evaluate_bot(bot_id, bars_map)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path.startswith('/api/terminal/autopilot/bot/') and path.endswith('/performance'):
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            bot_id = path.split('/')[5]
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            result = engine.get_bot_performance(bot_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/autopilot/strategies':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.ai_trading_engine import AutoPilotEngine
+            strategies = AutoPilotEngine.available_strategies()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(strategies, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/screener/scan':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            sector = qs.get('sector', [''])[0]
+            from services.trading_platform_service import get_live_screener
+            from services.ai_trading_engine import UNIVERSE
+            screener = get_live_screener()
+            if sector and sector in UNIVERSE:
+                symbols = UNIVERSE[sector]
+            else:
+                symbols = [s for sec in ['mega_cap', 'tech', 'energy', 'finance'] for s in UNIVERSE.get(sec, [])]
+            result = screener.scan_universe(_trading_platform, symbols)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/screener/sectors':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_live_screener
+            screener = get_live_screener()
+            result = screener.get_sector_heatmap(_trading_platform)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/screener/movers':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_live_screener
+            screener = get_live_screener()
+            limit = int(qs.get('limit', ['20'])[0])
+            result = screener.get_top_movers(_trading_platform, limit=limit)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/universe':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.ai_trading_engine import UNIVERSE
+            self._set_json_headers()
+            self.wfile.write(json.dumps(UNIVERSE, default=str).encode('utf-8'))
+            return
+
         # ========== END INVESTMENT AI TOOL API (GET) ==========
         
         # Reconcile balances
@@ -22838,6 +22986,100 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
+        # ========== AUTO-PILOT API (POST) ==========
+
+        if path == '/api/terminal/autopilot/create':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            result = engine.create_bot(
+                strategy_name=body_data.get('strategy', ''),
+                symbols=body_data.get('symbols', []),
+                config=body_data.get('config', {}),
+            )
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/autopilot/execute':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            bot_id = body_data.get('bot_id', '')
+            if not bot_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'bot_id required'}).encode('utf-8'))
+                return
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            bot_info = next((b for b in engine.get_bots() if b.get('id') == bot_id), None)
+            bars_map = {}
+            if bot_info:
+                for sym in bot_info.get('symbols', []):
+                    bars_map[sym] = _trading_platform.get_bars(sym, '1Day', 100)
+            result = engine.execute_bot_trades(bot_id, _trading_platform, bars_map)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/terminal/autopilot/control':
+            if not trading_platform_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
+                return
+            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                body_data = {}
+            if not ai_key:
+                ai_key = body_data.get('api_key', '')
+            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
+                return
+            bot_id = body_data.get('bot_id', '')
+            action = body_data.get('action', '')
+            from services.trading_platform_service import get_autopilot_engine
+            engine = get_autopilot_engine()
+            if action == 'pause':
+                result = engine.pause_bot(bot_id)
+            elif action == 'resume':
+                result = engine.resume_bot(bot_id)
+            elif action == 'delete':
+                result = engine.delete_bot(bot_id)
+            else:
+                result = {'error': f'Unknown action: {action}'}
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
         # ========== END TRADING TERMINAL API (POST) ==========
 
         # Demo login endpoint with secure password verification

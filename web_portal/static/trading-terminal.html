@@ -227,9 +227,10 @@
     <div class="panel panel-bottom-inner" id="panelBottom">
         <div class="bottom-tabs">
             <button class="bottom-tab active" onclick="switchBottomTab('global',this)">Global</button>
+            <button class="bottom-tab" onclick="switchBottomTab('screener',this)">Screener</button>
             <button class="bottom-tab" onclick="switchBottomTab('options',this)">Options</button>
-            <button class="bottom-tab" onclick="switchBottomTab('report',this)">Report</button>
-            <button class="bottom-tab" onclick="switchBottomTab('scanner',this)">Scanner</button>
+            <button class="bottom-tab" onclick="switchBottomTab('autopilot',this)">AutoPilot</button>
+            <button class="bottom-tab" onclick="switchBottomTab('scanner',this)">AI Scanner</button>
             <button class="bottom-tab" onclick="switchBottomTab('bi',this)">BI Analytics</button>
             <button class="bottom-tab" onclick="switchBottomTab('aiopt',this)">AI Optimize</button>
             <button class="bottom-tab" onclick="switchBottomTab('integrity',this)">Integrity</button>
@@ -248,11 +249,52 @@
                 <div style="color:var(--muted);text-align:center;padding:20px;">Enter an underlying symbol and click Load Chain to view options</div>
             </div>
         </div>
-        <div id="tab-report" class="tab-content">
-            <div id="reportPanel" class="report-grid">Loading report...</div>
+        <div id="tab-report" class="tab-content" style="display:none;"></div>
+        <div id="tab-screener" class="tab-content">
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+                <select id="screenerSector" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:18px;font-family:inherit;border-radius:3px;">
+                    <option value="">All Sectors</option>
+                    <option value="mega_cap">Mega Cap</option>
+                    <option value="tech">Technology</option>
+                    <option value="finance">Finance</option>
+                    <option value="energy">Energy</option>
+                    <option value="healthcare">Healthcare</option>
+                    <option value="consumer">Consumer</option>
+                    <option value="industrial">Industrial</option>
+                    <option value="etf_indices">ETF Indices</option>
+                    <option value="sector_etfs">Sector ETFs</option>
+                    <option value="commodities">Commodities</option>
+                    <option value="bonds">Bonds</option>
+                    <option value="crypto">Crypto</option>
+                </select>
+                <button onclick="loadLiveScreener()" style="background:var(--gold);color:#000;border:none;padding:6px 16px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">SCAN</button>
+                <button onclick="loadTopMovers()" style="background:var(--cyan);color:#000;border:none;padding:6px 16px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">TOP MOVERS</button>
+                <button onclick="loadSectorHeatmap()" style="background:var(--purple);color:#fff;border:none;padding:6px 16px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">HEATMAP</button>
+            </div>
+            <div id="screenerPanel" style="overflow-y:auto;max-height:220px;">Select a sector and click SCAN for live Alpaca data...</div>
+        </div>
+        <div id="tab-autopilot" class="tab-content">
+            <div style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-end;flex-wrap:wrap;">
+                <div><label style="color:var(--muted);font-size:16px;display:block;">Strategy</label>
+                    <select id="apStrategy" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;font-size:18px;font-family:inherit;border-radius:3px;">
+                        <option value="momentum">Momentum</option>
+                        <option value="mean_reversion">Mean Reversion</option>
+                        <option value="breakout">Breakout</option>
+                        <option value="macro_sentiment">Macro Sentiment</option>
+                        <option value="crypto_momentum">Crypto Momentum</option>
+                        <option value="quantum_scalp">Quantum Scalp</option>
+                    </select>
+                </div>
+                <div><label style="color:var(--muted);font-size:16px;display:block;">Symbols (comma)</label>
+                    <input type="text" id="apSymbols" value="AAPL,MSFT,NVDA" style="background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:6px 10px;font-size:18px;width:200px;text-transform:uppercase;font-family:inherit;border-radius:3px;">
+                </div>
+                <button onclick="createBot()" style="background:var(--green);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">CREATE BOT</button>
+                <button onclick="loadBots()" style="background:var(--gold);color:#000;border:none;padding:8px 18px;font-weight:700;font-size:18px;cursor:pointer;font-family:inherit;border-radius:3px;">REFRESH</button>
+            </div>
+            <div id="autopilotPanel" style="overflow-y:auto;max-height:220px;">Create an auto-pilot bot to start AI-driven trading...</div>
         </div>
         <div id="tab-scanner" class="tab-content">
-            <div id="scannerPanel" style="overflow-y:auto;max-height:250px;">Loading scanner...</div>
+            <div id="scannerPanel" style="overflow-y:auto;max-height:250px;">Loading AI scanner...</div>
         </div>
         <div id="tab-bi" class="tab-content">
             <div id="biPanel" style="overflow-y:auto;max-height:260px;">Click BI Analytics tab to load...</div>
@@ -403,23 +445,21 @@ let forecastData = null;
 let crosshairPos = null;
 let cachedPositions = [];
 
-const SCANNER_STOCKS = [
-    {symbol:'AAPL',name:'Apple Inc',sector:'Technology'},
-    {symbol:'MSFT',name:'Microsoft',sector:'Technology'},
-    {symbol:'GOOGL',name:'Alphabet',sector:'Technology'},
-    {symbol:'AMZN',name:'Amazon',sector:'Consumer Cyclical'},
-    {symbol:'NVDA',name:'NVIDIA',sector:'Technology'},
-    {symbol:'META',name:'Meta Platforms',sector:'Technology'},
-    {symbol:'TSLA',name:'Tesla',sector:'Consumer Cyclical'},
-    {symbol:'JPM',name:'JPMorgan Chase',sector:'Financial'},
-    {symbol:'V',name:'Visa Inc',sector:'Financial'},
-    {symbol:'JNJ',name:'Johnson & Johnson',sector:'Healthcare'},
-    {symbol:'WMT',name:'Walmart',sector:'Consumer Defensive'},
-    {symbol:'XOM',name:'Exxon Mobil',sector:'Energy'},
-    {symbol:'UNH',name:'UnitedHealth',sector:'Healthcare'},
-    {symbol:'BAC',name:'Bank of America',sector:'Financial'},
-    {symbol:'DIS',name:'Walt Disney',sector:'Communication'}
-];
+let SCANNER_SYMBOLS = ['AAPL','MSFT','GOOGL','AMZN','NVDA','META','TSLA','JPM','V','XOM','UNH','BAC','GLD','USO','BTC/USD'];
+let UNIVERSE_DATA = {};
+
+async function loadUniverse() {
+    try {
+        const d = await apiFetch('/api/terminal/universe');
+        if (d && !d.error) {
+            UNIVERSE_DATA = d;
+            SCANNER_SYMBOLS = [];
+            for (const [sector, syms] of Object.entries(d)) {
+                SCANNER_SYMBOLS.push(...syms.slice(0, 3));
+            }
+        }
+    } catch(e) {}
+}
 
 document.getElementById('orderType').addEventListener('change', function() {
     const v = this.value;
@@ -549,11 +589,12 @@ function switchBottomTab(tab, btn) {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     btn.classList.add('active');
     $('tab-' + tab).classList.add('active');
-    if (tab === 'report') loadReport();
     if (tab === 'scanner') loadScanner();
     if (tab === 'bi') loadBiAnalytics();
     if (tab === 'aiopt') loadAiOptimize();
     if (tab === 'integrity') loadIntegrity();
+    if (tab === 'autopilot') loadBots();
+    if (tab === 'screener') { /* loaded on button click */ }
     if (tab === 'options') { /* loaded on button click */ }
 }
 
@@ -963,6 +1004,7 @@ async function initTerminal() {
     if (!apiKey) { promptKey(); return; }
     setupCrosshair($('terminalChart'));
     checkBrokerHealth();
+    loadUniverse();
     loadAccount();
     loadPositions();
     loadGlobalDashboard();
@@ -1055,7 +1097,9 @@ async function loadGlobalDashboard() {
         if (!d.dashboard) return;
         let html = '';
         const categories = [
-            ['Indices', d.dashboard.indices],
+            ['Indices', d.dashboard.etf_indices || d.dashboard.indices],
+            ['Mega Caps', d.dashboard.mega_caps],
+            ['Sectors', d.dashboard.sectors],
             ['Crypto', d.dashboard.crypto],
             ['Commodities', d.dashboard.commodities],
             ['Bonds', d.dashboard.bonds],
@@ -1091,24 +1135,35 @@ async function loadGlobalDashboard() {
 // --- Load Chart ---
 async function loadChart() {
     chartSym = $('chartSymbol').value.toUpperCase() || 'SPY';
+    const tfMap = {'1D':'1Day','1W':'1Day','1M':'1Day','3M':'1Day','1Y':'1Week'};
+    const limitMap = {'1D':'1','1W':'5','1M':'30','3M':'90','1Y':'52'};
+    const alpacaTF = tfMap[chartTF] || '1Day';
+    const limit = parseInt(limitMap[chartTF] || '100');
     try {
-        const d = await apiPost('/api/investment-ai/analyze', { module: 'deep_dive', params: { symbol: chartSym, timeframe: chartTF } });
-        const bars = (d.chart_data || {}).bars || [];
+        const bars = await apiFetch('/api/terminal/bars?symbol=' + chartSym + '&timeframe=' + alpacaTF + '&limit=' + Math.max(limit, 50));
+        if (!Array.isArray(bars) || bars.length === 0) {
+            globalChartBars = [];
+            lastChartData = null;
+            drawTerminalChart([], chartSym, null, false);
+            return;
+        }
         globalChartBars = bars;
-        lastChartData = d;
+        lastChartData = {};
 
-        const closes = bars.map(b => b.close || 0).reverse();
+        const closes = bars.map(b => b.close || 0);
         forecastData = computeForecast(closes, 5);
 
         if (comparisonMode && comparisonSymbol) {
             try {
-                const d2 = await apiPost('/api/investment-ai/analyze', { module: 'deep_dive', params: { symbol: comparisonSymbol, timeframe: chartTF } });
-                comparisonBars = ((d2.chart_data || {}).bars || []);
+                const cmpBars = await apiFetch('/api/terminal/bars?symbol=' + comparisonSymbol + '&timeframe=' + alpacaTF + '&limit=' + Math.max(limit, 50));
+                comparisonBars = Array.isArray(cmpBars) ? cmpBars : [];
             } catch(e2) { comparisonBars = []; }
         }
 
-        drawTerminalChart(bars, chartSym, d, false);
-    } catch(e) {}
+        drawTerminalChart(bars, chartSym, lastChartData, false);
+    } catch(e) {
+        console.error('Chart load error:', e);
+    }
 }
 
 function setChartTF(tf) {
@@ -1151,12 +1206,12 @@ function drawTerminalChart(bars, symbol, data, isRedraw) {
         return;
     }
 
-    const opens = bars.map(b => b.open || b.close || 0).reverse();
-    const closes = bars.map(b => b.close || 0).reverse();
-    const highs = bars.map(b => b.high || b.close || 0).reverse();
-    const lows = bars.map(b => b.low || b.close || 0).reverse();
-    const volumes = bars.map(b => b.volume || 0).reverse();
-    const dates = bars.map(b => b.date || b.timestamp || '').reverse();
+    const opens = bars.map(b => b.open || b.close || 0);
+    const closes = bars.map(b => b.close || 0);
+    const highs = bars.map(b => b.high || b.close || 0);
+    const lows = bars.map(b => b.low || b.close || 0);
+    const volumes = bars.map(b => b.volume || 0);
+    const dates = bars.map(b => b.date || b.timestamp || '');
 
     const priceScaleW = 90;
     const padT = 50;
@@ -1434,7 +1489,9 @@ async function runCopilot() {
         html += `<div class="copilot-rec ${recCls}">${rec}</div>`;
         html += `<div class="copilot-card"><div class="card-label">PRICE & ACTION</div>`;
         html += `<div style="font-size:26px;font-weight:700;">$${fmt(d.price)}</div>`;
-        html += `<div style="color:var(--muted);margin-top:3px;">Score: ${d.composite_score} | Action: <span style="color:var(--gold);">${d.copilot_action}</span></div></div>`;
+        const confPct = d.confidence ? (d.confidence * 100).toFixed(0) + '%' : '—';
+        html += `<div style="color:var(--muted);margin-top:3px;">Score: ${d.composite_score} | Confidence: ${confPct} | Action: <span style="color:var(--gold);">${d.copilot_action}</span></div>`;
+        html += `<div style="color:var(--muted);font-size:14px;margin-top:2px;">Source: ${d.data_source || 'live'} | ${d.bars_count || 0} bars analyzed</div></div>`;
 
         if (d.trade_suggestion) {
             const ts = d.trade_suggestion;
@@ -1445,8 +1502,35 @@ async function runCopilot() {
             $('orderQty').value = ts.qty || 1;
         }
 
+        if (d.technicals) {
+            const t = d.technicals;
+            html += `<div class="copilot-card"><div class="card-label">REAL-TIME TECHNICALS (Alpaca)</div>`;
+            html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:18px;">`;
+            if (t.rsi != null) html += `<span style="color:var(--muted);">RSI(14)</span><span style="color:${t.rsi>70?'var(--red)':(t.rsi<30?'var(--green)':'var(--text)')};font-weight:700;">${Number(t.rsi).toFixed(1)}</span>`;
+            if (t.macd != null) html += `<span style="color:var(--muted);">MACD</span><span style="color:${t.macd>0?'var(--green)':'var(--red)'};">${Number(t.macd).toFixed(3)}</span>`;
+            if (t.macd_signal != null) html += `<span style="color:var(--muted);">Signal</span><span>${Number(t.macd_signal).toFixed(3)}</span>`;
+            if (t.bb_upper != null) html += `<span style="color:var(--muted);">BB Upper</span><span>$${Number(t.bb_upper).toFixed(2)}</span>`;
+            if (t.bb_lower != null) html += `<span style="color:var(--muted);">BB Lower</span><span>$${Number(t.bb_lower).toFixed(2)}</span>`;
+            if (t.sma_20 != null) html += `<span style="color:var(--muted);">SMA(20)</span><span>$${Number(t.sma_20).toFixed(2)}</span>`;
+            if (t.sma_50 != null) html += `<span style="color:var(--muted);">SMA(50)</span><span>$${Number(t.sma_50).toFixed(2)}</span>`;
+            if (t.atr != null) html += `<span style="color:var(--muted);">ATR(14)</span><span>$${Number(t.atr).toFixed(2)}</span>`;
+            if (t.stoch_k != null) html += `<span style="color:var(--muted);">Stoch %K</span><span>${Number(t.stoch_k).toFixed(1)}</span>`;
+            html += `</div></div>`;
+        }
+
+        if (d.risk_metrics && Object.keys(d.risk_metrics).length > 0) {
+            const rm = d.risk_metrics;
+            html += `<div class="copilot-card"><div class="card-label">RISK METRICS</div>`;
+            html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:18px;">`;
+            if (rm.volatility_annual != null) html += `<span style="color:var(--muted);">Volatility</span><span>${Number(rm.volatility_annual).toFixed(1)}%</span>`;
+            if (rm.var_95 != null) html += `<span style="color:var(--muted);">VaR 95%</span><span style="color:var(--red);">${Number(rm.var_95).toFixed(2)}%</span>`;
+            if (rm.max_drawdown != null) html += `<span style="color:var(--muted);">Max DD</span><span style="color:var(--red);">${Number(rm.max_drawdown).toFixed(2)}%</span>`;
+            if (rm.sharpe_ratio != null) html += `<span style="color:var(--muted);">Sharpe</span><span>${Number(rm.sharpe_ratio).toFixed(2)}</span>`;
+            html += `</div></div>`;
+        }
+
         if (d.signal_details && d.signal_details.length) {
-            html += `<div class="copilot-card"><div class="card-label">SIGNALS</div>`;
+            html += `<div class="copilot-card"><div class="card-label">AI SIGNALS</div>`;
             d.signal_details.forEach(s => {
                 const cls = s.bias === 'bullish' || s.bias === 'mildly_bullish' ? 'signal-bull' : (s.bias === 'bearish' || s.bias === 'mildly_bearish' ? 'signal-bear' : 'signal-neut');
                 html += `<div class="signal-item ${cls}">${s.signal} ${s.value !== undefined ? '('+s.value+')' : ''}</div>`;
@@ -1650,34 +1734,214 @@ function formatScannerScore(score) {
 }
 
 async function loadScanner() {
-    $('scannerPanel').innerHTML = '<div style="color:var(--muted);padding:8px 0;">Loading live AI scanner...</div>';
+    $('scannerPanel').innerHTML = '<div style="color:var(--muted);padding:8px 0;">Running AI analysis on live Alpaca data...</div>';
 
-    const analyses = await Promise.all(SCANNER_STOCKS.map(async stock => {
+    const symbols = SCANNER_SYMBOLS.filter(s => !s.includes('/'));
+    const analyses = await Promise.all(symbols.map(async sym => {
         try {
-            const d = await apiFetch('/api/terminal/copilot?symbol=' + encodeURIComponent(stock.symbol));
-            return { stock, analysis: d && !d.error ? d : null };
+            const d = await apiFetch('/api/terminal/copilot?symbol=' + encodeURIComponent(sym));
+            return { symbol: sym, analysis: d && !d.error ? d : null };
         } catch(e) {
-            return { stock, analysis: null };
+            return { symbol: sym, analysis: null };
         }
     }));
 
-    let html = '<table class="scanner-table"><thead><tr><th>Symbol</th><th>Name</th><th>Sector</th><th>Score</th><th>Signal</th></tr></thead><tbody>';
+    let html = '<table class="scanner-table"><thead><tr><th>Symbol</th><th>Price</th><th>Signal</th><th>Score</th><th>RSI</th><th>MACD</th><th>Confidence</th><th>Action</th></tr></thead><tbody>';
 
-    analyses.forEach(({ stock, analysis }) => {
-        const signal = ((analysis || {}).ai_recommendation || 'UNAVAILABLE').toUpperCase();
+    analyses.forEach(({ symbol, analysis }) => {
+        const signal = ((analysis || {}).ai_recommendation || '—').toUpperCase();
         const { color: sigColor, background: sigBg } = getScannerSignalStyles(signal);
         const score = formatScannerScore((analysis || {}).composite_score);
+        const tech = (analysis || {}).technicals || {};
+        const rsi = tech.rsi != null ? tech.rsi.toFixed(1) : '—';
+        const macd = tech.macd != null ? tech.macd.toFixed(3) : '—';
+        const conf = (analysis || {}).confidence != null ? ((analysis.confidence * 100).toFixed(0) + '%') : '—';
+        const price = (analysis || {}).price ? '$' + Number(analysis.price).toFixed(2) : '—';
+        const action = (analysis || {}).copilot_action || '—';
 
-        html += `<tr onclick="$('chartSymbol').value='${stock.symbol}';$('copilotSymbol').value='${stock.symbol}';loadChart();runCopilot();">
-            <td style="color:var(--gold);font-weight:700;">${stock.symbol}</td>
-            <td style="color:var(--muted);">${stock.name}</td>
-            <td style="color:var(--muted);font-size:16px;">${stock.sector}</td>
-            <td><span class="scanner-score" style="color:${sigColor};background:${sigBg};">${score}</span></td>
+        html += `<tr onclick="$('chartSymbol').value='${symbol}';$('copilotSymbol').value='${symbol}';loadChart();runCopilot();">
+            <td style="color:var(--gold);font-weight:700;">${symbol}</td>
+            <td>${price}</td>
             <td style="color:${sigColor};font-weight:700;">${signal}</td>
+            <td><span class="scanner-score" style="color:${sigColor};background:${sigBg};">${score}</span></td>
+            <td>${rsi}</td>
+            <td>${macd}</td>
+            <td>${conf}</td>
+            <td style="color:${sigColor};">${action}</td>
         </tr>`;
     });
     html += '</tbody></table>';
+    html += `<div style="color:var(--muted);font-size:14px;margin-top:6px;">Source: Live Alpaca bars → AI Technical Engine | ${analyses.length} symbols scanned</div>`;
     $('scannerPanel').innerHTML = html;
+}
+
+// --- Live Screener ---
+async function loadLiveScreener() {
+    const sector = $('screenerSector').value;
+    $('screenerPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Scanning live Alpaca data...</div>';
+    try {
+        const url = '/api/terminal/screener/scan' + (sector ? '?sector=' + sector : '');
+        const d = await apiFetch(url);
+        if (!Array.isArray(d) || d.length === 0) {
+            $('screenerPanel').innerHTML = '<div style="color:var(--muted);padding:10px;">No data. Connect Alpaca API keys.</div>';
+            return;
+        }
+        let html = '<table class="scanner-table"><thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Signal</th><th>Score</th><th>RSI</th><th>Volume</th></tr></thead><tbody>';
+        d.forEach(item => {
+            const chg = parseFloat(item.change_pct || 0);
+            const cls = chg > 0 ? 'tick-up' : (chg < 0 ? 'tick-down' : 'tick-flat');
+            const sig = item.signal || 'N/A';
+            const sigColor = sig.includes('BUY') ? 'var(--green)' : (sig.includes('SELL') ? 'var(--red)' : 'var(--muted)');
+            html += `<tr onclick="$('chartSymbol').value='${item.symbol}';$('copilotSymbol').value='${item.symbol}';loadChart();">
+                <td style="color:var(--gold);font-weight:700;">${item.symbol}</td>
+                <td>${item.price ? '$'+Number(item.price).toFixed(2) : '—'}</td>
+                <td class="${cls}">${chg ? (chg>0?'+':'')+chg.toFixed(2)+'%' : '—'}</td>
+                <td style="color:${sigColor};font-weight:700;">${sig}</td>
+                <td>${item.score != null ? item.score.toFixed(1) : '—'}</td>
+                <td>${item.rsi != null ? item.rsi.toFixed(1) : '—'}</td>
+                <td>${item.volume ? Number(item.volume).toLocaleString() : '—'}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        $('screenerPanel').innerHTML = html;
+    } catch(e) { $('screenerPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+async function loadTopMovers() {
+    $('screenerPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Loading top movers...</div>';
+    try {
+        const d = await apiFetch('/api/terminal/screener/movers?limit=20');
+        if (!d || d.error) { $('screenerPanel').innerHTML = `<div style="color:var(--red)">${d?.error||'No data'}</div>`; return; }
+        let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+        html += '<div><div style="color:var(--green);font-size:16px;font-weight:700;text-transform:uppercase;margin-bottom:6px;">TOP GAINERS</div>';
+        (d.gainers || []).forEach(g => {
+            html += `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer;font-size:18px;" onclick="$('chartSymbol').value='${g.symbol}';loadChart();">
+                <span style="color:var(--gold);font-weight:700;">${g.symbol}</span>
+                <span>$${Number(g.price||0).toFixed(2)}</span>
+                <span style="color:var(--green);font-weight:700;">+${Number(g.change_pct||0).toFixed(2)}%</span>
+            </div>`;
+        });
+        html += '</div><div><div style="color:var(--red);font-size:16px;font-weight:700;text-transform:uppercase;margin-bottom:6px;">TOP LOSERS</div>';
+        (d.losers || []).forEach(l => {
+            html += `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer;font-size:18px;" onclick="$('chartSymbol').value='${l.symbol}';loadChart();">
+                <span style="color:var(--gold);font-weight:700;">${l.symbol}</span>
+                <span>$${Number(l.price||0).toFixed(2)}</span>
+                <span style="color:var(--red);font-weight:700;">${Number(l.change_pct||0).toFixed(2)}%</span>
+            </div>`;
+        });
+        html += '</div></div>';
+        $('screenerPanel').innerHTML = html;
+    } catch(e) { $('screenerPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+async function loadSectorHeatmap() {
+    $('screenerPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Loading sector heatmap...</div>';
+    try {
+        const d = await apiFetch('/api/terminal/screener/sectors');
+        if (!d || d.error) { $('screenerPanel').innerHTML = `<div style="color:var(--red)">${d?.error||'No data'}</div>`; return; }
+        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">';
+        Object.entries(d.sectors || {}).forEach(([name, s]) => {
+            const chg = parseFloat(s.change_pct || 0);
+            const bgColor = chg > 1 ? 'rgba(16,185,129,0.3)' : (chg > 0 ? 'rgba(16,185,129,0.15)' : (chg < -1 ? 'rgba(239,68,68,0.3)' : (chg < 0 ? 'rgba(239,68,68,0.15)' : 'rgba(107,114,128,0.1)')));
+            const textColor = chg > 0 ? 'var(--green)' : (chg < 0 ? 'var(--red)' : 'var(--muted)');
+            html += `<div style="background:${bgColor};padding:10px;border-radius:4px;text-align:center;cursor:pointer;" onclick="$('screenerSector').value='sector_etfs';loadLiveScreener();">
+                <div style="color:var(--gold);font-weight:700;font-size:18px;">${s.symbol}</div>
+                <div style="color:var(--muted);font-size:16px;">${name}</div>
+                <div style="font-size:22px;font-weight:700;">${s.price ? '$'+Number(s.price).toFixed(2) : '—'}</div>
+                <div style="color:${textColor};font-weight:700;font-size:20px;">${chg ? (chg>0?'+':'')+chg.toFixed(2)+'%' : '—'}</div>
+            </div>`;
+        });
+        html += '</div>';
+        $('screenerPanel').innerHTML = html;
+    } catch(e) { $('screenerPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+// --- AutoPilot ---
+async function createBot() {
+    const strategy = $('apStrategy').value;
+    const symbols = $('apSymbols').value.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
+    if (!symbols.length) { showToast('Enter at least one symbol', 'error'); return; }
+    if (!confirm(`Create ${strategy} bot for ${symbols.join(', ')}?`)) return;
+    try {
+        const d = await apiPost('/api/terminal/autopilot/create', { strategy, symbols, config: {} });
+        if (d.error) { showToast('Bot creation failed: ' + d.error, 'error'); return; }
+        showToast('Bot created: ' + (d.id || d.bot_id || 'OK'), 'success');
+        loadBots();
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function loadBots() {
+    $('autopilotPanel').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Loading bots...</div>';
+    try {
+        const bots = await apiFetch('/api/terminal/autopilot/bots');
+        if (!Array.isArray(bots) || bots.length === 0) {
+            $('autopilotPanel').innerHTML = '<div style="color:var(--muted);padding:10px;">No bots created yet. Use the form above to create one.</div>';
+            return;
+        }
+        let html = '<table class="scanner-table"><thead><tr><th>ID</th><th>Strategy</th><th>Symbols</th><th>Status</th><th>Trades</th><th>P&L</th><th>Actions</th></tr></thead><tbody>';
+        bots.forEach(b => {
+            const statusColor = b.status === 'active' ? 'var(--green)' : (b.status === 'paused' ? 'var(--gold)' : 'var(--red)');
+            html += `<tr>
+                <td style="color:var(--gold);font-weight:700;font-size:16px;">${(b.id||'').substring(0,12)}</td>
+                <td>${b.strategy_name || b.strategy || ''}</td>
+                <td style="color:var(--muted);font-size:16px;">${(b.symbols||[]).join(', ')}</td>
+                <td style="color:${statusColor};font-weight:700;">${(b.status||'').toUpperCase()}</td>
+                <td>${b.trade_count || 0}</td>
+                <td class="acct-val ${(b.total_pnl||0)>=0?'up':'down'}">$${(b.total_pnl||0).toFixed(2)}</td>
+                <td style="display:flex;gap:4px;">
+                    <button onclick="evaluateBot('${b.id}')" style="background:var(--cyan);color:#000;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;">EVAL</button>
+                    <button onclick="executeBot('${b.id}')" style="background:var(--green);color:#000;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;">EXEC</button>
+                    ${b.status==='active' ?
+                        `<button onclick="controlBot('${b.id}','pause')" style="background:var(--gold);color:#000;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;">PAUSE</button>` :
+                        `<button onclick="controlBot('${b.id}','resume')" style="background:var(--green);color:#000;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;">RESUME</button>`
+                    }
+                    <button onclick="controlBot('${b.id}','delete')" style="background:var(--red);color:#fff;border:none;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:16px;">DEL</button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        $('autopilotPanel').innerHTML = html;
+    } catch(e) { $('autopilotPanel').innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+async function evaluateBot(botId) {
+    showToast('Evaluating bot signals...', 'warn');
+    try {
+        const d = await apiFetch('/api/terminal/autopilot/bot/' + botId + '/evaluate');
+        if (d.error) { showToast('Eval error: ' + d.error, 'error'); return; }
+        let msg = 'Signals: ';
+        for (const [sym, sig] of Object.entries(d.signals || {})) {
+            const actions = (sig.actions || []).map(a => a.action || a.side || 'hold').join(',');
+            msg += sym + '=' + (actions || 'hold') + ' ';
+        }
+        showToast(msg, 'success');
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function executeBot(botId) {
+    if (!confirm('Execute bot trades? This will submit real orders to Alpaca.')) return;
+    showToast('Executing bot trades...', 'warn');
+    try {
+        const d = await apiPost('/api/terminal/autopilot/execute', { bot_id: botId });
+        if (Array.isArray(d) && d.length > 0 && d[0].error) {
+            showToast('Execution error: ' + d[0].error, 'error');
+        } else {
+            const count = Array.isArray(d) ? d.length : 0;
+            showToast(count + ' trade(s) executed', 'success');
+        }
+        loadBots();
+        setTimeout(() => { loadPositions(); loadAccount(); }, 1500);
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function controlBot(botId, action) {
+    if (action === 'delete' && !confirm('Delete this bot?')) return;
+    try {
+        const d = await apiPost('/api/terminal/autopilot/control', { bot_id: botId, action });
+        if (d.error) { showToast('Error: ' + d.error, 'error'); return; }
+        showToast('Bot ' + action + 'd', 'success');
+        loadBots();
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 // --- Start ---
