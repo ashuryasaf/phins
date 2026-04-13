@@ -282,8 +282,97 @@ _STOCK_META: Dict[str, Dict[str, str]] = {
 _live_stock_cache: Dict[str, Dict[str, Any]] = {}
 _live_cache_ts: Dict[str, float] = {}
 _LIVE_CACHE_TTL = 60.0
+_live_sector_cache: Dict[str, Dict[str, Any]] = {}
+_live_sector_cache_ts: Dict[str, float] = {}
 
 import time as _time
+
+
+def _safe_average(values: List[float], window: int) -> Optional[float]:
+    cleaned = [float(v) for v in values if v is not None]
+    if len(cleaned) < window:
+        return None
+    return sum(cleaned[-window:]) / window
+
+
+def _parse_market_date(raw_date: Any) -> Optional[datetime]:
+    if not raw_date:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _extract_bar_close(bar: Dict[str, Any]) -> Optional[float]:
+    close = bar.get("adjusted_close")
+    if close in (None, 0):
+        close = bar.get("close")
+    try:
+        close_val = float(close)
+    except (TypeError, ValueError):
+        return None
+    return close_val if close_val > 0 else None
+
+
+def _resolve_sector_data(sector_key: str) -> Dict[str, Any]:
+    base = SECTOR_DATA.get(sector_key, {})
+    if not base:
+        return {}
+
+    now = _time.time()
+    if sector_key in _live_sector_cache and (now - _live_sector_cache_ts.get(sector_key, 0)) < _LIVE_CACHE_TTL:
+        return dict(_live_sector_cache[sector_key])
+
+    resolved = dict(base)
+    etf = resolved.get("etf")
+    if not etf:
+        return resolved
+
+    quote = _get_live_quote(etf)
+    daily = _get_live_daily(etf, outputsize="full")
+    bars = (daily or {}).get("bars", [])
+
+    current_price = None
+    if quote and quote.get("price"):
+        current_price = float(quote["price"])
+    elif bars:
+        current_price = _extract_bar_close(bars[0])
+
+    ytd_baseline = None
+    prev_close = None
+    current_year = datetime.now(timezone.utc).year
+    for bar in reversed(bars):
+        close = _extract_bar_close(bar)
+        if close is None:
+            continue
+        bar_dt = _parse_market_date(bar.get("date"))
+        if not bar_dt:
+            continue
+        if bar_dt.year < current_year:
+            prev_close = close
+            continue
+        if bar_dt.year == current_year:
+            ytd_baseline = prev_close or close
+            break
+
+    if current_price and ytd_baseline:
+        ytd_return = round(((current_price - ytd_baseline) / ytd_baseline) * 100, 2)
+        resolved["ytd_return"] = ytd_return
+        if ytd_return > 0.5:
+            resolved["trend"] = "bullish"
+        elif ytd_return < -0.5:
+            resolved["trend"] = "bearish"
+        else:
+            resolved["trend"] = "neutral"
+
+    _live_sector_cache[sector_key] = resolved
+    _live_sector_cache_ts[sector_key] = now
+    return dict(resolved)
+
+
+def _get_sector_data_snapshot() -> Dict[str, Dict[str, Any]]:
+    return {key: _resolve_sector_data(key) for key in SECTOR_DATA}
 
 
 def _resolve_stock_data(symbol: str) -> Dict[str, Any]:
@@ -305,15 +394,16 @@ def _resolve_stock_data(symbol: str) -> Dict[str, Any]:
         tp = get_trading_platform()
         if tp.is_connected:
             fetch_sym = symbol.replace("/", "") if "/" in symbol else symbol
-            bars = tp.get_bars(fetch_sym, "1Day", 60)
+            bars = tp.get_bars(fetch_sym, "1Day", 200)
             if bars and len(bars) >= 2:
                 techs = compute_technicals(bars)
                 ind = techs.get("indicators", {})
+                closes = [float(b.get("close", 0)) for b in bars if float(b.get("close", 0)) > 0]
                 result["price"] = float(bars[-1].get("close", 0))
                 result["volume"] = int(bars[-1].get("volume", 0))
                 result["rsi"] = ind.get("rsi_14") or 50
                 result["ma50"] = ind.get("sma_50") or result["price"]
-                result["ma200"] = ind.get("sma_20") or result["price"]
+                result["ma200"] = _safe_average(closes, 200) or result["price"]
                 result["data_source"] = "alpaca"
                 _live_stock_cache[symbol] = result
                 _live_cache_ts[symbol] = now
@@ -330,8 +420,9 @@ def _resolve_stock_data(symbol: str) -> Dict[str, Any]:
         profile = _get_live_technical_profile(symbol)
         if profile:
             ind = profile.get("indicators", {})
-            result["rsi"] = ind.get("rsi") or 50
-            result["ma50"] = ind.get("sma_50") or result["price"]
+            result["rsi"] = (ind.get("rsi") or {}).get("value") or 50
+            result["ma50"] = (ind.get("sma_50") or {}).get("value") or result["price"]
+            result["ma200"] = (ind.get("sma_200") or {}).get("value") or result["price"]
         _live_stock_cache[symbol] = result
         _live_cache_ts[symbol] = now
         return result
@@ -435,6 +526,7 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
     Identifies emerging patterns and suggests investment opportunities.
     Uses live Alpha Vantage data when available, falls back to static data.
     """
+    sector_snapshot = _get_sector_data_snapshot()
     result: Dict[str, Any] = {
         "module": "market_research_trend_analysis",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -444,7 +536,7 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
     if stock:
         sym = stock.upper()
         s = STOCK_DATABASE.get(sym, {})
-        sec = SECTOR_DATA.get(s.get("sector", ""), {})
+        sec = sector_snapshot.get(s.get("sector", ""), {})
         rsi = s.get("rsi", 50) if s else 50
         momentum_score = rsi
 
@@ -510,7 +602,7 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
 
     elif sector and sector.lower().replace(" ", "_") in SECTOR_DATA:
         key = sector.lower().replace(" ", "_")
-        sec = SECTOR_DATA[key]
+        sec = sector_snapshot[key]
         result["sector_analysis"] = {
             "sector": sec["name"],
             "trend": sec["trend"],
@@ -543,14 +635,14 @@ def analyze_market_trends(sector: str = "", stock: str = "") -> Dict[str, Any]:
         result["market_overview"] = {
             "sectors": {
                 k: {"name": v["name"], "trend": v["trend"], "ytd_return": v["ytd_return"]}
-                for k, v in SECTOR_DATA.items()
+                for k, v in sector_snapshot.items()
             },
-            "bullish_sectors": [v["name"] for v in SECTOR_DATA.values() if v["trend"] == "bullish"],
-            "bearish_sectors": [v["name"] for v in SECTOR_DATA.values() if v["trend"] == "bearish"],
+            "bullish_sectors": [v["name"] for v in sector_snapshot.values() if v["trend"] == "bullish"],
+            "bearish_sectors": [v["name"] for v in sector_snapshot.values() if v["trend"] == "bearish"],
         }
         result["top_opportunities"] = [
             {"sector": v["name"], "emerging": v["emerging"]}
-            for v in sorted(SECTOR_DATA.values(), key=lambda x: x["ytd_return"], reverse=True)[:5]
+            for v in sorted(sector_snapshot.values(), key=lambda x: x["ytd_return"], reverse=True)[:5]
         ]
         movers = _get_live_gainers_losers()
         if movers:
@@ -584,18 +676,19 @@ def analyze_portfolio_diversification(
     """
     Propose strategies to diversify a portfolio while minimizing risk.
     """
+    sector_snapshot = _get_sector_data_snapshot()
     held_sectors = set()
     for sym in current_holdings:
         s = STOCK_DATABASE.get(sym.upper())
         if s:
             held_sectors.add(s["sector"])
 
-    all_sectors = set(SECTOR_DATA.keys())
+    all_sectors = set(sector_snapshot.keys())
     missing_sectors = all_sectors - held_sectors
 
     recommendations: List[Dict[str, Any]] = []
     for sec_key in sorted(missing_sectors):
-        sec = SECTOR_DATA[sec_key]
+        sec = sector_snapshot[sec_key]
         picks = [sym for sym in sec["top_stocks"] if sym in STOCK_DATABASE][:2]
         recommendations.append({
             "sector": sec["name"],
@@ -1144,7 +1237,7 @@ def analyze_earnings_report(company: str) -> Dict[str, Any]:
         "name": s["name"],
         "key_metrics": {
             "revenue": _format_large_number(revenue),
-            "revenue_growth_yoy": f"{s['revenue_growth']}%",
+            "revenue_growth_yoy": f"{revenue_growth}%",
             "net_income": _format_large_number(net_income),
             "earnings_per_share": {
                 "actual": round(eps_actual, 2),
@@ -1538,17 +1631,28 @@ def _backtest_from_live_bars(symbols: List[str], period_years: int = 5) -> Dict[
         if not tp.is_connected:
             raise RuntimeError("not connected")
 
-        all_returns = []
+        symbol_returns: List[List[float]] = []
         for sym in symbols[:5]:
             bars = tp.get_bars(sym, "1Day", 200)
             if not bars or len(bars) < 10:
                 continue
             closes = [float(b.get("close", 0)) for b in bars if float(b.get("close", 0)) > 0]
+            if len(closes) < 2:
+                continue
+            returns = []
             for i in range(1, len(closes)):
-                all_returns.append((closes[i] - closes[i-1]) / closes[i-1])
+                returns.append((closes[i] - closes[i-1]) / closes[i-1])
+            if returns:
+                symbol_returns.append(returns)
 
-        if not all_returns:
+        if not symbol_returns:
             raise RuntimeError("no data")
+
+        all_returns = []
+        for i in range(max(len(returns) for returns in symbol_returns)):
+            day_returns = [returns[i] for returns in symbol_returns if i < len(returns)]
+            if day_returns:
+                all_returns.append(sum(day_returns) / len(day_returns))
 
         wins = [r for r in all_returns if r > 0]
         losses = [r for r in all_returns if r < 0]
@@ -1556,11 +1660,11 @@ def _backtest_from_live_bars(symbols: List[str], period_years: int = 5) -> Dict[
         win_rate = len(wins) / max(1, total_trades)
         avg_win_pct = (sum(wins) / max(1, len(wins))) * 100 if wins else 0
         avg_loss_pct = abs(sum(losses) / max(1, len(losses))) * 100 if losses else 0
-        total_return_pct = sum(all_returns)
 
         cumulative = [1.0]
         for r in all_returns:
             cumulative.append(cumulative[-1] * (1 + r))
+        total_return_pct = cumulative[-1] - 1
         peak = cumulative[0]
         max_dd = 0
         for v in cumulative:
@@ -1580,7 +1684,10 @@ def _backtest_from_live_bars(symbols: List[str], period_years: int = 5) -> Dict[
         monthly = []
         chunk = max(1, len(all_returns) // 12)
         for i in range(0, len(all_returns), chunk):
-            mr = sum(all_returns[i:i+chunk]) * 100
+            month_growth = 1.0
+            for r in all_returns[i:i+chunk]:
+                month_growth *= (1 + r)
+            mr = (month_growth - 1) * 100
             monthly.append(round(mr, 2))
 
         return {

@@ -12,6 +12,7 @@ import importlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
@@ -542,6 +543,121 @@ class TestLiveDataParameterForwarding:
 
         assert result["module"] == "news_sentiment"
         assert captured == {"tickers": "AAPL", "topics": "technology", "limit": 10}
+
+
+class TestInvestmentAiBugfixes:
+    def test_resolve_stock_data_computes_real_ma200(self, monkeypatch):
+        import services.ai_trading_engine as engine
+        import services.investment_ai_tool_service as service
+        import services.trading_platform_service as platform
+
+        service._live_stock_cache.clear()
+        service._live_cache_ts.clear()
+
+        class DummyPlatform:
+            is_connected = True
+
+            def get_bars(self, symbol, timeframe, limit):
+                assert timeframe == "1Day"
+                assert limit == 200
+                return [{"close": float(i), "volume": 1000} for i in range(1, 201)]
+
+        monkeypatch.setattr(platform, "get_trading_platform", lambda: DummyPlatform())
+        monkeypatch.setattr(
+            engine,
+            "compute_technicals",
+            lambda bars: {"indicators": {"rsi_14": 55, "sma_50": 175.0, "sma_20": 190.0}},
+        )
+
+        result = service._resolve_stock_data("AAPL")
+
+        assert result["ma50"] == 175.0
+        assert result["ma200"] == pytest.approx(100.5)
+
+    def test_earnings_report_defaults_missing_revenue_growth(self, monkeypatch):
+        import services.investment_ai_tool_service as service
+
+        monkeypatch.setattr(service, "_get_live_fundamentals", lambda symbol: None)
+        monkeypatch.setattr(
+            service.STOCK_DATABASE,
+            "get",
+            lambda symbol, default=None: {
+                "name": "Test Corp",
+                "market_cap": 1_000_000_000,
+                "eps": 2.5,
+                "revenue_growth": None,
+                "pe": 18.0,
+                "data_source": "alpaca",
+            },
+        )
+
+        result = service.analyze_earnings_report("TEST")
+
+        assert result["key_metrics"]["revenue_growth_yoy"] == "0%"
+
+    def test_backtest_strategy_uses_portfolio_returns(self, monkeypatch):
+        import services.investment_ai_tool_service as service
+        import services.trading_platform_service as platform
+
+        class DummyPlatform:
+            is_connected = True
+
+            def get_bars(self, symbol, timeframe, limit):
+                closes = [100.0] * 9 + [110.0]
+                return [{"close": close} for close in closes]
+
+        monkeypatch.setattr(platform, "get_trading_platform", lambda: DummyPlatform())
+
+        result = service.backtest_strategy(
+            period_years=1,
+            initial_capital=100000,
+            symbols=["AAA", "BBB"],
+        )
+
+        assert result["results"]["total_return_pct"] == pytest.approx(10.0)
+        assert result["results"]["final_portfolio_value"] == pytest.approx(110000.0)
+
+    def test_market_trends_populates_sector_trends_from_live_etfs(self, monkeypatch):
+        import services.investment_ai_tool_service as service
+
+        current_year = datetime.now(timezone.utc).year
+        previous_year = current_year - 1
+
+        service._live_sector_cache.clear()
+        service._live_sector_cache_ts.clear()
+
+        quotes = {
+            "XLK": {"price": 110.0},
+            "XLF": {"price": 90.0},
+        }
+        daily = {
+            "XLK": {
+                "bars": [
+                    {"date": f"{current_year}-04-01", "close": 110.0},
+                    {"date": f"{current_year}-01-02", "close": 101.0},
+                    {"date": f"{previous_year}-12-31", "close": 100.0},
+                ]
+            },
+            "XLF": {
+                "bars": [
+                    {"date": f"{current_year}-04-01", "close": 90.0},
+                    {"date": f"{current_year}-01-02", "close": 99.0},
+                    {"date": f"{previous_year}-12-31", "close": 100.0},
+                ]
+            },
+        }
+
+        monkeypatch.setattr(service, "_get_live_quote", lambda symbol: quotes.get(symbol))
+        monkeypatch.setattr(service, "_get_live_daily", lambda symbol, outputsize="full": daily.get(symbol))
+        monkeypatch.setattr(service, "_get_live_gainers_losers", lambda: None)
+
+        result = service.analyze_market_trends()
+
+        assert "Technology" in result["market_overview"]["bullish_sectors"]
+        assert "Financials" in result["market_overview"]["bearish_sectors"]
+        sectors = result["market_overview"]["sectors"]
+        assert sectors["technology"]["ytd_return"] == pytest.approx(10.0)
+        assert sectors["financials"]["ytd_return"] == pytest.approx(-10.0)
 
 
 # ---------------------------------------------------------------------------
