@@ -830,7 +830,8 @@
       margin-bottom: 4px;
     }
 
-    .export-toolbar {
+    .export-toolbar,
+    .export-actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
@@ -1664,7 +1665,9 @@
             <div class="export-actions">
               <button type="button" class="export-btn" id="download-json">Download JSON</button>
               <button type="button" class="export-btn" id="download-csv">Download CSV</button>
+              <button type="button" class="export-btn" id="download-pdf">Download Full PDF</button>
             </div>
+            <div class="export-status" id="export-status" aria-live="polite"></div>
           </div>
 
           <div class="kpi-grid">
@@ -1982,6 +1985,8 @@
     © 2026 PHINS Insurance Company &nbsp;|&nbsp; Executive assessment and scenario lab are confidential working materials &nbsp;|&nbsp; phins.ai
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@latest/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@latest/dist/jspdf.plugin.autotable.min.js"></script>
   <script>
     const sourceRegistry = {
       oecd_2025: {
@@ -2350,6 +2355,8 @@
     const dualBarChart = document.getElementById("dual-bar-chart");
     const downloadJsonBtn = document.getElementById("download-json");
     const downloadCsvBtn = document.getElementById("download-csv");
+    const downloadPdfBtn = document.getElementById("download-pdf");
+    const exportStatusEl = document.getElementById("export-status");
 
     let currentScenarioState = null;
 
@@ -2572,6 +2579,14 @@
       URL.revokeObjectURL(url);
     }
 
+    function setExportStatus(message, isError = false) {
+      if (!exportStatusEl) {
+        return;
+      }
+      exportStatusEl.textContent = message;
+      exportStatusEl.style.color = isError ? "var(--red-1)" : "var(--text-soft)";
+    }
+
     function downloadScenarioJson() {
       const payload = buildScenarioState();
       const filename = `${slugify(payload.region.name)}-phins-scenario.json`;
@@ -2613,6 +2628,200 @@
       const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
       const filename = `${slugify(payload.region.name)}-phins-scenario.csv`;
       triggerDownload(filename, "text/csv;charset=utf-8", `${csv}\n`);
+    }
+
+    function pdfModeLabel(mode) {
+      return mode === "premium" ? "Premium-share mode" : "Lives mode";
+    }
+
+    function formatScenarioNumber(value) {
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function addPdfTable(doc, options) {
+      if (typeof doc.autoTable === "function") {
+        doc.autoTable(options);
+        return doc.lastAutoTable ? doc.lastAutoTable.finalY : options.startY;
+      }
+      return options.startY;
+    }
+
+    function downloadFullAssessmentPdf() {
+      setExportStatus("Preparing full PDF export...");
+      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+        setExportStatus("PDF library unavailable. Please refresh and retry.", true);
+        return;
+      }
+
+      const payload = buildScenarioState();
+      const region = getRegion(regionSelect.value);
+      const scenarioOutputs = payload.outputs || {
+        grossWrittenPremium: 0,
+        cededPremium: 0,
+        netPremium: 0,
+        expectedClaims: 0,
+        operatingExpenses: 0,
+        underwritingContribution: 0,
+        netMargin: 0
+      };
+
+      try {
+        if (downloadPdfBtn) {
+          downloadPdfBtn.disabled = true;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: "pt", format: "a4" });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 40;
+        const maxTextWidth = pageWidth - margin * 2;
+        const printedAt = new Date(payload.exportedAt).toLocaleString("en-US", { hour12: false });
+        let y = margin;
+
+        const addParagraph = (text, fontSize = 10, lineGap = 14) => {
+          doc.setFontSize(fontSize);
+          const lines = doc.splitTextToSize(String(text), maxTextWidth);
+          const blockHeight = lines.length * lineGap;
+          if (y + blockHeight > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+          doc.text(lines, margin, y);
+          y += blockHeight + 4;
+        };
+
+        doc.setFontSize(17);
+        doc.setFont(undefined, "bold");
+        doc.text("PHI Permanent 3+ ADL Executive Business Assessment", margin, y);
+        y += 20;
+        doc.setFont(undefined, "normal");
+        addParagraph(`Export timestamp: ${printedAt}`, 9, 13);
+        addParagraph(`Selected market snapshot: ${region.name} (${region.currency})`, 9, 13);
+        addParagraph("Data integrity rule: Reported public evidence remains fixed. PHINS assumptions are editable and are shown as a separate scenario layer.", 9, 13);
+
+        doc.setFont(undefined, "bold");
+        addParagraph("Scenario assumptions", 12, 15);
+        doc.setFont(undefined, "normal");
+        y = addPdfTable(doc, {
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Field", "Value"]],
+          body: [
+            ["Scenario mode", pdfModeLabel(payload.mode)],
+            ["Addressable lives", formatInteger(formatScenarioNumber(payload.assumptions.addressableLives))],
+            ["Attach rate", formatPercent(formatScenarioNumber(payload.assumptions.attachRate))],
+            ["Annual premium", formatMoney(formatScenarioNumber(payload.assumptions.annualPremium), payload.region.currency)],
+            ["Reported premium pool", formatMoney(formatScenarioNumber(payload.assumptions.marketPremiumPool), payload.region.currency)],
+            ["Target share", formatPercent(formatScenarioNumber(payload.assumptions.targetShare))],
+            ["Cession rate", formatPercent(formatScenarioNumber(payload.assumptions.cessionRate))],
+            ["Expected loss ratio", formatPercent(formatScenarioNumber(payload.assumptions.lossRatio))],
+            ["Expense ratio", formatPercent(formatScenarioNumber(payload.assumptions.expenseRatio))]
+          ],
+          styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", valign: "top" },
+          headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
+        }) + 14;
+
+        doc.setFont(undefined, "bold");
+        addParagraph("Current modeled outputs", 12, 15);
+        doc.setFont(undefined, "normal");
+        y = addPdfTable(doc, {
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Metric", "Value"]],
+          body: [
+            ["Gross written premium", formatMoney(formatScenarioNumber(scenarioOutputs.grossWrittenPremium), payload.region.currency)],
+            ["Ceded premium", formatMoney(formatScenarioNumber(scenarioOutputs.cededPremium), payload.region.currency)],
+            ["Net premium retained", formatMoney(formatScenarioNumber(scenarioOutputs.netPremium), payload.region.currency)],
+            ["Expected claims", formatMoney(formatScenarioNumber(scenarioOutputs.expectedClaims), payload.region.currency)],
+            ["Operating expenses", formatMoney(formatScenarioNumber(scenarioOutputs.operatingExpenses), payload.region.currency)],
+            ["Underwriting contribution", formatMoney(formatScenarioNumber(scenarioOutputs.underwritingContribution), payload.region.currency)],
+            ["Net margin", formatPercent(formatScenarioNumber(scenarioOutputs.netMargin))]
+          ],
+          styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", valign: "top" },
+          headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" }
+        }) + 14;
+
+        doc.setFont(undefined, "bold");
+        addParagraph("Executive and governance notes", 12, 15);
+        doc.setFont(undefined, "normal");
+        addParagraph(`Mode note: ${outputs.modeNote.textContent}`, 9, 13);
+        addParagraph(`Reinsurance note: ${region.reinsuranceNote}`, 9, 13);
+        addParagraph(`Interpretation: ${region.interpretationNote}`, 9, 13);
+        addParagraph("Assessment scope includes scenario output, evidence matrix, and source register from the live dashboard state at export time.", 9, 13);
+
+        if (y + 80 > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.setFont(undefined, "bold");
+        addParagraph("Evidence matrix (reported public layer)", 12, 15);
+        doc.setFont(undefined, "normal");
+        y = addPdfTable(doc, {
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Market", "Demand signal", "Premium / benefit anchor", "Reinsurance signal", "PHINS read-through"]],
+          body: marketData.map((row) => ([
+            row.name,
+            row.demand,
+            row.premium,
+            row.reinsurance,
+            row.insight
+          ])),
+          styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak", valign: "top" },
+          headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" },
+          columnStyles: {
+            0: { cellWidth: 72 },
+            1: { cellWidth: 112 },
+            2: { cellWidth: 112 },
+            3: { cellWidth: 112 },
+            4: { cellWidth: 112 }
+          }
+        }) + 14;
+
+        doc.setFont(undefined, "bold");
+        addParagraph("Source register", 12, 15);
+        doc.setFont(undefined, "normal");
+        addPdfTable(doc, {
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Key", "Source title", "Type", "Evidence strength", "URL"]],
+          body: Object.entries(sourceRegistry).map(([key, source]) => ([
+            key,
+            source.title,
+            source.sourceType || "source",
+            source.evidenceStrength || "reference",
+            source.url
+          ])),
+          styles: { fontSize: 7.5, cellPadding: 4, overflow: "linebreak", valign: "top" },
+          headStyles: { fillColor: [66, 165, 245], textColor: [255, 255, 255], fontStyle: "bold" },
+          columnStyles: {
+            0: { cellWidth: 56 },
+            1: { cellWidth: 132 },
+            2: { cellWidth: 56 },
+            3: { cellWidth: 72 },
+            4: { cellWidth: 174 }
+          }
+        });
+
+        const pageCount = doc.getNumberOfPages();
+        for (let page = 1; page <= pageCount; page += 1) {
+          doc.setPage(page);
+          doc.setFontSize(8);
+          doc.setTextColor(90, 102, 122);
+          doc.text(`PHINS Executive Assessment PDF · Page ${page} of ${pageCount}`, margin, pageHeight - 18);
+        }
+
+        const filename = `phi-permanent-3-adl-executive-business-assessment-${slugify(region.name)}.pdf`;
+        doc.save(filename);
+        setExportStatus("Full PDF downloaded with fixed evidence and current PHINS assumptions.");
+      } catch (error) {
+        setExportStatus("Failed to generate PDF export. Please retry.", true);
+      } finally {
+        if (downloadPdfBtn) {
+          downloadPdfBtn.disabled = false;
+        }
+      }
     }
 
     function loadRegion(regionId) {
@@ -2746,6 +2955,9 @@
       }
       if (downloadCsvBtn) {
         downloadCsvBtn.addEventListener("click", downloadScenarioCsv);
+      }
+      if (downloadPdfBtn) {
+        downloadPdfBtn.addEventListener("click", downloadFullAssessmentPdf);
       }
     }
 
