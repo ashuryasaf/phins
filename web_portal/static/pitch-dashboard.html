@@ -2911,9 +2911,15 @@
 
       ensurePdfLibrary()
         .then(function () {
-          generateAssessmentPdf();
+          try {
+            generateAssessmentPdf();
+          } catch (error) {
+            console.error("Failed to generate PDF export", error);
+            setExportStatus("Failed to generate PDF export. Please retry.", true);
+          }
         })
-        .catch(function () {
+        .catch(function (error) {
+          console.error("PDF library could not be loaded", error);
           setExportStatus("PDF library could not be loaded. Check your network connection and retry.", true);
         })
         .finally(function () {
