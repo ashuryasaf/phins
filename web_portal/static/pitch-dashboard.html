@@ -1985,8 +1985,8 @@
     © 2026 PHINS Insurance Company &nbsp;|&nbsp; Executive assessment and scenario lab are confidential working materials &nbsp;|&nbsp; phins.ai
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@latest/dist/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@latest/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
   <script>
     const sourceRegistry = {
       oecd_2025: {
@@ -2653,22 +2653,22 @@
         return;
       }
 
-      const payload = buildScenarioState();
-      const region = getRegion(regionSelect.value);
-      const scenarioOutputs = payload.outputs || {
-        grossWrittenPremium: 0,
-        cededPremium: 0,
-        netPremium: 0,
-        expectedClaims: 0,
-        operatingExpenses: 0,
-        underwritingContribution: 0,
-        netMargin: 0
-      };
-
       try {
         if (downloadPdfBtn) {
           downloadPdfBtn.disabled = true;
         }
+
+        const payload = buildScenarioState();
+        const region = getRegion(regionSelect.value);
+        const scenarioOutputs = payload.outputs || {
+          grossWrittenPremium: 0,
+          cededPremium: 0,
+          netPremium: 0,
+          expectedClaims: 0,
+          operatingExpenses: 0,
+          underwritingContribution: 0,
+          netMargin: 0
+        };
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ unit: "pt", format: "a4" });
