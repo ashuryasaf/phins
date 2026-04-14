@@ -2656,27 +2656,44 @@
       });
     }
 
+    function hasJsPdfCore() {
+      return window.jspdf && typeof window.jspdf.jsPDF === "function";
+    }
+
+    function hasJsPdfAutoTable() {
+      return hasJsPdfCore()
+        && window.jspdf.jsPDF
+        && window.jspdf.jsPDF.API
+        && typeof window.jspdf.jsPDF.API.autoTable === "function";
+    }
+
     async function ensurePdfLibs() {
-      if (window.jspdf && typeof window.jspdf.jsPDF === "function") return true;
+      if (hasJsPdfCore() && hasJsPdfAutoTable()) return true;
       try {
-        await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js");
-        await loadScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js");
-        return window.jspdf && typeof window.jspdf.jsPDF === "function";
+        if (!hasJsPdfCore()) {
+          await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js");
+        }
+        if (!hasJsPdfAutoTable()) {
+          await loadScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js");
+        }
+        return hasJsPdfCore() && hasJsPdfAutoTable();
       } catch (_) {
         return false;
       }
     }
 
     async function downloadFullAssessmentPdf() {
-      setExportStatus("Preparing full PDF export...");
-      if (!await ensurePdfLibs()) {
-        setExportStatus("PDF library unavailable. Please refresh and retry.", true);
-        return;
+      if (downloadPdfBtn) {
+        if (downloadPdfBtn.disabled) {
+          return;
+        }
+        downloadPdfBtn.disabled = true;
       }
-
+      setExportStatus("Preparing full PDF export...");
       try {
-        if (downloadPdfBtn) {
-          downloadPdfBtn.disabled = true;
+        if (!await ensurePdfLibs()) {
+          setExportStatus("PDF library unavailable. Please refresh and retry.", true);
+          return;
         }
 
         const payload = buildScenarioState();
