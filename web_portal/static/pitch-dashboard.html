@@ -1985,8 +1985,8 @@
     © 2026 PHINS Insurance Company &nbsp;|&nbsp; Executive assessment and scenario lab are confidential working materials &nbsp;|&nbsp; phins.ai
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js" integrity="sha384-Xl/CUCfJbzsngMp0CFxkmF0VW/8C160IsGujqeQlIhaGxKz2+JsIGORFqtCPeldF" crossorigin="anonymous"></script>
   <script>
     const sourceRegistry = {
       oecd_2025: {
@@ -2646,10 +2646,14 @@
       return options.startY;
     }
 
-    function loadScript(src) {
+    function loadScript(src, integrity) {
       return new Promise(function(resolve, reject) {
         var s = document.createElement("script");
         s.src = src;
+        if (integrity) {
+          s.integrity = integrity;
+          s.crossOrigin = "anonymous";
+        }
         s.onload = resolve;
         s.onerror = reject;
         document.head.appendChild(s);
@@ -2671,10 +2675,16 @@
       if (hasJsPdfCore() && hasJsPdfAutoTable()) return true;
       try {
         if (!hasJsPdfCore()) {
-          await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js");
+          await loadScript(
+            "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+            "sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/"
+          );
         }
         if (!hasJsPdfAutoTable()) {
-          await loadScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js");
+          await loadScript(
+            "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js",
+            "sha384-Xl/CUCfJbzsngMp0CFxkmF0VW/8C160IsGujqeQlIhaGxKz2+JsIGORFqtCPeldF"
+          );
         }
         return hasJsPdfCore() && hasJsPdfAutoTable();
       } catch (_) {

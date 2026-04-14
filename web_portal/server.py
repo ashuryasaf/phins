@@ -8294,7 +8294,9 @@ For claims or questions, please contact:
         if path.endswith('.html'):
             self.send_header("Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' "
+                "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/ "
+                "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https://api.qrserver.com; "
                 "connect-src 'self'; "
