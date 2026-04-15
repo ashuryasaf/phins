@@ -5410,6 +5410,17 @@ try:
 except ImportError as e:
     print(f"Warning: Algo Trading service not available: {e}")
 
+# Options Wheel strategy service
+options_wheel_enabled = False
+options_wheel_service = None
+try:
+    from services.options_wheel_service import get_options_wheel_service, reset_options_wheel_service
+    options_wheel_service = get_options_wheel_service(portfolio_service)
+    options_wheel_enabled = True
+    print("✓ Options Wheel strategy service enabled (automated wheel, CSP, covered calls)")
+except ImportError as e:
+    print(f"Warning: Options Wheel service not available: {e}")
+
 # Alpha Vantage live market data service
 alpha_vantage_enabled = False
 try:
@@ -17259,6 +17270,99 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # ========== OPTIONS WHEEL STRATEGY API (GET) ==========
+
+        if path == '/api/wheel/dashboard':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            account_id = qs.get('account_id', ['WHEEL'])[0]
+            dashboard = options_wheel_service.get_dashboard(account_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(dashboard, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/positions':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            positions = options_wheel_service.get_positions()
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'positions': positions}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/scan-puts':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            account_id = qs.get('account_id', ['WHEEL'])[0]
+            result = options_wheel_service.scan_puts(account_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/config':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            config = options_wheel_service.get_config()
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'config': config}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/symbols':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            symbols = options_wheel_service.get_symbols()
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'symbols': symbols, 'count': len(symbols)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/orders':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            account_id = qs.get('account_id', [None])[0]
+            orders = options_wheel_service.get_order_history(account_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'orders': orders, 'count': len(orders)}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/audit-log':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            limit = safe_int(qs.get('limit', ['100'])[0], 100)
+            log = options_wheel_service.get_audit_log(limit)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'audit_log': log, 'count': len(log)}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/integrity-check':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            from services.options_wheel_service import validate_state_integrity
+            issues = validate_state_integrity(options_wheel_service.positions)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'status': 'clean' if not issues else 'issues_found',
+                'issues': issues,
+                'position_count': len(options_wheel_service.positions),
+            }).encode('utf-8'))
+            return
+
+        # ========== END OPTIONS WHEEL STRATEGY API (GET) ==========
+
         # ========== UNIFIED INVESTMENT API ==========
         # Single source of truth connecting Dashboard and Savings Portfolio
         
@@ -35021,7 +35125,245 @@ For claims or questions, please contact:
         # ========== END ADVANCED ALGO TRADING POST API ==========
         
         # ========== END ALGO TRADING API ==========
-        
+
+        # ========== OPTIONS WHEEL STRATEGY POST API ==========
+
+        if path == '/api/wheel/sell-put':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id', 'WHEEL')
+                underlying = data.get('underlying', '')
+                contract_data = data.get('contract', None)
+                if not underlying:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'underlying is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.sell_put(account_id, underlying, contract_data)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/sell-call':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id', 'WHEEL')
+                underlying = data.get('underlying', '')
+                contract_data = data.get('contract', None)
+                if not underlying:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'underlying is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.sell_call(account_id, underlying, contract_data)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/record-assignment':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                underlying = data.get('underlying', '')
+                cost_basis = data.get('cost_basis', None)
+                if not underlying:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'underlying is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.record_assignment(underlying, cost_basis)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/record-call-away':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                underlying = data.get('underlying', '')
+                if not underlying:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'underlying is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.record_call_away(underlying)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/record-put-expiry':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                underlying = data.get('underlying', '')
+                if not underlying:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'underlying is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.record_put_expiry(underlying)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/record-call-expiry':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                underlying = data.get('underlying', '')
+                if not underlying:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'underlying is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.record_call_expiry(underlying)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/run-cycle':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                account_id = data.get('account_id', 'WHEEL')
+                result = options_wheel_service.run_wheel_cycle(account_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/update-config':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                result = options_wheel_service.update_config(data)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/add-symbol':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                symbol = data.get('symbol', '')
+                if not symbol:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'symbol is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.add_symbol(symbol)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/remove-symbol':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                symbol = data.get('symbol', '')
+                if not symbol:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'symbol is required'}).encode('utf-8'))
+                    return
+                result = options_wheel_service.remove_symbol(symbol)
+                status_code = 200 if 'error' not in result else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/export-state':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                state = options_wheel_service.export_state()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(state, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/wheel/import-state':
+            if not options_wheel_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Options wheel service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body)
+                result = options_wheel_service.import_state(data)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # ========== END OPTIONS WHEEL STRATEGY POST API ==========
+
         # ========== UNIFIED BALANCE POST API ==========
         # Transfer funds to algo trading from wallet or investment
         if path == '/api/balance/transfer-to-algo':

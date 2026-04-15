@@ -51,6 +51,11 @@ class TradingStrategy(str, Enum):
     SCALPING = "scalping"
     SWING_TRADING = "swing_trading"
     AI_ADAPTIVE = "ai_adaptive"
+    OPTIONS_WHEEL = "options_wheel"
+    COVERED_CALL = "covered_call"
+    CASH_SECURED_PUT = "cash_secured_put"
+    IRON_CONDOR = "iron_condor"
+    PROTECTIVE_PUT = "protective_put"
 
 
 class SignalType(str, Enum):
@@ -686,6 +691,16 @@ class AlgoTradingService:
             signal_type, confidence, reasoning = self._swing_trading_strategy(indicators)
         elif strategy == TradingStrategy.GRID_TRADING:
             signal_type, confidence, reasoning = self._grid_trading_strategy(indicators)
+        elif strategy == TradingStrategy.OPTIONS_WHEEL:
+            signal_type, confidence, reasoning = self._options_wheel_strategy(indicators)
+        elif strategy == TradingStrategy.COVERED_CALL:
+            signal_type, confidence, reasoning = self._covered_call_strategy(indicators)
+        elif strategy == TradingStrategy.CASH_SECURED_PUT:
+            signal_type, confidence, reasoning = self._cash_secured_put_strategy(indicators)
+        elif strategy == TradingStrategy.IRON_CONDOR:
+            signal_type, confidence, reasoning = self._iron_condor_strategy(indicators)
+        elif strategy == TradingStrategy.PROTECTIVE_PUT:
+            signal_type, confidence, reasoning = self._protective_put_strategy(indicators)
         
         # Calculate price targets
         current = indicators.current_price
@@ -961,7 +976,159 @@ class AlgoTradingService:
             return SignalType.SELL, 0.75, f"Grid: Upper grid, sell zone ({price_position*100:.0f}%)"
         else:
             return SignalType.HOLD, 0.50, f"Grid: Mid-range, wait ({price_position*100:.0f}%)"
-    
+
+    def _options_wheel_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """
+        Options wheel strategy signal: sell puts when IV is elevated and price
+        is near support; sell calls when price is near resistance.
+        """
+        rsi = ind.rsi_14
+        price = ind.current_price
+        support = ind.support_level
+        resistance = ind.resistance_level
+        vol = ind.volatility
+
+        range_size = resistance - support if resistance > support else price * 0.1
+        price_pos = (price - support) / range_size if range_size > 0 else 0.5
+
+        if rsi < 35 and vol > 0.15 and price_pos < 0.35:
+            conf = min(0.90, 0.65 + vol + (0.35 - price_pos))
+            return (
+                SignalType.STRONG_BUY, conf,
+                f"Wheel: Sell cash-secured put — RSI {rsi:.1f}, IV {vol:.1%}, near support",
+            )
+        elif rsi < 45 and price_pos < 0.45:
+            conf = min(0.80, 0.55 + (0.45 - price_pos) * 0.5)
+            return (
+                SignalType.BUY, conf,
+                f"Wheel: Sell put candidate — RSI {rsi:.1f}, moderate IV, price in lower range",
+            )
+        elif rsi > 75 and price_pos > 0.80:
+            conf = min(0.90, 0.70 + (price_pos - 0.80))
+            return (
+                SignalType.STRONG_SELL, conf,
+                f"Wheel: Strong covered call signal — overbought RSI {rsi:.1f}, upper range",
+            )
+        elif rsi > 65 and price_pos > 0.65:
+            conf = min(0.85, 0.60 + (price_pos - 0.65) * 0.5)
+            return (
+                SignalType.SELL, conf,
+                f"Wheel: Sell covered call — RSI {rsi:.1f}, near resistance ({price_pos*100:.0f}%)",
+            )
+        else:
+            return (
+                SignalType.HOLD, 0.50,
+                f"Wheel: Hold — RSI {rsi:.1f}, price position {price_pos*100:.0f}%, no actionable edge",
+            )
+
+    def _covered_call_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Covered call: sell calls when price is elevated, keep premium while limiting upside."""
+        rsi = ind.rsi_14
+        price = ind.current_price
+        sma50 = ind.sma_50
+        vol = ind.volatility
+
+        if price > sma50 * 1.05 and rsi > 60:
+            conf = min(0.88, 0.60 + (rsi - 60) / 100 + vol * 0.5)
+            return (
+                SignalType.SELL, conf,
+                f"Covered call: Price {((price/sma50)-1)*100:.1f}% above SMA50, RSI {rsi:.1f} — sell call",
+            )
+        elif rsi > 75:
+            return (
+                SignalType.STRONG_SELL, 0.85,
+                f"Covered call: RSI overbought at {rsi:.1f} — strong sell call signal",
+            )
+        elif price < sma50 * 0.95:
+            return (
+                SignalType.HOLD, 0.45,
+                f"Covered call: Price below SMA50, not ideal for call writing",
+            )
+        else:
+            return SignalType.HOLD, 0.50, f"Covered call: Neutral — RSI {rsi:.1f}, near SMA50"
+
+    def _cash_secured_put_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Cash-secured put: sell puts when price drops to support with elevated IV."""
+        rsi = ind.rsi_14
+        price = ind.current_price
+        support = ind.support_level
+        vol = ind.volatility
+        sma20 = ind.sma_20
+
+        dist_to_support = (price - support) / price if price > 0 else 1.0
+
+        if rsi < 30 and vol > 0.20 and dist_to_support < 0.05:
+            return (
+                SignalType.STRONG_BUY, 0.88,
+                f"CSP: Oversold RSI {rsi:.1f}, IV {vol:.1%}, near support — premium sell put",
+            )
+        elif rsi < 40 and dist_to_support < 0.10:
+            conf = min(0.80, 0.55 + vol * 0.8)
+            return (
+                SignalType.BUY, conf,
+                f"CSP: RSI {rsi:.1f} near support ({dist_to_support*100:.1f}%) — sell put",
+            )
+        elif rsi > 60 and price > sma20:
+            return (
+                SignalType.HOLD, 0.45,
+                f"CSP: Price above SMA20, RSI {rsi:.1f} — not ideal for put selling",
+            )
+        else:
+            return SignalType.HOLD, 0.50, f"CSP: Neutral — RSI {rsi:.1f}"
+
+    def _iron_condor_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Iron condor: profit from range-bound markets with low volatility expectations."""
+        rsi = ind.rsi_14
+        vol = ind.volatility
+        price = ind.current_price
+        support = ind.support_level
+        resistance = ind.resistance_level
+        range_pct = (resistance - support) / price if price > 0 else 0
+
+        if 40 <= rsi <= 60 and vol < 0.25 and range_pct > 0.05:
+            conf = min(0.85, 0.60 + (0.60 - abs(rsi - 50) / 50) * 0.3)
+            return (
+                SignalType.BUY, conf,
+                f"Iron condor: Range-bound RSI {rsi:.1f}, low IV {vol:.1%}, spread width {range_pct*100:.1f}%",
+            )
+        elif vol > 0.40:
+            return (
+                SignalType.SELL, 0.70,
+                f"Iron condor: IV too high ({vol:.1%}) — condor risk elevated, avoid",
+            )
+        elif abs(rsi - 50) > 25:
+            return (
+                SignalType.HOLD, 0.45,
+                f"Iron condor: Directional bias (RSI {rsi:.1f}) — not range-bound",
+            )
+        else:
+            return SignalType.HOLD, 0.50, f"Iron condor: Neutral — evaluating range"
+
+    def _protective_put_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Protective put: buy puts as insurance when holding long positions in volatile markets."""
+        rsi = ind.rsi_14
+        vol = ind.volatility
+        price = ind.current_price
+        sma200 = ind.sma_200
+
+        if vol > 0.35 and price < sma200:
+            return (
+                SignalType.STRONG_BUY, 0.85,
+                f"Protective put: High vol {vol:.1%}, below 200-SMA — buy protection",
+            )
+        elif vol > 0.25 and rsi > 70:
+            return (
+                SignalType.BUY, 0.75,
+                f"Protective put: Elevated vol {vol:.1%}, overbought RSI {rsi:.1f} — hedge recommended",
+            )
+        elif vol < 0.15 and price > sma200 * 1.05:
+            return (
+                SignalType.SELL, 0.65,
+                f"Protective put: Low vol, strong uptrend — protection not needed",
+            )
+        else:
+            return SignalType.HOLD, 0.50, f"Protective put: Vol {vol:.1%}, RSI {rsi:.1f} — monitor"
+
     def create_bot(self, account_id: str, name: str, strategy: TradingStrategy,
                    symbols: List[str], **kwargs) -> TradingBot:
         """Create a new trading bot"""

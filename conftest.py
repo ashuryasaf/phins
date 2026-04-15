@@ -114,3 +114,15 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
+    # Reset options wheel singleton so each test starts clean.
+    try:
+        from services.options_wheel_service import reset_options_wheel_service
+        reset_options_wheel_service()
+        wheel_svc = getattr(portal, "options_wheel_service", None)
+        if wheel_svc is not None:
+            wheel_svc.positions.clear()
+            wheel_svc.order_history.clear()
+            wheel_svc.audit_log.clear()
+    except Exception:
+        pass
+
