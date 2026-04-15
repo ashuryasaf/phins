@@ -1003,17 +1003,17 @@ class AlgoTradingService:
                 SignalType.BUY, conf,
                 f"Wheel: Sell put candidate — RSI {rsi:.1f}, moderate IV, price in lower range",
             )
-        elif rsi > 65 and price_pos > 0.65:
-            conf = min(0.85, 0.60 + (price_pos - 0.65) * 0.5)
-            return (
-                SignalType.SELL, conf,
-                f"Wheel: Sell covered call — RSI {rsi:.1f}, near resistance ({price_pos*100:.0f}%)",
-            )
         elif rsi > 75 and price_pos > 0.80:
             conf = min(0.90, 0.70 + (price_pos - 0.80))
             return (
                 SignalType.STRONG_SELL, conf,
                 f"Wheel: Strong covered call signal — overbought RSI {rsi:.1f}, upper range",
+            )
+        elif rsi > 65 and price_pos > 0.65:
+            conf = min(0.85, 0.60 + (price_pos - 0.65) * 0.5)
+            return (
+                SignalType.SELL, conf,
+                f"Wheel: Sell covered call — RSI {rsi:.1f}, near resistance ({price_pos*100:.0f}%)",
             )
         else:
             return (

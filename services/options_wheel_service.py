@@ -568,11 +568,17 @@ class OptionsWheelService:
         """
         current_risk = calculate_wheel_risk(self.positions)
         buying_power = self.config.max_risk - current_risk
-        if buying_power <= 0:
-            return {"candidates": [], "buying_power": 0, "message": "No buying power available"}
-
         active_syms = set(self.positions.keys())
         allowed = [s for s in self.symbols if s not in active_syms]
+        if buying_power <= 0:
+            return {
+                "candidates": [],
+                "buying_power": 0,
+                "allowed_symbols": allowed,
+                "current_risk": round(current_risk, 2),
+                "max_risk": self.config.max_risk,
+                "message": "No buying power available",
+            }
 
         all_candidates: List[Dict[str, Any]] = []
         for sym in allowed:
@@ -1013,6 +1019,7 @@ class OptionsWheelService:
             actual_cs = hashlib.md5(json.dumps(data_copy, sort_keys=True, default=str).encode()).hexdigest()
             if stored_cs != actual_cs:
                 errors.append("Checksum mismatch — data may have been tampered with")
+                return {"status": "rejected", "warnings": errors}
 
         if "config" in data:
             cfg = WheelConfig.from_dict(data["config"])

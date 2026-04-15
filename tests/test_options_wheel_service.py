@@ -360,6 +360,15 @@ class TestOptionsWheelServiceLifecycle(unittest.TestCase):
         self.assertIn("buying_power", result)
         self.assertGreater(result["buying_power"], 0)
 
+    def test_scan_puts_no_buying_power_preserves_response_shape(self):
+        self.svc.config.max_risk = 0
+        result = self.svc.scan_puts("TEST")
+        self.assertEqual(result["buying_power"], 0)
+        self.assertEqual(result["current_risk"], 0)
+        self.assertEqual(result["max_risk"], 0)
+        self.assertIn("allowed_symbols", result)
+        self.assertEqual(result["allowed_symbols"], ["AAPL", "MSFT", "GOOG"])
+
     def test_run_wheel_cycle(self):
         result = self.svc.run_wheel_cycle("TEST")
         self.assertIn("actions", result)
@@ -425,10 +434,13 @@ class TestWheelStatePersistence(unittest.TestCase):
         state = svc.export_state()
         state["symbols"] = ["TAMPERED"]
 
-        svc2 = OptionsWheelService()
+        svc2 = OptionsWheelService(symbol_universe=["MSFT"])
         result = svc2.import_state(state)
+        self.assertEqual(result["status"], "rejected")
         self.assertTrue(any("checksum" in w.lower() or "tamper" in w.lower()
                             for w in result.get("warnings", [])))
+        self.assertEqual(svc2.symbols, ["MSFT"])
+        self.assertEqual(svc2.positions, {})
 
 
 # ===================================================================
@@ -551,6 +563,26 @@ class TestNewTradingStrategies(unittest.TestCase):
         self.assertEqual(signal.symbol, "SPY")
         self.assertTrue(0 <= signal.confidence <= 1)
         self.assertIn("Wheel", signal.reasoning)
+
+    def test_options_wheel_strong_sell_branch_reachable(self):
+        from services.algo_trading_service import AlgoTradingService, SignalType, TechnicalIndicators
+
+        signal_type, confidence, reasoning = AlgoTradingService._options_wheel_strategy(
+            AlgoTradingService.__new__(AlgoTradingService),
+            TechnicalIndicators(
+                symbol="SPY",
+                timestamp="2026-04-15T00:00:00",
+                current_price=108.5,
+                support_level=100.0,
+                resistance_level=110.0,
+                rsi_14=80.0,
+                volatility=0.20,
+            ),
+        )
+
+        self.assertEqual(signal_type, SignalType.STRONG_SELL)
+        self.assertGreater(confidence, 0.70)
+        self.assertIn("Strong covered call", reasoning)
 
     def test_covered_call_signal(self):
         signal = self.algo_service.generate_signal("AAPL", self.TradingStrategy.COVERED_CALL)
