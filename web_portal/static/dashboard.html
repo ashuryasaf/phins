@@ -3474,14 +3474,20 @@
         customerId = null;
       }
       
+      function redirectToLogin() {
+        hideSplashScreen();
+        safeStorageRemove(localStore, 'phins_token');
+        safeStorageRemove(sessionStore, 'phins_token');
+        window.location.href = '/login.html';
+      }
+
       // If no customer ID found, try to fetch from session validation
       // NO HARDCODED FALLBACK - each customer must see only their own data
       if (!customerId) {
         console.log('[Dashboard Init] No customer ID in storage, checking auth...');
         if (!authToken) {
           console.error('[Dashboard Init] No auth token - redirecting to login');
-          alert('Please log in to view your dashboard.');
-          window.location.href = '/login.html';
+          redirectToLogin();
           clearTimeout(splashFailsafe);
           return;
         }
@@ -3520,26 +3526,20 @@
             } else {
               // Session invalid - redirect to login
               console.error('[Dashboard Init] Session validation failed:', sessionInfo);
-              alert('Your session has expired. Please log in again.');
-              safeStorageRemove(localStore, 'phins_token');
-              window.location.href = '/login.html';
+              redirectToLogin();
               clearTimeout(splashFailsafe);
               return;
             }
           } else {
             // Session validation failed - token may be expired
             console.error('[Dashboard Init] Session validation request failed:', sessionResponse.status);
-            alert('Your session has expired. Please log in again.');
-            safeStorageRemove(localStore, 'phins_token');
-            window.location.href = '/login.html';
+            redirectToLogin();
             clearTimeout(splashFailsafe);
             return;
           }
         } catch (err) {
           console.error('[Dashboard Init] Error validating session:', err);
-          alert('Unable to verify your session. Please log in again.');
-          safeStorageRemove(localStore, 'phins_token');
-          window.location.href = '/login.html';
+          redirectToLogin();
           clearTimeout(splashFailsafe);
           return;
         }
