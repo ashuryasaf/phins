@@ -996,12 +996,16 @@
       floatingAuthAllowed = ["customer", "supplier"].includes(role) || isAdminRole(role);
 
       try {
-        localStorage.setItem("session", JSON.stringify({
-          role,
-          username: session?.username || "",
-          customer_id: session?.customer_id || null,
-          supplier_id: session?.supplier_id || null,
-        }));
+        const existingRaw = localStorage.getItem("session");
+        let merged = {};
+        if (existingRaw) {
+          try { merged = JSON.parse(existingRaw); } catch { merged = {}; }
+        }
+        merged.role = role;
+        merged.username = session?.username || merged.username || "";
+        merged.customer_id = session?.customer_id || merged.customer_id || null;
+        merged.supplier_id = session?.supplier_id || merged.supplier_id || null;
+        localStorage.setItem("session", JSON.stringify(merged));
       } catch {
         // no-op
       }

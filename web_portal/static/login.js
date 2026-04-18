@@ -342,79 +342,80 @@ document.addEventListener('DOMContentLoaded', function () {
       } else {
         msg.textContent = 'Login failed: ' + (data.error || 'Unknown error');
         msg.style.color = '#dc3545';
+        submitBtn.disabled = false;
       }
     } catch (e) {
       msg.textContent = 'Login error. Please try again.';
       msg.style.color = '#dc3545';
+      submitBtn.disabled = false;
     }
   }
   
+  function getDashboardUrl(role) {
+    switch (role) {
+      case 'admin': return '/admin-portal.html';
+      case 'media': return '/admin-media.html';
+      case 'actuary': return '/actuary-dashboard.html';
+      case 'supplier': return '/supplier-dashboard.html';
+      case 'underwriter': return '/underwriter-dashboard.html';
+      case 'claims':
+      case 'claims_adjuster': return '/claims-adjuster-dashboard.html';
+      case 'accountant': return '/accountant-dashboard.html';
+      case 'customer':
+      default: return '/dashboard.html';
+    }
+  }
+
   // Handle successful login
   function handleLoginSuccess(data, username) {
     msg.textContent = 'Login successful! Redirecting...';
     msg.style.color = '#28a745';
-    
-    // Store token and username
-    localStorage.setItem('phins_token', data.token);
-    sessionStorage.setItem('phins_token', data.token);
-    sessionStorage.setItem('username', username);
-    safeStorageSet(localStorage, 'phins_token', data.token);
-    safeStorageSet(sessionStorage, 'phins_token', data.token);
-    safeStorageSet(sessionStorage, 'username', username);
-    
-    // Store session object for ALL users (admin, customer, etc.)
-    const sessionObj = {
-      customer_id: data.customer_id || null,
-      username: username,
-      role: data.role || 'customer',
-      name: data.name || username,
-      token: data.token,
-      login_time: new Date().toISOString()
-    };
-    safeStorageSet(localStorage, 'session', JSON.stringify(sessionObj));
-    safeStorageSet(sessionStorage, 'user_role', data.role || 'customer');
-    
-    console.log('Session stored:', { username, role: data.role });
-    
-    // Store customer_id in ALL expected locations for data isolation (customers only)
-    if (data.customer_id) {
-      safeStorageSet(localStorage, 'customer_id', data.customer_id);
-      safeStorageSet(sessionStorage, 'customer_id', data.customer_id);
-      safeStorageSet(localStorage, 'phins_customer_id', data.customer_id);
-      console.log('Customer session stored:', data.customer_id);
-    } else if (data.role === 'customer') {
-      // Warning: customer logged in but no customer_id returned
-      console.warn('Customer login successful but no customer_id in response:', data);
-    }
-    
-    // Store device fingerprint for future logins
-    safeStorageSet(localStorage, 'phins_device_fp', getDeviceFingerprint());
-    
-    // Redirect based on user role
-    setTimeout(() => {
-      const role = data.role || '';
-      
-      if (role === 'admin') {
-        window.location.href = '/admin-portal.html';
-      } else if (role === 'media') {
-        window.location.href = '/admin-media.html';
-      } else if (role === 'actuary') {
-        window.location.href = '/actuary-dashboard.html';
-      } else if (role === 'supplier') {
-        window.location.href = '/supplier-dashboard.html';
-      } else if (role === 'customer') {
-        // Direct redirect to dashboard.html for customers (no double redirect)
-        window.location.href = '/dashboard.html';
-      } else if (role === 'underwriter') {
-        window.location.href = '/underwriter-dashboard.html';
-      } else if (role === 'claims' || role === 'claims_adjuster') {
-        window.location.href = '/claims-adjuster-dashboard.html';
-      } else if (role === 'accountant') {
-        window.location.href = '/accountant-dashboard.html';
-      } else {
-        window.location.href = '/dashboard.html';
+    submitBtn.disabled = true;
+
+    const targetUrl = getDashboardUrl(data.role || '');
+
+    try {
+      safeStorageSet(localStorage, 'phins_token', data.token);
+      safeStorageSet(sessionStorage, 'phins_token', data.token);
+      safeStorageSet(sessionStorage, 'username', username);
+
+      const sessionObj = {
+        customer_id: data.customer_id || null,
+        username: username,
+        role: data.role || 'customer',
+        name: data.name || username,
+        token: data.token,
+        login_time: new Date().toISOString()
+      };
+      safeStorageSet(localStorage, 'session', JSON.stringify(sessionObj));
+      safeStorageSet(sessionStorage, 'user_role', data.role || 'customer');
+
+      if (data.customer_id) {
+        safeStorageSet(localStorage, 'customer_id', data.customer_id);
+        safeStorageSet(sessionStorage, 'customer_id', data.customer_id);
+        safeStorageSet(localStorage, 'phins_customer_id', data.customer_id);
+      } else if (data.role === 'customer') {
+        console.warn('Customer login successful but no customer_id in response:', data);
       }
-    }, 500);
+
+      safeStorageSet(localStorage, 'phins_device_fp', getDeviceFingerprint());
+    } catch (storageErr) {
+      console.warn('Non-critical: failed to persist session data', storageErr);
+    }
+
+    console.log('Session stored:', { username, role: data.role });
+
+    setTimeout(() => { window.location.href = targetUrl; }, 400);
+
+    setTimeout(() => {
+      if (submitBtn.disabled) {
+        submitBtn.disabled = false;
+        msg.textContent = 'Redirect may have been blocked. Click here to continue.';
+        msg.style.color = '#1565c0';
+        msg.style.cursor = 'pointer';
+        msg.onclick = () => { window.location.href = targetUrl; };
+      }
+    }, 5000);
   }
   
   // Main form submission

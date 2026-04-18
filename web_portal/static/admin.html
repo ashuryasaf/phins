@@ -2012,21 +2012,19 @@
     
     // Validate token with server if not already confirmed as admin
     if (!isAdmin && token) {
-      // Quick async check - don't block page load
       fetch('/api/session/validate', {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).then(data => {
         if (data.valid && data.role === 'admin') {
-          // Store role for future checks
-          const session = { username: storedUser, role: 'admin', token: token };
-          localStorage.setItem('session', JSON.stringify(session));
+          try {
+            const session = { username: storedUser, role: 'admin', token: token };
+            localStorage.setItem('session', JSON.stringify(session));
+          } catch (e) {}
         } else if (!adminUsernames.includes(storedUser)) {
-          alert('Admin access required');
           window.location.href = '/login.html';
         }
       }).catch(() => {});
     } else if (!isAdmin && !token) {
-      alert('Admin access required. Please login.');
       window.location.href = '/login.html';
     }
     
