@@ -39783,9 +39783,8 @@ def run_server(port: int = PORT) -> None:
     try:
         if USE_DATABASE and database_enabled:
             from database.manager import DatabaseManager
-            from database.repositories.claim_repository import ClaimRepository
             with DatabaseManager() as db:
-                claim_repo = ClaimRepository(db.session)
+                claim_repo = db.claims
                 db_claims = claim_repo.get_all()
                 for db_claim in db_claims:
                     claim_dict = db_claim.to_dict() if hasattr(db_claim, 'to_dict') else {
@@ -39888,11 +39887,42 @@ def run_server(port: int = PORT) -> None:
             }
         ]
         
-        # Always update claims to ensure correct status
+        # Always update claims to ensure correct status.
+        # When backed by the database, guard against FK violations by only
+        # writing through to the DB when the parent policy actually exists.
+        # Pre-fetch the set of valid policy IDs once instead of probing per claim.
+        valid_policy_ids = None
+        if USE_DATABASE and database_enabled:
+            try:
+                from database.manager import DatabaseManager
+                with DatabaseManager() as _db:
+                    valid_policy_ids = {p.id for p in _db.policies.get_all()}
+            except Exception as _pol_err:
+                print(f"   ⚠️  Could not enumerate DB policies for claim seeding: {_pol_err}")
+                valid_policy_ids = None
+
+        skipped_db_writes = 0
         for claim in sample_claims:
-            CLAIMS[claim['id']] = claim
-        
-        print(f"✓ Initialized {len(sample_claims)} sample claims (3 Paid, 1 Pending, 1 Under Review)")
+            if valid_policy_ids is not None and claim['policy_id'] not in valid_policy_ids:
+                skipped_db_writes += 1
+                print(
+                    f"   ⚠️  Policy {claim['policy_id']} missing in DB; "
+                    f"skipping persistence of claim {claim['id']}"
+                )
+                continue
+            try:
+                CLAIMS[claim['id']] = claim
+            except Exception as _claim_err:
+                skipped_db_writes += 1
+                print(f"   ⚠️  Could not persist claim {claim['id']}: {_claim_err}")
+
+        if skipped_db_writes:
+            print(
+                f"✓ Initialized {len(sample_claims) - skipped_db_writes}/{len(sample_claims)} "
+                f"sample claims ({skipped_db_writes} skipped due to missing DB parent rows)"
+            )
+        else:
+            print(f"✓ Initialized {len(sample_claims)} sample claims (3 Paid, 1 Pending, 1 Under Review)")
     except Exception as e:
         print(f"⚠️  Claims initialization skipped: {e}")
     

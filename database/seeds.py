@@ -341,199 +341,239 @@ def seed_sample_data(session=None):
                 'created_at': datetime.now(timezone.utc).isoformat()
             }
             logger.info(f"Created health wallet with $20,000 balance for CUST-ASAF-001")
-            
-            # Create policies for primary customer
-            # PREMIUM CALCULATION (aligned with frontend apply.js):
-            # Base rate: $0.25 per $1000 coverage per month
-            # Age factor for age 47: 1.0 + (47-25) * 0.015 = 1.33
-            # Risk factors: low=0.90, medium=1.0
-            # Life $1M low: 1000 * 0.25 * 1.33 * 0.90 = $299.25/mo = $3,591/yr
-            # Health $500K medium: 500 * 0.25 * 1.33 * 1.0 = $166.25/mo = $1,995/yr
-            # Auto $100K low: 100 * 0.15 * 1.33 * 0.90 = $17.96/mo = $215.46/yr
-            policies_data = [
-                {
-                    'id': 'POL-ASAF-LIFE-001',
-                    'type': 'life',
-                    'coverage_amount': 1000000.0,
-                    'annual_premium': 3591.0,  # Corrected from 12000
-                    'monthly_premium': 299.25,  # Corrected from 1000
-                    'status': 'active',
-                    'risk_score': 'low'
-                },
-                {
-                    'id': 'POL-ASAF-HEALTH-001',
-                    'type': 'health',
-                    'coverage_amount': 500000.0,
-                    'annual_premium': 1995.0,  # Corrected from 6000
-                    'monthly_premium': 166.25,  # Corrected from 500
-                    'status': 'active',
-                    'risk_score': 'medium'
-                },
-                {
-                    'id': 'POL-ASAF-AUTO-001',
-                    'type': 'auto',
-                    'coverage_amount': 100000.0,
-                    'annual_premium': 215.46,  # Corrected from 2400
-                    'monthly_premium': 17.96,  # Corrected from 200
-                    'status': 'active',
-                    'risk_score': 'low'
+        else:
+            logger.info(f"Primary customer {primary_customer.email} already exists, verifying related data...")
+
+        # =================================================================
+        # Idempotent creation of primary customer policies/bills/claims/UW.
+        # This block runs on every call so that re-deployments (where the
+        # primary customer already exists) still ensure all dependent rows
+        # are present in the database. Previously, because these were nested
+        # under `if not primary_customer:`, subsequent deploys tried to
+        # insert claims referencing policies that were never persisted,
+        # causing `claims_policy_id_fkey` foreign-key violations.
+        # =================================================================
+
+        # PREMIUM CALCULATION (aligned with frontend apply.js):
+        # Base rate: $0.25 per $1000 coverage per month
+        # Age factor for age 47: 1.0 + (47-25) * 0.015 = 1.33
+        # Risk factors: low=0.90, medium=1.0
+        # Life $1M low: 1000 * 0.25 * 1.33 * 0.90 = $299.25/mo = $3,591/yr
+        # Health $500K medium: 500 * 0.25 * 1.33 * 1.0 = $166.25/mo = $1,995/yr
+        # Auto $100K low: 100 * 0.15 * 1.33 * 0.90 = $17.96/mo = $215.46/yr
+        policies_data = [
+            {
+                'id': 'POL-ASAF-LIFE-001',
+                'type': 'life',
+                'coverage_amount': 1000000.0,
+                'annual_premium': 3591.0,
+                'monthly_premium': 299.25,
+                'status': 'active',
+                'risk_score': 'low'
+            },
+            {
+                'id': 'POL-ASAF-HEALTH-001',
+                'type': 'health',
+                'coverage_amount': 500000.0,
+                'annual_premium': 1995.0,
+                'monthly_premium': 166.25,
+                'status': 'active',
+                'risk_score': 'medium'
+            },
+            {
+                'id': 'POL-ASAF-AUTO-001',
+                'type': 'auto',
+                'coverage_amount': 100000.0,
+                'annual_premium': 215.46,
+                'monthly_premium': 17.96,
+                'status': 'active',
+                'risk_score': 'low'
+            }
+        ]
+
+        for pol_data in policies_data:
+            existing_policy = policy_repo.find_one_by(id=pol_data['id'])
+            if not existing_policy:
+                try:
+                    policy = policy_repo.create(
+                        id=pol_data['id'],
+                        customer_id=primary_customer.id,
+                        type=pol_data['type'],
+                        coverage_amount=pol_data['coverage_amount'],
+                        annual_premium=pol_data['annual_premium'],
+                        monthly_premium=pol_data['monthly_premium'],
+                        status=pol_data['status'],
+                        risk_score=pol_data['risk_score'],
+                        start_date=now,
+                        end_date=now + timedelta(days=365),
+                        approval_date=now
+                    )
+                    if policy is not None:
+                        logger.info(f"Created policy: {policy.id}")
+                    else:
+                        logger.warning(f"Policy repo returned None for {pol_data['id']}; skipping dependents")
+                        continue
+                except Exception as e:
+                    logger.warning(f"Could not create policy {pol_data['id']}: {e}")
+                    continue
+
+            # Sync policy to memory (always, to keep demo/in-memory paths consistent)
+            if sync_primary_to_memory:
+                POLICIES[pol_data['id']] = {
+                    'id': pol_data['id'],
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': pol_data['type'],
+                    'coverage_amount': pol_data['coverage_amount'],
+                    'annual_premium': pol_data['annual_premium'],
+                    'monthly_premium': pol_data['monthly_premium'],
+                    'status': pol_data['status'],
+                    'risk_score': pol_data['risk_score'],
+                    'start_date': now.isoformat(),
+                    'end_date': (now + timedelta(days=365)).isoformat(),
+                    'approval_date': now.isoformat(),
+                    'created_date': now.isoformat(),
+                    'updated_date': now.isoformat()
                 }
-            ]
-            
-            for pol_data in policies_data:
-                policy = policy_repo.create(
-                    id=pol_data['id'],
-                    customer_id=primary_customer.id,
-                    type=pol_data['type'],
-                    coverage_amount=pol_data['coverage_amount'],
-                    annual_premium=pol_data['annual_premium'],
-                    monthly_premium=pol_data['monthly_premium'],
-                    status=pol_data['status'],
-                    risk_score=pol_data['risk_score'],
-                    start_date=now,
-                    end_date=now + timedelta(days=365),
-                    approval_date=now
-                )
-                logger.info(f"Created policy: {policy.id}")
-                
-                # Sync policy to memory
+
+            # Create bill for active policy (idempotent)
+            if pol_data['status'] == 'active':
+                bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
+                existing_bill = billing_repo.find_one_by(id=bill_id)
+                if not existing_bill:
+                    try:
+                        billing_repo.create(
+                            id=bill_id,
+                            policy_id=pol_data['id'],
+                            customer_id=primary_customer.id,
+                            amount=pol_data['monthly_premium'],
+                            amount_paid=0.0,
+                            status='outstanding',
+                            due_date=now + timedelta(days=30)
+                        )
+                        logger.info(f"Created bill: {bill_id}")
+                    except Exception as e:
+                        logger.warning(f"Could not create bill {bill_id}: {e}")
+
                 if sync_primary_to_memory:
-                    POLICIES[pol_data['id']] = {
-                        'id': pol_data['id'],
+                    BILLING[bill_id] = {
+                        'id': bill_id,
+                        'policy_id': pol_data['id'],
                         'customer_id': 'CUST-ASAF-001',
-                        'type': pol_data['type'],
-                        'coverage_amount': pol_data['coverage_amount'],
-                        'annual_premium': pol_data['annual_premium'],
-                        'monthly_premium': pol_data['monthly_premium'],
-                        'status': pol_data['status'],
-                        'risk_score': pol_data['risk_score'],
-                        'start_date': now.isoformat(),
-                        'end_date': (now + timedelta(days=365)).isoformat(),
-                        'approval_date': now.isoformat(),
+                        'amount': pol_data['monthly_premium'],
+                        'amount_paid': 0.0,
+                        'status': 'outstanding',
+                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'paid_date': None,
+                        'payment_method': None,
+                        'transaction_id': None,
+                        'late_fee': 0.0,
                         'created_date': now.isoformat(),
                         'updated_date': now.isoformat()
                     }
-                
-                # Create bill for active policy
-                if pol_data['status'] == 'active':
-                    bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
-                    bill = billing_repo.create(
-                        id=bill_id,
-                        policy_id=policy.id,
-                        customer_id=primary_customer.id,
-                        amount=pol_data['monthly_premium'],
-                        amount_paid=0.0,
-                        status='outstanding',
-                        due_date=now + timedelta(days=30)
-                    )
-                    logger.info(f"Created bill: {bill.id}")
-                    
-                    # Sync bill to memory
-                    if sync_primary_to_memory:
-                        BILLING[bill_id] = {
-                            'id': bill_id,
-                            'policy_id': pol_data['id'],
-                            'customer_id': 'CUST-ASAF-001',
-                            'amount': pol_data['monthly_premium'],
-                            'amount_paid': 0.0,
-                            'status': 'outstanding',
-                            'due_date': (now + timedelta(days=30)).isoformat(),
-                            'paid_date': None,
-                            'payment_method': None,
-                            'transaction_id': None,
-                            'late_fee': 0.0,
-                            'created_date': now.isoformat(),
-                            'updated_date': now.isoformat()
-                        }
-            
-            # Create sample claims for the primary customer
-            claim_repo = ClaimRepository(session)
-            sample_claims = [
-                {
-                    'id': 'CLM-ASAF-001',
-                    'policy_id': 'POL-ASAF-HEALTH-001',
-                    'type': 'Medical',
-                    'description': 'Emergency room visit for chest pain - cardiac evaluation',
-                    'claimed_amount': 15000.00,
-                    'approved_amount': 15000.00,
-                    'status': 'Paid'
-                },
-                {
-                    'id': 'CLM-ASAF-002',
-                    'policy_id': 'POL-ASAF-HEALTH-001',
-                    'type': 'Prescription',
-                    'description': 'Monthly prescription medications - cardiovascular',
-                    'claimed_amount': 850.00,
-                    'approved_amount': 850.00,
-                    'status': 'Paid'
-                },
-                {
-                    'id': 'CLM-ASAF-003',
-                    'policy_id': 'POL-ASAF-AUTO-001',
-                    'type': 'Collision',
-                    'description': 'Fender bender accident - rear bumper damage repair',
-                    'claimed_amount': 3500.00,
-                    'approved_amount': 3200.00,
-                    'status': 'Paid'
-                },
-                {
-                    'id': 'CLM-ASAF-004',
-                    'policy_id': 'POL-ASAF-HEALTH-001',
-                    'type': 'Dental',
-                    'description': 'Root canal treatment and crown placement',
-                    'claimed_amount': 2800.00,
-                    'status': 'Pending'
-                },
-                {
-                    'id': 'CLM-ASAF-005',
-                    'policy_id': 'POL-ASAF-LIFE-001',
-                    'type': 'Disability',
-                    'description': 'Temporary disability claim - work injury recovery',
-                    'claimed_amount': 45000.00,
-                    'status': 'Under Review'
-                }
-            ]
-            
-            for claim_data in sample_claims:
-                try:
-                    filed_date = now - timedelta(days=random.randint(1, 30))
-                    claim = claim_repo.create(
-                        id=claim_data['id'],
-                        policy_id=claim_data['policy_id'],
-                        customer_id=primary_customer.id,
-                        type=claim_data['type'],
-                        description=claim_data['description'],
-                        claimed_amount=claim_data['claimed_amount'],
-                        approved_amount=claim_data.get('approved_amount'),
-                        status=claim_data['status'],
-                        filed_date=filed_date
-                    )
-                    logger.info(f"Created claim: {claim.id}")
-                    
-                    # Sync claim to memory
-                    if sync_primary_to_memory:
-                        CLAIMS[claim_data['id']] = {
-                            'id': claim_data['id'],
-                            'policy_id': claim_data['policy_id'],
-                            'customer_id': 'CUST-ASAF-001',
-                            'type': claim_data['type'],
-                            'description': claim_data['description'],
-                            'claimed_amount': claim_data['claimed_amount'],
-                            'approved_amount': claim_data.get('approved_amount', 0),
-                            'status': claim_data['status'],
-                            'filed_date': filed_date.isoformat(),
-                            'created_date': filed_date.isoformat(),
-                            'updated_date': now.isoformat()
-                        }
-                except Exception as e:
-                    logger.warning(f"Could not create claim {claim_data['id']}: {e}")
-            
-            # Create underwriting application for primary customer
-            # This is the latest application that can be used for risk assessment reports
-            uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
-            existing_uw = underwriting_repo.find_one_by(id=uw_asaf_id)
-            if not existing_uw:
-                try:
+
+        # Create sample claims for the primary customer (idempotent;
+        # depends on policies persisted above)
+        claim_repo = ClaimRepository(session)
+        sample_claims = [
+            {
+                'id': 'CLM-ASAF-001',
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'type': 'Medical',
+                'description': 'Emergency room visit for chest pain - cardiac evaluation',
+                'claimed_amount': 15000.00,
+                'approved_amount': 15000.00,
+                'status': 'Paid'
+            },
+            {
+                'id': 'CLM-ASAF-002',
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'type': 'Prescription',
+                'description': 'Monthly prescription medications - cardiovascular',
+                'claimed_amount': 850.00,
+                'approved_amount': 850.00,
+                'status': 'Paid'
+            },
+            {
+                'id': 'CLM-ASAF-003',
+                'policy_id': 'POL-ASAF-AUTO-001',
+                'type': 'Collision',
+                'description': 'Fender bender accident - rear bumper damage repair',
+                'claimed_amount': 3500.00,
+                'approved_amount': 3200.00,
+                'status': 'Paid'
+            },
+            {
+                'id': 'CLM-ASAF-004',
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'type': 'Dental',
+                'description': 'Root canal treatment and crown placement',
+                'claimed_amount': 2800.00,
+                'status': 'Pending'
+            },
+            {
+                'id': 'CLM-ASAF-005',
+                'policy_id': 'POL-ASAF-LIFE-001',
+                'type': 'Disability',
+                'description': 'Temporary disability claim - work injury recovery',
+                'claimed_amount': 45000.00,
+                'status': 'Under Review'
+            }
+        ]
+
+        for claim_data in sample_claims:
+            try:
+                filed_date = now - timedelta(days=random.randint(1, 30))
+                existing_claim = claim_repo.find_one_by(id=claim_data['id'])
+                if not existing_claim:
+                    # Guard against FK violation: only insert if the referenced
+                    # policy is present in the DB.
+                    parent_policy = policy_repo.find_one_by(id=claim_data['policy_id'])
+                    if not parent_policy:
+                        logger.warning(
+                            f"Skipping claim {claim_data['id']}: parent policy "
+                            f"{claim_data['policy_id']} not found in database"
+                        )
+                    else:
+                        claim = claim_repo.create(
+                            id=claim_data['id'],
+                            policy_id=claim_data['policy_id'],
+                            customer_id=primary_customer.id,
+                            type=claim_data['type'],
+                            description=claim_data['description'],
+                            claimed_amount=claim_data['claimed_amount'],
+                            approved_amount=claim_data.get('approved_amount'),
+                            status=claim_data['status'],
+                            filed_date=filed_date
+                        )
+                        if claim is not None:
+                            logger.info(f"Created claim: {claim.id}")
+
+                if sync_primary_to_memory:
+                    CLAIMS[claim_data['id']] = {
+                        'id': claim_data['id'],
+                        'policy_id': claim_data['policy_id'],
+                        'customer_id': 'CUST-ASAF-001',
+                        'type': claim_data['type'],
+                        'description': claim_data['description'],
+                        'claimed_amount': claim_data['claimed_amount'],
+                        'approved_amount': claim_data.get('approved_amount', 0),
+                        'status': claim_data['status'],
+                        'filed_date': filed_date.isoformat(),
+                        'created_date': filed_date.isoformat(),
+                        'updated_date': now.isoformat()
+                    }
+            except Exception as e:
+                logger.warning(f"Could not create claim {claim_data['id']}: {e}")
+
+        # Create underwriting application for primary customer (idempotent).
+        # This is the latest application that can be used for risk assessment reports.
+        uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
+        existing_uw = underwriting_repo.find_one_by(id=uw_asaf_id)
+        if not existing_uw:
+            try:
+                # Only insert if parent policy exists to avoid FK violation
+                parent_policy = policy_repo.find_one_by(id='POL-ASAF-HEALTH-001')
+                if parent_policy:
                     uw_app = underwriting_repo.create(
                         id=uw_asaf_id,
                         policy_id='POL-ASAF-HEALTH-001',
@@ -543,76 +583,77 @@ def seed_sample_data(session=None):
                         risk_score='medium',
                         created_date=now
                     )
-                    logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
-                    
-                    # Sync to memory with full medical metadata
-                    if sync_primary_to_memory:
-                        # Premium calculation for age 47, moderate risk, $500K health:
-                        # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
-                        UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
-                            'id': uw_asaf_id,
-                            'policy_id': 'POL-ASAF-HEALTH-001',
-                            'customer_id': 'CUST-ASAF-001',
-                            'customer_name': 'Asaf Assurance',
-                            'customer_email': 'asaf@assurance.co.il',
-                            'policy_type': 'health',
-                            'coverage_amount': 500000.0,
-                            'annual_premium': 2294.25,  # Corrected from 6000
-                            'monthly_premium': 191.19,   # Corrected from 500
-                            'status': 'pending',
-                            'risk_score': 'moderate',
-                            'risk_assessment': 'moderate',
-                            # Demographic data
-                            'age': 47,  # Correct age as per applicant data
-                            'gender': 'male',
-                            'occupation': 'Business Owner',
-                            # Medical data - verified from pipeline
-                            'disability_percentage': 30,
-                            'disability_type': 'Mobility Impairment - Lower Limb',
-                            'disability_status': 'stable',
-                            'bmi': 32,
-                            'height_cm': 175,
-                            'weight_kg': 98,
-                            'smoking_status': 'never',
-                            'medical_conditions': [
-                                {
-                                    'condition': 'Obesity',
-                                    'icd_code': 'E66.9',
-                                    'severity': 'moderate',
-                                    'status': 'active',
-                                    'treatment': 'Dietary management, exercise program',
-                                    'risk_impact': 0.07,
-                                    'loading_percentage': 15,
-                                    'notes': 'BMI 32.0 (Class I Obesity). Weight management program.'
-                                },
-                                {
-                                    'condition': 'Mobility Impairment - Lower Limb',
-                                    'icd_code': 'M62.50',
-                                    'severity': 'moderate',
-                                    'status': 'stable',
-                                    'treatment': 'Physiotherapy, mobility aids',
-                                    'risk_impact': 0.18,
-                                    'loading_percentage': 20,
-                                    'exclusion_recommended': True,
-                                    'notes': '30% disability rating. Stable condition.'
-                                }
-                            ],
-                            'documents': [
-                                {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid'},
-                                {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
-                                {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
-                            ],
-                            'identity_verified': True,
-                            'medical_exam_required': True,
-                            'premium_adjustment': 35,
-                            'created_date': now.isoformat(),
-                            'submitted_date': now.isoformat(),
-                            'updated_date': now.isoformat()
-                        }
-                except Exception as e:
-                    logger.warning(f"Could not create underwriting application for primary customer: {e}")
-        else:
-            logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
+                    if uw_app is not None:
+                        logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
+                else:
+                    logger.warning(
+                        f"Skipping underwriting {uw_asaf_id}: parent policy "
+                        f"POL-ASAF-HEALTH-001 not found in database"
+                    )
+            except Exception as e:
+                logger.warning(f"Could not create underwriting application for primary customer: {e}")
+
+        if sync_primary_to_memory:
+            # Premium calculation for age 47, moderate risk, $500K health:
+            # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
+            UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
+                'id': uw_asaf_id,
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'customer_id': 'CUST-ASAF-001',
+                'customer_name': 'Asaf Assurance',
+                'customer_email': 'asaf@assurance.co.il',
+                'policy_type': 'health',
+                'coverage_amount': 500000.0,
+                'annual_premium': 2294.25,
+                'monthly_premium': 191.19,
+                'status': 'pending',
+                'risk_score': 'moderate',
+                'risk_assessment': 'moderate',
+                'age': 47,
+                'gender': 'male',
+                'occupation': 'Business Owner',
+                'disability_percentage': 30,
+                'disability_type': 'Mobility Impairment - Lower Limb',
+                'disability_status': 'stable',
+                'bmi': 32,
+                'height_cm': 175,
+                'weight_kg': 98,
+                'smoking_status': 'never',
+                'medical_conditions': [
+                    {
+                        'condition': 'Obesity',
+                        'icd_code': 'E66.9',
+                        'severity': 'moderate',
+                        'status': 'active',
+                        'treatment': 'Dietary management, exercise program',
+                        'risk_impact': 0.07,
+                        'loading_percentage': 15,
+                        'notes': 'BMI 32.0 (Class I Obesity). Weight management program.'
+                    },
+                    {
+                        'condition': 'Mobility Impairment - Lower Limb',
+                        'icd_code': 'M62.50',
+                        'severity': 'moderate',
+                        'status': 'stable',
+                        'treatment': 'Physiotherapy, mobility aids',
+                        'risk_impact': 0.18,
+                        'loading_percentage': 20,
+                        'exclusion_recommended': True,
+                        'notes': '30% disability rating. Stable condition.'
+                    }
+                ],
+                'documents': [
+                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid'},
+                    {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
+                    {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
+                ],
+                'identity_verified': True,
+                'medical_exam_required': True,
+                'premium_adjustment': 35,
+                'created_date': now.isoformat(),
+                'submitted_date': now.isoformat(),
+                'updated_date': now.isoformat()
+            }
         
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
