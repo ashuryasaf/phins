@@ -6,6 +6,7 @@ Tests the database layer, repositories, and integration with the server.
 
 import os
 import sys
+import types
 import pytest
 from datetime import datetime, timedelta, timezone
 
@@ -272,6 +273,102 @@ def test_database_dict_interface():
     # Cleanup
     del customers['TEST-CUST-400']
     assert 'TEST-CUST-400' not in customers
+
+
+def test_seed_sample_data_skips_memory_sync_when_parent_policy_missing(monkeypatch):
+    """Seeding should not write claim or underwriting rows without a parent policy."""
+    from database import seeds
+
+    claims_store = {}
+    underwriting_store = {}
+    fake_server = types.ModuleType('web_portal.server')
+    fake_server.CUSTOMERS = {}
+    fake_server.POLICIES = {}
+    fake_server.UNDERWRITING_APPLICATIONS = underwriting_store
+    fake_server.BILLING = {}
+    fake_server.CLAIMS = claims_store
+    fake_server.HEALTH_WALLETS = {}
+    fake_server.INVESTMENT_ACCOUNTS = {}
+
+    class ExistingCustomer:
+        id = 'CUST-ASAF-001'
+        email = 'asaf@assurance.co.il'
+
+    class FakeRecord:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    class FakeCustomerRepository:
+        def __init__(self, session):
+            self.session = session
+
+        def find_one_by(self, **kwargs):
+            if kwargs.get('email') == 'asaf@assurance.co.il':
+                return ExistingCustomer()
+            return None
+
+        def create(self, **kwargs):
+            return FakeRecord(**kwargs)
+
+    class FakePolicyRepository:
+        def __init__(self, session):
+            self.session = session
+
+        def find_one_by(self, **kwargs):
+            return None
+
+        def create(self, **kwargs):
+            if kwargs.get('id', '').startswith('POL-ASAF-'):
+                return None
+            return FakeRecord(**kwargs)
+
+    class FakeUnderwritingRepository:
+        def __init__(self, session):
+            self.session = session
+
+        def find_one_by(self, **kwargs):
+            return None
+
+        def create(self, **kwargs):
+            if kwargs.get('id', '').startswith('UW-ASAF-'):
+                pytest.fail('underwriting create should be skipped without parent policy')
+            return FakeRecord(**kwargs)
+
+    class FakeBillingRepository:
+        def __init__(self, session):
+            self.session = session
+
+        def find_one_by(self, **kwargs):
+            return None
+
+        def create(self, **kwargs):
+            return FakeRecord(**kwargs)
+
+    class FakeClaimRepository:
+        def __init__(self, session):
+            self.session = session
+
+        def find_one_by(self, **kwargs):
+            return None
+
+        def create(self, **kwargs):
+            pytest.fail('claim create should be skipped without parent policy')
+
+    fake_repositories = types.ModuleType('database.repositories')
+    fake_repositories.CustomerRepository = FakeCustomerRepository
+    fake_repositories.PolicyRepository = FakePolicyRepository
+    fake_repositories.UnderwritingRepository = FakeUnderwritingRepository
+    fake_repositories.BillingRepository = FakeBillingRepository
+    fake_repositories.ClaimRepository = FakeClaimRepository
+
+    monkeypatch.setitem(sys.modules, 'web_portal.server', fake_server)
+    monkeypatch.setitem(sys.modules, 'database.repositories', fake_repositories)
+
+    seeds.seed_sample_data(session=object())
+
+    assert claims_store == {}
+    assert f"UW-ASAF-{datetime.now(timezone.utc).strftime('%Y%m%d')}-001" not in underwriting_store
 
 
 if __name__ == '__main__':

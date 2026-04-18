@@ -523,11 +523,11 @@ def seed_sample_data(session=None):
         for claim_data in sample_claims:
             try:
                 filed_date = now - timedelta(days=random.randint(1, 30))
+                parent_policy = policy_repo.find_one_by(id=claim_data['policy_id'])
                 existing_claim = claim_repo.find_one_by(id=claim_data['id'])
                 if not existing_claim:
                     # Guard against FK violation: only insert if the referenced
                     # policy is present in the DB.
-                    parent_policy = policy_repo.find_one_by(id=claim_data['policy_id'])
                     if not parent_policy:
                         logger.warning(
                             f"Skipping claim {claim_data['id']}: parent policy "
@@ -548,7 +548,7 @@ def seed_sample_data(session=None):
                         if claim is not None:
                             logger.info(f"Created claim: {claim.id}")
 
-                if sync_primary_to_memory:
+                if sync_primary_to_memory and parent_policy:
                     CLAIMS[claim_data['id']] = {
                         'id': claim_data['id'],
                         'policy_id': claim_data['policy_id'],
@@ -568,11 +568,11 @@ def seed_sample_data(session=None):
         # Create underwriting application for primary customer (idempotent).
         # This is the latest application that can be used for risk assessment reports.
         uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
+        parent_policy = policy_repo.find_one_by(id='POL-ASAF-HEALTH-001')
         existing_uw = underwriting_repo.find_one_by(id=uw_asaf_id)
         if not existing_uw:
             try:
                 # Only insert if parent policy exists to avoid FK violation
-                parent_policy = policy_repo.find_one_by(id='POL-ASAF-HEALTH-001')
                 if parent_policy:
                     uw_app = underwriting_repo.create(
                         id=uw_asaf_id,
@@ -593,7 +593,7 @@ def seed_sample_data(session=None):
             except Exception as e:
                 logger.warning(f"Could not create underwriting application for primary customer: {e}")
 
-        if sync_primary_to_memory:
+        if sync_primary_to_memory and parent_policy:
             # Premium calculation for age 47, moderate risk, $500K health:
             # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
             UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
