@@ -201,6 +201,8 @@ class PaymentValidator:
         
         Returns: (is_valid, brand, error_message)
         """
+        if not card_number:
+            return False, "", "Card number is required"
         # Remove spaces and dashes
         card_number = re.sub(r'[\s-]', '', card_number)
         
@@ -224,6 +226,8 @@ class PaymentValidator:
     @staticmethod
     def _detect_card_brand(card_number: str) -> str:
         """Detect credit card brand from number"""
+        if not card_number:
+            return CardBrand.UNKNOWN.value
         if card_number.startswith('4'):
             return CardBrand.VISA.value
         elif card_number.startswith(('51', '52', '53', '54', '55')) or \

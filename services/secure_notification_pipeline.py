@@ -412,8 +412,11 @@ class TwilioWhatsAppProvider(WhatsAppProvider):
             )
             
             # Format WhatsApp number
+            if not to:
+                logger.warning("[BILLING] WhatsApp send called with None/empty recipient")
+                return False, None, "Recipient phone number is required"
             whatsapp_to = f"whatsapp:{to}" if not to.startswith('whatsapp:') else to
-            whatsapp_from = SecureNotificationConfig.TWILIO_WHATSAPP_NUMBER
+            whatsapp_from = SecureNotificationConfig.TWILIO_WHATSAPP_NUMBER or ''
             if not whatsapp_from.startswith('whatsapp:'):
                 whatsapp_from = f"whatsapp:{whatsapp_from}"
             

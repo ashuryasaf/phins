@@ -13,6 +13,7 @@ and ensure PCI DSS compliance for card handling.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 import hashlib
@@ -28,6 +29,8 @@ import urllib.parse
 import urllib.error
 
 from security.network import validated_urlopen
+
+logger = logging.getLogger(__name__)
 
 
 _TRUTHY_VALUES = {"1", "true", "yes", "y", "on"}
@@ -815,6 +818,20 @@ class UnifiedPaymentGateway:
     
     def check_status(self, transaction_id: str, method: str = None) -> PaymentResult:
         """Check payment status"""
+        if not transaction_id:
+            logger.warning("[BILLING] check_status called with None transaction_id")
+            return PaymentResult(
+                success=False,
+                transaction_id='',
+                gateway='unknown',
+                method=method or 'unknown',
+                amount=0,
+                currency='USD',
+                status=PaymentStatus.FAILED.value,
+                timestamp=datetime.now().isoformat(),
+                error='transaction_id is required',
+                details={}
+            )
         if transaction_id.startswith('CRYPTO-') or method in ['bitcoin', 'ethereum', 'usdc']:
             return self.crypto.check_payment_status(transaction_id)
         
@@ -849,6 +866,20 @@ class UnifiedPaymentGateway:
     def refund(self, transaction_id: str, amount: float = None,
                method: str = None) -> PaymentResult:
         """Process a refund"""
+        if not transaction_id:
+            logger.warning("[BILLING] refund called with None transaction_id")
+            return PaymentResult(
+                success=False,
+                transaction_id='',
+                gateway='unknown',
+                method='refund',
+                amount=amount or 0,
+                currency='USD',
+                status=PaymentStatus.FAILED.value,
+                timestamp=datetime.now().isoformat(),
+                error='transaction_id is required for refund',
+                details={}
+            )
         if transaction_id.startswith('pi_'):
             return self.stripe.refund(transaction_id, amount)
         elif transaction_id.startswith('PAYPAL-'):

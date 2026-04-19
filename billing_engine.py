@@ -71,6 +71,8 @@ class SecurityValidator:
     @staticmethod
     def detect_card_type(card_number: str) -> Optional[str]:
         """Detect card type from card number (IIN/BIN identification)"""
+        if not card_number:
+            return None
         card_number = card_number.replace(' ', '').replace('-', '')
         if not card_number.isdigit():
             return None
@@ -94,6 +96,14 @@ class SecurityValidator:
         Returns dict with validation details for insurance-grade accuracy.
         """
         # Clean the card number
+        if not card_number:
+            return {
+                'valid': False,
+                'card_number_masked': '****',
+                'card_type': None,
+                'errors': ['Card number is required'],
+                'warnings': []
+            }
         original = card_number
         card_number = card_number.replace(' ', '').replace('-', '').replace('.', '')
         
