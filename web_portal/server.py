@@ -6186,18 +6186,9 @@ def validate_session(token: str) -> dict[str, str] | None:
     if not token:
         return None
 
-    # v2 tokens (full HMAC-SHA256 + revocable jti).
-    if token.startswith('phins2_'):
-        v2_result = _auth_tokens.verify_v2_token(token)
-        if v2_result is not None:
-            return v2_result.to_session_dict()
-        return None
-
-    # Legacy v1 signed tokens.
-    if token.startswith('phins_') and '.' in token:
-        signed_result = _verify_signed_token(token)
-        if signed_result:
-            return signed_result
+    signed_result = _auth_tokens.verify_any_token(token)
+    if signed_result is not None:
+        return signed_result
     
     # Fallback: Check local SESSIONS dict (legacy tokens or same-instance)
     if token.startswith('phins_'):
@@ -6239,6 +6230,32 @@ def validate_session(token: str) -> dict[str, str] | None:
             print(f"[SESSION] DB lookup error: {e}")
     
     return None
+
+
+def _revoke_user_sessions(
+    username: str,
+    *,
+    exclude_token: Optional[str] = None,
+) -> None:
+    """Remove a user's sessions under ``STATE_LOCK`` and revoke any v2 jtids."""
+    removed_sessions: List[Dict[str, Any]] = []
+    with STATE_LOCK:
+        for session_token, sess in list(SESSIONS.items()):
+            if sess.get('username') != username or session_token == exclude_token:
+                continue
+            removed = SESSIONS.pop(session_token, None)
+            if removed is not None:
+                removed_sessions.append(removed)
+
+    for sess in removed_sessions:
+        jti = sess.get('jti')
+        if not jti:
+            continue
+        try:
+            exp = datetime.fromisoformat(sess.get('expires') or '').timestamp()
+        except Exception:
+            exp = datetime.now().timestamp() + SESSION_TIMEOUT
+        _auth_tokens.revoke_token(jti, exp)
 
 def get_customer_id_guaranteed(username: str, role: str) -> str | None:
     """
@@ -7495,6 +7512,8 @@ def cleanup_stale_data():
         # Trim malicious attempts log to last 1000
         if len(MALICIOUS_ATTEMPTS) > 1000:
             MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
+
+    _auth_tokens.prune_revocations(now=timestamp)
     
     if expired_sessions or expired_limits or expired_lockouts or expired_blocks:
         print(f"🧹 Cleanup: Removed {len(expired_sessions)} sessions, {len(expired_limits)} rate limits, "
@@ -24038,22 +24057,7 @@ For claims or questions, please contact:
                 # Invalidate all existing sessions for this user. We drop the
                 # in-memory entries AND revoke any stateless v2 ``jti`` values
                 # so tokens cached by other replicas stop validating too.
-                sessions_to_remove = [
-                    token for token, sess in SESSIONS.items()
-                    if sess.get('username') == username
-                ]
-                for token in sessions_to_remove:
-                    sess = SESSIONS.get(token) or {}
-                    jti = sess.get('jti')
-                    if jti:
-                        try:
-                            exp = datetime.fromisoformat(
-                                sess.get('expires') or ''
-                            ).timestamp()
-                        except Exception:
-                            exp = datetime.now().timestamp() + SESSION_TIMEOUT
-                        _auth_tokens.revoke_token(jti, exp)
-                    del SESSIONS[token]
+                _revoke_user_sessions(username)
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
@@ -24138,22 +24142,7 @@ For claims or questions, please contact:
                 
                 # Invalidate all sessions except current. Revoke v2 ``jti``
                 # values so the tokens stop validating across replicas.
-                sessions_to_remove = [
-                    t for t, s in SESSIONS.items()
-                    if s.get('username') == username and t != token
-                ]
-                for t in sessions_to_remove:
-                    sess = SESSIONS.get(t) or {}
-                    jti = sess.get('jti')
-                    if jti:
-                        try:
-                            exp = datetime.fromisoformat(
-                                sess.get('expires') or ''
-                            ).timestamp()
-                        except Exception:
-                            exp = datetime.now().timestamp() + SESSION_TIMEOUT
-                        _auth_tokens.revoke_token(jti, exp)
-                    del SESSIONS[t]
+                _revoke_user_sessions(username, exclude_token=token)
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({

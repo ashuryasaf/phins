@@ -186,6 +186,20 @@ def test_revocation_expires_with_token(token_secret):
     assert auth_tokens.is_revoked("jti-past") is False
 
 
+def test_prune_revocations_removes_expired_entries(token_secret):
+    from security import auth_tokens
+
+    now = time.time()
+    auth_tokens.revoke_token("jti-expired", now - 5)
+    auth_tokens.revoke_token("jti-live", now + 60)
+
+    removed = auth_tokens.prune_revocations(now=now)
+
+    assert removed >= 1
+    assert auth_tokens.is_revoked("jti-expired") is False
+    assert auth_tokens.is_revoked("jti-live") is True
+
+
 def test_key_rotation_allows_previous_key(monkeypatch):
     """Tokens minted with the previous key still verify after rotation."""
     from security import auth_tokens
