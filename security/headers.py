@@ -29,15 +29,15 @@ JSON_CSP = (
 # frame-ancestors, and mixed content.
 HTML_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net "
     "https://cdnjs.cloudflare.com; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
     "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
     "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net "
     "https://cdnjs.cloudflare.com; "
-    "img-src 'self' data: https: blob:; "
+    "img-src 'self' data: blob: https://api.qrserver.com; "
     "media-src 'self' blob:; "
-    "connect-src 'self' https:; "
+    "connect-src 'self'; "
     "frame-ancestors 'self'; "
     "form-action 'self'; "
     "base-uri 'self'; "
