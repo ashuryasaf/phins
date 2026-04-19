@@ -1,0 +1,370 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <!-- Van Gogh swirl filter for painterly texture -->
+    <filter id="painterly" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="turbulence" baseFrequency="0.015" numOctaves="4" seed="3" result="turb"/>
+      <feDisplacementMap in="SourceGraphic" in2="turb" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="brushstroke" x="-2%" y="-2%" width="104%" height="104%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="7" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="star-glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="shadow3d">
+      <feDropShadow dx="4" dy="6" stdDeviation="8" flood-color="#0a1628" flood-opacity="0.5"/>
+    </filter>
+    <filter id="text3d">
+      <feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#0a1628" flood-opacity="0.7"/>
+    </filter>
+
+    <!-- Sky gradient - deep Van Gogh blue -->
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1a3d"/>
+      <stop offset="30%" stop-color="#162d6b"/>
+      <stop offset="60%" stop-color="#1a4a8a"/>
+      <stop offset="100%" stop-color="#2a6cb0"/>
+    </linearGradient>
+
+    <!-- Sea gradient -->
+    <linearGradient id="seaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a5276"/>
+      <stop offset="40%" stop-color="#154360"/>
+      <stop offset="100%" stop-color="#0b2e4a"/>
+    </linearGradient>
+
+    <!-- Ship hull gradient -->
+    <linearGradient id="hullGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5d3a1a"/>
+      <stop offset="50%" stop-color="#4a2c0f"/>
+      <stop offset="100%" stop-color="#3a1f08"/>
+    </linearGradient>
+
+    <!-- Shield gradient -->
+    <linearGradient id="shieldGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#f0c850"/>
+      <stop offset="30%" stop-color="#d4a832"/>
+      <stop offset="70%" stop-color="#b8901e"/>
+      <stop offset="100%" stop-color="#8a6a10"/>
+    </linearGradient>
+
+    <!-- Shield inner gradient -->
+    <linearGradient id="shieldInnerGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#1a6fc4"/>
+      <stop offset="50%" stop-color="#0d4f94"/>
+      <stop offset="100%" stop-color="#083870"/>
+    </linearGradient>
+
+    <!-- Sail gradient -->
+    <linearGradient id="sailGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f5f0e8"/>
+      <stop offset="50%" stop-color="#e8ddc8"/>
+      <stop offset="100%" stop-color="#d4c8a8"/>
+    </linearGradient>
+
+    <!-- Moon glow -->
+    <radialGradient id="moonGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#fffde0" stop-opacity="1"/>
+      <stop offset="60%" stop-color="#f0e68c" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#f0e68c" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Dolphin gradient -->
+    <linearGradient id="dolphinGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5b8fa8"/>
+      <stop offset="50%" stop-color="#3a7190"/>
+      <stop offset="100%" stop-color="#2a5a78"/>
+    </linearGradient>
+
+    <!-- Water reflection shimmer -->
+    <linearGradient id="shimmer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f0e68c" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#f0e68c" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f0e68c" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Swirl pattern for Van Gogh sky -->
+    <pattern id="swirlPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+      <circle cx="50" cy="50" r="30" fill="none" stroke="#2a5a9a" stroke-width="3" opacity="0.3"/>
+      <circle cx="150" cy="80" r="25" fill="none" stroke="#3a6aaa" stroke-width="2.5" opacity="0.25"/>
+      <circle cx="100" cy="150" r="35" fill="none" stroke="#2a5080" stroke-width="3" opacity="0.2"/>
+    </pattern>
+  </defs>
+
+  <!-- Circular frame for logo -->
+  <circle cx="400" cy="400" r="395" fill="#0a1230"/>
+  <circle cx="400" cy="400" r="385" fill="url(#skyGrad)" filter="url(#painterly)"/>
+
+  <!-- Van Gogh swirling sky strokes -->
+  <g filter="url(#brushstroke)" opacity="0.7">
+    <!-- Large swirl top-left -->
+    <path d="M120,120 Q180,80 220,120 Q260,160 220,200 Q180,240 140,200 Q100,160 120,120" fill="none" stroke="#3a6ab0" stroke-width="5" opacity="0.6"/>
+    <path d="M130,130 Q190,90 230,130 Q270,170 230,210 Q190,250 150,210 Q110,170 130,130" fill="none" stroke="#4a7ac0" stroke-width="3" opacity="0.5"/>
+
+    <!-- Swirl top-center -->
+    <path d="M340,80 Q400,40 460,80 Q520,120 460,160 Q400,200 340,160 Q280,120 340,80" fill="none" stroke="#2a5a9a" stroke-width="5" opacity="0.5"/>
+    <path d="M350,90 Q410,50 470,90 Q530,130 470,170 Q410,210 350,170 Q290,130 350,90" fill="none" stroke="#3a6ab0" stroke-width="3.5" opacity="0.4"/>
+
+    <!-- Swirl top-right -->
+    <path d="M580,100 Q640,60 680,100 Q720,140 680,180 Q640,220 600,180 Q560,140 580,100" fill="none" stroke="#4a7ac0" stroke-width="4.5" opacity="0.55"/>
+    <path d="M590,110 Q650,70 690,110 Q730,150 690,190 Q650,230 610,190 Q570,150 590,110" fill="none" stroke="#5a8ad0" stroke-width="3" opacity="0.4"/>
+
+    <!-- Additional swirls -->
+    <path d="M200,200 Q240,170 270,200 Q300,230 270,260 Q240,290 210,260 Q180,230 200,200" fill="none" stroke="#3570b0" stroke-width="4" opacity="0.45"/>
+    <path d="M500,180 Q540,150 570,180 Q600,210 570,240 Q540,270 510,240 Q480,210 500,180" fill="none" stroke="#3570b0" stroke-width="4" opacity="0.45"/>
+    <path d="M650,200 Q690,180 710,210 Q730,240 700,260 Q670,280 650,250 Q630,220 650,200" fill="none" stroke="#4a80c0" stroke-width="3.5" opacity="0.4"/>
+    <path d="M100,250 Q130,230 155,250 Q180,275 155,300 Q130,320 105,295 Q80,270 100,250" fill="none" stroke="#4a80c0" stroke-width="3.5" opacity="0.4"/>
+  </g>
+
+  <!-- Stars (Van Gogh style radiating) -->
+  <g filter="url(#star-glow)">
+    <circle cx="180" cy="100" r="5" fill="#fffde0" opacity="0.9"/>
+    <line x1="180" y1="88" x2="180" y2="112" stroke="#fffde0" stroke-width="1.5" opacity="0.6"/>
+    <line x1="168" y1="100" x2="192" y2="100" stroke="#fffde0" stroke-width="1.5" opacity="0.6"/>
+    <line x1="172" y1="92" x2="188" y2="108" stroke="#fffde0" stroke-width="1" opacity="0.4"/>
+    <line x1="188" y1="92" x2="172" y2="108" stroke="#fffde0" stroke-width="1" opacity="0.4"/>
+
+    <circle cx="620" cy="80" r="4" fill="#fffde0" opacity="0.85"/>
+    <line x1="620" y1="70" x2="620" y2="90" stroke="#fffde0" stroke-width="1.5" opacity="0.5"/>
+    <line x1="610" y1="80" x2="630" y2="80" stroke="#fffde0" stroke-width="1.5" opacity="0.5"/>
+
+    <circle cx="300" cy="60" r="3" fill="#fffde0" opacity="0.8"/>
+    <line x1="300" y1="52" x2="300" y2="68" stroke="#fffde0" stroke-width="1" opacity="0.5"/>
+    <line x1="292" y1="60" x2="308" y2="60" stroke="#fffde0" stroke-width="1" opacity="0.5"/>
+
+    <circle cx="520" cy="50" r="3.5" fill="#fffde0" opacity="0.85"/>
+    <line x1="520" y1="42" x2="520" y2="58" stroke="#fffde0" stroke-width="1.2" opacity="0.5"/>
+    <line x1="512" y1="50" x2="528" y2="50" stroke="#fffde0" stroke-width="1.2" opacity="0.5"/>
+
+    <circle cx="720" cy="160" r="2.5" fill="#fffde0" opacity="0.7"/>
+    <circle cx="100" cy="180" r="2.5" fill="#fffde0" opacity="0.7"/>
+    <circle cx="440" cy="40" r="2" fill="#fffde0" opacity="0.6"/>
+    <circle cx="250" cy="150" r="2" fill="#fffde0" opacity="0.6"/>
+    <circle cx="670" cy="130" r="2" fill="#fffde0" opacity="0.6"/>
+  </g>
+
+  <!-- Crescent Moon -->
+  <g filter="url(#glow)" transform="translate(650, 80)">
+    <circle cx="0" cy="0" r="35" fill="url(#moonGlow)"/>
+    <circle cx="0" cy="0" r="22" fill="#fffde0"/>
+    <circle cx="8" cy="-5" r="18" fill="#0b1a3d"/>
+    <!-- Moon crater details -->
+    <circle cx="-8" cy="-3" r="3" fill="#f5e6a0" opacity="0.5"/>
+    <circle cx="-4" cy="8" r="2" fill="#f5e6a0" opacity="0.4"/>
+  </g>
+
+  <!-- Sea / Ocean -->
+  <g filter="url(#painterly)">
+    <!-- Ocean base -->
+    <path d="M15,450 Q100,430 200,445 Q300,460 400,440 Q500,420 600,445 Q700,470 785,450 L785,780 Q400,790 15,780 Z" fill="url(#seaGrad)"/>
+
+    <!-- Van Gogh wave strokes - layer 1 -->
+    <g opacity="0.6">
+      <path d="M30,460 Q80,445 130,460 Q180,475 230,460 Q280,445 330,460 Q380,475 430,460 Q480,445 530,460 Q580,475 630,460 Q680,445 730,460 Q760,470 780,465" fill="none" stroke="#2a7ab0" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M20,485 Q70,470 120,485 Q170,500 220,485 Q270,470 320,485 Q370,500 420,485 Q470,470 520,485 Q570,500 620,485 Q670,470 720,485 Q760,495 785,490" fill="none" stroke="#3588b8" stroke-width="4" stroke-linecap="round"/>
+      <path d="M25,510 Q75,495 125,510 Q175,525 225,510 Q275,495 325,510 Q375,525 425,510 Q475,495 525,510 Q575,525 625,510 Q675,495 725,510 Q765,520 780,515" fill="none" stroke="#1a6090" stroke-width="4" stroke-linecap="round"/>
+    </g>
+
+    <!-- Van Gogh wave strokes - layer 2 -->
+    <g opacity="0.5">
+      <path d="M30,540 Q90,525 150,540 Q210,555 270,540 Q330,525 390,540 Q450,555 510,540 Q570,525 630,540 Q690,555 750,540" fill="none" stroke="#2570a0" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M20,570 Q80,555 140,570 Q200,585 260,570 Q320,555 380,570 Q440,585 500,570 Q560,555 620,570 Q680,585 740,570 Q775,560 785,565" fill="none" stroke="#1a5580" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M30,600 Q90,585 150,600 Q210,615 270,600 Q330,585 390,600 Q450,615 510,600 Q570,585 630,600 Q690,615 750,600" fill="none" stroke="#154a70" stroke-width="3" stroke-linecap="round"/>
+      <path d="M20,630 Q80,620 140,630 Q200,640 260,630 Q320,620 380,630 Q440,640 500,630 Q560,620 620,630 Q680,640 740,630" fill="none" stroke="#103a60" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <!-- Deep water strokes -->
+    <g opacity="0.4">
+      <path d="M30,660 Q100,650 170,660 Q240,670 310,660 Q380,650 450,660 Q520,670 590,660 Q660,650 730,660" fill="none" stroke="#0d3050" stroke-width="3" stroke-linecap="round"/>
+      <path d="M40,690 Q110,680 180,690 Q250,700 320,690 Q390,680 460,690 Q530,700 600,690 Q670,680 740,690" fill="none" stroke="#0a2840" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M30,720 Q100,712 170,720 Q240,728 310,720 Q380,712 450,720 Q520,728 590,720 Q660,712 730,720" fill="none" stroke="#082030" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+
+    <!-- Moon reflection on water -->
+    <g opacity="0.25">
+      <rect x="620" y="450" width="60" height="300" fill="url(#shimmer)"/>
+      <path d="M640,460 Q650,470 660,460" fill="none" stroke="#f0e68c" stroke-width="2" opacity="0.4"/>
+      <path d="M635,500 Q650,510 665,500" fill="none" stroke="#f0e68c" stroke-width="1.5" opacity="0.3"/>
+      <path d="M638,550 Q650,558 662,550" fill="none" stroke="#f0e68c" stroke-width="1.5" opacity="0.25"/>
+      <path d="M640,600 Q650,607 660,600" fill="none" stroke="#f0e68c" stroke-width="1" opacity="0.2"/>
+    </g>
+  </g>
+
+  <!-- Ship -->
+  <g filter="url(#shadow3d)" transform="translate(400, 380)">
+    <!-- Hull (with shield-shaped bow) -->
+    <g filter="url(#brushstroke)">
+      <!-- Main hull body -->
+      <path d="M-140,20 Q-150,40 -130,80 L-100,100 L100,100 Q120,100 130,80 L140,20 Z" fill="url(#hullGrad)" stroke="#2a1a05" stroke-width="2"/>
+
+      <!-- Shield-shaped bow (front of ship - pointing right) -->
+      <path d="M140,20 L175,-10 L190,30 L175,70 L140,100 Z" fill="url(#shieldGrad)" stroke="#6a5010" stroke-width="2"/>
+      <!-- Shield inner emblem -->
+      <path d="M150,20 L170,5 L180,30 L170,55 L150,75 Z" fill="url(#shieldInnerGrad)" stroke="#d4a832" stroke-width="1.5"/>
+      <!-- Shield anchor emblem -->
+      <circle cx="165" cy="38" r="10" fill="none" stroke="#f0c850" stroke-width="1.5" opacity="0.8"/>
+      <line x1="165" y1="28" x2="165" y2="50" stroke="#f0c850" stroke-width="1.5" opacity="0.8"/>
+      <path d="M158,44 Q165,50 172,44" fill="none" stroke="#f0c850" stroke-width="1.5" opacity="0.8"/>
+
+      <!-- Hull planking details -->
+      <line x1="-120" y1="50" x2="130" y2="50" stroke="#2a1a05" stroke-width="1" opacity="0.4"/>
+      <line x1="-110" y1="70" x2="120" y2="70" stroke="#2a1a05" stroke-width="1" opacity="0.4"/>
+      <line x1="-100" y1="90" x2="105" y2="90" stroke="#2a1a05" stroke-width="1" opacity="0.3"/>
+
+      <!-- Stern detail (back - left side) -->
+      <path d="M-140,20 L-160,0 L-155,-10 L-140,5 Z" fill="#5d3a1a" stroke="#2a1a05" stroke-width="1.5"/>
+    </g>
+
+    <!-- Mast -->
+    <line x1="0" y1="20" x2="0" y2="-200" stroke="#4a3018" stroke-width="6" stroke-linecap="round"/>
+    <line x1="0" y1="-200" x2="0" y2="-210" stroke="#d4a832" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Main Sail -->
+    <g filter="url(#brushstroke)">
+      <path d="M5,-190 Q80,-150 70,-80 Q65,-40 5,-10 Z" fill="url(#sailGrad)" stroke="#a0906a" stroke-width="1.5" opacity="0.95"/>
+      <!-- Sail cross detail -->
+      <path d="M15,-170 Q60,-140 55,-80 Q50,-50 15,-25" fill="none" stroke="#c0a878" stroke-width="1" opacity="0.5"/>
+      <line x1="5" y1="-100" x2="65" y2="-90" stroke="#c0a878" stroke-width="1" opacity="0.4"/>
+    </g>
+
+    <!-- Secondary Sail (jib) -->
+    <g filter="url(#brushstroke)">
+      <path d="M-5,-180 Q-60,-130 -50,-70 Q-45,-30 -5,-10 Z" fill="url(#sailGrad)" stroke="#a0906a" stroke-width="1.5" opacity="0.85"/>
+      <path d="M-10,-160 Q-45,-120 -40,-70 Q-38,-40 -10,-20" fill="none" stroke="#c0a878" stroke-width="1" opacity="0.4"/>
+    </g>
+
+    <!-- Crow's nest -->
+    <rect x="-8" y="-195" width="16" height="8" rx="2" fill="#4a3018" stroke="#2a1a05" stroke-width="1"/>
+
+    <!-- Flag at top -->
+    <g>
+      <path d="M0,-210 Q15,-220 25,-210 Q15,-200 0,-205 Z" fill="#e63946" stroke="#c0303c" stroke-width="1"/>
+    </g>
+
+    <!-- Railing/gunwale -->
+    <line x1="-135" y1="20" x2="140" y2="20" stroke="#6a4a20" stroke-width="3"/>
+    <!-- Railing posts -->
+    <line x1="-120" y1="20" x2="-120" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <line x1="-80" y1="20" x2="-80" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <line x1="-40" y1="20" x2="-40" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <line x1="0" y1="20" x2="0" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <line x1="40" y1="20" x2="40" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <line x1="80" y1="20" x2="80" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <line x1="120" y1="20" x2="120" y2="8" stroke="#6a4a20" stroke-width="2"/>
+    <!-- Top railing bar -->
+    <line x1="-120" y1="8" x2="120" y2="8" stroke="#6a4a20" stroke-width="1.5"/>
+
+    <!-- Porthole windows -->
+    <circle cx="-80" cy="55" r="8" fill="#1a4a6a" stroke="#d4a832" stroke-width="2"/>
+    <circle cx="-40" cy="55" r="8" fill="#1a4a6a" stroke="#d4a832" stroke-width="2"/>
+    <circle cx="0" cy="55" r="8" fill="#1a4a6a" stroke="#d4a832" stroke-width="2"/>
+    <circle cx="40" cy="55" r="8" fill="#1a4a6a" stroke="#d4a832" stroke-width="2"/>
+    <circle cx="80" cy="55" r="8" fill="#1a4a6a" stroke="#d4a832" stroke-width="2"/>
+    <!-- Porthole reflections -->
+    <circle cx="-82" cy="53" r="3" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="-42" cy="53" r="3" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="-2" cy="53" r="3" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="38" cy="53" r="3" fill="rgba(255,255,255,0.15)"/>
+    <circle cx="78" cy="53" r="3" fill="rgba(255,255,255,0.15)"/>
+  </g>
+
+  <!-- Dolphin Left (leaping) -->
+  <g filter="url(#brushstroke)" transform="translate(180, 420) rotate(-25)">
+    <path d="M0,0 Q-10,-20 -5,-40 Q0,-55 15,-60 Q30,-58 40,-45 Q50,-30 55,-15 Q58,0 50,10 Q40,15 30,10 Q20,5 10,0 Z" fill="url(#dolphinGrad)" stroke="#1a4a68" stroke-width="1.5"/>
+    <!-- Dorsal fin -->
+    <path d="M20,-45 L15,-65 L30,-48" fill="#3a7190" stroke="#1a4a68" stroke-width="1"/>
+    <!-- Tail fluke -->
+    <path d="M-5,-38 L-20,-50 L-10,-35 L-25,-38 L-8,-30" fill="#3a7190" stroke="#1a4a68" stroke-width="1"/>
+    <!-- Eye -->
+    <circle cx="42" cy="-30" r="3" fill="#0a1628"/>
+    <circle cx="43" cy="-31" r="1" fill="white" opacity="0.7"/>
+    <!-- Belly highlight -->
+    <path d="M15,-5 Q30,-10 45,-5 Q50,5 40,10 Q25,8 15,-5" fill="#7ab0c8" opacity="0.4"/>
+    <!-- Snout -->
+    <path d="M50,-20 Q58,-25 55,-15" fill="none" stroke="#5b8fa8" stroke-width="1.5"/>
+  </g>
+
+  <!-- Dolphin Right (leaping) -->
+  <g filter="url(#brushstroke)" transform="translate(620, 410) rotate(20) scale(-1,1)">
+    <path d="M0,0 Q-10,-20 -5,-40 Q0,-55 15,-60 Q30,-58 40,-45 Q50,-30 55,-15 Q58,0 50,10 Q40,15 30,10 Q20,5 10,0 Z" fill="url(#dolphinGrad)" stroke="#1a4a68" stroke-width="1.5"/>
+    <!-- Dorsal fin -->
+    <path d="M20,-45 L15,-65 L30,-48" fill="#3a7190" stroke="#1a4a68" stroke-width="1"/>
+    <!-- Tail fluke -->
+    <path d="M-5,-38 L-20,-50 L-10,-35 L-25,-38 L-8,-30" fill="#3a7190" stroke="#1a4a68" stroke-width="1"/>
+    <!-- Eye -->
+    <circle cx="42" cy="-30" r="3" fill="#0a1628"/>
+    <circle cx="43" cy="-31" r="1" fill="white" opacity="0.7"/>
+    <!-- Belly highlight -->
+    <path d="M15,-5 Q30,-10 45,-5 Q50,5 40,10 Q25,8 15,-5" fill="#7ab0c8" opacity="0.4"/>
+    <!-- Snout -->
+    <path d="M50,-20 Q58,-25 55,-15" fill="none" stroke="#5b8fa8" stroke-width="1.5"/>
+  </g>
+
+  <!-- Small dolphin (background, swimming) -->
+  <g filter="url(#brushstroke)" transform="translate(300, 500) scale(0.5) rotate(-10)">
+    <path d="M0,0 Q-10,-20 -5,-40 Q0,-55 15,-60 Q30,-58 40,-45 Q50,-30 55,-15 Q58,0 50,10 Q40,15 30,10 Q20,5 10,0 Z" fill="#3a7190" stroke="#1a4a68" stroke-width="1.5" opacity="0.6"/>
+    <path d="M20,-45 L15,-65 L30,-48" fill="#2a5a78" stroke="#1a4a68" stroke-width="1" opacity="0.6"/>
+  </g>
+
+  <!-- Another small dolphin -->
+  <g filter="url(#brushstroke)" transform="translate(520, 510) scale(0.45) rotate(8)">
+    <path d="M0,0 Q-10,-20 -5,-40 Q0,-55 15,-60 Q30,-58 40,-45 Q50,-30 55,-15 Q58,0 50,10 Q40,15 30,10 Q20,5 10,0 Z" fill="#3a7190" stroke="#1a4a68" stroke-width="1.5" opacity="0.5"/>
+    <path d="M20,-45 L15,-65 L30,-48" fill="#2a5a78" stroke="#1a4a68" stroke-width="1" opacity="0.5"/>
+  </g>
+
+  <!-- Water splash effects near dolphins -->
+  <g opacity="0.5">
+    <path d="M170,430 Q175,415 180,430" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <path d="M185,425 Q190,412 195,425" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M160,435 Q163,425 166,435" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+
+    <path d="M620,425 Q625,412 630,425" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <path d="M635,420 Q638,410 641,420" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M610,430 Q614,420 618,430" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- Ship wake/foam -->
+  <g opacity="0.4">
+    <path d="M530,470 Q560,465 590,470 Q600,475 590,480 Q560,483 530,478 Z" fill="white" opacity="0.2"/>
+    <path d="M540,478 Q570,474 595,480" fill="none" stroke="white" stroke-width="1.5" opacity="0.3"/>
+    <path d="M260,465 Q290,460 320,465" fill="none" stroke="white" stroke-width="2" opacity="0.25"/>
+    <path d="M270,475 Q300,470 330,475" fill="none" stroke="white" stroke-width="1.5" opacity="0.2"/>
+  </g>
+
+  <!-- Foreground wave crests -->
+  <g filter="url(#brushstroke)" opacity="0.6">
+    <path d="M15,740 Q80,720 160,740 Q240,760 320,740 Q400,720 480,740 Q560,760 640,740 Q720,720 785,740" fill="none" stroke="#4a90c0" stroke-width="5" stroke-linecap="round"/>
+    <path d="M15,760 Q80,745 160,760 Q240,775 320,760 Q400,745 480,760 Q560,775 640,760 Q720,745 785,760" fill="none" stroke="#3a80b0" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- PHINS Text with 3D effect -->
+  <g filter="url(#text3d)">
+    <!-- Text shadow for 3D -->
+    <text x="400" y="700" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="bold" fill="#0a2040" opacity="0.5" transform="translate(3,3)">PHINS</text>
+    <!-- Main text -->
+    <text x="400" y="700" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="bold" fill="#f0c850" stroke="#d4a832" stroke-width="1.5">PHINS</text>
+    <!-- Text highlight -->
+    <text x="400" y="700" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="bold" fill="none" stroke="#fff8dc" stroke-width="0.5" opacity="0.4">PHINS</text>
+  </g>
+
+  <!-- Subtitle -->
+  <text x="400" y="735" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="22" fill="#c0d8f0" letter-spacing="6" opacity="0.9">SAFE ASSURANCE</text>
+
+  <!-- Circular border ring -->
+  <circle cx="400" cy="400" r="385" fill="none" stroke="#d4a832" stroke-width="4" opacity="0.6"/>
+  <circle cx="400" cy="400" r="392" fill="none" stroke="#1a3a6a" stroke-width="3" opacity="0.4"/>
+
+  <!-- Outer decorative dots -->
+  <g opacity="0.35">
+    <circle cx="400" cy="8" r="3" fill="#d4a832"/>
+    <circle cx="400" cy="792" r="3" fill="#d4a832"/>
+    <circle cx="8" cy="400" r="3" fill="#d4a832"/>
+    <circle cx="792" cy="400" r="3" fill="#d4a832"/>
+  </g>
+</svg>
