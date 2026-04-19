@@ -14039,10 +14039,10 @@ For claims or questions, please contact:
                     
                     DEFAULT CARD: If credit card but no last 4 digits available, use "4444"
                     """
-                    raw_method = bill.get('payment_method', '')
-                    pm_info = bill.get('payment_method_info', {})
-                    payment_setup = policy.get('payment_setup', {}) if policy else {}
-                    billing_config = policy.get('billing', {}) if policy else {}
+                    raw_method = bill.get('payment_method') or ''
+                    pm_info = bill.get('payment_method_info') or {}
+                    payment_setup = (policy.get('payment_setup') or {}) if policy else {}
+                    billing_config = (policy.get('billing') or {}) if policy else {}
                     
                     # Try to get card details from multiple sources (with fallback default)
                     card_last4 = (
