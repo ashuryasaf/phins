@@ -12,10 +12,12 @@ embedded role to scope correctly.
 import json
 import threading
 import time
+from datetime import datetime
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
+from security import auth_tokens
 import web_portal.server as portal
 
 
@@ -56,6 +58,66 @@ def _reset_supplier_state():
     with portal.STATE_LOCK:
         portal.SUPPLIERS.clear()
         portal.SUPPLIER_OFFERS.clear()
+        portal.SESSIONS.clear()
+
+
+def test_supplier_login_stores_jti_for_revocation(monkeypatch):
+    _reset_supplier_state()
+
+    monkeypatch.setenv("SESSION_SECRET_KEY", "s" * 48)
+    auth_tokens.set_secret_provider_for_tests(None)
+
+    port = 8162
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        reg, status = _post(
+            f"{base}/api/supplier/register",
+            {
+                "company_name": "Supplier JTI",
+                "contact_email": "supplier-jti@example.com",
+                "contact_name": "Supplier JTI Contact",
+                "supplier_type": "delivery",
+                "password": "SupJtiPass123!",
+            },
+        )
+        assert status == 200
+        supplier_id = reg.get("supplier_id") or reg.get("id")
+        assert supplier_id
+
+        admin_login, status = _post(
+            f"{base}/api/login",
+            {"username": "admin", "password": "admin123"},
+        )
+        assert status == 200
+        admin_token = admin_login["token"]
+
+        _, status = _post(
+            f"{base}/api/admin/suppliers/{supplier_id}/approve",
+            {"notes": "test approve"},
+            token=admin_token,
+        )
+        assert status == 200
+
+        supplier_login, status = _post(
+            f"{base}/api/supplier/login",
+            {"email": "supplier-jti@example.com", "password": "SupJtiPass123!"},
+        )
+        assert status == 200
+        token = supplier_login["token"]
+
+        with portal.STATE_LOCK:
+            session = portal.SESSIONS[token]
+
+        claims = auth_tokens.verify_v2_token(token)
+        assert claims is not None
+        assert session["jti"] == claims.jti
+        assert int(datetime.fromisoformat(session["expires"]).timestamp()) == int(claims.expires_at)
+    finally:
+        srv.stop()
 
 
 def test_supplier_offer_isolation_list_upsert_delete():

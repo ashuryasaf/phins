@@ -25,8 +25,22 @@ class UserRepository(BaseRepository[User]):
         return self.filter_by(active=True)
     
     def authenticate(self, username: str, password_hash: str) -> Optional[User]:
-        """Authenticate user (returns user if credentials match)"""
+        """Authenticate user by matching a PBKDF2 hash.
+
+        NOTE: callers MUST pass the derived PBKDF2 hash (not the plaintext
+        password). This method is retained for legacy call sites and performs
+        a constant-time comparison to avoid timing-based hash leaks.
+        """
+        import hmac as _hmac
+
+        if not username or not password_hash:
+            return None
         user = self.get_by_username(username)
-        if user and user.password_hash == password_hash:
-            return user
+        if not user or not user.password_hash:
+            return None
+        try:
+            if _hmac.compare_digest(str(user.password_hash), str(password_hash)):
+                return user
+        except Exception:
+            return None
         return None
