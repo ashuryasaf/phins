@@ -6131,11 +6131,15 @@ def _create_signed_token(username: str, role: str, customer_id: str | None, expi
 
 
 def _verify_signed_token(token: str) -> dict[str, str] | None:
-    """Verify a legacy v1 HMAC-signed token and return its claims dict."""
+    """Verify a legacy v1 HMAC-signed token and return its claims dict.
+
+    ``validate_session`` already routes v2 tokens (``phins2_`` prefix) to the
+    v2 verifier before falling through to this legacy path, so we only need
+    to match the v1 ``phins_`` prefix here. ``token.startswith('phins_')``
+    also matches ``phins2_``, but any such token is intercepted upstream, so
+    no additional guard is required.
+    """
     if not token or not token.startswith('phins_'):
-        return None
-    if token.startswith('phins2_'):
-        # v2 tokens are verified via ``security.auth_tokens`` instead.
         return None
     try:
         token_body = token[6:]
