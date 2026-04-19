@@ -8414,10 +8414,11 @@ For claims or questions, please contact:
         if path.endswith('.html'):
             self.send_header("Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https://api.qrserver.com; "
                 "connect-src 'self'; "
+                "frame-src 'self' https://player.vimeo.com; "
                 "frame-ancestors 'self'; "
                 "form-action 'self'; "
                 "base-uri 'self'; "
