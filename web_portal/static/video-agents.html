@@ -710,7 +710,10 @@
                 try {
                     const campaign = await loadLatestCampaign();
                     campaignId = campaign?.campaign?.campaign_id || '';
-                } catch (err) {}
+                } catch (err) {
+                    setStatus(`Failed to load latest campaign: ${err.message}`, 'error');
+                    return;
+                }
             }
             if (!campaignId) {
                 setStatus('No campaign ID found. Generate an Agent Plan in the Admin Growth section first, then return here.', 'warning');
