@@ -3092,12 +3092,30 @@ LEDGER_PERSISTENCE_FILE = os.environ.get(
     os.path.join(tempfile.gettempdir(), 'phins_ledger_data.json'),
 )
 PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
+# Verbose persistence logging emits one line per save; defaults OFF so Railway
+# logs are not flooded by the 70+ per-request save_ledger_data() call sites.
+# Operators can set LEDGER_PERSISTENCE_VERBOSE=true to re-enable per-save logs.
+PERSISTENCE_VERBOSE = os.environ.get('LEDGER_PERSISTENCE_VERBOSE', 'false').lower() == 'true'
+# Minimum seconds between summary persistence logs when not verbose. A single
+# summary line is still emitted periodically so operators can confirm saves
+# are still happening without drowning the log stream.
+try:
+    PERSISTENCE_LOG_INTERVAL_SECONDS = max(
+        0, int(os.environ.get('LEDGER_PERSISTENCE_LOG_INTERVAL', '300'))
+    )
+except (TypeError, ValueError):
+    PERSISTENCE_LOG_INTERVAL_SECONDS = 300
 
 # Loaded persistence buffers (used before services are initialized).
 # These must exist even when load_ledger_data() is never called (e.g. unit tests importing this module).
 _loaded_algo_balances: Dict[str, Any] = {}
 _loaded_trading_bots: Dict[str, Any] = {}
 _persistence_lock = threading.Lock()
+_persistence_log_state = {
+    'saves_since_last_log': 0,
+    'last_logged_at': 0.0,
+    'first_save_logged': False,
+}
 
 def save_ledger_data():
     """Save all ledger data to persistent storage"""
@@ -3171,9 +3189,37 @@ def save_ledger_data():
             
             # Atomic rename
             os.rename(temp_file, LEDGER_PERSISTENCE_FILE)
-            print(f"[PERSISTENCE] Saved ledger data to {LEDGER_PERSISTENCE_FILE}")
-            if algo_balances:
-                print(f"  - Algo Trading Balances: {len(algo_balances)} accounts")
+
+            # Emit a throttled summary line instead of one print per save. Each
+            # API write path calls save_ledger_data(); printing every time
+            # turns Railway's log stream into an unreadable repetition of
+            # "[PERSISTENCE] Saved ledger data ..." and
+            # "  - Algo Trading Balances: 1 accounts". We still guarantee one
+            # line at first save and then at most one line per interval.
+            _persistence_log_state['saves_since_last_log'] += 1
+            now = time.monotonic()
+            should_log = (
+                PERSISTENCE_VERBOSE
+                or not _persistence_log_state['first_save_logged']
+                or PERSISTENCE_LOG_INTERVAL_SECONDS == 0
+                or (
+                    PERSISTENCE_LOG_INTERVAL_SECONDS > 0
+                    and (now - _persistence_log_state['last_logged_at'])
+                        >= PERSISTENCE_LOG_INTERVAL_SECONDS
+                )
+            )
+            if should_log:
+                batched = _persistence_log_state['saves_since_last_log']
+                suffix = f" (coalesced {batched} saves)" if batched > 1 and not PERSISTENCE_VERBOSE else ""
+                print(
+                    f"[PERSISTENCE] Saved ledger data to {LEDGER_PERSISTENCE_FILE}"
+                    f"{suffix}"
+                )
+                if algo_balances:
+                    print(f"  - Algo Trading Balances: {len(algo_balances)} accounts")
+                _persistence_log_state['last_logged_at'] = now
+                _persistence_log_state['saves_since_last_log'] = 0
+                _persistence_log_state['first_save_logged'] = True
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
@@ -7910,7 +7956,70 @@ def try_get_statement_from_engine(customer_id: str) -> Any:
     return None
 
 
+_BOT_PROBE_PATH_PATTERNS = (
+    re.compile(r'^/?\.?env(\..*)?$', re.IGNORECASE),
+    re.compile(r'^/(?:backend|admin|api|app|src|server|config|web|public|private|dist|build)/+\.?env(\..*)?$', re.IGNORECASE),
+    re.compile(r'^/\.git(/|$)', re.IGNORECASE),
+    re.compile(r'^/\.svn(/|$)', re.IGNORECASE),
+    re.compile(r'^/\.aws(/|$)', re.IGNORECASE),
+    re.compile(r'^/\.ssh(/|$)', re.IGNORECASE),
+    re.compile(r'^/\.DS_Store$', re.IGNORECASE),
+    re.compile(r'^/wp-(?:config|login|admin|includes|content).*', re.IGNORECASE),
+    re.compile(r'^/xmlrpc\.php.*', re.IGNORECASE),
+    re.compile(r'^/config(?:\.php|\.js|\.json|\.yml|\.yaml|\.xml|\.bak|\.old|\.inc)?(?:/.*)?$', re.IGNORECASE),
+    re.compile(r'^/aws[.-]config(\..*)?$', re.IGNORECASE),
+    re.compile(r'^/(?:credentials|secrets|id_rsa|id_dsa)(\..*)?$', re.IGNORECASE),
+    re.compile(r'^/%22', re.IGNORECASE),
+    re.compile(r'^/phpmyadmin(/|$)', re.IGNORECASE),
+    re.compile(r'^/vendor/.*\.php$', re.IGNORECASE),
+)
+
+
+def _is_bot_probe_path(path: str) -> bool:
+    """Return True for paths matching common opportunistic scan patterns.
+
+    Railway's log stream was getting dominated by double-line 404s from bot
+    scans (`/.env`, `/.git/config`, `/wp-config.php`, etc.). Those requests
+    are never legitimate portal traffic, so we silence their stderr logging
+    while still returning 404.
+    """
+    if not path:
+        return False
+    for pattern in _BOT_PROBE_PATH_PATTERNS:
+        if pattern.match(path):
+            return True
+    return False
+
+
+def _should_silence_bot_probe_http_log(path: str, code: object) -> bool:
+    """Suppress only expected 404/403 bot-probe noise."""
+    return _is_bot_probe_path(path) and str(code) in ('404', '403')
+
+
 class PortalHandler(BaseHTTPRequestHandler):
+    # Hook points for BaseHTTPRequestHandler logging. We keep the default
+    # behavior for real traffic but suppress noisy bot-scan 404/403s that would
+    # otherwise flood the deploy logs (both the `log_error` line from
+    # `send_error` and the `log_request` access line).
+    def log_error(self, format, *args):  # type: ignore[override]
+        try:
+            if _should_silence_bot_probe_http_log(
+                getattr(self, 'path', '') or '',
+                args[0] if args else '-',
+            ):
+                return
+        except Exception:
+            pass
+        super().log_error(format, *args)
+
+    def log_request(self, code='-', size='-'):  # type: ignore[override]
+        try:
+            if _should_silence_bot_probe_http_log(getattr(self, 'path', '') or '', code):
+                return
+        except Exception:
+            pass
+        super().log_request(code, size)
+
     def _set_json_headers(self, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
