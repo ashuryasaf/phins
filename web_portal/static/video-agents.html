@@ -704,7 +704,21 @@
         }
 
         async function queueVideoAgentBatch() {
-            const campaignId = selectedCampaignId();
+            let campaignId = selectedCampaignId();
+            if (!campaignId) {
+                setStatus('Loading latest campaign...', 'info');
+                try {
+                    const campaign = await loadLatestCampaign();
+                    campaignId = campaign?.campaign?.campaign_id || '';
+                } catch (err) {
+                    setStatus(`Failed to load latest campaign: ${err.message}`, 'error');
+                    return;
+                }
+            }
+            if (!campaignId) {
+                setStatus('No campaign ID found. Generate an Agent Plan in the Admin Growth section first, then return here.', 'warning');
+                return;
+            }
             const provider = (document.getElementById('va-provider')?.value || 'gemini').trim();
             if (!isProviderEnabled(provider)) {
                 setStatus(`${String(provider).toUpperCase()} is not configured on the server. Connect the provider and try again.`, 'warning');

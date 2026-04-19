@@ -812,3 +812,122 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
     assert captured["body"]["mode"] == "professional"
     assert captured["body"]["duration"] == 10
     assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")
+
+
+def test_kling_poll_handles_official_api_response_formats(monkeypatch):
+    """Verify polling handles the official Kling API response shapes including
+    flat task_id/status/url at root, nested data.status, and the 'succeed'
+    status value used by some Kling API versions."""
+    monkeypatch.setenv("KLING_API_KEY", "api-key-poll-test")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+
+    service = media_generation_service.MediaGenerationService()
+
+    flat_completed = {
+        "task_id": "task-flat-1",
+        "status": "completed",
+        "url": "https://cdn.klingapi.com/videos/flat-1.mp4",
+        "format": "mp4",
+        "metadata": {"duration": 5},
+    }
+
+    def _urlopen_flat(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps(flat_completed).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _urlopen_flat)
+    result = service.poll_video_generation(
+        provider="kling",
+        provider_job_id="task-flat-1",
+        provider_state={"status_url": "https://api.klingapi.com/v1/videos/task-flat-1"},
+    )
+    assert result["status"] == "completed"
+    assert result["download_url"] == "https://cdn.klingapi.com/videos/flat-1.mp4"
+
+    nested_succeed = {
+        "data": {
+            "task_id": "task-nested-1",
+            "task_status": "succeed",
+            "works": [
+                {"resource": {"resource": "https://cdn.klingapi.com/videos/nested-1.mp4"}}
+            ],
+        }
+    }
+
+    def _urlopen_nested(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps(nested_succeed).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _urlopen_nested)
+    result = service.poll_video_generation(
+        provider="kling",
+        provider_job_id="task-nested-1",
+        provider_state={"status_url": "https://api.klingapi.com/v1/videos/task-nested-1"},
+    )
+    assert result["status"] == "completed"
+    assert result["download_url"] == "https://cdn.klingapi.com/videos/nested-1.mp4"
+
+    processing_body = {"task_id": "task-proc-1", "status": "processing"}
+
+    def _urlopen_processing(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps(processing_body).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _urlopen_processing)
+    result = service.poll_video_generation(
+        provider="kling",
+        provider_job_id="task-proc-1",
+        provider_state={"status_url": "https://api.klingapi.com/v1/videos/task-proc-1"},
+    )
+    assert result["status"] == "processing"
+
+    failed_body = {
+        "task_id": "task-fail-1",
+        "status": "failed",
+        "error": {"code": 1001, "message": "Content policy violation"},
+    }
+
+    def _urlopen_failed(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps(failed_body).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _urlopen_failed)
+    result = service.poll_video_generation(
+        provider="kling",
+        provider_job_id="task-fail-1",
+        provider_state={"status_url": "https://api.klingapi.com/v1/videos/task-fail-1"},
+    )
+    assert result["status"] == "failed"
+    assert "Content policy violation" in result["error"]
+
+
+def test_kling_submit_parses_root_level_task_id(monkeypatch):
+    """Verify submit handles task_id at root level (official Kling API format)."""
+    monkeypatch.setenv("KLING_API_KEY", "api-key-root-tid")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+
+    root_response = {"task_id": "root-task-001"}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps(root_response).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+    service = media_generation_service.MediaGenerationService()
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="Test video",
+        title="Root task_id test",
+    )
+    assert result["provider_job_id"] == "root-task-001"
+
+    nested_response = {"data": {"task_id": "nested-task-002"}}
+
+    def _fake_urlopen_nested(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps(nested_response).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen_nested)
+    service2 = media_generation_service.MediaGenerationService()
+    result2 = service2.submit_video_generation(
+        provider="kling",
+        prompt="Test video nested",
+        title="Nested task_id test",
+    )
+    assert result2["provider_job_id"] == "nested-task-002"

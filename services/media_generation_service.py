@@ -330,10 +330,12 @@ class MediaGenerationService:
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
         provider_job_id = str(
-            data.get("task_id")
+            response_body.get("task_id")
+            or data.get("task_id")
             or data.get("id")
             or data.get("job_id")
             or data.get("taskId")
+            or response_body.get("id")
             or ""
         ).strip()
         if not provider_job_id:
@@ -373,13 +375,14 @@ class MediaGenerationService:
 
         data = body.get("data") if isinstance(body.get("data"), dict) else body
         status_value = str(
-            data.get("status")
+            body.get("status")
+            or data.get("status")
             or data.get("task_status")
             or data.get("state")
             or ""
         ).strip().lower()
 
-        if status_value in {"queued", "pending", "submitted", "processing", "running", "in_progress", "generating", "created"}:
+        if status_value in {"queued", "pending", "submitted", "processing", "running", "in_progress", "generating", "created", "in progress"}:
             return {
                 "status": "processing",
                 "message": "Kling is still generating the video.",
@@ -391,9 +394,16 @@ class MediaGenerationService:
             }
 
         if status_value in {"failed", "error", "cancelled", "aborted", "rejected"}:
+            error_obj = data.get("error") if isinstance(data.get("error"), dict) else {}
+            error_message = str(
+                data.get("error_message")
+                or error_obj.get("message")
+                or data.get("message")
+                or "Kling generation failed"
+            )
             return {
                 "status": "failed",
-                "error": str(data.get("error_message") or data.get("message") or "Kling generation failed"),
+                "error": error_message,
                 "provider_job_id": provider_job_id,
                 "provider_state": {
                     "status_url": status_url,
@@ -402,7 +412,19 @@ class MediaGenerationService:
             }
 
         download_url = self._extract_kling_download_url(data)
+        if not download_url and data is not body:
+            download_url = self._extract_kling_download_url(body)
         if not download_url:
+            if status_value not in {"succeed", "succeeded", "completed", "done", "ready", "complete"}:
+                return {
+                    "status": "processing",
+                    "message": f"Kling video status: {status_value or 'unknown'}",
+                    "provider_job_id": provider_job_id,
+                    "provider_state": {
+                        "status_url": status_url,
+                        "last_poll": body,
+                    },
+                }
             raise MediaGenerationError("Kling generation completed without a downloadable video URL")
 
         return {
@@ -435,6 +457,22 @@ class MediaGenerationService:
 
     @staticmethod
     def _extract_kling_download_url(data: Dict[str, Any]) -> str:
+        works = data.get("works") if isinstance(data.get("works"), list) else []
+        for work in works:
+            if not isinstance(work, dict):
+                continue
+            resource = work.get("resource") if isinstance(work.get("resource"), dict) else {}
+            candidate = str(
+                work.get("url")
+                or work.get("video_url")
+                or work.get("download_url")
+                or resource.get("resource")
+                or resource.get("url")
+                or ""
+            ).strip()
+            if candidate:
+                return candidate
+
         outputs = data.get("outputs") if isinstance(data.get("outputs"), list) else []
         for output in outputs:
             if not isinstance(output, dict):
@@ -451,11 +489,20 @@ class MediaGenerationService:
             if candidate:
                 return candidate
 
+        task_result = data.get("task_result") if isinstance(data.get("task_result"), dict) else {}
+        task_videos = task_result.get("videos") if isinstance(task_result.get("videos"), list) else []
+        for tv in task_videos:
+            if not isinstance(tv, dict):
+                continue
+            candidate = str(tv.get("url") or tv.get("video_url") or tv.get("download_url") or "").strip()
+            if candidate:
+                return candidate
+
         video_payload = data.get("video") if isinstance(data.get("video"), dict) else {}
         return str(
-            data.get("video_url")
+            data.get("url")
+            or data.get("video_url")
             or data.get("download_url")
-            or data.get("url")
             or video_payload.get("url")
             or video_payload.get("download_url")
             or ""
