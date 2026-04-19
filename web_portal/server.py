@@ -21718,11 +21718,6 @@ For claims or questions, please contact:
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
-            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
-            if provider_error:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
-                return
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))
@@ -21801,11 +21796,6 @@ For claims or questions, please contact:
             image_data_url = resolve_media_video_job_image_data_url(data)
             auto_publish_to_hero = bool(data.get('auto_publish_to_hero'))
             prompt_override = str(data.get('prompt_override') or '').strip()
-            provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
-            if provider_error:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
-                return
             if not campaign_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'campaign_id is required'}).encode('utf-8'))

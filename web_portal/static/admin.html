@@ -1618,6 +1618,10 @@
           </select>
         </div>
       </div>
+      <div style="margin:-4px 0 10px 0;">
+        <label for="mkt-prompt-override" style="font-size: 0.78rem; opacity: 0.82;">Prompt / Notes Override</label>
+        <textarea id="mkt-prompt-override" placeholder="Optional narrative or compliance guidance for generated videos." style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;min-height:48px;resize:vertical;font-size:0.84rem;"></textarea>
+      </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:-4px 0 16px 0;font-size:0.82rem;">
         <label style="display:flex;gap:8px;align-items:center;">
           <input id="mkt-video-auto-hero" type="checkbox" checked>
@@ -4011,6 +4015,7 @@
       const pollMode = selectedMarketingPollMode();
       const autoPublishToHero = selectedMarketingAutoHero();
       setMarketingVideoJobStatus(`Queueing ${blueprintCount} blueprint videos with ${String(provider).toUpperCase()}...`, 'info');
+      const promptOverride = (document.getElementById('mkt-prompt-override')?.value || '').trim();
       const result = await runMarketingVideoJobControl(
         'batch',
         {
@@ -4020,7 +4025,8 @@
           image_data_url: referenceImage ? (referenceImage.data || referenceImage.url || '') : '',
           reference_image_asset_id: referenceImage ? referenceImage.id : '',
           poll_mode: pollMode,
-          auto_publish_to_hero: autoPublishToHero
+          auto_publish_to_hero: autoPublishToHero,
+          prompt_override: promptOverride
         },
         `Queued ${blueprintCount} video job(s).`
       );
@@ -4065,7 +4071,8 @@
             image_data_url: referenceImage ? (referenceImage.data || referenceImage.url || '') : '',
             reference_image_asset_id: referenceImage ? referenceImage.id : '',
             poll_mode: pollMode,
-            auto_publish_to_hero: autoPublishToHero
+            auto_publish_to_hero: autoPublishToHero,
+            prompt_override: (document.getElementById('mkt-prompt-override')?.value || '').trim()
           })
         });
         const data = await response.json();
