@@ -6066,67 +6066,106 @@ ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
 )
 
 # ============ STATELESS TOKEN AUTHENTICATION ============
-# For Railway multi-instance compatibility, we use HMAC-signed tokens
-# that encode user data directly, eliminating need for server-side session storage
+# For Railway multi-instance compatibility, we use HMAC-signed tokens that
+# encode user data directly, eliminating the need for server-side session
+# storage. v2 tokens (``phins2_...``) use a full HMAC-SHA256 signature plus a
+# revocable ``jti`` and live in ``security.auth_tokens``. The v1 legacy format
+# (``phins_...``) is still accepted until existing sessions expire.
 
 import hmac
 import base64
 
-# Session signing key - loaded from environment variable.
-# Falls back to a per-process random key so tokens are never signed with a
-# publicly-known default value.  Set SESSION_SECRET_KEY in production.
+from security import auth_tokens as _auth_tokens
+from security.auth_tokens import TokenSecretError
+
+# Retained for backward compatibility with legacy v1 tokens minted before the
+# v2 upgrade. New tokens derive their key via ``security.auth_tokens``.
 _TOKEN_SECRET = (
     os.environ.get('SESSION_SECRET_KEY')
     or os.environ.get('PHINS_ADMIN_PASSWORD')
     or secrets.token_hex(32)
 )
 
-def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
-    """Create an HMAC-signed token with embedded user data (stateless auth)"""
-    # Encode user data in token
+
+def _mint_auth_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
+    """Mint a v2 auth token, falling back to the legacy v1 format on misconfig.
+
+    We never want a login request to fail because ``SESSION_SECRET_KEY`` is
+    unset – that would lock every operator out during a bad rollout. When the
+    v2 signer refuses (missing/short secret) we log a loud warning and degrade
+    to the legacy format so the portal keeps working; operators see the error
+    in the startup secret audit and in live warnings.
+    """
+    try:
+        token, _claims = _auth_tokens.create_token(
+            username, role, customer_id, expires
+        )
+        return token
+    except TokenSecretError as exc:
+        print(
+            "[AUTH][WARN] v2 token signing unavailable ({err}); "
+            "falling back to legacy v1 token".format(err=exc)
+        )
+        return _create_signed_token_v1(username, role, customer_id, expires)
+
+
+def _create_signed_token_v1(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
+    """Legacy v1 token format retained for fallback & backward compatibility."""
     data = f"{username}|{role}|{customer_id or ''}|{expires.isoformat()}"
     data_b64 = base64.urlsafe_b64encode(data.encode()).decode()
-    # Create HMAC signature
     signature = hmac.new(_TOKEN_SECRET.encode(), data_b64.encode(), 'sha256').hexdigest()[:16]
     return f"phins_{data_b64}.{signature}"
 
+
+# Public alias preserved for any external callers / tests that imported the
+# old symbol. New code should prefer ``_mint_auth_token``.
+def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
+    """Create an auth token (v2 if signing key is available, else v1)."""
+    return _mint_auth_token(username, role, customer_id, expires)
+
+
 def _verify_signed_token(token: str) -> dict[str, str] | None:
-    """Verify and decode an HMAC-signed token"""
+    """Verify a legacy v1 HMAC-signed token and return its claims dict."""
     if not token or not token.startswith('phins_'):
         return None
+    if token.startswith('phins2_'):
+        # v2 tokens are verified via ``security.auth_tokens`` instead.
+        return None
     try:
-        # Parse token
-        token_body = token[6:]  # Remove 'phins_' prefix
+        token_body = token[6:]
         if '.' not in token_body:
             return None
         data_b64, signature = token_body.rsplit('.', 1)
-        
-        # Verify signature
+
         expected_sig = hmac.new(_TOKEN_SECRET.encode(), data_b64.encode(), 'sha256').hexdigest()[:16]
         if not hmac.compare_digest(signature, expected_sig):
             return None
-        
-        # Decode data
+
         data = base64.urlsafe_b64decode(data_b64.encode()).decode()
         parts = data.split('|')
         if len(parts) != 4:
             return None
-        
+
         username, role, customer_id, expires_str = parts
-        
-        # Check expiry
+
         expires = datetime.fromisoformat(expires_str)
         if datetime.now() > expires:
             return None
-        
+
         return {
             'username': username,
             'role': role,
             'customer_id': customer_id if customer_id else None,
-            'expires': expires_str
+            'expires': expires_str,
+            'token_version': 1,
         }
     except Exception:
         return None
+
+
+# Register the legacy verifier so ``security.auth_tokens.verify_any_token``
+# can transparently decode older sessions.
+_auth_tokens.register_legacy_verifier(_verify_signed_token)
 
 def validate_session(token: str) -> dict[str, str] | None:
     """Validate session token and return user info or None.
@@ -6136,8 +6175,15 @@ def validate_session(token: str) -> dict[str, str] | None:
     """
     if not token:
         return None
-    
-    # Try stateless signed token first (new format with embedded data)
+
+    # v2 tokens (full HMAC-SHA256 + revocable jti).
+    if token.startswith('phins2_'):
+        v2_result = _auth_tokens.verify_v2_token(token)
+        if v2_result is not None:
+            return v2_result.to_session_dict()
+        return None
+
+    # Legacy v1 signed tokens.
     if token.startswith('phins_') and '.' in token:
         signed_result = _verify_signed_token(token)
         if signed_result:
@@ -8023,30 +8069,11 @@ class PortalHandler(BaseHTTPRequestHandler):
     def _set_json_headers(self, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        # Security headers
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
-        self.send_header("X-XSS-Protection", "1; mode=block")
-        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        # Strict CSP for JSON API responses - no script/style execution needed
-        # - frame-ancestors: Prevents clickjacking (supersedes X-Frame-Options in modern browsers)
-        # - form-action: Restricts form submission targets
-        # - base-uri: Prevents base tag injection attacks
-        # - object-src: Blocks plugin content
-        # - img-src: Allows data: URIs for inline images (QR codes, charts)
-        # - connect-src: Restricts fetch/XHR targets
-        # JSON responses don't need 'unsafe-inline' - scripts/styles aren't executed
-        self.send_header("Content-Security-Policy", 
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self'; "
-            "img-src 'self' data: https://api.qrserver.com; "
-            "connect-src 'self'; "
-            "frame-ancestors 'none'; "
-            "form-action 'self'; "
-            "base-uri 'self'; "
-            "object-src 'none'"
-        )
+        # Centralised security headers live in ``security.headers`` so the
+        # policy is testable and applied consistently across response types.
+        from security.headers import json_security_headers
+        for name, value in json_security_headers():
+            self.send_header(name, value)
         self.end_headers()
 
     def _get_session(self) -> Optional[Dict[str, Any]]:
@@ -8404,35 +8431,14 @@ For claims or questions, please contact:
             self.send_header('Content-Type', 'text/css; charset=utf-8')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
-        # Security headers
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "SAMEORIGIN")
-        self.send_header("X-XSS-Protection", "1; mode=block")
-        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        # CSP for static files - HTML files need 'unsafe-inline' for existing inline scripts/styles
-        # Future improvement: migrate inline scripts to external files to enable strict CSP
+
+        from security.headers import html_security_headers, static_asset_security_headers
         if path.endswith('.html'):
-            self.send_header("Content-Security-Policy",
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data: https://api.qrserver.com; "
-                "connect-src 'self'; "
-                "frame-ancestors 'self'; "
-                "form-action 'self'; "
-                "base-uri 'self'; "
-                "object-src 'none'"
-            )
-        elif path.endswith('.js') or path.endswith('.css'):
-            # JS/CSS files don't need inline execution permissions
-            self.send_header("Content-Security-Policy",
-                "default-src 'self'; "
-                "script-src 'self'; "
-                "style-src 'self'; "
-                "frame-ancestors 'self'; "
-                "base-uri 'self'; "
-                "object-src 'none'"
-            )
+            for name, value in html_security_headers():
+                self.send_header(name, value)
+        else:
+            for name, value in static_asset_security_headers():
+                self.send_header(name, value)
         self.end_headers()
 
     def do_HEAD(self):
@@ -9254,11 +9260,20 @@ For claims or questions, please contact:
         
         # Security: Clear blocked IPs (Admin only or with security key)
         if path == '/api/security/clear-blocks':
-            # Allow with admin auth OR special security key for emergency access
-            security_key = qs.get('key', [''])[0]
-            # Emergency key from env var, or fallback for backwards compatibility
-            emergency_key = os.environ.get('PHINS_EMERGENCY_UNLOCK_KEY', 'phins-emergency-unlock-2026')
-            is_authorized = require_role(session, ['admin']) or security_key == emergency_key
+            # Allow with admin Bearer auth OR a strong pre-shared key stored in
+            # the PHINS_EMERGENCY_UNLOCK_KEY env var. The historical default
+            # literal has been removed so this endpoint cannot be abused via a
+            # well-known unlock string.
+            security_key = qs.get('key', [''])[0] or ''
+            emergency_key = (os.environ.get('PHINS_EMERGENCY_UNLOCK_KEY') or '').strip()
+            emergency_ok = False
+            if security_key and emergency_key and len(emergency_key) >= 32:
+                # Constant-time compare to avoid leaking prefix match timing.
+                try:
+                    emergency_ok = hmac.compare_digest(security_key, emergency_key)
+                except Exception:
+                    emergency_ok = False
+            is_authorized = require_role(session, ['admin']) or emergency_ok
             
             if not is_authorized:
                 self._set_json_headers(403)
@@ -23481,10 +23496,25 @@ For claims or questions, please contact:
                         if k in FAILED_LOGINS:
                             del FAILED_LOGINS[k]
                     
-                    # Generate stateless signed token (works across Railway instances)
+                    # Generate stateless signed token (works across Railway instances).
+                    # Prefer v2 (full HMAC, revocable jti); v1 is used only as
+                    # a last-resort fallback when SESSION_SECRET_KEY is missing.
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
-                    token = _create_signed_token(username, role, customer_id, expires)
-                    
+                    token_jti: str | None = None
+                    try:
+                        token, _v2_claims = _auth_tokens.create_token(
+                            username, role, customer_id, expires
+                        )
+                        token_jti = _v2_claims.jti
+                    except TokenSecretError as exc:
+                        print(
+                            "[AUTH][WARN] v2 signing unavailable for login "
+                            f"({exc}); falling back to legacy v1 token"
+                        )
+                        token = _create_signed_token_v1(
+                            username, role, customer_id, expires
+                        )
+
                     # Also store in local SESSIONS for faster same-instance lookups
                     with STATE_LOCK:
                         SESSIONS[token] = {
@@ -23492,7 +23522,8 @@ For claims or questions, please contact:
                             'expires': expires.isoformat(),
                             'customer_id': customer_id,
                             'role': role,
-                            'ip_address': client_ip
+                            'ip_address': client_ip,
+                            'jti': token_jti,
                         }
                     
                     self._set_json_headers()
@@ -23519,9 +23550,42 @@ For claims or questions, please contact:
                 import traceback
                 traceback.print_exc()
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Internal server error', 'debug': str(e)}).encode('utf-8'))
+                # Do NOT echo exception text to the client: it can leak stack
+                # traces, DB error fragments, or other internals that aid an
+                # attacker. Operators still get the full traceback above.
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
             return
         
+        # Logout endpoint - invalidates the current bearer token.
+        #
+        # For v2 tokens (``phins2_...``) we add the embedded ``jti`` to the
+        # revocation registry so even a copy of the token stored elsewhere
+        # stops validating. For legacy v1 tokens we can only drop them from
+        # the in-memory SESSIONS map (they remain valid in other replicas
+        # until their TTL expires).
+        if path == '/api/logout':
+            auth_header = self.headers.get('Authorization', '')
+            token = (
+                auth_header.replace('Bearer ', '')
+                if auth_header.startswith('Bearer ')
+                else None
+            )
+            revoked = False
+            if token and token.startswith('phins2_'):
+                claims = _auth_tokens.verify_v2_token(token)
+                if claims is not None:
+                    _auth_tokens.revoke_token(claims.jti, claims.expires_at)
+                    revoked = True
+            if token:
+                with STATE_LOCK:
+                    SESSIONS.pop(token, None)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'revoked': revoked,
+            }).encode('utf-8'))
+            return
+
         # Session Validation Endpoint (POST) - validates token and returns user info
         # NOTE: The frontend uses GET, but we keep POST for backward compatibility.
         # IMPORTANT: Must validate stateless signed tokens for Railway multi-instance deployments.
@@ -23972,9 +24036,24 @@ For claims or questions, please contact:
                         'salt': pwd_hash['salt'],
                     }
                 
-                # Invalidate all existing sessions for this user
-                sessions_to_remove = [token for token, sess in SESSIONS.items() if sess.get('username') == username]
+                # Invalidate all existing sessions for this user. We drop the
+                # in-memory entries AND revoke any stateless v2 ``jti`` values
+                # so tokens cached by other replicas stop validating too.
+                sessions_to_remove = [
+                    token for token, sess in SESSIONS.items()
+                    if sess.get('username') == username
+                ]
                 for token in sessions_to_remove:
+                    sess = SESSIONS.get(token) or {}
+                    jti = sess.get('jti')
+                    if jti:
+                        try:
+                            exp = datetime.fromisoformat(
+                                sess.get('expires') or ''
+                            ).timestamp()
+                        except Exception:
+                            exp = datetime.now().timestamp() + SESSION_TIMEOUT
+                        _auth_tokens.revoke_token(jti, exp)
                     del SESSIONS[token]
                 
                 self._set_json_headers()
@@ -24058,9 +24137,23 @@ For claims or questions, please contact:
                         'salt': pwd_hash['salt'],
                     }
                 
-                # Invalidate all sessions except current
-                sessions_to_remove = [t for t, s in SESSIONS.items() if s.get('username') == username and t != token]
+                # Invalidate all sessions except current. Revoke v2 ``jti``
+                # values so the tokens stop validating across replicas.
+                sessions_to_remove = [
+                    t for t, s in SESSIONS.items()
+                    if s.get('username') == username and t != token
+                ]
                 for t in sessions_to_remove:
+                    sess = SESSIONS.get(t) or {}
+                    jti = sess.get('jti')
+                    if jti:
+                        try:
+                            exp = datetime.fromisoformat(
+                                sess.get('expires') or ''
+                            ).timestamp()
+                        except Exception:
+                            exp = datetime.now().timestamp() + SESSION_TIMEOUT
+                        _auth_tokens.revoke_token(jti, exp)
                     del SESSIONS[t]
                 
                 self._set_json_headers()
@@ -39099,6 +39192,26 @@ For claims or questions, please contact:
 
 
 def run_server(port: int = PORT) -> None:
+    # Audit security-critical secrets early so operators see misconfiguration
+    # immediately and don't first learn about it via a failed login.
+    try:
+        from security.secrets_policy import audit_environment_secrets, log_report
+        _secret_report = audit_environment_secrets()
+        log_report(_secret_report)
+        if _secret_report.production_mode and not _secret_report.ok:
+            # We refuse to start in production when signing secrets are weak
+            # or known-insecure defaults are in use. This prevents a silent
+            # fallback to forgery-prone tokens.
+            print(
+                "[SECURITY] Refusing to start: "
+                + "; ".join(_secret_report.errors)
+            )
+            raise SystemExit(2)
+    except SystemExit:
+        raise
+    except Exception as _exc:  # pragma: no cover - defensive
+        print(f"[SECURITY] secret audit failed: {_exc}")
+
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
     if load_ledger_data():
