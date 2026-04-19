@@ -6087,7 +6087,12 @@ _TOKEN_SECRET = (
 )
 
 
-def _mint_auth_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
+def _mint_auth_token(
+    username: str,
+    role: str,
+    customer_id: str | None,
+    expires: datetime,
+) -> tuple[str, str | None]:
     """Mint a v2 auth token, falling back to the legacy v1 format on misconfig.
 
     We never want a login request to fail because ``SESSION_SECRET_KEY`` is
@@ -6097,16 +6102,16 @@ def _mint_auth_token(username: str, role: str, customer_id: str | None, expires:
     in the startup secret audit and in live warnings.
     """
     try:
-        token, _claims = _auth_tokens.create_token(
+        token, claims = _auth_tokens.create_token(
             username, role, customer_id, expires
         )
-        return token
+        return token, claims.jti
     except TokenSecretError as exc:
         print(
             "[AUTH][WARN] v2 token signing unavailable ({err}); "
             "falling back to legacy v1 token".format(err=exc)
         )
-        return _create_signed_token_v1(username, role, customer_id, expires)
+        return _create_signed_token_v1(username, role, customer_id, expires), None
 
 
 def _create_signed_token_v1(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
@@ -6121,7 +6126,8 @@ def _create_signed_token_v1(username: str, role: str, customer_id: str | None, e
 # old symbol. New code should prefer ``_mint_auth_token``.
 def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
     """Create an auth token (v2 if signing key is available, else v1)."""
-    return _mint_auth_token(username, role, customer_id, expires)
+    token, _token_jti = _mint_auth_token(username, role, customer_id, expires)
+    return token
 
 
 def _verify_signed_token(token: str) -> dict[str, str] | None:
@@ -23500,20 +23506,9 @@ For claims or questions, please contact:
                     # Prefer v2 (full HMAC, revocable jti); v1 is used only as
                     # a last-resort fallback when SESSION_SECRET_KEY is missing.
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
-                    token_jti: str | None = None
-                    try:
-                        token, _v2_claims = _auth_tokens.create_token(
-                            username, role, customer_id, expires
-                        )
-                        token_jti = _v2_claims.jti
-                    except TokenSecretError as exc:
-                        print(
-                            "[AUTH][WARN] v2 signing unavailable for login "
-                            f"({exc}); falling back to legacy v1 token"
-                        )
-                        token = _create_signed_token_v1(
-                            username, role, customer_id, expires
-                        )
+                    token, token_jti = _mint_auth_token(
+                        username, role, customer_id, expires
+                    )
 
                     # Also store in local SESSIONS for faster same-instance lookups
                     with STATE_LOCK:
@@ -25007,20 +25002,9 @@ For claims or questions, please contact:
                 
                 # Create session token for supplier
                 expires = datetime.now() + timedelta(hours=24)
-                token_jti: str | None = None
-                try:
-                    token, _v2_claims = _auth_tokens.create_token(
-                        supplier_info['id'], 'supplier', None, expires
-                    )
-                    token_jti = _v2_claims.jti
-                except TokenSecretError as exc:
-                    print(
-                        "[AUTH][WARN] v2 signing unavailable for supplier login "
-                        f"({exc}); falling back to legacy v1 token"
-                    )
-                    token = _create_signed_token_v1(
-                        supplier_info['id'], 'supplier', None, expires
-                    )
+                token, token_jti = _mint_auth_token(
+                    supplier_info['id'], 'supplier', None, expires
+                )
                 
                 # Also store in SESSIONS for compatibility
                 with STATE_LOCK:

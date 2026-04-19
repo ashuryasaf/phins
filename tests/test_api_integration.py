@@ -19,6 +19,7 @@ from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
+from security import auth_tokens
 import web_portal.server as portal
 
 
@@ -142,6 +143,39 @@ def test_login_endpoint():
         assert e.code == 401
     
     srv.stop()
+
+
+def test_login_stores_v2_jti_in_session(monkeypatch):
+    with portal.STATE_LOCK:
+        portal.SESSIONS.clear()
+
+    monkeypatch.setenv("SESSION_SECRET_KEY", "s" * 48)
+    auth_tokens.set_secret_provider_for_tests(None)
+
+    port = 8039
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        body, status = _post(base + "/api/login", {
+            "username": "admin",
+            "password": "admin123"
+        })
+        assert status == 200
+
+        data = json.loads(body)
+        token = data["token"]
+        claims = auth_tokens.verify_v2_token(token)
+
+        assert claims is not None
+        with portal.STATE_LOCK:
+            session = portal.SESSIONS[token]
+        assert session["jti"] == claims.jti
+    finally:
+        srv.stop()
 
 
 def test_register_endpoint():
