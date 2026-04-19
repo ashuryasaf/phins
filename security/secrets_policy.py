@@ -54,7 +54,7 @@ class SecretReport:
 
 def _is_production(environ: Optional[dict] = None) -> bool:
     env = environ if environ is not None else os.environ
-    if str(env.get("PHINS_TEST_MODE", "")).lower() in ("1", "true", "yes"):
+    if str(env.get("PHINS_TEST_MODE", "")).lower() in ("1", "true", "yes", "y"):
         return False
     env_label = str(env.get("ENVIRONMENT", env.get("ENV", ""))).lower()
     if env_label in ("production", "prod", "live"):

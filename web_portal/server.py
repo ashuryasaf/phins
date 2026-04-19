@@ -25007,12 +25007,20 @@ For claims or questions, please contact:
                 
                 # Create session token for supplier
                 expires = datetime.now() + timedelta(hours=24)
-                token = _create_signed_token(
-                    username=supplier_info['id'],
-                    role='supplier',
-                    customer_id=None,
-                    expires=expires
-                )
+                token_jti: str | None = None
+                try:
+                    token, _v2_claims = _auth_tokens.create_token(
+                        supplier_info['id'], 'supplier', None, expires
+                    )
+                    token_jti = _v2_claims.jti
+                except TokenSecretError as exc:
+                    print(
+                        "[AUTH][WARN] v2 signing unavailable for supplier login "
+                        f"({exc}); falling back to legacy v1 token"
+                    )
+                    token = _create_signed_token_v1(
+                        supplier_info['id'], 'supplier', None, expires
+                    )
                 
                 # Also store in SESSIONS for compatibility
                 with STATE_LOCK:
@@ -25021,7 +25029,8 @@ For claims or questions, please contact:
                         'role': 'supplier',
                         'supplier_id': supplier_info['id'],
                         'company_name': supplier_info['company_name'],
-                        'expires': expires.isoformat()
+                        'expires': expires.isoformat(),
+                        'jti': token_jti,
                     }
                 
                 self._set_json_headers()

@@ -296,6 +296,19 @@ def test_secrets_policy_ok_in_test_mode():
     assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
 
 
+def test_secrets_policy_treats_short_test_mode_flag_as_non_production():
+    from security.secrets_policy import audit_environment_secrets
+
+    report = audit_environment_secrets({
+        "PHINS_TEST_MODE": "y",
+        "RAILWAY_ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "",
+    })
+    assert report.production_mode is False
+    assert report.ok
+    assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
+
+
 def test_secrets_policy_rejects_short_emergency_key_in_prod():
     from security.secrets_policy import audit_environment_secrets
 
