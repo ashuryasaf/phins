@@ -3201,6 +3201,7 @@ def save_ledger_data():
             should_log = (
                 PERSISTENCE_VERBOSE
                 or not _persistence_log_state['first_save_logged']
+                or PERSISTENCE_LOG_INTERVAL_SECONDS == 0
                 or (
                     PERSISTENCE_LOG_INTERVAL_SECONDS > 0
                     and (now - _persistence_log_state['last_logged_at'])
@@ -7990,19 +7991,30 @@ def _is_bot_probe_path(path: str) -> bool:
     return False
 
 
+def _should_silence_bot_probe_http_log(path: str, code: object) -> bool:
+    """Suppress only expected 404/403 bot-probe noise."""
+    return _is_bot_probe_path(path) and str(code) in ('404', '403')
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     # Hook points for BaseHTTPRequestHandler logging. We keep the default
-    # behavior for real traffic but suppress noisy bot-scan 404s that would
+    # behavior for real traffic but suppress noisy bot-scan 404/403s that would
     # otherwise flood the deploy logs (both the `log_error` line from
     # `send_error` and the `log_request` access line).
     def log_error(self, format, *args):  # type: ignore[override]
-        if _is_bot_probe_path(getattr(self, 'path', '') or ''):
-            return
+        try:
+            if _should_silence_bot_probe_http_log(
+                getattr(self, 'path', '') or '',
+                args[0] if args else '-',
+            ):
+                return
+        except Exception:
+            pass
         super().log_error(format, *args)
 
     def log_request(self, code='-', size='-'):  # type: ignore[override]
         try:
-            if _is_bot_probe_path(getattr(self, 'path', '') or '') and str(code) in ('404', '403'):
+            if _should_silence_bot_probe_http_log(getattr(self, 'path', '') or '', code):
                 return
         except Exception:
             pass

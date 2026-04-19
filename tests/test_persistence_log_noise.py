@@ -69,6 +69,30 @@ def test_save_ledger_data_verbose_mode_still_logs(monkeypatch):
     assert buf.getvalue().count("[PERSISTENCE] Saved ledger data") >= 2
 
 
+def test_save_ledger_data_zero_interval_logs_every_save(monkeypatch):
+    """A zero interval disables throttling instead of silencing later saves."""
+    monkeypatch.setattr(server_module, "PERSISTENCE_VERBOSE", False)
+    monkeypatch.setattr(server_module, "PERSISTENCE_LOG_INTERVAL_SECONDS", 0)
+    monkeypatch.setitem(
+        server_module._persistence_log_state, "first_save_logged", True
+    )
+    monkeypatch.setitem(
+        server_module._persistence_log_state, "last_logged_at", 10**9
+    )
+    monkeypatch.setitem(
+        server_module._persistence_log_state, "saves_since_last_log", 0
+    )
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        _trigger_save()
+        _trigger_save()
+
+    output = buf.getvalue()
+    assert output.count("[PERSISTENCE] Saved ledger data") == 2
+    assert "coalesced" not in output
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -100,6 +124,14 @@ def test_legit_404_still_logged():
     assert not server_module._is_bot_probe_path("/dashboard.html")
     assert not server_module._is_bot_probe_path("/api/unknown")
     assert not server_module._is_bot_probe_path("/missing-page")
+
+
+def test_bot_probe_suppression_only_covers_expected_statuses():
+    """Unexpected bot-probe errors should still log their diagnostic message."""
+    assert server_module._should_silence_bot_probe_http_log("/.env", 404)
+    assert server_module._should_silence_bot_probe_http_log("/.env", 403)
+    assert not server_module._should_silence_bot_probe_http_log("/.env", 500)
+    assert not server_module._should_silence_bot_probe_http_log("/missing-page", 404)
 
 
 def test_bot_probe_404_request_is_silent_end_to_end():
