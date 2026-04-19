@@ -50,7 +50,7 @@ This document outlines the redesign of the PHINS landing page to:
 │  │                                                                           │   │
 │  │   [🔐 Access My Account]    [📝 Apply for Coverage]                      │   │
 │  │                                                                           │   │
-│  │   🔒 256-bit SSL  •  🏆 Licensed in 50 States  •  24/7 Support           │   │
+│  │   🔒 256-bit SSL  •  🏆 Global Pre-Licensed  •  24/7 Support           │   │
 │  │                                                                           │   │
 │  └──────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                  │
