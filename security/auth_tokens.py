@@ -50,7 +50,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 __all__ = [
@@ -160,11 +160,7 @@ class TokenClaims:
 
     def to_session_dict(self) -> Dict[str, Any]:
         """Return the shape expected by ``validate_session`` in server.py."""
-        expires_iso = (
-            datetime.fromtimestamp(self.expires_at, tz=timezone.utc)
-            .replace(tzinfo=None)
-            .isoformat()
-        )
+        expires_iso = datetime.fromtimestamp(self.expires_at).isoformat()
         return {
             "username": self.username,
             "role": self.role,
@@ -208,15 +204,17 @@ def create_token(
         raise ValueError("role is required")
 
     key = _primary_key()
-    issued_at = issued_at or datetime.utcnow()
+    issued_at = issued_at or datetime.now()
     jti = jti or secrets.token_urlsafe(16)
+    issued_at_ts = int(issued_at.timestamp())
+    expires_at_ts = int(expires_at.timestamp())
 
     payload = {
         "sub": username,
         "role": role,
         "cid": customer_id or "",
-        "iat": int(issued_at.replace(tzinfo=None).timestamp()),
-        "exp": int(expires_at.replace(tzinfo=None).timestamp()),
+        "iat": issued_at_ts,
+        "exp": expires_at_ts,
         "jti": jti,
         "v": 2,
     }

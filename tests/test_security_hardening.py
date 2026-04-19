@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import hmac as _hmac
+import os
 import time
 from datetime import datetime, timedelta
 from typing import List
@@ -55,6 +56,50 @@ def test_create_token_round_trips(token_secret):
     assert verified.username == "alice@phins.ai"
     assert verified.role == "customer"
     assert verified.jti == claims.jti
+
+
+def test_create_token_uses_local_time_basis_for_default_iat(token_secret, monkeypatch):
+    from security import auth_tokens
+
+    original_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Etc/GMT+5")
+    time.tzset()
+    try:
+        expires = datetime.now() + timedelta(hours=1)
+        token, claims = auth_tokens.create_token(
+            "alice@phins.ai", "customer", "CUST-00001", expires
+        )
+
+        assert claims.issued_at <= time.time() + 300
+        assert auth_tokens.verify_v2_token(token) is not None
+    finally:
+        if original_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", original_tz)
+        time.tzset()
+
+
+def test_v2_session_expires_matches_local_iso_format(token_secret, monkeypatch):
+    from security import auth_tokens
+
+    original_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Etc/GMT-5")
+    time.tzset()
+    try:
+        expires = datetime.now() + timedelta(hours=1)
+        _token, claims = auth_tokens.create_token(
+            "alice@phins.ai", "customer", "CUST-00001", expires
+        )
+
+        session = claims.to_session_dict()
+        assert session["expires"] == datetime.fromtimestamp(claims.expires_at).isoformat()
+    finally:
+        if original_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", original_tz)
+        time.tzset()
 
 
 def test_create_token_requires_long_secret(monkeypatch):
@@ -299,6 +344,9 @@ def test_html_csp_forbids_objects_and_allows_same_origin_frames():
     assert "object-src 'none'" in HTML_CSP
     assert "frame-ancestors 'self'" in HTML_CSP
     assert "base-uri 'self'" in HTML_CSP
+    assert "'unsafe-eval'" not in HTML_CSP
+    assert "connect-src 'self';" in HTML_CSP
+    assert "img-src 'self' data: blob: https://api.qrserver.com;" in HTML_CSP
 
 
 def test_permissions_policy_blocks_sensitive_features():
