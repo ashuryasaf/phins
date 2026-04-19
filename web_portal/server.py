@@ -39191,19 +39191,38 @@ For claims or questions, please contact:
 def run_server(port: int = PORT) -> None:
     # Audit security-critical secrets early so operators see misconfiguration
     # immediately and don't first learn about it via a failed login.
+    #
+    # Deployment policy:
+    #   * We always run the audit and log findings at startup.
+    #   * We only HARD ABORT the process when PHINS_ENFORCE_SECRET_POLICY is
+    #     explicitly set to a truthy value. This keeps the default
+    #     rollout-safe: Railway services that happen to be missing
+    #     SESSION_SECRET_KEY keep booting (auth still works because login
+    #     falls back to legacy v1 tokens with a warning) but operators see
+    #     very loud SECURITY error lines in the log stream so they can fix
+    #     the configuration without downtime.
+    #   * Set PHINS_ENFORCE_SECRET_POLICY=true once every service has a
+    #     strong SESSION_SECRET_KEY to turn the audit into a hard gate.
     try:
         from security.secrets_policy import audit_environment_secrets, log_report
         _secret_report = audit_environment_secrets()
         log_report(_secret_report)
+        _enforce = str(os.environ.get('PHINS_ENFORCE_SECRET_POLICY', '')).lower() in (
+            '1', 'true', 'yes', 'y', 'on'
+        )
         if _secret_report.production_mode and not _secret_report.ok:
-            # We refuse to start in production when signing secrets are weak
-            # or known-insecure defaults are in use. This prevents a silent
-            # fallback to forgery-prone tokens.
+            if _enforce:
+                print(
+                    "[SECURITY] Refusing to start (PHINS_ENFORCE_SECRET_POLICY is on): "
+                    + "; ".join(_secret_report.errors)
+                )
+                raise SystemExit(2)
+            # Not enforcing: emit a prominent warning but continue.
             print(
-                "[SECURITY] Refusing to start: "
+                "[SECURITY][WARN] Secret policy violations detected: "
                 + "; ".join(_secret_report.errors)
+                + " -- continuing because PHINS_ENFORCE_SECRET_POLICY is not set."
             )
-            raise SystemExit(2)
     except SystemExit:
         raise
     except Exception as _exc:  # pragma: no cover - defensive

@@ -143,21 +143,35 @@ internal metadata services and prevents accidental downgrade to `http`.
 - `SESSION_SECRET_KEYS_PREVIOUS` – comma-separated list of retired signing
   keys accepted for verification during rotation.
 - `ALLOW_LEGACY_DEMO_PASSWORDS` – enables short demo passwords
-  (`admin123`, …). Startup audit **refuses to boot** in production when set.
+  (`admin123`, …). Startup audit flags this as an error in production.
+- `PHINS_ENFORCE_SECRET_POLICY` – opt-in kill-switch. When set to a truthy
+  value (`true`/`1`/`yes`/`on`), startup aborts with exit code 2 if the
+  audit finds any error in production. Defaults to **off** so that
+  introducing the audit does not take a running service down before
+  operators have had the chance to populate `SESSION_SECRET_KEY`.
 
 ### 6.3 Startup secret audit
 
 `security/secrets_policy.py:audit_environment_secrets` runs at server
-startup (`run_server`). In production (`ENVIRONMENT=production`, any
-`RAILWAY_ENVIRONMENT`, or `RENDER=1`):
+startup (`run_server`) and logs its findings. In production
+(`ENVIRONMENT=production`, any `RAILWAY_ENVIRONMENT`, or `RENDER=1`):
 
-- Missing/short `SESSION_SECRET_KEY` aborts startup with exit code 2.
+- Missing/short `SESSION_SECRET_KEY` is an error.
 - Known-insecure defaults (`admin`, `admin123`, `phins-emergency-unlock-2026`,
-  `change-me`, …) abort startup.
-- `ALLOW_LEGACY_DEMO_PASSWORDS=true` aborts startup.
+  `change-me`, …) are errors.
+- `ALLOW_LEGACY_DEMO_PASSWORDS=true` is an error.
 
-In test/dev mode these conditions downgrade to warnings so the suite still
-runs on developer machines.
+**Behaviour on error:**
+
+- Default: emit `[SECURITY][WARN]` log lines and continue. Login falls back
+  to legacy v1 tokens with a warning so the service does not become
+  unavailable during a rollout that has not yet populated the env vars.
+- With `PHINS_ENFORCE_SECRET_POLICY=true`: abort startup with exit code 2.
+  Set this once every deploy target has a strong `SESSION_SECRET_KEY` so
+  future misconfigurations cannot silently degrade to v1.
+
+In test/dev mode these conditions downgrade to warnings regardless of the
+enforce flag so the suite still runs on developer machines.
 
 ## 7. Data integrity
 
