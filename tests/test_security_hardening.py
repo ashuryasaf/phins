@@ -309,6 +309,39 @@ def test_secrets_policy_treats_short_test_mode_flag_as_non_production():
     assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
 
 
+def test_secrets_policy_downgrades_forbidden_default_in_test_mode():
+    """A forbidden-default value is an error in prod but only a warning in
+    test/dev so the test runner still starts. Both conditions must appear
+    in the warnings list in test mode (known-default + too-short)."""
+    from security.secrets_policy import audit_environment_secrets
+
+    report = audit_environment_secrets({
+        "PHINS_TEST_MODE": "true",
+        "SESSION_SECRET_KEY": "change-me",
+        "PHINS_EMERGENCY_UNLOCK_KEY": "phins-emergency-unlock-2026",
+        "PHINS_ADMIN_PASSWORD": "admin",
+    })
+    assert report.production_mode is False
+    assert report.ok
+    joined = " | ".join(report.warnings)
+    assert "SESSION_SECRET_KEY matches a known-insecure default" in joined
+    assert "SESSION_SECRET_KEY is shorter than 32 bytes" in joined
+    assert "PHINS_EMERGENCY_UNLOCK_KEY matches a known-insecure default" in joined
+    assert "PHINS_ADMIN_PASSWORD matches a known-insecure default" in joined
+
+
+def test_secrets_policy_still_hard_fails_forbidden_default_in_production():
+    from security.secrets_policy import audit_environment_secrets
+
+    report = audit_environment_secrets({
+        "ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "change-me",
+    })
+    assert not report.ok
+    joined = " | ".join(report.errors)
+    assert "SESSION_SECRET_KEY matches a known-insecure default" in joined
+
+
 def test_secrets_policy_rejects_short_emergency_key_in_prod():
     from security.secrets_policy import audit_environment_secrets
 

@@ -86,8 +86,15 @@ def _check_secret(
         return errors, warnings
 
     if val.lower() in _FORBIDDEN_SECRETS:
-        errors.append(f"{env_name} matches a known-insecure default")
-        return errors, warnings
+        # In production, a known-insecure default is hard-failed so the boot
+        # sequence aborts. In test/dev we still want the test runner to start,
+        # so downgrade to a warning. The length check below still runs; it
+        # catches the same condition from a different angle.
+        msg = f"{env_name} matches a known-insecure default"
+        if production:
+            errors.append(msg)
+        else:
+            warnings.append(msg)
 
     if len(val.encode("utf-8")) < _MIN_BYTES:
         msg = f"{env_name} is shorter than {_MIN_BYTES} bytes"
@@ -118,9 +125,11 @@ def audit_environment_secrets(environ: Optional[dict] = None) -> SecretReport:
     emergency = (env.get("PHINS_EMERGENCY_UNLOCK_KEY") or "").strip()
     if emergency:
         if emergency.lower() in _FORBIDDEN_SECRETS:
-            report.errors.append(
-                "PHINS_EMERGENCY_UNLOCK_KEY matches a known-insecure default"
-            )
+            msg = "PHINS_EMERGENCY_UNLOCK_KEY matches a known-insecure default"
+            if production:
+                report.errors.append(msg)
+            else:
+                report.warnings.append(msg)
         elif len(emergency.encode("utf-8")) < _MIN_BYTES:
             msg = "PHINS_EMERGENCY_UNLOCK_KEY is shorter than 32 bytes"
             if production:
@@ -132,7 +141,11 @@ def audit_environment_secrets(environ: Optional[dict] = None) -> SecretReport:
     # publicly-known default.
     admin_pw = (env.get("PHINS_ADMIN_PASSWORD") or "").strip()
     if admin_pw and admin_pw.lower() in _FORBIDDEN_SECRETS:
-        report.errors.append("PHINS_ADMIN_PASSWORD matches a known-insecure default")
+        msg = "PHINS_ADMIN_PASSWORD matches a known-insecure default"
+        if production:
+            report.errors.append(msg)
+        else:
+            report.warnings.append(msg)
 
     allow_legacy = str(env.get("ALLOW_LEGACY_DEMO_PASSWORDS", "")).lower() in (
         "1",
