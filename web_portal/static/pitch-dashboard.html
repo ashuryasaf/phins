@@ -1350,7 +1350,7 @@
   <main class="container">
     <section class="stats-strip">
       <div class="stat-box">
-        <div class="stat-val">7</div>
+        <div class="stat-val">8</div>
         <div class="stat-lbl">Priority markets modeled</div>
       </div>
       <div class="stat-box">
@@ -1362,7 +1362,7 @@
         <div class="stat-lbl">Scenario modes: lives / premium share</div>
       </div>
       <div class="stat-box">
-        <div class="stat-val">25</div>
+        <div class="stat-val">26</div>
         <div class="stat-lbl">Country decks still linked below</div>
       </div>
     </section>
@@ -1977,6 +1977,37 @@
           <div class="card-authority">Central Bank of Ireland</div>
           <div class="card-cta">Open Pitch →</div>
         </a>
+        <a href="/albania-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇱</div>
+          <div class="card-country">Albania</div>
+          <div class="card-authority">AFSA / Bank of Albania</div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-label">🇦🇱 Albania — market entry documents</div>
+      <h2 class="section-title">Albania pitch, NDA &amp; prospectus</h2>
+      <div class="deck-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
+        <a href="/albania-capital-markets-pitch.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇱</div>
+          <div class="card-country">Albania</div>
+          <div class="card-authority">AFSA / Bank of Albania<br><small>Autoriteti i Mbikëqyrjes Financiare</small></div>
+          <div class="card-cta">Open Pitch →</div>
+        </a>
+        <a href="/albania-afsa-prospectus.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇱</div>
+          <div class="card-country">AFSA Prospectus</div>
+          <div class="card-authority">Albanian Financial Supervisory Authority<br><small>Prospektus — Insurance, Banking &amp; Investments</small></div>
+          <div class="card-cta">Open Prospectus →</div>
+        </a>
+        <a href="/nda-albania.html" target="_blank" class="pitch-card">
+          <div class="card-flag">🇦🇱</div>
+          <div class="card-country">Albania NDA</div>
+          <div class="card-authority">AFSA / Bank of Albania<br><small>Mutual Non-Disclosure Agreement</small></div>
+          <div class="card-cta">Open NDA →</div>
+        </a>
       </div>
     </section>
   </main>
@@ -2135,6 +2166,20 @@
         note: "Used for UAE retention ratio and implied cession benchmark.",
         sourceType: "official",
         evidenceStrength: "direct pdf"
+      },
+      afsa_2024: {
+        title: "AFSA Albania — Annual Report on Insurance Market 2024",
+        url: "https://amf.gov.al/publications.asp",
+        note: "Used for Albania insurance market size, penetration, and regulatory framework overview.",
+        sourceType: "official",
+        evidenceStrength: "official report"
+      },
+      boa_2024: {
+        title: "Bank of Albania — Financial Stability Report 2024",
+        url: "https://www.bankofalbania.org/Publications/Periodic/Financial_Stability_Report/",
+        note: "Used for Albanian banking sector structure, financial inclusion metrics, and macroeconomic context for insurance market entry.",
+        sourceType: "official",
+        evidenceStrength: "official report"
       }
     };
 
@@ -2341,6 +2386,35 @@
         basisNote: "Default lives basis uses APRA's current insured pool as the commercial anchor because public DII premium granularity was not cleanly surfaced.",
         reinsuranceNote: "APRA's DII sustainability review is the key warning signal: assume tighter pricing and treaty appetite than a casual market narrative suggests.",
         interpretationNote: "Australia is attractive, but only after the PHINS product language and claims engine are proven elsewhere."
+      },
+      {
+        id: "albania",
+        name: "Albania",
+        flag: "🇦🇱",
+        scope: "Country",
+        focus: "Emerging market entry with digital-first insurance platform",
+        currency: "ALL",
+        tags: ["private", "proxy"],
+        demand: "Albania's insurance penetration stands at approximately 1.5% of GDP, among the lowest in Europe. The population of 2.8 million has limited access to private disability and health insurance products, with an estimated 72% health insurance penetration gap.",
+        premium: "The total Albanian insurance market is approximately EUR 300 million annually. Life and health insurance premiums represent a small but growing share, with the non-life segment dominated by motor insurance. Private health and disability coverage remains largely undeveloped.",
+        reinsurance: "Albanian insurers cede a significant portion of premiums to international reinsurers due to limited domestic retention capacity. AFSA does not publish granular cession ratios, so treaty assumptions should remain quote-driven.",
+        insight: "Albania represents an early-mover digital-first opportunity: low insurance penetration, EU accession trajectory, a young and increasingly digital population, and regulatory openness to fintech innovation under AFSA's modernization agenda.",
+        sources: ["afsa_2024", "boa_2024"],
+        defaultMode: "lives",
+        investorScores: { priority: 55, demand: 48, monetization: 42, publicDepth: 30, privateAccess: 52, fit: 58, color: "amber" },
+        assumptionDefaults: {
+          addressableLives: 1200000,
+          attachRate: 1.5,
+          annualPremium: 16800,
+          marketPremiumPool: 300000000,
+          targetShare: 3.0,
+          cessionRate: 30.0,
+          lossRatio: 58.0,
+          expenseRatio: 20.0
+        },
+        basisNote: "Default lives basis uses estimated addressable Albanian individuals without private health/disability insurance as the target pool.",
+        reinsuranceNote: "Albanian market has limited domestic retention capacity. Treaty terms must be negotiated directly with international reinsurers.",
+        interpretationNote: "Albania is an early-stage market with high growth potential, best approached as a digital-first greenfield entry rather than a legacy displacement play."
       }
     ];
 
