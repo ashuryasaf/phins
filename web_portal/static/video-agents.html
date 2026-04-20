@@ -573,7 +573,13 @@
                 }
                 return videoAgentCampaign;
             } catch (err) {
-                if (String(err.message || '').toLowerCase().includes('no generated campaign found')) {
+                const msg = String(err.message || '').toLowerCase();
+                if (msg.includes('no generated campaign found') || msg.includes('404')) {
+                    videoAgentCampaign = null;
+                    return null;
+                }
+                if (msg.includes('403') || msg.includes('401')) {
+                    setStatus('Access denied. Admin or Media role required.', 'error');
                     videoAgentCampaign = null;
                     return null;
                 }
@@ -662,7 +668,14 @@
                 const data = await fetchJson(`/api/admin/media/video-jobs?campaign_id=${encodeURIComponent(campaignId)}`);
                 videoAgentJobs = Array.isArray(data.jobs) ? data.jobs : [];
                 renderJobs();
-                if (!silent) setStatus(`Loaded ${videoAgentJobs.length} video-agent job(s).`, 'info');
+                if (!silent) {
+                    const summary = data.summary || {};
+                    const parts = [`${videoAgentJobs.length} job(s)`];
+                    if (summary.completed) parts.push(`${summary.completed} completed`);
+                    if (summary.active) parts.push(`${summary.active} active`);
+                    if (summary.failed) parts.push(`${summary.failed} failed`);
+                    setStatus(`Video jobs: ${parts.join(', ')}.`, summary.failed ? 'warning' : 'info');
+                }
                 return videoAgentJobs;
             } catch (err) {
                 if (!silent) setStatus(`Failed to load video jobs: ${err.message}`, 'error');
@@ -716,7 +729,7 @@
                 }
             }
             if (!campaignId) {
-                setStatus('No campaign ID found. Generate an Agent Plan in the Admin Growth section first, then return here.', 'warning');
+                setStatus('No campaign ID found. Go to Admin \u2192 Growth/Media \u2192 "Generate Agent Plan" first.', 'warning');
                 return;
             }
             const provider = (document.getElementById('va-provider')?.value || 'gemini').trim();
@@ -729,8 +742,11 @@
             const pollMode = (document.getElementById('va-completion-mode')?.value || 'poll').trim();
             const autoHero = Boolean(document.getElementById('va-auto-hero')?.checked);
             const promptOverride = (document.getElementById('va-prompt-override')?.value || '').trim();
+            const pipelineType = document.getElementById('va-pipeline')?.value || 'introductions';
+            const providerLabel = String(provider).toUpperCase();
+            setStatus(`Submitting ${pipelineType} pipeline videos to ${providerLabel}...`, 'info');
             try {
-                await fetchJson('/api/admin/media/video-jobs/batch', {
+                const result = await fetchJson('/api/admin/media/video-jobs/batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -741,12 +757,13 @@
                         reference_image_asset_id: referenceImage ? referenceImage.id : '',
                         poll_mode: pollMode,
                         auto_publish_to_hero: autoHero,
-                        pipeline_type: document.getElementById('va-pipeline')?.value || 'introductions',
-                        prompt_override: promptOverride || buildPipelinePrompt(document.getElementById('va-pipeline')?.value || 'introductions')
+                        pipeline_type: pipelineType,
+                        prompt_override: promptOverride || buildPipelinePrompt(pipelineType)
                     })
                 });
+                const jobCount = result?.queued_jobs?.length || result?.jobs?.length || 0;
                 await refreshVideoAgentJobs(true);
-                setStatus('Queued video-agent batch generation.', 'success');
+                setStatus(`${jobCount} video job(s) queued with ${providerLabel}. Progress will auto-refresh.`, 'success');
             } catch (err) {
                 setStatus(`Batch generation failed: ${err.message}`, 'error');
             }
@@ -754,14 +771,19 @@
 
         async function refreshVideoAgentsDashboard() {
             try {
-                const campaign = await loadLatestCampaign();
-                await loadProviderCapabilities();
-                await loadMediaImages();
+                setStatus('Loading campaign and provider data...', 'info');
+                const [campaign] = await Promise.all([
+                    loadLatestCampaign(),
+                    loadProviderCapabilities(),
+                    loadMediaImages(),
+                ]);
                 await refreshVideoAgentJobs(true);
                 if (campaign?.campaign?.campaign_id) {
-                    setStatus('Video Agents dashboard refreshed.', 'success');
+                    const campaignId = campaign.campaign.campaign_id;
+                    const blueprintCount = Array.isArray(campaign.campaign?.ai_video_blueprints) ? campaign.campaign.ai_video_blueprints.length : 0;
+                    setStatus(`Campaign ${campaignId} loaded with ${blueprintCount} video blueprints. Ready for generation.`, 'success');
                 } else {
-                    setStatus('No generated campaign found yet. Generate Agent Plan in Admin to create a Campaign ID, then return here.', 'warning');
+                    setStatus('No generated campaign found. Go to Admin \u2192 Growth/Media \u2192 "Generate Agent Plan" first.', 'warning');
                 }
             } catch (err) {
                 setStatus(`Refresh failed: ${err.message}`, 'error');
