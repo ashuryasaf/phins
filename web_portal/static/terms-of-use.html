@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0d47a1" />
+  <title>PHINS — Terms of Use</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body {
+      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
+      margin: 0;
+      padding: 0;
+    }
+    .legal-header {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 100%);
+      color: #fff;
+      padding: 24px 0;
+      box-shadow: 0 4px 24px rgba(13, 71, 161, 0.25);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .legal-header .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+    .legal-header .brand {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-decoration: none;
+      color: #fff;
+    }
+    .legal-header .nav a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 6px;
+      transition: background 0.3s;
+    }
+    .legal-header .nav a:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    .legal-hero {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      color: #fff;
+      padding: 48px 0 36px;
+      text-align: center;
+    }
+    .legal-hero h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+    .legal-hero .effective-date {
+      font-size: 1rem;
+      opacity: 0.85;
+    }
+    .legal-container {
+      max-width: 900px;
+      margin: -24px auto 48px;
+      padding: 0 16px;
+    }
+    .legal-content {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 8px 30px rgba(13, 71, 161, 0.12);
+      border: 1px solid #e3f2fd;
+      line-height: 1.8;
+      color: #333;
+    }
+    .legal-content h2 {
+      color: #0d47a1;
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 36px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e3f2fd;
+    }
+    .legal-content h2:first-child {
+      margin-top: 0;
+    }
+    .legal-content h3 {
+      color: #1565c0;
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 24px 0 12px;
+    }
+    .legal-content p {
+      margin: 0 0 14px;
+      font-size: 0.98rem;
+    }
+    .legal-content ul, .legal-content ol {
+      margin: 0 0 14px;
+      padding-left: 24px;
+    }
+    .legal-content li {
+      margin-bottom: 6px;
+      font-size: 0.98rem;
+    }
+    .legal-content strong {
+      color: #1a237e;
+    }
+    .legal-content a {
+      color: #1565c0;
+      text-decoration: underline;
+    }
+    .legal-content a:hover {
+      color: #0d47a1;
+    }
+    .legal-content .highlight-box {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      border-left: 4px solid #1565c0;
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+      font-size: 0.95rem;
+    }
+    .legal-content .warning-box {
+      background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+      border-left: 4px solid #f57c00;
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+      font-size: 0.95rem;
+    }
+    .legal-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.95rem;
+    }
+    .legal-content table th,
+    .legal-content table td {
+      border: 1px solid #e3f2fd;
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .legal-content table th {
+      background: #e3f2fd;
+      color: #0d47a1;
+      font-weight: 600;
+    }
+    .legal-toc {
+      background: #f5f9fc;
+      border: 1px solid #e3f2fd;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+    }
+    .legal-toc h3 {
+      margin: 0 0 12px;
+      color: #0d47a1;
+      font-size: 1.1rem;
+    }
+    .legal-toc ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .legal-toc li {
+      margin-bottom: 4px;
+    }
+    .legal-toc a {
+      color: #1565c0;
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+    .legal-toc a:hover {
+      text-decoration: underline;
+    }
+    .legal-footer {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      color: #fff;
+      padding: 32px 0;
+      text-align: center;
+    }
+    .legal-footer .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .legal-footer .footer-links a {
+      color: rgba(255,255,255,0.9);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .legal-footer .footer-links a:hover {
+      color: #fff;
+      text-decoration: underline;
+    }
+    .legal-footer .footer-copyright {
+      font-size: 0.85rem;
+      opacity: 0.8;
+      margin: 0;
+    }
+    .legal-footer .footer-badges {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+    .legal-footer .footer-badge {
+      background: rgba(255,255,255,0.15);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    @media (max-width: 768px) {
+      .legal-content {
+        padding: 28px 20px;
+      }
+      .legal-hero h1 {
+        font-size: 1.6rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="legal-header">
+    <div class="container">
+      <a href="/" class="brand">🛡️ PHINS Insurance</a>
+      <nav class="nav">
+        <a href="/">Home</a>
+        <a href="/apply.html">Apply</a>
+        <a href="/login.html">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="legal-hero">
+    <h1>Terms of Use</h1>
+    <p class="effective-date">Effective Date: January 1, 2026 &middot; Last Updated: April 20, 2026</p>
+  </section>
+
+  <div class="legal-container">
+    <div class="legal-content">
+
+      <div class="legal-toc">
+        <h3>Table of Contents</h3>
+        <ol>
+          <li><a href="#acceptance">Acceptance of Terms</a></li>
+          <li><a href="#eligibility">Eligibility</a></li>
+          <li><a href="#services">Description of Services</a></li>
+          <li><a href="#ai-services">AI-Powered Services &amp; Limitations</a></li>
+          <li><a href="#accounts">Account Registration &amp; Security</a></li>
+          <li><a href="#insurance">Insurance Products &amp; Services</a></li>
+          <li><a href="#investments">Investment Services</a></li>
+          <li><a href="#health">Health &amp; Wellness Services</a></li>
+          <li><a href="#supplier">Supplier Marketplace</a></li>
+          <li><a href="#user-conduct">User Conduct &amp; Prohibited Activities</a></li>
+          <li><a href="#ip">Intellectual Property</a></li>
+          <li><a href="#privacy">Privacy &amp; Data Protection</a></li>
+          <li><a href="#disclaimers">Disclaimers &amp; Limitations of Liability</a></li>
+          <li><a href="#indemnification">Indemnification</a></li>
+          <li><a href="#disputes">Dispute Resolution &amp; Governing Law</a></li>
+          <li><a href="#termination">Termination</a></li>
+          <li><a href="#force-majeure">Force Majeure</a></li>
+          <li><a href="#modifications">Modifications to These Terms</a></li>
+          <li><a href="#severability">Severability &amp; Waiver</a></li>
+          <li><a href="#contact-terms">Contact Information</a></li>
+        </ol>
+      </div>
+
+      <div class="highlight-box">
+        <strong>Important:</strong> Please read these Terms of Use carefully before accessing or using the PHINS platform. By creating an account, submitting an application, or otherwise using our services, you agree to be bound by these Terms. If you do not agree, you must not use the platform.
+      </div>
+
+      <h2 id="acceptance">1. Acceptance of Terms</h2>
+      <p>These Terms of Use (<strong>"Terms"</strong>) constitute a legally binding agreement between you (<strong>"User," "you,"</strong> or <strong>"your"</strong>) and PHINS Insurance Company and its subsidiaries and affiliates (<strong>"PHINS," "we," "us,"</strong> or <strong>"our"</strong>). These Terms govern your access to and use of the PHINS platform, including our website, web portals, mobile applications, APIs, and all related services (collectively, the <strong>"Platform"</strong>).</p>
+      <p>By accessing or using the Platform, you acknowledge that you have read, understood, and agree to be bound by these Terms, our <a href="/privacy-policy.html">Privacy Policy</a>, and any additional terms applicable to specific services you use (such as insurance policy terms, investment agreements, or supplier contracts). These additional terms are incorporated by reference.</p>
+      <p>If you are accepting these Terms on behalf of a company, organization, or other legal entity, you represent and warrant that you are authorized to bind that entity and its affiliates to these Terms, in which case "you" and "your" shall also refer to that entity.</p>
+
+      <h2 id="eligibility">2. Eligibility</h2>
+      <p>To use the Platform, you must:</p>
+      <ul>
+        <li>Be at least 18 years of age (or the age of legal majority in your jurisdiction)</li>
+        <li>Have the legal capacity to enter into a binding agreement</li>
+        <li>Not be prohibited from receiving services under applicable laws (including sanctions, export control, and anti-money laundering regulations)</li>
+        <li>Provide accurate, current, and complete registration information</li>
+      </ul>
+      <p>Certain services may have additional eligibility requirements based on applicable regulatory frameworks. For example, investment services may require suitability assessments, and insurance products may require residency in specific jurisdictions.</p>
+
+      <h2 id="services">3. Description of Services</h2>
+      <p>The PHINS Platform provides an integrated suite of insurance, investment, health, and technology services, including but not limited to:</p>
+
+      <h3>3.1 Insurance Services</h3>
+      <ul>
+        <li>Insurance product quotation, application, underwriting, and policy issuance across multiple lines of business (life, health, property, casualty, travel, marine, professional liability)</li>
+        <li>Claims submission, tracking, and management</li>
+        <li>Policy administration, renewals, endorsements, and cancellations</li>
+        <li>Billing, premium payment processing, and statements</li>
+      </ul>
+
+      <h3>3.2 Investment Services</h3>
+      <ul>
+        <li>Investment advisory and portfolio management</li>
+        <li>Access to investment products and capital markets information</li>
+        <li>Risk profiling and suitability assessments</li>
+        <li>Account reporting and performance tracking</li>
+      </ul>
+
+      <h3>3.3 Health &amp; Wellness Services</h3>
+      <ul>
+        <li>Health insurance administration and benefits management</li>
+        <li>Wellness programs and preventive care resources</li>
+        <li>Healthcare provider marketplace and referrals</li>
+        <li>Health risk assessments and personalized recommendations</li>
+      </ul>
+
+      <h3>3.4 Technology &amp; AI Services</h3>
+      <ul>
+        <li>AI-powered risk assessment and underwriting support</li>
+        <li>Automated claims processing and fraud detection</li>
+        <li>Personalized recommendations and decision-support tools</li>
+        <li>Secure document management and digital signatures</li>
+      </ul>
+
+      <h3>3.5 Supplier Marketplace</h3>
+      <ul>
+        <li>Access to verified healthcare providers, legal professionals, and service suppliers</li>
+        <li>Settlement processing and commission management</li>
+        <li>Supplier onboarding, credentialing, and performance tracking</li>
+      </ul>
+
+      <h3>3.6 Community Foundations</h3>
+      <ul>
+        <li>Charitable foundation setup, management, and governance</li>
+        <li>Donation and contribution processing</li>
+        <li>Grant administration and reporting</li>
+      </ul>
+
+      <h2 id="ai-services">4. AI-Powered Services &amp; Limitations</h2>
+      <div class="warning-box">
+        <strong>AI Disclosure:</strong> PHINS uses artificial intelligence and machine learning technologies across its Platform. AI outputs are designed to assist and inform — they do not replace professional judgment. All significant AI-assisted decisions are subject to human review.
+      </div>
+
+      <h3>4.1 Nature of AI Services</h3>
+      <p>PHINS deploys AI systems to enhance the quality, speed, and consistency of its services. You acknowledge and agree that:</p>
+      <ul>
+        <li>AI-generated outputs (including risk scores, premium estimates, investment recommendations, health assessments, and fraud alerts) are <strong>decision-support tools</strong>, not final determinations, unless explicitly stated otherwise.</li>
+        <li>AI systems may process your data to generate predictions, recommendations, or classifications. The logic and data inputs used are described in our <a href="/privacy-policy.html">Privacy Policy</a>.</li>
+        <li>AI models are probabilistic in nature and may produce errors, inaccuracies, or biased outputs despite our best efforts at quality control and bias mitigation.</li>
+        <li>AI-generated content (including summaries, reports, and communications) may contain errors and should be verified independently for critical decisions.</li>
+      </ul>
+
+      <h3>4.2 AI-Specific Disclaimers</h3>
+      <ul>
+        <li><strong>Not Medical Advice:</strong> AI-generated health assessments, risk scores, and wellness recommendations do not constitute medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional for medical decisions.</li>
+        <li><strong>Not Financial Advice:</strong> AI-generated investment recommendations, risk analyses, and market insights are informational and do not constitute personalized financial, tax, or legal advice. Investment decisions should be made in consultation with a licensed financial advisor.</li>
+        <li><strong>Not Legal Advice:</strong> AI-generated summaries of policy terms, regulatory guidance, or contractual provisions do not constitute legal advice. Consult a qualified attorney for legal matters.</li>
+        <li><strong>No Guarantee of Outcome:</strong> AI-assisted underwriting decisions, claims assessments, and investment projections do not guarantee any particular outcome, coverage decision, or return on investment.</li>
+      </ul>
+
+      <h3>4.3 Human Oversight Commitment</h3>
+      <p>In accordance with applicable AI regulations (including the EU AI Act), PHINS maintains human oversight over all AI systems classified as high-risk. Specifically:</p>
+      <ul>
+        <li>Qualified human reviewers oversee and can override AI-generated insurance underwriting and claims decisions</li>
+        <li>Licensed financial professionals review AI-generated investment recommendations before execution above defined thresholds</li>
+        <li>AI-driven health risk scores are reviewed by qualified health professionals before being used to make adverse coverage determinations</li>
+        <li>You may request human review of any AI-assisted decision that materially affects your rights or interests</li>
+      </ul>
+
+      <h3>4.4 Responsible AI Principles</h3>
+      <p>PHINS is committed to developing and deploying AI responsibly. Our AI systems are designed and governed according to the following principles:</p>
+      <ul>
+        <li><strong>Fairness:</strong> We actively test for and mitigate bias across protected characteristics in AI model training and deployment.</li>
+        <li><strong>Transparency:</strong> We disclose when AI has been used in decisions that affect you and provide explanations of the logic involved.</li>
+        <li><strong>Accountability:</strong> We maintain audit trails, governance structures, and incident response procedures for AI systems.</li>
+        <li><strong>Privacy:</strong> AI systems process only the data necessary for their stated purpose, in accordance with our Privacy Policy and data minimization principles.</li>
+        <li><strong>Safety:</strong> AI systems undergo risk assessment, testing, and monitoring before and after deployment.</li>
+      </ul>
+
+      <h2 id="accounts">5. Account Registration &amp; Security</h2>
+
+      <h3>5.1 Registration</h3>
+      <p>To access certain features of the Platform, you must register for an account. When registering, you agree to:</p>
+      <ul>
+        <li>Provide accurate, current, and complete information</li>
+        <li>Maintain and promptly update your registration information</li>
+        <li>Not create an account using a false identity or information, or on behalf of someone else without authorization</li>
+        <li>Not create multiple accounts for the purpose of circumventing restrictions</li>
+      </ul>
+
+      <h3>5.2 Account Security</h3>
+      <p>You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. You agree to:</p>
+      <ul>
+        <li>Create a strong, unique password and not share it with others</li>
+        <li>Enable multi-factor authentication when available</li>
+        <li>Immediately notify PHINS of any unauthorized use of your account or any other security breach</li>
+        <li>Log out from your account at the end of each session, particularly on shared or public devices</li>
+      </ul>
+      <p>PHINS is not liable for losses arising from unauthorized use of your account where you have failed to maintain account security.</p>
+
+      <h3>5.3 Identity Verification</h3>
+      <p>PHINS may require identity verification (including know-your-customer (KYC) checks, document verification, and biometric authentication) before granting access to certain services. You consent to these verification procedures as a condition of using the Platform.</p>
+
+      <h2 id="insurance">6. Insurance Products &amp; Services</h2>
+
+      <h3>6.1 General Terms</h3>
+      <ul>
+        <li>Insurance products available through the Platform are subject to separate policy terms and conditions, which constitute the binding insurance contract between you and the insuring entity.</li>
+        <li>Quotations provided through the Platform are estimates only and are subject to underwriting review. Actual premiums, coverage terms, and eligibility may differ from initial quotations.</li>
+        <li>Coverage is not in effect until a policy is formally issued by the underwriting entity and the required premium has been paid.</li>
+        <li>You have a duty to disclose all material facts and information truthfully and completely in any insurance application. Failure to do so may result in denial of coverage, policy rescission, or claim denial.</li>
+      </ul>
+
+      <h3>6.2 Claims</h3>
+      <ul>
+        <li>Claims must be reported promptly in accordance with the terms of your policy.</li>
+        <li>You must cooperate fully with any investigation, provide truthful information, and submit requested documentation.</li>
+        <li>Making false or fraudulent claims is a criminal offense in most jurisdictions and may result in claim denial, policy cancellation, legal proceedings, and reporting to relevant authorities.</li>
+      </ul>
+
+      <h3>6.3 Regulatory Compliance</h3>
+      <p>Insurance products are offered in compliance with applicable insurance laws and regulations in each jurisdiction. Availability of specific products may vary by jurisdiction, and some products may not be available in all regions.</p>
+
+      <h2 id="investments">7. Investment Services</h2>
+
+      <h3>7.1 Nature of Investment Services</h3>
+      <ul>
+        <li>Investment services provided through the Platform are subject to applicable securities laws and regulations.</li>
+        <li>Past performance of any investment product or strategy does not guarantee future results.</li>
+        <li>All investments involve risk, including the potential loss of principal. You should not invest money you cannot afford to lose.</li>
+        <li>Investment recommendations are based on information you provide and market conditions at the time; they may not reflect all relevant factors or changes in your circumstances.</li>
+      </ul>
+
+      <h3>7.2 Suitability</h3>
+      <p>Before providing investment recommendations, PHINS will assess your investment objectives, risk tolerance, financial situation, and experience. You agree to provide accurate and complete information for this assessment and to update it when your circumstances change materially.</p>
+
+      <h3>7.3 Conflicts of Interest</h3>
+      <p>PHINS will disclose material conflicts of interest in connection with investment services. We maintain policies and procedures to identify, manage, and, where necessary, avoid conflicts of interest.</p>
+
+      <h2 id="health">8. Health &amp; Wellness Services</h2>
+
+      <h3>8.1 Not a Healthcare Provider</h3>
+      <p>PHINS is not a healthcare provider, medical practice, or licensed medical professional. Health-related features of the Platform, including wellness assessments, health risk scores, and preventive care recommendations, are <strong>informational and educational</strong> in nature and do not constitute medical advice, diagnosis, or treatment.</p>
+
+      <h3>8.2 Healthcare Provider Marketplace</h3>
+      <p>PHINS may connect you with third-party healthcare providers through our supplier marketplace. PHINS does not practice medicine, employ the healthcare providers listed on the marketplace (unless explicitly stated), or guarantee the quality of care provided by third-party providers. Your relationship with a healthcare provider accessed through the Platform is a direct relationship between you and that provider.</p>
+
+      <h3>8.3 Emergency Situations</h3>
+      <p>The Platform is not designed for medical emergencies. If you are experiencing a medical emergency, call your local emergency services immediately.</p>
+
+      <h3>8.4 Health Data</h3>
+      <p>Health data collected and processed by the Platform is handled in accordance with our <a href="/privacy-policy.html">Privacy Policy</a> and applicable health data protection laws, including HIPAA where applicable.</p>
+
+      <h2 id="supplier">9. Supplier Marketplace</h2>
+
+      <h3>9.1 Supplier Responsibilities</h3>
+      <p>Suppliers registered on the PHINS marketplace agree to:</p>
+      <ul>
+        <li>Maintain all required licenses, certifications, and accreditations for their services</li>
+        <li>Provide services in accordance with applicable professional standards and laws</li>
+        <li>Maintain appropriate professional liability, malpractice, or errors and omissions insurance</li>
+        <li>Comply with the PHINS Supplier Code of Conduct and marketplace policies</li>
+        <li>Accurately represent their qualifications, services, and pricing</li>
+      </ul>
+
+      <h3>9.2 Commission and Settlement</h3>
+      <p>Platform commission rates, settlement terms, and payment schedules are governed by the Supplier Agreement executed upon marketplace registration. PHINS reserves the right to modify commission structures with advance notice as specified in the Supplier Agreement.</p>
+
+      <h3>9.3 Marketplace Disclaimer</h3>
+      <p>PHINS acts as a marketplace facilitator and does not guarantee the availability, quality, or outcomes of services provided by third-party suppliers. Disputes between users and suppliers should first be addressed directly between the parties, with PHINS mediation available through our dispute resolution process.</p>
+
+      <h2 id="user-conduct">10. User Conduct &amp; Prohibited Activities</h2>
+      <p>You agree not to use the Platform to:</p>
+      <ul>
+        <li>Violate any applicable law, regulation, or third-party right</li>
+        <li>Submit false, misleading, or fraudulent information (including in insurance applications, claims, investment profiles, or supplier registrations)</li>
+        <li>Engage in insurance fraud, money laundering, terrorist financing, or other financial crimes</li>
+        <li>Attempt to gain unauthorized access to the Platform, other user accounts, or our systems</li>
+        <li>Introduce viruses, malware, or other harmful code</li>
+        <li>Interfere with the Platform's operation, integrity, or performance</li>
+        <li>Scrape, crawl, or harvest data from the Platform without authorization</li>
+        <li>Reverse engineer, decompile, or disassemble any aspect of the Platform</li>
+        <li>Circumvent or manipulate AI systems, risk assessments, or security controls</li>
+        <li>Use the Platform for unauthorized commercial purposes, spam, or unsolicited communications</li>
+        <li>Impersonate any person or entity, or misrepresent your affiliation with any person or entity</li>
+        <li>Engage in price manipulation, market abuse, or insider trading through investment services</li>
+        <li>Use the Platform in a manner that discriminates against or harasses any individual or group</li>
+      </ul>
+      <p>PHINS reserves the right to investigate, suspend, or terminate accounts and take legal action for violations of these prohibitions.</p>
+
+      <h2 id="ip">11. Intellectual Property</h2>
+
+      <h3>11.1 PHINS Intellectual Property</h3>
+      <p>The Platform, including its software, algorithms, AI models, user interface, design, text, graphics, logos, icons, images, audio, video, data compilations, and underlying technology, is owned by or licensed to PHINS and is protected by copyright, trademark, patent, trade secret, and other intellectual property laws.</p>
+      <p>You are granted a limited, non-exclusive, non-transferable, revocable license to access and use the Platform for its intended purposes in accordance with these Terms. This license does not include the right to:</p>
+      <ul>
+        <li>Modify, copy, distribute, or create derivative works based on the Platform</li>
+        <li>Use any data mining, robots, or similar data-gathering methods</li>
+        <li>Download (other than page caching) or store any portion of the Platform for commercial use</li>
+        <li>Use the Platform other than for its intended purposes</li>
+      </ul>
+
+      <h3>11.2 User Content</h3>
+      <p>You retain ownership of content you submit to the Platform (such as claim documentation, medical records, or financial documents). By submitting content, you grant PHINS a non-exclusive, worldwide, royalty-free license to use, process, store, and transmit such content as necessary to provide the requested services, comply with legal obligations, and improve our services (using de-identified or aggregated data).</p>
+
+      <h3>11.3 Feedback</h3>
+      <p>If you provide feedback, suggestions, or ideas about the Platform, you grant PHINS an unrestricted, irrevocable, worldwide, royalty-free right to use, modify, and incorporate such feedback for any purpose without obligation or compensation to you.</p>
+
+      <h2 id="privacy">12. Privacy &amp; Data Protection</h2>
+      <p>Your use of the Platform is also governed by our <a href="/privacy-policy.html">Privacy Policy</a>, which is incorporated into these Terms by reference. The Privacy Policy describes how we collect, use, share, and protect your personal data, including health data, financial data, and data processed by AI systems.</p>
+      <p>By using the Platform, you acknowledge that you have read and understood our Privacy Policy and consent to the data practices described therein, to the extent that consent is the applicable legal basis for processing.</p>
+
+      <h2 id="disclaimers">13. Disclaimers &amp; Limitations of Liability</h2>
+
+      <h3>13.1 Platform Availability</h3>
+      <p>PHINS strives to maintain continuous Platform availability but does not guarantee uninterrupted, error-free, or secure access. The Platform may be temporarily unavailable due to maintenance, upgrades, technical issues, or circumstances beyond our control.</p>
+
+      <h3>13.2 Warranty Disclaimer</h3>
+      <div class="warning-box">
+        TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE PLATFORM AND ALL SERVICES ARE PROVIDED <strong>"AS IS"</strong> AND <strong>"AS AVAILABLE"</strong> WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, AND ACCURACY. PHINS DOES NOT WARRANT THAT THE PLATFORM WILL MEET YOUR REQUIREMENTS, THAT AI OUTPUTS WILL BE ACCURATE OR ERROR-FREE, OR THAT DEFECTS WILL BE CORRECTED.
+      </div>
+      <p>This disclaimer does not affect your statutory rights as a consumer or policyholder under applicable law, which cannot be excluded or limited by contract.</p>
+
+      <h3>13.3 Limitation of Liability</h3>
+      <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW:</p>
+      <ul>
+        <li>PHINS shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including lost profits, lost data, business interruption, or loss of goodwill, arising from your use of or inability to use the Platform.</li>
+        <li>PHINS's total aggregate liability for all claims arising from or related to these Terms or your use of the Platform shall not exceed the greater of (a) the total fees paid by you to PHINS in the twelve (12) months preceding the claim, or (b) one hundred U.S. dollars (USD $100).</li>
+        <li>The limitations in this section do not apply to liability that cannot be excluded or limited under applicable law, including liability for death or personal injury caused by negligence, fraud or fraudulent misrepresentation, or violations of mandatory consumer protection laws.</li>
+      </ul>
+      <p>Nothing in these Terms limits or excludes PHINS's liability under any insurance policy issued to you. Insurance policy terms, coverage, and claims are governed by the applicable insurance contract.</p>
+
+      <h2 id="indemnification">14. Indemnification</h2>
+      <p>To the extent permitted by applicable law, you agree to indemnify, defend, and hold harmless PHINS and its officers, directors, employees, agents, licensors, and service providers from and against any claims, liabilities, damages, judgments, awards, losses, costs, or expenses (including reasonable attorneys' fees) arising out of or related to:</p>
+      <ul>
+        <li>Your violation of these Terms</li>
+        <li>Your use or misuse of the Platform</li>
+        <li>Your submission of false, misleading, or fraudulent information</li>
+        <li>Your violation of any applicable law or third-party right</li>
+        <li>Your interactions with third-party suppliers through the marketplace</li>
+      </ul>
+
+      <h2 id="disputes">15. Dispute Resolution &amp; Governing Law</h2>
+
+      <h3>15.1 Governing Law</h3>
+      <p>These Terms shall be governed by and construed in accordance with the laws of the State of New York, United States, without regard to conflict of law principles, except where overridden by mandatory consumer protection laws of your jurisdiction of residence.</p>
+
+      <h3>15.2 Dispute Resolution</h3>
+      <p>We encourage you to contact us first to resolve any disputes informally. If a dispute cannot be resolved informally within thirty (30) days, the following applies:</p>
+
+      <h3>15.3 Arbitration</h3>
+      <p>For users in the United States, any dispute arising from or relating to these Terms or the Platform shall be resolved by binding arbitration administered by a recognized arbitration institution, rather than in court, except that either party may seek injunctive or equitable relief in court for intellectual property matters. The arbitration shall be conducted in English in New York, New York. Class action waivers apply to the maximum extent permitted by law.</p>
+
+      <h3>15.4 Jurisdiction for Non-U.S. Users</h3>
+      <p>For users outside the United States, disputes shall be subject to the exclusive jurisdiction of the competent courts of New York, New York, except where mandatory consumer protection laws of your jurisdiction require that disputes be resolved in your local courts. Nothing in these Terms limits your right to bring proceedings in the courts of your country of residence if required by applicable law.</p>
+
+      <h3>15.5 Insurance Disputes</h3>
+      <p>Disputes arising from insurance policies (including coverage disputes and claims) are governed by the terms of the specific insurance policy and applicable insurance law, which may provide for regulatory complaints, ombudsman services, or other dispute resolution mechanisms. These Terms do not override or limit your rights under insurance-specific dispute resolution frameworks.</p>
+
+      <h2 id="termination">16. Termination</h2>
+
+      <h3>16.1 By You</h3>
+      <p>You may terminate your account at any time by contacting PHINS or using the account settings feature. Termination of your account does not relieve you of obligations under active insurance policies, investment agreements, or outstanding financial obligations.</p>
+
+      <h3>16.2 By PHINS</h3>
+      <p>PHINS may suspend or terminate your access to the Platform immediately if:</p>
+      <ul>
+        <li>You violate these Terms or any applicable law</li>
+        <li>We reasonably suspect fraud, money laundering, or other criminal activity</li>
+        <li>Required by law, regulation, or court order</li>
+        <li>Your account poses a security risk to the Platform or other users</li>
+        <li>You have been inactive for an extended period (with prior notice)</li>
+      </ul>
+
+      <h3>16.3 Effect of Termination</h3>
+      <p>Upon termination, your right to access the Platform ceases. However, the following survive termination: active insurance policy obligations, outstanding financial obligations, indemnification obligations, limitations of liability, intellectual property provisions, and dispute resolution provisions. Your data will be retained as described in our Privacy Policy.</p>
+
+      <h2 id="force-majeure">17. Force Majeure</h2>
+      <p>PHINS shall not be liable for any failure or delay in performing its obligations under these Terms due to circumstances beyond its reasonable control, including but not limited to natural disasters, epidemics, pandemics, war, terrorism, civil unrest, government actions, power failures, internet disruptions, cyberattacks, or failures of third-party service providers.</p>
+
+      <h2 id="modifications">18. Modifications to These Terms</h2>
+      <p>PHINS reserves the right to modify these Terms at any time. When we make material changes, we will:</p>
+      <ul>
+        <li>Post the updated Terms on the Platform with a revised effective date</li>
+        <li>Provide notice via email, platform notification, or a prominent banner on the Platform at least thirty (30) days before material changes take effect</li>
+        <li>Where required by law, obtain your affirmative consent before material changes apply to your use</li>
+      </ul>
+      <p>Your continued use of the Platform after the effective date of modified Terms constitutes your acceptance of the changes. If you do not agree with the modified Terms, you must discontinue use of the Platform.</p>
+
+      <h2 id="severability">19. Severability &amp; Waiver</h2>
+      <p><strong>Severability:</strong> If any provision of these Terms is found to be unenforceable or invalid by a court of competent jurisdiction, that provision shall be limited or eliminated to the minimum extent necessary, and the remaining provisions shall continue in full force and effect.</p>
+      <p><strong>Waiver:</strong> The failure of PHINS to enforce any right or provision of these Terms shall not constitute a waiver of such right or provision. Any waiver must be in writing and signed by an authorized representative of PHINS.</p>
+      <p><strong>Entire Agreement:</strong> These Terms, together with the Privacy Policy and any applicable service-specific agreements (including insurance policy terms, investment agreements, and supplier agreements), constitute the entire agreement between you and PHINS regarding your use of the Platform.</p>
+      <p><strong>Assignment:</strong> You may not assign or transfer these Terms or your account without our prior written consent. PHINS may assign these Terms in connection with a merger, acquisition, or sale of substantially all of its assets.</p>
+
+      <h2 id="contact-terms">20. Contact Information</h2>
+      <p>If you have questions or concerns about these Terms of Use, please contact:</p>
+      <p>
+        <strong>Legal Department</strong><br>
+        PHINS Insurance Company<br>
+        123 Insurance Boulevard, Financial District<br>
+        New York, NY 10004, United States<br>
+        Email: <a href="mailto:legal@phins.com">legal@phins.com</a><br>
+        Phone: 1-800-PHINS-01 (1-800-744-6701)
+      </p>
+      <p>
+        For privacy-related inquiries, please see our <a href="/privacy-policy.html">Privacy Policy</a> or contact our Data Protection Officer at <a href="mailto:privacy@phins.com">privacy@phins.com</a>.
+      </p>
+
+    </div>
+  </div>
+
+  <footer class="legal-footer">
+    <div class="footer-links">
+      <a href="/">Home</a>
+      <a href="/apply.html">Apply Now</a>
+      <a href="/privacy-policy.html">Privacy Policy</a>
+      <a href="/terms-of-use.html">Terms of Use</a>
+      <a href="/login.html">Customer Login</a>
+    </div>
+    <p class="footer-copyright">&copy; 2026 PHINS Insurance Company. All rights reserved.</p>
+    <div class="footer-badges">
+      <span class="footer-badge">SOC 2</span>
+      <span class="footer-badge">HIPAA</span>
+      <span class="footer-badge">PCI DSS</span>
+      <span class="footer-badge">GDPR</span>
+      <span class="footer-badge">EU AI Act</span>
+    </div>
+  </footer>
+
+</body>
+</html>
