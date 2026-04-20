@@ -6186,6 +6186,22 @@ def validate_session(token: str) -> dict[str, str] | None:
     if not token:
         return None
 
+    if token.startswith('phins_'):
+        with STATE_LOCK:
+            session = SESSIONS.get(token)
+            if session:
+                try:
+                    expires = datetime.fromisoformat(session['expires'])
+                    if datetime.now() > expires:
+                        try:
+                            del SESSIONS[token]
+                        except Exception:
+                            pass
+                        return None
+                except (KeyError, ValueError):
+                    return None
+                return session
+
     signed_result = _auth_tokens.verify_any_token(token)
     if signed_result is not None:
         return signed_result
@@ -8810,41 +8826,52 @@ For claims or questions, please contact:
             return
 
         if path == '/api/legal/stats':
+            documents = [
+                {
+                    'name': 'Privacy Policy',
+                    'version': '1.0',
+                    'effective_date': '2026-01-01',
+                    'last_updated': '2026-04-20',
+                    'url': '/privacy-policy.html',
+                    'status': 'active'
+                },
+                {
+                    'name': 'Terms of Use',
+                    'version': '1.0',
+                    'effective_date': '2026-01-01',
+                    'last_updated': '2026-04-20',
+                    'url': '/terms-of-use.html',
+                    'status': 'active'
+                }
+            ]
+            compliance_frameworks = [
+                {'name': 'GDPR', 'status': 'compliant', 'region': 'EU/EEA'},
+                {'name': 'EU AI Act', 'status': 'compliant', 'region': 'EU'},
+                {'name': 'HIPAA', 'status': 'compliant', 'region': 'United States'},
+                {'name': 'CCPA/CPRA', 'status': 'compliant', 'region': 'California, US'},
+                {'name': 'LGPD', 'status': 'compliant', 'region': 'Brazil'},
+                {'name': 'POPIA', 'status': 'compliant', 'region': 'South Africa'},
+                {'name': 'PIPEDA', 'status': 'compliant', 'region': 'Canada'},
+                {'name': 'DPDPA', 'status': 'compliant', 'region': 'India'},
+                {'name': 'PCI DSS', 'status': 'compliant', 'region': 'Global'},
+                {'name': 'SOC 2', 'status': 'compliant', 'region': 'Global'}
+            ]
+            all_compliant = all(
+                framework.get('status') == 'compliant'
+                for framework in compliance_frameworks
+            )
+            last_review_date = '2026-04-20'
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
-                'documents': [
-                    {
-                        'name': 'Privacy Policy',
-                        'version': '1.0',
-                        'effective_date': '2026-01-01',
-                        'last_updated': '2026-04-20',
-                        'url': '/privacy-policy.html',
-                        'status': 'active'
-                    },
-                    {
-                        'name': 'Terms of Use',
-                        'version': '1.0',
-                        'effective_date': '2026-01-01',
-                        'last_updated': '2026-04-20',
-                        'url': '/terms-of-use.html',
-                        'status': 'active'
-                    }
-                ],
-                'compliance_frameworks': [
-                    {'name': 'GDPR', 'status': 'compliant', 'region': 'EU/EEA'},
-                    {'name': 'EU AI Act', 'status': 'compliant', 'region': 'EU'},
-                    {'name': 'HIPAA', 'status': 'compliant', 'region': 'United States'},
-                    {'name': 'CCPA/CPRA', 'status': 'compliant', 'region': 'California, US'},
-                    {'name': 'LGPD', 'status': 'compliant', 'region': 'Brazil'},
-                    {'name': 'POPIA', 'status': 'compliant', 'region': 'South Africa'},
-                    {'name': 'PIPEDA', 'status': 'compliant', 'region': 'Canada'},
-                    {'name': 'DPDPA', 'status': 'compliant', 'region': 'India'},
-                    {'name': 'PCI DSS', 'status': 'compliant', 'region': 'Global'},
-                    {'name': 'SOC 2', 'status': 'compliant', 'region': 'Global'}
-                ],
-                'total_documents': 2,
-                'all_compliant': True,
-                'last_review_date': '2026-04-20'
+                'documents': documents,
+                'compliance_frameworks': compliance_frameworks,
+                'total_documents': len(documents),
+                'all_compliant': all_compliant,
+                'last_review_date': last_review_date,
+                'open_disputes': 0,
+                'pending_litigations': 0,
+                'compliance_status': 'All Compliant' if all_compliant else 'Action Needed',
+                'regulatory_status': f"Reviewed {last_review_date}"
             }).encode('utf-8'))
             return
 
@@ -8860,12 +8887,12 @@ For claims or questions, please contact:
                 'privacy_policy': {
                     'accepted': True,
                     'version': '1.0',
-                    'accepted_at': session.get('created', datetime.now().isoformat())
+                    'accepted_at': session.get('created')
                 },
                 'terms_of_use': {
                     'accepted': True,
                     'version': '1.0',
-                    'accepted_at': session.get('created', datetime.now().isoformat())
+                    'accepted_at': session.get('created')
                 },
                 'marketing_consent': False,
                 'health_data_consent': False
@@ -23663,6 +23690,7 @@ For claims or questions, please contact:
                     # Generate stateless signed token (works across Railway instances).
                     # Prefer v2 (full HMAC, revocable jti); v1 is used only as
                     # a last-resort fallback when SESSION_SECRET_KEY is missing.
+                    created_at = datetime.now().isoformat()
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
                     token, token_jti = _mint_auth_token(
                         username, role, customer_id, expires
@@ -23672,6 +23700,7 @@ For claims or questions, please contact:
                     with STATE_LOCK:
                         SESSIONS[token] = {
                             'username': username,
+                            'created': created_at,
                             'expires': expires.isoformat(),
                             'customer_id': customer_id,
                             'role': role,
@@ -25129,6 +25158,7 @@ For claims or questions, please contact:
                 supplier_info = supplier_service.authenticate_supplier(email, password)
                 
                 # Create session token for supplier
+                created_at = datetime.now().isoformat()
                 expires = datetime.now() + timedelta(hours=24)
                 token, token_jti = _mint_auth_token(
                     supplier_info['id'], 'supplier', None, expires
@@ -25138,6 +25168,7 @@ For claims or questions, please contact:
                 with STATE_LOCK:
                     SESSIONS[token] = {
                         'username': supplier_info['id'],
+                        'created': created_at,
                         'role': 'supplier',
                         'supplier_id': supplier_info['id'],
                         'company_name': supplier_info['company_name'],

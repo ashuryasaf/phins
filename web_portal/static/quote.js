@@ -701,15 +701,6 @@ function loadDraft() {
   showSuccess('Draft loaded!');
 }
 
-// Show/hide modals
-function showTerms() {
-  document.getElementById('termsModal').classList.add('active');
-}
-
-function closeModal(modalId) {
-  document.getElementById(modalId).classList.remove('active');
-}
-
 // Status messages
 function showError(message) {
   const status = document.getElementById('validationStatus');

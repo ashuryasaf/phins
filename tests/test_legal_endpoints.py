@@ -44,7 +44,9 @@ def _get_admin_token():
     })
     assert status == 200, f"Login failed with status {status}"
     data = json.loads(body)
-    return data.get('token')
+    token = data.get('token')
+    assert token, f"Login response missing token: {data}"
+    return token
 
 
 class TestPrivacyPolicyAPI:
@@ -173,6 +175,14 @@ class TestLegalStatsAPI:
         data = json.loads(body)
         assert data['all_compliant'] is True
 
+    def test_legal_stats_includes_admin_dashboard_fields(self):
+        body, _ = _get(f"{BASE_URL}/api/legal/stats")
+        data = json.loads(body)
+        assert data['open_disputes'] == 0
+        assert data['pending_litigations'] == 0
+        assert data['compliance_status'] == 'All Compliant'
+        assert data['regulatory_status'] == 'Reviewed 2026-04-20'
+
 
 class TestConsentStatusAPI:
 
@@ -185,8 +195,6 @@ class TestConsentStatusAPI:
 
     def test_consent_status_with_auth(self):
         token = _get_admin_token()
-        if not token:
-            return
         body, status = _get(f"{BASE_URL}/api/legal/consent/status", token=token)
         assert status == 200
         data = json.loads(body)
@@ -194,6 +202,8 @@ class TestConsentStatusAPI:
         assert 'terms_of_use' in data
         assert data['privacy_policy']['version'] == '1.0'
         assert data['terms_of_use']['version'] == '1.0'
+        assert data['privacy_policy']['accepted_at'] is not None
+        assert data['terms_of_use']['accepted_at'] is not None
 
 
 class TestLegalStaticPages:
