@@ -4,10 +4,10 @@ reportlab>=4.0
 types-reportlab>=0.0.1
 pytest>=7.0
 mypy>=1.0
-requests>=2.0
+requests>=2.28
 # Optional: convert PDF pages to images for visual diffing (requires poppler on the system)
 pdf2image>=1.16
-boto3>=1.20
+boto3>=1.28
 moto>=4.0
 # Database support
 sqlalchemy>=2.0.0
@@ -19,3 +19,14 @@ xlrd>=2.0.1  # For older .xls Excel files
 # Date manipulation for billing projections
 python-dateutil>=2.8.0
 defusedxml>=0.7.1
+
+# ---------------------------------------------------------------------------
+# Transitive-dependency security floors
+# These packages are pulled in by direct dependencies above but have known
+# CVEs at older versions.  Pinning a minimum here ensures any fresh install
+# picks up patched releases.
+# ---------------------------------------------------------------------------
+Jinja2>=3.1.6          # CVE-2024-22195, CVE-2024-34064, CVE-2024-56326, CVE-2024-56201, CVE-2025-27516
+PyJWT>=2.12.0          # CVE-2026-32597 (crit header bypass)
+setuptools>=78.1.1     # CVE-2024-6345, PYSEC-2025-49 (path traversal)
+wheel>=0.46.2          # CVE-2026-24049 (path traversal in unpack)
