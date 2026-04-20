@@ -250,18 +250,35 @@ class TradingPlatformService:
 
     def _data_request(self, path: str, params: Optional[Dict] = None) -> Optional[Dict]:
         url = f"{self._data_url}{path}"
-        try:
-            resp = requests.get(
-                url,
-                headers=self._headers(),
-                params=params or {},
-                timeout=self._timeout,
-            )
-            if resp.status_code >= 400:
+        last_err = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                resp = requests.get(
+                    url,
+                    headers=self._headers(),
+                    params=params or {},
+                    timeout=self._timeout,
+                )
+                if resp.status_code == 429:
+                    last_err = "HTTP 429 rate limited"
+                    if attempt < _MAX_RETRIES:
+                        time.sleep(_RETRY_BACKOFF * (attempt + 1))
+                    continue
+                if resp.status_code >= 400:
+                    return None
+                data = resp.json()
+                # Guard against non-dict responses (e.g. null, list) that
+                # would cause AttributeError / TypeError on callers using .get()
+                if not isinstance(data, dict):
+                    return None
+                return data
+            except requests.exceptions.ConnectionError as e:
+                last_err = str(e)
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_RETRY_BACKOFF * (attempt + 1))
+            except Exception:
                 return None
-            return resp.json()
-        except Exception:
-            return None
+        return None
 
     def _cached(self, key: str, ttl: float = 30.0) -> Optional[Any]:
         if key in self._cache and time.time() - self._cache_ts.get(key, 0) < ttl:
@@ -659,10 +676,18 @@ class TradingPlatformService:
             "limit": str(limit),
             "feed": "iex",
         })
-        if not raw or "bars" not in raw:
+        if raw is None:
+            print(f"[TradingPlatform] get_bars({symbol}): Alpaca API returned None — skipping")
+            return []
+        if not isinstance(raw, dict) or "bars" not in raw:
+            print(f"[TradingPlatform] get_bars({symbol}): unexpected response shape: {type(raw)}")
+            return []
+        bars_data = raw.get("bars")
+        if not isinstance(bars_data, list):
+            print(f"[TradingPlatform] get_bars({symbol}): 'bars' field is not a list: {type(bars_data)}")
             return []
         bars = []
-        for b in raw.get("bars", []):
+        for b in bars_data:
             bars.append({
                 "date": b.get("t"),
                 "open": _sf(b.get("o")),
