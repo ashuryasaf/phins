@@ -1475,21 +1475,19 @@
         // ==================== INITIALIZATION ====================
         document.addEventListener('DOMContentLoaded', async () => {
             const token = getToken();
-            console.log('Media & Design Dashboard: Initializing...');
-            
             if (!token) {
-                console.log('No token found, redirecting to login');
                 window.location.href = '/login.html';
                 return;
             }
             
-            // Load all data
-            loadMediaAssets();
-            loadAssignments();
-            loadDesignSettings();
-            loadGrowthBridgeCampaign();
             setupDragAndDrop();
             setupRangeListeners();
+            Promise.all([
+                loadMediaAssets(),
+                loadAssignments(),
+                loadDesignSettings(),
+                loadGrowthBridgeCampaign(),
+            ]).catch(err => console.error('Dashboard init error:', err));
         });
         
         // Setup range input listeners
@@ -1673,14 +1671,14 @@
             const token = getToken();
             if (!token) return;
 
-            setGrowthStatus('Loading latest campaign from admin...');
+            setGrowthStatus('Loading latest campaign...');
             try {
                 const response = await fetch('/api/admin/marketing-sales-agent/latest', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
                 if (response.status === 404) {
-                    setGrowthStatus('No published campaign found. Generate and publish from admin dashboard first.');
+                    setGrowthStatus('No campaign found yet. Go to Admin \u2192 Growth/Media \u2192 "Generate Agent Plan" to create one.');
                     return;
                 }
                 if (!response.ok) {
@@ -1695,7 +1693,7 @@
                     setGrowthStatus('No campaign payload returned by server.');
                 }
             } catch (e) {
-                setGrowthStatus('Error loading campaign bridge: ' + e.message);
+                setGrowthStatus('Error loading campaign: ' + e.message);
             }
         }
         

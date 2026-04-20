@@ -561,6 +561,17 @@ def test_marketing_video_generation_batch_route_accepts_dashboard_payload():
         assert portal.DESIGN_SETTINGS["hero_video_id"] in {
             job["generated_asset_id"] for job in completed_jobs
         }
+
+        status, final_jobs_resp = _json_request(
+            base + "/api/admin/media/video-jobs?campaign_id=MKT-TEST-BATCH",
+            token=token,
+        )
+        assert status == 200
+        summary = final_jobs_resp.get("summary", {})
+        assert summary["total"] == 2
+        assert summary["completed"] == 2
+        assert summary["active"] == 0
+        assert summary["failed"] == 0
     finally:
         portal.get_media_generation_service = original_factory
         srv.stop()
@@ -671,6 +682,13 @@ def test_marketing_generate_route_persists_latest_campaign_for_video_agents():
         assert status == 200
         assert latest_resp["latest_campaign"]["campaign"]["campaign_id"] == generated_campaign_id
         assert latest_resp["latest_campaign"]["integrity"]["verified"] is True
+
+        assert "video_job_summary" in latest_resp
+        summary = latest_resp["video_job_summary"]
+        assert summary["total"] == 0
+        assert summary["completed"] == 0
+        assert summary["active"] == 0
+        assert summary["failed"] == 0
     finally:
         srv.stop()
 

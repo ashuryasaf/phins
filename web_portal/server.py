@@ -8975,12 +8975,22 @@ For claims or questions, please contact:
                 latest_copy['integrity'] = dict(integrity_payload)
                 latest_copy['integrity']['verified'] = bool(verified)
 
+                campaign_id = str(campaign_payload.get('campaign_id') or '')
+                video_jobs = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
+                video_job_summary = {
+                    'total': len(video_jobs),
+                    'completed': sum(1 for j in video_jobs if j.get('status') == 'completed'),
+                    'active': sum(1 for j in video_jobs if j.get('status') in ('queued', 'processing')),
+                    'failed': sum(1 for j in video_jobs if j.get('status') in ('failed', 'cancelled')),
+                }
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'latest_campaign': latest_copy,
                     'published_count': len(marketing_state.get('published_campaigns', [])),
                     'social_connections': marketing_state.get('social_connections', {}),
+                    'video_job_summary': video_job_summary,
                 }, default=str).encode('utf-8'))
                 return
             except Exception as e:
@@ -9006,6 +9016,12 @@ For claims or questions, please contact:
                 'success': True,
                 'campaign_id': campaign_id,
                 'jobs': jobs,
+                'summary': {
+                    'total': len(jobs),
+                    'completed': sum(1 for j in jobs if j.get('status') == 'completed'),
+                    'active': sum(1 for j in jobs if j.get('status') in ('queued', 'processing')),
+                    'failed': sum(1 for j in jobs if j.get('status') in ('failed', 'cancelled')),
+                },
             }).encode('utf-8'))
             return
 

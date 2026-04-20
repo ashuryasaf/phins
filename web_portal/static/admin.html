@@ -2032,16 +2032,14 @@
       window.location.href = '/login.html';
     }
     
-    // Initialize dashboard with dynamic data
     document.addEventListener('DOMContentLoaded', () => {
       initAdminAssistant();
       loadDashboardStats();
-      loadBalanceSheet();  // Load PHINS Balance Sheet
+      loadBalanceSheet();
       loadCustomerList();
       loadUnderwritingApplications();
       loadPolicies();
       loadPlatformAnalytics();
-      loadMarketingProviderCapabilities();
       loadLatestMarketingCampaign();
       loadClaims();
       loadBillingData();
@@ -2207,7 +2205,7 @@
       refresh_legal: { label: '⚖️ Refresh Legal', fn: async () => { await loadLegalData(); }, integrity: 'safe' },
       refresh_growth_media: { label: '🚀 Refresh Growth Campaign', fn: async () => { await loadLatestMarketingCampaign(); }, integrity: 'safe' },
       refresh_marketing_media: { label: '🗂️ Refresh Media Assets', fn: async () => { await loadMarketingMediaAssets(); }, integrity: 'safe' },
-      refresh_video_jobs: { label: '🎬 Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); }, integrity: 'safe' },
+      refresh_video_jobs: { label: '🎬 Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); if (latestMarketingCampaignPayload?.campaign) renderMarketingCampaign(latestMarketingCampaignPayload); }, integrity: 'safe' },
       refresh_active_tab: { label: '🔄 Refresh Active Tab', dynamic: true, integrity: 'safe' }
     };
 
@@ -3934,9 +3932,13 @@
         const data = await response.json();
         latestMarketingVideoJobs = Array.isArray(data.jobs) ? data.jobs : [];
         if (!options.silent) {
-          const total = latestMarketingVideoJobs.length;
-          const completed = latestMarketingVideoJobs.filter(job => job.status === 'completed').length;
-          setMarketingVideoJobStatus(`Loaded ${total} video generation job(s); ${completed} completed.`, 'info');
+          const summary = data.summary || {};
+          const total = summary.total || latestMarketingVideoJobs.length;
+          const parts = [`${total} video job(s)`];
+          if (summary.completed) parts.push(`${summary.completed} completed`);
+          if (summary.active) parts.push(`${summary.active} active`);
+          if (summary.failed) parts.push(`${summary.failed} failed`);
+          setMarketingVideoJobStatus(parts.join(', ') + '.', summary.failed ? 'warning' : 'info');
         }
         if (hasActiveMarketingVideoJobs()) {
           startMarketingVideoAutoRefresh();
@@ -4014,7 +4016,9 @@
       const referenceImage = selectedMarketingReferenceImage();
       const pollMode = selectedMarketingPollMode();
       const autoPublishToHero = selectedMarketingAutoHero();
-      setMarketingVideoJobStatus(`Queueing ${blueprintCount} blueprint videos with ${String(provider).toUpperCase()}...`, 'info');
+      const providerLabel = String(provider).toUpperCase();
+      setMarketingVideoJobStatus(`Queueing ${blueprintCount} blueprint videos with ${providerLabel}...`, 'info');
+      setMarketingStatus(`Submitting batch video generation to ${providerLabel}...`, 'info');
       const promptOverride = (document.getElementById('mkt-prompt-override')?.value || '').trim();
       const result = await runMarketingVideoJobControl(
         'batch',
@@ -4028,11 +4032,12 @@
           auto_publish_to_hero: autoPublishToHero,
           prompt_override: promptOverride
         },
-        `Queued ${blueprintCount} video job(s).`
+        `${blueprintCount} video job(s) queued with ${providerLabel}. Jobs will auto-refresh.`
       );
       if (result) {
+        setMarketingStatus(`${blueprintCount} video jobs submitted to ${providerLabel}. Progress will update automatically.`, 'success');
         startMarketingVideoAutoRefresh();
-        setTimeout(() => loadMarketingVideoJobs({ silent: false }), 7000);
+        setTimeout(() => loadMarketingVideoJobs({ silent: false }), 3000);
       }
     }
 
@@ -4084,11 +4089,12 @@
           latestMarketingVideoJobs = [data.job, ...latestMarketingVideoJobs.filter(job => job.id !== data.job.id)];
         }
         renderMarketingCampaign(latestMarketingCampaignPayload);
-        const modeLabel = pollMode === 'webhook' ? 'webhook-first completion' : 'background polling';
-        setMarketingVideoJobStatus(`${String(provider).toUpperCase()} job queued for "${blueprint.title || `Blueprint ${index + 1}`}" using ${modeLabel}.`, 'success');
-        setMarketingStatus(`Video generation queued with ${String(provider).toUpperCase()}.`, 'success');
+        const providerLabel = String(provider).toUpperCase();
+        const blueprintTitle = blueprint.title || `Blueprint ${index + 1}`;
+        setMarketingVideoJobStatus(`${providerLabel} job queued for "${blueprintTitle}". Progress will update automatically.`, 'success');
+        setMarketingStatus(`Video generation for "${blueprintTitle}" submitted to ${providerLabel}.`, 'success');
         startMarketingVideoAutoRefresh();
-        setTimeout(() => loadMarketingVideoJobs({ silent: false }), 7000);
+        setTimeout(() => loadMarketingVideoJobs({ silent: false }), 3000);
       } catch (err) {
         setMarketingVideoJobStatus(`Video generation failed to start: ${err.message}`, 'error');
         setMarketingStatus(`Video generation error: ${err.message}`, 'error');
@@ -4200,13 +4206,14 @@
     }
 
     async function loadLatestMarketingCampaign() {
+      const capabilitiesPromise = loadMarketingProviderCapabilities();
       try {
         const response = await fetch('/api/admin/marketing-sales-agent/latest', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (response.status === 404) {
-          setMarketingStatus('No generated campaign yet. Generate a new one to begin.', 'info');
+          setMarketingStatus('No generated campaign yet. Click "Generate Agent Plan" to begin.', 'info');
           return;
         }
         if (!response.ok) {
@@ -4216,11 +4223,18 @@
 
         const data = await response.json();
         if (data && data.latest_campaign) {
+          await Promise.all([
+            capabilitiesPromise,
+            loadMarketingMediaAssets()
+          ]);
           renderMarketingCampaign(data.latest_campaign);
-          await loadMarketingProviderCapabilities();
-          await loadMarketingMediaAssets();
           await loadMarketingVideoJobs({ silent: true });
-          setMarketingStatus(`Latest campaign loaded (${data.latest_campaign.campaign?.campaign_id || 'unknown'}).`, 'success');
+          const campaignId = data.latest_campaign.campaign?.campaign_id || 'unknown';
+          const lifecycleStatus = data.latest_campaign.lifecycle_status || '';
+          const statusHint = lifecycleStatus === 'published'
+            ? 'Published and ready for video generation.'
+            : 'Generated. Click "Publish to Media" to sync briefs, or generate videos directly.';
+          setMarketingStatus(`Campaign ${campaignId} loaded. ${statusHint}`, 'success');
         } else {
           setMarketingStatus('No campaign payload returned from server.', 'warning');
         }
@@ -4247,16 +4261,21 @@
         });
 
         if (!response.ok) {
-          setMarketingStatus(`Generation failed (${response.status}).`, 'error');
+          const errBody = await response.json().catch(() => ({}));
+          setMarketingStatus(`Generation failed (${response.status}): ${errBody.error || 'unknown error'}`, 'error');
           return;
         }
         const data = await response.json();
         if (data?.latest_campaign?.campaign || data?.generated?.campaign) {
-          renderMarketingCampaign(data.latest_campaign || data.generated);
-          await loadMarketingProviderCapabilities();
-          await loadMarketingMediaAssets();
+          const campaignPayload = data.latest_campaign || data.generated;
+          await Promise.all([
+            loadMarketingProviderCapabilities(),
+            loadMarketingMediaAssets()
+          ]);
+          renderMarketingCampaign(campaignPayload);
           await loadMarketingVideoJobs({ silent: true });
-          setMarketingStatus('Campaign generated and stored successfully. Campaign ID is now ready for media + video generation.', 'success');
+          const campaignId = campaignPayload?.campaign?.campaign_id || '';
+          setMarketingStatus(`Campaign ${campaignId} generated. Ready for Publish to Media or Video Generation.`, 'success');
         } else {
           setMarketingStatus('Generation response did not include campaign details.', 'warning');
         }
@@ -4287,11 +4306,15 @@
 
         const data = await response.json();
         if (data?.latest_campaign?.campaign) {
+          await Promise.all([
+            loadMarketingProviderCapabilities(),
+            loadMarketingMediaAssets()
+          ]);
           renderMarketingCampaign(data.latest_campaign);
-          await loadMarketingProviderCapabilities();
-          await loadMarketingMediaAssets();
           await loadMarketingVideoJobs({ silent: true });
-          setMarketingStatus(`Campaign published. ${data.created_assets?.length || 0} media briefs synced to admin-media dashboard.`, 'success');
+          const assetCount = data.created_assets?.length || 0;
+          const campaignId = data.latest_campaign.campaign?.campaign_id || '';
+          setMarketingStatus(`Campaign ${campaignId} published. ${assetCount} media briefs synced. Open Media Dashboard or Video Agents to continue.`, 'success');
         } else {
           setMarketingStatus('Publish completed but no campaign payload returned.', 'warning');
         }
