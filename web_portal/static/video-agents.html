@@ -558,7 +558,9 @@
                 data = await response.json();
             } catch (err) {}
             if (!response.ok) {
-                throw new Error(data.error || `Request failed (${response.status})`);
+                const error = new Error(data.error || `Request failed (${response.status})`);
+                error.status = response.status;
+                throw error;
             }
             return data;
         }
@@ -573,12 +575,13 @@
                 }
                 return videoAgentCampaign;
             } catch (err) {
+                const status = Number(err?.status || 0);
                 const msg = String(err.message || '').toLowerCase();
-                if (msg.includes('no generated campaign found') || msg.includes('404')) {
+                if (status === 404 || msg.includes('no generated campaign found') || msg.includes('404')) {
                     videoAgentCampaign = null;
                     return null;
                 }
-                if (msg.includes('403') || msg.includes('401')) {
+                if (status === 403 || status === 401 || msg.includes('403') || msg.includes('401')) {
                     setStatus('Access denied. Admin or Media role required.', 'error');
                     videoAgentCampaign = null;
                     return null;

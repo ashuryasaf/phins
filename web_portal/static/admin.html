@@ -4206,6 +4206,7 @@
     }
 
     async function loadLatestMarketingCampaign() {
+      const capabilitiesPromise = loadMarketingProviderCapabilities();
       try {
         const response = await fetch('/api/admin/marketing-sales-agent/latest', {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -4222,12 +4223,12 @@
 
         const data = await response.json();
         if (data && data.latest_campaign) {
-          renderMarketingCampaign(data.latest_campaign);
           await Promise.all([
-            loadMarketingProviderCapabilities(),
-            loadMarketingMediaAssets(),
-            loadMarketingVideoJobs({ silent: true }),
+            capabilitiesPromise,
+            loadMarketingMediaAssets()
           ]);
+          renderMarketingCampaign(data.latest_campaign);
+          await loadMarketingVideoJobs({ silent: true });
           const campaignId = data.latest_campaign.campaign?.campaign_id || 'unknown';
           const lifecycleStatus = data.latest_campaign.lifecycle_status || '';
           const statusHint = lifecycleStatus === 'published'
@@ -4266,13 +4267,14 @@
         }
         const data = await response.json();
         if (data?.latest_campaign?.campaign || data?.generated?.campaign) {
-          renderMarketingCampaign(data.latest_campaign || data.generated);
+          const campaignPayload = data.latest_campaign || data.generated;
           await Promise.all([
             loadMarketingProviderCapabilities(),
-            loadMarketingMediaAssets(),
-            loadMarketingVideoJobs({ silent: true }),
+            loadMarketingMediaAssets()
           ]);
-          const campaignId = (data.latest_campaign || data.generated)?.campaign?.campaign_id || '';
+          renderMarketingCampaign(campaignPayload);
+          await loadMarketingVideoJobs({ silent: true });
+          const campaignId = campaignPayload?.campaign?.campaign_id || '';
           setMarketingStatus(`Campaign ${campaignId} generated. Ready for Publish to Media or Video Generation.`, 'success');
         } else {
           setMarketingStatus('Generation response did not include campaign details.', 'warning');
@@ -4304,12 +4306,12 @@
 
         const data = await response.json();
         if (data?.latest_campaign?.campaign) {
-          renderMarketingCampaign(data.latest_campaign);
           await Promise.all([
             loadMarketingProviderCapabilities(),
-            loadMarketingMediaAssets(),
-            loadMarketingVideoJobs({ silent: true }),
+            loadMarketingMediaAssets()
           ]);
+          renderMarketingCampaign(data.latest_campaign);
+          await loadMarketingVideoJobs({ silent: true });
           const assetCount = data.created_assets?.length || 0;
           const campaignId = data.latest_campaign.campaign?.campaign_id || '';
           setMarketingStatus(`Campaign ${campaignId} published. ${assetCount} media briefs synced. Open Media Dashboard or Video Agents to continue.`, 'success');
