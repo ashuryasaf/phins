@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0d47a1" />
+  <title>PHINS — Privacy Policy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body {
+      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
+      margin: 0;
+      padding: 0;
+    }
+    .legal-header {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 100%);
+      color: #fff;
+      padding: 24px 0;
+      box-shadow: 0 4px 24px rgba(13, 71, 161, 0.25);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .legal-header .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+    .legal-header .brand {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-decoration: none;
+      color: #fff;
+    }
+    .legal-header .nav a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 6px;
+      transition: background 0.3s;
+    }
+    .legal-header .nav a:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    .legal-hero {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      color: #fff;
+      padding: 48px 0 36px;
+      text-align: center;
+    }
+    .legal-hero h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+    .legal-hero .effective-date {
+      font-size: 1rem;
+      opacity: 0.85;
+    }
+    .legal-container {
+      max-width: 900px;
+      margin: -24px auto 48px;
+      padding: 0 16px;
+    }
+    .legal-content {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 8px 30px rgba(13, 71, 161, 0.12);
+      border: 1px solid #e3f2fd;
+      line-height: 1.8;
+      color: #333;
+    }
+    .legal-content h2 {
+      color: #0d47a1;
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 36px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e3f2fd;
+    }
+    .legal-content h2:first-child {
+      margin-top: 0;
+    }
+    .legal-content h3 {
+      color: #1565c0;
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 24px 0 12px;
+    }
+    .legal-content p {
+      margin: 0 0 14px;
+      font-size: 0.98rem;
+    }
+    .legal-content ul, .legal-content ol {
+      margin: 0 0 14px;
+      padding-left: 24px;
+    }
+    .legal-content li {
+      margin-bottom: 6px;
+      font-size: 0.98rem;
+    }
+    .legal-content strong {
+      color: #1a237e;
+    }
+    .legal-content a {
+      color: #1565c0;
+      text-decoration: underline;
+    }
+    .legal-content a:hover {
+      color: #0d47a1;
+    }
+    .legal-content .highlight-box {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      border-left: 4px solid #1565c0;
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+      font-size: 0.95rem;
+    }
+    .legal-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.95rem;
+    }
+    .legal-content table th,
+    .legal-content table td {
+      border: 1px solid #e3f2fd;
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .legal-content table th {
+      background: #e3f2fd;
+      color: #0d47a1;
+      font-weight: 600;
+    }
+    .legal-toc {
+      background: #f5f9fc;
+      border: 1px solid #e3f2fd;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+    }
+    .legal-toc h3 {
+      margin: 0 0 12px;
+      color: #0d47a1;
+      font-size: 1.1rem;
+    }
+    .legal-toc ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .legal-toc li {
+      margin-bottom: 4px;
+    }
+    .legal-toc a {
+      color: #1565c0;
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+    .legal-toc a:hover {
+      text-decoration: underline;
+    }
+    .legal-footer {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      color: #fff;
+      padding: 32px 0;
+      text-align: center;
+    }
+    .legal-footer .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .legal-footer .footer-links a {
+      color: rgba(255,255,255,0.9);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .legal-footer .footer-links a:hover {
+      color: #fff;
+      text-decoration: underline;
+    }
+    .legal-footer .footer-copyright {
+      font-size: 0.85rem;
+      opacity: 0.8;
+      margin: 0;
+    }
+    .legal-footer .footer-badges {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+    .legal-footer .footer-badge {
+      background: rgba(255,255,255,0.15);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    @media (max-width: 768px) {
+      .legal-content {
+        padding: 28px 20px;
+      }
+      .legal-hero h1 {
+        font-size: 1.6rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="legal-header">
+    <div class="container">
+      <a href="/" class="brand">🛡️ PHINS Insurance</a>
+      <nav class="nav">
+        <a href="/">Home</a>
+        <a href="/apply.html">Apply</a>
+        <a href="/login.html">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="legal-hero">
+    <h1>Privacy Policy</h1>
+    <p class="effective-date">Effective Date: January 1, 2026 &middot; Last Updated: April 20, 2026</p>
+  </section>
+
+  <div class="legal-container">
+    <div class="legal-content">
+
+      <div class="legal-toc">
+        <h3>Table of Contents</h3>
+        <ol>
+          <li><a href="#introduction">Introduction &amp; Scope</a></li>
+          <li><a href="#definitions">Key Definitions</a></li>
+          <li><a href="#data-collected">Information We Collect</a></li>
+          <li><a href="#ai-data">AI &amp; Automated Decision-Making</a></li>
+          <li><a href="#purpose">How We Use Your Information</a></li>
+          <li><a href="#legal-bases">Legal Bases for Processing</a></li>
+          <li><a href="#sharing">Sharing &amp; Disclosure</a></li>
+          <li><a href="#international">International Data Transfers</a></li>
+          <li><a href="#retention">Data Retention</a></li>
+          <li><a href="#your-rights">Your Rights</a></li>
+          <li><a href="#health-data">Health &amp; Medical Data (HIPAA)</a></li>
+          <li><a href="#financial-data">Financial &amp; Investment Data</a></li>
+          <li><a href="#cookies">Cookies &amp; Tracking Technologies</a></li>
+          <li><a href="#children">Children's Privacy</a></li>
+          <li><a href="#security">Data Security</a></li>
+          <li><a href="#breach">Data Breach Notification</a></li>
+          <li><a href="#regional">Regional &amp; Jurisdictional Disclosures</a></li>
+          <li><a href="#changes">Changes to This Policy</a></li>
+          <li><a href="#contact">Contact Information</a></li>
+        </ol>
+      </div>
+
+      <h2 id="introduction">1. Introduction &amp; Scope</h2>
+      <p>PHINS Insurance Company and its subsidiaries and affiliates (collectively, <strong>"PHINS," "we," "us,"</strong> or <strong>"our"</strong>) are committed to protecting the privacy and security of your personal information. This Privacy Policy explains how we collect, use, disclose, retain, and safeguard information when you interact with our platform, products, and services, including our insurance, investment, health services, and AI-powered tools.</p>
+      <p>This Policy applies to all users worldwide, including customers, applicants, suppliers, beneficiaries, agents, brokers, and visitors to our website, portals, mobile applications, and application programming interfaces (APIs). It covers all services provided through the PHINS platform, including:</p>
+      <ul>
+        <li>Insurance underwriting, quotation, policy administration, and claims processing</li>
+        <li>Investment advisory, portfolio management, and capital markets services</li>
+        <li>Health and wellness services, telemedicine, and medical data processing</li>
+        <li>AI-powered risk assessment, fraud detection, and automated decision-making</li>
+        <li>Community foundation management and charitable programs</li>
+        <li>Supplier marketplace and partner ecosystem services</li>
+      </ul>
+      <div class="highlight-box">
+        <strong>Our Commitment:</strong> PHINS operates as a global platform serving clients across multiple jurisdictions. We comply with all applicable data protection and privacy laws, including but not limited to the EU General Data Protection Regulation (GDPR), the EU AI Act, the U.S. Health Insurance Portability and Accountability Act (HIPAA), the California Consumer Privacy Act (CCPA/CPRA), Brazil's Lei Geral de Proteção de Dados (LGPD), South Africa's Protection of Personal Information Act (POPIA), Canada's PIPEDA, India's Digital Personal Data Protection Act (DPDPA), the UK Data Protection Act 2018, and other regional regulations.
+      </div>
+
+      <h2 id="definitions">2. Key Definitions</h2>
+      <table>
+        <tr><th>Term</th><th>Definition</th></tr>
+        <tr><td><strong>Personal Data</strong></td><td>Any information relating to an identified or identifiable natural person, including name, identification numbers, location data, online identifiers, or factors specific to the physical, physiological, genetic, mental, economic, cultural, or social identity of that person.</td></tr>
+        <tr><td><strong>Protected Health Information (PHI)</strong></td><td>Individually identifiable health information transmitted or maintained in any form, as defined under HIPAA and applicable health data laws.</td></tr>
+        <tr><td><strong>Sensitive Personal Data</strong></td><td>Data revealing racial or ethnic origin, political opinions, religious beliefs, trade union membership, genetic data, biometric data, health data, sex life, sexual orientation, or criminal records.</td></tr>
+        <tr><td><strong>Processing</strong></td><td>Any operation performed on personal data, whether automated or manual, including collection, recording, organization, structuring, storage, adaptation, retrieval, consultation, use, disclosure, erasure, or destruction.</td></tr>
+        <tr><td><strong>AI System</strong></td><td>A machine-based system designed to operate with varying levels of autonomy, that generates outputs such as predictions, recommendations, decisions, or content that can influence environments.</td></tr>
+        <tr><td><strong>Automated Decision-Making</strong></td><td>A decision made solely by automated means, including profiling, without meaningful human involvement.</td></tr>
+        <tr><td><strong>Data Controller / Operator</strong></td><td>PHINS, as the entity that determines the purposes and means of processing personal data.</td></tr>
+        <tr><td><strong>Data Processor / Sub-processor</strong></td><td>An entity that processes personal data on behalf of PHINS pursuant to written instructions.</td></tr>
+      </table>
+
+      <h2 id="data-collected">3. Information We Collect</h2>
+
+      <h3>3.1 Information You Provide Directly</h3>
+      <ul>
+        <li><strong>Identity Data:</strong> Full name, date of birth, gender, nationality, government-issued identification numbers (passport, national ID, social security number, tax identification number)</li>
+        <li><strong>Contact Data:</strong> Email address, postal address, telephone number, emergency contact details</li>
+        <li><strong>Financial Data:</strong> Bank account details, payment card information, income and employment details, credit history, investment preferences, net worth declarations</li>
+        <li><strong>Insurance Data:</strong> Prior coverage history, claims history, property details, vehicle information, travel plans, beneficiary designations</li>
+        <li><strong>Health Data:</strong> Medical history, current health conditions, prescription medications, physician information, diagnostic results, treatment records, disability status, lifestyle factors (smoking, alcohol consumption, exercise habits)</li>
+        <li><strong>Employment Data:</strong> Employer name, occupation, professional certifications, business registration details (for suppliers)</li>
+        <li><strong>Account Data:</strong> Username, password (stored in hashed form), security questions, two-factor authentication preferences</li>
+        <li><strong>Communication Data:</strong> Correspondence, support tickets, feedback, survey responses, claims narratives</li>
+      </ul>
+
+      <h3>3.2 Information Collected Automatically</h3>
+      <ul>
+        <li><strong>Device Data:</strong> IP address, browser type and version, operating system, device identifiers, screen resolution</li>
+        <li><strong>Usage Data:</strong> Pages visited, features used, time spent on pages, click patterns, navigation paths, search queries within the platform</li>
+        <li><strong>Session Data:</strong> Login timestamps, session duration, authentication events, security events</li>
+        <li><strong>Location Data:</strong> Approximate geographic location derived from IP address (we do not collect precise GPS location without explicit consent)</li>
+      </ul>
+
+      <h3>3.3 Information from Third Parties</h3>
+      <ul>
+        <li><strong>Identity Verification Services:</strong> Identity confirmation, watchlist screening, politically exposed persons (PEP) status</li>
+        <li><strong>Credit Bureaus:</strong> Credit scores, credit reports (with your consent where required)</li>
+        <li><strong>Medical Providers:</strong> Medical examination reports, attending physician statements (with your authorization)</li>
+        <li><strong>Insurance Databases:</strong> Prior claims history, loss records, motor vehicle records</li>
+        <li><strong>Public Records:</strong> Court records, property registrations, corporate filings</li>
+        <li><strong>Reinsurance Partners:</strong> Risk assessment data shared under treaty or facultative arrangements</li>
+      </ul>
+
+      <h2 id="ai-data">4. AI &amp; Automated Decision-Making</h2>
+      <div class="highlight-box">
+        <strong>EU AI Act Classification:</strong> Certain PHINS AI systems used in insurance underwriting, health risk assessment, and investment suitability analysis are classified as <strong>high-risk AI systems</strong> under the EU AI Act (Regulation (EU) 2024/1689). We maintain full compliance with applicable high-risk requirements, including risk management, data governance, transparency, human oversight, and technical documentation.
+      </div>
+
+      <h3>4.1 How We Use AI</h3>
+      <p>PHINS deploys AI and machine-learning technologies across several areas of our operations:</p>
+      <ul>
+        <li><strong>Underwriting &amp; Risk Assessment:</strong> AI models analyze application data to assess risk profiles, calculate premiums, and support underwriting decisions. These models are trained on historical actuarial data and are subject to regular bias auditing and validation.</li>
+        <li><strong>Claims Processing:</strong> AI assists in claims triage, damage estimation, fraud pattern detection, and settlement recommendations. Human claims adjusters review AI recommendations before final determinations.</li>
+        <li><strong>Investment Suitability:</strong> AI-driven tools assess your risk tolerance, financial goals, and market conditions to provide personalized investment recommendations.</li>
+        <li><strong>Health Risk Scoring:</strong> With your explicit consent, AI models process health-related data to provide wellness scores, risk stratification, and preventive care recommendations.</li>
+        <li><strong>Fraud Detection:</strong> AI systems monitor transactions and claim patterns to identify potentially fraudulent activity, protecting both PHINS and its customers.</li>
+        <li><strong>Customer Service:</strong> AI chatbots and virtual assistants handle routine inquiries, route complex requests to human agents, and provide 24/7 support.</li>
+      </ul>
+
+      <h3>4.2 Human Oversight</h3>
+      <p>We are committed to maintaining meaningful human oversight over AI-assisted decisions that significantly affect your rights or interests:</p>
+      <ul>
+        <li>No insurance application is solely denied by an AI system without human review.</li>
+        <li>Claims above established thresholds require human adjuster approval regardless of AI recommendation.</li>
+        <li>Investment recommendations generated by AI are reviewed by licensed financial advisors before execution of trades above defined limits.</li>
+        <li>Health-related AI outputs are presented as decision-support tools and do not replace professional medical judgment.</li>
+      </ul>
+
+      <h3>4.3 Your Rights Regarding AI Decisions</h3>
+      <p>You have the right to:</p>
+      <ul>
+        <li><strong>Be informed</strong> when an AI system has been used in making a decision that affects you</li>
+        <li><strong>Obtain an explanation</strong> of the logic, significance, and envisaged consequences of any automated decision</li>
+        <li><strong>Request human review</strong> of any decision made or substantially supported by an AI system</li>
+        <li><strong>Contest</strong> an AI-assisted decision and express your point of view</li>
+        <li><strong>Opt out</strong> of solely automated decision-making where legally required</li>
+      </ul>
+
+      <h3>4.4 AI Model Governance</h3>
+      <p>PHINS maintains a comprehensive AI governance framework, including:</p>
+      <ul>
+        <li>Documented risk assessments for all AI systems before deployment</li>
+        <li>Regular bias and fairness audits to prevent discriminatory outcomes across protected characteristics</li>
+        <li>Model performance monitoring with defined accuracy, precision, and recall thresholds</li>
+        <li>Data quality controls ensuring training and input data accuracy, completeness, and representativeness</li>
+        <li>Incident reporting procedures for AI-related errors or adverse outcomes</li>
+        <li>Technical documentation and logging of AI system outputs as required under the EU AI Act</li>
+      </ul>
+
+      <h2 id="purpose">5. How We Use Your Information</h2>
+      <p>We process your personal data for the following purposes:</p>
+
+      <h3>5.1 Service Delivery</h3>
+      <ul>
+        <li>Provide and administer insurance policies, including underwriting, premium calculation, policy issuance, renewals, endorsements, and cancellations</li>
+        <li>Process and adjudicate insurance claims</li>
+        <li>Provide investment advisory and portfolio management services</li>
+        <li>Deliver health and wellness services, including telemedicine referrals and preventive care programs</li>
+        <li>Manage your account, authenticate your identity, and maintain session security</li>
+        <li>Process payments, billing, and financial transactions</li>
+      </ul>
+
+      <h3>5.2 Legal and Regulatory Compliance</h3>
+      <ul>
+        <li>Comply with applicable insurance, financial services, and health care regulations</li>
+        <li>Fulfill anti-money laundering (AML), know-your-customer (KYC), and sanctions screening obligations</li>
+        <li>Report to regulatory authorities and respond to lawful requests from law enforcement or courts</li>
+        <li>Maintain records as required by statutory retention periods</li>
+      </ul>
+
+      <h3>5.3 Legitimate Business Interests</h3>
+      <ul>
+        <li>Detect and prevent fraud, financial crime, and misrepresentation</li>
+        <li>Improve our products, services, and platform functionality</li>
+        <li>Conduct actuarial analysis, risk modeling, and statistical research (using anonymized or aggregated data where possible)</li>
+        <li>Train and validate AI models (using de-identified or synthetic data where feasible)</li>
+        <li>Ensure information security and protect the integrity of our systems</li>
+        <li>Administer supplier relationships and marketplace operations</li>
+      </ul>
+
+      <h3>5.4 With Your Consent</h3>
+      <ul>
+        <li>Send marketing communications about products or services that may interest you</li>
+        <li>Process sensitive health data for wellness scoring and preventive care recommendations</li>
+        <li>Share your data with third-party partners for ancillary services you request</li>
+        <li>Conduct satisfaction surveys and research studies</li>
+      </ul>
+
+      <h2 id="legal-bases">6. Legal Bases for Processing</h2>
+      <table>
+        <tr><th>Legal Basis</th><th>Examples</th></tr>
+        <tr><td><strong>Contract Performance</strong></td><td>Underwriting and issuing policies, processing claims, managing investments, payment processing</td></tr>
+        <tr><td><strong>Legal Obligation</strong></td><td>AML/KYC checks, regulatory reporting, tax reporting, HIPAA compliance, insurance solvency requirements</td></tr>
+        <tr><td><strong>Legitimate Interest</strong></td><td>Fraud detection, platform security, service improvement, actuarial analysis, AI model validation</td></tr>
+        <tr><td><strong>Consent</strong></td><td>Marketing communications, health data processing for wellness services, optional analytics, sharing with third-party partners</td></tr>
+        <tr><td><strong>Vital Interests</strong></td><td>Emergency medical situations, imminent threat to life</td></tr>
+        <tr><td><strong>Public Interest / Substantial Public Interest</strong></td><td>Insurance claim processing involving special category data where permitted by national law</td></tr>
+      </table>
+
+      <h2 id="sharing">7. Sharing &amp; Disclosure</h2>
+      <p>We may share your personal data with the following categories of recipients, subject to appropriate safeguards:</p>
+      <ul>
+        <li><strong>Reinsurers and Co-insurers:</strong> To manage risk, underwrite policies, and settle claims under reinsurance or co-insurance arrangements</li>
+        <li><strong>Regulators and Government Authorities:</strong> When required by law, regulation, or lawful government request</li>
+        <li><strong>Service Providers:</strong> Including cloud hosting providers, payment processors, identity verification services, communication platforms, and professional advisors, all bound by data processing agreements</li>
+        <li><strong>Healthcare Providers:</strong> When necessary for claims adjudication or with your authorization for health services</li>
+        <li><strong>Financial Institutions:</strong> Banks, custodians, and clearing houses as needed for investment and payment operations</li>
+        <li><strong>Marketplace Suppliers:</strong> When you engage with supplier services through our marketplace platform, limited to the data necessary for service delivery</li>
+        <li><strong>Legal and Professional Advisors:</strong> Lawyers, auditors, and consultants under professional privilege and confidentiality obligations</li>
+        <li><strong>Law Enforcement:</strong> When required by valid legal process (warrant, subpoena, court order), and when necessary to protect the rights, safety, or property of PHINS, our users, or the public</li>
+        <li><strong>Corporate Transactions:</strong> In connection with a merger, acquisition, reorganization, or sale of assets, with prior notice to affected users where required</li>
+      </ul>
+      <p>We do <strong>not</strong> sell your personal data. We do not share your data for third-party advertising purposes without your explicit consent.</p>
+
+      <h2 id="international">8. International Data Transfers</h2>
+      <p>As a global platform, PHINS may transfer your personal data across international borders. When we do so, we ensure adequate protection through:</p>
+      <ul>
+        <li><strong>Adequacy Decisions:</strong> Transferring data to countries recognized by the European Commission, UK, or other relevant authorities as providing adequate data protection</li>
+        <li><strong>Standard Contractual Clauses (SCCs):</strong> Using EU-approved or locally required standard contractual clauses with our international processors and partners</li>
+        <li><strong>Binding Corporate Rules:</strong> Intra-group transfers governed by binding corporate rules approved by supervisory authorities</li>
+        <li><strong>Supplementary Measures:</strong> Implementing technical measures such as encryption in transit and at rest, pseudonymization, and access controls to supplement contractual safeguards</li>
+        <li><strong>Data Localization:</strong> Where required by local law (e.g., Russia, China, certain Middle Eastern and African jurisdictions), we store and process data locally</li>
+      </ul>
+      <p>You may obtain a copy of the safeguards we use for international transfers by contacting our Data Protection Officer.</p>
+
+      <h2 id="retention">9. Data Retention</h2>
+      <p>We retain personal data only for as long as necessary to fulfill the purposes for which it was collected, or as required by applicable law. General retention periods include:</p>
+      <table>
+        <tr><th>Data Category</th><th>Retention Period</th><th>Basis</th></tr>
+        <tr><td>Active policy data</td><td>Life of the policy + 7 years</td><td>Contractual obligation, regulatory requirements</td></tr>
+        <tr><td>Claims records</td><td>10 years after final settlement</td><td>Statute of limitations, regulatory requirements</td></tr>
+        <tr><td>Health/medical data</td><td>As required by applicable health records laws (typically 6–10 years)</td><td>HIPAA, national health data laws</td></tr>
+        <tr><td>Investment records</td><td>7 years after account closure</td><td>Financial services regulations</td></tr>
+        <tr><td>AML/KYC records</td><td>5–7 years after relationship ends</td><td>Anti-money laundering regulations</td></tr>
+        <tr><td>Marketing consent records</td><td>Duration of consent + 3 years</td><td>Accountability and audit</td></tr>
+        <tr><td>Session/audit logs</td><td>2 years</td><td>Security and compliance</td></tr>
+        <tr><td>AI model training data</td><td>De-identified upon model validation or 5 years, whichever is shorter</td><td>Model governance policy</td></tr>
+      </table>
+      <p>Upon expiration of the retention period, data is securely deleted or irreversibly anonymized. Anonymized and aggregated data used for actuarial and statistical purposes may be retained indefinitely as it no longer constitutes personal data.</p>
+
+      <h2 id="your-rights">10. Your Rights</h2>
+      <p>Depending on your jurisdiction, you may exercise the following rights with respect to your personal data:</p>
+      <ul>
+        <li><strong>Right of Access:</strong> Request a copy of the personal data we hold about you and information about how it is processed.</li>
+        <li><strong>Right to Rectification:</strong> Request correction of inaccurate or incomplete personal data.</li>
+        <li><strong>Right to Erasure ("Right to Be Forgotten"):</strong> Request deletion of your personal data, subject to our legal retention obligations.</li>
+        <li><strong>Right to Restriction:</strong> Request that we restrict processing of your data in certain circumstances.</li>
+        <li><strong>Right to Data Portability:</strong> Receive your personal data in a structured, commonly used, machine-readable format and transmit it to another controller.</li>
+        <li><strong>Right to Object:</strong> Object to processing based on legitimate interests, including profiling and direct marketing.</li>
+        <li><strong>Right to Withdraw Consent:</strong> Withdraw consent at any time, without affecting the lawfulness of processing before withdrawal.</li>
+        <li><strong>Right Not to Be Subject to Automated Decisions:</strong> Not be subject to decisions based solely on automated processing, including profiling, that produce legal or similarly significant effects, except where authorized by law or based on explicit consent.</li>
+        <li><strong>Right to Non-Discrimination:</strong> Not be discriminated against for exercising your privacy rights (CCPA/CPRA).</li>
+        <li><strong>Right to Appeal:</strong> Appeal a decision regarding your data rights request.</li>
+      </ul>
+      <p>To exercise any of these rights, please contact our Data Protection Officer using the details in Section 19. We will respond within the timeframes required by applicable law (typically 30 days for GDPR, 45 days for CCPA/CPRA).</p>
+
+      <h2 id="health-data">11. Health &amp; Medical Data (HIPAA)</h2>
+      <p>Where PHINS acts as a covered entity or business associate under HIPAA, the following additional protections apply to Protected Health Information (PHI):</p>
+      <ul>
+        <li>PHI is processed under the minimum necessary standard — only the information required for the stated purpose is accessed or disclosed.</li>
+        <li>Business Associate Agreements (BAAs) are in place with all vendors and sub-processors that handle PHI.</li>
+        <li>AI systems processing PHI operate within HIPAA-compliant infrastructure with encryption at rest (AES-256) and in transit (TLS 1.2+).</li>
+        <li>You have the right to request an accounting of disclosures of your PHI made by PHINS in the preceding six years.</li>
+        <li>You may request restrictions on how your PHI is used or disclosed for treatment, payment, and health care operations.</li>
+        <li>Breach notification will be provided within 60 days of discovery for any unauthorized acquisition, access, use, or disclosure of unsecured PHI, in accordance with the HIPAA Breach Notification Rule.</li>
+      </ul>
+      <p>Where there is a conflict between this Privacy Policy and the PHINS Notice of Privacy Practices required under HIPAA, the Notice of Privacy Practices shall control with respect to PHI.</p>
+
+      <h2 id="financial-data">12. Financial &amp; Investment Data</h2>
+      <p>PHINS processes financial and investment data in accordance with applicable financial services regulations, including:</p>
+      <ul>
+        <li>Payment Card Industry Data Security Standard (PCI DSS) for payment card transactions</li>
+        <li>Securities regulations governing investment advisory and portfolio management activities</li>
+        <li>Anti-money laundering (AML) and counter-terrorism financing (CTF) requirements</li>
+        <li>Solvency and capital adequacy reporting obligations</li>
+      </ul>
+      <p>Financial data is encrypted both in transit and at rest, and access is restricted to authorized personnel on a need-to-know basis. We do not store complete payment card numbers on our platform; card processing is handled by PCI DSS-certified payment processors.</p>
+
+      <h2 id="cookies">13. Cookies &amp; Tracking Technologies</h2>
+      <p>PHINS uses the following categories of cookies and similar technologies:</p>
+      <table>
+        <tr><th>Category</th><th>Purpose</th><th>Duration</th></tr>
+        <tr><td><strong>Strictly Necessary</strong></td><td>Session management, authentication, security (CSRF protection), load balancing</td><td>Session / up to 24 hours</td></tr>
+        <tr><td><strong>Functional</strong></td><td>Language preferences, accessibility settings, remembered login choices</td><td>Up to 12 months</td></tr>
+        <tr><td><strong>Analytics</strong></td><td>Platform usage patterns, performance monitoring, error tracking (anonymized)</td><td>Up to 24 months</td></tr>
+      </table>
+      <p>We do <strong>not</strong> use third-party advertising or behavioral targeting cookies. You may manage cookie preferences through your browser settings. Disabling strictly necessary cookies may impair platform functionality.</p>
+
+      <h2 id="children">14. Children's Privacy</h2>
+      <p>PHINS services are not directed at children under the age of 16 (or the applicable age of digital consent in your jurisdiction). We do not knowingly collect personal data from children. If a parent or guardian becomes aware that a child has provided personal data to PHINS, please contact us immediately. If we discover that we have collected personal data from a child without parental consent, we will delete such data promptly.</p>
+      <p>In limited circumstances, we may process a minor's data where they are a named beneficiary or dependent on an insurance policy, in which case the data is collected from and managed by the policyholder (parent or legal guardian).</p>
+
+      <h2 id="security">15. Data Security</h2>
+      <p>PHINS implements comprehensive technical and organizational security measures, including:</p>
+      <ul>
+        <li><strong>Encryption:</strong> AES-256 encryption at rest, TLS 1.2+ encryption in transit</li>
+        <li><strong>Access Controls:</strong> Role-based access control (RBAC), multi-factor authentication for administrative access, principle of least privilege</li>
+        <li><strong>Network Security:</strong> Firewalls, intrusion detection and prevention systems, DDoS mitigation</li>
+        <li><strong>Application Security:</strong> Input validation, output encoding, CSRF protection, Content Security Policy headers, rate limiting</li>
+        <li><strong>Monitoring:</strong> Continuous security monitoring, audit logging, automated anomaly detection</li>
+        <li><strong>Physical Security:</strong> Data centers with SOC 2 Type II certification, restricted physical access, environmental controls</li>
+        <li><strong>Personnel:</strong> Background checks, confidentiality agreements, regular security awareness training</li>
+        <li><strong>Testing:</strong> Regular penetration testing, vulnerability scanning, and code security reviews</li>
+      </ul>
+
+      <h2 id="breach">16. Data Breach Notification</h2>
+      <p>In the event of a personal data breach that poses a risk to your rights and freedoms, PHINS will:</p>
+      <ul>
+        <li>Notify the relevant supervisory authority within 72 hours of becoming aware of the breach (GDPR) or as required by applicable law</li>
+        <li>Notify affected individuals without undue delay when the breach is likely to result in a high risk to their rights and freedoms</li>
+        <li>For HIPAA-covered PHI, notify affected individuals within 60 days of discovery, the U.S. Department of Health and Human Services, and, where applicable, prominent media outlets</li>
+        <li>Document all breaches, including their effects and the remedial actions taken, in our internal breach register</li>
+      </ul>
+
+      <h2 id="regional">17. Regional &amp; Jurisdictional Disclosures</h2>
+
+      <h3>17.1 European Economic Area, United Kingdom &amp; Switzerland (GDPR / UK GDPR / FADP)</h3>
+      <p>If you are in the EEA, UK, or Switzerland, PHINS processes your data as described in this Policy. Our legal bases for processing are detailed in Section 6. You have the right to lodge a complaint with your local data protection supervisory authority.</p>
+
+      <h3>17.2 United States — California (CCPA / CPRA)</h3>
+      <p>California residents have additional rights under the CCPA/CPRA, including the right to know what personal information is collected, the right to delete, the right to correct, the right to opt out of "sale" or "sharing" of personal information, and the right to limit the use of sensitive personal information. PHINS does not sell personal information as defined by the CCPA/CPRA. To exercise your rights, contact us using the details in Section 19 or use our "Do Not Sell or Share My Personal Information" page where applicable.</p>
+
+      <h3>17.3 United States — Other States</h3>
+      <p>Residents of Virginia (VCDPA), Colorado (CPA), Connecticut (CTDPA), Utah (UCPA), and other states with comprehensive privacy laws have similar rights. We honor all applicable state privacy laws.</p>
+
+      <h3>17.4 Brazil (LGPD)</h3>
+      <p>Brazilian data subjects have rights under the LGPD, including access, correction, anonymization, portability, deletion, information about sharing, and the right to revoke consent. Our Data Protection Officer serves as the LGPD-required "encarregado."</p>
+
+      <h3>17.5 South Africa (POPIA)</h3>
+      <p>South African data subjects have the right to be notified of data collection, to access and correct personal information, and to object to processing. Complaints may be directed to the Information Regulator.</p>
+
+      <h3>17.6 Canada (PIPEDA)</h3>
+      <p>Canadian users have rights under PIPEDA, including the right to access personal information, challenge its accuracy, and withdraw consent (subject to legal or contractual restrictions). Complaints may be directed to the Office of the Privacy Commissioner of Canada.</p>
+
+      <h3>17.7 India (DPDPA)</h3>
+      <p>Indian data principals have rights under the Digital Personal Data Protection Act, including the right to access, correct, erase, and nominate. Processing of personal data is based on consent or legitimate uses as defined under the DPDPA.</p>
+
+      <h3>17.8 Other Jurisdictions</h3>
+      <p>PHINS respects and complies with applicable privacy and data protection laws in all jurisdictions where we operate. If your jurisdiction is not specifically listed above, please contact our Data Protection Officer for information about your specific rights.</p>
+
+      <h2 id="changes">18. Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time to reflect changes in our practices, technologies, legal requirements, or for other operational reasons. When we make material changes, we will:</p>
+      <ul>
+        <li>Post the updated Policy on our website with a revised "Last Updated" date</li>
+        <li>Notify you via email or platform notification for material changes that significantly affect how we process your data</li>
+        <li>Where required by law, obtain your renewed consent before processing your data under materially different terms</li>
+      </ul>
+      <p>We encourage you to review this Privacy Policy periodically.</p>
+
+      <h2 id="contact">19. Contact Information</h2>
+      <p>If you have questions, concerns, or requests regarding this Privacy Policy or your personal data, please contact:</p>
+      <p>
+        <strong>Data Protection Officer</strong><br>
+        PHINS Insurance Company<br>
+        123 Insurance Boulevard, Financial District<br>
+        New York, NY 10004, United States<br>
+        Email: <a href="mailto:privacy@phins.com">privacy@phins.com</a><br>
+        Phone: 1-800-PHINS-01 (1-800-744-6701)
+      </p>
+      <p>
+        <strong>EU/EEA Representative</strong><br>
+        PHINS Insurance Company (EU)<br>
+        Email: <a href="mailto:eu-privacy@phins.com">eu-privacy@phins.com</a>
+      </p>
+      <p>
+        <strong>UK Representative</strong><br>
+        PHINS Insurance Company (UK)<br>
+        Email: <a href="mailto:uk-privacy@phins.com">uk-privacy@phins.com</a>
+      </p>
+      <p>You also have the right to lodge a complaint with the supervisory authority in your jurisdiction if you believe your data protection rights have been violated.</p>
+
+    </div>
+  </div>
+
+  <footer class="legal-footer">
+    <div class="footer-links">
+      <a href="/">Home</a>
+      <a href="/apply.html">Apply Now</a>
+      <a href="/privacy-policy.html">Privacy Policy</a>
+      <a href="/terms-of-use.html">Terms of Use</a>
+      <a href="/login.html">Customer Login</a>
+    </div>
+    <p class="footer-copyright">&copy; 2026 PHINS Insurance Company. All rights reserved.</p>
+    <div class="footer-badges">
+      <span class="footer-badge">SOC 2</span>
+      <span class="footer-badge">HIPAA</span>
+      <span class="footer-badge">PCI DSS</span>
+      <span class="footer-badge">GDPR</span>
+      <span class="footer-badge">EU AI Act</span>
+    </div>
+  </footer>
+
+</body>
+</html>

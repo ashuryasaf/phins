@@ -8728,6 +8728,151 @@ For claims or questions, please contact:
             return
         
         # =====================================================================
+        # LEGAL / COMPLIANCE API (GET) - Privacy Policy, Terms of Use
+        # =====================================================================
+        if path == '/api/legal/privacy-policy':
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'title': 'Privacy Policy',
+                'effective_date': '2026-01-01',
+                'last_updated': '2026-04-20',
+                'url': '/privacy-policy.html',
+                'version': '1.0',
+                'sections': [
+                    'Introduction & Scope',
+                    'Key Definitions',
+                    'Information We Collect',
+                    'AI & Automated Decision-Making',
+                    'How We Use Your Information',
+                    'Legal Bases for Processing',
+                    'Sharing & Disclosure',
+                    'International Data Transfers',
+                    'Data Retention',
+                    'Your Rights',
+                    'Health & Medical Data (HIPAA)',
+                    'Financial & Investment Data',
+                    'Cookies & Tracking Technologies',
+                    'Children\'s Privacy',
+                    'Data Security',
+                    'Data Breach Notification',
+                    'Regional & Jurisdictional Disclosures',
+                    'Changes to This Policy',
+                    'Contact Information'
+                ],
+                'compliance_frameworks': [
+                    'GDPR', 'EU AI Act', 'HIPAA', 'CCPA/CPRA', 'LGPD',
+                    'POPIA', 'PIPEDA', 'DPDPA', 'UK DPA 2018', 'PCI DSS', 'SOC 2'
+                ],
+                'contact': {
+                    'dpo_email': 'privacy@phins.com',
+                    'eu_representative_email': 'eu-privacy@phins.com',
+                    'uk_representative_email': 'uk-privacy@phins.com'
+                }
+            }).encode('utf-8'))
+            return
+
+        if path == '/api/legal/terms-of-use':
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'title': 'Terms of Use',
+                'effective_date': '2026-01-01',
+                'last_updated': '2026-04-20',
+                'url': '/terms-of-use.html',
+                'version': '1.0',
+                'sections': [
+                    'Acceptance of Terms',
+                    'Eligibility',
+                    'Description of Services',
+                    'AI-Powered Services & Limitations',
+                    'Account Registration & Security',
+                    'Insurance Products & Services',
+                    'Investment Services',
+                    'Health & Wellness Services',
+                    'Supplier Marketplace',
+                    'User Conduct & Prohibited Activities',
+                    'Intellectual Property',
+                    'Privacy & Data Protection',
+                    'Disclaimers & Limitations of Liability',
+                    'Indemnification',
+                    'Dispute Resolution & Governing Law',
+                    'Termination',
+                    'Force Majeure',
+                    'Modifications to These Terms',
+                    'Severability & Waiver',
+                    'Contact Information'
+                ],
+                'governing_law': 'State of New York, United States',
+                'contact': {
+                    'legal_email': 'legal@phins.com',
+                    'dpo_email': 'privacy@phins.com'
+                }
+            }).encode('utf-8'))
+            return
+
+        if path == '/api/legal/stats':
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'documents': [
+                    {
+                        'name': 'Privacy Policy',
+                        'version': '1.0',
+                        'effective_date': '2026-01-01',
+                        'last_updated': '2026-04-20',
+                        'url': '/privacy-policy.html',
+                        'status': 'active'
+                    },
+                    {
+                        'name': 'Terms of Use',
+                        'version': '1.0',
+                        'effective_date': '2026-01-01',
+                        'last_updated': '2026-04-20',
+                        'url': '/terms-of-use.html',
+                        'status': 'active'
+                    }
+                ],
+                'compliance_frameworks': [
+                    {'name': 'GDPR', 'status': 'compliant', 'region': 'EU/EEA'},
+                    {'name': 'EU AI Act', 'status': 'compliant', 'region': 'EU'},
+                    {'name': 'HIPAA', 'status': 'compliant', 'region': 'United States'},
+                    {'name': 'CCPA/CPRA', 'status': 'compliant', 'region': 'California, US'},
+                    {'name': 'LGPD', 'status': 'compliant', 'region': 'Brazil'},
+                    {'name': 'POPIA', 'status': 'compliant', 'region': 'South Africa'},
+                    {'name': 'PIPEDA', 'status': 'compliant', 'region': 'Canada'},
+                    {'name': 'DPDPA', 'status': 'compliant', 'region': 'India'},
+                    {'name': 'PCI DSS', 'status': 'compliant', 'region': 'Global'},
+                    {'name': 'SOC 2', 'status': 'compliant', 'region': 'Global'}
+                ],
+                'total_documents': 2,
+                'all_compliant': True,
+                'last_review_date': '2026-04-20'
+            }).encode('utf-8'))
+            return
+
+        if path == '/api/legal/consent/status':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            username = session.get('username', '')
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'username': username,
+                'privacy_policy': {
+                    'accepted': True,
+                    'version': '1.0',
+                    'accepted_at': session.get('created', datetime.now().isoformat())
+                },
+                'terms_of_use': {
+                    'accepted': True,
+                    'version': '1.0',
+                    'accepted_at': session.get('created', datetime.now().isoformat())
+                },
+                'marketing_consent': False,
+                'health_data_consent': False
+            }).encode('utf-8'))
+            return
+
+        # =====================================================================
         # API EXTENSIONS - Community Foundations & OTP Security (GET)
         # =====================================================================
         if api_extensions_enabled and api_ext_get:
