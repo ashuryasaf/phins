@@ -18,6 +18,7 @@ import json
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
+from unittest.mock import patch
 
 from security import auth_tokens
 import web_portal.server as portal
@@ -1031,6 +1032,66 @@ def test_metrics_endpoint():
     assert 'ts' in data
     
     srv.stop()
+
+
+def test_metrics_endpoint_fallback_counts_partial_bills_as_outstanding():
+    """Fallback metrics should count partial bills as outstanding, not pending bills."""
+    port = 8089
+    srv = ServerThread(port)
+    partial_id = 'TEST-METRICS-PARTIAL-001'
+    pending_id = 'TEST-METRICS-PENDING-001'
+    previous_bills = {
+        partial_id: portal.BILLING.get(partial_id),
+        pending_id: portal.BILLING.get(pending_id),
+    }
+
+    try:
+        srv.start()
+        time.sleep(0.2)
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+        baseline_outstanding = sum(
+            1 for bill in portal.BILLING.values()
+            if (
+                not portal.is_suspended_account(bill.get('customer_id', ''))
+                and portal.status_in(bill, ['outstanding', 'partial'])
+            )
+        )
+        portal.BILLING[partial_id] = {
+            'id': partial_id,
+            'customer_id': 'CUST-TEST-METRICS-001',
+            'policy_id': 'POL-TEST-METRICS-001',
+            'amount': 200.0,
+            'amount_due': 200.0,
+            'amount_paid': 75.0,
+            'status': 'partial',
+        }
+        portal.BILLING[pending_id] = {
+            'id': pending_id,
+            'customer_id': 'CUST-TEST-METRICS-002',
+            'policy_id': 'POL-TEST-METRICS-002',
+            'amount': 300.0,
+            'amount_due': 300.0,
+            'amount_paid': 0.0,
+            'status': 'pending',
+        }
+
+        expected_outstanding = baseline_outstanding + 1
+
+        base = f"http://127.0.0.1:{port}"
+        with patch('services.metrics_service.MetricsService.summary', side_effect=RuntimeError('Force /api/metrics fallback path')):
+            body, status = _get(base + "/api/metrics")
+
+        assert status == 200
+        data = json.loads(body)
+        assert data['metrics']['billing']['outstanding'] == expected_outstanding
+    finally:
+        srv.stop()
+        for bill_id, previous_bill in previous_bills.items():
+            if previous_bill is None:
+                portal.BILLING.pop(bill_id, None)
+            else:
+                portal.BILLING[bill_id] = previous_bill
 
 
 def test_audit_endpoint():

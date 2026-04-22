@@ -11174,11 +11174,18 @@ For claims or questions, please contact:
                 data = ms.summary()
             except Exception:
                 m = compute_unified_financial_metrics(exclude_suspended=True)
+                outstanding_count = sum(
+                    1 for b in BILLING.values()
+                    if (
+                        not is_suspended_account(b.get('customer_id', ''))
+                        and status_in(b, ['outstanding', 'partial'])
+                    )
+                )
                 data = {
                     'policies': {'total': m['total_policies'], 'active': m['active_policies']},
                     'claims': {'pending': m['pending_claims'], 'approved': m['approved_claims']},
                     'billing': {'overdue': m['overdue_count'],
-                                'outstanding': m['pending_count']}
+                                'outstanding': outstanding_count}
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
