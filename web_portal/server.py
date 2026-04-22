@@ -607,6 +607,32 @@ def compute_unified_financial_metrics(
     }
 
 
+def compute_dashboard_metrics_fallback_counts(
+    exclude_suspended: bool = True,
+) -> Dict[str, int]:
+    """Compute only the lightweight count metrics needed by /api/metrics fallback."""
+    bills = [
+        b for b in BILLING.values()
+        if not (exclude_suspended and is_suspended_account(b.get('customer_id', '')))
+    ]
+    policies = [
+        p for p in POLICIES.values()
+        if not (exclude_suspended and is_suspended_account(p.get('customer_id', '')))
+    ]
+    claims = [
+        c for c in CLAIMS.values()
+        if not (exclude_suspended and is_suspended_account(c.get('customer_id', '')))
+    ]
+    return {
+        'total_policies': len(policies),
+        'active_policies': sum(1 for p in policies if status_eq(p, 'active')),
+        'approved_claims': sum(1 for c in claims if status_eq(c, 'approved')),
+        'pending_claims': sum(1 for c in claims if status_in(c, ['pending', 'under_review'])),
+        'overdue_count': sum(1 for b in bills if status_eq(b, 'overdue')),
+        'outstanding_count': sum(1 for b in bills if status_in(b, ['outstanding', 'partial'])),
+    }
+
+
 # ==============================================================================
 # MARKETPLACE NORMALIZATION HELPERS
 # ==============================================================================
@@ -11183,26 +11209,12 @@ For claims or questions, please contact:
                 ms = MetricsService(POLICIES, CLAIMS, BILLING)
                 data = ms.summary()
             except Exception:
-                m = compute_unified_financial_metrics(exclude_suspended=True)
-                outstanding_count = sum(
-                    1 for b in BILLING.values()
-                    if (
-                        not is_suspended_account(b.get('customer_id', ''))
-                        and status_in(b, ['outstanding', 'partial'])
-                    )
-                )
-                pending_claims = sum(
-                    1 for c in CLAIMS.values()
-                    if (
-                        not is_suspended_account(c.get('customer_id', ''))
-                        and status_in(c, ['pending', 'under_review'])
-                    )
-                )
+                m = compute_dashboard_metrics_fallback_counts(exclude_suspended=True)
                 data = {
                     'policies': {'total': m['total_policies'], 'active': m['active_policies']},
-                    'claims': {'pending': pending_claims, 'approved': m['approved_claims']},
+                    'claims': {'pending': m['pending_claims'], 'approved': m['approved_claims']},
                     'billing': {'overdue': m['overdue_count'],
-                                'outstanding': outstanding_count}
+                                'outstanding': m['outstanding_count']}
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))

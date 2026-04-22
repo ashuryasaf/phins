@@ -1079,7 +1079,8 @@ def test_metrics_endpoint_fallback_counts_partial_bills_as_outstanding():
         expected_outstanding = baseline_outstanding + 1
 
         base = f"http://127.0.0.1:{port}"
-        with patch('services.metrics_service.MetricsService.summary', side_effect=RuntimeError('Force /api/metrics fallback path')):
+        with patch('services.metrics_service.MetricsService.summary', side_effect=RuntimeError('Force /api/metrics fallback path')), \
+             patch('web_portal.server.compute_unified_financial_metrics', side_effect=AssertionError('Fallback should not compute full unified metrics')):
             body, status = _get(base + "/api/metrics")
 
         assert status == 200
