@@ -14580,12 +14580,11 @@ For claims or questions, please contact:
                     
                     DEFAULT CARD: If credit card but no last 4 digits available, use "4444"
                     """
-                    raw_method = bill.get('payment_method', '')
-                    pm_info = bill.get('payment_method_info', {})
-                    payment_setup = policy.get('payment_setup', {}) if policy else {}
-                    billing_config = policy.get('billing', {}) if policy else {}
+                    raw_method = bill.get('payment_method') or ''
+                    pm_info = bill.get('payment_method_info') or {}
+                    payment_setup = (policy.get('payment_setup') or {}) if policy else {}
+                    billing_config = (policy.get('billing') or {}) if policy else {}
                     
-                    # Try to get card details from multiple sources (with fallback default)
                     card_last4 = (
                         pm_info.get('card_last4') or
                         bill.get('card_last4') or
@@ -14599,7 +14598,6 @@ For claims or questions, please contact:
                         None
                     )
                     
-                    # Get auto-pay and billing schedule info
                     auto_pay = (
                         bill.get('auto_pay') or
                         billing_config.get('auto_pay') or
@@ -32364,9 +32362,9 @@ For claims or questions, please contact:
                 try:
                     # Helper function to format payment method
                     def format_pm_display(bill, policy=None):
-                        raw_method = bill.get('payment_method', '')
-                        card_last4 = bill.get('card_last4') or (policy.get('payment_setup', {}).get('card_last4') if policy else None)
-                        card_type = bill.get('card_type') or (policy.get('payment_setup', {}).get('card_type') if policy else None)
+                        raw_method = bill.get('payment_method') or ''
+                        card_last4 = bill.get('card_last4') or ((policy.get('payment_setup') or {}).get('card_last4') if policy else None)
+                        card_type = bill.get('card_type') or ((policy.get('payment_setup') or {}).get('card_type') if policy else None)
                         
                         card_names = {'visa': 'Visa', 'mastercard': 'Mastercard', 'amex': 'Amex', 'discover': 'Discover'}
                         icons = {'credit_card': '💳', 'debit_card': '💳', 'paypal': '🅿️', 'apple_pay': '🍎', 
