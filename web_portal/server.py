@@ -214,7 +214,7 @@ def build_bills_vs_billing_autopay_summary() -> Dict[str, Any]:
     """
 
     # ---- 1. Bills overview (from BILLING dict) ----
-    all_bills = list(BILLING.values())
+    all_bills = filter_suspended_accounts(list(BILLING.values()))
     total_billed = 0.0
     total_paid_on_bills = 0.0
     total_outstanding_on_bills = 0.0
@@ -302,6 +302,8 @@ def build_bills_vs_billing_autopay_summary() -> Dict[str, Any]:
     autopay_ledger_by_policy: Dict[str, Dict[str, Any]] = {}
     for tx in TRANSACTION_LEDGER.values():
         if get_transaction_type(tx) != 'auto_pay_execution':
+            continue
+        if is_suspended_account(tx.get('customer_id', '')):
             continue
         amt = safe_float(tx.get('amount', 0), 0.0)
         autopay_ledger_total += amt

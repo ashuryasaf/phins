@@ -651,6 +651,82 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.TRANSACTION_LEDGER[tx_id] = prev_tx
 
+    def test_bills_vs_billing_autopay_excludes_suspended_accounts_consistently(self):
+        """Suspended accounts should be excluded from both bill and autopay cross-check totals."""
+        self.initialize_balance_sheet()
+
+        previous_state = {
+            'billing': dict(self.BILLING),
+            'ledger': dict(self.TRANSACTION_LEDGER),
+            'reports': dict(self.AUTO_PAY_RUN_REPORTS),
+            'bs_revenue': dict(self.PHINS_BALANCE_SHEET['revenue_breakdown']),
+            'bs_total_revenue': self.PHINS_BALANCE_SHEET['total_revenue'],
+        }
+
+        try:
+            self.BILLING.clear()
+            self.TRANSACTION_LEDGER.clear()
+            self.AUTO_PAY_RUN_REPORTS.clear()
+
+            self.BILLING['TEST-ACTIVE-BILL-001'] = {
+                'id': 'TEST-ACTIVE-BILL-001',
+                'customer_id': 'CUST-ACTIVE-001',
+                'policy_id': 'POL-ACTIVE-001',
+                'amount': 100.0,
+                'amount_due': 100.0,
+                'amount_paid': 100.0,
+                'status': 'paid',
+                'auto_pay': False,
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat(),
+            }
+            self.BILLING['TEST-SUSP-BILL-001'] = {
+                'id': 'TEST-SUSP-BILL-001',
+                'customer_id': 'CUST-TEST-100',
+                'policy_id': 'POL-SUSP-001',
+                'amount': 75.0,
+                'amount_due': 75.0,
+                'amount_paid': 75.0,
+                'status': 'paid',
+                'auto_pay': True,
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat(),
+            }
+            self.TRANSACTION_LEDGER['TEST-SUSP-TX-001'] = {
+                'id': 'TEST-SUSP-TX-001',
+                'customer_id': 'CUST-TEST-100',
+                'type': 'auto_pay_execution',
+                'amount': 75.0,
+                'metadata': {'policy_id': 'POL-SUSP-001', 'bill_id': 'TEST-SUSP-BILL-001'},
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed',
+            }
+
+            self.PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = 100.0
+            self.PHINS_BALANCE_SHEET['total_revenue'] = round(
+                sum(self.PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2
+            )
+
+            result = self.build_bills_vs_billing_autopay_summary()
+
+            self.assertEqual(result['bills_overview']['total_bills'], 1)
+            self.assertEqual(result['bills_overview']['total_paid_amount'], 100.0)
+            self.assertEqual(result['bills_overview']['autopay_bills']['count'], 0)
+            self.assertEqual(result['autopay_summary']['ledger_executions']['total_amount'], 0.0)
+            self.assertEqual(result['billing_on_balance_sheet']['cumulative_from_bills'], 100.0)
+            self.assertTrue(result['cross_check']['is_consistent'])
+            self.assertEqual(result['cross_check']['discrepancies'], [])
+        finally:
+            self.BILLING.clear()
+            self.BILLING.update(previous_state['billing'])
+            self.TRANSACTION_LEDGER.clear()
+            self.TRANSACTION_LEDGER.update(previous_state['ledger'])
+            self.AUTO_PAY_RUN_REPORTS.clear()
+            self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
+            self.PHINS_BALANCE_SHEET['revenue_breakdown'].clear()
+            self.PHINS_BALANCE_SHEET['revenue_breakdown'].update(previous_state['bs_revenue'])
+            self.PHINS_BALANCE_SHEET['total_revenue'] = previous_state['bs_total_revenue']
+
     def test_bills_vs_billing_after_autopay_run(self):
         """After a full auto-pay run, the summary should reflect the payment data consistently."""
         self.initialize_balance_sheet()
