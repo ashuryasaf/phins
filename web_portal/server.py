@@ -199,6 +199,214 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     }
 
 
+def build_bills_vs_billing_autopay_summary() -> Dict[str, Any]:
+    """Build a reconciliation summary comparing back-data bills, billing
+    (balance-sheet premium income), and autopay execution records.
+
+    Returns a dict with four sections:
+    - ``bills_overview``: aggregated bill totals by status, including
+      auto-pay vs manual breakdown.
+    - ``billing_on_balance_sheet``: current premium income reflected on the
+      company balance sheet, with the cumulative calculation breakdown.
+    - ``autopay_summary``: totals from ``AUTO_PAY_RUN_REPORTS`` and
+      ledger ``auto_pay_execution`` entries.
+    - ``cross_check``: discrepancy analysis between the three sources.
+    """
+
+    # ---- 1. Bills overview (from BILLING dict) ----
+    all_bills = list(BILLING.values())
+    total_billed = 0.0
+    total_paid_on_bills = 0.0
+    total_outstanding_on_bills = 0.0
+    bills_by_status: Dict[str, Dict[str, Any]] = {}
+    autopay_bill_count = 0
+    autopay_bill_paid_total = 0.0
+    manual_bill_count = 0
+    manual_bill_paid_total = 0.0
+    per_customer_bills: Dict[str, Dict[str, Any]] = {}
+
+    for bill in all_bills:
+        bill_amount = safe_float(bill.get('amount', bill.get('amount_due', 0)), 0.0)
+        bill_paid = safe_float(bill.get('amount_paid', 0), 0.0)
+        status = get_status_lower(bill)
+        total_billed += bill_amount
+        total_paid_on_bills += bill_paid
+        if status in ('outstanding', 'pending', 'partial'):
+            total_outstanding_on_bills += max(0.0, bill_amount - bill_paid)
+
+        if status not in bills_by_status:
+            bills_by_status[status] = {'count': 0, 'total_amount': 0.0, 'total_paid': 0.0}
+        bills_by_status[status]['count'] += 1
+        bills_by_status[status]['total_amount'] = round(bills_by_status[status]['total_amount'] + bill_amount, 2)
+        bills_by_status[status]['total_paid'] = round(bills_by_status[status]['total_paid'] + bill_paid, 2)
+
+        is_autopay = bool(bill.get('auto_pay'))
+        if is_autopay:
+            autopay_bill_count += 1
+            autopay_bill_paid_total += bill_paid
+        else:
+            manual_bill_count += 1
+            manual_bill_paid_total += bill_paid
+
+        cust_id = bill.get('customer_id', 'unknown')
+        if cust_id not in per_customer_bills:
+            per_customer_bills[cust_id] = {
+                'total_billed': 0.0, 'total_paid': 0.0,
+                'outstanding': 0.0, 'bill_count': 0,
+                'autopay_bills': 0, 'manual_bills': 0,
+            }
+        entry = per_customer_bills[cust_id]
+        entry['total_billed'] = round(entry['total_billed'] + bill_amount, 2)
+        entry['total_paid'] = round(entry['total_paid'] + bill_paid, 2)
+        if status in ('outstanding', 'pending', 'partial'):
+            entry['outstanding'] = round(entry['outstanding'] + max(0.0, bill_amount - bill_paid), 2)
+        entry['bill_count'] += 1
+        if is_autopay:
+            entry['autopay_bills'] += 1
+        else:
+            entry['manual_bills'] += 1
+
+    bills_overview = {
+        'total_bills': len(all_bills),
+        'total_billed_amount': round(total_billed, 2),
+        'total_paid_amount': round(total_paid_on_bills, 2),
+        'total_outstanding_amount': round(total_outstanding_on_bills, 2),
+        'by_status': bills_by_status,
+        'autopay_bills': {
+            'count': autopay_bill_count,
+            'total_paid': round(autopay_bill_paid_total, 2),
+        },
+        'manual_bills': {
+            'count': manual_bill_count,
+            'total_paid': round(manual_bill_paid_total, 2),
+        },
+        'per_customer': per_customer_bills,
+    }
+
+    # ---- 2. Billing on balance sheet (premium income) ----
+    cumulative = calculate_cumulative_premium_income(exclude_suspended=True)
+    bs_premium = PHINS_BALANCE_SHEET['revenue_breakdown'].get('premium_income', 0.0)
+
+    billing_on_balance_sheet = {
+        'balance_sheet_premium_income': round(bs_premium, 2),
+        'cumulative_from_bills': cumulative['from_bills'],
+        'cumulative_from_ledger_unbilled': cumulative['ledger_unbilled_total'],
+        'cumulative_total': cumulative['total'],
+        'paid_bills_count': cumulative['paid_bills_count'],
+        'ledger_unbilled_count': cumulative['ledger_unbilled_count'],
+    }
+
+    # ---- 3. Autopay summary ----
+    autopay_ledger_total = 0.0
+    autopay_ledger_count = 0
+    autopay_ledger_by_policy: Dict[str, Dict[str, Any]] = {}
+    for tx in TRANSACTION_LEDGER.values():
+        if get_transaction_type(tx) != 'auto_pay_execution':
+            continue
+        amt = safe_float(tx.get('amount', 0), 0.0)
+        autopay_ledger_total += amt
+        autopay_ledger_count += 1
+        meta = tx.get('metadata', {}) or {}
+        pol_id = meta.get('policy_id', tx.get('policy_id', 'unknown'))
+        if pol_id not in autopay_ledger_by_policy:
+            autopay_ledger_by_policy[pol_id] = {'count': 0, 'total': 0.0}
+        autopay_ledger_by_policy[pol_id]['count'] += 1
+        autopay_ledger_by_policy[pol_id]['total'] = round(autopay_ledger_by_policy[pol_id]['total'] + amt, 2)
+
+    reports = list(AUTO_PAY_RUN_REPORTS.values())
+    total_report_amount = sum(safe_float(r.get('total_amount', 0), 0.0) for r in reports)
+    total_report_processed = sum(int(r.get('processed', 0)) for r in reports)
+    total_report_failed = sum(int(r.get('failed_count', 0)) for r in reports)
+
+    autopay_summary = {
+        'ledger_executions': {
+            'count': autopay_ledger_count,
+            'total_amount': round(autopay_ledger_total, 2),
+            'by_policy': autopay_ledger_by_policy,
+        },
+        'run_reports': {
+            'report_count': len(reports),
+            'total_processed': total_report_processed,
+            'total_failed': total_report_failed,
+            'total_amount': round(total_report_amount, 2),
+            'latest_report': max(
+                reports, key=lambda r: r.get('executed_at', ''), default=None
+            ),
+        },
+        'autopay_bills_total_paid': round(autopay_bill_paid_total, 2),
+    }
+
+    # ---- 4. Cross-check / discrepancy analysis ----
+    discrepancies = []
+    bills_paid_total_rounded = round(total_paid_on_bills, 2)
+    cumulative_total_rounded = cumulative['total']
+
+    bill_vs_cumulative_diff = round(abs(bills_paid_total_rounded - cumulative['from_bills']), 2)
+    if bill_vs_cumulative_diff > 0.01:
+        discrepancies.append({
+            'check': 'bills_paid_vs_cumulative_from_bills',
+            'description': 'Paid amount on bill records differs from cumulative premium calculation (from_bills)',
+            'bills_paid_total': bills_paid_total_rounded,
+            'cumulative_from_bills': cumulative['from_bills'],
+            'difference': round(bills_paid_total_rounded - cumulative['from_bills'], 2),
+        })
+
+    bs_vs_cumulative_diff = round(abs(bs_premium - cumulative_total_rounded), 2)
+    if bs_vs_cumulative_diff > 1.0:
+        discrepancies.append({
+            'check': 'balance_sheet_vs_cumulative',
+            'description': 'Balance sheet premium_income differs from cumulative calculation',
+            'balance_sheet_premium_income': round(bs_premium, 2),
+            'cumulative_total': cumulative_total_rounded,
+            'difference': round(bs_premium - cumulative_total_rounded, 2),
+        })
+
+    autopay_bill_vs_ledger_diff = round(abs(autopay_bill_paid_total - autopay_ledger_total), 2)
+    if autopay_bill_vs_ledger_diff > 0.01:
+        discrepancies.append({
+            'check': 'autopay_bills_vs_ledger',
+            'description': 'Autopay bill payments differ from auto_pay_execution ledger entries',
+            'autopay_bills_paid': round(autopay_bill_paid_total, 2),
+            'autopay_ledger_total': round(autopay_ledger_total, 2),
+            'difference': round(autopay_bill_paid_total - autopay_ledger_total, 2),
+        })
+
+    autopay_ledger_vs_reports_diff = round(abs(autopay_ledger_total - total_report_amount), 2)
+    if autopay_ledger_vs_reports_diff > 0.01 and len(reports) > 0:
+        discrepancies.append({
+            'check': 'autopay_ledger_vs_run_reports',
+            'description': 'Autopay ledger total differs from run report totals',
+            'autopay_ledger_total': round(autopay_ledger_total, 2),
+            'run_reports_total': round(total_report_amount, 2),
+            'difference': round(autopay_ledger_total - total_report_amount, 2),
+        })
+
+    cross_check = {
+        'is_consistent': len(discrepancies) == 0,
+        'checks_performed': 4,
+        'discrepancies_found': len(discrepancies),
+        'discrepancies': discrepancies,
+        'totals': {
+            'bills_total_paid': bills_paid_total_rounded,
+            'bills_autopay_paid': round(autopay_bill_paid_total, 2),
+            'bills_manual_paid': round(manual_bill_paid_total, 2),
+            'cumulative_premium_from_bills': cumulative['from_bills'],
+            'cumulative_premium_from_ledger': cumulative['ledger_unbilled_total'],
+            'cumulative_premium_total': cumulative_total_rounded,
+            'balance_sheet_premium_income': round(bs_premium, 2),
+            'autopay_ledger_total': round(autopay_ledger_total, 2),
+            'autopay_run_reports_total': round(total_report_amount, 2),
+        },
+    }
+
+    return {
+        'bills_overview': bills_overview,
+        'billing_on_balance_sheet': billing_on_balance_sheet,
+        'autopay_summary': autopay_summary,
+        'cross_check': cross_check,
+    }
+
+
 # ==============================================================================
 # MARKETPLACE NORMALIZATION HELPERS
 # ==============================================================================
@@ -19850,6 +20058,18 @@ For claims or questions, please contact:
                 if tx.get('category') == 'claims_paid'
             ][-10:]
             
+            # Bills vs billing quick snapshot
+            all_bills = list(BILLING.values())
+            bills_paid_total = round(sum(
+                safe_float(b.get('amount_paid', 0), 0.0) for b in all_bills
+            ), 2)
+            bills_outstanding_total = round(sum(
+                max(0.0, safe_float(b.get('amount', b.get('amount_due', 0)), 0.0) - safe_float(b.get('amount_paid', 0), 0.0))
+                for b in all_bills if status_in(b, ['outstanding', 'pending', 'partial'])
+            ), 2)
+            autopay_bills_count = sum(1 for b in all_bills if b.get('auto_pay'))
+            manual_bills_count = len(all_bills) - autopay_bills_count
+
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
@@ -19860,6 +20080,13 @@ For claims or questions, please contact:
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),
                     'last_updated': PHINS_BALANCE_SHEET['last_updated']
+                },
+                'billing_snapshot': {
+                    'total_bills': len(all_bills),
+                    'total_paid_on_bills': bills_paid_total,
+                    'total_outstanding': bills_outstanding_total,
+                    'autopay_bills': autopay_bills_count,
+                    'manual_bills': manual_bills_count,
                 },
                 'recent_claims': recent_claims,
                 'timestamp': datetime.now().isoformat()
@@ -20565,6 +20792,9 @@ For claims or questions, please contact:
                     'total_investments': total_investment_balance,
                     'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
                 },
+                
+                # Bills vs Billing vs Autopay reconciliation summary
+                'bills_vs_billing_autopay': build_bills_vs_billing_autopay_summary(),
                 
                 # Top-level cumulative premium echo
                 'cumulative_premium': expected_premium_income,
