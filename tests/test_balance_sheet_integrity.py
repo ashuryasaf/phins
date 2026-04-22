@@ -8,8 +8,10 @@ Tests that the balance sheet correctly tracks:
 - Data reconciliation between different sources
 """
 
-import sys
+import json
 import os
+import subprocess
+import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
@@ -488,6 +490,97 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
                     self.TRANSACTION_LEDGER.pop(tx_id, None)
             self.AUTO_PAY_RUN_REPORTS.clear()
             self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
+
+    def test_run_server_preserves_efrat_persisted_wallets_from_v1_persistence(self):
+        """Server startup should not overwrite Efrat balances restored from legacy persistence."""
+        fd, tmp_path = tempfile.mkstemp(prefix='phins-efrat-persisted-', suffix='.json')
+        os.close(fd)
+
+        persisted_data = {
+            'version': '1.0',
+            'saved_at': datetime.now().isoformat(),
+            'health_wallets': {
+                'CUST-EFRAT-001': {
+                    'customer_id': 'CUST-EFRAT-001',
+                    'balance': 321.45,
+                    'monthly_deposit': 25.0,
+                    'transactions': [{'id': 'TX-LEGACY-WALLET'}],
+                    'created_at': datetime.now().isoformat(),
+                }
+            },
+            'investment_accounts': {
+                'CUST-EFRAT-001': {
+                    'customer_id': 'CUST-EFRAT-001',
+                    'balance': 654.32,
+                    'index_balance': 500.0,
+                    'bonds_balance': 100.0,
+                    'crypto_balance': 54.32,
+                    'deposits': [{'id': 'DEP-LEGACY-INVESTMENT'}],
+                    'created_at': datetime.now().isoformat(),
+                }
+            },
+        }
+
+        with open(tmp_path, 'w') as handle:
+            json.dump(persisted_data, handle)
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        web_portal_root = os.path.join(repo_root, 'web_portal')
+        script = f"""
+import json
+import sys
+sys.path.insert(0, {repo_root!r})
+sys.path.insert(0, {web_portal_root!r})
+import server as server_module
+
+class _FakeServer:
+    def __init__(self, *args, **kwargs):
+        self.daemon_threads = True
+        self.timeout = None
+
+    def serve_forever(self):
+        return
+
+server_module.ThreadingHTTPServer = _FakeServer
+server_module.schedule_periodic_save = lambda: None
+server_module.seed_demo_documents = lambda: None
+server_module.USE_DATABASE = False
+server_module.database_enabled = False
+server_module.run_server(0)
+print(json.dumps({{
+    "wallet_balance": server_module.HEALTH_WALLETS["CUST-EFRAT-001"]["balance"],
+    "wallet_transactions": len(server_module.HEALTH_WALLETS["CUST-EFRAT-001"].get("transactions", [])),
+    "investment_balance": server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"]["balance"],
+    "investment_deposits": len(server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"].get("deposits", [])),
+}}))
+"""
+
+        env = os.environ.copy()
+        env.update({
+            'LEDGER_PERSISTENCE_FILE': tmp_path,
+            'ENABLE_LEDGER_PERSISTENCE': 'true',
+            'USE_DATABASE': 'false',
+            'PHINS_TEST_MODE': 'true',
+        })
+
+        try:
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=repo_root,
+            )
+            payload = json.loads(result.stdout.strip().splitlines()[-1])
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+        self.assertAlmostEqual(payload['wallet_balance'], 321.45)
+        self.assertEqual(payload['wallet_transactions'], 1)
+        self.assertAlmostEqual(payload['investment_balance'], 654.32)
+        self.assertEqual(payload['investment_deposits'], 1)
 
     def test_bills_vs_billing_autopay_summary_structure(self):
         """Summary must contain all four required top-level sections."""

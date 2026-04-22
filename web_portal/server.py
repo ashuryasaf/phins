@@ -39989,13 +39989,14 @@ def run_server(port: int = PORT) -> None:
                 'created_date': datetime.now().isoformat(),
                 'status': 'active'
             }
-            HEALTH_WALLETS['CUST-EFRAT-001'] = {
-                'customer_id': 'CUST-EFRAT-001',
-                'balance': 0.0,
-                'monthly_deposit': 0.0,
-                'transactions': [],
-                'created_at': datetime.now().isoformat()
-            }
+            if 'CUST-EFRAT-001' not in HEALTH_WALLETS:
+                HEALTH_WALLETS['CUST-EFRAT-001'] = {
+                    'customer_id': 'CUST-EFRAT-001',
+                    'balance': 0.0,
+                    'monthly_deposit': 0.0,
+                    'transactions': [],
+                    'created_at': datetime.now().isoformat()
+                }
             
             # Create an active policy for Efrat
             efrat_policy_id = 'POL-EFRAT-UNIFIED-001'
@@ -40049,15 +40050,16 @@ def run_server(port: int = PORT) -> None:
                 'created_date': datetime.now().isoformat()
             }
             
-            INVESTMENT_ACCOUNTS['CUST-EFRAT-001'] = {
-                'customer_id': 'CUST-EFRAT-001',
-                'balance': 0.0,
-                'index_balance': 0.0,
-                'bonds_balance': 0.0,
-                'crypto_balance': 0.0,
-                'deposits': [],
-                'created_at': datetime.now().isoformat()
-            }
+            if 'CUST-EFRAT-001' not in INVESTMENT_ACCOUNTS:
+                INVESTMENT_ACCOUNTS['CUST-EFRAT-001'] = {
+                    'customer_id': 'CUST-EFRAT-001',
+                    'balance': 0.0,
+                    'index_balance': 0.0,
+                    'bonds_balance': 0.0,
+                    'crypto_balance': 0.0,
+                    'deposits': [],
+                    'created_at': datetime.now().isoformat()
+                }
             
             # Create underwriting application for Efrat (approved - has active policy)
             efrat_uw_id = 'UW-EFRAT-001'
