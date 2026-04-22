@@ -995,6 +995,7 @@ print(json.dumps({{
             'TEST-UNI-CLM-UNDER-REVIEW-001',
         ]
         prev_claims = {claim_id: self.CLAIMS.get(claim_id) for claim_id in claim_ids}
+        baseline = self.compute_unified_financial_metrics(exclude_suspended=False)
 
         try:
             self.CLAIMS[claim_ids[0]] = {
@@ -1036,7 +1037,11 @@ print(json.dumps({{
             self.assertGreaterEqual(m['claims_disbursed_amount'], 100.0)
             self.assertGreaterEqual(m['pending_claims_liability'], 100.0)
             self.assertEqual(
-                round(m['claims_paid_amount'] - m['claims_disbursed_amount'], 2),
+                round(
+                    (m['claims_paid_amount'] - m['claims_disbursed_amount'])
+                    - (baseline['claims_paid_amount'] - baseline['claims_disbursed_amount']),
+                    2,
+                ),
                 80.0,
             )
         finally:
