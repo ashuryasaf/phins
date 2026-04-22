@@ -8384,23 +8384,30 @@ def get_bi_data_underwriting() -> Dict[str, Any]:
     }
 
 def get_bi_data_accounting() -> Dict[str, Any]:
-    """Generate accounting BI data - DATA INTEGRITY: Using safe_float for all numeric values"""
-    total_premium_collected = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
-    total_claims_paid = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
-    outstanding_premiums = sum(safe_float(p.get('annual_premium', 0)) * 0.1 for p in POLICIES.values())
-    pending_liability = sum(safe_float(c.get('claimed_amount', 0)) for c in CLAIMS.values() if status_in(c, ['pending', 'under_review']))
+    """Generate accounting BI data using unified financial metrics."""
+    m = compute_unified_financial_metrics(exclude_suspended=True)
+    total_revenue = m['total_revenue']
+    claims_paid = m['claims_paid_amount']
+    outstanding = m['outstanding_balance']
+
+    claims_list = [c for c in CLAIMS.values()
+                   if not is_suspended_account(c.get('customer_id', ''))]
+    pending_liability = round(sum(
+        safe_float(c.get('claimed_amount', 0), 0.0)
+        for c in claims_list if status_in(c, ['pending', 'under_review'])
+    ), 2)
     
     return {
-        'total_revenue': round(total_premium_collected, 2),
-        'total_claims_paid': round(total_claims_paid, 2),
-        'net_income': round(total_premium_collected - total_claims_paid, 2),
-        'outstanding_premiums': round(outstanding_premiums, 2),
-        'pending_claims_liability': round(pending_liability, 2),
-        'profit_margin': round(((total_premium_collected - total_claims_paid) / max(total_premium_collected, 1)) * 100, 2),
+        'total_revenue': total_revenue,
+        'total_claims_paid': claims_paid,
+        'net_income': round(total_revenue - claims_paid, 2),
+        'outstanding_premiums': outstanding,
+        'pending_claims_liability': pending_liability,
+        'profit_margin': round(((total_revenue - claims_paid) / max(total_revenue, 1)) * 100, 2),
         'monthly_breakdown': [
             {'month': (datetime.now() - timedelta(days=30*i)).strftime('%Y-%m'), 
-             'revenue': total_premium_collected / 12, 
-             'claims': total_claims_paid / 12}
+             'revenue': total_revenue / 12, 
+             'claims': claims_paid / 12}
             for i in range(12)
         ][::-1]
     }
@@ -11166,12 +11173,12 @@ For claims or questions, please contact:
                 ms = MetricsService(POLICIES, CLAIMS, BILLING)
                 data = ms.summary()
             except Exception:
+                m = compute_unified_financial_metrics(exclude_suspended=True)
                 data = {
-                    'policies': {'total': len(POLICIES), 'active': sum(1 for p in POLICIES.values() if status_eq(p, 'active'))},
-                    'claims': {'pending': sum(1 for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])),
-                               'approved': sum(1 for c in CLAIMS.values() if status_eq(c, 'approved'))},
-                    'billing': {'overdue': sum(1 for b in BILLING.values() if status_eq(b, 'overdue')),
-                                'outstanding': sum(1 for b in BILLING.values() if status_in(b, ['outstanding', 'partial']))}
+                    'policies': {'total': m['total_policies'], 'active': m['active_policies']},
+                    'claims': {'pending': m['pending_claims'], 'approved': m['approved_claims']},
+                    'billing': {'overdue': m['overdue_count'],
+                                'outstanding': m['pending_count']}
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
@@ -20148,24 +20155,16 @@ For claims or questions, please contact:
                 return
             
             initialize_balance_sheet()
+            m = compute_unified_financial_metrics(exclude_suspended=True)
             
-            # Recent claims paid
             recent_claims = [
                 tx for tx in PHINS_BALANCE_SHEET.get('transactions', [])
                 if tx.get('category') == 'claims_paid'
             ][-10:]
             
-            # Bills vs billing quick snapshot
-            all_bills = list(BILLING.values())
-            bills_paid_total = round(sum(
-                safe_float(b.get('amount_paid', 0), 0.0) for b in all_bills
-            ), 2)
-            bills_outstanding_total = round(sum(
-                max(0.0, safe_float(b.get('amount', b.get('amount_due', 0)), 0.0) - safe_float(b.get('amount_paid', 0), 0.0))
-                for b in all_bills if status_in(b, ['outstanding', 'pending', 'partial'])
-            ), 2)
-            autopay_bills_count = sum(1 for b in all_bills if b.get('auto_pay'))
-            manual_bills_count = len(all_bills) - autopay_bills_count
+            bills = [b for b in BILLING.values()
+                     if not is_suspended_account(b.get('customer_id', ''))]
+            autopay_bills_count = sum(1 for b in bills if b.get('auto_pay'))
 
             self._set_json_headers()
             self.wfile.write(json.dumps({
@@ -20179,11 +20178,11 @@ For claims or questions, please contact:
                     'last_updated': PHINS_BALANCE_SHEET['last_updated']
                 },
                 'billing_snapshot': {
-                    'total_bills': len(all_bills),
-                    'total_paid_on_bills': bills_paid_total,
-                    'total_outstanding': bills_outstanding_total,
+                    'total_bills': m['total_transactions'],
+                    'total_paid_on_bills': m['total_collected'],
+                    'total_outstanding': m['outstanding_balance'],
                     'autopay_bills': autopay_bills_count,
-                    'manual_bills': manual_bills_count,
+                    'manual_bills': m['total_transactions'] - autopay_bills_count,
                 },
                 'recent_claims': recent_claims,
                 'timestamp': datetime.now().isoformat()
