@@ -1094,6 +1094,83 @@ def test_metrics_endpoint_fallback_counts_partial_bills_as_outstanding():
                 portal.BILLING[bill_id] = previous_bill
 
 
+def test_post_billing_stats_reports_unified_revenue():
+    """POST /api/billing/stats should return policy revenue, not collected payments."""
+    port = 8090
+    srv = ServerThread(port)
+    policy_id = 'POL-TEST-BILLING-STATS-001'
+    paid_bill_id = 'BILL-TEST-BILLING-STATS-PAID-001'
+    partial_bill_id = 'BILL-TEST-BILLING-STATS-PARTIAL-001'
+    failed_bill_id = 'BILL-TEST-BILLING-STATS-FAILED-001'
+    previous_policy = portal.POLICIES.get(policy_id)
+    previous_bills = {
+        paid_bill_id: portal.BILLING.get(paid_bill_id),
+        partial_bill_id: portal.BILLING.get(partial_bill_id),
+        failed_bill_id: portal.BILLING.get(failed_bill_id),
+    }
+
+    try:
+        srv.start()
+        time.sleep(0.2)
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+        portal.POLICIES[policy_id] = {
+            'id': policy_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'annual_premium': 1200.0,
+            'monthly_premium': 100.0,
+            'status': 'active',
+        }
+        portal.BILLING[paid_bill_id] = {
+            'id': paid_bill_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'policy_id': policy_id,
+            'amount': 100.0,
+            'amount_due': 100.0,
+            'amount_paid': 100.0,
+            'status': 'paid',
+        }
+        portal.BILLING[partial_bill_id] = {
+            'id': partial_bill_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'policy_id': policy_id,
+            'amount': 100.0,
+            'amount_due': 100.0,
+            'amount_paid': 25.0,
+            'status': 'partial',
+        }
+        portal.BILLING[failed_bill_id] = {
+            'id': failed_bill_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'policy_id': policy_id,
+            'amount': 100.0,
+            'amount_due': 100.0,
+            'amount_paid': 0.0,
+            'status': 'failed',
+        }
+
+        base = f"http://127.0.0.1:{port}"
+        body, status = _post(base + "/api/billing/stats", {})
+
+        assert status == 200
+        data = json.loads(body)
+        assert data['total_transactions'] == 3
+        assert data['successful_payments'] == 2
+        assert data['failed_payments'] == 1
+        assert data['total_revenue'] == 1200.0
+    finally:
+        srv.stop()
+        if previous_policy is None:
+            portal.POLICIES.pop(policy_id, None)
+        else:
+            portal.POLICIES[policy_id] = previous_policy
+        for bill_id, previous_bill in previous_bills.items():
+            if previous_bill is None:
+                portal.BILLING.pop(bill_id, None)
+            else:
+                portal.BILLING[bill_id] = previous_bill
+
+
 def test_audit_endpoint():
     """Test GET /api/audit (admin only)"""
     port = 8050

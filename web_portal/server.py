@@ -32334,7 +32334,7 @@ For claims or questions, please contact:
                         'total_transactions': m['total_transactions'],
                         'successful_payments': successful,
                         'failed_payments': failed,
-                        'total_revenue': m['total_collected'],
+                        'total_revenue': m['total_revenue'],
                         'pending_alerts': 0
                     }).encode('utf-8'))
                 except Exception as e:
