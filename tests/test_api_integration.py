@@ -18,6 +18,7 @@ import json
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
+from unittest.mock import patch
 
 from security import auth_tokens
 import web_portal.server as portal
@@ -1031,6 +1032,231 @@ def test_metrics_endpoint():
     assert 'ts' in data
     
     srv.stop()
+
+
+def test_metrics_endpoint_fallback_counts_partial_bills_as_outstanding():
+    """Fallback metrics should count partial bills as outstanding, not pending bills."""
+    port = 8089
+    srv = ServerThread(port)
+    partial_id = 'TEST-METRICS-PARTIAL-001'
+    pending_id = 'TEST-METRICS-PENDING-001'
+    previous_bills = {
+        partial_id: portal.BILLING.get(partial_id),
+        pending_id: portal.BILLING.get(pending_id),
+    }
+
+    try:
+        srv.start()
+        time.sleep(0.2)
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+        baseline_outstanding = sum(
+            1 for bill in portal.BILLING.values()
+            if (
+                not portal.is_suspended_account(bill.get('customer_id', ''))
+                and portal.status_in(bill, ['outstanding', 'partial'])
+            )
+        )
+        portal.BILLING[partial_id] = {
+            'id': partial_id,
+            'customer_id': 'CUST-TEST-METRICS-001',
+            'policy_id': 'POL-TEST-METRICS-001',
+            'amount': 200.0,
+            'amount_due': 200.0,
+            'amount_paid': 75.0,
+            'status': 'partial',
+        }
+        portal.BILLING[pending_id] = {
+            'id': pending_id,
+            'customer_id': 'CUST-TEST-METRICS-002',
+            'policy_id': 'POL-TEST-METRICS-002',
+            'amount': 300.0,
+            'amount_due': 300.0,
+            'amount_paid': 0.0,
+            'status': 'pending',
+        }
+
+        expected_outstanding = baseline_outstanding + 1
+
+        base = f"http://127.0.0.1:{port}"
+        with patch('services.metrics_service.MetricsService.summary', side_effect=RuntimeError('Force /api/metrics fallback path')):
+            body, status = _get(base + "/api/metrics")
+
+        assert status == 200
+        data = json.loads(body)
+        assert data['metrics']['billing']['outstanding'] == expected_outstanding
+    finally:
+        srv.stop()
+        for bill_id, previous_bill in previous_bills.items():
+            if previous_bill is None:
+                portal.BILLING.pop(bill_id, None)
+            else:
+                portal.BILLING[bill_id] = previous_bill
+
+
+def test_metrics_endpoint_fallback_excludes_medical_assessment_from_pending_claims():
+    """Fallback metrics should match the legacy pending-claims definition."""
+    port = 8091
+    srv = ServerThread(port)
+    pending_id = 'CLM-TEST-METRICS-PENDING-001'
+    medical_id = 'CLM-TEST-METRICS-MEDICAL-001'
+    previous_claims = {
+        pending_id: portal.CLAIMS.get(pending_id),
+        medical_id: portal.CLAIMS.get(medical_id),
+    }
+
+    try:
+        srv.start()
+        time.sleep(0.2)
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+        baseline_pending = sum(
+            1 for claim_id, claim in portal.CLAIMS.items()
+            if (
+                claim_id not in {pending_id, medical_id}
+                and not portal.is_suspended_account(claim.get('customer_id', ''))
+                and portal.status_in(claim, ['pending', 'under_review'])
+            )
+        )
+        portal.CLAIMS[pending_id] = {
+            'id': pending_id,
+            'customer_id': 'CUST-TEST-METRICS-CLAIMS-001',
+            'policy_id': 'POL-TEST-METRICS-CLAIMS-001',
+            'claimed_amount': 150.0,
+            'status': 'pending',
+        }
+        portal.CLAIMS[medical_id] = {
+            'id': medical_id,
+            'customer_id': 'CUST-TEST-METRICS-CLAIMS-002',
+            'policy_id': 'POL-TEST-METRICS-CLAIMS-002',
+            'claimed_amount': 275.0,
+            'status': 'medical_assessment',
+        }
+
+        base = f"http://127.0.0.1:{port}"
+        with patch('services.metrics_service.MetricsService.summary', side_effect=RuntimeError('Force /api/metrics fallback path')):
+            body, status = _get(base + "/api/metrics")
+
+        assert status == 200
+        data = json.loads(body)
+        assert data['metrics']['claims']['pending'] == baseline_pending + 1
+    finally:
+        srv.stop()
+        for claim_id, previous_claim in previous_claims.items():
+            if previous_claim is None:
+                portal.CLAIMS.pop(claim_id, None)
+            else:
+                portal.CLAIMS[claim_id] = previous_claim
+
+
+def test_post_billing_stats_reports_unified_revenue():
+    """POST /api/billing/stats should return policy revenue, not collected payments."""
+    port = 8090
+    srv = ServerThread(port)
+    policy_id = 'POL-TEST-BILLING-STATS-001'
+    paid_bill_id = 'BILL-TEST-BILLING-STATS-PAID-001'
+    partial_bill_id = 'BILL-TEST-BILLING-STATS-PARTIAL-001'
+    failed_bill_id = 'BILL-TEST-BILLING-STATS-FAILED-001'
+    previous_policy = portal.POLICIES.get(policy_id)
+    previous_bills = {
+        paid_bill_id: portal.BILLING.get(paid_bill_id),
+        partial_bill_id: portal.BILLING.get(partial_bill_id),
+        failed_bill_id: portal.BILLING.get(failed_bill_id),
+    }
+
+    try:
+        srv.start()
+        time.sleep(0.2)
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+        baseline_transactions = sum(
+            1 for bill_id, bill in portal.BILLING.items()
+            if (
+                bill_id not in {paid_bill_id, partial_bill_id, failed_bill_id}
+                and not portal.is_suspended_account(bill.get('customer_id', ''))
+            )
+        )
+        baseline_successful = sum(
+            1 for bill_id, bill in portal.BILLING.items()
+            if (
+                bill_id not in {paid_bill_id, partial_bill_id, failed_bill_id}
+                and not portal.is_suspended_account(bill.get('customer_id', ''))
+                and portal.status_in(bill, ['paid', 'partial'])
+            )
+        )
+        baseline_failed = sum(
+            1 for bill_id, bill in portal.BILLING.items()
+            if (
+                bill_id not in {paid_bill_id, partial_bill_id, failed_bill_id}
+                and not portal.is_suspended_account(bill.get('customer_id', ''))
+                and portal.status_eq(bill, 'failed')
+            )
+        )
+        baseline_revenue = round(sum(
+            portal.safe_float(policy.get('annual_premium', 0), 0.0)
+            for existing_policy_id, policy in portal.POLICIES.items()
+            if (
+                existing_policy_id != policy_id
+                and not portal.is_suspended_account(policy.get('customer_id', ''))
+                and portal.status_eq(policy, 'active')
+            )
+        ), 2)
+
+        portal.POLICIES[policy_id] = {
+            'id': policy_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'annual_premium': 1200.0,
+            'monthly_premium': 100.0,
+            'status': 'active',
+        }
+        portal.BILLING[paid_bill_id] = {
+            'id': paid_bill_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'policy_id': policy_id,
+            'amount': 100.0,
+            'amount_due': 100.0,
+            'amount_paid': 100.0,
+            'status': 'paid',
+        }
+        portal.BILLING[partial_bill_id] = {
+            'id': partial_bill_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'policy_id': policy_id,
+            'amount': 100.0,
+            'amount_due': 100.0,
+            'amount_paid': 25.0,
+            'status': 'partial',
+        }
+        portal.BILLING[failed_bill_id] = {
+            'id': failed_bill_id,
+            'customer_id': 'CUST-TEST-BILLING-STATS-001',
+            'policy_id': policy_id,
+            'amount': 100.0,
+            'amount_due': 100.0,
+            'amount_paid': 0.0,
+            'status': 'failed',
+        }
+
+        base = f"http://127.0.0.1:{port}"
+        body, status = _post(base + "/api/billing/stats", {})
+
+        assert status == 200
+        data = json.loads(body)
+        assert data['total_transactions'] == baseline_transactions + 3
+        assert data['successful_payments'] == baseline_successful + 2
+        assert data['failed_payments'] == baseline_failed + 1
+        assert data['total_revenue'] == baseline_revenue + 1200.0
+    finally:
+        srv.stop()
+        if previous_policy is None:
+            portal.POLICIES.pop(policy_id, None)
+        else:
+            portal.POLICIES[policy_id] = previous_policy
+        for bill_id, previous_bill in previous_bills.items():
+            if previous_bill is None:
+                portal.BILLING.pop(bill_id, None)
+            else:
+                portal.BILLING[bill_id] = previous_bill
 
 
 def test_audit_endpoint():

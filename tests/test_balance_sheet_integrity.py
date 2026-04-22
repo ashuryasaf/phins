@@ -8,8 +8,10 @@ Tests that the balance sheet correctly tracks:
 - Data reconciliation between different sources
 """
 
-import sys
+import json
 import os
+import subprocess
+import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
@@ -35,7 +37,9 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             POLICIES, CUSTOMERS, INVESTMENT_ACCOUNTS, CUSTOMER_ALLOCATIONS,
             AUTO_PAY_RUN_REPORTS, ensure_policy_auto_pay_defaults,
             run_monthly_auto_pay, save_ledger_data, load_ledger_data,
-            build_bills_vs_billing_autopay_summary
+            build_bills_vs_billing_autopay_summary,
+            compute_unified_financial_metrics, get_bi_data_accounting,
+            UNDERWRITING_APPLICATIONS
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -59,6 +63,9 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.save_ledger_data = save_ledger_data
         self.load_ledger_data = load_ledger_data
         self.build_bills_vs_billing_autopay_summary = build_bills_vs_billing_autopay_summary
+        self.compute_unified_financial_metrics = compute_unified_financial_metrics
+        self.get_bi_data_accounting = get_bi_data_accounting
+        self.UNDERWRITING_APPLICATIONS = UNDERWRITING_APPLICATIONS
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -485,6 +492,97 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             self.AUTO_PAY_RUN_REPORTS.clear()
             self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
 
+    def test_run_server_preserves_efrat_persisted_wallets_from_v1_persistence(self):
+        """Server startup should not overwrite Efrat balances restored from legacy persistence."""
+        fd, tmp_path = tempfile.mkstemp(prefix='phins-efrat-persisted-', suffix='.json')
+        os.close(fd)
+
+        persisted_data = {
+            'version': '1.0',
+            'saved_at': datetime.now().isoformat(),
+            'health_wallets': {
+                'CUST-EFRAT-001': {
+                    'customer_id': 'CUST-EFRAT-001',
+                    'balance': 321.45,
+                    'monthly_deposit': 25.0,
+                    'transactions': [{'id': 'TX-LEGACY-WALLET'}],
+                    'created_at': datetime.now().isoformat(),
+                }
+            },
+            'investment_accounts': {
+                'CUST-EFRAT-001': {
+                    'customer_id': 'CUST-EFRAT-001',
+                    'balance': 654.32,
+                    'index_balance': 500.0,
+                    'bonds_balance': 100.0,
+                    'crypto_balance': 54.32,
+                    'deposits': [{'id': 'DEP-LEGACY-INVESTMENT'}],
+                    'created_at': datetime.now().isoformat(),
+                }
+            },
+        }
+
+        with open(tmp_path, 'w') as handle:
+            json.dump(persisted_data, handle)
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        web_portal_root = os.path.join(repo_root, 'web_portal')
+        script = f"""
+import json
+import sys
+sys.path.insert(0, {repo_root!r})
+sys.path.insert(0, {web_portal_root!r})
+import server as server_module
+
+class _FakeServer:
+    def __init__(self, *args, **kwargs):
+        self.daemon_threads = True
+        self.timeout = None
+
+    def serve_forever(self):
+        return
+
+server_module.ThreadingHTTPServer = _FakeServer
+server_module.schedule_periodic_save = lambda: None
+server_module.seed_demo_documents = lambda: None
+server_module.USE_DATABASE = False
+server_module.database_enabled = False
+server_module.run_server(0)
+print(json.dumps({{
+    "wallet_balance": server_module.HEALTH_WALLETS["CUST-EFRAT-001"]["balance"],
+    "wallet_transactions": len(server_module.HEALTH_WALLETS["CUST-EFRAT-001"].get("transactions", [])),
+    "investment_balance": server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"]["balance"],
+    "investment_deposits": len(server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"].get("deposits", [])),
+}}))
+"""
+
+        env = os.environ.copy()
+        env.update({
+            'LEDGER_PERSISTENCE_FILE': tmp_path,
+            'ENABLE_LEDGER_PERSISTENCE': 'true',
+            'USE_DATABASE': 'false',
+            'PHINS_TEST_MODE': 'true',
+        })
+
+        try:
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=repo_root,
+            )
+            payload = json.loads(result.stdout.strip().splitlines()[-1])
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+        self.assertAlmostEqual(payload['wallet_balance'], 321.45)
+        self.assertEqual(payload['wallet_transactions'], 1)
+        self.assertAlmostEqual(payload['investment_balance'], 654.32)
+        self.assertEqual(payload['investment_deposits'], 1)
+
     def test_bills_vs_billing_autopay_summary_structure(self):
         """Summary must contain all four required top-level sections."""
         self.initialize_balance_sheet()
@@ -831,6 +929,234 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             self.PHINS_BALANCE_SHEET['total_revenue'] = previous_state['bs_total_revenue']
             self.PHINS_BALANCE_SHEET['expense_breakdown'].update(previous_state['bs_expense'])
             self.PHINS_BALANCE_SHEET['total_expenses'] = previous_state['bs_total_expenses']
+
+    def test_unified_metrics_structure(self):
+        """compute_unified_financial_metrics should return all required keys."""
+        self.initialize_balance_sheet()
+        m = self.compute_unified_financial_metrics()
+
+        required_keys = [
+            'total_billed', 'total_collected', 'outstanding_balance',
+            'paid_count', 'pending_count', 'overdue_count', 'total_transactions',
+            'collection_rate', 'total_revenue', 'monthly_premium_income',
+            'claims_paid_amount', 'claims_disbursed_amount',
+            'pending_claims_liability', 'pending_claims', 'approved_claims',
+            'rejected_claims', 'total_claims',
+            'total_customers', 'new_customers_this_month',
+            'total_policies', 'active_policies', 'pending_policies',
+            'total_applications', 'pending_applications',
+            'approved_applications', 'rejected_applications',
+            'total_health_wallet', 'total_deposits', 'active_wallets',
+            'total_investment_balance', 'total_algo_balance',
+            'total_pipeline_cash', 'total_wallet_balance',
+            'total_investment_value', 'total_coverage_amount', 'total_aum',
+            'cumulative_premium',
+        ]
+        for key in required_keys:
+            self.assertIn(key, m, f"Missing unified metrics key: {key}")
+
+    def test_unified_metrics_consistency_with_bills(self):
+        """Unified metrics billing figures should be consistent with bill data."""
+        bill_ids = ['TEST-UNI-BILL-001', 'TEST-UNI-BILL-002']
+        prev = {k: self.BILLING.get(k) for k in bill_ids}
+
+        try:
+            self.BILLING[bill_ids[0]] = {
+                'id': bill_ids[0], 'customer_id': 'CUST-UNI-001',
+                'policy_id': 'POL-UNI-001',
+                'amount': 300.0, 'amount_due': 300.0, 'amount_paid': 300.0,
+                'status': 'paid', 'auto_pay': False,
+            }
+            self.BILLING[bill_ids[1]] = {
+                'id': bill_ids[1], 'customer_id': 'CUST-UNI-001',
+                'policy_id': 'POL-UNI-001',
+                'amount': 200.0, 'amount_due': 200.0, 'amount_paid': 100.0,
+                'status': 'partial', 'auto_pay': True,
+            }
+
+            m = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+            self.assertGreaterEqual(m['total_billed'], 500.0)
+            self.assertGreaterEqual(m['total_collected'], 400.0)
+            self.assertGreaterEqual(m['outstanding_balance'], 100.0)
+        finally:
+            for k, old in prev.items():
+                if old is None:
+                    self.BILLING.pop(k, None)
+                else:
+                    self.BILLING[k] = old
+
+    def test_unified_metrics_expose_disbursed_and_pending_claims_liability(self):
+        """Unified claim metrics should separate disbursed claims from pending liability."""
+        claim_ids = [
+            'TEST-UNI-CLM-PAID-001',
+            'TEST-UNI-CLM-APPROVED-001',
+            'TEST-UNI-CLM-PENDING-001',
+            'TEST-UNI-CLM-UNDER-REVIEW-001',
+        ]
+        prev_claims = {claim_id: self.CLAIMS.get(claim_id) for claim_id in claim_ids}
+        baseline = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+        try:
+            self.CLAIMS[claim_ids[0]] = {
+                'id': claim_ids[0],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'paid',
+                'claimed_amount': 120.0,
+                'approved_amount': 100.0,
+            }
+            self.CLAIMS[claim_ids[1]] = {
+                'id': claim_ids[1],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'approved',
+                'claimed_amount': 95.0,
+                'approved_amount': 80.0,
+            }
+            self.CLAIMS[claim_ids[2]] = {
+                'id': claim_ids[2],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'pending',
+                'claimed_amount': 60.0,
+                'approved_amount': 0.0,
+            }
+            self.CLAIMS[claim_ids[3]] = {
+                'id': claim_ids[3],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'under_review',
+                'claimed_amount': 40.0,
+                'approved_amount': 0.0,
+            }
+
+            m = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+            self.assertGreaterEqual(m['claims_paid_amount'], 180.0)
+            self.assertGreaterEqual(m['claims_disbursed_amount'], 100.0)
+            self.assertGreaterEqual(m['pending_claims_liability'], 100.0)
+            self.assertEqual(
+                round(
+                    (m['claims_paid_amount'] - m['claims_disbursed_amount'])
+                    - (baseline['claims_paid_amount'] - baseline['claims_disbursed_amount']),
+                    2,
+                ),
+                80.0,
+            )
+        finally:
+            for claim_id, old in prev_claims.items():
+                if old is None:
+                    self.CLAIMS.pop(claim_id, None)
+                else:
+                    self.CLAIMS[claim_id] = old
+
+    def test_accounting_bi_uses_only_disbursed_claims_for_expense(self):
+        """Accounting BI should subtract only paid claims from revenue."""
+        policy_id = 'TEST-ACCT-POL-001'
+        claim_ids = ['TEST-ACCT-CLM-PAID-001', 'TEST-ACCT-CLM-APPROVED-001']
+        prev_policy = self.POLICIES.get(policy_id)
+        prev_claims = {claim_id: self.CLAIMS.get(claim_id) for claim_id in claim_ids}
+
+        baseline = self.get_bi_data_accounting()
+
+        try:
+            self.POLICIES[policy_id] = {
+                'id': policy_id,
+                'customer_id': 'CUST-ACCT-001',
+                'status': 'active',
+                'annual_premium': 1200.0,
+                'coverage_amount': 50000.0,
+            }
+            self.CLAIMS[claim_ids[0]] = {
+                'id': claim_ids[0],
+                'customer_id': 'CUST-ACCT-001',
+                'policy_id': policy_id,
+                'status': 'paid',
+                'claimed_amount': 150.0,
+                'approved_amount': 150.0,
+            }
+            self.CLAIMS[claim_ids[1]] = {
+                'id': claim_ids[1],
+                'customer_id': 'CUST-ACCT-001',
+                'policy_id': policy_id,
+                'status': 'approved',
+                'claimed_amount': 90.0,
+                'approved_amount': 90.0,
+            }
+
+            updated = self.get_bi_data_accounting()
+
+            self.assertEqual(
+                round(updated['total_revenue'] - baseline['total_revenue'], 2),
+                1200.0,
+            )
+            self.assertEqual(
+                round(updated['total_claims_paid'] - baseline['total_claims_paid'], 2),
+                150.0,
+            )
+            self.assertEqual(
+                round(updated['pending_claims_liability'] - baseline['pending_claims_liability'], 2),
+                0.0,
+            )
+            self.assertEqual(
+                round(updated['net_income'] - baseline['net_income'], 2),
+                1050.0,
+            )
+        finally:
+            if prev_policy is None:
+                self.POLICIES.pop(policy_id, None)
+            else:
+                self.POLICIES[policy_id] = prev_policy
+
+            for claim_id, old in prev_claims.items():
+                if old is None:
+                    self.CLAIMS.pop(claim_id, None)
+                else:
+                    self.CLAIMS[claim_id] = old
+
+    def test_unified_metrics_excludes_suspended(self):
+        """Suspended accounts should be filtered from unified metrics."""
+        from server import SUSPENDED_TEST_ACCOUNTS
+        bill_id = 'TEST-SUSP-BILL-001'
+        cust_id = 'CUST-TEST-100'
+        prev_bill = self.BILLING.get(bill_id)
+
+        self.assertIn(cust_id, SUSPENDED_TEST_ACCOUNTS)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id, 'customer_id': cust_id,
+                'policy_id': 'POL-SUSP-001',
+                'amount': 9999.0, 'amount_due': 9999.0, 'amount_paid': 0.0,
+                'status': 'outstanding',
+            }
+
+            m_with = self.compute_unified_financial_metrics(exclude_suspended=True)
+            m_without = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+            self.assertGreater(m_without['total_billed'], m_with['total_billed'],
+                               "Suspended bill should be excluded when exclude_suspended=True")
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+
+    def test_unified_metrics_bi_dashboard_consistency(self):
+        """BI dashboard and billing stats should use the same underlying data."""
+        m = self.compute_unified_financial_metrics(exclude_suspended=True)
+
+        self.assertEqual(m['outstanding_balance'],
+                         round(m['outstanding_balance'], 2))
+        self.assertEqual(m['total_collected'],
+                         round(m['total_collected'], 2))
+        self.assertGreaterEqual(m['total_revenue'], 0)
+        self.assertGreaterEqual(m['total_aum'], 0)
+        self.assertGreaterEqual(m['total_customers'], 0)
+
+        self.assertIsInstance(m['cumulative_premium'], dict)
+        self.assertIn('total', m['cumulative_premium'])
 
 
 def run_balance_sheet_integrity_test():
