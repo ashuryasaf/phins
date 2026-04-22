@@ -38,7 +38,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             AUTO_PAY_RUN_REPORTS, ensure_policy_auto_pay_defaults,
             run_monthly_auto_pay, save_ledger_data, load_ledger_data,
             build_bills_vs_billing_autopay_summary,
-            compute_unified_financial_metrics,
+            compute_unified_financial_metrics, get_bi_data_accounting,
             UNDERWRITING_APPLICATIONS
         )
         
@@ -64,6 +64,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.load_ledger_data = load_ledger_data
         self.build_bills_vs_billing_autopay_summary = build_bills_vs_billing_autopay_summary
         self.compute_unified_financial_metrics = compute_unified_financial_metrics
+        self.get_bi_data_accounting = get_bi_data_accounting
         self.UNDERWRITING_APPLICATIONS = UNDERWRITING_APPLICATIONS
     
     def test_balance_sheet_initialized(self):
@@ -938,7 +939,8 @@ print(json.dumps({{
             'total_billed', 'total_collected', 'outstanding_balance',
             'paid_count', 'pending_count', 'overdue_count', 'total_transactions',
             'collection_rate', 'total_revenue', 'monthly_premium_income',
-            'claims_paid_amount', 'pending_claims', 'approved_claims',
+            'claims_paid_amount', 'claims_disbursed_amount',
+            'pending_claims_liability', 'pending_claims', 'approved_claims',
             'rejected_claims', 'total_claims',
             'total_customers', 'new_customers_this_month',
             'total_policies', 'active_policies', 'pending_policies',
@@ -983,6 +985,130 @@ print(json.dumps({{
                     self.BILLING.pop(k, None)
                 else:
                     self.BILLING[k] = old
+
+    def test_unified_metrics_expose_disbursed_and_pending_claims_liability(self):
+        """Unified claim metrics should separate disbursed claims from pending liability."""
+        claim_ids = [
+            'TEST-UNI-CLM-PAID-001',
+            'TEST-UNI-CLM-APPROVED-001',
+            'TEST-UNI-CLM-PENDING-001',
+            'TEST-UNI-CLM-UNDER-REVIEW-001',
+        ]
+        prev_claims = {claim_id: self.CLAIMS.get(claim_id) for claim_id in claim_ids}
+
+        try:
+            self.CLAIMS[claim_ids[0]] = {
+                'id': claim_ids[0],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'paid',
+                'claimed_amount': 120.0,
+                'approved_amount': 100.0,
+            }
+            self.CLAIMS[claim_ids[1]] = {
+                'id': claim_ids[1],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'approved',
+                'claimed_amount': 95.0,
+                'approved_amount': 80.0,
+            }
+            self.CLAIMS[claim_ids[2]] = {
+                'id': claim_ids[2],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'pending',
+                'claimed_amount': 60.0,
+                'approved_amount': 0.0,
+            }
+            self.CLAIMS[claim_ids[3]] = {
+                'id': claim_ids[3],
+                'customer_id': 'CUST-UNI-CLAIMS-001',
+                'policy_id': 'POL-UNI-CLAIMS-001',
+                'status': 'under_review',
+                'claimed_amount': 40.0,
+                'approved_amount': 0.0,
+            }
+
+            m = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+            self.assertGreaterEqual(m['claims_paid_amount'], 180.0)
+            self.assertGreaterEqual(m['claims_disbursed_amount'], 100.0)
+            self.assertGreaterEqual(m['pending_claims_liability'], 100.0)
+            self.assertEqual(
+                round(m['claims_paid_amount'] - m['claims_disbursed_amount'], 2),
+                80.0,
+            )
+        finally:
+            for claim_id, old in prev_claims.items():
+                if old is None:
+                    self.CLAIMS.pop(claim_id, None)
+                else:
+                    self.CLAIMS[claim_id] = old
+
+    def test_accounting_bi_uses_only_disbursed_claims_for_expense(self):
+        """Accounting BI should subtract only paid claims from revenue."""
+        policy_id = 'TEST-ACCT-POL-001'
+        claim_ids = ['TEST-ACCT-CLM-PAID-001', 'TEST-ACCT-CLM-APPROVED-001']
+        prev_policy = self.POLICIES.get(policy_id)
+        prev_claims = {claim_id: self.CLAIMS.get(claim_id) for claim_id in claim_ids}
+
+        baseline = self.get_bi_data_accounting()
+
+        try:
+            self.POLICIES[policy_id] = {
+                'id': policy_id,
+                'customer_id': 'CUST-ACCT-001',
+                'status': 'active',
+                'annual_premium': 1200.0,
+                'coverage_amount': 50000.0,
+            }
+            self.CLAIMS[claim_ids[0]] = {
+                'id': claim_ids[0],
+                'customer_id': 'CUST-ACCT-001',
+                'policy_id': policy_id,
+                'status': 'paid',
+                'claimed_amount': 150.0,
+                'approved_amount': 150.0,
+            }
+            self.CLAIMS[claim_ids[1]] = {
+                'id': claim_ids[1],
+                'customer_id': 'CUST-ACCT-001',
+                'policy_id': policy_id,
+                'status': 'approved',
+                'claimed_amount': 90.0,
+                'approved_amount': 90.0,
+            }
+
+            updated = self.get_bi_data_accounting()
+
+            self.assertEqual(
+                round(updated['total_revenue'] - baseline['total_revenue'], 2),
+                1200.0,
+            )
+            self.assertEqual(
+                round(updated['total_claims_paid'] - baseline['total_claims_paid'], 2),
+                150.0,
+            )
+            self.assertEqual(
+                round(updated['pending_claims_liability'] - baseline['pending_claims_liability'], 2),
+                0.0,
+            )
+            self.assertEqual(
+                round(updated['net_income'] - baseline['net_income'], 2),
+                1050.0,
+            )
+        finally:
+            if prev_policy is None:
+                self.POLICIES.pop(policy_id, None)
+            else:
+                self.POLICIES[policy_id] = prev_policy
+
+            for claim_id, old in prev_claims.items():
+                if old is None:
+                    self.CLAIMS.pop(claim_id, None)
+                else:
+                    self.CLAIMS[claim_id] = old
 
     def test_unified_metrics_excludes_suspended(self):
         """Suspended accounts should be filtered from unified metrics."""

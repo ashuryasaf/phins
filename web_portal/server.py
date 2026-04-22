@@ -440,6 +440,12 @@ def compute_unified_financial_metrics(
     - ``total_coverage_amount``: sum of ``coverage_amount`` on active policies.
     - ``total_aum``: ``total_investment_value`` + unified wallet balance (health
       + investment + algo + pipeline).
+    - ``claims_paid_amount``: sum of approved amounts for claims in ``paid`` or
+      ``approved`` status.
+    - ``claims_disbursed_amount``: sum of approved amounts for claims actually
+      in ``paid`` status.
+    - ``pending_claims_liability``: sum of ``claimed_amount`` for claims still
+      in ``pending`` or ``under_review``.
     """
     # --- Billing ---
     bills = [
@@ -475,6 +481,14 @@ def compute_unified_financial_metrics(
     claims_paid_amount = round(sum(
         safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
         for c in claims if status_in(c, ['paid', 'approved'])
+    ), 2)
+    claims_disbursed_amount = round(sum(
+        safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
+        for c in claims if status_eq(c, 'paid')
+    ), 2)
+    pending_claims_liability = round(sum(
+        safe_float(c.get('claimed_amount', 0), 0.0)
+        for c in claims if status_in(c, ['pending', 'under_review'])
     ), 2)
 
     # --- Health wallets ---
@@ -558,6 +572,8 @@ def compute_unified_financial_metrics(
         'monthly_premium_income': monthly_premium_income,
         # Claims
         'claims_paid_amount': claims_paid_amount,
+        'claims_disbursed_amount': claims_disbursed_amount,
+        'pending_claims_liability': pending_claims_liability,
         'pending_claims': pending_claims,
         'approved_claims': approved_claims,
         'rejected_claims': rejected_claims,
@@ -8387,15 +8403,9 @@ def get_bi_data_accounting() -> Dict[str, Any]:
     """Generate accounting BI data using unified financial metrics."""
     m = compute_unified_financial_metrics(exclude_suspended=True)
     total_revenue = m['total_revenue']
-    claims_paid = m['claims_paid_amount']
+    claims_paid = m['claims_disbursed_amount']
     outstanding = m['outstanding_balance']
-
-    claims_list = [c for c in CLAIMS.values()
-                   if not is_suspended_account(c.get('customer_id', ''))]
-    pending_liability = round(sum(
-        safe_float(c.get('claimed_amount', 0), 0.0)
-        for c in claims_list if status_in(c, ['pending', 'under_review'])
-    ), 2)
+    pending_liability = m['pending_claims_liability']
     
     return {
         'total_revenue': total_revenue,
