@@ -34,7 +34,8 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             record_fee_revenue, record_balance_sheet_transaction,
             POLICIES, CUSTOMERS, INVESTMENT_ACCOUNTS, CUSTOMER_ALLOCATIONS,
             AUTO_PAY_RUN_REPORTS, ensure_policy_auto_pay_defaults,
-            run_monthly_auto_pay, save_ledger_data, load_ledger_data
+            run_monthly_auto_pay, save_ledger_data, load_ledger_data,
+            build_bills_vs_billing_autopay_summary
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -57,6 +58,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.run_monthly_auto_pay = run_monthly_auto_pay
         self.save_ledger_data = save_ledger_data
         self.load_ledger_data = load_ledger_data
+        self.build_bills_vs_billing_autopay_summary = build_bills_vs_billing_autopay_summary
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -482,6 +484,353 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
                     self.TRANSACTION_LEDGER.pop(tx_id, None)
             self.AUTO_PAY_RUN_REPORTS.clear()
             self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
+
+    def test_bills_vs_billing_autopay_summary_structure(self):
+        """Summary must contain all four required top-level sections."""
+        self.initialize_balance_sheet()
+        result = self.build_bills_vs_billing_autopay_summary()
+
+        for key in ('bills_overview', 'billing_on_balance_sheet',
+                     'autopay_summary', 'cross_check'):
+            self.assertIn(key, result, f"Missing section: {key}")
+
+        bo = result['bills_overview']
+        self.assertIn('total_bills', bo)
+        self.assertIn('total_billed_amount', bo)
+        self.assertIn('total_paid_amount', bo)
+        self.assertIn('total_outstanding_amount', bo)
+        self.assertIn('by_status', bo)
+        self.assertIn('autopay_bills', bo)
+        self.assertIn('manual_bills', bo)
+        self.assertIn('per_customer', bo)
+
+        bbs = result['billing_on_balance_sheet']
+        self.assertIn('balance_sheet_premium_income', bbs)
+        self.assertIn('cumulative_from_bills', bbs)
+        self.assertIn('cumulative_total', bbs)
+
+        aps = result['autopay_summary']
+        self.assertIn('ledger_executions', aps)
+        self.assertIn('run_reports', aps)
+
+        cc = result['cross_check']
+        self.assertIn('is_consistent', cc)
+        self.assertIn('discrepancies', cc)
+        self.assertIn('totals', cc)
+
+    def test_bills_vs_billing_autopay_with_data(self):
+        """Summary should reflect test bills and autopay ledger entries correctly."""
+        self.initialize_balance_sheet()
+
+        bill_id_manual = "TEST-SUMM-BILL-001"
+        bill_id_auto = "TEST-SUMM-BILL-002"
+        tx_id_auto = "TEST-SUMM-TX-AUTO-001"
+
+        prev_bills = {k: self.BILLING.get(k) for k in (bill_id_manual, bill_id_auto)}
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id_auto)
+
+        try:
+            self.BILLING[bill_id_manual] = {
+                'id': bill_id_manual,
+                'customer_id': 'CUST-SUMM-001',
+                'policy_id': 'POL-SUMM-001',
+                'amount': 200.0,
+                'amount_due': 200.0,
+                'amount_paid': 200.0,
+                'status': 'paid',
+                'auto_pay': False,
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat(),
+            }
+            self.BILLING[bill_id_auto] = {
+                'id': bill_id_auto,
+                'customer_id': 'CUST-SUMM-001',
+                'policy_id': 'POL-SUMM-001',
+                'amount': 100.0,
+                'amount_due': 100.0,
+                'amount_paid': 100.0,
+                'status': 'paid',
+                'auto_pay': True,
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat(),
+            }
+            self.TRANSACTION_LEDGER[tx_id_auto] = {
+                'id': tx_id_auto,
+                'customer_id': 'CUST-SUMM-001',
+                'type': 'auto_pay_execution',
+                'amount': 100.0,
+                'metadata': {'policy_id': 'POL-SUMM-001', 'bill_id': bill_id_auto},
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed',
+            }
+
+            result = self.build_bills_vs_billing_autopay_summary()
+            bo = result['bills_overview']
+
+            self.assertGreaterEqual(bo['total_bills'], 2)
+            self.assertGreaterEqual(bo['total_paid_amount'], 300.0)
+            self.assertGreaterEqual(bo['autopay_bills']['count'], 1)
+            self.assertGreaterEqual(bo['autopay_bills']['total_paid'], 100.0)
+            self.assertGreaterEqual(bo['manual_bills']['count'], 1)
+            self.assertGreaterEqual(bo['manual_bills']['total_paid'], 200.0)
+
+            self.assertIn('CUST-SUMM-001', bo['per_customer'])
+            cust = bo['per_customer']['CUST-SUMM-001']
+            self.assertGreaterEqual(cust['total_paid'], 300.0)
+            self.assertGreaterEqual(cust['autopay_bills'], 1)
+            self.assertGreaterEqual(cust['manual_bills'], 1)
+
+            aps = result['autopay_summary']
+            self.assertGreaterEqual(aps['ledger_executions']['count'], 1)
+            self.assertGreaterEqual(aps['ledger_executions']['total_amount'], 100.0)
+            self.assertIn('POL-SUMM-001', aps['ledger_executions']['by_policy'])
+
+            cc = result['cross_check']
+            self.assertIn('totals', cc)
+            self.assertGreaterEqual(cc['totals']['bills_total_paid'], 300.0)
+            self.assertGreaterEqual(cc['totals']['autopay_ledger_total'], 100.0)
+
+        finally:
+            for k, prev in prev_bills.items():
+                if prev is None:
+                    self.BILLING.pop(k, None)
+                else:
+                    self.BILLING[k] = prev
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id_auto, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id_auto] = prev_tx
+
+    def test_bills_vs_billing_autopay_detects_discrepancy(self):
+        """Cross-check should flag discrepancy when autopay bill total != ledger total."""
+        self.initialize_balance_sheet()
+
+        bill_id = "TEST-DISC-BILL-001"
+        tx_id = "TEST-DISC-TX-001"
+
+        prev_bill = self.BILLING.get(bill_id)
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'CUST-DISC-001',
+                'policy_id': 'POL-DISC-001',
+                'amount': 500.0,
+                'amount_due': 500.0,
+                'amount_paid': 500.0,
+                'status': 'paid',
+                'auto_pay': True,
+                'created_date': datetime.now().isoformat(),
+            }
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'customer_id': 'CUST-DISC-001',
+                'type': 'auto_pay_execution',
+                'amount': 300.0,
+                'metadata': {'policy_id': 'POL-DISC-001', 'bill_id': bill_id},
+                'timestamp': datetime.now().isoformat(),
+            }
+
+            result = self.build_bills_vs_billing_autopay_summary()
+            cc = result['cross_check']
+
+            autopay_disc = [d for d in cc['discrepancies']
+                            if d['check'] == 'autopay_bills_vs_ledger']
+            self.assertTrue(len(autopay_disc) > 0,
+                            "Expected autopay_bills_vs_ledger discrepancy")
+            self.assertFalse(cc['is_consistent'])
+
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
+
+    def test_bills_vs_billing_autopay_excludes_suspended_accounts_consistently(self):
+        """Suspended accounts should be excluded from both bill and autopay cross-check totals."""
+        self.initialize_balance_sheet()
+
+        previous_state = {
+            'billing': dict(self.BILLING),
+            'ledger': dict(self.TRANSACTION_LEDGER),
+            'reports': dict(self.AUTO_PAY_RUN_REPORTS),
+            'bs_revenue': dict(self.PHINS_BALANCE_SHEET['revenue_breakdown']),
+            'bs_total_revenue': self.PHINS_BALANCE_SHEET['total_revenue'],
+        }
+
+        try:
+            self.BILLING.clear()
+            self.TRANSACTION_LEDGER.clear()
+            self.AUTO_PAY_RUN_REPORTS.clear()
+
+            self.BILLING['TEST-ACTIVE-BILL-001'] = {
+                'id': 'TEST-ACTIVE-BILL-001',
+                'customer_id': 'CUST-ACTIVE-001',
+                'policy_id': 'POL-ACTIVE-001',
+                'amount': 100.0,
+                'amount_due': 100.0,
+                'amount_paid': 100.0,
+                'status': 'paid',
+                'auto_pay': False,
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat(),
+            }
+            self.BILLING['TEST-SUSP-BILL-001'] = {
+                'id': 'TEST-SUSP-BILL-001',
+                'customer_id': 'CUST-TEST-100',
+                'policy_id': 'POL-SUSP-001',
+                'amount': 75.0,
+                'amount_due': 75.0,
+                'amount_paid': 75.0,
+                'status': 'paid',
+                'auto_pay': True,
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat(),
+            }
+            self.TRANSACTION_LEDGER['TEST-SUSP-TX-001'] = {
+                'id': 'TEST-SUSP-TX-001',
+                'customer_id': 'CUST-TEST-100',
+                'type': 'auto_pay_execution',
+                'amount': 75.0,
+                'metadata': {'policy_id': 'POL-SUSP-001', 'bill_id': 'TEST-SUSP-BILL-001'},
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed',
+            }
+
+            self.PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = 100.0
+            self.PHINS_BALANCE_SHEET['total_revenue'] = round(
+                sum(self.PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2
+            )
+
+            result = self.build_bills_vs_billing_autopay_summary()
+
+            self.assertEqual(result['bills_overview']['total_bills'], 1)
+            self.assertEqual(result['bills_overview']['total_paid_amount'], 100.0)
+            self.assertEqual(result['bills_overview']['autopay_bills']['count'], 0)
+            self.assertEqual(result['autopay_summary']['ledger_executions']['total_amount'], 0.0)
+            self.assertEqual(result['billing_on_balance_sheet']['cumulative_from_bills'], 100.0)
+            self.assertTrue(result['cross_check']['is_consistent'])
+            self.assertEqual(result['cross_check']['discrepancies'], [])
+        finally:
+            self.BILLING.clear()
+            self.BILLING.update(previous_state['billing'])
+            self.TRANSACTION_LEDGER.clear()
+            self.TRANSACTION_LEDGER.update(previous_state['ledger'])
+            self.AUTO_PAY_RUN_REPORTS.clear()
+            self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
+            self.PHINS_BALANCE_SHEET['revenue_breakdown'].clear()
+            self.PHINS_BALANCE_SHEET['revenue_breakdown'].update(previous_state['bs_revenue'])
+            self.PHINS_BALANCE_SHEET['total_revenue'] = previous_state['bs_total_revenue']
+
+    def test_bills_vs_billing_after_autopay_run(self):
+        """After a full auto-pay run, the summary should reflect the payment data consistently."""
+        self.initialize_balance_sheet()
+        policy_id = "TEST-SUMM-AUTOPAY-POL-001"
+        customer_id = "TEST-SUMM-AUTOPAY-CUST-001"
+        previous_state = {
+            'policy': self.POLICIES.get(policy_id),
+            'customer': self.CUSTOMERS.get(customer_id),
+            'wallet': self.HEALTH_WALLETS.get(customer_id),
+            'investment': self.INVESTMENT_ACCOUNTS.get(customer_id),
+            'allocation': self.CUSTOMER_ALLOCATIONS.get(customer_id),
+            'reports': dict(self.AUTO_PAY_RUN_REPORTS),
+            'billing_keys': set(self.BILLING.keys()),
+            'ledger_keys': set(self.TRANSACTION_LEDGER.keys()),
+            'bs_revenue': dict(self.PHINS_BALANCE_SHEET['revenue_breakdown']),
+            'bs_total_revenue': self.PHINS_BALANCE_SHEET['total_revenue'],
+            'bs_total_expenses': self.PHINS_BALANCE_SHEET['total_expenses'],
+            'bs_expense': dict(self.PHINS_BALANCE_SHEET['expense_breakdown']),
+        }
+
+        try:
+            self.CUSTOMERS[customer_id] = {
+                'id': customer_id, 'name': 'Summary AutoPay Test',
+                'email': 'summ-autopay@example.com', 'phone': '+15555550999',
+                'created_date': datetime.now().isoformat(),
+            }
+            self.HEALTH_WALLETS[customer_id] = {
+                'customer_id': customer_id, 'balance': 0.0,
+                'transactions': [], 'created_at': datetime.now().isoformat(),
+            }
+            self.INVESTMENT_ACCOUNTS[customer_id] = {
+                'customer_id': customer_id, 'balance': 0.0,
+                'index_balance': 0.0, 'bonds_balance': 0.0, 'crypto_balance': 0.0,
+                'deposits': [], 'created_at': datetime.now().isoformat(),
+            }
+            self.CUSTOMER_ALLOCATIONS[customer_id] = {
+                'customer_id': customer_id, 'savings_pct': 25.0, 'risk_pct': 75.0,
+                'wallet_pct': 30.0, 'investment_pct': 65.0, 'algo_pct': 5.0,
+                'index_pct': 60.0, 'bonds_pct': 30.0, 'crypto_pct': 10.0,
+            }
+            self.POLICIES[policy_id] = {
+                'id': policy_id, 'customer_id': customer_id,
+                'status': 'active', 'monthly_premium': 150.0,
+                'payment_setup': {
+                    'auto_pay': True, 'billing_frequency': 'monthly',
+                    'billing_day': 1, 'next_billing_date': '2026-04-01T00:00:00',
+                },
+                'billing': {
+                    'auto_pay': True, 'frequency': 'monthly', 'billing_day': 1,
+                    'next_billing_date': '2026-04-01T00:00:00', 'auto_pay_config': {},
+                },
+            }
+
+            report = self.run_monthly_auto_pay(
+                reference_datetime=datetime(2026, 4, 1, 8, 0, 0),
+                dry_run=False, notify_users=False,
+                trigger='unit_test', actor='unit_test',
+            )
+            self.assertTrue(report['success'])
+            self.assertEqual(report['processed'], 1)
+
+            summary = self.build_bills_vs_billing_autopay_summary()
+            bo = summary['bills_overview']
+            aps = summary['autopay_summary']
+
+            self.assertGreaterEqual(bo['autopay_bills']['count'], 1)
+            self.assertGreaterEqual(bo['autopay_bills']['total_paid'], 150.0)
+            self.assertGreaterEqual(aps['ledger_executions']['count'], 1)
+            self.assertGreaterEqual(aps['run_reports']['report_count'], 1)
+            self.assertGreaterEqual(aps['run_reports']['total_processed'], 1)
+
+        finally:
+            if previous_state['policy'] is None:
+                self.POLICIES.pop(policy_id, None)
+            else:
+                self.POLICIES[policy_id] = previous_state['policy']
+            if previous_state['customer'] is None:
+                self.CUSTOMERS.pop(customer_id, None)
+            else:
+                self.CUSTOMERS[customer_id] = previous_state['customer']
+            if previous_state['wallet'] is None:
+                self.HEALTH_WALLETS.pop(customer_id, None)
+            else:
+                self.HEALTH_WALLETS[customer_id] = previous_state['wallet']
+            if previous_state['investment'] is None:
+                self.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+            else:
+                self.INVESTMENT_ACCOUNTS[customer_id] = previous_state['investment']
+            if previous_state['allocation'] is None:
+                self.CUSTOMER_ALLOCATIONS.pop(customer_id, None)
+            else:
+                self.CUSTOMER_ALLOCATIONS[customer_id] = previous_state['allocation']
+            for bill_id in list(self.BILLING.keys()):
+                if bill_id not in previous_state['billing_keys']:
+                    self.BILLING.pop(bill_id, None)
+            for tx_id in list(self.TRANSACTION_LEDGER.keys()):
+                if tx_id not in previous_state['ledger_keys']:
+                    self.TRANSACTION_LEDGER.pop(tx_id, None)
+            self.AUTO_PAY_RUN_REPORTS.clear()
+            self.AUTO_PAY_RUN_REPORTS.update(previous_state['reports'])
+            self.PHINS_BALANCE_SHEET['revenue_breakdown'].update(previous_state['bs_revenue'])
+            self.PHINS_BALANCE_SHEET['total_revenue'] = previous_state['bs_total_revenue']
+            self.PHINS_BALANCE_SHEET['expense_breakdown'].update(previous_state['bs_expense'])
+            self.PHINS_BALANCE_SHEET['total_expenses'] = previous_state['bs_total_expenses']
 
 
 def run_balance_sheet_integrity_test():
