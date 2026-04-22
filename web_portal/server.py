@@ -11181,9 +11181,16 @@ For claims or questions, please contact:
                         and status_in(b, ['outstanding', 'partial'])
                     )
                 )
+                pending_claims = sum(
+                    1 for c in CLAIMS.values()
+                    if (
+                        not is_suspended_account(c.get('customer_id', ''))
+                        and status_in(c, ['pending', 'under_review'])
+                    )
+                )
                 data = {
                     'policies': {'total': m['total_policies'], 'active': m['active_policies']},
-                    'claims': {'pending': m['pending_claims'], 'approved': m['approved_claims']},
+                    'claims': {'pending': pending_claims, 'approved': m['approved_claims']},
                     'billing': {'overdue': m['overdue_count'],
                                 'outstanding': outstanding_count}
                 }
