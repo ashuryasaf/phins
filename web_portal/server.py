@@ -410,6 +410,188 @@ def build_bills_vs_billing_autopay_summary() -> Dict[str, Any]:
 
 
 # ==============================================================================
+# UNIFIED FINANCIAL METRICS — single source of truth for dashboard, billing,
+# balance sheet, reconciliation, and all admin/customer-facing views.
+# ==============================================================================
+
+def compute_unified_financial_metrics(
+    exclude_suspended: bool = True,
+) -> Dict[str, Any]:
+    """Compute all platform financial metrics in one pass.
+
+    Every endpoint that needs revenue, outstanding, AUM, deposits, etc. should
+    call this function instead of re-deriving the values with slightly different
+    filters or formulas.
+
+    Definitions (canonical):
+    - ``total_revenue``: sum of ``annual_premium`` on active, non-suspended
+      policies — the *expected* annual revenue run-rate.
+    - ``total_collected``: sum of ``amount_paid`` across all non-suspended
+      billing records.
+    - ``total_billed``: sum of ``amount`` (face value) across all non-suspended
+      billing records.
+    - ``outstanding_balance``: for bills in ``outstanding|pending|partial|overdue``
+      status, ``max(0, amount - amount_paid)``.
+    - ``total_deposits``: sum of ``amount`` for health-wallet deposit
+      transactions (``deposit`` or ``initial_deposit``).
+    - ``total_health_wallet``: sum of wallet balances.
+    - ``total_investment_balance``: sum of investment account balances.
+    - ``total_investment_value``: sum of ``investment_value`` field on policies.
+    - ``total_coverage_amount``: sum of ``coverage_amount`` on active policies.
+    - ``total_aum``: ``total_investment_value`` + unified wallet balance (health
+      + investment + algo + pipeline).
+    """
+    # --- Billing ---
+    bills = [
+        b for b in BILLING.values()
+        if not (exclude_suspended and is_suspended_account(b.get('customer_id', '')))
+    ]
+    total_billed = round(sum(safe_float(b.get('amount', b.get('amount_due', 0)), 0.0) for b in bills), 2)
+    total_collected = round(sum(safe_float(b.get('amount_paid', 0), 0.0) for b in bills), 2)
+    outstanding_balance = round(sum(
+        max(0.0, safe_float(b.get('amount', b.get('amount_due', 0)), 0.0)
+            - safe_float(b.get('amount_paid', 0), 0.0))
+        for b in bills
+        if status_in(b, ['outstanding', 'pending', 'partial', 'overdue'])
+    ), 2)
+    paid_count = sum(1 for b in bills if status_eq(b, 'paid'))
+    pending_count = sum(1 for b in bills if status_in(b, ['outstanding', 'pending']))
+    overdue_count = sum(1 for b in bills if status_eq(b, 'overdue'))
+
+    # --- Policies ---
+    policies = list(POLICIES.values())
+    if exclude_suspended:
+        policies = [p for p in policies if not is_suspended_account(p.get('customer_id', ''))]
+    active_policies_list = [p for p in policies if status_eq(p, 'active')]
+    total_annual_revenue = round(sum(safe_float(p.get('annual_premium', 0), 0.0) for p in active_policies_list), 2)
+    monthly_premium_income = round(total_annual_revenue / 12.0, 2) if total_annual_revenue > 0 else 0.0
+    total_investment_value = round(sum(safe_float(p.get('investment_value', 0), 0.0) for p in policies), 2)
+    total_coverage_amount = round(sum(safe_float(p.get('coverage_amount', 0), 0.0) for p in active_policies_list), 2)
+
+    # --- Claims ---
+    claims = list(CLAIMS.values())
+    if exclude_suspended:
+        claims = [c for c in claims if not is_suspended_account(c.get('customer_id', ''))]
+    claims_paid_amount = round(sum(
+        safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
+        for c in claims if status_in(c, ['paid', 'approved'])
+    ), 2)
+
+    # --- Health wallets ---
+    total_health_wallet = round(sum(safe_float(w.get('balance', 0), 0.0) for w in HEALTH_WALLETS.values()), 2)
+    total_deposits = round(sum(
+        safe_float(t.get('amount', 0), 0.0)
+        for w in HEALTH_WALLETS.values()
+        for t in w.get('transactions', [])
+        if t.get('type') in ('deposit', 'initial_deposit')
+    ), 2)
+    active_wallets = sum(1 for w in HEALTH_WALLETS.values() if safe_float(w.get('balance', 0), 0.0) > 0)
+
+    # --- Investment accounts ---
+    total_investment_balance = round(sum(safe_float(acc.get('balance', 0), 0.0) for acc in INVESTMENT_ACCOUNTS.values()), 2)
+
+    # --- Algo trading ---
+    total_algo_balance = 0.0
+    try:
+        if unified_balance_enabled and unified_balance_service:
+            for _cid, algo_data in unified_balance_service.algo_trading_balances.items():
+                total_algo_balance += safe_float(algo_data.get('balance', algo_data.get('available', 0)), 0.0)
+    except Exception:
+        pass
+    total_algo_balance = round(total_algo_balance, 2)
+
+    # --- Pipeline cash ---
+    total_pipeline_cash = 0.0
+    try:
+        if savings_pipeline_enabled and savings_pipeline_service:
+            for account in savings_pipeline_service.accounts.values():
+                total_pipeline_cash += safe_float(getattr(account, 'cash_balance', 0), 0.0)
+    except Exception:
+        pass
+    total_pipeline_cash = round(total_pipeline_cash, 2)
+
+    # --- Unified wallet balance ---
+    total_wallet_balance = round(total_health_wallet + total_investment_balance + total_algo_balance + total_pipeline_cash, 2)
+
+    # --- AUM ---
+    total_aum = round(total_investment_value + total_wallet_balance, 2)
+
+    # --- Customers ---
+    customers = list(CUSTOMERS.values())
+    if exclude_suspended:
+        customers = [c for c in customers if not is_suspended_account(c.get('id', ''))]
+    total_customers = len(customers)
+    now_month = datetime.now().strftime('%Y-%m')
+    new_customers_this_month = sum(
+        1 for c in customers
+        if (c.get('created_at') or c.get('created_date') or '')[:7] == now_month
+    )
+
+    # --- Underwriting ---
+    apps = list(UNDERWRITING_APPLICATIONS.values())
+    if exclude_suspended:
+        apps = [a for a in apps if not is_suspended_account(a.get('customer_id', ''))]
+    pending_applications = sum(1 for a in apps if status_eq(a, 'pending'))
+    approved_applications = sum(1 for a in apps if status_eq(a, 'approved'))
+    rejected_applications = sum(1 for a in apps if status_eq(a, 'rejected'))
+
+    # --- Claims counts ---
+    pending_claims = sum(1 for c in claims if status_in(c, ['pending', 'under_review', 'medical_assessment']))
+    approved_claims = sum(1 for c in claims if status_eq(c, 'approved'))
+    rejected_claims = sum(1 for c in claims if status_eq(c, 'rejected'))
+
+    # --- Cumulative premium (from billing + ledger, de-duplicated) ---
+    cumulative_premium = calculate_cumulative_premium_income(exclude_suspended=exclude_suspended)
+
+    return {
+        # Billing
+        'total_billed': total_billed,
+        'total_collected': total_collected,
+        'outstanding_balance': outstanding_balance,
+        'paid_count': paid_count,
+        'pending_count': pending_count,
+        'overdue_count': overdue_count,
+        'total_transactions': len(bills),
+        'collection_rate': round((total_collected / total_billed * 100) if total_billed > 0 else 0.0, 1),
+        # Revenue
+        'total_revenue': total_annual_revenue,
+        'monthly_premium_income': monthly_premium_income,
+        # Claims
+        'claims_paid_amount': claims_paid_amount,
+        'pending_claims': pending_claims,
+        'approved_claims': approved_claims,
+        'rejected_claims': rejected_claims,
+        'total_claims': len(claims),
+        # Customers
+        'total_customers': total_customers,
+        'new_customers_this_month': new_customers_this_month,
+        # Policies
+        'total_policies': len(policies),
+        'active_policies': len(active_policies_list),
+        'pending_policies': sum(1 for p in policies if status_eq(p, 'pending_underwriting')),
+        # Underwriting
+        'total_applications': len(apps),
+        'pending_applications': pending_applications,
+        'approved_applications': approved_applications,
+        'rejected_applications': rejected_applications,
+        # Wallets
+        'total_health_wallet': total_health_wallet,
+        'total_deposits': total_deposits,
+        'active_wallets': active_wallets,
+        'total_investment_balance': total_investment_balance,
+        'total_algo_balance': total_algo_balance,
+        'total_pipeline_cash': total_pipeline_cash,
+        'total_wallet_balance': total_wallet_balance,
+        # AUM / coverage
+        'total_investment_value': total_investment_value,
+        'total_coverage_amount': total_coverage_amount,
+        'total_aum': total_aum,
+        # Cumulative premium (for reconciliation)
+        'cumulative_premium': cumulative_premium,
+    }
+
+
+# ==============================================================================
 # MARKETPLACE NORMALIZATION HELPERS
 # ==============================================================================
 MARKETPLACE_CATEGORY_ALIASES: Dict[str, str] = {
@@ -9868,128 +10050,62 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
                 return
             
-            # Calculate comprehensive dashboard stats
-            total_customers = len(CUSTOMERS)
-            total_policies = len(POLICIES)
-            active_policies = len([p for p in POLICIES.values() if status_eq(p, 'active')])
-            pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')])
-            approved_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'approved')])
-            
-            # Claims stats (case-insensitive for data integrity)
-            total_claims = len(CLAIMS)
-            pending_claims = len([c for c in CLAIMS.values() if status_in(c, ['pending', 'under_review', 'medical_assessment'])])
-            approved_claims = len([c for c in CLAIMS.values() if status_eq(c, 'approved')])
-            
-            # Billing stats - fixed naming for clarity
-            # DATA INTEGRITY: Using global safe_float() for all numeric conversions
-            
-            # Total annual revenue from active policies (expected revenue)
-            total_annual_revenue = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
-            # Total amount actually collected (paid bills)
-            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
-            # Total amount billed
-            total_billed = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
-            # Outstanding balance (billed but not paid)
-            outstanding_balance = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) for b in BILLING.values() if status_in(b, ['outstanding', 'pending', 'overdue']))
-            # Legacy compatibility
-            total_revenue = total_annual_revenue
-            total_premium_collected = total_billed
-            
-            # ========== UNIFIED WALLET BALANCE CALCULATION ==========
-            # Health wallet balance
-            total_health_wallet = sum(float(w.get('balance', 0) or 0) for w in HEALTH_WALLETS.values())
-            total_deposits = sum(t.get('amount', 0) for w in HEALTH_WALLETS.values() for t in w.get('transactions', []) if t.get('type') == 'deposit')
-            
-            # Investment account balance
-            total_investment_balance = sum(float(acc.get('balance', 0) or 0) for acc in INVESTMENT_ACCOUNTS.values())
-            
-            # Algo trading balance (from unified service if available)
-            total_algo_balance = 0
-            try:
-                if unified_balance_enabled and unified_balance_service:
-                    for cust_id, algo_data in unified_balance_service.algo_trading_balances.items():
-                        total_algo_balance += float(algo_data.get('balance', 0) or 0)
-            except:
-                pass
-            
-            # Pipeline cash balance (from savings pipeline if available)
-            total_pipeline_cash = 0
-            try:
-                if savings_pipeline_enabled and savings_pipeline_service:
-                    for account in savings_pipeline_service.accounts.values():
-                        total_pipeline_cash += float(account.cash_balance or 0)
-            except:
-                pass
-            
-            # Total unified wallet balance (sum of all wallet types)
-            total_wallet_balance = total_health_wallet + total_investment_balance + total_algo_balance + total_pipeline_cash
-            
-            # Customer allocations total (as a cross-check)
-            total_allocation_balance = sum(
-                float(alloc.get('distribution', {}).get('total_balance', 0) or 0)
-                for alloc in CUSTOMER_ALLOCATIONS.values()
-            )
-            
-            # Investment stats
-            total_investment_value = sum(float(p.get('investment_value', 0) or 0) for p in POLICIES.values())
-            total_coverage_amount = sum(float(p.get('coverage_amount', 0) or 0) for p in POLICIES.values() if status_eq(p, 'active'))
-            
-            # Claims payment stats (case-insensitive)
-            claims_paid = sum(c.get('amount_approved', c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'approved'))
-            
+            m = compute_unified_financial_metrics(exclude_suspended=True)
+
             dashboard_data = {
                 'success': True,
                 # Customer metrics
-                'total_customers': total_customers,
-                'new_customers_this_month': len([c for c in CUSTOMERS.values() if c.get('created_at', '')[:7] == datetime.now().strftime('%Y-%m')]),
+                'total_customers': m['total_customers'],
+                'new_customers_this_month': m['new_customers_this_month'],
                 
                 # Policy metrics
-                'total_policies': total_policies,
-                'active_policies': active_policies,
-                'pending_policies': len([p for p in POLICIES.values() if status_eq(p, 'pending_underwriting')]),
+                'total_policies': m['total_policies'],
+                'active_policies': m['active_policies'],
+                'pending_policies': m['pending_policies'],
                 
                 # Underwriting metrics
-                'total_applications': len(UNDERWRITING_APPLICATIONS),
-                'pending_applications': pending_applications,
-                'approved_applications': approved_applications,
-                'rejected_applications': len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'rejected')]),
+                'total_applications': m['total_applications'],
+                'pending_applications': m['pending_applications'],
+                'approved_applications': m['approved_applications'],
+                'rejected_applications': m['rejected_applications'],
                 
-                # Claims metrics (case-insensitive)
-                'total_claims': total_claims,
-                'pending_claims': pending_claims,
-                'approved_claims': approved_claims,
-                'rejected_claims': len([c for c in CLAIMS.values() if status_eq(c, 'rejected')]),
-                'claims_paid_amount': claims_paid,
+                # Claims metrics
+                'total_claims': m['total_claims'],
+                'pending_claims': m['pending_claims'],
+                'approved_claims': m['approved_claims'],
+                'rejected_claims': m['rejected_claims'],
+                'claims_paid_amount': m['claims_paid_amount'],
                 
                 # Financial metrics
-                'total_revenue': total_revenue,
-                'total_premium_collected': total_premium_collected,
-                'outstanding_balance': outstanding_balance,
-                'total_investment_value': total_investment_value,
-                'total_coverage_amount': total_coverage_amount,
-                'total_aum': total_investment_value + total_wallet_balance,
+                'total_revenue': m['total_revenue'],
+                'total_premium_collected': m['total_collected'],
+                'outstanding_balance': m['outstanding_balance'],
+                'total_investment_value': m['total_investment_value'],
+                'total_coverage_amount': m['total_coverage_amount'],
+                'total_aum': m['total_aum'],
                 
                 # Wallet metrics (unified across all wallet types)
-                'total_wallet_balance': round(total_wallet_balance, 2),
-                'total_deposits': total_deposits,
-                'active_wallets': len([w for w in HEALTH_WALLETS.values() if float(w.get('balance', 0) or 0) > 0]),
+                'total_wallet_balance': m['total_wallet_balance'],
+                'total_deposits': m['total_deposits'],
+                'active_wallets': m['active_wallets'],
                 'wallet_breakdown': {
-                    'health_wallet': round(total_health_wallet, 2),
-                    'investment': round(total_investment_balance, 2),
-                    'algo_trading': round(total_algo_balance, 2),
-                    'pipeline_cash': round(total_pipeline_cash, 2),
-                    'allocation_total': round(total_allocation_balance, 2)
+                    'health_wallet': m['total_health_wallet'],
+                    'investment': m['total_investment_balance'],
+                    'algo_trading': m['total_algo_balance'],
+                    'pipeline_cash': m['total_pipeline_cash'],
                 },
                 
                 # Pipeline summary
                 'pipeline': {
-                    'registered': len([c for c in CUSTOMERS.values()]),
-                    'applied': len(UNDERWRITING_APPLICATIONS),
-                    'underwriting': pending_applications,
-                    'approved': approved_applications,
-                    'active': active_policies,
-                    'billing': len([b for b in BILLING.values() if status_eq(b, 'outstanding')]),
-                    'claims': pending_claims
+                    'registered': m['total_customers'],
+                    'applied': m['total_applications'],
+                    'underwriting': m['pending_applications'],
+                    'approved': m['approved_applications'],
+                    'active': m['active_policies'],
+                    'billing': sum(1 for b in BILLING.values()
+                                   if status_eq(b, 'outstanding')
+                                   and not is_suspended_account(b.get('customer_id', ''))),
+                    'claims': m['pending_claims']
                 },
                 
                 'timestamp': datetime.now().isoformat()
@@ -14227,45 +14343,24 @@ For claims or questions, please contact:
         
         # Billing stats for admin dashboard (fallback when billing_engine unavailable)
         if path == '/api/billing/stats':
-            # FILTER: Exclude suspended test accounts from billing stats
-            bills = [b for b in BILLING.values() if not is_suspended_account(b.get('customer_id', ''))]
-            
-            # DATA INTEGRITY: Using global safe_float() for all numeric values
-            # Calculate comprehensive stats with safe type conversion
-            total_billed = sum(safe_float(b.get('amount', 0)) for b in bills)
-            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in bills)
-            outstanding = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) 
-                             for b in bills if not status_eq(b, 'paid'))
-            
-            paid_bills = [b for b in bills if status_eq(b, 'paid')]
-            pending_bills = [b for b in bills if status_in(b, ['outstanding', 'pending'])]
-            overdue_bills = [b for b in bills if status_eq(b, 'overdue')]
-            
-            # Calculate revenue from policies
-            active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
-            total_annual_revenue = sum(float(p.get('annual_premium', 0)) for p in active_policies)
-            monthly_revenue = total_annual_revenue / 12
-            
-            # Claims paid (case-insensitive)
-            claims_paid = sum(float(c.get('approved_amount', 0)) for c in CLAIMS.values() 
-                            if status_in(c, ['paid', 'approved']))
+            m = compute_unified_financial_metrics(exclude_suspended=True)
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
-                'total_revenue': round(total_annual_revenue, 2),
-                'monthly_premium_income': round(monthly_revenue, 2),
-                'total_billed': round(total_billed, 2),
-                'total_collected': round(total_collected, 2),
-                'outstanding_balance': round(outstanding, 2),
-                'outstanding_receivables': round(outstanding, 2),
-                'claims_paid': round(claims_paid, 2),
-                'claims_paid_this_month': round(claims_paid, 2),
+                'total_revenue': m['total_revenue'],
+                'monthly_premium_income': m['monthly_premium_income'],
+                'total_billed': m['total_billed'],
+                'total_collected': m['total_collected'],
+                'outstanding_balance': m['outstanding_balance'],
+                'outstanding_receivables': m['outstanding_balance'],
+                'claims_paid': m['claims_paid_amount'],
+                'claims_paid_this_month': m['claims_paid_amount'],
                 'investment_returns': 0,
-                'total_transactions': len(bills),
-                'paid_count': len(paid_bills),
-                'pending_count': len(pending_bills),
-                'overdue_count': len(overdue_bills),
-                'collection_rate': round((total_collected / total_billed * 100) if total_billed > 0 else 0, 1)
+                'total_transactions': m['total_transactions'],
+                'paid_count': m['paid_count'],
+                'pending_count': m['pending_count'],
+                'overdue_count': m['overdue_count'],
+                'collection_rate': m['collection_rate']
             }).encode('utf-8'))
             return
         
@@ -32222,19 +32317,18 @@ For claims or questions, please contact:
             # Get billing stats for dashboard
             if path == '/api/billing/stats':
                 try:
-                    # Calculate real stats from BILLING data (case-insensitive)
-                    bills = list(BILLING.values())
-                    total_transactions = len(bills)
-                    successful = len([b for b in bills if status_in(b, ['paid', 'partial'])])
-                    failed = len([b for b in bills if status_eq(b, 'failed')])
-                    total_revenue = sum(float(b.get('amount_paid', 0)) for b in bills)
+                    m = compute_unified_financial_metrics(exclude_suspended=True)
+                    bills = [b for b in BILLING.values()
+                             if not is_suspended_account(b.get('customer_id', ''))]
+                    successful = sum(1 for b in bills if status_in(b, ['paid', 'partial']))
+                    failed = sum(1 for b in bills if status_eq(b, 'failed'))
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
-                        'total_transactions': total_transactions,
+                        'total_transactions': m['total_transactions'],
                         'successful_payments': successful,
                         'failed_payments': failed,
-                        'total_revenue': round(total_revenue, 2),
+                        'total_revenue': m['total_collected'],
                         'pending_alerts': 0
                     }).encode('utf-8'))
                 except Exception as e:
@@ -39889,23 +39983,11 @@ def run_server(port: int = PORT) -> None:
                 'created_date': datetime.now().isoformat(),
                 'status': 'active'
             }
-            # Initialize health wallet for efrat
             HEALTH_WALLETS['CUST-EFRAT-001'] = {
                 'customer_id': 'CUST-EFRAT-001',
-                'balance': 5000.00,  # Initial wallet balance
-                'monthly_deposit': 200.00,
-                'transactions': [
-                    {
-                        'id': f'INIT-WALLET-EFRAT-001',
-                        'type': 'initial_deposit',
-                        'amount': 5000.00,
-                        'source': 'policy_savings',
-                        'description': 'Initial policy savings allocation',
-                        'previous_balance': 0.0,
-                        'balance_after': 5000.0,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                ],
+                'balance': 0.0,
+                'monthly_deposit': 0.0,
+                'transactions': [],
                 'created_at': datetime.now().isoformat()
             }
             
@@ -39961,21 +40043,13 @@ def run_server(port: int = PORT) -> None:
                 'created_date': datetime.now().isoformat()
             }
             
-            # Initialize investment account for Efrat
             INVESTMENT_ACCOUNTS['CUST-EFRAT-001'] = {
                 'customer_id': 'CUST-EFRAT-001',
-                'balance': 10000.00,
-                'index_balance': 6000.00,
-                'bonds_balance': 3000.00,
-                'crypto_balance': 1000.00,
-                'deposits': [
-                    {
-                        'id': 'DEP-EFRAT-001',
-                        'amount': 10000.00,
-                        'source': 'initial_deposit',
-                        'timestamp': datetime.now().isoformat()
-                    }
-                ],
+                'balance': 0.0,
+                'index_balance': 0.0,
+                'bonds_balance': 0.0,
+                'crypto_balance': 0.0,
+                'deposits': [],
                 'created_at': datetime.now().isoformat()
             }
             
@@ -40110,83 +40184,61 @@ def run_server(port: int = PORT) -> None:
         print(f"⚠️  Customer initialization skipped (database issue): {e}")
     
     # Initialize CUST-ASAF-001 wallets and investment account
+    # Only seed defaults when no persisted data exists — never override real data.
     print("💰 Initializing customer wallets and investment accounts...")
     try:
         now = datetime.now()
         
-        # Initialize Health Wallet for Asaf with demo data
-        HEALTH_WALLETS['CUST-ASAF-001'] = {
-            'customer_id': 'CUST-ASAF-001',
-            'balance': 25000.00,  # Demo starting balance
-            'monthly_deposit': 382.50,  # 30% of savings ($1,275 * 0.30)
-            'transactions': [
-                {
-                    'id': 'INIT-WALLET-001',
-                    'type': 'initial_deposit',
-                    'amount': 25000.00,
-                    'description': 'Initial demo deposit',
-                    'timestamp': now.isoformat(),
-                    'balance_after': 25000.00
-                }
-            ],
-            'created_at': now.isoformat()
-        }
-        print(f"   ✓ Health Wallet CUST-ASAF-001: $25,000.00 (demo)")
-        
-        # Initialize Investment Account for Asaf with demo data
-        INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
-            'customer_id': 'CUST-ASAF-001',
-            'balance': 15000.00,  # Demo starting balance
-            'index_balance': 9000.00,   # 60% in Index Funds
-            'bonds_balance': 4500.00,   # 30% in Bonds
-            'crypto_balance': 1500.00,  # 10% in Crypto
-            'deposits': [
-                {
-                    'id': 'INIT-INV-001',
-                    'type': 'initial_deposit',
-                    'amount': 15000.00,
-                    'index_amount': 9000.00,
-                    'bonds_amount': 4500.00,
-                    'crypto_amount': 1500.00,
-                    'description': 'Initial demo deposit',
-                    'timestamp': now.isoformat()
-                }
-            ],
-            'created_at': now.isoformat()
-        }
-        print(f"   ✓ Investment Account CUST-ASAF-001: $15,000.00 (demo)")
-        
-        # Initialize Algo Trading Balance for Asaf with demo data
-        if unified_balance_enabled and unified_balance_service:
-            unified_balance_service.algo_trading_balances['CUST-ASAF-001'] = {
-                'available': 5000.00,  # Demo starting balance
-                'in_positions': 0.00,
-                'total_pnl': 0.00,
-                'active_bots': 0,
-                'transfers': [
-                    {
-                        'id': 'INIT-ALGO-001',
-                        'type': 'deposit',
-                        'source': 'initial_demo',
-                        'amount': 5000.00,
-                        'timestamp': now.isoformat()
-                    }
-                ],
+        if 'CUST-ASAF-001' not in HEALTH_WALLETS:
+            HEALTH_WALLETS['CUST-ASAF-001'] = {
+                'customer_id': 'CUST-ASAF-001',
+                'balance': 0.0,
+                'monthly_deposit': 0.0,
+                'transactions': [],
                 'created_at': now.isoformat()
             }
-            print(f"   ✓ Algo Trading CUST-ASAF-001: $5,000.00 (demo)")
+            print(f"   ✓ Health Wallet CUST-ASAF-001: initialized (empty)")
+        else:
+            print(f"   ✓ Health Wallet CUST-ASAF-001: preserved from persistence")
         
-        # Initialize/Update Customer Allocation preferences with 75% savings
+        if 'CUST-ASAF-001' not in INVESTMENT_ACCOUNTS:
+            INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
+                'customer_id': 'CUST-ASAF-001',
+                'balance': 0.0,
+                'index_balance': 0.0,
+                'bonds_balance': 0.0,
+                'crypto_balance': 0.0,
+                'deposits': [],
+                'created_at': now.isoformat()
+            }
+            print(f"   ✓ Investment Account CUST-ASAF-001: initialized (empty)")
+        else:
+            print(f"   ✓ Investment Account CUST-ASAF-001: preserved from persistence")
+        
+        if unified_balance_enabled and unified_balance_service:
+            if 'CUST-ASAF-001' not in unified_balance_service.algo_trading_balances:
+                unified_balance_service.algo_trading_balances['CUST-ASAF-001'] = {
+                    'available': 0.0,
+                    'in_positions': 0.00,
+                    'total_pnl': 0.00,
+                    'active_bots': 0,
+                    'transfers': [],
+                    'created_at': now.isoformat()
+                }
+                print(f"   ✓ Algo Trading CUST-ASAF-001: initialized (empty)")
+            else:
+                print(f"   ✓ Algo Trading CUST-ASAF-001: preserved from persistence")
+        
         if 'CUST-ASAF-001' not in CUSTOMER_ALLOCATIONS:
             CUSTOMER_ALLOCATIONS['CUST-ASAF-001'] = {
-                'savings_pct': 75.0,      # 75% of premium to savings
-                'risk_pct': 25.0,         # 25% of premium to risk coverage
-                'wallet_pct': 30.0,       # 30% of savings to Health Wallet
-                'investment_pct': 65.0,   # 65% of savings to Investment
-                'algo_pct': 5.0,          # 5% of savings to Algo Trading
-                'index_pct': 60.0,        # 60% of investment to Index Funds
-                'bonds_pct': 30.0,        # 30% of investment to Bonds
-                'crypto_pct': 10.0,       # 10% of investment to Crypto
+                'savings_pct': 75.0,
+                'risk_pct': 25.0,
+                'wallet_pct': 30.0,
+                'investment_pct': 65.0,
+                'algo_pct': 5.0,
+                'index_pct': 60.0,
+                'bonds_pct': 30.0,
+                'crypto_pct': 10.0,
                 'updated_at': now.isoformat(),
                 'customer_id': 'CUST-ASAF-001'
             }
@@ -40424,7 +40476,8 @@ def run_server(port: int = PORT) -> None:
     except Exception as db_err:
         print(f"   ℹ️ Database claims loading: {db_err}")
     
-    # Initialize sample claims for Asaf (always update to ensure correct status)
+    # Seed sample claims for Asaf — only insert claims that don't already
+    # exist so that user/admin modifications and persisted state are preserved.
     print("📋 Initializing sample claims...")
     try:
         now = datetime.now()
@@ -40497,10 +40550,6 @@ def run_server(port: int = PORT) -> None:
             }
         ]
         
-        # Always update claims to ensure correct status.
-        # When backed by the database, guard against FK violations by only
-        # writing through to the DB when the parent policy actually exists.
-        # Pre-fetch the set of valid policy IDs once instead of probing per claim.
         valid_policy_ids = None
         if USE_DATABASE and database_enabled:
             try:
@@ -40511,28 +40560,23 @@ def run_server(port: int = PORT) -> None:
                 print(f"   ⚠️  Could not enumerate DB policies for claim seeding: {_pol_err}")
                 valid_policy_ids = None
 
-        skipped_db_writes = 0
+        skipped = 0
+        created = 0
+        preserved = 0
         for claim in sample_claims:
+            if claim['id'] in CLAIMS:
+                preserved += 1
+                continue
             if valid_policy_ids is not None and claim['policy_id'] not in valid_policy_ids:
-                skipped_db_writes += 1
-                print(
-                    f"   ⚠️  Policy {claim['policy_id']} missing in DB; "
-                    f"skipping persistence of claim {claim['id']}"
-                )
+                skipped += 1
                 continue
             try:
                 CLAIMS[claim['id']] = claim
-            except Exception as _claim_err:
-                skipped_db_writes += 1
-                print(f"   ⚠️  Could not persist claim {claim['id']}: {_claim_err}")
+                created += 1
+            except Exception:
+                skipped += 1
 
-        if skipped_db_writes:
-            print(
-                f"✓ Initialized {len(sample_claims) - skipped_db_writes}/{len(sample_claims)} "
-                f"sample claims ({skipped_db_writes} skipped due to missing DB parent rows)"
-            )
-        else:
-            print(f"✓ Initialized {len(sample_claims)} sample claims (3 Paid, 1 Pending, 1 Under Review)")
+        print(f"✓ Sample claims: {created} created, {preserved} preserved, {skipped} skipped")
     except Exception as e:
         print(f"⚠️  Claims initialization skipped: {e}")
     
@@ -40695,41 +40739,9 @@ def run_server(port: int = PORT) -> None:
                     'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=3)).strftime("%Y%m%d")}-004'
                 },
                 
-                # CUST-ASAF-001 demo deposit entries - matching wallet/investment initialization
-                # Use specific deposit types recognized by integrity service
-                {
-                    'id': 'TX-DEMO-WALLET-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'wallet_deposit',  # Recognized by integrity service
-                    'amount': 25000.00,
-                    'description': 'Initial demo deposit - Health Wallet',
-                    'metadata': {'destination': 'health_wallet', 'demo': True},
-                    'timestamp': now.isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-DEMO-WALLET-{now.strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-DEMO-INV-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'investment_deposit',  # Recognized by integrity service
-                    'amount': 15000.00,
-                    'description': 'Initial demo deposit - Investment Account',
-                    'metadata': {'destination': 'investment', 'index_amount': 9000, 'bonds_amount': 4500, 'crypto_amount': 1500, 'demo': True},
-                    'timestamp': now.isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-DEMO-INV-{now.strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-DEMO-ALGO-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'algo_trading_deposit',  # Recognized by integrity service
-                    'amount': 5000.00,
-                    'description': 'Initial demo deposit - Algo Trading',
-                    'metadata': {'destination': 'algo_trading', 'demo': True},
-                    'timestamp': now.isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-DEMO-ALGO-{now.strftime("%Y%m%d")}-001'
-                }
+                # Note: demo deposit entries for CUST-ASAF-001 wallets/investments
+                # have been removed — financial ledger entries should only be
+                # created by real payment flows, not startup seeding.
         ]
         
         # Populate TRANSACTION_LEDGER
@@ -40769,10 +40781,6 @@ def run_server(port: int = PORT) -> None:
         print(f"   - Billing Records: 3")
         print(f"   - Claim Transactions: 3")
         print(f"   - Pipeline Events: 4")
-        print(f"   - CUST-ASAF-001 Demo Deposits: $45,000")
-        print(f"     • Health Wallet: $25,000")
-        print(f"     • Investment: $15,000")
-        print(f"     • Algo Trading: $5,000")
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")

@@ -35,7 +35,9 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             POLICIES, CUSTOMERS, INVESTMENT_ACCOUNTS, CUSTOMER_ALLOCATIONS,
             AUTO_PAY_RUN_REPORTS, ensure_policy_auto_pay_defaults,
             run_monthly_auto_pay, save_ledger_data, load_ledger_data,
-            build_bills_vs_billing_autopay_summary
+            build_bills_vs_billing_autopay_summary,
+            compute_unified_financial_metrics,
+            UNDERWRITING_APPLICATIONS
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -59,6 +61,8 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.save_ledger_data = save_ledger_data
         self.load_ledger_data = load_ledger_data
         self.build_bills_vs_billing_autopay_summary = build_bills_vs_billing_autopay_summary
+        self.compute_unified_financial_metrics = compute_unified_financial_metrics
+        self.UNDERWRITING_APPLICATIONS = UNDERWRITING_APPLICATIONS
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -831,6 +835,104 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             self.PHINS_BALANCE_SHEET['total_revenue'] = previous_state['bs_total_revenue']
             self.PHINS_BALANCE_SHEET['expense_breakdown'].update(previous_state['bs_expense'])
             self.PHINS_BALANCE_SHEET['total_expenses'] = previous_state['bs_total_expenses']
+
+    def test_unified_metrics_structure(self):
+        """compute_unified_financial_metrics should return all required keys."""
+        self.initialize_balance_sheet()
+        m = self.compute_unified_financial_metrics()
+
+        required_keys = [
+            'total_billed', 'total_collected', 'outstanding_balance',
+            'paid_count', 'pending_count', 'overdue_count', 'total_transactions',
+            'collection_rate', 'total_revenue', 'monthly_premium_income',
+            'claims_paid_amount', 'pending_claims', 'approved_claims',
+            'rejected_claims', 'total_claims',
+            'total_customers', 'new_customers_this_month',
+            'total_policies', 'active_policies', 'pending_policies',
+            'total_applications', 'pending_applications',
+            'approved_applications', 'rejected_applications',
+            'total_health_wallet', 'total_deposits', 'active_wallets',
+            'total_investment_balance', 'total_algo_balance',
+            'total_pipeline_cash', 'total_wallet_balance',
+            'total_investment_value', 'total_coverage_amount', 'total_aum',
+            'cumulative_premium',
+        ]
+        for key in required_keys:
+            self.assertIn(key, m, f"Missing unified metrics key: {key}")
+
+    def test_unified_metrics_consistency_with_bills(self):
+        """Unified metrics billing figures should be consistent with bill data."""
+        bill_ids = ['TEST-UNI-BILL-001', 'TEST-UNI-BILL-002']
+        prev = {k: self.BILLING.get(k) for k in bill_ids}
+
+        try:
+            self.BILLING[bill_ids[0]] = {
+                'id': bill_ids[0], 'customer_id': 'CUST-UNI-001',
+                'policy_id': 'POL-UNI-001',
+                'amount': 300.0, 'amount_due': 300.0, 'amount_paid': 300.0,
+                'status': 'paid', 'auto_pay': False,
+            }
+            self.BILLING[bill_ids[1]] = {
+                'id': bill_ids[1], 'customer_id': 'CUST-UNI-001',
+                'policy_id': 'POL-UNI-001',
+                'amount': 200.0, 'amount_due': 200.0, 'amount_paid': 100.0,
+                'status': 'partial', 'auto_pay': True,
+            }
+
+            m = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+            self.assertGreaterEqual(m['total_billed'], 500.0)
+            self.assertGreaterEqual(m['total_collected'], 400.0)
+            self.assertGreaterEqual(m['outstanding_balance'], 100.0)
+        finally:
+            for k, old in prev.items():
+                if old is None:
+                    self.BILLING.pop(k, None)
+                else:
+                    self.BILLING[k] = old
+
+    def test_unified_metrics_excludes_suspended(self):
+        """Suspended accounts should be filtered from unified metrics."""
+        from server import SUSPENDED_TEST_ACCOUNTS
+        bill_id = 'TEST-SUSP-BILL-001'
+        cust_id = 'CUST-TEST-100'
+        prev_bill = self.BILLING.get(bill_id)
+
+        self.assertIn(cust_id, SUSPENDED_TEST_ACCOUNTS)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id, 'customer_id': cust_id,
+                'policy_id': 'POL-SUSP-001',
+                'amount': 9999.0, 'amount_due': 9999.0, 'amount_paid': 0.0,
+                'status': 'outstanding',
+            }
+
+            m_with = self.compute_unified_financial_metrics(exclude_suspended=True)
+            m_without = self.compute_unified_financial_metrics(exclude_suspended=False)
+
+            self.assertGreater(m_without['total_billed'], m_with['total_billed'],
+                               "Suspended bill should be excluded when exclude_suspended=True")
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+
+    def test_unified_metrics_bi_dashboard_consistency(self):
+        """BI dashboard and billing stats should use the same underlying data."""
+        m = self.compute_unified_financial_metrics(exclude_suspended=True)
+
+        self.assertEqual(m['outstanding_balance'],
+                         round(m['outstanding_balance'], 2))
+        self.assertEqual(m['total_collected'],
+                         round(m['total_collected'], 2))
+        self.assertGreaterEqual(m['total_revenue'], 0)
+        self.assertGreaterEqual(m['total_aum'], 0)
+        self.assertGreaterEqual(m['total_customers'], 0)
+
+        self.assertIsInstance(m['cumulative_premium'], dict)
+        self.assertIn('total', m['cumulative_premium'])
 
 
 def run_balance_sheet_integrity_test():
