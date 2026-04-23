@@ -93,3 +93,46 @@ def test_seed_invitation_usage_customer_ids_match_dynamic_customers():
                 mismatches.append(email)
 
     assert not mismatches, f"Invitation usage records reference wrong customer IDs: {mismatches}"
+
+
+def test_seed_dynamic_customers_rehashes_redacted_password_salt(tmp_path, monkeypatch):
+    import database.seeds as seeds_module
+
+    dynamic_customers_file = tmp_path / "dynamic_customers.json"
+    dynamic_customers_file.write_text(
+        json.dumps(
+            [
+                {
+                    "username": "customer@example.com",
+                    "email": "customer@example.com",
+                    "password": "customer-password",
+                    "password_hash": "stored-hash",
+                    "password_salt": "REDACTED",
+                }
+            ]
+        )
+    )
+
+    class StubUserRepo:
+        def __init__(self):
+            self.created = []
+
+        def get_by_username(self, username):
+            return None
+
+        def create(self, **kwargs):
+            self.created.append(kwargs)
+
+    repo = StubUserRepo()
+    monkeypatch.setattr(seeds_module, "DYNAMIC_CUSTOMERS_FILE", dynamic_customers_file)
+    monkeypatch.setattr(
+        seeds_module,
+        "hash_password",
+        lambda password: {"hash": "rehash", "salt": "fresh-salt"},
+    )
+
+    seeds_module.seed_dynamic_customers(None, repo)
+
+    assert len(repo.created) == 1
+    assert repo.created[0]["password_hash"] == "rehash"
+    assert repo.created[0]["password_salt"] == "fresh-salt"

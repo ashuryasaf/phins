@@ -240,7 +240,12 @@ def seed_dynamic_customers(session, user_repo):
                 continue
             
             # Use pre-hashed credentials if available, otherwise hash now
-            if customer.get('password_hash') and customer.get('password_salt') and customer['password_hash'] != 'REDACTED':
+            if (
+                customer.get('password_hash')
+                and customer.get('password_salt')
+                and customer['password_hash'] != 'REDACTED'
+                and customer['password_salt'] != 'REDACTED'
+            ):
                 pw_hash = {'hash': customer['password_hash'], 'salt': customer['password_salt']}
             else:
                 default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
