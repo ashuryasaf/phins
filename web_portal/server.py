@@ -6618,7 +6618,8 @@ def validate_session(token: str) -> dict[str, str] | None:
     # Database fallback (if available)
     if USE_DATABASE and database_enabled:
         try:
-            with DatabaseManager() as db:
+            from database.manager import DatabaseManager as _DBMgr
+            with _DBMgr() as db:
                 db_session = db.sessions.get_by_id(token)
                 if db_session:
                     expires = db_session.expires

@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let resendInterval = null;
   let pendingLoginData = null;
   let localCaptchaAnswer = null;
+  let otpVerifyInFlight = false;
   
   function safeStorageSet(storage, key, value) {
     try {
@@ -49,6 +50,15 @@ document.addEventListener('DOMContentLoaded', function () {
       console.warn(`Storage set failed (${key}):`, err);
       return false;
     }
+  }
+
+  function fetchWithTimeout(url, options, timeoutMs) {
+    timeoutMs = timeoutMs || 15000;
+    const controller = new AbortController();
+    const timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+    options = options || {};
+    options.signal = controller.signal;
+    return fetch(url, options).finally(function () { clearTimeout(timer); });
   }
 
   function generateLocalCaptchaChallenge() {
@@ -117,11 +127,11 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaSection.style.display = '';
 
     try {
-      const response = await fetch('/api/security/captcha', {
+      const response = await fetchWithTimeout('/api/security/captcha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'login' })
-      });
+      }, 10000);
       const data = await response.json();
       
       if (response.ok && data.success && data.challenge) {
@@ -223,13 +233,13 @@ document.addEventListener('DOMContentLoaded', function () {
     if (resendOtp.classList.contains('disabled')) return;
     
     try {
-      const response = await fetch('/api/security/otp/resend', {
+      const response = await fetchWithTimeout('/api/security/otp/resend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           verification_id: verificationId.value
         })
-      });
+      }, 10000);
       const data = await response.json();
       
       if (data.success) {
@@ -274,12 +284,14 @@ document.addEventListener('DOMContentLoaded', function () {
   
   // Verify OTP
   async function verifyOTP(code) {
+    if (otpVerifyInFlight) return;
+    otpVerifyInFlight = true;
     submitBtn.disabled = true;
     msg.textContent = 'Verifying...';
     msg.style.color = '#546e7a';
     
     try {
-      const response = await fetch('/api/security/otp/verify', {
+      const response = await fetchWithTimeout('/api/security/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -288,25 +300,25 @@ document.addEventListener('DOMContentLoaded', function () {
           trust_device: trustDevice.checked,
           device_fingerprint: getDeviceFingerprint()
         })
-      });
+      }, 10000);
       const data = await response.json();
       
       if (data.success) {
         msg.textContent = 'Verified! Completing login...';
         msg.style.color = '#28a745';
-        
-        // Complete login
         completeLogin();
       } else {
         msg.textContent = data.message || 'Invalid code';
         msg.style.color = '#dc3545';
         clearOTPInputs();
         submitBtn.disabled = false;
+        otpVerifyInFlight = false;
       }
     } catch (e) {
-      msg.textContent = 'Verification error';
+      msg.textContent = e.name === 'AbortError' ? 'Verification timed out. Please try again.' : 'Verification error';
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
+      otpVerifyInFlight = false;
     }
   }
   
@@ -326,7 +338,7 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // Final login call with verified flag
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetchWithTimeout('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -334,7 +346,7 @@ document.addEventListener('DOMContentLoaded', function () {
           verified: true,
           verification_id: verificationId.value
         })
-      });
+      }, 15000);
       const data = await response.json();
       
       if (data.token) {
@@ -463,14 +475,14 @@ document.addEventListener('DOMContentLoaded', function () {
     try {
       // Step 1: Verify CAPTCHA if present
       if (captchaIdValue && captchaValue) {
-        const captchaResponse = await fetch('/api/security/captcha/verify', {
+        const captchaResponse = await fetchWithTimeout('/api/security/captcha/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             challenge_id: captchaIdValue,
             response: captchaValue
           })
-        });
+        }, 10000);
         const captchaResult = await captchaResponse.json();
         
         if (!captchaResult.success) {
@@ -498,11 +510,11 @@ document.addEventListener('DOMContentLoaded', function () {
         user_agent: navigator.userAgent
       };
       
-      const response = await fetch('/api/login', {
+      const response = await fetchWithTimeout('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginData)
-      });
+      }, 15000);
       const data = await response.json();
       
       if (data.requires_otp) {
@@ -530,7 +542,11 @@ document.addEventListener('DOMContentLoaded', function () {
       
     } catch (err) {
       console.error('Login error:', err);
-      msg.textContent = 'Login error. Please try again.';
+      if (err.name === 'AbortError') {
+        msg.textContent = 'Request timed out. Please check your connection and try again.';
+      } else {
+        msg.textContent = 'Login error. Please try again.';
+      }
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
       loadCaptcha();
