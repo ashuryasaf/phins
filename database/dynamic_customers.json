@@ -102,5 +102,45 @@
     "customer_id": "CUST-77587",
     "email": "invitation-flow-secondary@example.com",
     "registered_at": "2026-04-23T13:46:51.119858"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "a6f9ec71ae2e33544013a17721cce2a42a72e022c3904e7865e59ffdb56530da",
+    "password_salt": "3a3fd5f903c37c7ca2dfe84eebb0a8ed",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-19324",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-04-23T13:59:47.638631"
+  },
+  {
+    "username": "legacyotp@example.com",
+    "password_hash": "34b4adc3fceb8a014df4ecd1cd5a3b92f0da6a4ca848100c0ea7ba98eb2f1d51",
+    "password_salt": "eaad74d2b6845482434365588582a799",
+    "name": "Legacy OTP Payload User",
+    "role": "customer",
+    "customer_id": "CUST-15830",
+    "email": "legacyotp@example.com",
+    "registered_at": "2026-04-23T13:59:47.920466"
+  },
+  {
+    "username": "invitation-flow-primary@example.com",
+    "password_hash": "595fffbf46950fa97e3f8b4e32d33b0828581b525536d2ac7bd83f3e8f2a9ba0",
+    "password_salt": "2e43f791222c0b8307b77a6b6beb4b6e",
+    "name": "First Invite User",
+    "role": "customer",
+    "customer_id": "CUST-38734",
+    "email": "invitation-flow-primary@example.com",
+    "registered_at": "2026-04-23T13:59:48.666459"
+  },
+  {
+    "username": "invitation-flow-secondary@example.com",
+    "password_hash": "a9c13fde7db1ba67d0f4b38a854bebc158397d50c787fddeaa311c264167d598",
+    "password_salt": "3c21d09dddd266e73f319046390638f7",
+    "name": "Replay Invite Success User",
+    "role": "customer",
+    "customer_id": "CUST-12985",
+    "email": "invitation-flow-secondary@example.com",
+    "registered_at": "2026-04-23T13:59:48.731491"
   }
 ]

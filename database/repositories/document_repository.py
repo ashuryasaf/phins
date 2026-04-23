@@ -145,6 +145,35 @@ class DocumentRepository(BaseRepository):
     def archive(self, doc_id: str) -> bool:
         return self.update(doc_id, is_archived=True) is not None
 
+    def count_filtered(self, query: Optional[str] = None,
+                       entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+                       customer_id: Optional[str] = None, category: Optional[str] = None,
+                       status: Optional[str] = None) -> int:
+        """Efficient COUNT(*) with all optional filters (no row loading)."""
+        try:
+            q = self.session.query(Document).filter(Document.is_deleted == False)
+            if query:
+                pattern = f"%{query}%"
+                q = q.filter(
+                    (Document.file_name.ilike(pattern))
+                    | (Document.description.ilike(pattern))
+                    | (Document.document_type.ilike(pattern))
+                )
+            if entity_type:
+                q = q.filter(Document.entity_type == entity_type)
+            if entity_id:
+                q = q.filter(Document.entity_id == entity_id)
+            if customer_id:
+                q = q.filter(Document.customer_id == customer_id)
+            if category:
+                q = q.filter(Document.category == category)
+            if status:
+                q = q.filter(Document.status == status)
+            return q.count()
+        except SQLAlchemyError as e:
+            logger.error(f"Error counting documents: {e}")
+            return 0
+
     def count_by_entity(self, entity_type: str, entity_id: str) -> int:
         try:
             return (

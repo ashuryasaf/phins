@@ -243,7 +243,7 @@ class DocumentProcessingService:
                 'ai_summary': extracted.get('summary', ''),
                 'ai_tags': json.dumps(extracted.get('tags', [])),
                 'confidence_score': extracted.get('confidence', None),
-                'processed_date': datetime.now().isoformat(),
+                'processed_date': datetime.now(),
             })
 
         return UploadResult(
@@ -335,6 +335,7 @@ class DocumentProcessingService:
         total = self._count_records(
             entity_type=entity_type, entity_id=entity_id,
             customer_id=customer_id, category=category, status=status,
+            query=search_query,
         )
         items = []
         for d in docs:
@@ -521,13 +522,24 @@ class DocumentProcessingService:
             docs = [d for d in docs if q_lower in (d.get('file_name', '') + d.get('description', '')).lower()]
         return docs[offset:offset + limit]
 
-    def _count_records(self, **filters) -> int:
+    def _count_records(self, entity_type=None, entity_id=None, customer_id=None,
+                       category=None, status=None, query=None, **_ignored) -> int:
         if self.db_manager:
             try:
-                return len(self._search_records(**filters, limit=10000, offset=0))
+                return self.db_manager.documents.count_filtered(
+                    query=query, entity_type=entity_type, entity_id=entity_id,
+                    customer_id=customer_id, category=category, status=status,
+                )
             except Exception:
                 pass
-        return len(self._filter_inmemory(**filters))
+        docs = self._filter_inmemory(
+            entity_type=entity_type, entity_id=entity_id,
+            customer_id=customer_id, category=category, status=status,
+        )
+        if query:
+            q_lower = query.lower()
+            docs = [d for d in docs if q_lower in (d.get('file_name', '') + d.get('description', '')).lower()]
+        return len(docs)
 
     def _filter_inmemory(self, entity_type=None, entity_id=None, customer_id=None,
                          category=None, status=None, **_ignored) -> List[Dict[str, Any]]:
@@ -635,7 +647,7 @@ class DocumentProcessingService:
                     result=json.dumps(result_data) if result_data else None,
                     error_message=error,
                     processing_time_ms=elapsed_ms,
-                    completed_date=datetime.now().isoformat(),
+                    completed_date=datetime.now(),
                 )
             except Exception as e:
                 logger.error(f"Failed to persist job {job_id}: {e}")

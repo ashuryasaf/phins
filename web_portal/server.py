@@ -13839,7 +13839,7 @@ For claims or questions, please contact:
                     page_size=safe_int(qs.get('page_size', ['50'])[0], 50),
                 )
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps(result).encode('utf-8'))
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -13864,6 +13864,16 @@ For claims or questions, please contact:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
                     return
+
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = result.get('customer_id') or result.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
@@ -27984,8 +27994,23 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'document_id is required'}).encode('utf-8'))
                     return
-                job_types = data.get('job_types', None)
+
                 doc_svc = get_document_service()
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    doc_record = doc_svc.get_document(doc_id)
+                    if not doc_record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                        return
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = doc_record.get('customer_id') or doc_record.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                job_types = data.get('job_types', None)
                 results = doc_svc.process_document(doc_id, job_types)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -28017,7 +28042,22 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'document_id is required'}).encode('utf-8'))
                     return
+
                 doc_svc = get_document_service()
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    doc_record = doc_svc.get_document(doc_id)
+                    if not doc_record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                        return
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = doc_record.get('customer_id') or doc_record.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
                 result = doc_svc.verify_integrity(doc_id)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result).encode('utf-8'))
@@ -28042,8 +28082,23 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'document_id is required'}).encode('utf-8'))
                     return
-                hard = data.get('hard', False)
+
                 doc_svc = get_document_service()
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    doc_record = doc_svc.get_document(doc_id)
+                    if not doc_record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                        return
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = doc_record.get('customer_id') or doc_record.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                hard = data.get('hard', False)
                 success = doc_svc.delete_document(doc_id, hard=hard)
                 if success:
                     self._set_json_headers(200)
