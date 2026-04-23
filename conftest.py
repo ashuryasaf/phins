@@ -126,3 +126,10 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
+    # Reset document processing service in-memory state.
+    try:
+        from services.document_processing_service import reset_document_service
+        reset_document_service()
+    except Exception:
+        pass
+
