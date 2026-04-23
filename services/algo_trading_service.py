@@ -408,7 +408,7 @@ class AlgoTradingService:
                     is_crypto = True
 
                 if is_crypto:
-                    raw = tp.get_crypto_bars(symbol.replace("/", ""), "1Day", 200)
+                    raw = tp.get_crypto_bars(symbol, "1Day", 200)
                     bars_list = []
                     if raw and isinstance(raw, dict):
                         for _sym_key, sym_bars in raw.get("bars", {}).items():

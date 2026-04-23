@@ -40180,6 +40180,12 @@ def run_server(port: int = PORT) -> None:
             print(f"   URL: {db_info['database_url'][:50]}...")
         except Exception:
             pass
+        try:
+            from database.seeds import seed_sample_data
+            seed_sample_data()
+            print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
+        except Exception as e:
+            print(f"Note: Sample data seeding skipped (may already exist): {e}")
     
     # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
     print("👤 Initializing customer accounts...")
