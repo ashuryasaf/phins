@@ -218,34 +218,52 @@ def seed_dynamic_customers(session, user_repo):
             logger.info("Dynamic customers file is empty")
             return
         
+        # Deduplicate: keep the last entry per email/username (most recent)
+        seen: dict = {}
         for customer in dynamic_customers:
+            key = customer.get('username', customer.get('email', ''))
+            if key:
+                seen[key] = customer
+        unique_customers = list(seen.values())
+
+        created_count = 0
+        skipped_count = 0
+        for customer in unique_customers:
             username = customer.get('username', customer.get('email', ''))
             if not username:
                 continue
             
-            # Check if already exists
             existing_user = user_repo.get_by_username(username)
             if existing_user:
                 logger.info(f"Dynamic customer '{username}' already exists, skipping...")
+                skipped_count += 1
                 continue
             
-            # Hash password - use env var for default or generate random
-            default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
-            password_hash = hash_password(customer.get('password', default_cust_pwd))
+            # Use pre-hashed credentials if available, otherwise hash now
+            if (
+                customer.get('password_hash')
+                and customer.get('password_salt')
+                and customer['password_hash'] != 'REDACTED'
+                and customer['password_salt'] != 'REDACTED'
+            ):
+                pw_hash = {'hash': customer['password_hash'], 'salt': customer['password_salt']}
+            else:
+                default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+                pw_hash = hash_password(customer.get('password', default_cust_pwd))
             
-            # Create user
             user_repo.create(
                 username=username,
-                password_hash=password_hash['hash'],
-                password_salt=password_hash['salt'],
+                password_hash=pw_hash['hash'],
+                password_salt=pw_hash['salt'],
                 role='customer',
                 name=customer.get('name', username),
                 email=customer.get('email', username),
                 active=True
             )
+            created_count += 1
             logger.info(f"Created dynamic customer: {username}")
         
-        logger.info(f"Dynamic customers loaded: {len(dynamic_customers)} processed")
+        logger.info(f"Dynamic customers loaded: {len(unique_customers)} processed ({created_count} created, {skipped_count} skipped)")
         
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing dynamic customers file: {e}")
