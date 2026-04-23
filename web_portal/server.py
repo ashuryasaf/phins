@@ -1285,6 +1285,7 @@ except ImportError:
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
 database_enabled = False
+_db_init_done = False  # guards against duplicate init_database + seed_default_users calls
 
 if USE_DATABASE:
     try:
@@ -1315,6 +1316,7 @@ if USE_DATABASE:
                     try:
                         init_database()
                         seed_default_users()
+                        _db_init_done = True
                         print("✓ Database initialized and seeded")
                     except Exception as e:
                         print(f"Warning: Database init/seed failed: {e}")
@@ -3640,6 +3642,7 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
     Append newly registered customer to dynamic seeds file for restart persistence.
     
     SECURITY: Passwords are hashed before storage - NEVER store plain-text passwords.
+    Duplicate emails are replaced (last-write-wins) to keep the file clean.
     """
     try:
         seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
@@ -3653,10 +3656,8 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
         # SECURITY: Hash password before storing
         pwd_hash = hash_password(password)
         
-        # Add new customer with hashed password
-        dynamic_customers.append({
+        new_entry = {
             'username': email,
-            # SECURITY: Store hash and salt, NEVER plain-text password
             'password_hash': pwd_hash['hash'],
             'password_salt': pwd_hash['salt'],
             'name': name,
@@ -3664,13 +3665,20 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
             'customer_id': customer_id,
             'email': email,
             'registered_at': registered_at
-        })
+        }
+        
+        # Remove any existing entries for this email to prevent duplicates
+        dynamic_customers = [
+            c for c in dynamic_customers
+            if (c.get('email') or c.get('username', '')) != email
+        ]
+        dynamic_customers.append(new_entry)
         
         # Save back
         with open(seeds_file, 'w') as f:
             json.dump(dynamic_customers, f, indent=2)
         
-        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file (password hashed)")
+        print(f"[SEEDS] Saved customer {email} to dynamic seeds file (password hashed)")
     except Exception as e:
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
@@ -40093,8 +40101,8 @@ def run_server(port: int = PORT) -> None:
     # Start periodic save thread
     schedule_periodic_save()
     
-    # Initialize database if enabled
-    if USE_DATABASE and database_enabled:
+    # Initialize database if enabled (skip if already done at import time)
+    if USE_DATABASE and database_enabled and not _db_init_done:
         print("📊 Initializing database...")
         try:
             # Check connection
@@ -40160,6 +40168,15 @@ def run_server(port: int = PORT) -> None:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")
             # Don't fail - just fall back to in-memory
+    elif USE_DATABASE and database_enabled and _db_init_done:
+        print("📊 Database already initialized at startup, skipping re-initialization")
+        # Still show connection info for diagnostics
+        try:
+            db_info = get_database_info()
+            print(f"   Type: {db_info['database_type']}")
+            print(f"   URL: {db_info['database_url'][:50]}...")
+        except Exception:
+            pass
     
     # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
     print("👤 Initializing customer accounts...")

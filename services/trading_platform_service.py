@@ -19,6 +19,7 @@ Features:
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 import threading
@@ -29,6 +30,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 import requests
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -677,14 +680,14 @@ class TradingPlatformService:
             "feed": "iex",
         })
         if raw is None:
-            print(f"[TradingPlatform] get_bars({symbol}): Alpaca API returned None — skipping")
+            _log.debug("get_bars(%s): Alpaca API returned None — skipping", symbol)
             return []
         if not isinstance(raw, dict) or "bars" not in raw:
-            print(f"[TradingPlatform] get_bars({symbol}): unexpected response shape: {type(raw)}")
+            _log.debug("get_bars(%s): unexpected response shape: %s", symbol, type(raw))
             return []
         bars_data = raw.get("bars")
         if not isinstance(bars_data, list):
-            print(f"[TradingPlatform] get_bars({symbol}): 'bars' field is not a list: {type(bars_data)}")
+            _log.debug("get_bars(%s): 'bars' field is not a list: %s", symbol, type(bars_data))
             return []
         bars = []
         for b in bars_data:

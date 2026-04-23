@@ -15,96 +15,6 @@
   },
   {
     "username": "newcustomer@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "New Customer",
-    "role": "customer",
-    "customer_id": "CUST-18636",
-    "email": "newcustomer@example.com",
-    "registered_at": "2026-02-25T19:13:38.347955"
-  },
-  {
-    "username": "legacyotp@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "Legacy OTP Payload User",
-    "role": "customer",
-    "customer_id": "CUST-61636",
-    "email": "legacyotp@example.com",
-    "registered_at": "2026-02-25T19:13:38.644060"
-  },
-  {
-    "username": "invitation-flow-primary@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "First Invite User",
-    "role": "customer",
-    "customer_id": "CUST-56824",
-    "email": "invitation-flow-primary@example.com",
-    "registered_at": "2026-02-25T19:13:39.409060"
-  },
-  {
-    "username": "invitation-flow-secondary@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "Replay Invite Success User",
-    "role": "customer",
-    "customer_id": "CUST-49958",
-    "email": "invitation-flow-secondary@example.com",
-    "registered_at": "2026-02-25T19:13:39.503387"
-  },
-  {
-    "username": "ledger_test_customer@example.com",
-    "password_hash": "REDACTED",
-    "password_salt": "REDACTED",
-    "name": "Ledger Test Customer",
-    "role": "customer",
-    "customer_id": "CUST-80663",
-    "email": "ledger_test_customer@example.com",
-    "registered_at": "2026-02-26T14:49:10.551407"
-  },
-  {
-    "username": "newcustomer@example.com",
-    "password_hash": "fb1822ac0e8f118b3a9cbe0b46932f63cd4df51027d7de7a0c6a0e367681b105",
-    "password_salt": "bc3d6175523c60a1010d5139e6c0d817",
-    "name": "New Customer",
-    "role": "customer",
-    "customer_id": "CUST-53968",
-    "email": "newcustomer@example.com",
-    "registered_at": "2026-04-23T13:46:49.539124"
-  },
-  {
-    "username": "legacyotp@example.com",
-    "password_hash": "8f54c63d0901c2f6cdc6b33a9ac5e484c42435c307ee29761e069cd6bf9f0e46",
-    "password_salt": "38adda59457574bbec0275164d800920",
-    "name": "Legacy OTP Payload User",
-    "role": "customer",
-    "customer_id": "CUST-36289",
-    "email": "legacyotp@example.com",
-    "registered_at": "2026-04-23T13:46:50.306589"
-  },
-  {
-    "username": "invitation-flow-primary@example.com",
-    "password_hash": "81f2929a78d2892f294490f10f9629e07abff645b60bd84c88096496eccd539f",
-    "password_salt": "fb3c323004f4bde6f71af4dbdf0aa62d",
-    "name": "First Invite User",
-    "role": "customer",
-    "customer_id": "CUST-52929",
-    "email": "invitation-flow-primary@example.com",
-    "registered_at": "2026-04-23T13:46:51.051476"
-  },
-  {
-    "username": "invitation-flow-secondary@example.com",
-    "password_hash": "f5db7320c7fa3a6dbbbf2b15f48f66025808d6834719e83d1fa806a608b085fb",
-    "password_salt": "c7696edc9490c58190bb43cc9133cc8a",
-    "name": "Replay Invite Success User",
-    "role": "customer",
-    "customer_id": "CUST-77587",
-    "email": "invitation-flow-secondary@example.com",
-    "registered_at": "2026-04-23T13:46:51.119858"
-  },
-  {
-    "username": "newcustomer@example.com",
     "password_hash": "a6f9ec71ae2e33544013a17721cce2a42a72e022c3904e7865e59ffdb56530da",
     "password_salt": "3a3fd5f903c37c7ca2dfe84eebb0a8ed",
     "name": "New Customer",
@@ -136,11 +46,21 @@
   {
     "username": "invitation-flow-secondary@example.com",
     "password_hash": "a9c13fde7db1ba67d0f4b38a854bebc158397d50c787fddeaa311c264167d598",
-    "password_salt": "3c21d09dddd266e73f319046390638f7",
+    "password_salt": "c7696edc9490c58190bb43cc9133cc8a",
     "name": "Replay Invite Success User",
     "role": "customer",
     "customer_id": "CUST-12985",
     "email": "invitation-flow-secondary@example.com",
     "registered_at": "2026-04-23T13:59:48.731491"
+  },
+  {
+    "username": "ledger_test_customer@example.com",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED",
+    "name": "Ledger Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-80663",
+    "email": "ledger_test_customer@example.com",
+    "registered_at": "2026-02-26T14:49:10.551407"
   }
 ]

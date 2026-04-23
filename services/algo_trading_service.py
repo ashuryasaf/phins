@@ -365,7 +365,13 @@ class AlgoTradingService:
         self._fill_from_portfolio_data()
 
     def _try_load_live_history(self):
-        """Fetch real OHLCV bars from Alpaca for all known symbols."""
+        """Fetch real OHLCV bars from Alpaca for all known symbols.
+
+        Alpaca stock bars only support US equities/ETFs.  Currencies (EUR, CHF,
+        …) and indexes (^SPX, ^DAX, …) are not available through that endpoint,
+        so we skip them to avoid noisy log lines.  Crypto symbols are routed
+        through the dedicated crypto bars endpoint.
+        """
         try:
             from services.trading_platform_service import get_trading_platform
             tp = get_trading_platform()
@@ -374,18 +380,52 @@ class AlgoTradingService:
         except Exception:
             return
 
-        symbols_to_fetch = set()
+        try:
+            from services.investment_portfolio_service import AssetClass as _AC
+        except ImportError:
+            _AC = None
+
+        _SKIP_CLASSES = set()
+        if _AC:
+            _SKIP_CLASSES = {_AC.CURRENCY, _AC.INDEX}
+
+        market_data = {}
         if self.portfolio_service and hasattr(self.portfolio_service, 'MARKET_DATA'):
-            symbols_to_fetch.update(self.portfolio_service.MARKET_DATA.keys())
+            market_data = self.portfolio_service.MARKET_DATA
+
+        symbols_to_fetch = set(market_data.keys())
         symbols_to_fetch.update(["SPY", "QQQ", "BTC/USD", "ETH/USD", "GLD", "BND"])
 
         for symbol in symbols_to_fetch:
             try:
+                asset_class = market_data.get(symbol, {}).get("class")
+
+                if asset_class in _SKIP_CLASSES:
+                    continue
+
                 is_crypto = "/" in symbol
+                if not is_crypto and _AC and asset_class == _AC.CRYPTO:
+                    is_crypto = True
+
                 if is_crypto:
-                    bars = tp.get_bars(symbol.replace("/", ""), "1Day", 200)
+                    raw = tp.get_crypto_bars(symbol.replace("/", ""), "1Day", 200)
+                    bars_list = []
+                    if raw and isinstance(raw, dict):
+                        for _sym_key, sym_bars in raw.get("bars", {}).items():
+                            if isinstance(sym_bars, list):
+                                for b in sym_bars:
+                                    bars_list.append({
+                                        "date": b.get("t"),
+                                        "open": float(b.get("o", 0)),
+                                        "high": float(b.get("h", 0)),
+                                        "low": float(b.get("l", 0)),
+                                        "close": float(b.get("c", 0)),
+                                        "volume": float(b.get("v", 0)),
+                                    })
+                    bars = bars_list
                 else:
                     bars = tp.get_bars(symbol, "1Day", 200)
+
                 if not bars:
                     continue
                 history = deque(maxlen=200)
