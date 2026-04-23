@@ -109,6 +109,36 @@ class DocumentRepository(BaseRepository):
             logger.error(f"Error searching documents: {e}")
             return []
 
+    def search_all(self, query: Optional[str] = None,
+                   entity_type: Optional[str] = None, entity_id: Optional[str] = None,
+                   customer_id: Optional[str] = None, category: Optional[str] = None,
+                   status: Optional[str] = None,
+                   limit: int = 50, offset: int = 0) -> List[Document]:
+        """Unified search that chains all optional filters with pagination."""
+        try:
+            q = self.session.query(Document).filter(Document.is_deleted == False)
+            if query:
+                pattern = f"%{query}%"
+                q = q.filter(
+                    (Document.file_name.ilike(pattern))
+                    | (Document.description.ilike(pattern))
+                    | (Document.document_type.ilike(pattern))
+                )
+            if entity_type:
+                q = q.filter(Document.entity_type == entity_type)
+            if entity_id:
+                q = q.filter(Document.entity_id == entity_id)
+            if customer_id:
+                q = q.filter(Document.customer_id == customer_id)
+            if category:
+                q = q.filter(Document.category == category)
+            if status:
+                q = q.filter(Document.status == status)
+            return q.order_by(desc(Document.created_date)).offset(offset).limit(limit).all()
+        except SQLAlchemyError as e:
+            logger.error(f"Error in search_all: {e}")
+            return []
+
     def soft_delete(self, doc_id: str) -> bool:
         return self.update(doc_id, is_deleted=True) is not None
 
@@ -134,18 +164,18 @@ class DocumentRepository(BaseRepository):
             q = self.session.query(Document).filter(Document.is_deleted == False)
             if customer_id:
                 q = q.filter(Document.customer_id == customer_id)
-            total = q.count()
-            total_size = sum(d.file_size or 0 for d in q.all())
-            by_category = {}
-            for doc in q.all():
+            all_docs = q.all()
+            total_size = 0
+            by_category: Dict[str, int] = {}
+            by_status: Dict[str, int] = {}
+            for doc in all_docs:
+                total_size += doc.file_size or 0
                 cat = doc.category or 'general'
                 by_category[cat] = by_category.get(cat, 0) + 1
-            by_status = {}
-            for doc in q.all():
                 st = doc.status or 'uploaded'
                 by_status[st] = by_status.get(st, 0) + 1
             return {
-                'total_documents': total,
+                'total_documents': len(all_docs),
                 'total_size_bytes': total_size,
                 'by_category': by_category,
                 'by_status': by_status,

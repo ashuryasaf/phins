@@ -83,6 +83,12 @@ CATEGORY_BY_EXTENSION = {
 }
 
 
+ALLOWED_CATEGORIES = {
+    'identity', 'legal', 'medical', 'financial', 'policy', 'claim',
+    'underwriting', 'report', 'media', 'table', 'general',
+}
+
+
 class ProcessingJobType(str, Enum):
     METADATA_EXTRACTION = 'metadata_extraction'
     TEXT_EXTRACTION = 'text_extraction'
@@ -139,6 +145,7 @@ class DocumentProcessingService:
     def __init__(self, storage_root: Optional[str] = None, db_manager=None):
         self.storage_root = storage_root or DOCUMENT_STORAGE_ROOT
         self.db_manager = db_manager
+        self._inmemory_store: Dict[str, Dict[str, Any]] = {}
         os.makedirs(self.storage_root, exist_ok=True)
 
     # ── Upload ────────────────────────────────────────────────────────────────
@@ -178,7 +185,9 @@ class DocumentProcessingService:
             raise ValueError(f'File type {ext} not allowed')
 
         resolved_mime = mime_type or mimetypes.guess_type(file_name)[0] or 'application/octet-stream'
-        resolved_category = category or self._classify_category(file_name, resolved_mime)
+        resolved_category = self._sanitise_category(
+            category or self._classify_category(file_name, resolved_mime)
+        )
 
         sha256 = hashlib.sha256(raw_bytes).hexdigest()
         md5 = hashlib.md5(raw_bytes).hexdigest()
@@ -286,14 +295,21 @@ class DocumentProcessingService:
         record = self._load_record(doc_id)
         if not record:
             return None
-        result = dict(record)
+        if isinstance(record, dict):
+            result = dict(record)
+            storage_path = record.get('storage_path', '')
+            expected_sha = record.get('sha256_checksum')
+        else:
+            result = record.to_dict() if hasattr(record, 'to_dict') else {'id': record.id}
+            storage_path = record.storage_path
+            expected_sha = record.sha256_checksum
         if include_data:
-            raw = self._read_from_disk(record.get('storage_path', ''))
+            raw = self._read_from_disk(storage_path)
             if raw is not None:
                 on_disk_sha = hashlib.sha256(raw).hexdigest()
-                if on_disk_sha != record.get('sha256_checksum'):
+                if on_disk_sha != expected_sha:
                     logger.error(f"Integrity mismatch for {doc_id}: expected "
-                                 f"{record.get('sha256_checksum')}, got {on_disk_sha}")
+                                 f"{expected_sha}, got {on_disk_sha}")
                     result['integrity_warning'] = True
                 result['data'] = base64.b64encode(raw).decode('ascii')
                 result['data_encoding'] = 'base64'
@@ -406,10 +422,22 @@ class DocumentProcessingService:
 
     # ── Internal: disk storage ────────────────────────────────────────────────
 
+    @staticmethod
+    def _sanitise_category(category: str) -> str:
+        """Ensure category is a safe, whitelisted directory name (no path traversal)."""
+        clean = re.sub(r'[^a-zA-Z0-9_-]', '', (category or 'general').strip())
+        if clean not in ALLOWED_CATEGORIES:
+            clean = 'general'
+        return clean
+
     def _write_to_disk(self, safe_name: str, raw_bytes: bytes, category: str) -> str:
-        cat_dir = os.path.join(self.storage_root, category)
+        safe_category = self._sanitise_category(category)
+        cat_dir = os.path.join(self.storage_root, safe_category)
         os.makedirs(cat_dir, exist_ok=True)
         path = os.path.join(cat_dir, safe_name)
+        resolved = os.path.realpath(path)
+        if not resolved.startswith(os.path.realpath(self.storage_root)):
+            raise ValueError('Invalid storage path')
         tmp_path = path + '.tmp'
         with open(tmp_path, 'wb') as f:
             f.write(raw_bytes)
@@ -431,8 +459,6 @@ class DocumentProcessingService:
         return hashlib.sha256(raw).hexdigest() == expected_sha256
 
     # ── Internal: record persistence (DB-first, in-memory fallback) ──────────
-
-    _inmemory_store: Dict[str, Dict[str, Any]] = {}
 
     def _persist_record(self, doc: Dict[str, Any]) -> None:
         if self.db_manager:
@@ -478,35 +504,18 @@ class DocumentProcessingService:
                         limit=50, offset=0):
         if self.db_manager:
             try:
-                if query:
-                    return self.db_manager.documents.search(
-                        query, category=category, entity_type=entity_type,
-                        customer_id=customer_id, limit=limit, offset=offset,
-                    )
-                if entity_type and entity_id:
-                    return self.db_manager.documents.get_by_entity(entity_type, entity_id)
-                if customer_id:
-                    return self.db_manager.documents.get_by_customer(customer_id)
-                if category:
-                    return self.db_manager.documents.get_by_category(category, limit, offset)
-                if status:
-                    return self.db_manager.documents.get_by_status(status, limit)
-                return self.db_manager.documents.get_all(limit=limit, offset=offset)
+                return self.db_manager.documents.search_all(
+                    query=query, entity_type=entity_type, entity_id=entity_id,
+                    customer_id=customer_id, category=category, status=status,
+                    limit=limit, offset=offset,
+                )
             except Exception as e:
                 logger.error(f"DB search error: {e}")
 
-        docs = list(self._inmemory_store.values())
-        docs = [d for d in docs if not d.get('is_deleted')]
-        if entity_type:
-            docs = [d for d in docs if d.get('entity_type') == entity_type]
-        if entity_id:
-            docs = [d for d in docs if d.get('entity_id') == entity_id]
-        if customer_id:
-            docs = [d for d in docs if d.get('customer_id') == customer_id]
-        if category:
-            docs = [d for d in docs if d.get('category') == category]
-        if status:
-            docs = [d for d in docs if d.get('status') == status]
+        docs = self._filter_inmemory(
+            entity_type=entity_type, entity_id=entity_id,
+            customer_id=customer_id, category=category, status=status,
+        )
         if query:
             q_lower = query.lower()
             docs = [d for d in docs if q_lower in (d.get('file_name', '') + d.get('description', '')).lower()]
@@ -518,9 +527,23 @@ class DocumentProcessingService:
                 return len(self._search_records(**filters, limit=10000, offset=0))
             except Exception:
                 pass
-        docs = list(self._inmemory_store.values())
-        docs = [d for d in docs if not d.get('is_deleted')]
-        return len(docs)
+        return len(self._filter_inmemory(**filters))
+
+    def _filter_inmemory(self, entity_type=None, entity_id=None, customer_id=None,
+                         category=None, status=None, **_ignored) -> List[Dict[str, Any]]:
+        """Apply all filters to the in-memory store and return matching docs."""
+        docs = [d for d in self._inmemory_store.values() if not d.get('is_deleted')]
+        if entity_type:
+            docs = [d for d in docs if d.get('entity_type') == entity_type]
+        if entity_id:
+            docs = [d for d in docs if d.get('entity_id') == entity_id]
+        if customer_id:
+            docs = [d for d in docs if d.get('customer_id') == customer_id]
+        if category:
+            docs = [d for d in docs if d.get('category') == category]
+        if status:
+            docs = [d for d in docs if d.get('status') == status]
+        return docs
 
     def _check_duplicate(self, sha256: str, entity_type: Optional[str], entity_id: Optional[str]) -> Optional[str]:
         if self.db_manager:
@@ -612,7 +635,7 @@ class DocumentProcessingService:
                     result=json.dumps(result_data) if result_data else None,
                     error_message=error,
                     processing_time_ms=elapsed_ms,
-                    completed_date=datetime.utcnow().isoformat(),
+                    completed_date=datetime.now().isoformat(),
                 )
             except Exception as e:
                 logger.error(f"Failed to persist job {job_id}: {e}")
@@ -1096,4 +1119,3 @@ def reset_document_service() -> None:
     """Reset the singleton (mainly for tests)."""
     global _default_service
     _default_service = None
-    DocumentProcessingService._inmemory_store.clear()
