@@ -1,0 +1,4 @@
+MEDICAL REPORT
+Patient: John Doe
+Diagnosis: Terminal illness - Stage 4 Lung Cancer
+Risk Assessment: HIGH RISK

@@ -1,0 +1,112 @@
+{
+  "allocation_profile": {
+    "algo_pct": 5.0,
+    "investment_pct": 65.0,
+    "risk_pct": 50.0,
+    "savings_pct": 50.0,
+    "wallet_pct": 30.0
+  },
+  "details": {
+    "payment_method": "health_wallet",
+    "pricing_plan": {
+      "base_amount": 80.0,
+      "discounted_rate_amount": 3.54,
+      "discounted_rate_pct": 0.035,
+      "expense_loading_amount": 12.0,
+      "expense_loading_pct": 0.15,
+      "final_customer_amount": 97.66,
+      "gross_before_discount": 101.2,
+      "profit_margin_amount": 9.2,
+      "profit_margin_pct": 0.1
+    },
+    "product_id": "PROD-DOC-001",
+    "provider": "PHINS Labs",
+    "purchase_id": "PUR-20260423132935-1558"
+  },
+  "document_standard": "PHINS_CUSTOMER_TAX_YEAR_PREMIUM_REPORT_V1",
+  "generated_at": "2026-04-23T13:29:35.180504",
+  "integrity": {
+    "integrity_valid": false,
+    "verified_balances_available": true
+  },
+  "invoice_entity_id": "TX-20260423132935-63154",
+  "invoice_entity_type": "medical_purchase",
+  "invoice_token_hash": "5cc34e86db52095c6bfe053af024e102cec5507fa184d1dedb5aee77e9ea38f1",
+  "issued_at": "2026-04-23T13:29:35.181099",
+  "ledger_transaction_id": "TX-20260423132935-63154",
+  "nft_token_id": "NFT-20260423132935-79731",
+  "personal_details": {
+    "address": null,
+    "age": null,
+    "city": null,
+    "customer_id": "CUST-PURCHASE-DOCS",
+    "date_of_birth": null,
+    "email": "purchasedocs@example.com",
+    "full_name": "Purchase Doc Customer",
+    "phone": null,
+    "state": null,
+    "zip": null
+  },
+  "premium_summary": {
+    "current_action_amount": 97.66,
+    "paid_bill_count": 0,
+    "paid_premium_total": 0,
+    "premium_ledger_entries_count": 0,
+    "risk_paid_total": 0.0,
+    "savings_paid_total": 0.0,
+    "tax_year": 2026
+  },
+  "savings_usage": {
+    "bonds_balance": 0.0,
+    "crypto_balance": 0.0,
+    "index_balance": 0.0,
+    "investment_balance": 0.0,
+    "verified_algo_trading_balance": 0.0,
+    "verified_investment_balance": 0.0,
+    "verified_total_savings": 902.34,
+    "verified_wallet_balance": 902.34,
+    "wallet_balance": 902.34
+  },
+  "source_metadata": {
+    "payment_method": "health_wallet",
+    "pricing_plan": {
+      "base_amount": 80.0,
+      "discounted_rate_amount": 3.54,
+      "discounted_rate_pct": 0.035,
+      "expense_loading_amount": 12.0,
+      "expense_loading_pct": 0.15,
+      "final_customer_amount": 97.66,
+      "gross_before_discount": 101.2,
+      "profit_margin_amount": 9.2,
+      "profit_margin_pct": 0.1
+    },
+    "product_id": "PROD-DOC-001",
+    "provider": "PHINS Labs",
+    "purchase_id": "PUR-20260423132935-1558"
+  },
+  "supporting_records": {
+    "bill_ids": [],
+    "ledger_transaction_ids": []
+  },
+  "tax_year": 2026,
+  "tax_year_summary": {
+    "current_action_amount": 97.66,
+    "paid_bill_count": 0,
+    "paid_premium_total": 0,
+    "premium_ledger_entries_count": 0,
+    "risk_paid_total": 0.0,
+    "savings_paid_total": 0.0,
+    "tax_year": 2026
+  },
+  "verified_balances": {
+    "bonds_balance": 0.0,
+    "crypto_balance": 0.0,
+    "index_balance": 0.0,
+    "investment_balance": 0.0,
+    "verified_algo_trading_balance": 0.0,
+    "verified_investment_balance": 0.0,
+    "verified_total_savings": 902.34,
+    "verified_wallet_balance": 902.34,
+    "wallet_balance": 902.34
+  }
+}

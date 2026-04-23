@@ -1,0 +1,24 @@
+{
+  "action_type": "premium_payment_ledger",
+  "amount": 150.0,
+  "currency": "USD",
+  "customer_id": "TEST-SUMM-AUTOPAY-CUST-001",
+  "customer_name": "Summary AutoPay Test",
+  "description": "Ledger-backed premium payment for TEST-SUMM-AUTOPAY-CUST-001",
+  "details": {
+    "bills_updated": [
+      "AUTOPAY-20260401-7454"
+    ],
+    "payment_method": "credit_card",
+    "policy_id": "TEST-SUMM-AUTOPAY-POL-001"
+  },
+  "document_standard": "PHINS_INSTITUTIONAL_ACCOUNTING_BOOK_V1",
+  "entity_id": "TX-20260423132029-40833",
+  "institutional_views": {
+    "balance_sheet_category": "service_revenue",
+    "ledger_classification": "premium_payment_ledger",
+    "nft_supported": true,
+    "tokenized_invoice_supported": true
+  },
+  "recorded_at": "2026-04-23T13:20:29.818789"
+}

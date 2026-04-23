@@ -234,7 +234,7 @@ class DocumentProcessingService:
                 'ai_summary': extracted.get('summary', ''),
                 'ai_tags': json.dumps(extracted.get('tags', [])),
                 'confidence_score': extracted.get('confidence', None),
-                'processed_date': datetime.utcnow().isoformat(),
+                'processed_date': datetime.now().isoformat(),
             })
 
         return UploadResult(

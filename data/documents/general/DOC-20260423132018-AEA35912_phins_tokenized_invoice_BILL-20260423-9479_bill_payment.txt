@@ -1,0 +1,96 @@
+{
+  "allocation_profile": {
+    "algo_pct": 5.0,
+    "investment_pct": 65.0,
+    "risk_pct": 50.0,
+    "savings_pct": 50.0,
+    "wallet_pct": 30.0
+  },
+  "details": {
+    "amount_due": 1200.0,
+    "amount_paid_total": 600.0,
+    "bill_status": "partial",
+    "payment_method": "card",
+    "policy_id": "POL-20260423-9613"
+  },
+  "document_standard": "PHINS_CUSTOMER_TAX_YEAR_PREMIUM_REPORT_V1",
+  "generated_at": "2026-04-23T13:20:18.586884",
+  "integrity": {
+    "integrity_valid": true,
+    "verified_balances_available": true
+  },
+  "invoice_entity_id": "BILL-20260423-9479",
+  "invoice_entity_type": "bill_payment",
+  "invoice_token_hash": "26ed96b5bafba3d8a21b5d38e8b21b586ebc2d906f0b5637acdf60c8f9744951",
+  "issued_at": "2026-04-23T13:20:18.586958",
+  "ledger_transaction_id": "TX-20260423132018-46032",
+  "nft_token_id": "NFT-20260423132018-11037",
+  "personal_details": {
+    "address": null,
+    "age": null,
+    "city": null,
+    "customer_id": "CUST-29092",
+    "date_of_birth": null,
+    "email": "billpay@example.com",
+    "full_name": "Bill Pay Test",
+    "phone": "",
+    "state": null,
+    "zip": null
+  },
+  "premium_summary": {
+    "current_action_amount": 600.0,
+    "paid_bill_count": 1,
+    "paid_premium_total": 600.0,
+    "premium_ledger_entries_count": 1,
+    "risk_paid_total": 600.0,
+    "savings_paid_total": 0.0,
+    "tax_year": 2026
+  },
+  "savings_usage": {
+    "bonds_balance": 0.0,
+    "crypto_balance": 0.0,
+    "index_balance": 0.0,
+    "investment_balance": 0.0,
+    "verified_algo_trading_balance": 0.0,
+    "verified_investment_balance": 0.0,
+    "verified_total_savings": 0.0,
+    "verified_wallet_balance": 0.0,
+    "wallet_balance": 0.0
+  },
+  "source_metadata": {
+    "amount_due": 1200.0,
+    "amount_paid_total": 600.0,
+    "bill_status": "partial",
+    "payment_method": "card",
+    "policy_id": "POL-20260423-9613"
+  },
+  "supporting_records": {
+    "bill_ids": [
+      "BILL-20260423-9479"
+    ],
+    "ledger_transaction_ids": [
+      "TX-20260423132018-46032"
+    ]
+  },
+  "tax_year": 2026,
+  "tax_year_summary": {
+    "current_action_amount": 600.0,
+    "paid_bill_count": 1,
+    "paid_premium_total": 600.0,
+    "premium_ledger_entries_count": 1,
+    "risk_paid_total": 600.0,
+    "savings_paid_total": 0.0,
+    "tax_year": 2026
+  },
+  "verified_balances": {
+    "bonds_balance": 0.0,
+    "crypto_balance": 0.0,
+    "index_balance": 0.0,
+    "investment_balance": 0.0,
+    "verified_algo_trading_balance": 0.0,
+    "verified_investment_balance": 0.0,
+    "verified_total_savings": 0.0,
+    "verified_wallet_balance": 0.0,
+    "wallet_balance": 0.0
+  }
+}

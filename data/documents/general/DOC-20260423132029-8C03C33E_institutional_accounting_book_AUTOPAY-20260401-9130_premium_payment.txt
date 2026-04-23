@@ -1,0 +1,24 @@
+{
+  "action_type": "premium_payment",
+  "amount": 100.0,
+  "currency": "USD",
+  "customer_id": "TEST-AUTOPAY-CUST-002",
+  "customer_name": "Auto Pay Test Customer",
+  "description": "Premium payment for bill AUTOPAY-20260401-9130",
+  "details": {
+    "amount_paid": 100.0,
+    "bill_status": "paid",
+    "billed_amount": 100.0,
+    "payment_method": "credit_card",
+    "policy_id": "TEST-AUTOPAY-POL-002"
+  },
+  "document_standard": "PHINS_INSTITUTIONAL_ACCOUNTING_BOOK_V1",
+  "entity_id": "AUTOPAY-20260401-9130",
+  "institutional_views": {
+    "balance_sheet_category": "service_revenue",
+    "ledger_classification": "premium_payment",
+    "nft_supported": true,
+    "tokenized_invoice_supported": true
+  },
+  "recorded_at": "2026-04-23T13:20:29.838644"
+}

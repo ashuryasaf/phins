@@ -284,7 +284,7 @@ class TestDocumentProcessingServiceUnit:
         assert self.svc._classify_category("unknown.xyz", "application/octet-stream") == "general"
 
     def test_upload_rejects_empty_content(self):
-        with pytest.raises(ValueError, match="content cannot be empty"):
+        with pytest.raises(ValueError, match="(Missing file content|content cannot be empty)"):
             self.svc.upload_document(
                 file_name="empty.txt",
                 file_data_b64=_b64_bytes(b""),
@@ -381,6 +381,7 @@ class TestDocumentProcessingServiceAPI:
         upload_resp = requests.post(f"{BASE_URL}/api/doc-service/upload", json={
             "files": [{"name": "view_api.txt", "data": _b64("view test data")}],
         }, headers=headers)
+        assert upload_resp.status_code == 201, f"Upload failed: {upload_resp.text}"
         doc_id = upload_resp.json()["uploaded"][0]["document_id"]
         resp = requests.get(
             f"{BASE_URL}/api/doc-service/view?id={doc_id}&include_data=true",

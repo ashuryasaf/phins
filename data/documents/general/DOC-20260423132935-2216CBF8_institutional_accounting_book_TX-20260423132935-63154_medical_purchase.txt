@@ -1,0 +1,34 @@
+{
+  "action_type": "medical_purchase",
+  "amount": 97.66,
+  "currency": "USD",
+  "customer_id": "CUST-PURCHASE-DOCS",
+  "customer_name": "Purchase Doc Customer",
+  "description": "Medical purchase for Institutional Lab Service",
+  "details": {
+    "payment_method": "health_wallet",
+    "pricing_plan": {
+      "base_amount": 80.0,
+      "discounted_rate_amount": 3.54,
+      "discounted_rate_pct": 0.035,
+      "expense_loading_amount": 12.0,
+      "expense_loading_pct": 0.15,
+      "final_customer_amount": 97.66,
+      "gross_before_discount": 101.2,
+      "profit_margin_amount": 9.2,
+      "profit_margin_pct": 0.1
+    },
+    "product_id": "PROD-DOC-001",
+    "provider": "PHINS Labs",
+    "purchase_id": "PUR-20260423132935-1558"
+  },
+  "document_standard": "PHINS_INSTITUTIONAL_ACCOUNTING_BOOK_V1",
+  "entity_id": "TX-20260423132935-63154",
+  "institutional_views": {
+    "balance_sheet_category": "service_revenue",
+    "ledger_classification": "medical_purchase",
+    "nft_supported": true,
+    "tokenized_invoice_supported": true
+  },
+  "recorded_at": "2026-04-23T13:29:35.180497"
+}

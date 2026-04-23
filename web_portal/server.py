@@ -27935,19 +27935,22 @@ For claims or questions, please contact:
                     else:
                         uploaded.append(rd)
 
-                        store_policy_document(
-                            file_name=r.file_name,
-                            mime_type=r.mime_type,
-                            file_data_b64=base64.b64encode(
-                                open(r.storage_path, 'rb').read()
-                            ).decode('ascii') if r.storage_path and os.path.exists(r.storage_path) else '',
-                            entity_type=entity_type,
-                            entity_id=entity_id,
-                            document_type=document_type,
-                            description=description,
-                            uploaded_by=actor,
-                            owner_customer_id=customer_id or '',
-                        )
+                        POLICY_DOCUMENTS[r.document_id] = {
+                            'id': r.document_id,
+                            'name': r.file_name,
+                            'type': r.mime_type,
+                            'size': r.file_size,
+                            'data_encoding': 'disk',
+                            'sha256': r.sha256,
+                            'entity_type': entity_type,
+                            'entity_id': entity_id,
+                            'document_type': document_type,
+                            'description': description,
+                            'uploaded_at': datetime.now().isoformat(),
+                            'uploaded_by': actor,
+                            'uploaded_by_customer': customer_id or '',
+                            'storage_path': r.storage_path,
+                        }
                 save_ledger_data()
 
                 self._set_json_headers(201)
