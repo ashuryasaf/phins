@@ -27,6 +27,8 @@ from database.repositories import (
     PlatformLedgerRepository,
     ActuarialRepository,
     TokenRepository,
+    DocumentRepository,
+    DocumentProcessingJobRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,8 @@ class DatabaseManager:
         self._platform_ledger = None
         self._actuarial = None
         self._tokens = None
+        self._documents = None
+        self._processing_jobs = None
     
     def _ensure_session(self) -> Session:
         """
@@ -97,6 +101,8 @@ class DatabaseManager:
         self._platform_ledger = None
         self._actuarial = None
         self._tokens = None
+        self._documents = None
+        self._processing_jobs = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -174,6 +180,20 @@ class DatabaseManager:
         if self._tokens is None:
             self._tokens = TokenRepository(self._ensure_session())
         return self._tokens
+
+    @property
+    def documents(self) -> DocumentRepository:
+        """Get document repository"""
+        if self._documents is None:
+            self._documents = DocumentRepository(self._ensure_session())
+        return self._documents
+
+    @property
+    def processing_jobs(self) -> DocumentProcessingJobRepository:
+        """Get document processing-job repository"""
+        if self._processing_jobs is None:
+            self._processing_jobs = DocumentProcessingJobRepository(self._ensure_session())
+        return self._processing_jobs
     
     def commit(self):
         """Commit current transaction"""

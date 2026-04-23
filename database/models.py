@@ -2322,3 +2322,156 @@ class TrustedDevice(Base):
             'last_seen': self.last_seen.isoformat() if self.last_seen else None,
             'trusted_at': self.trusted_at.isoformat() if self.trusted_at else None
         }
+
+
+# ── Document & File Management ───────────────────────────────────────────────
+
+
+class DocumentStatus(str, enum.Enum):
+    PENDING = "pending"
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    FAILED = "failed"
+    ARCHIVED = "archived"
+
+
+class DocumentCategory(str, enum.Enum):
+    IDENTITY = "identity"
+    LEGAL = "legal"
+    MEDICAL = "medical"
+    FINANCIAL = "financial"
+    POLICY = "policy"
+    CLAIM = "claim"
+    UNDERWRITING = "underwriting"
+    REPORT = "report"
+    MEDIA = "media"
+    TABLE = "table"
+    GENERAL = "general"
+
+
+class Document(Base):
+    """Persistent document storage with full metadata and integrity tracking.
+
+    Stores uploaded files (ID docs, medical records, legal papers, videos,
+    audio, spreadsheets, PDFs, images, etc.) with SHA-256 checksums, MIME
+    type detection, processing status, and extracted metadata.  Binary
+    content is stored on disk; the database holds paths and metadata.
+    """
+    __tablename__ = 'documents'
+
+    id = Column(String(120), primary_key=True)
+    file_name = Column(String(500), nullable=False, index=True)
+    original_file_name = Column(String(500), nullable=False)
+    mime_type = Column(String(200), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    file_extension = Column(String(20), nullable=True)
+    storage_path = Column(Text, nullable=False)
+
+    sha256_checksum = Column(String(64), nullable=False, index=True)
+    md5_checksum = Column(String(32), nullable=True)
+
+    category = Column(String(50), nullable=False, default='general', index=True)
+    document_type = Column(String(100), nullable=True, index=True)
+    description = Column(Text, nullable=True)
+
+    entity_type = Column(String(50), nullable=True, index=True)
+    entity_id = Column(String(120), nullable=True, index=True)
+    customer_id = Column(String(50), nullable=True, index=True)
+
+    uploaded_by = Column(String(100), nullable=True, index=True)
+    uploaded_by_role = Column(String(50), nullable=True)
+
+    status = Column(String(30), nullable=False, default='uploaded', index=True)
+    processing_status = Column(String(30), nullable=True)
+    processing_result = Column(Text, nullable=True)
+
+    extracted_metadata = Column(Text, nullable=True)
+    extracted_text = Column(Text, nullable=True)
+    ai_summary = Column(Text, nullable=True)
+    ai_tags = Column(Text, nullable=True)
+    confidence_score = Column(Float, nullable=True)
+
+    is_archived = Column(Boolean, default=False, index=True)
+    is_deleted = Column(Boolean, default=False)
+    version = Column(Integer, default=1)
+    parent_document_id = Column(String(120), nullable=True, index=True)
+
+    created_date = Column(DateTime, default=datetime.utcnow)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    processed_date = Column(DateTime, nullable=True)
+
+    processing_jobs = relationship('DocumentProcessingJob', back_populates='document',
+                                   cascade='all, delete-orphan')
+
+    def to_dict(self, include_extracted=False):
+        result = {
+            'id': self.id,
+            'file_name': self.file_name,
+            'original_file_name': self.original_file_name,
+            'mime_type': self.mime_type,
+            'file_size': self.file_size,
+            'file_extension': self.file_extension,
+            'sha256_checksum': self.sha256_checksum,
+            'category': self.category,
+            'document_type': self.document_type,
+            'description': self.description,
+            'entity_type': self.entity_type,
+            'entity_id': self.entity_id,
+            'customer_id': self.customer_id,
+            'uploaded_by': self.uploaded_by,
+            'uploaded_by_role': self.uploaded_by_role,
+            'status': self.status,
+            'processing_status': self.processing_status,
+            'confidence_score': self.confidence_score,
+            'is_archived': self.is_archived,
+            'version': self.version,
+            'parent_document_id': self.parent_document_id,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+            'processed_date': self.processed_date.isoformat() if self.processed_date else None,
+        }
+        if include_extracted:
+            result['extracted_metadata'] = (
+                json.loads(self.extracted_metadata) if self.extracted_metadata else None
+            )
+            result['extracted_text'] = self.extracted_text
+            result['ai_summary'] = self.ai_summary
+            result['ai_tags'] = json.loads(self.ai_tags) if self.ai_tags else []
+            result['processing_result'] = (
+                json.loads(self.processing_result) if self.processing_result else None
+            )
+        return result
+
+
+class DocumentProcessingJob(Base):
+    """Tracks individual processing tasks run against a document."""
+    __tablename__ = 'document_processing_jobs'
+
+    id = Column(String(120), primary_key=True)
+    document_id = Column(String(120), ForeignKey('documents.id', ondelete='CASCADE'),
+                         nullable=False, index=True)
+    job_type = Column(String(50), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default='pending', index=True)
+    input_params = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    processing_time_ms = Column(Integer, nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow)
+    completed_date = Column(DateTime, nullable=True)
+
+    document = relationship('Document', back_populates='processing_jobs')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'document_id': self.document_id,
+            'job_type': self.job_type,
+            'status': self.status,
+            'input_params': json.loads(self.input_params) if self.input_params else None,
+            'result': json.loads(self.result) if self.result else None,
+            'error_message': self.error_message,
+            'processing_time_ms': self.processing_time_ms,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'completed_date': self.completed_date.isoformat() if self.completed_date else None,
+        }

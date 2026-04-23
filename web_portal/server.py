@@ -35,6 +35,10 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 from services.platform_event_ledger_service import PlatformEventLedgerService
+from services.document_processing_service import (
+    DocumentProcessingService, get_document_service, reset_document_service,
+    ProcessingJobType,
+)
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -7258,6 +7262,24 @@ def store_policy_document(
         'uploaded_by_customer': owner_customer_id or '',
     }
     POLICY_DOCUMENTS[doc_id] = doc
+
+    try:
+        doc_svc = get_document_service()
+        doc_svc.upload_document(
+            file_name=file_name,
+            file_data_b64=file_data_b64,
+            mime_type=mime_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            document_type=document_type,
+            description=description,
+            uploaded_by=uploaded_by,
+            customer_id=owner_customer_id,
+            skip_processing=True,
+        )
+    except Exception as e:
+        print(f"[doc-service] Disk persistence warning for {doc_id}: {e}")
+
     return doc
 
 
@@ -13788,6 +13810,106 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        # ========== DOCUMENT PROCESSING SERVICE (GET) ENDPOINTS ==========
+
+        # GET /api/doc-service/list - Persistent document list with search/filter/pagination
+        if path == '/api/doc-service/list':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                eff_role = get_effective_role(session)
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+                customer_id = session_customer_id
+                if is_admin:
+                    customer_id = qs.get('customer_id', [None])[0] or None
+
+                doc_svc = get_document_service()
+                result = doc_svc.list_documents(
+                    entity_type=qs.get('entity_type', [None])[0],
+                    entity_id=qs.get('entity_id', [None])[0],
+                    customer_id=customer_id if not is_admin or qs.get('customer_id', [None])[0] else None,
+                    category=qs.get('category', [None])[0],
+                    status=qs.get('status', [None])[0],
+                    search_query=qs.get('q', [None])[0],
+                    page=safe_int(qs.get('page', ['1'])[0], 1),
+                    page_size=safe_int(qs.get('page_size', ['50'])[0], 50),
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # GET /api/doc-service/view?id=<doc_id> - View/download a persistent document
+        if path == '/api/doc-service/view':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                doc_id = qs.get('id', [None])[0]
+                if not doc_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Document ID required (id=...)'}).encode('utf-8'))
+                    return
+                include_data = qs.get('include_data', ['false'])[0].lower() == 'true'
+                doc_svc = get_document_service()
+                result = doc_svc.get_document(doc_id, include_data=include_data)
+                if not result:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                    return
+
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = result.get('customer_id') or result.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # GET /api/doc-service/statistics - Document statistics
+        if path == '/api/doc-service/statistics':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                eff_role = get_effective_role(session)
+                session_customer_id = get_session_customer_id(session)
+                customer_id = None
+                if eff_role == 'customer':
+                    customer_id = session_customer_id
+                elif qs.get('customer_id', [None])[0]:
+                    customer_id = qs.get('customer_id', [None])[0]
+                doc_svc = get_document_service()
+                stats = doc_svc.get_statistics(customer_id)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(stats).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # GET /api/doc-service/processing-types - Available processing job types
+        if path == '/api/doc-service/processing-types':
+            self._set_json_headers(200)
+            types = [{'value': jt.value, 'name': jt.name} for jt in ProcessingJobType]
+            self.wfile.write(json.dumps({'processing_types': types}).encode('utf-8'))
+            return
 
         # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
         # GET /api/admin/customers-for-documents - Returns customer list for admin doc filtering
@@ -27764,6 +27886,229 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Analysis failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # ========== DOCUMENT PROCESSING SERVICE ENDPOINTS ==========
+        # These endpoints use the persistent DocumentProcessingService that stores
+        # files to disk, maintains SHA-256 integrity, and runs metadata-mining
+        # analysis pipelines. Data survives restarts.
+
+        # POST /api/doc-service/upload - Persistent multi-file upload with processing
+        if path == '/api/doc-service/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                files_data = data.get('files', [])
+                if not files_data:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No files provided'}).encode('utf-8'))
+                    return
+
+                actor = (session or {}).get('username', 'user')
+                effective_role = get_effective_role(session)
+                session_customer_id = get_session_customer_id(session)
+                entity_type = str(data.get('entity_type', 'general') or 'general').strip().lower()
+                entity_id = str(data.get('entity_id', '') or '').strip()
+                category = str(data.get('category', '') or '').strip().lower() or None
+                document_type = str(data.get('document_type', 'general') or 'general').strip().lower()
+                description = str(data.get('description', '') or '').strip()
+
+                customer_id = session_customer_id
+                if effective_role != 'customer':
+                    customer_id = str(data.get('customer_id', '') or '').strip() or session_customer_id
+
+                doc_svc = get_document_service()
+                results = doc_svc.upload_batch(
+                    files_data,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    customer_id=customer_id,
+                    category=category,
+                    document_type=document_type,
+                    description=description,
+                    uploaded_by=actor,
+                    uploaded_by_role=effective_role,
+                )
+
+                uploaded = []
+                errors = []
+                for r in results:
+                    rd = r.to_dict()
+                    if r.status == 'error':
+                        errors.append(rd)
+                    else:
+                        uploaded.append(rd)
+
+                        POLICY_DOCUMENTS[r.document_id] = {
+                            'id': r.document_id,
+                            'name': r.file_name,
+                            'type': r.mime_type,
+                            'size': r.file_size,
+                            'data_encoding': 'disk',
+                            'sha256': r.sha256,
+                            'entity_type': entity_type,
+                            'entity_id': entity_id,
+                            'document_type': document_type,
+                            'description': description,
+                            'uploaded_at': datetime.now().isoformat(),
+                            'uploaded_by': actor,
+                            'uploaded_by_customer': customer_id or '',
+                            'storage_path': r.storage_path,
+                        }
+                save_ledger_data()
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'{len(uploaded)} document(s) uploaded and processed',
+                    'uploaded': uploaded,
+                    'errors': errors,
+                }).encode('utf-8'))
+            except ValueError as ve:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # POST /api/doc-service/process - Run processing jobs on an existing document
+        if path == '/api/doc-service/process':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                doc_id = str(data.get('document_id', '') or '').strip()
+                if not doc_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'document_id is required'}).encode('utf-8'))
+                    return
+
+                doc_svc = get_document_service()
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    doc_record = doc_svc.get_document(doc_id)
+                    if not doc_record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                        return
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = doc_record.get('customer_id') or doc_record.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                job_types = data.get('job_types', None)
+                results = doc_svc.process_document(doc_id, job_types)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'document_id': doc_id,
+                    'jobs': [r.to_dict() for r in results],
+                }).encode('utf-8'))
+            except ValueError as ve:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Processing failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # POST /api/doc-service/verify-integrity - Re-verify SHA-256 integrity
+        if path == '/api/doc-service/verify-integrity':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                doc_id = str(data.get('document_id', '') or '').strip()
+                if not doc_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'document_id is required'}).encode('utf-8'))
+                    return
+
+                doc_svc = get_document_service()
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    doc_record = doc_svc.get_document(doc_id)
+                    if not doc_record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                        return
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = doc_record.get('customer_id') or doc_record.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                result = doc_svc.verify_integrity(doc_id)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Verification failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # POST /api/doc-service/delete - Soft-delete a document
+        if path == '/api/doc-service/delete':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                doc_id = str(data.get('document_id', '') or '').strip()
+                if not doc_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'document_id is required'}).encode('utf-8'))
+                    return
+
+                doc_svc = get_document_service()
+                eff_role = get_effective_role(session)
+                if not is_document_admin_role(eff_role):
+                    doc_record = doc_svc.get_document(doc_id)
+                    if not doc_record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                        return
+                    session_cid = get_session_customer_id(session)
+                    doc_cid = doc_record.get('customer_id') or doc_record.get('uploaded_by_customer') or ''
+                    if not session_cid or doc_cid != session_cid:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                hard = data.get('hard', False)
+                success = doc_svc.delete_document(doc_id, hard=hard)
+                if success:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'document_id': doc_id}).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Delete failed', 'details': str(e)}).encode('utf-8'))
             return
 
         # ========== RISK DASHBOARD SAVE ASSESSMENT ENDPOINT ==========

@@ -17,6 +17,7 @@ from .audit_repository import AuditRepository
 from .platform_ledger_repository import PlatformLedgerRepository
 from .actuarial_repository import ActuarialRepository
 from .token_repository import TokenRepository
+from .document_repository import DocumentRepository, DocumentProcessingJobRepository
 
 __all__ = [
     'BaseRepository',
@@ -31,4 +32,6 @@ __all__ = [
     'PlatformLedgerRepository',
     'ActuarialRepository',
     'TokenRepository',
+    'DocumentRepository',
+    'DocumentProcessingJobRepository',
 ]
