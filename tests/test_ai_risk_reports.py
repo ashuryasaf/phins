@@ -201,6 +201,10 @@ POL-005,75000,350,0,20"""
         self.assertEqual(analysis.document_id, self.doc_id)
         self.assertEqual(analysis.language, 'english')
         self.assertEqual(analysis.data_classification, DataType.INSURANCE)
+        self.assertIsInstance(analysis.advanced_assessment, dict)
+        self.assertIn('analysis_mode', analysis.advanced_assessment)
+        self.assertIsInstance(analysis.optimization_opportunities, list)
+        self.assertIsInstance(analysis.reasoning_summary, str)
     
     def test_risk_score_calculation(self):
         """Verify risk score is calculated"""

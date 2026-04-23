@@ -448,6 +448,10 @@ def test_policies_create_endpoint():
     assert 'provisioned_login' in data
     assert data['policy']['status'] == 'pending_underwriting'
     assert data['policy']['coverage_amount'] == 250000
+    assert 'ai_assessment' in data['policy']
+    assert data['policy'].get('ai_risk_level') in ('low', 'medium', 'high', 'very_high')
+    assert data['underwriting'].get('ai_assessment') is not None
+    assert data['underwriting'].get('ai_recommendation') is not None
     
     # Test missing customer name
     try:
@@ -691,6 +695,9 @@ def test_claims_create_endpoint():
     assert data['status'] == 'pending'
     assert data['claimed_amount'] == 25000
     assert data['policy_id'] == policy_id
+    assert data.get('ai_assessment') is not None
+    assert data.get('ai_risk_level') in ('low', 'medium', 'high', 'very_high')
+    assert data.get('ai_recommendation') is not None
     
     srv.stop()
 
@@ -1540,4 +1547,40 @@ def test_bi_accounting_endpoint():
     assert 'profit_margin' in data
     assert 'monthly_breakdown' in data
     
+    srv.stop()
+
+
+def test_ai_bi_analytics_endpoint():
+    """Test GET /api/ai-bi/analytics returns portfolio assessment."""
+    port = 8055
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/login", {
+        "username": "underwriter",
+        "password": "under123"
+    })
+    uw_token = json.loads(body)['token']
+
+    # Seed one policy so the endpoint has some data to assess.
+    _post(base + "/api/policies/create", {
+        "customer_name": "BI Test Customer",
+        "customer_email": "bi-analytics@example.com",
+        "type": "life",
+        "coverage_amount": 350000
+    })
+
+    body, status = _get(base + "/api/ai-bi/analytics", uw_token)
+    assert status == 200
+    data = json.loads(body)
+    assert data['success'] is True
+    assert 'portfolio_assessment' in data
+    assert 'optimization_opportunities' in data['portfolio_assessment']
+    assert 'document_intelligence' in data['portfolio_assessment']
+    assert isinstance(data.get('ai_insights', []), list)
+    assert isinstance(data.get('recommendations', []), list)
+
     srv.stop()
