@@ -15,8 +15,8 @@
   },
   {
     "username": "newcustomer@example.com",
-    "password_hash": "a6f9ec71ae2e33544013a17721cce2a42a72e022c3904e7865e59ffdb56530da",
-    "password_salt": "3a3fd5f903c37c7ca2dfe84eebb0a8ed",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED",
     "name": "New Customer",
     "role": "customer",
     "customer_id": "CUST-19324",
@@ -25,8 +25,8 @@
   },
   {
     "username": "legacyotp@example.com",
-    "password_hash": "34b4adc3fceb8a014df4ecd1cd5a3b92f0da6a4ca848100c0ea7ba98eb2f1d51",
-    "password_salt": "eaad74d2b6845482434365588582a799",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED",
     "name": "Legacy OTP Payload User",
     "role": "customer",
     "customer_id": "CUST-15830",
@@ -35,8 +35,8 @@
   },
   {
     "username": "invitation-flow-primary@example.com",
-    "password_hash": "595fffbf46950fa97e3f8b4e32d33b0828581b525536d2ac7bd83f3e8f2a9ba0",
-    "password_salt": "2e43f791222c0b8307b77a6b6beb4b6e",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED",
     "name": "First Invite User",
     "role": "customer",
     "customer_id": "CUST-38734",
@@ -45,8 +45,8 @@
   },
   {
     "username": "invitation-flow-secondary@example.com",
-    "password_hash": "a9c13fde7db1ba67d0f4b38a854bebc158397d50c787fddeaa311c264167d598",
-    "password_salt": "c7696edc9490c58190bb43cc9133cc8a",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED",
     "name": "Replay Invite Success User",
     "role": "customer",
     "customer_id": "CUST-12985",

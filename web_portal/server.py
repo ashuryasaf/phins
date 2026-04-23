@@ -3643,7 +3643,10 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
     
     SECURITY: Passwords are hashed before storage - NEVER store plain-text passwords.
     Duplicate emails are replaced (last-write-wins) to keep the file clean.
+    Skipped entirely in test mode to avoid polluting the committed seeds file.
     """
+    if os.environ.get('PHINS_TEST_MODE', '').lower() in ('true', '1', 'yes'):
+        return
     try:
         seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
         
