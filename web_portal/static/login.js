@@ -4,6 +4,7 @@
  * - CAPTCHA verification (bot protection)
  * - OTP verification for new devices
  * - Device trust management
+ * - Retry logic for transient network failures
  */
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -25,6 +26,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const captchaQuestion = document.getElementById('captcha-question');
   const captchaAnswer = document.getElementById('captcha-answer');
   const captchaId = document.getElementById('captcha-id');
+  const captchaRefreshBtn = document.getElementById('captcha-refresh');
   
   // OTP elements
   const otpDigits = document.querySelectorAll('.otp-digit');
@@ -35,54 +37,84 @@ document.addEventListener('DOMContentLoaded', function () {
   const trustDevice = document.getElementById('trust-device');
   
   // State
-  let currentStep = 1; // 1: credentials+captcha, 2: otp, 3: complete
-  let resendCountdown = 0;
-  let resendInterval = null;
-  let pendingLoginData = null;
-  let localCaptchaAnswer = null;
-  let otpVerifyInFlight = false;
+  var currentStep = 1; // 1: credentials+captcha, 2: otp, 3: complete
+  var resendCountdown = 0;
+  var resendInterval = null;
+  var pendingLoginData = null;
+  var localCaptchaAnswer = null;
+  var otpVerifyInFlight = false;
+  var captchaVerifiedToken = null;
+  var captchaExpiryTimer = null;
   
   function safeStorageSet(storage, key, value) {
     try {
       storage.setItem(key, value);
       return true;
     } catch (err) {
-      console.warn(`Storage set failed (${key}):`, err);
+      console.warn('Storage set failed (' + key + '):', err);
       return false;
     }
   }
 
   function fetchWithTimeout(url, options, timeoutMs) {
-    timeoutMs = timeoutMs || 15000;
-    const controller = new AbortController();
-    const timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+    timeoutMs = timeoutMs || 30000;
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, timeoutMs);
     options = options || {};
     options.signal = controller.signal;
     return fetch(url, options).finally(function () { clearTimeout(timer); });
   }
 
-  function generateLocalCaptchaChallenge() {
-    const prompts = [
-      {
-        question: "Type 'human' to continue:",
-        answer: 'human'
-      },
-      {
-        question: "Type 'secure' to continue:",
-        answer: 'secure'
-      },
-      {
-        question: "Type 'yes' to continue:",
-        answer: 'yes'
-      }
-    ];
+  function fetchWithRetry(url, options, timeoutMs, maxRetries) {
+    maxRetries = maxRetries || 2;
+    timeoutMs = timeoutMs || 30000;
+    var attempt = 0;
 
-    return prompts[Math.floor(Math.random() * prompts.length)];
+    function tryOnce() {
+      attempt++;
+      return fetchWithTimeout(url, Object.assign({}, options), timeoutMs)
+        .then(function (response) {
+          if (response.status >= 500 && attempt <= maxRetries) {
+            return delay(1000 * attempt).then(tryOnce);
+          }
+          return response;
+        })
+        .catch(function (err) {
+          if (attempt <= maxRetries && (err.name === 'AbortError' || err.name === 'TypeError')) {
+            return delay(1000 * attempt).then(tryOnce);
+          }
+          throw err;
+        });
+    }
+
+    return tryOnce();
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function generateLocalCaptchaChallenge() {
+    var a = Math.floor(Math.random() * 20) + 10;
+    var b = Math.floor(Math.random() * 15) + 5;
+    var ops = [
+      { symbol: '+', fn: function (x, y) { return x + y; } },
+      { symbol: '-', fn: function (x, y) { return x - y; } },
+      { symbol: 'x', fn: function (x, y) { return x * y; } }
+    ];
+    var op = ops[Math.floor(Math.random() * ops.length)];
+    if (op.symbol === '-' && b > a) { var tmp = a; a = b; b = tmp; }
+    if (op.symbol === 'x') { a = Math.floor(Math.random() * 9) + 2; b = Math.floor(Math.random() * 9) + 2; }
+    return {
+      question: 'What is ' + a + ' ' + op.symbol + ' ' + b + '?',
+      answer: String(op.fn(a, b))
+    };
   }
 
   function showLocalCaptcha(message) {
-    const localChallenge = generateLocalCaptchaChallenge();
+    var localChallenge = generateLocalCaptchaChallenge();
     localCaptchaAnswer = localChallenge.answer;
+    captchaVerifiedToken = null;
     captchaAnswer.value = '';
     captchaId.value = '';
     captchaQuestion.textContent = localChallenge.question;
@@ -90,16 +122,15 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaSection.style.display = '';
   }
   
-  // Generate device fingerprint
   function getDeviceFingerprint() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    var canvas = document.createElement('canvas');
+    var ctx = canvas.getContext('2d');
     ctx.textBaseline = 'top';
     ctx.font = '14px Arial';
     ctx.fillText('PHINS fingerprint', 2, 2);
-    const canvasData = canvas.toDataURL();
+    var canvasData = canvas.toDataURL();
     
-    const data = [
+    var data = [
       navigator.userAgent,
       navigator.language,
       screen.width + 'x' + screen.height,
@@ -107,32 +138,47 @@ document.addEventListener('DOMContentLoaded', function () {
       canvasData.substring(0, 50)
     ].join('|');
     
-    // Simple hash
-    let hash = 0;
-    for (let i = 0; i < data.length; i++) {
-      const char = data.charCodeAt(i);
+    var hash = 0;
+    for (var i = 0; i < data.length; i++) {
+      var char = data.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
       hash = hash & hash;
     }
     return Math.abs(hash).toString(16);
   }
+
+  function startCaptchaExpiryTimer(expiresAt) {
+    if (captchaExpiryTimer) clearInterval(captchaExpiryTimer);
+    if (!expiresAt) return;
+
+    var expiryDate = new Date(expiresAt);
+    captchaExpiryTimer = setInterval(function () {
+      var remaining = Math.max(0, Math.floor((expiryDate - Date.now()) / 1000));
+      if (remaining <= 0) {
+        clearInterval(captchaExpiryTimer);
+        captchaExpiryTimer = null;
+        loadCaptcha();
+      }
+    }, 10000);
+  }
   
-  // Initialize CAPTCHA
   async function loadCaptcha() {
     localCaptchaAnswer = null;
+    captchaVerifiedToken = null;
     captchaAnswer.value = '';
     captchaId.value = '';
     captchaQuestion.textContent = 'Loading verification...';
     captchaQuestion.title = '';
     captchaSection.style.display = '';
+    if (captchaExpiryTimer) { clearInterval(captchaExpiryTimer); captchaExpiryTimer = null; }
 
     try {
-      const response = await fetchWithTimeout('/api/security/captcha', {
+      var response = await fetchWithRetry('/api/security/captcha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'login' })
-      }, 10000);
-      const data = await response.json();
+      }, 15000, 2);
+      var data = await response.json();
       
       if (response.ok && data.success && data.challenge) {
         captchaId.value = data.challenge.challenge_id;
@@ -140,8 +186,10 @@ document.addEventListener('DOMContentLoaded', function () {
           captchaQuestion.textContent = data.challenge.challenge_question;
           captchaQuestion.title = '';
         } else {
-          // Keep verification visible even if advanced widgets are unavailable.
           showLocalCaptcha('Advanced CAPTCHA fallback is active');
+        }
+        if (data.challenge.expires_at) {
+          startCaptchaExpiryTimer(data.challenge.expires_at);
         }
       } else {
         showLocalCaptcha('Verification service is temporarily unavailable');
@@ -151,8 +199,14 @@ document.addEventListener('DOMContentLoaded', function () {
       showLocalCaptcha('Verification service could not be reached');
     }
   }
+
+  if (captchaRefreshBtn) {
+    captchaRefreshBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      loadCaptcha();
+    });
+  }
   
-  // Load CAPTCHA on page load
   loadCaptcha();
   
   // OTP digit input handling
@@ -233,14 +287,14 @@ document.addEventListener('DOMContentLoaded', function () {
     if (resendOtp.classList.contains('disabled')) return;
     
     try {
-      const response = await fetchWithTimeout('/api/security/otp/resend', {
+      var response = await fetchWithRetry('/api/security/otp/resend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           verification_id: verificationId.value
         })
-      }, 10000);
-      const data = await response.json();
+      }, 15000, 1);
+      var data = await response.json();
       
       if (data.success) {
         msg.textContent = 'New code sent!';
@@ -251,8 +305,8 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.textContent = data.message || 'Failed to resend code';
         msg.style.color = '#dc3545';
       }
-    } catch (e) {
-      msg.textContent = 'Error sending code';
+    } catch (resendErr) {
+      msg.textContent = 'Error sending code. Please try again.';
       msg.style.color = '#dc3545';
     }
   });
@@ -282,7 +336,6 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => otpDigits[0].focus(), 100);
   }
   
-  // Verify OTP
   async function verifyOTP(code) {
     if (otpVerifyInFlight) return;
     otpVerifyInFlight = true;
@@ -291,7 +344,7 @@ document.addEventListener('DOMContentLoaded', function () {
     msg.style.color = '#546e7a';
     
     try {
-      const response = await fetchWithTimeout('/api/security/otp/verify', {
+      var response = await fetchWithRetry('/api/security/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -300,8 +353,8 @@ document.addEventListener('DOMContentLoaded', function () {
           trust_device: trustDevice.checked,
           device_fingerprint: getDeviceFingerprint()
         })
-      }, 10000);
-      const data = await response.json();
+      }, 20000, 1);
+      var data = await response.json();
       
       if (data.success) {
         msg.textContent = 'Verified! Completing login...';
@@ -315,14 +368,13 @@ document.addEventListener('DOMContentLoaded', function () {
         otpVerifyInFlight = false;
       }
     } catch (e) {
-      msg.textContent = e.name === 'AbortError' ? 'Verification timed out. Please try again.' : 'Verification error';
+      msg.textContent = e.name === 'AbortError' ? 'Verification timed out. Please try again.' : 'Verification error. Please try again.';
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
       otpVerifyInFlight = false;
     }
   }
   
-  // Complete login after verification
   async function completeLogin() {
     if (!pendingLoginData) {
       msg.textContent = 'Session expired. Please try again.';
@@ -331,23 +383,22 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
     
-    // Update steps
     step2.classList.remove('active');
     step2.classList.add('complete');
     step3.classList.add('active');
     
-    // Final login call with verified flag
     try {
-      const response = await fetchWithTimeout('/api/login', {
+      var loginPayload = Object.assign({}, pendingLoginData, {
+        verified: true,
+        verification_id: verificationId.value
+      });
+
+      var response = await fetchWithRetry('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...pendingLoginData,
-          verified: true,
-          verification_id: verificationId.value
-        })
-      }, 15000);
-      const data = await response.json();
+        body: JSON.stringify(loginPayload)
+      }, 30000, 2);
+      var data = await response.json();
       
       if (data.token) {
         handleLoginSuccess(data, pendingLoginData.username);
@@ -357,7 +408,7 @@ document.addEventListener('DOMContentLoaded', function () {
         submitBtn.disabled = false;
       }
     } catch (e) {
-      msg.textContent = 'Login error. Please try again.';
+      msg.textContent = e.name === 'AbortError' ? 'The server is taking longer than usual. Please try again.' : 'Login error. Please try again.';
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
     }
@@ -434,9 +485,8 @@ document.addEventListener('DOMContentLoaded', function () {
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     
-    // If in OTP step, verify OTP
     if (currentStep === 2) {
-      const code = getOTPCode();
+      var code = getOTPCode();
       if (code.length === 6) {
         verifyOTP(code);
       } else {
@@ -446,20 +496,18 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
     
-    const username = form.username.value.trim();
-    const password = form.password.value;
-    const captchaValue = captchaAnswer.value.trim();
-    const captchaIdValue = captchaId.value;
+    var username = form.username.value.trim();
+    var password = form.password.value;
+    var captchaValue = captchaAnswer.value.trim();
+    var captchaIdValue = captchaId.value;
     
-    // Validate
     if (!username || !password) {
       msg.textContent = 'Please enter username and password';
       msg.style.color = '#dc3545';
       return;
     }
     
-    // Verify CAPTCHA if present
-    if (captchaSection.style.display !== 'none' && captchaIdValue) {
+    if (captchaSection.style.display !== 'none') {
       if (!captchaValue) {
         msg.textContent = 'Please complete the verification';
         msg.style.color = '#dc3545';
@@ -473,52 +521,62 @@ document.addEventListener('DOMContentLoaded', function () {
     submitBtn.disabled = true;
     
     try {
-      // Step 1: Verify CAPTCHA if present
-      if (captchaIdValue && captchaValue) {
-        const captchaResponse = await fetchWithTimeout('/api/security/captcha/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            challenge_id: captchaIdValue,
-            response: captchaValue
-          })
-        }, 10000);
-        const captchaResult = await captchaResponse.json();
-        
-        if (!captchaResult.success) {
-          msg.textContent = captchaResult.message || 'Verification failed. Please try again.';
-          msg.style.color = '#dc3545';
-          submitBtn.disabled = false;
-          loadCaptcha(); // Reload CAPTCHA
-          captchaAnswer.value = '';
-          return;
+      var verifiedCaptchaToken = captchaVerifiedToken;
+
+      if (!verifiedCaptchaToken) {
+        if (captchaIdValue && captchaValue) {
+          var captchaResponse = await fetchWithRetry('/api/security/captcha/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              challenge_id: captchaIdValue,
+              response: captchaValue
+            })
+          }, 15000, 1);
+          var captchaResult = await captchaResponse.json();
+          
+          if (!captchaResult.success) {
+            msg.textContent = captchaResult.message || 'Verification failed. Please try again.';
+            msg.style.color = '#dc3545';
+            submitBtn.disabled = false;
+            loadCaptcha();
+            captchaAnswer.value = '';
+            return;
+          }
+          verifiedCaptchaToken = captchaIdValue;
+          captchaVerifiedToken = captchaIdValue;
+        } else if (localCaptchaAnswer) {
+          if (captchaValue.toLowerCase().trim() !== localCaptchaAnswer.toLowerCase().trim()) {
+            msg.textContent = 'Verification failed. Please try again.';
+            msg.style.color = '#dc3545';
+            submitBtn.disabled = false;
+            loadCaptcha();
+            captchaAnswer.value = '';
+            return;
+          }
+          verifiedCaptchaToken = '__local__';
         }
-      } else if (localCaptchaAnswer && captchaValue.toLowerCase() !== localCaptchaAnswer) {
-        msg.textContent = 'Verification failed. Please try again.';
-        msg.style.color = '#dc3545';
-        submitBtn.disabled = false;
-        loadCaptcha();
-        captchaAnswer.value = '';
-        return;
       }
       
-      // Step 2: Attempt login
-      const loginData = {
-        username,
-        password,
+      var loginData = {
+        username: username,
+        password: password,
         device_fingerprint: getDeviceFingerprint(),
         user_agent: navigator.userAgent
       };
+
+      if (verifiedCaptchaToken && verifiedCaptchaToken !== '__local__') {
+        loginData.captcha_token = verifiedCaptchaToken;
+      }
       
-      const response = await fetchWithTimeout('/api/login', {
+      var response = await fetchWithRetry('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginData)
-      }, 15000);
-      const data = await response.json();
+      }, 30000, 2);
+      var data = await response.json();
       
       if (data.requires_otp) {
-        // OTP required - show OTP step
         pendingLoginData = loginData;
         showOTPStep(data.masked_email || '***@***.com', data.verification_id);
         msg.textContent = 'Please enter the verification code sent to your email';
@@ -526,16 +584,13 @@ document.addEventListener('DOMContentLoaded', function () {
         submitBtn.disabled = false;
         
       } else if (data.token) {
-        // Direct login success (trusted device)
         handleLoginSuccess(data, username);
         
       } else {
-        // Login failed
         msg.textContent = 'Login failed: ' + (data.error || 'Invalid credentials');
         msg.style.color = '#dc3545';
         submitBtn.disabled = false;
-        
-        // Reload CAPTCHA on failure
+        captchaVerifiedToken = null;
         loadCaptcha();
         captchaAnswer.value = '';
       }
@@ -543,12 +598,15 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (err) {
       console.error('Login error:', err);
       if (err.name === 'AbortError') {
-        msg.textContent = 'Request timed out. Please check your connection and try again.';
+        msg.textContent = 'The server is taking longer than usual. Please try again.';
+      } else if (!navigator.onLine) {
+        msg.textContent = 'You appear to be offline. Please check your connection.';
       } else {
-        msg.textContent = 'Login error. Please try again.';
+        msg.textContent = 'Connection error. Please try again.';
       }
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
+      captchaVerifiedToken = null;
       loadCaptcha();
     }
   });

@@ -19,6 +19,7 @@ from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from security import auth_tokens
 import web_portal.server as portal
@@ -177,6 +178,42 @@ def test_login_stores_v2_jti_in_session(monkeypatch):
         assert session["jti"] == claims.jti
     finally:
         srv.stop()
+
+
+def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
+    port = 8060
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    class _ExplodingLock:
+        def __enter__(self):
+            raise RuntimeError("captcha unavailable")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    exploding_service = SimpleNamespace(
+        _lock=_ExplodingLock(),
+        _challenges={},
+    )
+
+    with patch("services.otp_security_service.get_otp_security_service", return_value=exploding_service):
+        try:
+            _post(base + "/api/login", {
+                "username": "admin",
+                "password": "admin123",
+                "captcha_token": "CAPTCHA_test"
+            })
+            assert False, "Expected CAPTCHA validation failure"
+        except HTTPError as e:
+            assert e.code == 503
+            data = json.loads(e.read().decode("utf-8"))
+            assert data["error"] == "CAPTCHA validation unavailable. Please try again."
+
+    srv.stop()
 
 
 def test_register_endpoint():

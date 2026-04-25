@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from services.otp_security_service import SimpleCaptchaGenerator
 import web_portal.api_extensions as api_extensions
 
 
@@ -210,3 +211,14 @@ def test_configured_email_provider_types_normalizes_spaced_aliases(monkeypatch):
 
     providers = api_extensions._configured_email_provider_types()
     assert providers[0] == "ses"
+
+
+def test_simple_captcha_math_answers_do_not_accept_text_aliases():
+    assert SimpleCaptchaGenerator.verify("12", "12") is True
+    assert SimpleCaptchaGenerator.verify("12", "twelve") is False
+    assert SimpleCaptchaGenerator.verify("7", "seven") is False
+
+
+def test_simple_captcha_text_answers_still_accept_equivalent_aliases():
+    assert SimpleCaptchaGenerator.verify("seven", "7") is True
+    assert SimpleCaptchaGenerator.verify("twelve", "12") is True

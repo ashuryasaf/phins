@@ -138,6 +138,11 @@
       padding: 16px;
       margin-bottom: 20px;
     }
+    .captcha-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
     .captcha-box label {
       color: #1565c0;
       font-size: 0.9rem;
@@ -146,11 +151,29 @@
       gap: 8px;
     }
     .captcha-box label::before {
-      content: '🤖';
+      content: '🛡️';
       font-size: 1.2rem;
     }
+    .captcha-refresh {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(21, 101, 192, 0.1);
+      color: #1565c0;
+      font-size: 1.2rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .captcha-refresh:hover {
+      background: rgba(21, 101, 192, 0.2);
+      transform: rotate(90deg);
+    }
     .captcha-question {
-      font-size: 1rem;
+      font-size: 1.05rem;
       font-weight: 600;
       color: #0d47a1;
       background: #fff;
@@ -158,6 +181,7 @@
       border-radius: 8px;
       margin: 10px 0;
       text-align: center;
+      user-select: none;
     }
     .captcha-input {
       width: 100%;
@@ -344,7 +368,10 @@
           
           <!-- CAPTCHA Section -->
           <div class="captcha-box" id="captcha-section">
-            <label>Human Verification</label>
+            <div class="captcha-header">
+              <label>Human Verification</label>
+              <a href="#" class="captcha-refresh" id="captcha-refresh" title="Get a new challenge">&#x21bb;</a>
+            </div>
             <div class="captcha-question" id="captcha-question">Loading...</div>
             <input type="text" class="captcha-input" id="captcha-answer" placeholder="Your answer" autocomplete="off" />
             <input type="hidden" id="captcha-id" />

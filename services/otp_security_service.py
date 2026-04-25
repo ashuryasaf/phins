@@ -290,70 +290,92 @@ def mask_email(email: str) -> str:
 # ============================================================================
 
 class SimpleCaptchaGenerator:
-    """Simple CAPTCHA generator for basic bot protection"""
+    """CAPTCHA generator with multi-step math and contextual challenges"""
     
     OPERATIONS = ['+', '-', 'x']
-    QUESTIONS = [
-        ("What is {} {} {}?", lambda a, op, b: a + b if op == '+' else (a - b if op == '-' else a * b)),
-        ("Calculate: {} {} {}", lambda a, op, b: a + b if op == '+' else (a - b if op == '-' else a * b)),
-        ("Solve: {} {} {} = ?", lambda a, op, b: a + b if op == '+' else (a - b if op == '-' else a * b)),
+    TEMPLATES = [
+        "What is {} {} {}?",
+        "Calculate: {} {} {}",
+        "Solve: {} {} {} = ?",
     ]
     
     TEXT_QUESTIONS = [
         ("What color is the sky on a clear day?", ["blue", "azure"]),
-        ("What is 2 + 2?", ["4", "four"]),
-        ("Type 'yes' to continue:", ["yes"]),
         ("What comes after 'one, two, ...'?", ["three", "3"]),
         ("Enter the current year:", [str(datetime.now().year)]),
+        ("How many days are in a week?", ["seven", "7"]),
+        ("What is the capital of France?", ["paris"]),
+        ("How many months are in a year?", ["twelve", "12"]),
+        ("What planet do we live on?", ["earth"]),
     ]
     
     @classmethod
     def generate(cls) -> Tuple[str, str]:
-        """Generate a simple CAPTCHA challenge"""
-        # 70% math questions, 30% text questions
-        if secrets.randbelow(100) < 70:
+        """Generate a CAPTCHA challenge, biased toward math"""
+        roll = secrets.randbelow(100)
+        if roll < 50:
             return cls._generate_math_question()
+        elif roll < 80:
+            return cls._generate_two_step_math()
         else:
             return cls._generate_text_question()
     
     @classmethod
     def _generate_math_question(cls) -> Tuple[str, str]:
-        """Generate a math CAPTCHA"""
-        a = secrets.randbelow(10) + 1  # 1-10
-        b = secrets.randbelow(10) + 1  # 1-10
+        """Generate a single-operation math CAPTCHA with wider ranges"""
+        a = secrets.randbelow(40) + 5   # 5-44
+        b = secrets.randbelow(30) + 3   # 3-32
         op = secrets.choice(cls.OPERATIONS)
         
-        template, calculator = secrets.choice(cls.QUESTIONS)
-        
-        # Ensure no negative results for subtraction
         if op == '-' and b > a:
             a, b = b, a
+        if op == 'x':
+            a = secrets.randbelow(9) + 2   # 2-10
+            b = secrets.randbelow(9) + 2   # 2-10
+
+        template = secrets.choice(cls.TEMPLATES)
+        if op == '+':
+            answer = a + b
+        elif op == '-':
+            answer = a - b
+        else:
+            answer = a * b
         
-        question = template.format(a, op, b)
-        answer = str(calculator(a, op, b))
-        
-        return question, answer
+        return template.format(a, op, b), str(answer)
+    
+    @classmethod
+    def _generate_two_step_math(cls) -> Tuple[str, str]:
+        """Generate a two-operation math challenge, e.g. (a + b) x c"""
+        a = secrets.randbelow(10) + 2
+        b = secrets.randbelow(10) + 2
+        c = secrets.randbelow(5) + 2
+        op1 = secrets.choice(['+', '-'])
+        if op1 == '-' and b > a:
+            a, b = b, a
+        step1 = a + b if op1 == '+' else a - b
+        answer = step1 * c
+        question = f"({a} {op1} {b}) x {c} = ?"
+        return question, str(answer)
     
     @classmethod
     def _generate_text_question(cls) -> Tuple[str, str]:
         """Generate a text CAPTCHA"""
         question, answers = secrets.choice(cls.TEXT_QUESTIONS)
-        return question, answers[0]  # Store first acceptable answer
+        return question, answers[0]
     
     @classmethod
     def verify(cls, expected: str, provided: str) -> bool:
-        """Verify CAPTCHA answer"""
+        """Verify CAPTCHA answer with timing-safe comparison for numeric answers"""
         expected_clean = expected.lower().strip()
         provided_clean = provided.lower().strip()
         
-        # Check direct match
-        if expected_clean == provided_clean:
+        if hmac.compare_digest(expected_clean, provided_clean):
             return True
         
-        # Check if it's a text question with multiple answers
-        for question, answers in cls.TEXT_QUESTIONS:
-            if expected_clean in [a.lower() for a in answers]:
-                return provided_clean in [a.lower() for a in answers]
+        for _question, answers in cls.TEXT_QUESTIONS:
+            normalized_answers = [a.lower() for a in answers]
+            if expected_clean == normalized_answers[0]:
+                return provided_clean in normalized_answers
         
         return False
 
