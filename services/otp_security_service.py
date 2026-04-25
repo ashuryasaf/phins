@@ -303,9 +303,9 @@ class SimpleCaptchaGenerator:
         ("What color is the sky on a clear day?", ["blue", "azure"]),
         ("What comes after 'one, two, ...'?", ["three", "3"]),
         ("Enter the current year:", [str(datetime.now().year)]),
-        ("How many days are in a week?", ["7", "seven"]),
+        ("How many days are in a week?", ["seven", "7"]),
         ("What is the capital of France?", ["paris"]),
-        ("How many months are in a year?", ["12", "twelve"]),
+        ("How many months are in a year?", ["twelve", "12"]),
         ("What planet do we live on?", ["earth"]),
     ]
     
@@ -373,8 +373,9 @@ class SimpleCaptchaGenerator:
             return True
         
         for _question, answers in cls.TEXT_QUESTIONS:
-            if expected_clean in [a.lower() for a in answers]:
-                return provided_clean in [a.lower() for a in answers]
+            normalized_answers = [a.lower() for a in answers]
+            if expected_clean == normalized_answers[0]:
+                return provided_clean in normalized_answers
         
         return False
 

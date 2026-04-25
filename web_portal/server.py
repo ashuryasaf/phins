@@ -24008,6 +24008,10 @@ For claims or questions, please contact:
                             return
                     except Exception as captcha_err:
                         print(f"[AUTH] CAPTCHA token check warning: {captcha_err}")
+                        record_failed_login(client_ip, server_port)
+                        self._set_json_headers(503)
+                        self.wfile.write(json.dumps({'error': 'CAPTCHA validation unavailable. Please try again.'}).encode('utf-8'))
+                        return
                 
                 # Input validation
                 if not username or not password:
