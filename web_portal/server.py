@@ -23995,20 +23995,30 @@ For claims or questions, please contact:
                 
                 # Server-side CAPTCHA token validation
                 captcha_token = creds.get('captcha_token', '')
+                if not captcha_token and not PHINS_TEST_MODE:
+                    record_failed_login(client_ip, server_port)
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'CAPTCHA verification required. Please reload and try again.'}).encode('utf-8'))
+                    return
                 if captcha_token:
                     try:
                         from services.otp_security_service import get_otp_security_service
                         captcha_svc = get_otp_security_service()
                         with captcha_svc._lock:
                             challenge = captcha_svc._challenges.get(captcha_token)
-                        if not challenge or not challenge.verified:
+                            challenge_expired = bool(
+                                challenge and datetime.now().timestamp() > challenge.expires_at.timestamp()
+                            )
+                            captcha_verified = bool(challenge and challenge.verified and not challenge_expired)
+                            if captcha_verified or challenge_expired:
+                                captcha_svc._challenges.pop(captcha_token, None)
+                        if not captcha_verified:
                             record_failed_login(client_ip, server_port)
                             self._set_json_headers(400)
                             self.wfile.write(json.dumps({'error': 'CAPTCHA verification required. Please reload and try again.'}).encode('utf-8'))
                             return
                     except Exception as captcha_err:
                         print(f"[AUTH] CAPTCHA token check warning: {captcha_err}")
-                        record_failed_login(client_ip, server_port)
                         self._set_json_headers(503)
                         self.wfile.write(json.dumps({'error': 'CAPTCHA validation unavailable. Please try again.'}).encode('utf-8'))
                         return
