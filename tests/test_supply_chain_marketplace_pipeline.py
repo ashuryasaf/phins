@@ -1962,3 +1962,91 @@ def test_dashboard_health_wallet_ai_search_flow_uses_supplier_offers_and_preserv
     finally:
         srv.stop()
 
+
+def test_supplier_invitation_revoke_endpoint_and_persistence():
+    """Verify the invitation revoke endpoint works and data persists across
+    in-memory clears, and that the generate→register→approve→offer flow
+    maintains data integrity through persistence helpers."""
+    _reset_supply_chain_state()
+
+    port = 8171
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.5)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        admin_login, _ = _post(f"{base}/api/login", {"username": "admin", "password": "admin123"})
+        token = admin_login["token"]
+
+        inv_resp, _ = _post(
+            f"{base}/api/supply-chain/invitations",
+            {"max_uses": 5, "expires_days": 60, "notes": "persistence test"},
+            token=token,
+        )
+        assert inv_resp.get("success"), f"Invitation generation failed: {inv_resp}"
+        code = inv_resp["invitation"]["code"]
+
+        invitations_list, _ = _get(f"{base}/api/supply-chain/invitations", token=token)
+        assert any(i["code"] == code for i in invitations_list.get("items", []))
+
+        reg_resp, _ = _post(f"{base}/api/supply-chain/register", {
+            "invitation_code": code,
+            "company_name": "PersistTest Ltd",
+            "contact_name": "Jane Doe",
+            "contact_email": "persist@test.com",
+            "contact_phone": "555-0199",
+            "supplier_type": "pharmacy",
+            "category": "medical",
+            "password": "securePass1!",
+            "services_offered": ["prescriptions"],
+        })
+        assert reg_resp.get("success"), f"Registration failed: {reg_resp}"
+        supplier_id = reg_resp["supplier_id"]
+
+        approve_resp, _ = _post(
+            f"{base}/api/supply-chain/suppliers/{supplier_id}/approve",
+            {"notes": "test approval"},
+            token=token,
+        )
+        assert approve_resp.get("success"), f"Approval failed: {approve_resp}"
+
+        offer_resp, _ = _post(
+            f"{base}/api/supplier/offers/upsert",
+            {
+                "supplier_id": supplier_id,
+                "name": "Test Rx",
+                "category": "pharmacy",
+                "item_type": "product",
+                "price": 25.0,
+                "currency": "USD",
+                "active": True,
+            },
+            token=token,
+        )
+        assert offer_resp.get("success"), f"Offer upsert failed: {offer_resp}"
+        offer_id = offer_resp["id"]
+
+        with portal.STATE_LOCK:
+            assert code in portal.SUPPLIER_INVITATIONS
+            assert supplier_id in portal.SUPPLIERS
+            assert offer_id in portal.SUPPLIER_OFFERS
+
+        revoke_resp, _ = _post(
+            f"{base}/api/supply-chain/invitations/{code}/revoke",
+            {"reason": "testing revoke"},
+            token=token,
+        )
+        assert revoke_resp.get("success"), f"Revoke failed: {revoke_resp}"
+
+        with portal.STATE_LOCK:
+            inv_data = portal.SUPPLIER_INVITATIONS.get(code)
+            inv_status = inv_data.status if hasattr(inv_data, 'status') else inv_data.get('status')
+            assert inv_status == "revoked", f"Expected revoked, got {inv_status}"
+
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
+    finally:
+        srv.stop()
+

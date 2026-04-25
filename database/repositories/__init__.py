@@ -18,6 +18,14 @@ from .platform_ledger_repository import PlatformLedgerRepository
 from .actuarial_repository import ActuarialRepository
 from .token_repository import TokenRepository
 from .document_repository import DocumentRepository, DocumentProcessingJobRepository
+from .supplier_repository import (
+    SupplierRepository,
+    SupplierInvitationRepository,
+    SupplierOfferRepository,
+    SupplierOrderRepository,
+    SupplierDocumentRepository,
+    SupplyChainLedgerRepository,
+)
 
 __all__ = [
     'BaseRepository',
@@ -34,4 +42,10 @@ __all__ = [
     'TokenRepository',
     'DocumentRepository',
     'DocumentProcessingJobRepository',
+    'SupplierRepository',
+    'SupplierInvitationRepository',
+    'SupplierOfferRepository',
+    'SupplierOrderRepository',
+    'SupplierDocumentRepository',
+    'SupplyChainLedgerRepository',
 ]
