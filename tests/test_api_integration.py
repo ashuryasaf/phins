@@ -15,6 +15,7 @@ Tests every API endpoint for correctness and proper behavior:
 import threading
 import time
 import json
+from datetime import datetime, timedelta
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
@@ -200,6 +201,9 @@ def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
         _challenges={},
     )
 
+    with portal.STATE_LOCK:
+        portal.FAILED_LOGINS.clear()
+
     with patch("services.otp_security_service.get_otp_security_service", return_value=exploding_service):
         try:
             _post(base + "/api/login", {
@@ -213,7 +217,84 @@ def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
             data = json.loads(e.read().decode("utf-8"))
             assert data["error"] == "CAPTCHA validation unavailable. Please try again."
 
+    with portal.STATE_LOCK:
+        assert portal.FAILED_LOGINS == {}
+
     srv.stop()
+
+
+def test_login_requires_captcha_token_outside_test_mode(monkeypatch):
+    port = 8061
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
+    with portal.STATE_LOCK:
+        portal.FAILED_LOGINS.clear()
+
+    try:
+        _post(base + "/api/login", {
+            "username": "admin",
+            "password": "admin123"
+        })
+        assert False, "Expected missing CAPTCHA token to be rejected"
+    except HTTPError as e:
+        assert e.code == 400
+        data = json.loads(e.read().decode("utf-8"))
+        assert data["error"] == "CAPTCHA verification required. Please reload and try again."
+    finally:
+        srv.stop()
+
+
+def test_login_consumes_verified_captcha_token(monkeypatch):
+    port = 8062
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    captcha_token = "CAPTCHA_test"
+    verified_service = SimpleNamespace(
+        _lock=threading.Lock(),
+        _challenges={
+            captcha_token: SimpleNamespace(
+                verified=True,
+                expires_at=datetime.now() + timedelta(minutes=5),
+            )
+        },
+    )
+
+    monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
+    with portal.STATE_LOCK:
+        portal.FAILED_LOGINS.clear()
+
+    with patch("services.otp_security_service.get_otp_security_service", return_value=verified_service):
+        try:
+            body, status = _post(base + "/api/login", {
+                "username": "admin",
+                "password": "admin123",
+                "captcha_token": captcha_token
+            })
+            assert status == 200
+            assert json.loads(body)["username"] == "admin"
+            assert captcha_token not in verified_service._challenges
+
+            try:
+                _post(base + "/api/login", {
+                    "username": "admin",
+                    "password": "admin123",
+                    "captcha_token": captcha_token
+                })
+                assert False, "Expected replayed CAPTCHA token to be rejected"
+            except HTTPError as e:
+                assert e.code == 400
+                data = json.loads(e.read().decode("utf-8"))
+                assert data["error"] == "CAPTCHA verification required. Please reload and try again."
+        finally:
+            srv.stop()
 
 
 def test_register_endpoint():
