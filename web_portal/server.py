@@ -23993,6 +23993,22 @@ For claims or questions, please contact:
                 username = creds.get('username', '').strip()
                 password = creds.get('password', '')
                 
+                # Server-side CAPTCHA token validation
+                captcha_token = creds.get('captcha_token', '')
+                if captcha_token:
+                    try:
+                        from services.otp_security_service import get_otp_security_service
+                        captcha_svc = get_otp_security_service()
+                        with captcha_svc._lock:
+                            challenge = captcha_svc._challenges.get(captcha_token)
+                        if not challenge or not challenge.verified:
+                            record_failed_login(client_ip, server_port)
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({'error': 'CAPTCHA verification required. Please reload and try again.'}).encode('utf-8'))
+                            return
+                    except Exception as captcha_err:
+                        print(f"[AUTH] CAPTCHA token check warning: {captcha_err}")
+                
                 # Input validation
                 if not username or not password:
                     self._set_json_headers(400)
