@@ -26553,15 +26553,16 @@ For claims or questions, please contact:
                 data = json.loads(body or '{}')
                 result = supply_chain_service.register_supplier(data)
                 
-                if result.get('success') and result.get('supplier'):
-                    sup = result['supplier']
-                    sup_id = sup.get('id', '')
-                    _persist_supplier(sup_id, sup)
+                if result.get('success'):
+                    sup_id = result.get('supplier_id', '')
+                    if sup_id and sup_id in SUPPLIERS:
+                        _persist_supplier(sup_id, SUPPLIERS[sup_id])
                     inv_code = data.get('invitation_code', '')
                     if inv_code and inv_code in SUPPLIER_INVITATIONS:
                         inv_data = SUPPLIER_INVITATIONS[inv_code]
                         inv_dict = inv_data.to_dict() if hasattr(inv_data, 'to_dict') else dict(inv_data)
                         _persist_supplier_invitation(inv_code, inv_dict)
+                    _sync_recent_ledger_entries()
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
