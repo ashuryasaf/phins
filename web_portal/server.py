@@ -6339,6 +6339,185 @@ try:
 except ImportError as e:
     print(f"Warning: Supply Chain Ecosystem service not available: {e}")
 
+# ---------------------------------------------------------------------------
+# Hydrate in-memory supplier stores from the database so data survives restarts
+# ---------------------------------------------------------------------------
+def _hydrate_supplier_stores():
+    """Load persisted supplier ecosystem data into in-memory dicts."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            loaded_suppliers = db.suppliers.load_all_as_dicts()
+            if loaded_suppliers:
+                SUPPLIERS.update(loaded_suppliers)
+                print(f"  ↳ Hydrated {len(loaded_suppliers)} suppliers from DB")
+
+            loaded_invitations = db.supplier_invitations.load_all_as_dicts()
+            if loaded_invitations:
+                SUPPLIER_INVITATIONS.update(loaded_invitations)
+                print(f"  ↳ Hydrated {len(loaded_invitations)} supplier invitations from DB")
+
+            loaded_offers = db.supplier_offers.load_all_as_dicts()
+            if loaded_offers:
+                SUPPLIER_OFFERS.update(loaded_offers)
+                print(f"  ↳ Hydrated {len(loaded_offers)} supplier offers from DB")
+
+            loaded_orders = db.supplier_orders.load_all_as_dicts()
+            if loaded_orders:
+                SUPPLIER_ORDERS.update(loaded_orders)
+                print(f"  ↳ Hydrated {len(loaded_orders)} supplier orders from DB")
+
+            loaded_docs = db.supplier_documents.load_all_as_dicts()
+            if loaded_docs:
+                SUPPLIER_DOCUMENTS.update(loaded_docs)
+                print(f"  ↳ Hydrated {len(loaded_docs)} supplier documents from DB")
+
+            loaded_ledger = db.supply_chain_ledger.load_all_as_dicts()
+            if loaded_ledger:
+                SUPPLY_CHAIN_LEDGER.update(loaded_ledger)
+                print(f"  ↳ Hydrated {len(loaded_ledger)} supply chain ledger entries from DB")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not hydrate supplier stores from DB: {e}")
+
+_hydrate_supplier_stores()
+
+
+def _persist_supplier_invitation(code: str, data):
+    """Persist a single invitation to the database."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            inv_dict = data.to_dict() if hasattr(data, 'to_dict') else dict(data)
+            db.supplier_invitations.upsert_from_dict(code, inv_dict)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not persist invitation {code}: {e}")
+
+
+def _persist_supplier(supplier_id: str, data: dict):
+    """Persist a single supplier to the database."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            existing = db.suppliers.get_by_id(supplier_id)
+            if existing:
+                for key, value in data.items():
+                    if hasattr(existing, key) and key != 'id':
+                        if isinstance(value, (list, dict)):
+                            import json as _json
+                            setattr(existing, key, _json.dumps(value))
+                        else:
+                            setattr(existing, key, value)
+                db.commit()
+            else:
+                db.suppliers.create(**data)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not persist supplier {supplier_id}: {e}")
+
+
+def _persist_supplier_offer(offer_id: str, data: dict):
+    """Persist a single supplier offer to the database."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            existing = db.supplier_offers.get_by_id(offer_id)
+            if existing:
+                for key, value in data.items():
+                    if hasattr(existing, key) and key != 'id':
+                        if isinstance(value, (list, dict)):
+                            import json as _json
+                            setattr(existing, key, _json.dumps(value))
+                        else:
+                            setattr(existing, key, value)
+                db.commit()
+            else:
+                db.supplier_offers.create(**data)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not persist offer {offer_id}: {e}")
+
+
+def _persist_supplier_order(order_id: str, data: dict):
+    """Persist a single supplier order to the database."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            existing = db.supplier_orders.get_by_id(order_id)
+            if existing:
+                for key, value in data.items():
+                    if hasattr(existing, key) and key != 'id':
+                        setattr(existing, key, value)
+                db.commit()
+            else:
+                db.supplier_orders.create(**data)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not persist order {order_id}: {e}")
+
+
+def _persist_supply_chain_ledger_entry(entry_id: str, data: dict):
+    """Persist a single supply-chain ledger entry to the database."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            db.supply_chain_ledger.upsert_from_dict(entry_id, data)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not persist ledger entry {entry_id}: {e}")
+
+
+_last_synced_ledger_count = len(SUPPLY_CHAIN_LEDGER)
+
+
+def _sync_recent_ledger_entries():
+    """Persist any new ledger entries that appeared since last sync."""
+    global _last_synced_ledger_count
+    if not (USE_DATABASE and database_enabled):
+        return
+    current_count = len(SUPPLY_CHAIN_LEDGER)
+    if current_count <= _last_synced_ledger_count:
+        _last_synced_ledger_count = current_count
+        return
+    try:
+        from database.manager import DatabaseManager
+        db = DatabaseManager()
+        try:
+            for entry_id, entry_data in SUPPLY_CHAIN_LEDGER.items():
+                entry_dict = entry_data.to_dict() if hasattr(entry_data, 'to_dict') else dict(entry_data)
+                db.supply_chain_ledger.upsert_from_dict(entry_id, entry_dict)
+            _last_synced_ledger_count = len(SUPPLY_CHAIN_LEDGER)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not sync ledger entries: {e}")
+
+
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 ACTUARIAL_SIMULATIONS: Dict[str, Dict[str, Any]] = {}  # simulation_id -> actuarial snapshot
@@ -25617,6 +25796,10 @@ For claims or questions, please contact:
             try:
                 payload = json.loads(body or '{}')
                 result = supplier_service.register_supplier(payload)
+                if result.get('success') and result.get('supplier'):
+                    sup = result['supplier']
+                    sup_id = sup.get('id', '')
+                    _persist_supplier(sup_id, sup)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(result).encode('utf-8'))
             except ValueError as e:
@@ -25703,6 +25886,9 @@ For claims or questions, please contact:
                 
                 result = supplier_service.approve_supplier(supplier_id, admin_user, notes)
                 
+                if result.get('success') and supplier_id in SUPPLIERS:
+                    _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
+                
                 # Log audit
                 if audit:
                     audit.log(admin_user, 'approve', 'supplier', supplier_id, {'notes': notes})
@@ -25745,6 +25931,9 @@ For claims or questions, please contact:
                     return
                 
                 result = supplier_service.reject_supplier(supplier_id, admin_user, reason)
+                
+                if result.get('success') and supplier_id in SUPPLIERS:
+                    _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
                 
                 # Log audit
                 if audit:
@@ -25789,6 +25978,9 @@ For claims or questions, please contact:
                 
                 result = supplier_service.suspend_supplier(supplier_id, admin_user, reason)
                 
+                if result.get('success') and supplier_id in SUPPLIERS:
+                    _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
+                
                 # Log audit
                 if audit:
                     audit.log(admin_user, 'suspend', 'supplier', supplier_id, {'reason': reason})
@@ -25824,6 +26016,9 @@ For claims or questions, please contact:
                 admin_user = (session or {}).get('username', 'admin')
                 
                 result = supplier_service.reactivate_supplier(supplier_id, admin_user)
+                
+                if result.get('success') and supplier_id in SUPPLIERS:
+                    _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
                 
                 # Log audit
                 if audit:
@@ -25971,6 +26166,9 @@ For claims or questions, please contact:
                     except Exception:
                         pass
 
+                if offer_id and offer_id in SUPPLIER_OFFERS:
+                    _persist_supplier_offer(offer_id, SUPPLIER_OFFERS[offer_id])
+
                 self._set_json_headers(201 if not existing else 200)
                 self.wfile.write(json.dumps({'success': True, 'id': offer_id}).encode('utf-8'))
             except json.JSONDecodeError:
@@ -26103,6 +26301,9 @@ For claims or questions, please contact:
                         updated_by=actor,
                         notes=notes,
                     )
+                    if result.get('success') and transaction_id in SUPPLIER_ORDERS:
+                        _persist_supplier_order(transaction_id, SUPPLIER_ORDERS[transaction_id])
+                        _sync_recent_ledger_entries()
                 else:
                     if not marketplace_enabled or not marketplace:
                         self._set_json_headers(503)
@@ -26294,6 +26495,10 @@ For claims or questions, please contact:
                     notes=data.get('notes', '')
                 )
                 
+                if result.get('success') and result.get('invitation'):
+                    inv = result['invitation']
+                    _persist_supplier_invitation(inv.get('code', ''), inv)
+                
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
@@ -26301,6 +26506,42 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Revoke invitation code (admin only)
+        if path.startswith('/api/supply-chain/invitations/') and path.endswith('/revoke'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                code = path.split('/')[4]
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                reason = data.get('reason', '')
+                
+                result = supply_chain_service.revoke_invitation(code, admin_user, reason)
+                
+                if result.get('success'):
+                    inv_data = SUPPLIER_INVITATIONS.get(code)
+                    if inv_data:
+                        inv_dict = inv_data.to_dict() if hasattr(inv_data, 'to_dict') else dict(inv_data)
+                        _persist_supplier_invitation(code, inv_dict)
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # Register supplier with invitation code
         if path == '/api/supply-chain/register':
             if not supply_chain_enabled or not supply_chain_service:
@@ -26311,6 +26552,16 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body or '{}')
                 result = supply_chain_service.register_supplier(data)
+                
+                if result.get('success') and result.get('supplier'):
+                    sup = result['supplier']
+                    sup_id = sup.get('id', '')
+                    _persist_supplier(sup_id, sup)
+                    inv_code = data.get('invitation_code', '')
+                    if inv_code and inv_code in SUPPLIER_INVITATIONS:
+                        inv_data = SUPPLIER_INVITATIONS[inv_code]
+                        inv_dict = inv_data.to_dict() if hasattr(inv_data, 'to_dict') else dict(inv_data)
+                        _persist_supplier_invitation(inv_code, inv_dict)
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -26348,6 +26599,9 @@ For claims or questions, please contact:
                     notes=data.get('notes', '')
                 )
                 
+                if result.get('success') and supplier_id in SUPPLIERS:
+                    _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
+                
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26383,6 +26637,9 @@ For claims or questions, please contact:
                     rejected_by=admin_user,
                     reason=data.get('reason', 'Not specified')
                 )
+                
+                if result.get('success') and supplier_id in SUPPLIERS:
+                    _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -26453,6 +26710,12 @@ For claims or questions, please contact:
                     data=data
                 )
                 
+                if result.get('success') and result.get('order'):
+                    order = result['order']
+                    order_id = order.get('id', '')
+                    _persist_supplier_order(order_id, order)
+                    _sync_recent_ledger_entries()
+                
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26516,6 +26779,10 @@ For claims or questions, please contact:
                 
                 result = supply_chain_service.complete_order(order_id, completed_by)
                 
+                if result.get('success') and order_id in SUPPLIER_ORDERS:
+                    _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
+                    _sync_recent_ledger_entries()
+                
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26562,6 +26829,9 @@ For claims or questions, please contact:
                     actor=actor,
                     data=data,
                 )
+                if result.get('success') and order_id in SUPPLIER_ORDERS:
+                    _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
+                    _sync_recent_ledger_entries()
                 self._set_json_headers(200 if result.get('success') else 400)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26608,6 +26878,9 @@ For claims or questions, please contact:
                     actor=actor,
                     data=data,
                 )
+                if result.get('success') and order_id in SUPPLIER_ORDERS:
+                    _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
+                    _sync_recent_ledger_entries()
                 self._set_json_headers(200 if result.get('success') else 400)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26654,6 +26927,9 @@ For claims or questions, please contact:
                     actor=actor,
                     data=data,
                 )
+                if result.get('success') and order_id in SUPPLIER_ORDERS:
+                    _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
+                    _sync_recent_ledger_entries()
                 self._set_json_headers(200 if result.get('success') else 400)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26687,6 +26963,9 @@ For claims or questions, please contact:
                     actor=actor,
                     data=data,
                 )
+                if result.get('success') and order_id in SUPPLIER_ORDERS:
+                    _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
+                    _sync_recent_ledger_entries()
                 self._set_json_headers(200 if result.get('success') else 400)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
@@ -26970,6 +27249,11 @@ For claims or questions, please contact:
                 processed_by = (session or {}).get('username', 'admin')
                 
                 result = supply_chain_service.process_settlement(supplier_id, processed_by)
+                
+                if result.get('success'):
+                    _sync_recent_ledger_entries()
+                    if supplier_id in SUPPLIERS:
+                        _persist_supplier(supplier_id, SUPPLIERS[supplier_id])
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -33824,6 +34108,10 @@ For claims or questions, please contact:
                     )
                     order = order_result.get('order', {})
                     pricing_plan = order_result.get('pricing_plan') or order.get('pricing_plan') or {}
+
+                    if order_result.get('success') and order.get('id'):
+                        _persist_supplier_order(order['id'], order)
+                        _sync_recent_ledger_entries()
 
                     purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                     final_amount = safe_float(order.get('total_amount'), 0.0)

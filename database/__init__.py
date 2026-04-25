@@ -265,6 +265,8 @@ def upgrade_schema(engine=None):
         ('claims', 'payment_method', 'VARCHAR(50)', None),
         ('claims', 'payment_reference', 'VARCHAR(100)', None),
         ('claims', 'paid_amount', 'FLOAT', None),
+        # Supplier invitation code reference
+        ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
     ]
     
     with engine.connect() as conn:

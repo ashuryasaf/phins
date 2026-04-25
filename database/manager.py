@@ -29,6 +29,12 @@ from database.repositories import (
     TokenRepository,
     DocumentRepository,
     DocumentProcessingJobRepository,
+    SupplierRepository,
+    SupplierInvitationRepository,
+    SupplierOfferRepository,
+    SupplierOrderRepository,
+    SupplierDocumentRepository,
+    SupplyChainLedgerRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +78,12 @@ class DatabaseManager:
         self._tokens = None
         self._documents = None
         self._processing_jobs = None
+        self._suppliers = None
+        self._supplier_invitations = None
+        self._supplier_offers = None
+        self._supplier_orders = None
+        self._supplier_documents = None
+        self._supply_chain_ledger = None
     
     def _ensure_session(self) -> Session:
         """
@@ -103,6 +115,12 @@ class DatabaseManager:
         self._tokens = None
         self._documents = None
         self._processing_jobs = None
+        self._suppliers = None
+        self._supplier_invitations = None
+        self._supplier_offers = None
+        self._supplier_orders = None
+        self._supplier_documents = None
+        self._supply_chain_ledger = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -194,7 +212,49 @@ class DatabaseManager:
         if self._processing_jobs is None:
             self._processing_jobs = DocumentProcessingJobRepository(self._ensure_session())
         return self._processing_jobs
-    
+
+    @property
+    def suppliers(self) -> SupplierRepository:
+        """Get supplier repository"""
+        if self._suppliers is None:
+            self._suppliers = SupplierRepository(self._ensure_session())
+        return self._suppliers
+
+    @property
+    def supplier_invitations(self) -> SupplierInvitationRepository:
+        """Get supplier invitation repository"""
+        if self._supplier_invitations is None:
+            self._supplier_invitations = SupplierInvitationRepository(self._ensure_session())
+        return self._supplier_invitations
+
+    @property
+    def supplier_offers(self) -> SupplierOfferRepository:
+        """Get supplier offer repository"""
+        if self._supplier_offers is None:
+            self._supplier_offers = SupplierOfferRepository(self._ensure_session())
+        return self._supplier_offers
+
+    @property
+    def supplier_orders(self) -> SupplierOrderRepository:
+        """Get supplier order repository"""
+        if self._supplier_orders is None:
+            self._supplier_orders = SupplierOrderRepository(self._ensure_session())
+        return self._supplier_orders
+
+    @property
+    def supplier_documents(self) -> SupplierDocumentRepository:
+        """Get supplier document repository"""
+        if self._supplier_documents is None:
+            self._supplier_documents = SupplierDocumentRepository(self._ensure_session())
+        return self._supplier_documents
+
+    @property
+    def supply_chain_ledger(self) -> SupplyChainLedgerRepository:
+        """Get supply chain ledger repository"""
+        if self._supply_chain_ledger is None:
+            self._supply_chain_ledger = SupplyChainLedgerRepository(self._ensure_session())
+        return self._supply_chain_ledger
+
     def commit(self):
         """Commit current transaction"""
         if self._session:
