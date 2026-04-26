@@ -3525,16 +3525,35 @@ except (TypeError, ValueError):
 _loaded_algo_balances: Dict[str, Any] = {}
 _loaded_trading_bots: Dict[str, Any] = {}
 _persistence_lock = threading.Lock()
+_persistence_dirty = True
 _persistence_log_state = {
     'saves_since_last_log': 0,
     'last_logged_at': 0.0,
     'first_save_logged': False,
 }
 
-def save_ledger_data():
-    """Save all ledger data to persistent storage"""
+def mark_ledger_dirty():
+    """Mark ledger data as modified so the next periodic save writes to disk."""
+    global _persistence_dirty
+    _persistence_dirty = True
+
+
+def save_ledger_data(_periodic: bool = False):
+    """Save all ledger data to persistent storage.
+
+    Explicit calls from API write handlers always flush.  The background
+    periodic loop passes ``_periodic=True`` and is skipped when no mutation
+    has occurred since the last successful save, avoiding unnecessary disk
+    writes and log noise when the system is idle.
+    """
+    global _persistence_dirty
     if not PERSISTENCE_ENABLED:
         return
+    if _periodic and not _persistence_dirty:
+        return
+    # Non-periodic (explicit) callers are triggered by data mutations.
+    if not _periodic:
+        _persistence_dirty = True
     
     try:
         with _persistence_lock:
@@ -3603,6 +3622,7 @@ def save_ledger_data():
             
             # Atomic rename
             os.rename(temp_file, LEDGER_PERSISTENCE_FILE)
+            _persistence_dirty = False
 
             # Emit a throttled summary line instead of one print per save. Each
             # API write path calls save_ledger_data(); printing every time
@@ -4015,8 +4035,8 @@ def schedule_periodic_save():
     """Schedule periodic saves of ledger data"""
     def save_loop():
         while True:
-            time.sleep(60)  # Save every 60 seconds
-            save_ledger_data()
+            time.sleep(60)
+            save_ledger_data(_periodic=True)
     
     if PERSISTENCE_ENABLED:
         save_thread = threading.Thread(target=save_loop, daemon=True)
@@ -8756,6 +8776,63 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         return user_id, user_role, username, None
 
+    def _build_aggregate_portfolio(self) -> dict:
+        """Build an aggregate portfolio summary across all customers.
+
+        Used when admin/underwriter/agent roles call ``/api/investment-portfolio``
+        without a specific ``customer_id``.  Returns totals per customer so the
+        admin dashboard can show investment values alongside policies.
+        """
+        accounts_list = []
+        total_balance = 0.0
+        total_deposited = 0.0
+        total_returns = 0.0
+
+        customer_ids = set(INVESTMENT_ACCOUNTS.keys())
+        for cid in CUSTOMERS:
+            customer_ids.add(cid if isinstance(cid, str) else cid.get('id', ''))
+
+        for cid in sorted(customer_ids):
+            if not cid:
+                continue
+            account = INVESTMENT_ACCOUNTS.get(cid, {})
+            allocation = CUSTOMER_ALLOCATIONS.get(cid, {})
+            customer_policies = [
+                p for p in POLICIES.values()
+                if p.get('customer_id') == cid and status_eq(p, 'active')
+            ]
+            monthly_premium = sum(safe_float(p.get('monthly_premium', 0)) for p in customer_policies)
+            investment_pct = allocation.get('investment_pct', 65) / 100
+            savings_pct = allocation.get('savings_pct', 50) / 100
+            monthly_investment = monthly_premium * savings_pct * investment_pct
+
+            balance = safe_float(account.get('balance', monthly_investment * 6))
+            deposited = safe_float(account.get('total_deposited', monthly_investment * 6))
+            returns = safe_float(account.get('total_returns', monthly_investment * 0.05))
+
+            total_balance += balance
+            total_deposited += deposited
+            total_returns += returns
+
+            accounts_list.append({
+                'customer_id': cid,
+                'total_value': balance,
+                'invested_assets': deposited,
+                'total_returns': returns,
+                'status': 'active' if customer_policies else 'inactive',
+            })
+
+        return {
+            'portfolio': accounts_list,
+            'accounts': accounts_list,
+            'summary': {
+                'total_balance': total_balance,
+                'total_deposited': total_deposited,
+                'total_returns': total_returns,
+                'customer_count': len(accounts_list),
+            },
+        }
+
     @staticmethod
     def _safe_download_filename(value: str, fallback: str = 'report_summary') -> str:
         """Create a filesystem-safe ASCII filename stem."""
@@ -9188,6 +9265,41 @@ For claims or questions, please contact:
                 health_status['recovery_url'] = '/api/diagnostics/db-recovery'
             
             self.wfile.write(json.dumps(health_status).encode('utf-8'))
+            return
+
+        # Serve favicon.ico — avoids noisy 404s in logs from every browser hit.
+        # Returns a minimal 1x1 transparent PNG to keep the response lightweight.
+        if self.path == '/favicon.ico':
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/x-icon')
+            self.send_header('Cache-Control', 'public, max-age=604800')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(
+                b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+                b'\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89'
+                b'\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01'
+                b'\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+            )
+            return
+
+        # Serve robots.txt — controls crawler access and prevents indexing of
+        # internal API endpoints and admin pages.
+        if self.path == '/robots.txt':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            robots_content = (
+                "User-agent: *\n"
+                "Disallow: /api/\n"
+                "Disallow: /admin.html\n"
+                "Disallow: /actuary-dashboard.html\n"
+                "Disallow: /media-files/\n"
+                "Allow: /\n"
+            )
+            self.wfile.write(robots_content.encode('utf-8'))
             return
         
         # Security checks
@@ -12479,11 +12591,21 @@ For claims or questions, please contact:
         
         # Individual Policy by ID: /api/policy/{id}
         if path.startswith('/api/policy/') and not path.endswith('/activate') and '/api/policy/update' not in path and '/api/policy/create' not in path:
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
             policy_id = path.replace('/api/policy/', '').split('/')[0]
             if policy_id:
                 policy = POLICIES.get(policy_id)
                 if policy:
-                    # Enrich with customer name if available
+                    user = get_session_user(session) or {}
+                    role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
+                    session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+                    if role == 'customer' and session_customer_id and policy.get('customer_id') != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own policies'}).encode('utf-8'))
+                        return
                     customer = CUSTOMERS.get(policy.get('customer_id'))
                     if customer:
                         policy['customer_name'] = customer.get('name', 'N/A')
@@ -12496,11 +12618,21 @@ For claims or questions, please contact:
         
         # Individual Claim by ID: /api/claim/{id}
         if path.startswith('/api/claim/') and not any(x in path for x in ['/approve', '/reject', '/pay', '/process']):
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
             claim_id = path.replace('/api/claim/', '').split('/')[0]
             if claim_id:
                 claim = CLAIMS.get(claim_id)
                 if claim:
-                    # Enrich with customer name if available
+                    user = get_session_user(session) or {}
+                    role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
+                    session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+                    if role == 'customer' and session_customer_id and claim.get('customer_id') != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own claims'}).encode('utf-8'))
+                        return
                     customer = CUSTOMERS.get(claim.get('customer_id'))
                     if customer:
                         claim['customer_name'] = customer.get('name', 'N/A')
@@ -14370,6 +14502,11 @@ For claims or questions, please contact:
 
         # Customers Endpoint
         if path == '/api/customers':
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
             requested_customer_id = qs.get('id', [None])[0]
             
             # SECURITY: Enforce customer data isolation
@@ -14572,6 +14709,11 @@ For claims or questions, please contact:
 
         # Customer billing list - GET /api/billing?customer_id=XXX
         if path == '/api/billing':
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
             requested_customer_id = qs.get('customer_id', [None])[0]
             
             # SECURITY: Enforce customer data isolation
@@ -21789,7 +21931,15 @@ For claims or questions, please contact:
             else:
                 customer_id = requested_customer_id or session_customer_id
             
+            # Admin/underwriter without a specific customer_id: return an
+            # aggregate summary across all customers so the admin dashboard
+            # can display total investment values without a 400 error.
             if not customer_id:
+                if role in ('admin', 'underwriter', 'agent'):
+                    aggregate = self._build_aggregate_portfolio()
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(aggregate, default=str).encode('utf-8'))
+                    return
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
@@ -21821,10 +21971,10 @@ For claims or questions, please contact:
                     result = {
                         'customer_id': customer_id,
                         'account': {
-                            'balance': account.get('balance', monthly_investment * 6),  # Estimate 6 months
+                            'balance': account.get('balance', monthly_investment * 6),
                             'total_deposited': account.get('total_deposited', monthly_investment * 6),
                             'total_returns': account.get('total_returns', monthly_investment * 0.05),
-                            'return_rate': 8.5,  # Annual estimate
+                            'return_rate': 8.5,
                             'created_at': account.get('created_at', datetime.now().isoformat())
                         },
                         'allocation': {
@@ -21975,6 +22125,15 @@ For claims or questions, please contact:
         
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
+        qs_post = urlparse.parse_qs(parsed.query)
+
+        for key, values in qs_post.items():
+            for value in values:
+                is_valid, error = validate_input_security(value, client_ip, f"post_query_param_{key}")
+                if not is_valid:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
         
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
@@ -25274,8 +25433,9 @@ For claims or questions, please contact:
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({'success': True, 'id': table_id}).encode('utf-8'))
             except Exception as e:
+                print(f"[ERROR] Actuarial table upload failed: {e}")
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Upload failed'}).encode('utf-8'))
             return
 
         # Risk Assessment Upload Endpoint
@@ -25654,8 +25814,9 @@ For claims or questions, please contact:
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({'success': True, 'id': table_id}).encode('utf-8'))
             except Exception as e:
+                print(f"[ERROR] Risk assessment upload failed: {e}")
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Upload failed'}).encode('utf-8'))
             return
 
         # Admin/Actuary: Create fee schedule (draft) - governance-friendly (maker/checker supported via approve endpoint)
@@ -25717,8 +25878,9 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
             except Exception as e:
+                print(f"[ERROR] Fee schedule creation failed: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Failed to create fee schedule', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Failed to create fee schedule'}).encode('utf-8'))
             return
 
         # Admin/Actuary: Approve fee schedule (maker/checker: approver must differ from creator)
@@ -25780,8 +25942,9 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
             except Exception as e:
+                print(f"[ERROR] Fee schedule approval failed: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Failed to approve fee schedule', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Failed to approve fee schedule'}).encode('utf-8'))
             return
 
         # ============ SUPPLIER MANAGEMENT POST ENDPOINTS ============
@@ -25806,8 +25969,9 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
+                print(f"[SECURITY] Supplier registration error: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Registration failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
             return
         
         # Supplier Login
@@ -25858,8 +26022,9 @@ For claims or questions, please contact:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
+                print(f"[SECURITY] Supplier login error: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Login failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Login failed'}).encode('utf-8'))
             return
         
         # Admin: Approve supplier
@@ -25899,8 +26064,9 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
+                print(f"[SECURITY] Supplier approval error: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Approval failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Approval failed'}).encode('utf-8'))
             return
         
         # Admin: Reject supplier
@@ -25945,8 +26111,9 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
+                print(f"[SECURITY] Supplier rejection error: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Rejection failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Rejection failed'}).encode('utf-8'))
             return
         
         # Admin: Suspend supplier
@@ -25991,8 +26158,9 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
+                print(f"[SECURITY] Supplier suspension error: {e}")
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Suspension failed', 'details': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Suspension failed'}).encode('utf-8'))
             return
         
         # Admin: Reactivate supplier
