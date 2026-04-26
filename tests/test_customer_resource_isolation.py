@@ -71,4 +71,7 @@ def test_customer_without_customer_id_cannot_access_policy_or_claim():
         assert claim_content_type.startswith("application/json")
         assert claim_body == {"error": "Customer session invalid"}
     finally:
+        portal.POLICIES.pop("POL-TEST-ISO", None)
+        portal.CLAIMS.pop("CLM-TEST-ISO", None)
+        portal.CUSTOMERS.pop("CUST-TARGET-001", None)
         portal.SESSIONS.pop("phins_test_missing_customer_id", None)

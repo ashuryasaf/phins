@@ -3541,21 +3541,21 @@ def mark_ledger_dirty():
 def save_ledger_data(_periodic: bool = False):
     """Save all ledger data to persistent storage.
 
-    Explicit calls from API write handlers always flush.  The background
-    periodic loop passes ``_periodic=True`` and still writes a periodic
-    checkpoint even when no mutation was marked dirty, preserving the
-    pre-existing persistence safety net for code paths that forgot to flag
-    changes explicitly.
+    Explicit calls from API write handlers always flush. The background
+    periodic loop passes ``_periodic=True`` and skips disk writes when no
+    mutation has marked persistence state dirty.
     """
     global _persistence_dirty
     if not PERSISTENCE_ENABLED:
         return
     # Non-periodic (explicit) callers are triggered by data mutations.
     if not _periodic:
-        _persistence_dirty = True
+        mark_ledger_dirty()
     
     try:
         with _persistence_lock:
+            if _periodic and not _persistence_dirty:
+                return
             # Collect algo trading balances from services if available
             algo_balances = {}
             try:
