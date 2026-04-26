@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var otpVerifyInFlight = false;
   var captchaVerifiedToken = null;
   var captchaExpiryTimer = null;
+  var LOCAL_CAPTCHA_FLAG = ['__', 'local', '__'].join('');
   
   function safeStorageSet(storage, key, value) {
     try {
@@ -554,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function () {
             captchaAnswer.value = '';
             return;
           }
-          verifiedCaptchaToken = '__local__';
+          verifiedCaptchaToken = LOCAL_CAPTCHA_FLAG;
         }
       }
       
@@ -565,7 +566,7 @@ document.addEventListener('DOMContentLoaded', function () {
         user_agent: navigator.userAgent
       };
 
-      if (verifiedCaptchaToken && verifiedCaptchaToken !== '__local__') {
+      if (verifiedCaptchaToken && verifiedCaptchaToken !== LOCAL_CAPTCHA_FLAG) {
         loginData.captcha_token = verifiedCaptchaToken;
       }
       
