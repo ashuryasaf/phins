@@ -34,6 +34,15 @@ from typing import Dict, Any, Tuple, Optional, List
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
+
+# Prevent double module initialization: when this file runs as __main__ (e.g.
+# `python3 web_portal/server.py` on Railway) and other modules later do
+# `from web_portal.server import X`, Python would load the file a *second* time
+# under the canonical package name, re-executing all module-level code (DB init,
+# service constructors, print banners).  Registering under the package name
+# early ensures subsequent imports reuse the already-running module.
+if __name__ == '__main__' and 'web_portal.server' not in sys.modules:
+    sys.modules['web_portal.server'] = sys.modules[__name__]
 from services.platform_event_ledger_service import PlatformEventLedgerService
 from services.document_processing_service import (
     DocumentProcessingService, get_document_service, reset_document_service,
@@ -3796,6 +3805,7 @@ def load_dynamic_customers():
             return 0
         
         loaded_count = 0
+        skipped_count = 0
         legacy_count = 0
         
         for customer in dynamic_customers:
@@ -3805,6 +3815,7 @@ def load_dynamic_customers():
             
             # Skip if already exists
             if email in USERS:
+                skipped_count += 1
                 continue
             
             # SECURITY: Check if password is already hashed (new secure format)
@@ -3852,7 +3863,8 @@ def load_dynamic_customers():
         if legacy_count > 0:
             print(f"[DYNAMIC] WARNING: {legacy_count} customers have legacy plain-text passwords. Run password migration.")
         
-        print(f"[DYNAMIC] Loaded {loaded_count} dynamic customers from seeds file")
+        total = len(dynamic_customers)
+        print(f"[DYNAMIC] Dynamic customers from file: {total} found, {loaded_count} new, {skipped_count} already loaded")
         return loaded_count
         
     except json.JSONDecodeError as e:
@@ -40599,7 +40611,6 @@ def run_server(port: int = PORT) -> None:
                 print("✓ Database connection successful")
                 db_info = get_database_info()
                 print(f"   Type: {db_info['database_type']}")
-                print(f"   URL: {db_info['database_url'][:50]}...")
             else:
                 print("⚠️  Database connection failed, will try to initialize anyway")
             
@@ -40659,11 +40670,9 @@ def run_server(port: int = PORT) -> None:
             # Don't fail - just fall back to in-memory
     elif USE_DATABASE and database_enabled and _db_init_done:
         print("📊 Database already initialized at startup, skipping re-initialization")
-        # Still show connection info for diagnostics
         try:
             db_info = get_database_info()
             print(f"   Type: {db_info['database_type']}")
-            print(f"   URL: {db_info['database_url'][:50]}...")
         except Exception:
             pass
         try:
