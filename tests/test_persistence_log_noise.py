@@ -93,6 +93,30 @@ def test_save_ledger_data_zero_interval_logs_every_save(monkeypatch):
     assert "coalesced" not in output
 
 
+def test_periodic_save_still_writes_when_dirty_flag_is_clear(monkeypatch, tmp_path):
+    """Periodic checkpoints should still persist data as a safety net."""
+    persistence_file = tmp_path / "ledger.json"
+
+    monkeypatch.setattr(server_module, "LEDGER_PERSISTENCE_FILE", str(persistence_file))
+    monkeypatch.setattr(server_module, "_persistence_dirty", False)
+    monkeypatch.setattr(server_module, "PERSISTENCE_VERBOSE", False)
+    monkeypatch.setattr(server_module, "PERSISTENCE_LOG_INTERVAL_SECONDS", 3600)
+    monkeypatch.setitem(
+        server_module._persistence_log_state, "first_save_logged", True
+    )
+    monkeypatch.setitem(
+        server_module._persistence_log_state, "last_logged_at", 10**9
+    )
+    monkeypatch.setitem(
+        server_module._persistence_log_state, "saves_since_last_log", 0
+    )
+
+    server_module.CUSTOMERS["CUST-PERSIST-001"] = {"id": "CUST-PERSIST-001"}
+    server_module.save_ledger_data(_periodic=True)
+
+    assert persistence_file.exists(), "Periodic save should still write a checkpoint file"
+
+
 @pytest.mark.parametrize(
     "path",
     [

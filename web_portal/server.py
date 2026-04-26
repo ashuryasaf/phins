@@ -3542,14 +3542,13 @@ def save_ledger_data(_periodic: bool = False):
     """Save all ledger data to persistent storage.
 
     Explicit calls from API write handlers always flush.  The background
-    periodic loop passes ``_periodic=True`` and is skipped when no mutation
-    has occurred since the last successful save, avoiding unnecessary disk
-    writes and log noise when the system is idle.
+    periodic loop passes ``_periodic=True`` and still writes a periodic
+    checkpoint even when no mutation was marked dirty, preserving the
+    pre-existing persistence safety net for code paths that forgot to flag
+    changes explicitly.
     """
     global _persistence_dirty
     if not PERSISTENCE_ENABLED:
-        return
-    if _periodic and not _persistence_dirty:
         return
     # Non-periodic (explicit) callers are triggered by data mutations.
     if not _periodic:
@@ -9271,7 +9270,7 @@ For claims or questions, please contact:
         # Returns a minimal 1x1 transparent PNG to keep the response lightweight.
         if self.path == '/favicon.ico':
             self.send_response(200)
-            self.send_header('Content-Type', 'image/x-icon')
+            self.send_header('Content-Type', 'image/png')
             self.send_header('Cache-Control', 'public, max-age=604800')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.end_headers()
@@ -12601,11 +12600,16 @@ For claims or questions, please contact:
                 if policy:
                     user = get_session_user(session) or {}
                     role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
-                    session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
-                    if role == 'customer' and session_customer_id and policy.get('customer_id') != session_customer_id:
-                        self._set_json_headers(403)
-                        self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own policies'}).encode('utf-8'))
-                        return
+                    session_customer_id = get_session_customer_id(session)
+                    if role == 'customer':
+                        if not session_customer_id:
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                            return
+                        if policy.get('customer_id') != session_customer_id:
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own policies'}).encode('utf-8'))
+                            return
                     customer = CUSTOMERS.get(policy.get('customer_id'))
                     if customer:
                         policy['customer_name'] = customer.get('name', 'N/A')
@@ -12628,11 +12632,16 @@ For claims or questions, please contact:
                 if claim:
                     user = get_session_user(session) or {}
                     role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
-                    session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
-                    if role == 'customer' and session_customer_id and claim.get('customer_id') != session_customer_id:
-                        self._set_json_headers(403)
-                        self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own claims'}).encode('utf-8'))
-                        return
+                    session_customer_id = get_session_customer_id(session)
+                    if role == 'customer':
+                        if not session_customer_id:
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                            return
+                        if claim.get('customer_id') != session_customer_id:
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own claims'}).encode('utf-8'))
+                            return
                     customer = CUSTOMERS.get(claim.get('customer_id'))
                     if customer:
                         claim['customer_name'] = customer.get('name', 'N/A')
