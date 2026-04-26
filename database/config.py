@@ -119,15 +119,11 @@ class DatabaseConfig:
     def get_config_summary(cls) -> Dict[str, Any]:
         """Get configuration summary for diagnostics"""
         db_url = cls.get_database_url()
-        # Mask password in URL for security
+        # Mask credentials AND hostname to avoid leaking infrastructure
+        # details in log streams.  Only the scheme + database type are safe.
         if '@' in db_url:
-            parts = db_url.split('@')
-            user_pass = parts[0].split('://')[-1]
-            if ':' in user_pass:
-                user = user_pass.split(':')[0]
-                masked_url = db_url.replace(user_pass, f"{user}:****")
-            else:
-                masked_url = db_url
+            scheme = db_url.split('://')[0] if '://' in db_url else 'unknown'
+            masked_url = f"{scheme}://****:****@****/****"
         else:
             masked_url = db_url
         
