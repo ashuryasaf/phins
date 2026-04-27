@@ -20210,6 +20210,304 @@ For claims or questions, please contact:
             return
         
         # ========== END COMPREHENSIVE CUSTOMER API ==========
+
+        # ========== CUSTOMER AI REPORT API ==========
+        if path == '/api/customer/ai-report':
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            period = qs.get('period', ['all'])[0]
+            date_from = qs.get('from', [''])[0]
+            date_to = qs.get('to', [''])[0]
+
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'AI report'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                return
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+
+            now = datetime.now()
+
+            def _resolve_period_bounds(period_val, dfrom, dto):
+                """Return (start_dt, end_dt) for the requested period."""
+                end = now
+                if period_val == 'monthly':
+                    start = now.replace(day=1)
+                elif period_val == 'quarterly':
+                    q_month = ((now.month - 1) // 3) * 3 + 1
+                    start = now.replace(month=q_month, day=1)
+                elif period_val == 'annual':
+                    start = now.replace(month=1, day=1)
+                elif period_val == 'custom' and dfrom:
+                    try:
+                        start = datetime.strptime(dfrom, '%d/%m/%Y')
+                    except ValueError:
+                        try:
+                            start = datetime.strptime(dfrom, '%Y-%m-%d')
+                        except ValueError:
+                            start = datetime(2000, 1, 1)
+                    if dto:
+                        try:
+                            end = datetime.strptime(dto, '%d/%m/%Y').replace(hour=23, minute=59, second=59)
+                        except ValueError:
+                            try:
+                                end = datetime.strptime(dto, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                            except ValueError:
+                                end = now
+                else:
+                    start = datetime(2000, 1, 1)
+                return start, end
+
+            period_start, period_end = _resolve_period_bounds(period, date_from, date_to)
+
+            def _in_period(ts_str):
+                if not ts_str:
+                    return True
+                try:
+                    ts = datetime.fromisoformat(str(ts_str).replace('Z', '+00:00').split('+')[0])
+                    return period_start <= ts <= period_end
+                except (ValueError, TypeError):
+                    return True
+
+            customer = CUSTOMERS.get(customer_id, {})
+            profile = {
+                'id': customer_id,
+                'name': customer.get('name', 'Customer'),
+                'email': customer.get('email'),
+                'phone': customer.get('phone'),
+                'address': customer.get('address'),
+                'created_at': customer.get('created_at'),
+                'risk_score': customer.get('risk_score'),
+                'credit_score': customer.get('credit_score'),
+            }
+
+            customer_policies = [p for p in POLICIES.values()
+                                 if p.get('customer_id') == customer_id and _in_period(p.get('created_at'))]
+            active_policies = [p for p in customer_policies if get_status_lower(p) in ('active', 'approved')]
+            policies_data = {
+                'items': customer_policies,
+                'total': len(customer_policies),
+                'active': len(active_policies),
+                'total_coverage': round(sum(safe_float(p.get('coverage_amount', 0)) for p in customer_policies), 2),
+                'total_premium': round(sum(safe_float(p.get('monthly_premium', 0)) for p in customer_policies), 2),
+                'by_type': {},
+            }
+            for p in customer_policies:
+                ptype = p.get('policy_type', p.get('type', 'other'))
+                policies_data['by_type'].setdefault(ptype, 0)
+                policies_data['by_type'][ptype] += 1
+
+            customer_claims = [c for c in CLAIMS.values()
+                               if c.get('customer_id') == customer_id and _in_period(c.get('created_at', c.get('date_filed')))]
+            pending_claims = [c for c in customer_claims if get_status_lower(c) in ('pending', 'under review', 'under_review')]
+            approved_claims = [c for c in customer_claims if get_status_lower(c) in ('approved', 'paid', 'settled')]
+            denied_claims = [c for c in customer_claims if get_status_lower(c) in ('denied', 'rejected')]
+            claims_data = {
+                'items': customer_claims,
+                'total': len(customer_claims),
+                'pending': len(pending_claims),
+                'approved': len(approved_claims),
+                'denied': len(denied_claims),
+                'total_amount': round(sum(safe_float(c.get('amount', c.get('claim_amount', 0))) for c in customer_claims), 2),
+                'approved_amount': round(sum(safe_float(c.get('amount', c.get('claim_amount', 0))) for c in approved_claims), 2),
+                'by_status': {},
+            }
+            for c in customer_claims:
+                st = get_status_lower(c) or 'unknown'
+                claims_data['by_status'].setdefault(st, 0)
+                claims_data['by_status'][st] += 1
+
+            customer_bills = [b for b in BILLING.values()
+                              if b.get('customer_id') == customer_id and _in_period(b.get('created_at', b.get('bill_date')))]
+            outstanding_bills = [b for b in customer_bills if status_in(b, ['outstanding', 'pending', 'partial'])]
+            paid_bills = [b for b in customer_bills if status_in(b, ['paid', 'completed'])]
+            overdue_bills = [b for b in customer_bills if status_in(b, ['overdue', 'past_due'])]
+            outstanding_amount = round(sum(
+                safe_float(b.get('amount', b.get('amount_due', 0))) - safe_float(b.get('amount_paid', 0))
+                for b in outstanding_bills
+            ), 2)
+            total_paid_amount = round(sum(safe_float(b.get('amount_paid', 0)) for b in paid_bills), 2)
+            billing_data = {
+                'items': customer_bills,
+                'total': len(customer_bills),
+                'outstanding': len(outstanding_bills),
+                'paid': len(paid_bills),
+                'overdue': len(overdue_bills),
+                'outstanding_amount': outstanding_amount,
+                'total_paid': total_paid_amount,
+                'next_due': min(
+                    (b.get('due_date') for b in customer_bills if status_in(b, ['outstanding', 'pending'])),
+                    default=None
+                ),
+                'by_status': {},
+            }
+            for b in customer_bills:
+                st = get_status_lower(b) or 'unknown'
+                billing_data['by_status'].setdefault(st, 0)
+                billing_data['by_status'][st] += 1
+
+            wallet = HEALTH_WALLETS.get(customer_id, {'balance': 0, 'transactions': []})
+            wallet_txns = [t for t in wallet.get('transactions', []) if _in_period(t.get('timestamp'))]
+            deposits = [t for t in wallet_txns if t.get('type') == 'deposit']
+            health_wallet_data = {
+                'balance': safe_float(wallet.get('balance', 0)),
+                'monthly_deposit': safe_float(wallet.get('monthly_deposit', 0)),
+                'transactions_count': len(wallet_txns),
+                'deposits_total': round(sum(safe_float(t.get('amount', 0)) for t in deposits), 2),
+            }
+
+            inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+            inv_deposits = [d for d in inv_acc.get('deposits', []) if _in_period(d.get('timestamp', d.get('created_at')))]
+            investment_data = {
+                'balance': safe_float(inv_acc.get('balance', 0)),
+                'index_balance': safe_float(inv_acc.get('index_balance', 0)),
+                'bonds_balance': safe_float(inv_acc.get('bonds_balance', 0)),
+                'crypto_balance': safe_float(inv_acc.get('crypto_balance', 0)),
+                'deposits_count': len(inv_deposits),
+                'deposits_total': round(sum(safe_float(d.get('amount', 0)) for d in inv_deposits), 2),
+            }
+
+            customer_txns = [tx for tx in TRANSACTION_LEDGER.values()
+                             if tx.get('customer_id') == customer_id and _in_period(tx.get('timestamp'))]
+            customer_txns.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            tx_by_type = {}
+            for tx in customer_txns:
+                ttype = tx.get('type', 'unknown')
+                tx_by_type.setdefault(ttype, {'count': 0, 'total_amount': 0})
+                tx_by_type[ttype]['count'] += 1
+                tx_by_type[ttype]['total_amount'] = round(
+                    tx_by_type[ttype]['total_amount'] + safe_float(tx.get('amount', 0)), 2
+                )
+            ledger_data = {
+                'total_transactions': len(customer_txns),
+                'items': customer_txns[:100],
+                'by_type': tx_by_type,
+                'total_credits': round(sum(safe_float(tx.get('amount', 0)) for tx in customer_txns if safe_float(tx.get('amount', 0)) > 0), 2),
+                'total_debits': round(abs(sum(safe_float(tx.get('amount', 0)) for tx in customer_txns if safe_float(tx.get('amount', 0)) < 0)), 2),
+            }
+
+            customer_nfts = [nft for nft in NFT_LEDGER.values() if nft.get('owner_id') == customer_id]
+            credit_score = safe_float(customer.get('credit_score', 0))
+            risk_score = safe_float(customer.get('risk_score', 0))
+            credit_data = {
+                'credit_score': credit_score,
+                'risk_score': risk_score,
+                'risk_level': 'Low' if risk_score < 30 else ('Medium' if risk_score < 60 else 'High'),
+            }
+
+            total_assets = round(
+                safe_float(wallet.get('balance', 0)) +
+                safe_float(inv_acc.get('balance', 0)),
+                2
+            )
+            total_liabilities = outstanding_amount
+
+            timeline = []
+            for p in customer_policies:
+                timeline.append({
+                    'date': p.get('created_at', ''),
+                    'type': 'policy',
+                    'description': f"Policy {p.get('id', '')} - {p.get('policy_type', p.get('type', ''))}",
+                    'amount': safe_float(p.get('monthly_premium', 0)),
+                })
+            for c in customer_claims:
+                timeline.append({
+                    'date': c.get('created_at', c.get('date_filed', '')),
+                    'type': 'claim',
+                    'description': f"Claim {c.get('id', '')} - {get_status_lower(c)}",
+                    'amount': safe_float(c.get('amount', c.get('claim_amount', 0))),
+                })
+            for b in customer_bills:
+                timeline.append({
+                    'date': b.get('created_at', b.get('bill_date', '')),
+                    'type': 'billing',
+                    'description': f"Bill {b.get('id', '')} - {get_status_lower(b)}",
+                    'amount': safe_float(b.get('amount', b.get('amount_due', 0))),
+                })
+            timeline.sort(key=lambda x: x.get('date', '') or '', reverse=True)
+
+            ai_insights = []
+            if outstanding_amount > 0:
+                ai_insights.append({
+                    'severity': 'warning',
+                    'category': 'billing',
+                    'message': f'Outstanding balance of ${outstanding_amount:,.2f} requires attention across {len(outstanding_bills)} bill(s).',
+                })
+            if len(overdue_bills) > 0:
+                ai_insights.append({
+                    'severity': 'critical',
+                    'category': 'billing',
+                    'message': f'{len(overdue_bills)} overdue bill(s) detected. Immediate action recommended.',
+                })
+            if len(pending_claims) > 0:
+                ai_insights.append({
+                    'severity': 'info',
+                    'category': 'claims',
+                    'message': f'{len(pending_claims)} claim(s) currently pending review.',
+                })
+            if len(denied_claims) > 0:
+                ai_insights.append({
+                    'severity': 'warning',
+                    'category': 'claims',
+                    'message': f'{len(denied_claims)} claim(s) were denied. Review eligibility criteria.',
+                })
+            if len(active_policies) == 0 and len(customer_policies) > 0:
+                ai_insights.append({
+                    'severity': 'critical',
+                    'category': 'policies',
+                    'message': 'No active policies found. Coverage may have lapsed.',
+                })
+            if credit_score > 0 and credit_score < 600:
+                ai_insights.append({
+                    'severity': 'warning',
+                    'category': 'credit',
+                    'message': f'Credit score ({credit_score:.0f}) is below recommended threshold. Consider improvement strategies.',
+                })
+            if total_assets > 0:
+                ai_insights.append({
+                    'severity': 'positive',
+                    'category': 'investments',
+                    'message': f'Total asset value is ${total_assets:,.2f}. Portfolio is diversified across health, index, bonds, and crypto.',
+                })
+            if len(customer_policies) == 0 and len(customer_claims) == 0 and len(customer_bills) == 0:
+                ai_insights.append({
+                    'severity': 'info',
+                    'category': 'general',
+                    'message': 'No policies, claims, or billing records found for the selected period.',
+                })
+
+            report = {
+                'customer_id': customer_id,
+                'generated_at': now.isoformat(),
+                'period': {
+                    'type': period,
+                    'from': period_start.isoformat(),
+                    'to': period_end.isoformat(),
+                },
+                'profile': profile,
+                'policies': policies_data,
+                'claims': claims_data,
+                'billing': billing_data,
+                'health_wallet': health_wallet_data,
+                'investments': investment_data,
+                'ledger': ledger_data,
+                'credit': credit_data,
+                'nft_count': len(customer_nfts),
+                'total_assets': total_assets,
+                'total_liabilities': total_liabilities,
+                'net_position': round(total_assets - total_liabilities, 2),
+                'timeline': timeline[:50],
+                'ai_insights': ai_insights,
+            }
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            return
+        # ========== END CUSTOMER AI REPORT API ==========
         
         # ========== UNIFIED ACTIVITY LOG API ==========
         # Get all customer activities across all systems in unified view
