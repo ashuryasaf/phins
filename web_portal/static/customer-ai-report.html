@@ -328,17 +328,43 @@
 
   const API_BASE = '/api/customer/ai-report';
   let currentPeriod = 'all';
-  let token = null;
+  let authToken = '';
 
-  function getToken() {
-    if (token) return token;
-    const cookies = document.cookie.split(';');
-    for (const c of cookies) {
-      const [k, v] = c.trim().split('=');
-      if (k === 'session_token' || k === 'token') { token = v; return v; }
+  function safeStorageGet(store, key) {
+    if (!store) return null;
+    try { return store.getItem(key); } catch(e) { return null; }
+  }
+
+  function normalizeToken(t) {
+    if (!t) return '';
+    const s = String(t).trim();
+    return (s === 'undefined' || s === 'null') ? '' : s;
+  }
+
+  function readSessionCache() {
+    const raw = safeStorageGet(localStorage, 'session');
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch(e) { return {}; }
+  }
+
+  function initAuth() {
+    authToken = normalizeToken(safeStorageGet(localStorage, 'phins_token') || safeStorageGet(sessionStorage, 'phins_token'));
+    if (!authToken) {
+      const cached = readSessionCache();
+      authToken = normalizeToken(cached.token);
     }
-    token = localStorage.getItem('session_token') || localStorage.getItem('token') || '';
-    return token;
+    if (!authToken) {
+      window.location.href = '/login.html';
+      return false;
+    }
+    return true;
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
   }
 
   function formatCurrency(v) {
@@ -376,7 +402,7 @@
   async function fetchReport(period, dateFrom, dateTo) {
     showLoading();
     hideError();
-    const t = getToken();
+    if (!authToken) { window.location.href = '/login.html'; return; }
     const params = new URLSearchParams({ period: period });
     if (period === 'custom') {
       if (dateFrom) params.set('from', convertDateForApi(dateFrom));
@@ -384,8 +410,13 @@
     }
     try {
       const resp = await fetch(API_BASE + '?' + params.toString(), {
-        headers: t ? { 'Authorization': 'Bearer ' + t } : {}
+        headers: { 'Authorization': 'Bearer ' + authToken }
       });
+      if (resp.status === 401 || resp.status === 403) {
+        const err = await resp.json().catch(() => ({}));
+        if (resp.status === 401) { window.location.href = '/login.html'; return; }
+        throw new Error(err.error || 'Access denied');
+      }
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to load report (HTTP ' + resp.status + ')');
@@ -493,7 +524,7 @@
     const legendHtml = segments.map((seg, i) => `
       <div class="donut-legend-item">
         <div class="donut-legend-dot" style="background:${colors[i % colors.length]}"></div>
-        <span>${capitalize(seg.label)}: ${seg.value}</span>
+        <span>${esc(capitalize(seg.label))}: ${seg.value}</span>
       </div>
     `).join('');
     return `
@@ -539,10 +570,10 @@
       const pct = Math.max(2, (item.value / max) * 100);
       return `
         <div class="bar-row">
-          <div class="bar-label">${capitalize(item.label)}</div>
+          <div class="bar-label">${esc(capitalize(item.label))}</div>
           <div class="bar-track">
             <div class="bar-fill" style="width:${pct}%;background:${colors[i % colors.length]}">
-              <span class="bar-value">${item.value}</span>
+              <span class="bar-value">${esc(item.value)}</span>
             </div>
           </div>
         </div>
@@ -595,7 +626,7 @@
         <div style="width:${pct}%;height:100%;background:${scoreColor};border-radius:5px;transition:width 0.8s"></div>
       </div>
       <div class="credit-label" style="margin-top:12px">Risk Assessment</div>
-      <span class="risk-badge ${riskCls}">${risk} Risk (Score: ${credit.risk_score || 0})</span>
+      <span class="risk-badge ${riskCls}">${esc(risk)} Risk (Score: ${credit.risk_score || 0})</span>
     `;
   }
 
@@ -652,12 +683,14 @@
       return;
     }
     const icons = { critical: '🚨', warning: '⚠️', info: 'ℹ️', positive: '✅' };
-    el.innerHTML = insights.map(ins => `
-      <li class="insight-item ${ins.severity || 'info'}">
-        <span class="insight-icon">${icons[ins.severity] || '💡'}</span>
-        <span>${ins.message}</span>
-      </li>
-    `).join('');
+    const validSeverities = ['critical', 'warning', 'info', 'positive'];
+    el.innerHTML = insights.map(ins => {
+      const sev = validSeverities.includes(ins.severity) ? ins.severity : 'info';
+      return `<li class="insight-item ${sev}">
+        <span class="insight-icon">${icons[sev] || '💡'}</span>
+        <span>${esc(ins.message)}</span>
+      </li>`;
+    }).join('');
   }
 
   function renderPoliciesTable(policies) {
@@ -667,9 +700,9 @@
     tbody.innerHTML = items.slice(0, 20).map(p => {
       const st = (p.status || '').toLowerCase();
       return `<tr>
-        <td style="font-weight:600">${p.id || '--'}</td>
-        <td>${capitalize(p.policy_type || p.type || '')}</td>
-        <td><span class="status-dot ${statusClass(st)}"></span>${capitalize(st)}</td>
+        <td style="font-weight:600">${esc(p.id || '--')}</td>
+        <td>${esc(capitalize(p.policy_type || p.type || ''))}</td>
+        <td><span class="status-dot ${statusClass(st)}"></span>${esc(capitalize(st))}</td>
         <td>${formatCurrency(p.monthly_premium || 0)}/mo</td>
         <td>${formatCurrency(p.coverage_amount || 0)}</td>
       </tr>`;
@@ -683,8 +716,8 @@
     tbody.innerHTML = items.slice(0, 20).map(c => {
       const st = (c.status || '').toLowerCase();
       return `<tr>
-        <td style="font-weight:600">${c.id || '--'}</td>
-        <td><span class="status-dot ${statusClass(st)}"></span>${capitalize(st)}</td>
+        <td style="font-weight:600">${esc(c.id || '--')}</td>
+        <td><span class="status-dot ${statusClass(st)}"></span>${esc(capitalize(st))}</td>
         <td>${formatCurrency(c.amount || c.claim_amount || 0)}</td>
         <td>${formatDate(c.created_at || c.date_filed)}</td>
       </tr>`;
@@ -698,8 +731,8 @@
     tbody.innerHTML = items.slice(0, 20).map(b => {
       const st = (b.status || '').toLowerCase();
       return `<tr>
-        <td style="font-weight:600">${b.id || '--'}</td>
-        <td><span class="status-dot ${statusClass(st)}"></span>${capitalize(st)}</td>
+        <td style="font-weight:600">${esc(b.id || '--')}</td>
+        <td><span class="status-dot ${statusClass(st)}"></span>${esc(capitalize(st))}</td>
         <td>${formatCurrency(b.amount || b.amount_due || 0)}</td>
         <td>${formatDate(b.due_date)}</td>
         <td>${formatCurrency(b.amount_paid || 0)}</td>
@@ -713,8 +746,8 @@
     const items = (ledger && ledger.items) || [];
     if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px">No ledger entries</td></tr>'; return; }
     tbody.innerHTML = items.slice(0, 30).map(tx => `<tr>
-      <td style="font-weight:600;font-size:0.75rem">${tx.id || tx.tx_id || '--'}</td>
-      <td>${capitalize(tx.type || '')}</td>
+      <td style="font-weight:600;font-size:0.75rem">${esc(tx.id || tx.tx_id || '--')}</td>
+      <td>${esc(capitalize(tx.type || ''))}</td>
       <td style="font-weight:600;color:${(parseFloat(tx.amount) || 0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatCurrency(tx.amount || 0)}</td>
       <td>${formatDateTime(tx.timestamp)}</td>
     </tr>`).join('');
@@ -726,19 +759,22 @@
       el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No activity</div></div>';
       return;
     }
-    el.innerHTML = timeline.slice(0, 25).map((item, i) => `
+    const validTypes = ['policy', 'claim', 'billing'];
+    el.innerHTML = timeline.slice(0, 25).map((item, i) => {
+      const dotType = validTypes.includes(item.type) ? item.type : '';
+      return `
       <div class="timeline-item">
         <div class="timeline-dot-wrap">
-          <div class="timeline-dot ${item.type || ''}"></div>
+          <div class="timeline-dot ${dotType}"></div>
           ${i < timeline.length - 1 ? '<div class="timeline-line"></div>' : ''}
         </div>
         <div class="timeline-content">
           <div class="timeline-date">${formatDate(item.date)}</div>
-          <div class="timeline-desc">${item.description || '--'}</div>
+          <div class="timeline-desc">${esc(item.description || '--')}</div>
           ${item.amount ? '<div class="timeline-amount">' + formatCurrency(item.amount) + '</div>' : ''}
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 
   // Period selector
@@ -763,7 +799,9 @@
     fetchReport('custom', from, to);
   });
 
-  fetchReport('all');
+  if (initAuth()) {
+    fetchReport('all');
+  }
 })();
 </script>
 </body>

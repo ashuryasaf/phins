@@ -20236,12 +20236,12 @@ For claims or questions, please contact:
                 """Return (start_dt, end_dt) for the requested period."""
                 end = now
                 if period_val == 'monthly':
-                    start = now.replace(day=1)
+                    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 elif period_val == 'quarterly':
                     q_month = ((now.month - 1) // 3) * 3 + 1
-                    start = now.replace(month=q_month, day=1)
+                    start = now.replace(month=q_month, day=1, hour=0, minute=0, second=0, microsecond=0)
                 elif period_val == 'annual':
-                    start = now.replace(month=1, day=1)
+                    start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
                 elif period_val == 'custom' and dfrom:
                     try:
                         start = datetime.strptime(dfrom, '%d/%m/%Y')
@@ -20252,10 +20252,10 @@ For claims or questions, please contact:
                             start = datetime(2000, 1, 1)
                     if dto:
                         try:
-                            end = datetime.strptime(dto, '%d/%m/%Y').replace(hour=23, minute=59, second=59)
+                            end = datetime.strptime(dto, '%d/%m/%Y').replace(hour=23, minute=59, second=59, microsecond=999999)
                         except ValueError:
                             try:
-                                end = datetime.strptime(dto, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                                end = datetime.strptime(dto, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=999999)
                             except ValueError:
                                 end = now
                 else:
@@ -20264,14 +20264,35 @@ For claims or questions, please contact:
 
             period_start, period_end = _resolve_period_bounds(period, date_from, date_to)
 
-            def _in_period(ts_str):
+            def _parse_ts(ts_str):
                 if not ts_str:
-                    return True
+                    return None
                 try:
-                    ts = datetime.fromisoformat(str(ts_str).replace('Z', '+00:00').split('+')[0])
-                    return period_start <= ts <= period_end
+                    normalized = re.sub(r'(Z|[+-]\d{2}:?\d{2})$', '', str(ts_str).strip())
+                    return datetime.fromisoformat(normalized)
                 except (ValueError, TypeError):
-                    return True
+                    return None
+
+            def _in_period(*timestamps):
+                ts = None
+                for ts_str in timestamps:
+                    ts = _parse_ts(ts_str)
+                    if ts is not None:
+                        break
+                if ts is None:
+                    return period == 'all'
+                return period_start <= ts <= period_end
+
+            def _bill_unpaid(bill):
+                return max(0.0,
+                    safe_float(bill.get('amount', bill.get('amount_due', 0))) -
+                    safe_float(bill.get('amount_paid', 0))
+                )
+
+            _POLICY_FIELDS = ('id', 'policy_type', 'type', 'status', 'coverage_amount', 'monthly_premium', 'created_at')
+            _CLAIM_FIELDS = ('id', 'status', 'amount', 'claim_amount', 'created_at', 'date_filed')
+            _BILL_FIELDS = ('id', 'status', 'amount', 'amount_due', 'amount_paid', 'due_date', 'created_at', 'bill_date')
+            _LEDGER_FIELDS = ('id', 'tx_id', 'type', 'amount', 'timestamp')
 
             customer = CUSTOMERS.get(customer_id, {})
             profile = {
@@ -20289,7 +20310,7 @@ For claims or questions, please contact:
                                  if p.get('customer_id') == customer_id and _in_period(p.get('created_at'))]
             active_policies = [p for p in customer_policies if get_status_lower(p) in ('active', 'approved')]
             policies_data = {
-                'items': customer_policies,
+                'items': [{k: p.get(k) for k in _POLICY_FIELDS} for p in customer_policies],
                 'total': len(customer_policies),
                 'active': len(active_policies),
                 'total_coverage': round(sum(safe_float(p.get('coverage_amount', 0)) for p in customer_policies), 2),
@@ -20302,12 +20323,12 @@ For claims or questions, please contact:
                 policies_data['by_type'][ptype] += 1
 
             customer_claims = [c for c in CLAIMS.values()
-                               if c.get('customer_id') == customer_id and _in_period(c.get('created_at', c.get('date_filed')))]
+                               if c.get('customer_id') == customer_id and _in_period(c.get('created_at'), c.get('date_filed'))]
             pending_claims = [c for c in customer_claims if get_status_lower(c) in ('pending', 'under review', 'under_review')]
             approved_claims = [c for c in customer_claims if get_status_lower(c) in ('approved', 'paid', 'settled')]
             denied_claims = [c for c in customer_claims if get_status_lower(c) in ('denied', 'rejected')]
             claims_data = {
-                'items': customer_claims,
+                'items': [{k: c.get(k) for k in _CLAIM_FIELDS} for c in customer_claims],
                 'total': len(customer_claims),
                 'pending': len(pending_claims),
                 'approved': len(approved_claims),
@@ -20321,18 +20342,17 @@ For claims or questions, please contact:
                 claims_data['by_status'].setdefault(st, 0)
                 claims_data['by_status'][st] += 1
 
-            customer_bills = [b for b in BILLING.values()
-                              if b.get('customer_id') == customer_id and _in_period(b.get('created_at', b.get('bill_date')))]
+            all_customer_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+            customer_bills = [b for b in all_customer_bills
+                              if _in_period(b.get('created_at'), b.get('bill_date'))]
             outstanding_bills = [b for b in customer_bills if status_in(b, ['outstanding', 'pending', 'partial'])]
             paid_bills = [b for b in customer_bills if status_in(b, ['paid', 'completed'])]
             overdue_bills = [b for b in customer_bills if status_in(b, ['overdue', 'past_due'])]
-            outstanding_amount = round(sum(
-                safe_float(b.get('amount', b.get('amount_due', 0))) - safe_float(b.get('amount_paid', 0))
-                for b in outstanding_bills
-            ), 2)
+            unpaid_bills = outstanding_bills + overdue_bills
+            outstanding_amount = round(sum(_bill_unpaid(b) for b in unpaid_bills), 2)
             total_paid_amount = round(sum(safe_float(b.get('amount_paid', 0)) for b in paid_bills), 2)
             billing_data = {
-                'items': customer_bills,
+                'items': [{k: b.get(k) for k in _BILL_FIELDS} for b in customer_bills],
                 'total': len(customer_bills),
                 'outstanding': len(outstanding_bills),
                 'paid': len(paid_bills),
@@ -20384,7 +20404,7 @@ For claims or questions, please contact:
                 )
             ledger_data = {
                 'total_transactions': len(customer_txns),
-                'items': customer_txns[:100],
+                'items': [{k: tx.get(k) for k in _LEDGER_FIELDS} for tx in customer_txns[:100]],
                 'by_type': tx_by_type,
                 'total_credits': round(sum(safe_float(tx.get('amount', 0)) for tx in customer_txns if safe_float(tx.get('amount', 0)) > 0), 2),
                 'total_debits': round(abs(sum(safe_float(tx.get('amount', 0)) for tx in customer_txns if safe_float(tx.get('amount', 0)) < 0)), 2),
@@ -20404,7 +20424,11 @@ For claims or questions, please contact:
                 safe_float(inv_acc.get('balance', 0)),
                 2
             )
-            total_liabilities = outstanding_amount
+            total_liabilities = round(sum(
+                _bill_unpaid(b)
+                for b in all_customer_bills
+                if status_in(b, ['outstanding', 'pending', 'partial', 'overdue', 'past_due'])
+            ), 2)
 
             timeline = []
             for p in customer_policies:
@@ -20435,7 +20459,7 @@ For claims or questions, please contact:
                 ai_insights.append({
                     'severity': 'warning',
                     'category': 'billing',
-                    'message': f'Outstanding balance of ${outstanding_amount:,.2f} requires attention across {len(outstanding_bills)} bill(s).',
+                    'message': f'Outstanding balance of ${outstanding_amount:,.2f} requires attention across {len(unpaid_bills)} bill(s).',
                 })
             if len(overdue_bills) > 0:
                 ai_insights.append({
