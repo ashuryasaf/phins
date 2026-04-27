@@ -1246,6 +1246,18 @@
       .source-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      .exec-summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .exec-tech-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .exec-chart-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 720px) {
@@ -3813,7 +3825,7 @@
           y += Math.max(mLines.length * 12, 16) + 4;
         });
 
-        ensureSpace(50);
+        ensureSpace(54);
         y += 10;
         doc.setFillColor(240, 244, 250);
         doc.roundedRect(m, y, tw, 42, 6, 6, "F");
