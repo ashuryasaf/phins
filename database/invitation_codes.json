@@ -1,29 +1,24 @@
 {
   "version": "1.0",
-  "saved_at": "2026-04-25T22:05:33.922279",
+  "saved_at": "2026-04-27T21:58:46.803302",
   "admin_codes": {
     "TESTCODE2026": {
       "code": "TESTCODE2026",
-      "created_at": "2026-04-25T22:05:20.506192",
+      "created_at": "2026-04-27T21:58:42.749579",
       "created_by": "system",
       "expires_at": null,
       "max_uses": 999999,
-      "used_count": 3,
+      "used_count": 2,
       "used_by": [
         {
-          "email": "ledger_test_customer@example.com",
-          "customer_id": "CUST-34540",
-          "used_at": "2026-04-25T22:05:27.254054"
-        },
-        {
           "email": "newcustomer@example.com",
-          "customer_id": "CUST-97200",
-          "used_at": "2026-04-25T22:05:32.384286"
+          "customer_id": "CUST-35244",
+          "used_at": "2026-04-27T21:58:45.269380"
         },
         {
           "email": "legacyotp@example.com",
-          "customer_id": "CUST-57715",
-          "used_at": "2026-04-25T22:05:33.132339"
+          "customer_id": "CUST-60088",
+          "used_at": "2026-04-27T21:58:46.015395"
         }
       ],
       "status": "active",
@@ -40,8 +35,8 @@
       "used_by": [
         {
           "email": "invitation-flow-primary@example.com",
-          "customer_id": "CUST-97801",
-          "used_at": "2026-04-25T22:05:33.857857"
+          "customer_id": "CUST-20231",
+          "used_at": "2026-04-27T21:58:46.739370"
         }
       ]
     },
@@ -56,8 +51,8 @@
       "used_by": [
         {
           "email": "invitation-flow-secondary@example.com",
-          "customer_id": "CUST-33645",
-          "used_at": "2026-04-25T22:05:33.901230"
+          "customer_id": "CUST-14441",
+          "used_at": "2026-04-27T21:58:46.782960"
         }
       ]
     }
