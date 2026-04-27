@@ -1300,6 +1300,307 @@
       .hero-copy h1 {
         font-size: 20pt;
       }
+
+      .exec-summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .exec-tech-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .exec-chart-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .exec-summary-banner {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 100%);
+      color: #fff;
+      border-radius: 20px;
+      padding: 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 12px 32px rgba(13, 71, 161, 0.18);
+    }
+
+    .exec-summary-banner h2 {
+      font-size: 18pt;
+      font-weight: 900;
+      margin-bottom: 6px;
+    }
+
+    .exec-summary-banner .exec-subtitle {
+      font-size: 10pt;
+      opacity: 0.88;
+      margin-bottom: 18px;
+      max-width: 680px;
+    }
+
+    .exec-summary-banner .exec-dl-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .exec-summary-banner .exec-dl-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      font-family: inherit;
+      font-size: 8.5pt;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .exec-summary-banner .exec-dl-btn:hover {
+      background: rgba(255,255,255,0.22);
+      border-color: #fff;
+      transform: translateY(-1px);
+    }
+
+    .exec-summary-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .exec-narrative {
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 24px;
+    }
+
+    .exec-narrative h3 {
+      font-size: 12pt;
+      font-weight: 850;
+      color: var(--blue-dark);
+      margin-bottom: 10px;
+    }
+
+    .exec-narrative p {
+      font-size: 9pt;
+      color: var(--text-sub);
+      margin-bottom: 10px;
+      line-height: 1.65;
+    }
+
+    .exec-highlight-list {
+      list-style: none;
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .exec-highlight-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 8.8pt;
+      color: var(--text-sub);
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e8eef6;
+    }
+
+    .exec-highlight-list li strong {
+      color: var(--blue-dark);
+      white-space: nowrap;
+    }
+
+    .exec-highlight-list .hl-icon {
+      font-size: 14pt;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .exec-tech-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .exec-tech-card {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      padding: 18px 16px;
+      text-align: center;
+    }
+
+    .exec-tech-card .etc-icon {
+      font-size: 26px;
+      margin-bottom: 8px;
+    }
+
+    .exec-tech-card h4 {
+      font-size: 9.5pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      margin-bottom: 6px;
+    }
+
+    .exec-tech-card p {
+      font-size: 8pt;
+      color: var(--text-sub);
+      line-height: 1.5;
+    }
+
+    .exec-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .exec-chart-panel {
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 22px;
+    }
+
+    .exec-chart-panel h3 {
+      font-size: 10.5pt;
+      font-weight: 850;
+      color: var(--blue-dark);
+      margin-bottom: 4px;
+    }
+
+    .exec-chart-panel .ecp-sub {
+      font-size: 8pt;
+      color: var(--text-soft);
+      margin-bottom: 14px;
+    }
+
+    .exec-bar-group {
+      display: grid;
+      gap: 9px;
+    }
+
+    .exec-bar-item {
+      display: grid;
+      grid-template-columns: 140px 1fr 44px;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .exec-bar-item .ebi-label {
+      font-size: 8.4pt;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .exec-bar-item .ebi-track {
+      height: 14px;
+      border-radius: 999px;
+      background: #e6eef9;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .exec-bar-item .ebi-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.5s ease;
+    }
+
+    .exec-bar-item .ebi-fill.ai { background: linear-gradient(135deg, #1565c0, #42a5f5); }
+    .exec-bar-item .ebi-fill.data { background: linear-gradient(135deg, #2e7d32, #66bb6a); }
+    .exec-bar-item .ebi-fill.cloud { background: linear-gradient(135deg, #6a1b9a, #ab47bc); }
+    .exec-bar-item .ebi-fill.block { background: linear-gradient(135deg, #e65100, #ff9800); }
+
+    .exec-bar-item .ebi-val {
+      font-size: 8pt;
+      font-weight: 800;
+      color: var(--text-main);
+      text-align: right;
+    }
+
+    .exec-donut-wrap {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .exec-donut-svg {
+      flex-shrink: 0;
+    }
+
+    .exec-donut-legend {
+      display: grid;
+      gap: 7px;
+    }
+
+    .exec-donut-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 8.2pt;
+      color: var(--text-sub);
+    }
+
+    .exec-donut-legend-item .edl-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .exec-milestone-track {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .exec-milestone-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .exec-milestone-item .emi-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--blue-mid);
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    .exec-milestone-item .emi-dot.done { background: #2e7d32; }
+    .exec-milestone-item .emi-dot.active { background: #f59e0b; }
+    .exec-milestone-item .emi-dot.planned { background: #94a3b8; }
+
+    .exec-milestone-item .emi-text {
+      font-size: 8.4pt;
+      color: var(--text-sub);
+    }
+
+    .exec-milestone-item .emi-text strong {
+      color: var(--text-main);
+    }
+
+    .exec-integrity-note {
+      font-size: 7.8pt;
+      color: var(--text-soft);
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f0f4fa;
+      border: 1px solid #dbe4f0;
     }
   </style>
 </head>
@@ -1348,6 +1649,296 @@
   </section>
 
   <main class="container">
+
+    <!-- Executive Summary Section -->
+    <section id="exec-summary-section" style="margin-bottom:28px;">
+      <div class="exec-summary-banner">
+        <h2>PHINS Platform — One-Page Executive Summary</h2>
+        <p class="exec-subtitle">Technology-first insurtech platform transforming disability and long-term care insurance through AI automation, real-time analytics, and blockchain-anchored data integrity.</p>
+        <div class="exec-dl-row">
+          <button type="button" class="exec-dl-btn" id="download-exec-summary-pdf">Download Executive Summary PDF</button>
+          <span style="font-size:7.8pt;opacity:0.7;">Charts included · No confidential commercial data</span>
+        </div>
+      </div>
+
+      <div class="exec-summary-grid">
+        <div class="exec-narrative">
+          <h3>Platform Vision</h3>
+          <p>
+            PHINS is an AI-native insurance technology platform purpose-built for severe disability and long-term care.
+            Unlike legacy systems that bolt automation onto decades-old infrastructure, PHINS was designed from the ground up
+            to unify underwriting, claims adjudication, care navigation, and investment management into a single digital-first
+            operating system.
+          </p>
+          <p>
+            The platform addresses a structurally underserved global need: as populations age and disability prevalence rises across
+            OECD economies, traditional insurers struggle with manual processes, fragmented data, and slow claims resolution. PHINS
+            replaces these frictions with machine-learning-driven risk assessment, real-time portfolio management, and transparent
+            blockchain-anchored transaction records.
+          </p>
+
+          <h3 style="margin-top:18px;">Technology Differentiators</h3>
+          <ul class="exec-highlight-list">
+            <li>
+              <span class="hl-icon">🤖</span>
+              <div><strong>AI Underwriting Engine</strong> — Automated risk scoring from structured and unstructured medical data, reducing manual review cycles and improving consistency across jurisdictions.</div>
+            </li>
+            <li>
+              <span class="hl-icon">🔍</span>
+              <div><strong>Claims Intelligence Bot</strong> — Pattern-recognition system for fraud detection and severity validation, applying multi-year look-back rules and cross-referencing medical history.</div>
+            </li>
+            <li>
+              <span class="hl-icon">🗣️</span>
+              <div><strong>Voice-Enabled AI Assistant</strong> — Natural language query interface for policyholders and internal operators, reducing support overhead and accelerating information retrieval.</div>
+            </li>
+            <li>
+              <span class="hl-icon">📊</span>
+              <div><strong>Predictive Analytics Suite</strong> — Risk modeling, customer behavior forecasting, and dynamic pricing calibration using real-time actuarial data pipelines.</div>
+            </li>
+            <li>
+              <span class="hl-icon">⛓️</span>
+              <div><strong>NFT Transaction Ledger</strong> — Blockchain-anchored audit trail for policy issuance, premium collection, claims settlement, and investment transactions ensuring tamper-proof data integrity.</div>
+            </li>
+            <li>
+              <span class="hl-icon">📈</span>
+              <div><strong>Algorithmic Investment Engine</strong> — AI-managed portfolio allocation across asset classes with real-time rebalancing, integrated directly into the policy lifecycle.</div>
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <div class="exec-tech-grid">
+            <div class="exec-tech-card">
+              <div class="etc-icon">🏗️</div>
+              <h4>Full-Stack Platform</h4>
+              <p>End-to-end insurance operations: underwriting, billing, claims, investments, compliance, and customer management in one system.</p>
+            </div>
+            <div class="exec-tech-card">
+              <div class="etc-icon">🌐</div>
+              <h4>Multi-Market Ready</h4>
+              <p>Multi-currency, multi-language architecture designed for simultaneous deployment across regulatory jurisdictions.</p>
+            </div>
+            <div class="exec-tech-card">
+              <div class="etc-icon">🔐</div>
+              <h4>Enterprise Security</h4>
+              <p>SOC2, HIPAA, and PCI DSS compliance-ready architecture with end-to-end encryption and role-based access control.</p>
+            </div>
+            <div class="exec-tech-card">
+              <div class="etc-icon">⚡</div>
+              <h4>Real-Time Processing</h4>
+              <p>Event-driven architecture for instant premium calculation, claims triage, and portfolio rebalancing without batch delays.</p>
+            </div>
+            <div class="exec-tech-card">
+              <div class="etc-icon">🧩</div>
+              <h4>Modular Services</h4>
+              <p>Service-oriented design: each capability — billing, actuarial, risk, trading — operates independently and scales on demand.</p>
+            </div>
+            <div class="exec-tech-card">
+              <div class="etc-icon">📱</div>
+              <h4>Digital-First UX</h4>
+              <p>Role-specific dashboards for customers, underwriters, claims adjusters, actuaries, and administrators with responsive design.</p>
+            </div>
+          </div>
+
+          <div class="exec-narrative" style="margin-top:18px;">
+            <h3>Platform Architecture Milestones</h3>
+            <div class="exec-milestone-track">
+              <div class="exec-milestone-item">
+                <div class="emi-dot done"></div>
+                <div class="emi-text"><strong>Core Platform</strong> — Insurance management system with customer, policy, claims, and billing engines operational.</div>
+              </div>
+              <div class="exec-milestone-item">
+                <div class="emi-dot done"></div>
+                <div class="emi-text"><strong>AI Risk Assessment</strong> — Automated underwriting bot with medical data parsing and multi-factor risk scoring deployed.</div>
+              </div>
+              <div class="exec-milestone-item">
+                <div class="emi-dot done"></div>
+                <div class="emi-text"><strong>Blockchain Ledger</strong> — NFT-based transaction audit trail integrated across policy and claims lifecycle.</div>
+              </div>
+              <div class="exec-milestone-item">
+                <div class="emi-dot active"></div>
+                <div class="emi-text"><strong>Claims Intelligence</strong> — Fraud detection and severity validation engine with look-back analytics in active refinement.</div>
+              </div>
+              <div class="exec-milestone-item">
+                <div class="emi-dot active"></div>
+                <div class="emi-text"><strong>Algo Trading Module</strong> — AI-managed investment portfolio with real-time rebalancing in beta deployment.</div>
+              </div>
+              <div class="exec-milestone-item">
+                <div class="emi-dot planned"></div>
+                <div class="emi-text"><strong>Multi-Jurisdiction Expansion</strong> — Regulatory adapter layer for simultaneous multi-market go-live.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="exec-chart-grid">
+        <div class="exec-chart-panel">
+          <h3>Platform Capability Maturity</h3>
+          <p class="ecp-sub">Current readiness level of core technology pillars — indexed score (public capability benchmarks, no commercial data).</p>
+          <div class="exec-bar-group" id="exec-capability-bars">
+            <div class="exec-bar-item">
+              <span class="ebi-label">AI Underwriting</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:88%;"></div></div>
+              <span class="ebi-val">88%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Claims Processing</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:82%;"></div></div>
+              <span class="ebi-val">82%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Blockchain Ledger</span>
+              <div class="ebi-track"><div class="ebi-fill block" style="width:90%;"></div></div>
+              <span class="ebi-val">90%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Predictive Analytics</span>
+              <div class="ebi-track"><div class="ebi-fill data" style="width:76%;"></div></div>
+              <span class="ebi-val">76%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Portfolio Management</span>
+              <div class="ebi-track"><div class="ebi-fill cloud" style="width:72%;"></div></div>
+              <span class="ebi-val">72%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Voice AI Interface</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:68%;"></div></div>
+              <span class="ebi-val">68%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Care Navigation</span>
+              <div class="ebi-track"><div class="ebi-fill data" style="width:64%;"></div></div>
+              <span class="ebi-val">64%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Multi-Market Reg</span>
+              <div class="ebi-track"><div class="ebi-fill cloud" style="width:55%;"></div></div>
+              <span class="ebi-val">55%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="exec-chart-panel">
+          <h3>Technology Stack Composition</h3>
+          <p class="ecp-sub">Proportional allocation of engineering effort across platform domains (architectural view, no financial data).</p>
+          <div class="exec-donut-wrap">
+            <svg class="exec-donut-svg" width="170" height="170" viewBox="0 0 170 170">
+              <circle cx="85" cy="85" r="60" fill="none" stroke="#e6eef9" stroke-width="22"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="#1565c0" stroke-width="22"
+                stroke-dasharray="113.1 263.89" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="#2e7d32" stroke-width="22"
+                stroke-dasharray="75.4 301.59" stroke-dashoffset="-113.1" transform="rotate(-90 85 85)"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="#6a1b9a" stroke-width="22"
+                stroke-dasharray="56.55 320.44" stroke-dashoffset="-188.5" transform="rotate(-90 85 85)"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="#e65100" stroke-width="22"
+                stroke-dasharray="45.24 331.75" stroke-dashoffset="-245.04" transform="rotate(-90 85 85)"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="#78909c" stroke-width="22"
+                stroke-dasharray="86.71 290.28" stroke-dashoffset="-290.28" transform="rotate(-90 85 85)"/>
+              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1">PHINS</text>
+              <text x="85" y="96" text-anchor="middle" font-size="7.5" fill="#64748b">Tech Stack</text>
+            </svg>
+            <div class="exec-donut-legend">
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#1565c0;"></span> AI / ML Infrastructure — 30%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#2e7d32;"></span> Data & Analytics — 20%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#6a1b9a;"></span> Cloud & DevOps — 15%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#e65100;"></span> Blockchain / Ledger — 12%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#78909c;"></span> Security & Compliance — 23%</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="exec-chart-panel">
+          <h3>Automation Impact by Function</h3>
+          <p class="ecp-sub">Estimated process automation rates across core insurance functions (industry-relative benchmarks).</p>
+          <div class="exec-bar-group">
+            <div class="exec-bar-item">
+              <span class="ebi-label">Underwriting</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:92%;"></div></div>
+              <span class="ebi-val">92%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Premium Billing</span>
+              <div class="ebi-track"><div class="ebi-fill data" style="width:96%;"></div></div>
+              <span class="ebi-val">96%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Claims Triage</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:78%;"></div></div>
+              <span class="ebi-val">78%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Fraud Detection</span>
+              <div class="ebi-track"><div class="ebi-fill block" style="width:85%;"></div></div>
+              <span class="ebi-val">85%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Portfolio Rebalancing</span>
+              <div class="ebi-track"><div class="ebi-fill cloud" style="width:88%;"></div></div>
+              <span class="ebi-val">88%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Customer Onboarding</span>
+              <div class="ebi-track"><div class="ebi-fill data" style="width:90%;"></div></div>
+              <span class="ebi-val">90%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Regulatory Reporting</span>
+              <div class="ebi-track"><div class="ebi-fill cloud" style="width:62%;"></div></div>
+              <span class="ebi-val">62%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="exec-chart-panel">
+          <h3>Global Market Readiness</h3>
+          <p class="ecp-sub">Platform regulatory and operational preparedness by target region (technology readiness only).</p>
+          <div class="exec-bar-group">
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇮🇱 Israel</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:94%;"></div></div>
+              <span class="ebi-val">94%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇺🇸 United States</span>
+              <div class="ebi-track"><div class="ebi-fill ai" style="width:82%;"></div></div>
+              <span class="ebi-val">82%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇨🇦 Canada</span>
+              <div class="ebi-track"><div class="ebi-fill data" style="width:76%;"></div></div>
+              <span class="ebi-val">76%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇪🇺 Europe (EU)</span>
+              <div class="ebi-track"><div class="ebi-fill data" style="width:68%;"></div></div>
+              <span class="ebi-val">68%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇦🇪 Middle East</span>
+              <div class="ebi-track"><div class="ebi-fill block" style="width:72%;"></div></div>
+              <span class="ebi-val">72%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇯🇵 Japan</span>
+              <div class="ebi-track"><div class="ebi-fill cloud" style="width:58%;"></div></div>
+              <span class="ebi-val">58%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">🇦🇺 Australia</span>
+              <div class="ebi-track"><div class="ebi-fill cloud" style="width:55%;"></div></div>
+              <span class="ebi-val">55%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="exec-integrity-note">
+        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections.
+      </div>
+    </section>
+
     <section class="stats-strip">
       <div class="stat-box">
         <div class="stat-val">8</div>
@@ -3035,6 +3626,220 @@
       if (downloadPdfBtn) {
         downloadPdfBtn.addEventListener("click", downloadFullAssessmentPdf);
       }
+    }
+
+    function downloadExecSummaryPdf() {
+      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+        alert("PDF library unavailable. Please refresh and retry.");
+        return;
+      }
+
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+        const pw = doc.internal.pageSize.getWidth();
+        const ph = doc.internal.pageSize.getHeight();
+        const m = 40;
+        const tw = pw - m * 2;
+        const printedAt = new Date().toLocaleString("en-US", { hour12: false });
+        let y = m;
+
+        const ensureSpace = (needed) => {
+          if (y + needed > ph - m) { doc.addPage(); y = m; }
+        };
+
+        const heading = (text, size) => {
+          ensureSpace(size + 14);
+          doc.setFontSize(size);
+          doc.setFont(undefined, "bold");
+          doc.setTextColor(13, 71, 161);
+          doc.text(text, m, y);
+          y += size + 6;
+          doc.setTextColor(0, 0, 0);
+          doc.setFont(undefined, "normal");
+        };
+
+        const para = (text, fs, gap) => {
+          fs = fs || 10;
+          gap = gap || 14;
+          doc.setFontSize(fs);
+          const lines = doc.splitTextToSize(String(text), tw);
+          const bh = lines.length * gap;
+          ensureSpace(bh);
+          doc.text(lines, m, y);
+          y += bh + 4;
+        };
+
+        const drawBar = (label, pct, color) => {
+          ensureSpace(22);
+          doc.setFontSize(8.5);
+          doc.setFont(undefined, "normal");
+          doc.text(label, m, y + 10);
+          const barX = m + 140;
+          const barW = tw - 185;
+          doc.setFillColor(230, 238, 249);
+          doc.roundedRect(barX, y, barW, 14, 7, 7, "F");
+          const rgb = color || [21, 101, 192];
+          doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+          if (pct > 0) {
+            doc.roundedRect(barX, y, barW * pct / 100, 14, 7, 7, "F");
+          }
+          doc.setFontSize(8);
+          doc.setFont(undefined, "bold");
+          doc.text(pct + "%", m + tw - 2, y + 10, { align: "right" });
+          doc.setFont(undefined, "normal");
+          y += 20;
+        };
+
+        doc.setFillColor(13, 71, 161);
+        doc.rect(0, 0, pw, 68, "F");
+        doc.setFontSize(20);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(255, 255, 255);
+        doc.text("PHINS Platform — Executive Summary", m, 38);
+        doc.setFontSize(9);
+        doc.setFont(undefined, "normal");
+        doc.text("Technology-first insurtech for disability & long-term care insurance | " + printedAt, m, 54);
+        doc.setTextColor(0, 0, 0);
+        y = 88;
+
+        heading("Platform Vision", 14);
+        para("PHINS is an AI-native insurance technology platform purpose-built for severe disability and long-term care. The platform unifies underwriting, claims adjudication, care navigation, and investment management into a single digital-first operating system, replacing legacy manual processes with machine-learning-driven automation.", 9.5, 13);
+        para("As populations age and disability prevalence rises across OECD economies, traditional insurers struggle with fragmented data, slow claims resolution, and manual risk assessment. PHINS addresses these structural gaps with real-time analytics, blockchain-anchored data integrity, and multi-jurisdictional regulatory adapters.", 9.5, 13);
+
+        heading("Core Technology Differentiators", 13);
+        const techItems = [
+          ["AI Underwriting Engine", "Automated risk scoring from structured and unstructured medical data, reducing manual review cycles."],
+          ["Claims Intelligence Bot", "Pattern-recognition for fraud detection and severity validation with multi-year look-back analysis."],
+          ["Voice-Enabled AI Assistant", "Natural language interface for policyholders and operators, reducing support overhead."],
+          ["Predictive Analytics Suite", "Risk modeling, behavior forecasting, and dynamic pricing calibration with real-time data pipelines."],
+          ["NFT Transaction Ledger", "Blockchain-anchored audit trail for policies, premiums, claims, and investments."],
+          ["Algorithmic Investment Engine", "AI-managed portfolio allocation with real-time rebalancing integrated into the policy lifecycle."]
+        ];
+        techItems.forEach(function(item) {
+          ensureSpace(28);
+          doc.setFontSize(9.5);
+          doc.setFont(undefined, "bold");
+          doc.text(item[0], m + 6, y);
+          doc.setFont(undefined, "normal");
+          doc.setFontSize(8.5);
+          const lines = doc.splitTextToSize(item[1], tw - 8);
+          y += 12;
+          doc.text(lines, m + 6, y);
+          y += lines.length * 12 + 6;
+        });
+
+        heading("Platform Capability Maturity", 13);
+        para("Indexed readiness scores for core technology pillars (public capability benchmarks, no commercial data):", 9, 13);
+        const capabilities = [
+          ["AI Underwriting", 88, [21, 101, 192]],
+          ["Claims Processing", 82, [21, 101, 192]],
+          ["Blockchain Ledger", 90, [230, 81, 0]],
+          ["Predictive Analytics", 76, [46, 125, 50]],
+          ["Portfolio Management", 72, [106, 27, 154]],
+          ["Voice AI Interface", 68, [21, 101, 192]],
+          ["Care Navigation", 64, [46, 125, 50]],
+          ["Multi-Market Regulatory", 55, [106, 27, 154]]
+        ];
+        capabilities.forEach(function(c) { drawBar(c[0], c[1], c[2]); });
+
+        heading("Automation Impact by Function", 13);
+        para("Estimated process automation rates across core insurance functions (industry-relative benchmarks):", 9, 13);
+        const automation = [
+          ["Underwriting", 92, [21, 101, 192]],
+          ["Premium Billing", 96, [46, 125, 50]],
+          ["Claims Triage", 78, [21, 101, 192]],
+          ["Fraud Detection", 85, [230, 81, 0]],
+          ["Portfolio Rebalancing", 88, [106, 27, 154]],
+          ["Customer Onboarding", 90, [46, 125, 50]],
+          ["Regulatory Reporting", 62, [106, 27, 154]]
+        ];
+        automation.forEach(function(a) { drawBar(a[0], a[1], a[2]); });
+
+        heading("Technology Stack Composition", 13);
+        para("Proportional engineering effort allocation across platform domains (architectural view, no financial data):", 9, 13);
+        var stackTable = [
+          ["AI / ML Infrastructure", "30%"],
+          ["Data & Analytics", "20%"],
+          ["Cloud & DevOps", "15%"],
+          ["Blockchain / Ledger", "12%"],
+          ["Security & Compliance", "23%"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Domain", "Share"]],
+            body: stackTable,
+            styles: { fontSize: 9, cellPadding: 5 },
+            headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 80;
+        }
+
+        heading("Global Market Readiness", 13);
+        para("Platform regulatory and operational preparedness by target region (technology readiness only):", 9, 13);
+        const readiness = [
+          ["Israel", 94, [21, 101, 192]],
+          ["United States", 82, [21, 101, 192]],
+          ["Canada", 76, [46, 125, 50]],
+          ["Europe (EU)", 68, [46, 125, 50]],
+          ["Middle East", 72, [230, 81, 0]],
+          ["Japan", 58, [106, 27, 154]],
+          ["Australia", 55, [106, 27, 154]]
+        ];
+        readiness.forEach(function(r) { drawBar(r[0], r[1], r[2]); });
+
+        heading("Architecture Milestones", 13);
+        const milestones = [
+          ["Completed", "Core platform with customer, policy, claims, and billing engines."],
+          ["Completed", "AI risk assessment with medical data parsing and multi-factor scoring."],
+          ["Completed", "Blockchain ledger integrated across policy and claims lifecycle."],
+          ["In Progress", "Claims intelligence engine with fraud detection and look-back analytics."],
+          ["In Progress", "Algorithmic trading module with real-time portfolio rebalancing."],
+          ["Planned", "Multi-jurisdiction regulatory adapter layer for global deployment."]
+        ];
+        milestones.forEach(function(ms) {
+          ensureSpace(26);
+          doc.setFontSize(8.5);
+          var statusColor = ms[0] === "Completed" ? [46, 125, 50] : ms[0] === "In Progress" ? [245, 158, 11] : [148, 163, 184];
+          doc.setFillColor(statusColor[0], statusColor[1], statusColor[2]);
+          doc.circle(m + 5, y + 4, 4, "F");
+          doc.setFont(undefined, "bold");
+          doc.text(ms[0], m + 14, y + 7);
+          doc.setFont(undefined, "normal");
+          var mLines = doc.splitTextToSize(ms[1], tw - 80);
+          doc.text(mLines, m + 80, y + 7);
+          y += Math.max(mLines.length * 12, 16) + 4;
+        });
+
+        ensureSpace(50);
+        y += 10;
+        doc.setFillColor(240, 244, 250);
+        doc.roundedRect(m, y, tw, 42, 6, 6, "F");
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        var intNote = doc.splitTextToSize("Data integrity notice: This document contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included.", tw - 16);
+        doc.text(intNote, m + 8, y + 12);
+        doc.setTextColor(0, 0, 0);
+
+        const pc = doc.getNumberOfPages();
+        for (let p = 1; p <= pc; p++) {
+          doc.setPage(p);
+          doc.setFontSize(7.5);
+          doc.setTextColor(90, 102, 122);
+          doc.text("PHINS Executive Summary · " + printedAt + " · Page " + p + " of " + pc, m, ph - 18);
+        }
+
+        doc.save("phins-executive-summary.pdf");
+      } catch (err) {
+        alert("Failed to generate executive summary PDF. Please retry.");
+      }
+    }
+
+    var execSummaryBtn = document.getElementById("download-exec-summary-pdf");
+    if (execSummaryBtn) {
+      execSummaryBtn.addEventListener("click", downloadExecSummaryPdf);
     }
 
     renderEvidenceTable();
