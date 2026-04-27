@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0d47a1" />
+  <meta name="apple-mobile-web-app-title" content="PHINS" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230d47a1' width='100' height='100' rx='20'/><text x='50' y='65' font-size='50' text-anchor='middle' fill='white'>🛡️</text></svg>" />
+  <title>PHINS — AI Customer Report</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    :root {
+      --primary: #0d47a1;
+      --primary-light: #1565c0;
+      --accent: #42a5f5;
+      --bg: #f0f4f8;
+      --card-bg: #ffffff;
+      --text: #1a2332;
+      --text-muted: #6b7b8d;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #3b82f6;
+      --positive: #059669;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+    .phins-header { background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); border-bottom: 1px solid rgba(255,255,255,0.15); position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px); box-shadow: 0 4px 24px rgba(13, 71, 161, 0.3); }
+    .phins-header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; }
+    .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .phins-logo-icon { width: 42px; height: 42px; background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3); border: 2px solid rgba(255,255,255,0.3); }
+    .phins-logo-text { font-size: 1.6rem; font-weight: 800; color: white; letter-spacing: 2px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); -webkit-background-clip: text; background-clip: text; }
+    .phins-nav { display: flex; align-items: center; gap: 0.5rem; }
+    .phins-nav a { padding: 0.5rem 1rem; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 8px; font-size: 0.85rem; font-weight: 500; transition: all 0.2s ease; white-space: nowrap; }
+    .phins-nav a:hover { background: rgba(255,255,255,0.12); color: white; }
+    .phins-nav a.active { background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); color: white; box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3); }
+    .phins-nav .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); color: white; border-radius: 8px; padding: 0.5rem 1rem; font-weight: 600; }
+    .phins-nav .btn-logout:hover { background: linear-gradient(135deg, #e53935 0%, #c62828 100%); }
+    .nav-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.2); margin: 0 0.25rem; }
+
+    .report-container { max-width: 1400px; margin: 0 auto; padding: 24px 16px; }
+
+    .report-header { background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #303f9f 100%); border-radius: 16px; padding: 32px; margin-bottom: 24px; color: white; box-shadow: 0 8px 32px rgba(26, 35, 126, 0.3); }
+    .report-header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+    .report-header .subtitle { color: rgba(255,255,255,0.8); font-size: 0.95rem; }
+    .report-meta { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+    .report-meta-item { font-size: 0.85rem; color: rgba(255,255,255,0.7); }
+    .report-meta-item strong { color: white; }
+
+    .period-selector { background: var(--card-bg); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .period-selector label { font-weight: 600; font-size: 0.9rem; color: var(--text); white-space: nowrap; }
+    .period-btn { padding: 8px 20px; border: 2px solid var(--border); background: var(--card-bg); color: var(--text); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.2s; }
+    .period-btn:hover { border-color: var(--accent); color: var(--primary); }
+    .period-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .date-input { padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 0.85rem; color: var(--text); background: var(--card-bg); }
+    .date-input:focus { outline: none; border-color: var(--accent); }
+    .custom-range { display: none; align-items: center; gap: 8px; }
+    .custom-range.visible { display: flex; }
+    .apply-btn { padding: 8px 20px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: background 0.2s; }
+    .apply-btn:hover { background: var(--primary-light); }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .kpi-card { background: var(--card-bg); border-radius: 12px; padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s; }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .kpi-icon { font-size: 1.8rem; margin-bottom: 8px; }
+    .kpi-value { font-size: 1.6rem; font-weight: 700; color: var(--text); }
+    .kpi-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-top: 4px; }
+    .kpi-change { font-size: 0.75rem; margin-top: 4px; font-weight: 600; }
+    .kpi-change.positive { color: var(--success); }
+    .kpi-change.negative { color: var(--danger); }
+
+    .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+    .section-full { grid-column: 1 / -1; }
+
+    .card { background: var(--card-bg); border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--border); overflow: hidden; }
+    .card-header { padding: 20px 24px 12px; display: flex; justify-content: space-between; align-items: center; }
+    .card-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+    .card-header .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .badge-blue { background: #e3f2fd; color: #1565c0; }
+    .badge-green { background: #e8f5e9; color: #2e7d32; }
+    .badge-orange { background: #fff3e0; color: #e65100; }
+    .badge-red { background: #ffebee; color: #c62828; }
+    .card-body { padding: 12px 24px 24px; }
+
+    .chart-container { width: 100%; height: 260px; position: relative; }
+    .chart-canvas { width: 100% !important; height: 100% !important; }
+    .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    .mini-table { width: 100%; border-collapse: collapse; }
+    .mini-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 8px 12px; border-bottom: 2px solid var(--border); font-weight: 600; }
+    .mini-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+    .mini-table tr:last-child td { border-bottom: none; }
+    .mini-table tr:hover { background: #f8fafc; }
+
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .status-dot.active, .status-dot.approved, .status-dot.paid { background: var(--success); }
+    .status-dot.pending, .status-dot.under_review { background: var(--warning); }
+    .status-dot.denied, .status-dot.rejected, .status-dot.overdue { background: var(--danger); }
+    .status-dot.cancelled, .status-dot.expired { background: var(--text-muted); }
+
+    .insights-list { list-style: none; }
+    .insight-item { padding: 14px 16px; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 12px; font-size: 0.9rem; }
+    .insight-item.critical { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .insight-item.warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .insight-item.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    .insight-item.positive { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    .insight-icon { font-size: 1.2rem; flex-shrink: 0; }
+
+    .bar-chart-h { display: flex; flex-direction: column; gap: 10px; }
+    .bar-row { display: flex; align-items: center; gap: 12px; }
+    .bar-label { width: 90px; font-size: 0.8rem; color: var(--text-muted); text-align: right; font-weight: 500; }
+    .bar-track { flex: 1; height: 24px; background: #f1f5f9; border-radius: 6px; overflow: hidden; position: relative; }
+    .bar-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; }
+    .bar-value { font-size: 0.7rem; color: white; font-weight: 700; }
+
+    .donut-wrapper { display: flex; align-items: center; gap: 24px; justify-content: center; }
+    .donut-svg { width: 160px; height: 160px; }
+    .donut-center { font-size: 1.2rem; font-weight: 700; fill: var(--text); }
+    .donut-legend { display: flex; flex-direction: column; gap: 8px; }
+    .donut-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+    .donut-legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+    .timeline-list { max-height: 360px; overflow-y: auto; }
+    .timeline-item { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .timeline-item:last-child { border-bottom: none; }
+    .timeline-dot-wrap { display: flex; flex-direction: column; align-items: center; width: 24px; flex-shrink: 0; }
+    .timeline-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--primary); background: white; }
+    .timeline-dot.policy { border-color: var(--info); background: #dbeafe; }
+    .timeline-dot.claim { border-color: var(--warning); background: #fef3c7; }
+    .timeline-dot.billing { border-color: var(--success); background: #d1fae5; }
+    .timeline-line { flex: 1; width: 2px; background: var(--border); }
+    .timeline-content { flex: 1; }
+    .timeline-date { font-size: 0.75rem; color: var(--text-muted); }
+    .timeline-desc { font-size: 0.85rem; font-weight: 500; }
+    .timeline-amount { font-size: 0.8rem; color: var(--primary); font-weight: 600; }
+
+    .credit-gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .credit-gauge { width: 200px; height: 110px; position: relative; }
+    .credit-label { font-size: 0.85rem; color: var(--text-muted); }
+    .credit-value { font-size: 2rem; font-weight: 800; }
+    .risk-badge { padding: 4px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; }
+    .risk-low { background: #d1fae5; color: #065f46; }
+    .risk-medium { background: #fef3c7; color: #92400e; }
+    .risk-high { background: #fecaca; color: #991b1b; }
+
+    .net-position-card { background: linear-gradient(135deg, #0d47a1, #1976d2); color: white; border-radius: 12px; padding: 24px; text-align: center; }
+    .net-position-card h3 { font-size: 0.9rem; opacity: 0.85; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+    .net-position-value { font-size: 2.5rem; font-weight: 800; }
+    .net-position-detail { display: flex; justify-content: center; gap: 32px; margin-top: 12px; font-size: 0.85rem; opacity: 0.8; }
+
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state-text { font-size: 0.95rem; }
+
+    .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(240,244,248,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.4s; }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { margin-top: 16px; color: var(--text-muted); font-weight: 500; }
+
+    .error-banner { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px; display: none; align-items: center; gap: 10px; }
+    .error-banner.visible { display: flex; }
+
+    footer { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 0.8rem; }
+
+    @media (max-width: 900px) {
+      .section-grid { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .phins-nav a:not(.btn-logout):not(.active) { display: none; }
+    }
+    @media (max-width: 600px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+      .report-header { padding: 20px; }
+      .report-header h1 { font-size: 1.3rem; }
+      .period-selector { flex-direction: column; align-items: stretch; }
+      .donut-wrapper { flex-direction: column; }
+      .net-position-detail { flex-direction: column; gap: 4px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Generating AI Report...</div>
+  </div>
+
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/dashboard.html" class="phins-logo">
+        <div class="phins-logo-icon">🛡️</div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <nav class="phins-nav">
+        <a href="/dashboard.html">Dashboard</a>
+        <a href="/customer-ai-report.html" class="active">AI Report</a>
+        <a href="/savings-portfolio.html">Investments</a>
+        <a href="/dashboard.html#billing-settings">Billing</a>
+        <a href="/dashboard.html#claims">Claims</a>
+        <a href="/risk-reports-dashboard.html">Reports</a>
+        <a href="/documents.html">Documents</a>
+        <div class="nav-divider"></div>
+        <a href="/" class="btn-logout">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="report-container">
+    <div id="error-banner" class="error-banner">
+      <span style="font-size:1.2rem">&#9888;</span>
+      <span id="error-message">An error occurred loading the report.</span>
+    </div>
+
+    <div class="report-header">
+      <h1 id="report-title">AI Customer Intelligence Report</h1>
+      <div class="subtitle" id="report-subtitle">Unified overview powered by PHINS AI analytics</div>
+      <div class="report-meta">
+        <div class="report-meta-item"><strong id="meta-customer">--</strong></div>
+        <div class="report-meta-item">Generated: <strong id="meta-generated">--</strong></div>
+        <div class="report-meta-item">Period: <strong id="meta-period">--</strong></div>
+      </div>
+    </div>
+
+    <div class="period-selector">
+      <label>Period:</label>
+      <button class="period-btn" data-period="monthly">Monthly</button>
+      <button class="period-btn" data-period="quarterly">Quarterly</button>
+      <button class="period-btn" data-period="annual">Annual</button>
+      <button class="period-btn active" data-period="all">All Time</button>
+      <button class="period-btn" data-period="custom">Custom</button>
+      <div id="custom-range" class="custom-range">
+        <label>From:</label>
+        <input type="date" id="date-from" class="date-input" />
+        <label>To:</label>
+        <input type="date" id="date-to" class="date-input" />
+        <button class="apply-btn" id="apply-custom">Apply</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <div id="net-position-section"></div>
+
+    <div class="section-grid">
+      <div class="card" id="claims-chart-card">
+        <div class="card-header"><h2>Claims Overview</h2><span class="badge badge-blue" id="claims-badge">0 claims</span></div>
+        <div class="card-body"><div id="claims-donut" class="donut-wrapper"></div></div>
+      </div>
+      <div class="card" id="billing-chart-card">
+        <div class="card-header"><h2>Billing Breakdown</h2><span class="badge badge-green" id="billing-badge">0 bills</span></div>
+        <div class="card-body"><div id="billing-donut" class="donut-wrapper"></div></div>
+      </div>
+    </div>
+
+    <div class="section-grid">
+      <div class="card">
+        <div class="card-header"><h2>Policy Distribution</h2></div>
+        <div class="card-body"><div id="policy-bars" class="bar-chart-h"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Ledger Activity by Type</h2></div>
+        <div class="card-body"><div id="ledger-bars" class="bar-chart-h"></div></div>
+      </div>
+    </div>
+
+    <div class="section-grid">
+      <div class="card">
+        <div class="card-header"><h2>Credit & Risk Assessment</h2></div>
+        <div class="card-body"><div id="credit-section" class="credit-gauge-wrap"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Investment Portfolio</h2></div>
+        <div class="card-body"><div id="investment-section"></div></div>
+      </div>
+    </div>
+
+    <div class="section-grid">
+      <div class="card section-full">
+        <div class="card-header"><h2>AI Insights & Recommendations</h2><span class="badge badge-orange" id="insights-badge">0</span></div>
+        <div class="card-body"><ul class="insights-list" id="insights-list"></ul></div>
+      </div>
+    </div>
+
+    <div class="section-grid">
+      <div class="card">
+        <div class="card-header"><h2>Policies</h2></div>
+        <div class="card-body" style="overflow-x:auto"><table class="mini-table" id="policies-table"><thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Premium</th><th>Coverage</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Claims</h2></div>
+        <div class="card-body" style="overflow-x:auto"><table class="mini-table" id="claims-table"><thead><tr><th>ID</th><th>Status</th><th>Amount</th><th>Filed</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="section-grid">
+      <div class="card">
+        <div class="card-header"><h2>Billing History</h2></div>
+        <div class="card-body" style="overflow-x:auto"><table class="mini-table" id="billing-table"><thead><tr><th>ID</th><th>Status</th><th>Amount</th><th>Due</th><th>Paid</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Activity Timeline</h2></div>
+        <div class="card-body"><div class="timeline-list" id="timeline-list"></div></div>
+      </div>
+    </div>
+
+    <div class="section-grid">
+      <div class="card section-full">
+        <div class="card-header"><h2>Recent Ledger Transactions</h2><span class="badge badge-blue" id="ledger-badge">0</span></div>
+        <div class="card-body" style="overflow-x:auto"><table class="mini-table" id="ledger-table"><thead><tr><th>ID</th><th>Type</th><th>Amount</th><th>Timestamp</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>PHINS Insurance Platform &copy; 2026 &mdash; AI Customer Intelligence Report</footer>
+
+<script>
+(function() {
+  'use strict';
+
+  const API_BASE = '/api/customer/ai-report';
+  let currentPeriod = 'all';
+  let token = null;
+
+  function getToken() {
+    if (token) return token;
+    const cookies = document.cookie.split(';');
+    for (const c of cookies) {
+      const [k, v] = c.trim().split('=');
+      if (k === 'session_token' || k === 'token') { token = v; return v; }
+    }
+    token = localStorage.getItem('session_token') || localStorage.getItem('token') || '';
+    return token;
+  }
+
+  function formatCurrency(v) {
+    const n = parseFloat(v) || 0;
+    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function formatDate(d) {
+    if (!d) return '--';
+    try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
+    catch { return d; }
+  }
+  function formatDateTime(d) {
+    if (!d) return '--';
+    try { return new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch { return d; }
+  }
+  function statusClass(s) { return (s || '').toLowerCase().replace(/\s+/g, '_'); }
+  function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : '--'; }
+
+  function showError(msg) {
+    document.getElementById('error-message').textContent = msg;
+    document.getElementById('error-banner').classList.add('visible');
+  }
+  function hideError() { document.getElementById('error-banner').classList.remove('visible'); }
+  function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
+  function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+
+  function convertDateForApi(dateStr) {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
+    return dateStr;
+  }
+
+  async function fetchReport(period, dateFrom, dateTo) {
+    showLoading();
+    hideError();
+    const t = getToken();
+    const params = new URLSearchParams({ period: period });
+    if (period === 'custom') {
+      if (dateFrom) params.set('from', convertDateForApi(dateFrom));
+      if (dateTo) params.set('to', convertDateForApi(dateTo));
+    }
+    try {
+      const resp = await fetch(API_BASE + '?' + params.toString(), {
+        headers: t ? { 'Authorization': 'Bearer ' + t } : {}
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to load report (HTTP ' + resp.status + ')');
+      }
+      const data = await resp.json();
+      renderReport(data);
+    } catch (e) {
+      showError(e.message);
+      renderEmpty();
+    } finally {
+      hideLoading();
+    }
+  }
+
+  function renderEmpty() {
+    document.getElementById('kpi-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon">📊</div><div class="empty-state-text">No data available for the selected period.</div></div>';
+    for (const id of ['claims-donut', 'billing-donut', 'policy-bars', 'ledger-bars', 'credit-section', 'investment-section', 'insights-list', 'timeline-list', 'net-position-section']) {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    }
+    for (const id of ['policies-table', 'claims-table', 'billing-table', 'ledger-table']) {
+      const tbody = document.querySelector('#' + id + ' tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">No records</td></tr>';
+    }
+  }
+
+  function renderReport(data) {
+    document.getElementById('meta-customer').textContent = (data.profile && data.profile.name) ? data.profile.name + ' (' + data.customer_id + ')' : data.customer_id;
+    document.getElementById('meta-generated').textContent = formatDateTime(data.generated_at);
+    const pType = data.period ? capitalize(data.period.type) : 'All';
+    const pFrom = data.period ? formatDate(data.period.from) : '--';
+    const pTo = data.period ? formatDate(data.period.to) : '--';
+    document.getElementById('meta-period').textContent = pType + ' (' + pFrom + ' - ' + pTo + ')';
+
+    renderKPIs(data);
+    renderNetPosition(data);
+    renderClaimsDonut(data.claims);
+    renderBillingDonut(data.billing);
+    renderPolicyBars(data.policies);
+    renderLedgerBars(data.ledger);
+    renderCreditSection(data.credit);
+    renderInvestmentSection(data.investments, data.health_wallet);
+    renderInsights(data.ai_insights || []);
+    renderPoliciesTable(data.policies);
+    renderClaimsTable(data.claims);
+    renderBillingTable(data.billing);
+    renderLedgerTable(data.ledger);
+    renderTimeline(data.timeline || []);
+  }
+
+  function renderKPIs(data) {
+    const kpis = [
+      { icon: '📋', label: 'Active Policies', value: (data.policies && data.policies.active) || 0, fmt: 'num' },
+      { icon: '💰', label: 'Total Coverage', value: (data.policies && data.policies.total_coverage) || 0, fmt: 'cur' },
+      { icon: '📝', label: 'Total Claims', value: (data.claims && data.claims.total) || 0, fmt: 'num' },
+      { icon: '⏳', label: 'Pending Claims', value: (data.claims && data.claims.pending) || 0, fmt: 'num' },
+      { icon: '💳', label: 'Outstanding Billing', value: (data.billing && data.billing.outstanding_amount) || 0, fmt: 'cur' },
+      { icon: '✅', label: 'Total Paid', value: (data.billing && data.billing.total_paid) || 0, fmt: 'cur' },
+      { icon: '🏥', label: 'Wallet Balance', value: (data.health_wallet && data.health_wallet.balance) || 0, fmt: 'cur' },
+      { icon: '📈', label: 'Total Assets', value: data.total_assets || 0, fmt: 'cur' },
+      { icon: '📊', label: 'Ledger Entries', value: (data.ledger && data.ledger.total_transactions) || 0, fmt: 'num' },
+      { icon: '🔗', label: 'NFT Tokens', value: data.nft_count || 0, fmt: 'num' },
+    ];
+    const grid = document.getElementById('kpi-grid');
+    grid.innerHTML = kpis.map(k => `
+      <div class="kpi-card">
+        <div class="kpi-icon">${k.icon}</div>
+        <div class="kpi-value">${k.fmt === 'cur' ? formatCurrency(k.value) : k.value}</div>
+        <div class="kpi-label">${k.label}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderNetPosition(data) {
+    const el = document.getElementById('net-position-section');
+    const assets = data.total_assets || 0;
+    const liabilities = data.total_liabilities || 0;
+    const net = data.net_position || 0;
+    el.innerHTML = `
+      <div class="net-position-card" style="margin-bottom:24px">
+        <h3>Net Financial Position</h3>
+        <div class="net-position-value">${formatCurrency(net)}</div>
+        <div class="net-position-detail">
+          <span>Assets: ${formatCurrency(assets)}</span>
+          <span>Liabilities: ${formatCurrency(liabilities)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function createDonutSVG(segments, centerText) {
+    if (!segments.length) return '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">No data</div></div>';
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+    const total = segments.reduce((a, s) => a + s.value, 0) || 1;
+    const r = 60, cx = 80, cy = 80, sw = 20;
+    const circ = 2 * Math.PI * r;
+    let offset = 0;
+    const paths = segments.map((seg, i) => {
+      const pct = seg.value / total;
+      const dashLen = pct * circ;
+      const html = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colors[i % colors.length]}" stroke-width="${sw}" stroke-dasharray="${dashLen} ${circ - dashLen}" stroke-dashoffset="${-offset}" style="transition: stroke-dasharray 0.8s, stroke-dashoffset 0.8s" />`;
+      offset += dashLen;
+      return html;
+    });
+    const legendHtml = segments.map((seg, i) => `
+      <div class="donut-legend-item">
+        <div class="donut-legend-dot" style="background:${colors[i % colors.length]}"></div>
+        <span>${capitalize(seg.label)}: ${seg.value}</span>
+      </div>
+    `).join('');
+    return `
+      <svg class="donut-svg" viewBox="0 0 160 160">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f1f5f9" stroke-width="${sw}" />
+        ${paths.join('')}
+        <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" class="donut-center">${centerText}</text>
+      </svg>
+      <div class="donut-legend">${legendHtml}</div>
+    `;
+  }
+
+  function renderClaimsDonut(claims) {
+    const el = document.getElementById('claims-donut');
+    document.getElementById('claims-badge').textContent = (claims ? claims.total : 0) + ' claims';
+    if (!claims || !claims.by_status || Object.keys(claims.by_status).length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No claims found</div></div>';
+      return;
+    }
+    const segments = Object.entries(claims.by_status).map(([k, v]) => ({ label: k, value: v }));
+    el.innerHTML = createDonutSVG(segments, claims.total);
+  }
+
+  function renderBillingDonut(billing) {
+    const el = document.getElementById('billing-donut');
+    document.getElementById('billing-badge').textContent = (billing ? billing.total : 0) + ' bills';
+    if (!billing || !billing.by_status || Object.keys(billing.by_status).length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💳</div><div class="empty-state-text">No billing records</div></div>';
+      return;
+    }
+    const segments = Object.entries(billing.by_status).map(([k, v]) => ({ label: k, value: v }));
+    el.innerHTML = createDonutSVG(segments, billing.total);
+  }
+
+  function renderBarChart(container, items, maxVal) {
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+    if (!items.length) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">No data</div></div>';
+      return;
+    }
+    const max = maxVal || Math.max(...items.map(i => i.value)) || 1;
+    container.innerHTML = items.map((item, i) => {
+      const pct = Math.max(2, (item.value / max) * 100);
+      return `
+        <div class="bar-row">
+          <div class="bar-label">${capitalize(item.label)}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:${pct}%;background:${colors[i % colors.length]}">
+              <span class="bar-value">${item.value}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderPolicyBars(policies) {
+    const el = document.getElementById('policy-bars');
+    if (!policies || !policies.by_type || Object.keys(policies.by_type).length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No policies found</div></div>';
+      return;
+    }
+    const items = Object.entries(policies.by_type).map(([k, v]) => ({ label: k, value: v }));
+    renderBarChart(el, items);
+  }
+
+  function renderLedgerBars(ledger) {
+    const el = document.getElementById('ledger-bars');
+    if (!ledger || !ledger.by_type || Object.keys(ledger.by_type).length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">No ledger activity</div></div>';
+      return;
+    }
+    const items = Object.entries(ledger.by_type).map(([k, v]) => ({ label: k, value: v.count }));
+    items.sort((a, b) => b.value - a.value);
+    renderBarChart(el, items.slice(0, 8));
+  }
+
+  function renderCreditSection(credit) {
+    const el = document.getElementById('credit-section');
+    if (!credit || (!credit.credit_score && !credit.risk_score)) {
+      el.innerHTML = `
+        <div class="credit-label">Credit Score</div>
+        <div class="credit-value" style="color:var(--text-muted)">N/A</div>
+        <div class="credit-label" style="margin-top:12px">Risk Level</div>
+        <span class="risk-badge risk-low">Not Assessed</span>
+      `;
+      return;
+    }
+    const score = credit.credit_score || 0;
+    const risk = credit.risk_level || 'N/A';
+    const riskCls = risk === 'Low' ? 'risk-low' : (risk === 'Medium' ? 'risk-medium' : 'risk-high');
+    const scoreColor = score >= 700 ? 'var(--success)' : (score >= 500 ? 'var(--warning)' : 'var(--danger)');
+    const pct = Math.min(score / 850 * 100, 100);
+
+    el.innerHTML = `
+      <div class="credit-label">Credit Score</div>
+      <div class="credit-value" style="color:${scoreColor}">${score > 0 ? score : 'N/A'}</div>
+      <div style="width:100%;max-width:280px;height:10px;background:#f1f5f9;border-radius:5px;overflow:hidden;margin:8px 0">
+        <div style="width:${pct}%;height:100%;background:${scoreColor};border-radius:5px;transition:width 0.8s"></div>
+      </div>
+      <div class="credit-label" style="margin-top:12px">Risk Assessment</div>
+      <span class="risk-badge ${riskCls}">${risk} Risk (Score: ${credit.risk_score || 0})</span>
+    `;
+  }
+
+  function renderInvestmentSection(investments, wallet) {
+    const el = document.getElementById('investment-section');
+    const inv = investments || {};
+    const bal = parseFloat(inv.balance) || 0;
+    const idx = parseFloat(inv.index_balance) || 0;
+    const bonds = parseFloat(inv.bonds_balance) || 0;
+    const crypto = parseFloat(inv.crypto_balance) || 0;
+    const walBal = (wallet && parseFloat(wallet.balance)) || 0;
+
+    if (!bal && !idx && !bonds && !crypto && !walBal) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📈</div><div class="empty-state-text">No investment data</div></div>';
+      return;
+    }
+
+    const items = [
+      { label: 'Health Wallet', value: walBal, color: '#10b981' },
+      { label: 'Index Fund', value: idx, color: '#3b82f6' },
+      { label: 'Bonds', value: bonds, color: '#f59e0b' },
+      { label: 'Crypto', value: crypto, color: '#8b5cf6' },
+    ].filter(i => i.value > 0);
+    const total = items.reduce((a, i) => a + i.value, 0) || 1;
+
+    el.innerHTML = `
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Total Portfolio</div>
+        <div style="font-size:1.8rem;font-weight:700;color:var(--primary)">${formatCurrency(bal + walBal)}</div>
+      </div>
+      <div class="bar-chart-h">
+        ${items.map(i => `
+          <div class="bar-row">
+            <div class="bar-label">${i.label}</div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:${Math.max(2, (i.value / total) * 100)}%;background:${i.color}">
+                <span class="bar-value">${formatCurrency(i.value)}</span>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:12px;font-size:0.8rem;color:var(--text-muted);text-align:center">
+        ${investments.deposits_count || 0} deposit(s) totalling ${formatCurrency(investments.deposits_total || 0)}
+      </div>
+    `;
+  }
+
+  function renderInsights(insights) {
+    const el = document.getElementById('insights-list');
+    document.getElementById('insights-badge').textContent = insights.length + ' insight(s)';
+    if (!insights.length) {
+      el.innerHTML = '<li class="insight-item info"><span class="insight-icon">💡</span><span>No specific insights for this period. Your account appears to be in good standing.</span></li>';
+      return;
+    }
+    const icons = { critical: '🚨', warning: '⚠️', info: 'ℹ️', positive: '✅' };
+    el.innerHTML = insights.map(ins => `
+      <li class="insight-item ${ins.severity || 'info'}">
+        <span class="insight-icon">${icons[ins.severity] || '💡'}</span>
+        <span>${ins.message}</span>
+      </li>
+    `).join('');
+  }
+
+  function renderPoliciesTable(policies) {
+    const tbody = document.querySelector('#policies-table tbody');
+    const items = (policies && policies.items) || [];
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">No policies found</td></tr>'; return; }
+    tbody.innerHTML = items.slice(0, 20).map(p => {
+      const st = (p.status || '').toLowerCase();
+      return `<tr>
+        <td style="font-weight:600">${p.id || '--'}</td>
+        <td>${capitalize(p.policy_type || p.type || '')}</td>
+        <td><span class="status-dot ${statusClass(st)}"></span>${capitalize(st)}</td>
+        <td>${formatCurrency(p.monthly_premium || 0)}/mo</td>
+        <td>${formatCurrency(p.coverage_amount || 0)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderClaimsTable(claims) {
+    const tbody = document.querySelector('#claims-table tbody');
+    const items = (claims && claims.items) || [];
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px">No claims found</td></tr>'; return; }
+    tbody.innerHTML = items.slice(0, 20).map(c => {
+      const st = (c.status || '').toLowerCase();
+      return `<tr>
+        <td style="font-weight:600">${c.id || '--'}</td>
+        <td><span class="status-dot ${statusClass(st)}"></span>${capitalize(st)}</td>
+        <td>${formatCurrency(c.amount || c.claim_amount || 0)}</td>
+        <td>${formatDate(c.created_at || c.date_filed)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderBillingTable(billing) {
+    const tbody = document.querySelector('#billing-table tbody');
+    const items = (billing && billing.items) || [];
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">No billing records</td></tr>'; return; }
+    tbody.innerHTML = items.slice(0, 20).map(b => {
+      const st = (b.status || '').toLowerCase();
+      return `<tr>
+        <td style="font-weight:600">${b.id || '--'}</td>
+        <td><span class="status-dot ${statusClass(st)}"></span>${capitalize(st)}</td>
+        <td>${formatCurrency(b.amount || b.amount_due || 0)}</td>
+        <td>${formatDate(b.due_date)}</td>
+        <td>${formatCurrency(b.amount_paid || 0)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderLedgerTable(ledger) {
+    const tbody = document.querySelector('#ledger-table tbody');
+    document.getElementById('ledger-badge').textContent = (ledger ? ledger.total_transactions : 0) + ' entries';
+    const items = (ledger && ledger.items) || [];
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px">No ledger entries</td></tr>'; return; }
+    tbody.innerHTML = items.slice(0, 30).map(tx => `<tr>
+      <td style="font-weight:600;font-size:0.75rem">${tx.id || tx.tx_id || '--'}</td>
+      <td>${capitalize(tx.type || '')}</td>
+      <td style="font-weight:600;color:${(parseFloat(tx.amount) || 0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatCurrency(tx.amount || 0)}</td>
+      <td>${formatDateTime(tx.timestamp)}</td>
+    </tr>`).join('');
+  }
+
+  function renderTimeline(timeline) {
+    const el = document.getElementById('timeline-list');
+    if (!timeline.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">No activity</div></div>';
+      return;
+    }
+    el.innerHTML = timeline.slice(0, 25).map((item, i) => `
+      <div class="timeline-item">
+        <div class="timeline-dot-wrap">
+          <div class="timeline-dot ${item.type || ''}"></div>
+          ${i < timeline.length - 1 ? '<div class="timeline-line"></div>' : ''}
+        </div>
+        <div class="timeline-content">
+          <div class="timeline-date">${formatDate(item.date)}</div>
+          <div class="timeline-desc">${item.description || '--'}</div>
+          ${item.amount ? '<div class="timeline-amount">' + formatCurrency(item.amount) + '</div>' : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Period selector
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      currentPeriod = this.dataset.period;
+      const customEl = document.getElementById('custom-range');
+      if (currentPeriod === 'custom') {
+        customEl.classList.add('visible');
+      } else {
+        customEl.classList.remove('visible');
+        fetchReport(currentPeriod);
+      }
+    });
+  });
+
+  document.getElementById('apply-custom').addEventListener('click', function() {
+    const from = document.getElementById('date-from').value;
+    const to = document.getElementById('date-to').value;
+    fetchReport('custom', from, to);
+  });
+
+  fetchReport('all');
+})();
+</script>
+</body>
+</html>
