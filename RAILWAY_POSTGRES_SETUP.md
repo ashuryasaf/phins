@@ -49,7 +49,8 @@ Your Project
    - Mount Path: `/data`
    - Size: 1GB (or more)
 
-Then add one more variable:
+The server automatically detects a volume mounted at `/data` and stores
+ledger data there.  You can also set the path explicitly:
 ```
 LEDGER_PERSISTENCE_FILE = /data/phins_ledger.json
 ```
@@ -82,7 +83,7 @@ Check the deployment logs for:
 | `DATABASE_URL` | `postgresql://...` | ✅ Yes |
 | `USE_DATABASE` | `true` | ✅ Yes |
 | `ENABLE_LEDGER_PERSISTENCE` | `true` | ✅ Yes |
-| `LEDGER_PERSISTENCE_FILE` | `/data/phins_ledger.json` | ✅ Yes |
+| `LEDGER_PERSISTENCE_FILE` | `/data/phins_ledger.json` | Optional (auto-detected if `/data` volume mounted) |
 | `ALLOW_LEGACY_DEMO_PASSWORDS` | `false` | ✅ Yes (security) |
 
 ---
