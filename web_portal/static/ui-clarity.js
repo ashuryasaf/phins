@@ -774,6 +774,45 @@
     dispatchFloatingQuery(action.query);
   }
 
+  function preprocessFloatingVoiceInput(transcript) {
+    let processed = String(transcript || "").toLowerCase().trim();
+    const patterns = [
+      [/(?:show|open|go to) (?:me )?(?:my )?(?:polic(?:y|ies)|insurance)/i, "show me my policies"],
+      [/(?:show|display|list) (?:me )?(?:my |all )?(?:bill(?:s|ing)?|invoice(?:s)?)/i, "show me all my billings"],
+      [/(?:file|submit|make|open) (?:a |an )?(?:new )?claim/i, "i want to file a claim"],
+      [/(?:check|show|what(?:'s| is)) (?:me )?(?:my )?(?:wallet )?balance/i, "check my wallet balance"],
+      [/(?:open|go to|show) (?:the )?admin(?:istration)?/i, "refresh overview"],
+      [/(?:open|show|go to) underwriter/i, "open underwriter dashboard"],
+      [/(?:open|show|go to) claims (?:adjuster )?dashboard/i, "open claims adjuster dashboard"],
+      [/(?:open|show|go to) (?:the )?billing/i, "open billing dashboard"],
+      [/(?:open|show|go to) (?:the )?account(?:ant|ing)/i, "open accountant dashboard"],
+      [/(?:open|show|go to) (?:the )?actuary/i, "open actuary dashboard"],
+      [/(?:run|start) (?:a )?(?:portfolio )?simulation/i, "run portfolio simulation"],
+      [/(?:show|open|go to) (?:the )?(?:risk|risk dashboard)/i, "open risk dashboard"],
+      [/(?:show|open) (?:me )?(?:my )?(?:supplier )?orders/i, "show supplier orders"],
+      [/(?:show|open) (?:me )?(?:my )?(?:supplier )?settlements/i, "show supplier settlements"],
+      [/(?:show|open) (?:me )?(?:my )?(?:supplier )?offers/i, "show supplier offers"],
+      [/(?:create|new|add) (?:a )?(?:supplier )?offer/i, "create new supplier offer"],
+      [/(?:log ?out|sign ?out)/i, "logout"],
+    ];
+    for (const [pattern, replacement] of patterns) {
+      if (pattern.test(processed)) {
+        return replacement;
+      }
+    }
+    return processed;
+  }
+
+  function getFloatingVoiceLang() {
+    try {
+      const saved = localStorage.getItem("phins_language") || "en";
+      const langMap = { en: "en-US", es: "es-ES", fr: "fr-FR", de: "de-DE", he: "he-IL" };
+      return langMap[saved] || "en-US";
+    } catch {
+      return "en-US";
+    }
+  }
+
   function ensureFloatingVoiceRecognition() {
     if (floatingRecognition) {
       return floatingRecognition;
@@ -787,7 +826,7 @@
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = getFloatingVoiceLang();
 
     recognition.onstart = () => {
       floatingListening = true;
@@ -807,12 +846,13 @@
       const cleaned = transcript.trim();
       if (!cleaned) return;
 
+      const processed = preprocessFloatingVoiceInput(cleaned);
       const input = document.getElementById(VQA_INPUT_ID);
-      if (input) input.value = cleaned;
+      if (input) input.value = processed;
       setFloatingStatus(`Heard: "${cleaned}"`, "info");
 
       if (event.results[event.results.length - 1].isFinal) {
-        dispatchFloatingQuery(cleaned);
+        dispatchFloatingQuery(processed);
       }
     };
 
@@ -823,7 +863,13 @@
         voiceBtn.dataset.listening = "false";
         voiceBtn.textContent = "🎤";
       }
-      setFloatingStatus(`Voice error: ${event.error}`, "error");
+      if (event.error === "no-speech") {
+        setFloatingStatus("No speech detected. Please try again.", "warning");
+      } else if (event.error === "not-allowed") {
+        setFloatingStatus("Microphone access denied. Please allow permissions.", "error");
+      } else {
+        setFloatingStatus(`Voice error: ${event.error}`, "error");
+      }
     };
 
     recognition.onend = () => {

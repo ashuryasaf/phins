@@ -40285,6 +40285,9 @@ For claims or questions, please contact:
                 query = data.get('query', '')
                 source = data.get('source', 'ai_assistant')
                 timestamp = data.get('timestamp', datetime.now().isoformat())
+                input_method = data.get('input_method', 'text')
+                if input_method not in ('voice', 'text', 'quick_action'):
+                    input_method = 'text'
                 
                 # SECURITY: Enforce customer data isolation
                 authorized, customer_id, error = authorize_customer_data(
@@ -40300,10 +40303,8 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
                 
-                # Generate interaction ID
                 interaction_id = f"AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                 
-                # Create NFT token for AI interaction (for data integrity tracking)
                 nft_token = generate_nft_token(
                     customer_id=customer_id,
                     transaction_type='ai_interaction',
@@ -40312,15 +40313,15 @@ For claims or questions, please contact:
                     description=f"AI Assistant: {intent_type} - {query[:100]}",
                     metadata={
                         'intent_type': intent_type,
-                        'query': query[:500],  # Limit query length
+                        'query': query[:500],
                         'source': source,
+                        'input_method': input_method,
                         'timestamp': timestamp,
                         'interaction_id': interaction_id
                     }
                 )
                 NFT_LEDGER[nft_token['token_id']] = nft_token
                 
-                # Store interaction in TRANSACTION_LEDGER for unified activity log
                 tx_id = f"TX-AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                 platform_event_ledger.append_event(
                     event_type='ai_interaction',
@@ -40340,6 +40341,7 @@ For claims or questions, please contact:
                     'amount': 0,
                     'timestamp': timestamp,
                     'source': source,
+                    'input_method': input_method,
                     'nft_token_id': nft_token['token_id'],
                     'created_at': datetime.now().isoformat()
                     },
@@ -40357,7 +40359,6 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 
             except Exception as e:
-                # Non-critical - don't fail the request
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
