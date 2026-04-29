@@ -1923,7 +1923,7 @@
           
           if (event.results[0].isFinal) {
             document.getElementById('ai-query-input').value = transcript;
-            stopVoiceInput();
+            stopVoiceInput(false);
             // Show confirmation feedback
             showVoiceFeedback(transcript);
             // Auto-process after voice input with slight delay for UX
@@ -2114,7 +2114,7 @@
     }
     
     // Stop voice input
-    function stopVoiceInput() {
+    function stopVoiceInput(resetInputMethod = true) {
       isListening = false;
       document.getElementById('voice-recording-indicator').style.display = 'none';
       const voiceBtn = document.getElementById('voice-btn');
@@ -2127,6 +2127,10 @@
         try {
           recognition.stop();
         } catch (e) {}
+      }
+
+      if (resetInputMethod) {
+        lastInputMethod = 'text';
       }
     }
 
