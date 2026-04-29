@@ -73,6 +73,11 @@ def test_voice_preprocessing_handles_financial_variants():
     assert "monthly.*cost" in content or "monthly cost" in content
 
 
+def test_referral_voice_preprocessing_matches_referral_intent_keywords():
+    content = DASHBOARD_PATH.read_text(encoding="utf-8")
+    assert "ACTION_REFERRAL: ['refer a friend'," in content
+
+
 # ---------------------------------------------------------------------------
 # TTS voice feedback (speakResponse)
 # ---------------------------------------------------------------------------
