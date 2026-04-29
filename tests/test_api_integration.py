@@ -201,6 +201,7 @@ def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
         _challenges={},
     )
 
+    monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
     with portal.STATE_LOCK:
         portal.FAILED_LOGINS.clear()
 

@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaVerifiedToken = null;
     captchaAnswer.value = '';
     captchaId.value = '';
+    captchaQuestion.classList.remove('loading');
     captchaQuestion.textContent = localChallenge.question;
     captchaQuestion.title = message || 'Using built-in verification';
     captchaSection.style.display = '';
@@ -169,6 +170,7 @@ document.addEventListener('DOMContentLoaded', function () {
     captchaId.value = '';
     captchaQuestion.textContent = 'Loading verification...';
     captchaQuestion.title = '';
+    captchaQuestion.classList.add('loading');
     captchaSection.style.display = '';
     if (captchaExpiryTimer) { clearInterval(captchaExpiryTimer); captchaExpiryTimer = null; }
 
@@ -182,6 +184,7 @@ document.addEventListener('DOMContentLoaded', function () {
       
       if (response.ok && data.success && data.challenge) {
         captchaId.value = data.challenge.challenge_id;
+        captchaQuestion.classList.remove('loading');
         if (data.challenge.challenge_type === 'simple') {
           captchaQuestion.textContent = data.challenge.challenge_question;
           captchaQuestion.title = '';
@@ -388,16 +391,18 @@ document.addEventListener('DOMContentLoaded', function () {
     step3.classList.add('active');
     
     try {
-      var loginPayload = Object.assign({}, pendingLoginData, {
+      var otpLoginData = Object.assign({}, pendingLoginData);
+      delete otpLoginData.captcha_token;
+      var loginPayload = Object.assign(otpLoginData, {
         verified: true,
         verification_id: verificationId.value
       });
 
-      var response = await fetchWithRetry('/api/login', {
+      var response = await fetchWithTimeout('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginPayload)
-      }, 30000, 2);
+      }, 30000);
       var data = await response.json();
       
       if (data.token) {
@@ -567,13 +572,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (verifiedCaptchaToken && verifiedCaptchaToken !== '__local__') {
         loginData.captcha_token = verifiedCaptchaToken;
+      } else if (verifiedCaptchaToken === '__local__') {
+        loginData.captcha_fallback = true;
       }
       
-      var response = await fetchWithRetry('/api/login', {
+      var response = await fetchWithTimeout('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginData)
-      }, 30000, 2);
+      }, 30000);
       var data = await response.json();
       
       if (data.requires_otp) {

@@ -23993,14 +23993,13 @@ For claims or questions, please contact:
                 username = creds.get('username', '').strip()
                 password = creds.get('password', '')
                 
-                # Server-side CAPTCHA token validation
+                # Server-side CAPTCHA token validation (verified flag
+                # skips CAPTCHA for OTP second-pass logins)
                 captcha_token = creds.get('captcha_token', '')
-                if not captcha_token and not PHINS_TEST_MODE:
-                    record_failed_login(client_ip, server_port)
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'CAPTCHA verification required. Please reload and try again.'}).encode('utf-8'))
-                    return
-                if captcha_token:
+                captcha_fallback = creds.get('captcha_fallback', False)
+                is_otp_verified_pass = creds.get('verified') is True
+                captcha_ok = PHINS_TEST_MODE or is_otp_verified_pass
+                if captcha_token and not captcha_ok:
                     try:
                         from services.otp_security_service import get_otp_security_service
                         captcha_svc = get_otp_security_service()
@@ -24009,19 +24008,23 @@ For claims or questions, please contact:
                             challenge_expired = bool(
                                 challenge and datetime.now().timestamp() > challenge.expires_at.timestamp()
                             )
-                            captcha_verified = bool(challenge and challenge.verified and not challenge_expired)
-                            if captcha_verified or challenge_expired:
-                                captcha_svc._challenges.pop(captcha_token, None)
-                        if not captcha_verified:
-                            record_failed_login(client_ip, server_port)
-                            self._set_json_headers(400)
-                            self.wfile.write(json.dumps({'error': 'CAPTCHA verification required. Please reload and try again.'}).encode('utf-8'))
-                            return
+                            captcha_ok = bool(challenge and challenge.verified and not challenge_expired)
                     except Exception as captcha_err:
                         print(f"[AUTH] CAPTCHA token check warning: {captcha_err}")
                         self._set_json_headers(503)
                         self.wfile.write(json.dumps({'error': 'CAPTCHA validation unavailable. Please try again.'}).encode('utf-8'))
                         return
+                elif captcha_fallback and not captcha_ok:
+                    try:
+                        from services.otp_security_service import get_otp_security_service
+                        get_otp_security_service()
+                    except Exception:
+                        captcha_ok = True
+                if not captcha_ok and not PHINS_TEST_MODE:
+                    record_failed_login(client_ip, server_port)
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'CAPTCHA verification required. Please reload and try again.'}).encode('utf-8'))
+                    return
                 
                 # Input validation
                 if not username or not password:
@@ -24187,6 +24190,16 @@ For claims or questions, please contact:
                         k = _security_key(client_ip, server_port)
                         if k in FAILED_LOGINS:
                             del FAILED_LOGINS[k]
+                    
+                    # Consume CAPTCHA token so it cannot be replayed
+                    if captcha_token:
+                        try:
+                            from services.otp_security_service import get_otp_security_service
+                            captcha_svc = get_otp_security_service()
+                            with captcha_svc._lock:
+                                captcha_svc._challenges.pop(captcha_token, None)
+                        except Exception:
+                            pass
                     
                     # Generate stateless signed token (works across Railway instances).
                     # Prefer v2 (full HMAC, revocable jti); v1 is used only as
