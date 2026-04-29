@@ -181,6 +181,129 @@ def test_login_stores_v2_jti_in_session(monkeypatch):
         srv.stop()
 
 
+def test_revoke_user_sessions_deletes_persisted_sessions(monkeypatch):
+    class _FakeSessionRepo:
+        def __init__(self):
+            self.rows = {
+                "revoked-db-token": SimpleNamespace(
+                    token="revoked-db-token",
+                    username="alice",
+                    role="customer",
+                    customer_id="CUST-1",
+                    expires=(datetime.now() + timedelta(hours=1)).isoformat(),
+                ),
+                "keep-token": SimpleNamespace(
+                    token="keep-token",
+                    username="alice",
+                    role="customer",
+                    customer_id="CUST-1",
+                    expires=(datetime.now() + timedelta(hours=1)).isoformat(),
+                ),
+            }
+            self.deleted = []
+
+        def get_by_username(self, username):
+            return [
+                session
+                for session in self.rows.values()
+                if session.username == username
+            ]
+
+        def get_by_id(self, token):
+            return self.rows.get(token)
+
+        def delete(self, token):
+            self.deleted.append(token)
+            self.rows.pop(token, None)
+            return True
+
+    class _FakeDB:
+        def __init__(self, repo):
+            self.sessions = repo
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    repo = _FakeSessionRepo()
+    fake_db = _FakeDB(repo)
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+
+    expires = (datetime.now() + timedelta(hours=1)).isoformat()
+    with portal.STATE_LOCK:
+        portal.SESSIONS.clear()
+        portal.SESSIONS["revoked-memory-token"] = {
+            "username": "alice",
+            "role": "customer",
+            "customer_id": "CUST-1",
+            "expires": expires,
+            "jti": "revoked-jti",
+        }
+        portal.SESSIONS["keep-token"] = {
+            "username": "alice",
+            "role": "customer",
+            "customer_id": "CUST-1",
+            "expires": expires,
+            "jti": "keep-jti",
+        }
+
+    with patch("database.manager.DatabaseManager", return_value=fake_db):
+        assert portal.validate_session("revoked-db-token") is not None
+
+        portal._revoke_user_sessions("alice", exclude_token="keep-token")
+
+        assert portal.validate_session("revoked-db-token") is None
+
+    with portal.STATE_LOCK:
+        assert "revoked-memory-token" not in portal.SESSIONS
+        assert "keep-token" in portal.SESSIONS
+    assert "revoked-db-token" in repo.deleted
+    assert "keep-token" not in repo.deleted
+    assert auth_tokens.is_revoked("revoked-jti") is True
+
+
+def test_cleanup_stale_data_prunes_db_sessions_without_memory_entries(monkeypatch):
+    class _FakeSessionRepo:
+        def __init__(self):
+            self.calls = 0
+
+        def delete_expired_sessions(self):
+            self.calls += 1
+            return 3
+
+    class _FakeDB:
+        def __init__(self, repo):
+            self.sessions = repo
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    repo = _FakeSessionRepo()
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+    monkeypatch.setattr(
+        portal,
+        "last_cleanup",
+        datetime.now() - timedelta(seconds=portal.CLEANUP_INTERVAL + 1),
+    )
+
+    with portal.STATE_LOCK:
+        portal.SESSIONS.clear()
+
+    with patch("database.manager.DatabaseManager", return_value=_FakeDB(repo)):
+        portal.cleanup_stale_data()
+
+    assert repo.calls == 1
+
+
 def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
     port = 8060
     srv = ServerThread(port)

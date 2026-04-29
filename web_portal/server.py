@@ -1409,10 +1409,12 @@ if USE_DATABASE and database_enabled:
     CUSTOMERS = DB_CUSTOMERS
     UNDERWRITING_APPLICATIONS = DB_UNDERWRITING
     BILLING = DB_BILLING
-    # IMPORTANT: Sessions MUST stay in-memory for Railway compatibility
-    # Database-backed sessions fail on multi-instance Railway deployments
+    # Sessions use an in-memory dict as the primary lookup cache (fast, no DB
+    # round-trip per request). The DB is used as a write-through persistence
+    # layer so sessions survive container restarts and can be validated from
+    # other Railway instances via the DB fallback in validate_session().
     SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id, role}
-    print("✓ Using database storage with in-memory sessions for Railway compatibility")
+    print("✓ Using database storage with write-through session persistence")
 else:
     # In-memory storage for demo purposes
     POLICIES: Dict[str, Dict[str, Any]] = {}
@@ -3509,11 +3511,32 @@ def record_fee_revenue(
     )
 
 # ========== DATA PERSISTENCE LAYER ==========
-# Path for persistent storage file
-LEDGER_PERSISTENCE_FILE = os.environ.get(
-    'LEDGER_PERSISTENCE_FILE',
-    os.path.join(tempfile.gettempdir(), 'phins_ledger_data.json'),
-)
+# Path for persistent storage file.
+# Priority: $LEDGER_PERSISTENCE_FILE (explicit) > $RAILWAY_VOLUME_MOUNT_PATH
+# (Railway persistent volume) > /data/ (standard mount point) > tempdir fallback.
+# Using tempdir (typically /tmp) is ephemeral on Railway and causes data loss on
+# container restart.  The code below picks the first viable persistent directory.
+def _resolve_persistence_file() -> str:
+    explicit = os.environ.get('LEDGER_PERSISTENCE_FILE')
+    if explicit:
+        return explicit
+
+    candidate_dirs = [
+        os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', ''),
+        '/data',
+    ]
+    for d in candidate_dirs:
+        if d and os.path.isdir(d):
+            return os.path.join(d, 'phins_ledger_data.json')
+
+    return os.path.join(tempfile.gettempdir(), 'phins_ledger_data.json')
+
+
+LEDGER_PERSISTENCE_FILE = _resolve_persistence_file()
+if LEDGER_PERSISTENCE_FILE.startswith(tempfile.gettempdir()):
+    print(f"⚠️  [PERSISTENCE] Using ephemeral path {LEDGER_PERSISTENCE_FILE} — "
+          "data will be lost on container restart. Set LEDGER_PERSISTENCE_FILE "
+          "or mount a volume at /data for durable storage.")
 PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
 # Verbose persistence logging emits one line per save; defaults OFF so Railway
 # logs are not flooded by the 70+ per-request save_ledger_data() call sites.
@@ -6871,8 +6894,9 @@ def _revoke_user_sessions(
     *,
     exclude_token: Optional[str] = None,
 ) -> None:
-    """Remove a user's sessions under ``STATE_LOCK`` and revoke any v2 jtids."""
+    """Remove a user's sessions and revoke any v2 jtids."""
     removed_sessions: List[Dict[str, Any]] = []
+    session_tokens_to_delete: set[str] = set()
     with STATE_LOCK:
         for session_token, sess in list(SESSIONS.items()):
             if sess.get('username') != username or session_token == exclude_token:
@@ -6880,6 +6904,21 @@ def _revoke_user_sessions(
             removed = SESSIONS.pop(session_token, None)
             if removed is not None:
                 removed_sessions.append(removed)
+                session_tokens_to_delete.add(session_token)
+
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager as _DBMgr
+            with _DBMgr() as db:
+                for db_session in db.sessions.get_by_username(username):
+                    session_token = getattr(db_session, 'token', None)
+                    if session_token and session_token != exclude_token:
+                        session_tokens_to_delete.add(session_token)
+                for session_token in session_tokens_to_delete:
+                    db.sessions.delete(session_token)
+        except Exception:
+            for session_token in session_tokens_to_delete:
+                _delete_session_from_db(session_token)
 
     for sess in removed_sessions:
         jti = sess.get('jti')
@@ -6890,6 +6929,48 @@ def _revoke_user_sessions(
         except Exception:
             exp = datetime.now().timestamp() + SESSION_TIMEOUT
         _auth_tokens.revoke_token(jti, exp)
+
+def _persist_session_to_db(token: str, session_data: Dict[str, Any]) -> None:
+    """Write-through: persist a newly created session to the database.
+
+    This is best-effort — if the DB is unavailable, the session still works via
+    the stateless HMAC token.  The persisted row allows other Railway instances
+    (or the same instance after a restart) to validate legacy/v1 tokens through
+    the DB fallback in ``validate_session()``.
+    """
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager as _DBMgr
+        with _DBMgr() as db:
+            expires_raw = session_data.get('expires', '')
+            if isinstance(expires_raw, str):
+                expires_dt = datetime.fromisoformat(expires_raw)
+            else:
+                expires_dt = expires_raw
+            db.sessions.create(
+                token=token,
+                username=session_data.get('username', ''),
+                customer_id=session_data.get('customer_id'),
+                role=session_data.get('role', ''),
+                ip_address=session_data.get('ip_address'),
+                expires=expires_dt,
+            )
+    except Exception as e:
+        print(f"[SESSION] DB write-through failed (non-fatal): {e}")
+
+
+def _delete_session_from_db(token: str) -> None:
+    """Best-effort removal of a session row from the database."""
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        from database.manager import DatabaseManager as _DBMgr
+        with _DBMgr() as db:
+            db.sessions.delete(token)
+    except Exception:
+        pass
+
 
 def get_customer_id_guaranteed(username: str, role: str) -> str | None:
     """
@@ -8133,7 +8214,7 @@ def cleanup_stale_data():
     timestamp = now.timestamp()
     
     with STATE_LOCK:
-        # Clean expired sessions
+        # Clean expired sessions (in-memory cache)
         expired_sessions = [token for token, sess in SESSIONS.items()
                            if datetime.fromisoformat(sess['expires']) < now]
         for token in expired_sessions:
@@ -8141,6 +8222,18 @@ def cleanup_stale_data():
                 del SESSIONS[token]
             except Exception:
                 pass
+
+    # Also clean expired sessions from the database (outside STATE_LOCK to
+    # avoid holding the lock during a potentially slow DB round-trip).
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager as _DBMgr
+            with _DBMgr() as db:
+                db.sessions.delete_expired_sessions()
+        except Exception:
+            pass
+
+    with STATE_LOCK:
 
         # Clean expired rate limits
         expired_limits = [ip for ip, data in RATE_LIMIT.items()
@@ -8175,7 +8268,7 @@ def check_session_limit(client_ip: str) -> bool:
     """Check if IP has too many concurrent sessions"""
     with STATE_LOCK:
         active_sessions = sum(1 for sess in SESSIONS.values()
-                             if sess.get('ip') == client_ip and
+                             if sess.get('ip_address') == client_ip and
                              datetime.fromisoformat(sess['expires']) > datetime.now())
         return active_sessions < MAX_SESSIONS_PER_IP
 
@@ -8415,13 +8508,16 @@ else:
     USERS: Dict[str, Dict[str, Any]] = _build_fallback_users()
 
 # ========== SUSPENDED TEST ACCOUNTS ==========
-# Test accounts that should NOT appear in admin dashboards, reports, or data aggregations
-# These accounts can still LOGIN but their data is hidden from platform displays
-# To reactivate: Remove customer_id from this set
+# QA/underwriting test accounts hidden from admin dashboards, reports, and BI
+# aggregations.  They can still log in; their data simply doesn't pollute
+# production metrics.  Seeded in database/seeds.py alongside pending
+# underwriting applications.
+# To reactivate at runtime: POST /api/admin/reactivate-account
+# To reactivate permanently: remove the customer_id from this set.
 SUSPENDED_TEST_ACCOUNTS: set = {
-    'CUST-TEST-100',  # Sara Cohen - Test account
-    'CUST-TEST-101',  # Test account
-    'CUST-TEST-102',  # Test account
+    'CUST-TEST-100',  # Sarah Cohen - QA underwriting test
+    'CUST-TEST-101',  # David Levy  - QA underwriting test
+    'CUST-TEST-102',  # Rachel Green - QA underwriting test
 }
 
 def is_suspended_account(customer_id: str) -> bool:
@@ -24890,16 +24986,19 @@ For claims or questions, please contact:
                         username, role, customer_id, expires
                     )
 
-                    # Also store in local SESSIONS for faster same-instance lookups
+                    # Store in local SESSIONS for faster same-instance lookups
+                    # and persist to DB so sessions survive container restarts.
+                    _session_payload = {
+                        'username': username,
+                        'expires': expires.isoformat(),
+                        'customer_id': customer_id,
+                        'role': role,
+                        'ip_address': client_ip,
+                        'jti': token_jti,
+                    }
                     with STATE_LOCK:
-                        SESSIONS[token] = {
-                            'username': username,
-                            'expires': expires.isoformat(),
-                            'customer_id': customer_id,
-                            'role': role,
-                            'ip_address': client_ip,
-                            'jti': token_jti,
-                        }
+                        SESSIONS[token] = _session_payload
+                    _persist_session_to_db(token, _session_payload)
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -24954,6 +25053,7 @@ For claims or questions, please contact:
             if token:
                 with STATE_LOCK:
                     SESSIONS.pop(token, None)
+                _delete_session_from_db(token)
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
@@ -26365,16 +26465,18 @@ For claims or questions, please contact:
                     supplier_info['id'], 'supplier', None, expires
                 )
                 
-                # Also store in SESSIONS for compatibility
+                # Store in SESSIONS and persist to DB for restart survival.
+                _supplier_session = {
+                    'username': supplier_info['id'],
+                    'role': 'supplier',
+                    'supplier_id': supplier_info['id'],
+                    'company_name': supplier_info['company_name'],
+                    'expires': expires.isoformat(),
+                    'jti': token_jti,
+                }
                 with STATE_LOCK:
-                    SESSIONS[token] = {
-                        'username': supplier_info['id'],
-                        'role': 'supplier',
-                        'supplier_id': supplier_info['id'],
-                        'company_name': supplier_info['company_name'],
-                        'expires': expires.isoformat(),
-                        'jti': token_jti,
-                    }
+                    SESSIONS[token] = _supplier_session
+                _persist_session_to_db(token, _supplier_session)
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
@@ -41707,7 +41809,12 @@ def run_server(port: int = PORT) -> None:
                     if claim_dict['id'] not in CLAIMS:
                         CLAIMS[claim_dict['id']] = claim_dict
                         db_claims_loaded += 1
-                print(f"   ✓ Loaded {db_claims_loaded} claims from database")
+                total_db = len(db_claims)
+                in_memory_before = len(CLAIMS) - db_claims_loaded
+                if db_claims_loaded > 0:
+                    print(f"   ✓ Loaded {db_claims_loaded} new claims from database ({total_db} total in DB, {in_memory_before} already in memory)")
+                else:
+                    print(f"   ✓ Loaded {db_claims_loaded} claims from database ({total_db} in DB, all {in_memory_before} already in memory)")
     except Exception as db_err:
         print(f"   ℹ️ Database claims loading: {db_err}")
     
@@ -42020,10 +42127,14 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")
     
-    # Log suspended test accounts
-    print(f"🚫 Suspended test accounts (hidden from platform data): {len(SUSPENDED_TEST_ACCOUNTS)}")
+    # Log suspended test accounts (these exist for QA/underwriting tests and
+    # consume negligible resources — 3 DB rows.  They can log in but their data
+    # is excluded from admin dashboards, reports, and BI aggregations.
+    # To reactivate: POST /api/admin/reactivate-account or remove from
+    # SUSPENDED_TEST_ACCOUNTS set above.)
+    print(f"🚫 Suspended test accounts (hidden from platform data, used for QA): {len(SUSPENDED_TEST_ACCOUNTS)}")
     for acc in SUSPENDED_TEST_ACCOUNTS:
-        print(f"   - {acc}")
+        print(f"   • {acc}")
     
     # Final step 1: Ensure all PHINS customers exist in the CUSTOMERS dictionary
     print("🔧 Final data integrity check - PHINS customer records...")
