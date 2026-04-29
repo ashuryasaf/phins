@@ -3992,13 +3992,15 @@
           y += Math.max(mLines.length * 12, 16) + 4;
         });
 
-        ensureSpace(50);
+        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules.";
+        var intNote = doc.splitTextToSize(integrityNotice, tw - 16);
+        var intNoteHeight = Math.max(42, intNote.length * 9 + 14);
+        ensureSpace(intNoteHeight + 18);
         y += 10;
         doc.setFillColor(240, 244, 250);
-        doc.roundedRect(m, y, tw, 42, 6, 6, "F");
+        doc.roundedRect(m, y, tw, intNoteHeight, 6, 6, "F");
         doc.setFontSize(7.5);
         doc.setTextColor(100, 116, 139);
-        var intNote = doc.splitTextToSize("Data integrity notice: This document contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included.", tw - 16);
         doc.text(intNote, m + 8, y + 12);
         doc.setTextColor(0, 0, 0);
 
