@@ -2510,13 +2510,14 @@
     </section>
 
     <section class="panel" id="pitch-modify-section">
-      <div class="section-label">⚙️ Pitch parameters</div>
+      <div class="section-label">⚙️ Pitch parameters — scenario lab integration</div>
       <h2 class="section-title">Modify country pitch data</h2>
       <p class="section-copy">
-        Adjust exchange rates, market sizes, coverage amounts, and pitch dates for each country.
-        Changes here do <strong>not</strong> alter reported public evidence. They only update the editable pitch
-        parameters used in actuarial tables and market sizing. Updated values are applied when you click
-        <strong>Apply &amp; Recalculate</strong>.
+        Adjust exchange rates, market sizes, coverage amounts, attach rates, and pitch dates for each country.
+        This tool uses the same <strong>PHINS scenario lab methodology</strong> to isolate risk premiums and
+        model addressable-lives-to-GWP conversion. Changes here do <strong>not</strong> alter reported public
+        evidence. The proportional relationship between <strong>addressable lives × attach rate = written lives</strong>
+        and <strong>written lives × annual premium = GWP</strong> is preserved throughout recalculation.
       </p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 8px;">
         <button type="button" class="export-btn" id="toggle-modify-panel" style="background:var(--gradient-hdr);color:#fff;border:none;">⚙️ Open Modify Panel</button>
@@ -2563,20 +2564,58 @@
           </div>
         </div>
 
+        <div style="border:1px solid var(--accent-1);border-radius:14px;padding:16px;background:linear-gradient(180deg,#eff6ff 0%,#f8fbff 100%);margin-bottom:16px;">
+          <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">📐 Scenario lab — risk premium isolation &amp; proportional sizing</div>
+          <p style="font-size:8pt;color:var(--text-sub);margin-bottom:12px;">
+            These controls mirror the PHINS scenario lab. <strong>Attach rate</strong> determines what proportion of
+            addressable lives convert to written policies. <strong>Cession rate</strong> isolates the retained risk
+            premium from the gross written premium. Adjust these to stress-test market-entry economics.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;">
+            <div class="control-group">
+              <label for="modify-attach-rate">Attach rate (%)</label>
+              <input id="modify-attach-rate" type="number" min="0" max="100" step="0.1" value="2.0" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="modify-cession-rate">Cession / quota share (%)</label>
+              <input id="modify-cession-rate" type="number" min="0" max="100" step="0.1" value="20.0" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="modify-loss-ratio">Expected loss ratio (%)</label>
+              <input id="modify-loss-ratio" type="number" min="0" max="100" step="0.1" value="60.0" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="modify-expense-ratio">Operating expense ratio (%)</label>
+              <input id="modify-expense-ratio" type="number" min="0" max="100" step="0.1" value="17.0" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+          </div>
+        </div>
+
         <div id="modify-preview" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--bg-light);margin-bottom:16px;">
           <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">Live recalculation preview</div>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;" id="modify-preview-grid">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
             <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Coverage (local)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-coverage">-</div></div>
             <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Monthly premium (local)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-monthly">-</div></div>
             <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Annual premium (local)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-annual">-</div></div>
             <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">20yr savings (local, 6%)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-savings">-</div></div>
           </div>
 
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Written lives</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-written-lives">-</div><div style="font-size:7pt;color:var(--text-soft);" id="mp-written-lives-note">addressable × attach rate</div></div>
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Gross written premium</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-gwp">-</div><div style="font-size:7pt;color:var(--text-soft);" id="mp-gwp-note">written lives × annual premium</div></div>
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Net retained premium</div><div style="font-size:12pt;font-weight:850;color:var(--green-1);" id="mp-net">-</div><div style="font-size:7pt;color:var(--text-soft);" id="mp-net-note">GWP − ceded premium</div></div>
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Underwriting contribution</div><div style="font-size:12pt;font-weight:850;color:var(--green-1);" id="mp-uw">-</div><div style="font-size:7pt;color:var(--text-soft);" id="mp-uw-note">net − claims − expenses</div></div>
+          </div>
+
+          <div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid var(--border);">
+            <div style="font-size:7.5pt;color:var(--text-sub);line-height:1.6;" id="mp-narrative">-</div>
+          </div>
+
           <div style="margin-top:12px;">
             <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;margin-bottom:6px;">Premium by age — local currency (age factor × base rate × coverage ÷ 1000 × exchange rate)</div>
             <div style="overflow-x:auto;">
               <table style="min-width:auto;margin:0;font-size:7.5pt;">
-                <thead><tr><th style="padding:6px 8px;">Age</th><th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">USD</th><th style="padding:6px 8px;">Local</th></tr></thead>
+                <thead><tr><th style="padding:6px 8px;">Age</th><th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">USD</th><th style="padding:6px 8px;">Local</th><th style="padding:6px 8px;">Risk portion</th><th style="padding:6px 8px;">Savings portion</th></tr></thead>
                 <tbody id="mp-age-table"></tbody>
               </table>
             </div>
@@ -2586,7 +2625,7 @@
             <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;margin-bottom:6px;">Premium by risk level — Age 35 (risk factor × age-35 USD × exchange rate)</div>
             <div style="overflow-x:auto;">
               <table style="min-width:auto;margin:0;font-size:7.5pt;">
-                <thead><tr><th style="padding:6px 8px;">Risk</th><th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">USD</th><th style="padding:6px 8px;">Local</th></tr></thead>
+                <thead><tr><th style="padding:6px 8px;">Risk</th><th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">USD</th><th style="padding:6px 8px;">Local</th><th style="padding:6px 8px;">Risk portion</th><th style="padding:6px 8px;">Savings portion</th></tr></thead>
                 <tbody id="mp-risk-table"></tbody>
               </table>
             </div>
@@ -2595,11 +2634,16 @@
 
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
           <button type="button" class="export-btn" id="modify-apply-btn" style="background:var(--green-1);color:#fff;border:none;">✓ Apply &amp; Recalculate</button>
+          <button type="button" class="export-btn" id="modify-download-pdf-btn" style="background:var(--gradient-hdr);color:#fff;border:none;">📄 Download Modified Pitch PDF</button>
           <button type="button" class="export-btn" id="modify-export-json-btn">Export Parameters JSON</button>
           <button type="button" class="export-btn" id="modify-reset-btn">Reset to Defaults</button>
         </div>
         <div class="helper-note" style="margin-top:10px;">
-          Modifications affect pitch parameter display only. Reported public evidence (demand signals, premium anchors, reinsurance markers) remains fixed and source-tagged. This tool is designed for pre-pitch calibration and investor meeting preparation.
+          Modifications affect pitch parameter display only. Reported public evidence (demand signals, premium
+          anchors, reinsurance markers) remains fixed and source-tagged. This tool uses the PHINS scenario lab
+          methodology: addressable lives × attach rate determines written lives; annual premium × written lives
+          determines GWP; cession isolates retained risk premium. All proportional assumptions are explicitly
+          labeled and downloadable.
         </div>
       </div>
     </section>
@@ -4119,52 +4163,110 @@
     }
 
     const pitchCountryDefaults = {
-      israel:       { flag: "🇮🇱", name: "Israel",       sym: "₪",   rate: 3.68,   market: "₪263B",     gap: 31,  addressable: 5.0, date: "2026-02" },
-      usa:          { flag: "🇺🇸", name: "USA",           sym: "$",   rate: 1.00,   market: "$2.8T",     gap: 28,  addressable: 11.3, date: "2026-02" },
-      hawaii:       { flag: "🌺", name: "Hawaii",        sym: "$",   rate: 1.00,   market: "$4.2B",     gap: 22,  addressable: 0.3, date: "2026-02" },
-      england:      { flag: "🏴", name: "England",       sym: "£",   rate: 0.79,   market: "£332B",     gap: 18,  addressable: 12.0, date: "2026-02" },
-      canada:       { flag: "🇨🇦", name: "Canada",        sym: "CA$", rate: 1.36,   market: "CA$236B",   gap: 22,  addressable: 8.0, date: "2026-02" },
-      australia:    { flag: "🇦🇺", name: "Australia",     sym: "A$",  rate: 1.53,   market: "A$98B",     gap: 24,  addressable: 5.5, date: "2026-02" },
-      japan:        { flag: "🇯🇵", name: "Japan",         sym: "¥",   rate: 154.50, market: "¥53T",      gap: 15,  addressable: 6.9, date: "2026-02" },
-      germany:      { flag: "🇩🇪", name: "Germany",       sym: "€",   rate: 0.92,   market: "€224B",     gap: 12,  addressable: 5.7, date: "2026-02" },
-      france:       { flag: "🇫🇷", name: "France",        sym: "€",   rate: 0.92,   market: "€236B",     gap: 16,  addressable: 4.2, date: "2026-02" },
-      spain:        { flag: "🇪🇸", name: "Spain",         sym: "€",   rate: 0.92,   market: "€68B",      gap: 24,  addressable: 3.5, date: "2026-02" },
-      italy:        { flag: "🇮🇹", name: "Italy",         sym: "€",   rate: 0.92,   market: "€157B",     gap: 20,  addressable: 4.8, date: "2026-02" },
-      netherlands:  { flag: "🇳🇱", name: "Netherlands",   sym: "€",   rate: 0.92,   market: "€86B",      gap: 10,  addressable: 2.1, date: "2026-02" },
-      sweden:       { flag: "🇸🇪", name: "Sweden",        sym: "kr",  rate: 10.85,  market: "kr380B",    gap: 14,  addressable: 1.5, date: "2026-02" },
-      swisserland:  { flag: "🇨🇭", name: "Switzerland",   sym: "CHF", rate: 0.88,   market: "CHF 68B",   gap: 8,   addressable: 1.2, date: "2026-02" },
-      irland:       { flag: "🇮🇪", name: "Ireland",       sym: "€",   rate: 0.92,   market: "€52B",      gap: 18,  addressable: 0.9, date: "2026-02" },
-      greece:       { flag: "🇬🇷", name: "Greece",        sym: "€",   rate: 0.92,   market: "€5.2B",     gap: 32,  addressable: 1.8, date: "2026-02" },
-      poland:       { flag: "🇵🇱", name: "Poland",        sym: "zł",  rate: 4.05,   market: "zł78B",     gap: 35,  addressable: 3.2, date: "2026-02" },
-      brazil:       { flag: "🇧🇷", name: "Brazil",        sym: "R$",  rate: 5.05,   market: "R$380B",    gap: 55,  addressable: 45.0, date: "2026-02" },
-      india:        { flag: "🇮🇳", name: "India",         sym: "₹",   rate: 83.50,  market: "₹8.3T",     gap: 72,  addressable: 120.0, date: "2026-02" },
-      mexico:       { flag: "🇲🇽", name: "Mexico",        sym: "MX$", rate: 17.20,  market: "MX$750B",   gap: 58,  addressable: 22.0, date: "2026-02" },
-      syngapore:    { flag: "🇸🇬", name: "Singapore",     sym: "S$",  rate: 1.34,   market: "S$42B",     gap: 12,  addressable: 1.2, date: "2026-02" },
-      south_africa: { flag: "🇿🇦", name: "South Africa",  sym: "R",   rate: 18.50,  market: "R780B",     gap: 62,  addressable: 8.5, date: "2026-02" },
-      emirates:     { flag: "🇦🇪", name: "UAE / Emirates", sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 2.0, date: "2026-02" },
-      dubai:        { flag: "🇦🇪", name: "Dubai",         sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 1.0, date: "2026-02" },
-      portugal:     { flag: "🇵🇹", name: "Portugal",      sym: "€",   rate: 0.92,   market: "€11.2B",    gap: 34,  addressable: 2.8, date: "2026-02" },
-      albania:      { flag: "🇦🇱", name: "Albania",       sym: "ALL", rate: 96.50,  market: "ALL 30B",   gap: 72,  addressable: 1.2, date: "2026-02" }
+      israel:       { flag: "🇮🇱", name: "Israel",       sym: "₪",   rate: 3.68,   market: "₪263B",     gap: 31,  addressable: 5.0,   attachRate: 2.4, cessionRate: 18.0, lossRatio: 62.0, expenseRatio: 18.0, date: "2026-02" },
+      usa:          { flag: "🇺🇸", name: "USA",           sym: "$",   rate: 1.00,   market: "$2.8T",     gap: 28,  addressable: 11.3,  attachRate: 3.5, cessionRate: 25.0, lossRatio: 60.0, expenseRatio: 17.0, date: "2026-02" },
+      hawaii:       { flag: "🌺", name: "Hawaii",        sym: "$",   rate: 1.00,   market: "$4.2B",     gap: 22,  addressable: 0.3,   attachRate: 2.0, cessionRate: 20.0, lossRatio: 60.0, expenseRatio: 18.0, date: "2026-02" },
+      england:      { flag: "🏴", name: "England",       sym: "£",   rate: 0.79,   market: "£332B",     gap: 18,  addressable: 12.0,  attachRate: 1.5, cessionRate: 22.0, lossRatio: 58.0, expenseRatio: 16.0, date: "2026-02" },
+      canada:       { flag: "🇨🇦", name: "Canada",        sym: "CA$", rate: 1.36,   market: "CA$236B",   gap: 22,  addressable: 8.0,   attachRate: 1.0, cessionRate: 20.0, lossRatio: 61.0, expenseRatio: 16.0, date: "2026-02" },
+      australia:    { flag: "🇦🇺", name: "Australia",     sym: "A$",  rate: 1.53,   market: "A$98B",     gap: 24,  addressable: 5.5,   attachRate: 1.4, cessionRate: 23.0, lossRatio: 63.0, expenseRatio: 17.0, date: "2026-02" },
+      japan:        { flag: "🇯🇵", name: "Japan",         sym: "¥",   rate: 154.50, market: "¥53T",      gap: 15,  addressable: 6.9,   attachRate: 1.8, cessionRate: 12.0, lossRatio: 57.0, expenseRatio: 14.0, date: "2026-02" },
+      germany:      { flag: "🇩🇪", name: "Germany",       sym: "€",   rate: 0.92,   market: "€224B",     gap: 12,  addressable: 5.7,   attachRate: 4.0, cessionRate: 22.0, lossRatio: 58.0, expenseRatio: 16.0, date: "2026-02" },
+      france:       { flag: "🇫🇷", name: "France",        sym: "€",   rate: 0.92,   market: "€236B",     gap: 16,  addressable: 4.2,   attachRate: 2.5, cessionRate: 22.0, lossRatio: 58.0, expenseRatio: 16.0, date: "2026-02" },
+      spain:        { flag: "🇪🇸", name: "Spain",         sym: "€",   rate: 0.92,   market: "€68B",      gap: 24,  addressable: 3.5,   attachRate: 2.0, cessionRate: 22.0, lossRatio: 59.0, expenseRatio: 17.0, date: "2026-02" },
+      italy:        { flag: "🇮🇹", name: "Italy",         sym: "€",   rate: 0.92,   market: "€157B",     gap: 20,  addressable: 4.8,   attachRate: 2.2, cessionRate: 22.0, lossRatio: 59.0, expenseRatio: 17.0, date: "2026-02" },
+      netherlands:  { flag: "🇳🇱", name: "Netherlands",   sym: "€",   rate: 0.92,   market: "€86B",      gap: 10,  addressable: 2.1,   attachRate: 3.0, cessionRate: 22.0, lossRatio: 57.0, expenseRatio: 15.0, date: "2026-02" },
+      sweden:       { flag: "🇸🇪", name: "Sweden",        sym: "kr",  rate: 10.85,  market: "kr380B",    gap: 14,  addressable: 1.5,   attachRate: 2.5, cessionRate: 20.0, lossRatio: 57.0, expenseRatio: 15.0, date: "2026-02" },
+      swisserland:  { flag: "🇨🇭", name: "Switzerland",   sym: "CHF", rate: 0.88,   market: "CHF 68B",   gap: 8,   addressable: 1.2,   attachRate: 3.0, cessionRate: 18.0, lossRatio: 55.0, expenseRatio: 14.0, date: "2026-02" },
+      irland:       { flag: "🇮🇪", name: "Ireland",       sym: "€",   rate: 0.92,   market: "€52B",      gap: 18,  addressable: 0.9,   attachRate: 2.0, cessionRate: 22.0, lossRatio: 58.0, expenseRatio: 16.0, date: "2026-02" },
+      greece:       { flag: "🇬🇷", name: "Greece",        sym: "€",   rate: 0.92,   market: "€5.2B",     gap: 32,  addressable: 1.8,   attachRate: 1.5, cessionRate: 25.0, lossRatio: 60.0, expenseRatio: 18.0, date: "2026-02" },
+      poland:       { flag: "🇵🇱", name: "Poland",        sym: "zł",  rate: 4.05,   market: "zł78B",     gap: 35,  addressable: 3.2,   attachRate: 1.5, cessionRate: 25.0, lossRatio: 59.0, expenseRatio: 17.0, date: "2026-02" },
+      brazil:       { flag: "🇧🇷", name: "Brazil",        sym: "R$",  rate: 5.05,   market: "R$380B",    gap: 55,  addressable: 45.0,  attachRate: 0.5, cessionRate: 28.0, lossRatio: 62.0, expenseRatio: 19.0, date: "2026-02" },
+      india:        { flag: "🇮🇳", name: "India",         sym: "₹",   rate: 83.50,  market: "₹8.3T",     gap: 72,  addressable: 120.0, attachRate: 0.3, cessionRate: 30.0, lossRatio: 60.0, expenseRatio: 20.0, date: "2026-02" },
+      mexico:       { flag: "🇲🇽", name: "Mexico",        sym: "MX$", rate: 17.20,  market: "MX$750B",   gap: 58,  addressable: 22.0,  attachRate: 0.5, cessionRate: 28.0, lossRatio: 61.0, expenseRatio: 19.0, date: "2026-02" },
+      syngapore:    { flag: "🇸🇬", name: "Singapore",     sym: "S$",  rate: 1.34,   market: "S$42B",     gap: 12,  addressable: 1.2,   attachRate: 3.0, cessionRate: 18.0, lossRatio: 55.0, expenseRatio: 14.0, date: "2026-02" },
+      south_africa: { flag: "🇿🇦", name: "South Africa",  sym: "R",   rate: 18.50,  market: "R780B",     gap: 62,  addressable: 8.5,   attachRate: 0.8, cessionRate: 28.0, lossRatio: 63.0, expenseRatio: 19.0, date: "2026-02" },
+      emirates:     { flag: "🇦🇪", name: "UAE / Emirates", sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 2.0,   attachRate: 2.0, cessionRate: 46.9, lossRatio: 60.0, expenseRatio: 15.0, date: "2026-02" },
+      dubai:        { flag: "🇦🇪", name: "Dubai",         sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 1.0,   attachRate: 2.5, cessionRate: 46.9, lossRatio: 60.0, expenseRatio: 15.0, date: "2026-02" },
+      portugal:     { flag: "🇵🇹", name: "Portugal",      sym: "€",   rate: 0.92,   market: "€11.2B",    gap: 34,  addressable: 2.8,   attachRate: 1.8, cessionRate: 22.0, lossRatio: 59.0, expenseRatio: 17.0, date: "2026-02" },
+      albania:      { flag: "🇦🇱", name: "Albania",       sym: "ALL", rate: 96.50,  market: "ALL 30B",   gap: 72,  addressable: 1.2,   attachRate: 1.5, cessionRate: 30.0, lossRatio: 58.0, expenseRatio: 20.0, date: "2026-02" }
     };
 
     const modifyAgeFactors  = [[25,1.000],[28,1.045],[30,1.075],[33,1.120],[35,1.150],[38,1.195],[40,1.225],[43,1.270],[45,1.300],[50,1.375],[55,1.450],[60,1.525]];
     const modifyRiskFactors = [["Very Low",0.85],["Low",0.90],["Medium",1.00],["Moderate",1.15],["Elevated",1.25],["High",1.35],["Very High",1.50]];
 
     function fmtModLocal(val, sym) {
-      const needsSpace = ["AED","CHF","ALL"].includes(sym);
-      const prefix = needsSpace ? sym + " " : sym;
+      var needsSpace = ["AED","CHF","ALL"].includes(sym);
+      var prefix = needsSpace ? sym + " " : sym;
       if (Math.abs(val) >= 100) return prefix + Math.round(val).toLocaleString("en-US");
       return prefix + val.toFixed(2);
     }
 
+    function fmtModBig(val, sym) {
+      var needsSpace = ["AED","CHF","ALL"].includes(sym);
+      var prefix = needsSpace ? sym + " " : sym;
+      if (val >= 1e9) return prefix + (val/1e9).toFixed(2) + "B";
+      if (val >= 1e6) return prefix + (val/1e6).toFixed(2) + "M";
+      if (val >= 1e3) return prefix + (val/1e3).toFixed(1) + "K";
+      return prefix + val.toFixed(0);
+    }
+
+    function getModifyInputs() {
+      var key = document.getElementById("modify-country-select").value;
+      var d = pitchCountryDefaults[key];
+      if (!d) return null;
+      var rate = parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate;
+      var coverage = parseFloat(document.getElementById("modify-coverage").value) || 50000;
+      var baseRate = parseFloat(document.getElementById("modify-base-rate").value) || 0.25;
+      var addressableM = parseFloat(document.getElementById("modify-addressable").value) || d.addressable;
+      var attachRatePct = parseFloat(document.getElementById("modify-attach-rate").value) || d.attachRate;
+      var cessionPct = parseFloat(document.getElementById("modify-cession-rate").value) || d.cessionRate;
+      var lossRatioPct = parseFloat(document.getElementById("modify-loss-ratio").value) || d.lossRatio;
+      var expenseRatioPct = parseFloat(document.getElementById("modify-expense-ratio").value) || d.expenseRatio;
+      var gap = parseFloat(document.getElementById("modify-penetration-gap").value) || d.gap;
+      var pitchDate = document.getElementById("modify-pitch-date").value || d.date;
+      var marketSize = document.getElementById("modify-market-size").value || d.market;
+
+      var baseUsd = baseRate * (coverage / 1000);
+      var age35Usd = baseUsd * 1.150;
+      var age35Local = age35Usd * rate;
+      var coverageLocal = coverage * rate;
+      var annualLocal = age35Local * 12;
+      var savingsMonthly = age35Local / 2;
+      var savingsAnnual = savingsMonthly * 12;
+      var balance = 0;
+      for (var yr = 0; yr < 20; yr++) { balance = (balance + savingsAnnual) * 1.06; }
+      var addressable = addressableM * 1e6;
+      var writtenLives = addressable * attachRatePct / 100;
+      var gwp = writtenLives * annualLocal;
+      var ceded = gwp * cessionPct / 100;
+      var net = gwp - ceded;
+      var claims = net * lossRatioPct / 100;
+      var expenses = net * expenseRatioPct / 100;
+      var uw = net - claims - expenses;
+      var uwMargin = net > 0 ? (uw / net * 100) : 0;
+
+      return {
+        key: key, d: d, rate: rate, coverage: coverage, baseRate: baseRate, sym: d.sym,
+        addressableM: addressableM, addressable: addressable, attachRatePct: attachRatePct,
+        cessionPct: cessionPct, lossRatioPct: lossRatioPct, expenseRatioPct: expenseRatioPct,
+        gap: gap, pitchDate: pitchDate, marketSize: marketSize,
+        baseUsd: baseUsd, age35Usd: age35Usd, age35Local: age35Local,
+        coverageLocal: coverageLocal, annualLocal: annualLocal,
+        savingsMonthly: savingsMonthly, savingsAnnual: savingsAnnual, savings20yr: balance,
+        writtenLives: writtenLives, gwp: gwp, ceded: ceded, net: net,
+        claims: claims, expenses: expenses, uw: uw, uwMargin: uwMargin
+      };
+    }
+
     function initModifyPanel() {
-      const sel = document.getElementById("modify-country-select");
-      const toggleBtn = document.getElementById("toggle-modify-panel");
-      const panel = document.getElementById("modify-panel");
-      const applyBtn = document.getElementById("modify-apply-btn");
-      const exportBtn = document.getElementById("modify-export-json-btn");
-      const resetBtn = document.getElementById("modify-reset-btn");
-      const statusEl = document.getElementById("modify-status");
+      var sel = document.getElementById("modify-country-select");
+      var toggleBtn = document.getElementById("toggle-modify-panel");
+      var panel = document.getElementById("modify-panel");
+      var applyBtn = document.getElementById("modify-apply-btn");
+      var pdfBtn = document.getElementById("modify-download-pdf-btn");
+      var exportBtn = document.getElementById("modify-export-json-btn");
+      var resetBtn = document.getElementById("modify-reset-btn");
+      var statusEl = document.getElementById("modify-status");
 
       sel.innerHTML = Object.entries(pitchCountryDefaults).map(function(e) {
         return '<option value="' + e[0] + '">' + e[1].flag + ' ' + e[1].name + '</option>';
@@ -4183,108 +4285,248 @@
         document.getElementById("modify-pitch-date").value = d.date;
         document.getElementById("modify-penetration-gap").value = d.gap;
         document.getElementById("modify-addressable").value = d.addressable;
+        document.getElementById("modify-attach-rate").value = d.attachRate;
+        document.getElementById("modify-cession-rate").value = d.cessionRate;
+        document.getElementById("modify-loss-ratio").value = d.lossRatio;
+        document.getElementById("modify-expense-ratio").value = d.expenseRatio;
         document.getElementById("modify-coverage").value = 50000;
         document.getElementById("modify-base-rate").value = 0.25;
         updatePreview();
       }
 
       function updatePreview() {
-        var key = sel.value;
-        var d = pitchCountryDefaults[key];
-        if (!d) return;
-        var rate = parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate;
-        var coverage = parseFloat(document.getElementById("modify-coverage").value) || 50000;
-        var baseRate = parseFloat(document.getElementById("modify-base-rate").value) || 0.25;
-        var sym = d.sym;
+        var m = getModifyInputs();
+        if (!m) return;
+        var sym = m.sym;
 
-        var baseUsd = baseRate * (coverage / 1000);
-        var age35Usd = baseUsd * 1.150;
-        var age35Local = age35Usd * rate;
-        var coverageLocal = coverage * rate;
-        var annualLocal = age35Local * 12;
-        var savingsMonthly = age35Local / 2;
-        var savingsAnnual = savingsMonthly * 12;
-        var balance = 0;
-        for (var yr = 0; yr < 20; yr++) { balance = (balance + savingsAnnual) * 1.06; }
+        document.getElementById("mp-coverage").textContent = fmtModLocal(m.coverageLocal, sym);
+        document.getElementById("mp-monthly").textContent = fmtModLocal(m.age35Local, sym);
+        document.getElementById("mp-annual").textContent = fmtModLocal(m.annualLocal, sym);
+        document.getElementById("mp-savings").textContent = fmtModLocal(m.savings20yr, sym);
 
-        document.getElementById("mp-coverage").textContent = fmtModLocal(coverageLocal, sym);
-        document.getElementById("mp-monthly").textContent = fmtModLocal(age35Local, sym);
-        document.getElementById("mp-annual").textContent = fmtModLocal(annualLocal, sym);
-        document.getElementById("mp-savings").textContent = fmtModLocal(balance, sym);
+        document.getElementById("mp-written-lives").textContent = formatInteger(Math.round(m.writtenLives));
+        document.getElementById("mp-written-lives-note").textContent = formatInteger(m.addressable) + " × " + m.attachRatePct.toFixed(1) + "%";
+        document.getElementById("mp-gwp").textContent = fmtModBig(m.gwp, sym);
+        document.getElementById("mp-gwp-note").textContent = formatInteger(Math.round(m.writtenLives)) + " × " + fmtModLocal(m.annualLocal, sym) + "/yr";
+        document.getElementById("mp-net").textContent = fmtModBig(m.net, sym);
+        document.getElementById("mp-net-note").textContent = "GWP − " + m.cessionPct.toFixed(1) + "% ceded";
+        document.getElementById("mp-uw").textContent = fmtModBig(m.uw, sym);
+        document.getElementById("mp-uw-note").textContent = m.uwMargin.toFixed(1) + "% margin on net";
+
+        var narrativeParts = [];
+        narrativeParts.push("<strong>Proportional sizing:</strong> " + formatInteger(m.addressable) + " addressable lives × " + m.attachRatePct.toFixed(1) + "% attach rate = " + formatInteger(Math.round(m.writtenLives)) + " written lives.");
+        narrativeParts.push("<strong>Premium conversion:</strong> " + formatInteger(Math.round(m.writtenLives)) + " written lives × " + fmtModLocal(m.annualLocal, sym) + " annual premium = " + fmtModBig(m.gwp, sym) + " gross written premium.");
+        narrativeParts.push("<strong>Risk premium isolation:</strong> " + fmtModBig(m.gwp, sym) + " GWP − " + m.cessionPct.toFixed(1) + "% cession (" + fmtModBig(m.ceded, sym) + ") = " + fmtModBig(m.net, sym) + " net retained premium.");
+        narrativeParts.push("<strong>Underwriting economics:</strong> net " + fmtModBig(m.net, sym) + " − " + m.lossRatioPct.toFixed(1) + "% claims (" + fmtModBig(m.claims, sym) + ") − " + m.expenseRatioPct.toFixed(1) + "% expenses (" + fmtModBig(m.expenses, sym) + ") = " + fmtModBig(m.uw, sym) + " underwriting contribution (" + m.uwMargin.toFixed(1) + "% margin).");
+        narrativeParts.push("<strong>Coverage recalculation:</strong> $" + formatInteger(m.coverage) + " USD × " + m.rate + " " + m.d.flag + " = " + fmtModLocal(m.coverageLocal, sym) + " local coverage. Monthly premium (age 35, medium risk): " + fmtModLocal(m.age35Local, sym) + " = risk portion " + fmtModLocal(m.age35Local/2, sym) + " + savings portion " + fmtModLocal(m.age35Local/2, sym) + ".");
+        document.getElementById("mp-narrative").innerHTML = narrativeParts.join("<br>");
 
         var ageHtml = "";
         modifyAgeFactors.forEach(function(af) {
-          var usd = baseUsd * af[1];
-          var local = usd * rate;
-          ageHtml += '<tr><td style="padding:4px 8px;">' + af[0] + '</td><td style="padding:4px 8px;">' + af[1].toFixed(3) + '</td><td style="padding:4px 8px;">$' + usd.toFixed(2) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local, sym) + '</td></tr>';
+          var usd = m.baseUsd * af[1];
+          var local = usd * m.rate;
+          ageHtml += '<tr><td style="padding:4px 8px;">' + af[0] + '</td><td style="padding:4px 8px;">' + af[1].toFixed(3) + '</td><td style="padding:4px 8px;">$' + usd.toFixed(2) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local, sym) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local/2, sym) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local/2, sym) + '</td></tr>';
         });
         document.getElementById("mp-age-table").innerHTML = ageHtml;
 
         var riskHtml = "";
         modifyRiskFactors.forEach(function(rf) {
-          var usd = age35Usd * rf[1] / 1.150;
-          usd = baseUsd * 1.150 * rf[1];
-          var local = usd * rate;
-          riskHtml += '<tr><td style="padding:4px 8px;">' + rf[0] + '</td><td style="padding:4px 8px;">' + rf[1].toFixed(2) + '</td><td style="padding:4px 8px;">$' + usd.toFixed(2) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local, sym) + '</td></tr>';
+          var usd = m.baseUsd * 1.150 * rf[1];
+          var local = usd * m.rate;
+          riskHtml += '<tr><td style="padding:4px 8px;">' + rf[0] + '</td><td style="padding:4px 8px;">' + rf[1].toFixed(2) + '</td><td style="padding:4px 8px;">$' + usd.toFixed(2) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local, sym) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local/2, sym) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local/2, sym) + '</td></tr>';
         });
         document.getElementById("mp-risk-table").innerHTML = riskHtml;
       }
 
       sel.addEventListener("change", function() { loadCountryDefaults(sel.value); });
-      ["modify-exchange-rate","modify-coverage","modify-base-rate","modify-market-size","modify-penetration-gap","modify-addressable"].forEach(function(id) {
+      ["modify-exchange-rate","modify-coverage","modify-base-rate","modify-market-size","modify-penetration-gap","modify-addressable","modify-attach-rate","modify-cession-rate","modify-loss-ratio","modify-expense-ratio"].forEach(function(id) {
         document.getElementById(id).addEventListener("input", updatePreview);
       });
 
       applyBtn.addEventListener("click", function() {
-        var key = sel.value;
-        var d = pitchCountryDefaults[key];
-        pitchCountryDefaults[key] = Object.assign({}, d, {
-          rate: parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate,
-          market: document.getElementById("modify-market-size").value || d.market,
-          date: document.getElementById("modify-pitch-date").value || d.date,
-          gap: parseFloat(document.getElementById("modify-penetration-gap").value) || d.gap,
-          addressable: parseFloat(document.getElementById("modify-addressable").value) || d.addressable
+        var m = getModifyInputs();
+        if (!m) return;
+        pitchCountryDefaults[m.key] = Object.assign({}, m.d, {
+          rate: m.rate, market: m.marketSize, date: m.pitchDate, gap: m.gap,
+          addressable: m.addressableM, attachRate: m.attachRatePct,
+          cessionRate: m.cessionPct, lossRatio: m.lossRatioPct, expenseRatio: m.expenseRatioPct
         });
-        statusEl.textContent = "Parameters applied for " + d.name + " at " + new Date().toLocaleTimeString() + ". Public evidence layer unchanged.";
+        statusEl.textContent = "Parameters applied for " + m.d.name + " at " + new Date().toLocaleTimeString() + ". Public evidence layer unchanged. PDF ready for download.";
         statusEl.style.color = "var(--green-1)";
       });
 
+      pdfBtn.addEventListener("click", function() {
+        var m = getModifyInputs();
+        if (!m) return;
+        if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") { alert("PDF library not loaded. Please refresh."); return; }
+        try {
+          statusEl.textContent = "Generating modified pitch PDF...";
+          var jsPDF = window.jspdf.jsPDF;
+          var doc = new jsPDF({ unit: "pt", format: "a4" });
+          var pw = doc.internal.pageSize.getWidth();
+          var ph = doc.internal.pageSize.getHeight();
+          var mg = 40;
+          var tw = pw - mg * 2;
+          var printedAt = new Date().toLocaleString("en-US", { hour12: false });
+          var y = mg;
+
+          var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = mg; } };
+          var heading = function(text, sz) {
+            ensureSpace(sz + 14);
+            doc.setFontSize(sz); doc.setFont(undefined, "bold"); doc.setTextColor(13, 71, 161);
+            doc.text(text, mg, y); y += sz + 6;
+            doc.setTextColor(0, 0, 0); doc.setFont(undefined, "normal");
+          };
+          var para = function(text, fs, gap) {
+            fs = fs || 10; gap = gap || 14;
+            doc.setFontSize(fs);
+            var lines = doc.splitTextToSize(String(text), tw);
+            ensureSpace(lines.length * gap);
+            doc.text(lines, mg, y); y += lines.length * gap + 4;
+          };
+
+          doc.setFillColor(13, 71, 161);
+          doc.rect(0, 0, pw, 72, "F");
+          doc.setFontSize(18); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
+          doc.text("PHINS Modified Pitch — " + m.d.flag + " " + m.d.name, mg, 34);
+          doc.setFontSize(9); doc.setFont(undefined, "normal");
+          doc.text("Modified pitch parameters | Pitch date: " + m.pitchDate + " | Generated: " + printedAt, mg, 52);
+          doc.text("Data integrity: reported public evidence unchanged — only PHINS assumptions modified", mg, 64);
+          doc.setTextColor(0, 0, 0); y = 92;
+
+          heading("Market Sizing & Proportional Analysis", 14);
+          para("Market size: " + m.marketSize + " | Health insurance penetration gap: " + m.gap.toFixed(1) + "% | Exchange rate: " + m.d.sym + " " + m.rate + " per USD", 9.5, 13);
+
+          if (typeof doc.autoTable === "function") {
+            doc.autoTable({
+              startY: y, margin: { left: mg, right: mg },
+              head: [["Metric", "Value", "Derivation"]],
+              body: [
+                ["Addressable lives", formatInteger(m.addressable), "Estimated individuals without adequate disability/LTC coverage"],
+                ["Attach rate", m.attachRatePct.toFixed(1) + "%", "PHINS assumed conversion rate of addressable lives to written policies"],
+                ["Written lives", formatInteger(Math.round(m.writtenLives)), formatInteger(m.addressable) + " x " + m.attachRatePct.toFixed(1) + "% attach rate"],
+                ["Coverage amount", fmtModLocal(m.coverageLocal, m.sym) + " ($" + formatInteger(m.coverage) + " USD)", "$" + formatInteger(m.coverage) + " x " + m.rate + " exchange rate"],
+                ["Monthly premium (Age 35)", fmtModLocal(m.age35Local, m.sym), "Base rate x coverage/1000 x age factor x exchange rate"],
+                ["Annual premium", fmtModLocal(m.annualLocal, m.sym), "Monthly premium x 12"]
+              ],
+              styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak", valign: "top" },
+              headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
+            });
+            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+          }
+
+          heading("Risk Premium Isolation (Scenario Lab Method)", 13);
+          para("The PHINS scenario lab isolates risk premium by separating gross written premium into ceded, retained, claims, expenses, and underwriting contribution layers. This mirrors the methodology used in the main dashboard scenario engine.", 9, 13);
+
+          if (typeof doc.autoTable === "function") {
+            doc.autoTable({
+              startY: y, margin: { left: mg, right: mg },
+              head: [["Layer", "Value (" + m.sym + ")", "Derivation"]],
+              body: [
+                ["Gross written premium", fmtModBig(m.gwp, m.sym), formatInteger(Math.round(m.writtenLives)) + " written lives x " + fmtModLocal(m.annualLocal, m.sym) + " annual premium"],
+                ["Ceded premium (" + m.cessionPct.toFixed(1) + "%)", fmtModBig(m.ceded, m.sym), "GWP x " + m.cessionPct.toFixed(1) + "% quota share / cession"],
+                ["Net retained premium", fmtModBig(m.net, m.sym), "GWP - ceded premium"],
+                ["Expected claims (" + m.lossRatioPct.toFixed(1) + "%)", fmtModBig(m.claims, m.sym), "Net premium x " + m.lossRatioPct.toFixed(1) + "% loss ratio"],
+                ["Operating expenses (" + m.expenseRatioPct.toFixed(1) + "%)", fmtModBig(m.expenses, m.sym), "Net premium x " + m.expenseRatioPct.toFixed(1) + "% expense ratio"],
+                ["Underwriting contribution", fmtModBig(m.uw, m.sym), "Net - claims - expenses (" + m.uwMargin.toFixed(1) + "% margin)"]
+              ],
+              styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak", valign: "top" },
+              headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" }
+            });
+            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+          }
+
+          heading("Premium by Age — " + fmtModLocal(m.coverageLocal, m.sym) + " Coverage", 13);
+          if (typeof doc.autoTable === "function") {
+            doc.autoTable({
+              startY: y, margin: { left: mg, right: mg },
+              head: [["Age", "Factor", "Monthly (USD)", "Monthly (" + m.sym + ")", "Risk portion", "Savings portion"]],
+              body: modifyAgeFactors.map(function(af) {
+                var usd = m.baseUsd * af[1];
+                var local = usd * m.rate;
+                return [af[0], af[1].toFixed(3), "$" + usd.toFixed(2), fmtModLocal(local, m.sym), fmtModLocal(local/2, m.sym), fmtModLocal(local/2, m.sym)];
+              }),
+              styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+              headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" }
+            });
+            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+          }
+
+          heading("Premium by Risk Level — Age 35", 13);
+          if (typeof doc.autoTable === "function") {
+            doc.autoTable({
+              startY: y, margin: { left: mg, right: mg },
+              head: [["Risk", "Factor", "Monthly (USD)", "Monthly (" + m.sym + ")", "Risk portion", "Savings portion"]],
+              body: modifyRiskFactors.map(function(rf) {
+                var usd = m.baseUsd * 1.150 * rf[1];
+                var local = usd * m.rate;
+                return [rf[0], rf[1].toFixed(2), "$" + usd.toFixed(2), fmtModLocal(local, m.sym), fmtModLocal(local/2, m.sym), fmtModLocal(local/2, m.sym)];
+              }),
+              styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+              headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" }
+            });
+            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+          }
+
+          heading("20-Year Savings Projection", 13);
+          para("Customer profile: " + fmtModLocal(m.coverageLocal, m.sym) + " coverage, age 35, medium risk, 50% savings allocation, 6% annual compound growth. Monthly premium: " + fmtModLocal(m.age35Local, m.sym) + ". After 20 years, projected savings balance: " + fmtModLocal(m.savings20yr, m.sym) + ".", 9, 13);
+
+          ensureSpace(60);
+          y += 10;
+          doc.setFillColor(240, 244, 250);
+          doc.roundedRect(mg, y, tw, 50, 6, 6, "F");
+          doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
+          var intNote = doc.splitTextToSize("Data integrity notice: This document contains modified PHINS assumptions (exchange rate, attach rate, coverage, cession, loss ratio, expense ratio) applied to the " + m.d.name + " market. Reported public evidence — demand signals, premium anchors, and reinsurance markers from the evidence matrix — remains unchanged. Proportional sizing uses the scenario lab methodology: addressable lives x attach rate = written lives; written lives x annual premium = GWP.", tw - 16);
+          doc.text(intNote, mg + 8, y + 12);
+          doc.setTextColor(0, 0, 0);
+
+          var pc = doc.getNumberOfPages();
+          for (var p = 1; p <= pc; p++) {
+            doc.setPage(p);
+            doc.setFontSize(7.5); doc.setTextColor(90, 102, 122);
+            doc.text("PHINS Modified Pitch — " + m.d.name + " · " + printedAt + " · Page " + p + " of " + pc, mg, ph - 18);
+          }
+
+          doc.save("phins-modified-pitch-" + slugify(m.d.name) + ".pdf");
+          statusEl.textContent = "Modified pitch PDF downloaded for " + m.d.name + ". Public evidence unchanged.";
+          statusEl.style.color = "var(--green-1)";
+        } catch (err) {
+          statusEl.textContent = "Failed to generate PDF. Please retry.";
+          statusEl.style.color = "var(--red-1)";
+        }
+      });
+
       exportBtn.addEventListener("click", function() {
-        var key = sel.value;
-        var d = pitchCountryDefaults[key];
-        var rate = parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate;
-        var coverage = parseFloat(document.getElementById("modify-coverage").value) || 50000;
-        var baseRate = parseFloat(document.getElementById("modify-base-rate").value) || 0.25;
+        var m = getModifyInputs();
+        if (!m) return;
         var payload = {
           exportedAt: new Date().toISOString(),
-          country: key,
-          name: d.name,
-          flag: d.flag,
-          localCurrency: d.sym,
-          exchangeRate: rate,
-          coverageUsd: coverage,
-          baseRateUsd: baseRate,
-          marketSize: document.getElementById("modify-market-size").value,
-          penetrationGap: parseFloat(document.getElementById("modify-penetration-gap").value),
-          addressableCustomersM: parseFloat(document.getElementById("modify-addressable").value),
-          pitchDate: document.getElementById("modify-pitch-date").value,
+          country: m.key, name: m.d.name, flag: m.d.flag,
+          localCurrency: m.sym, exchangeRate: m.rate,
+          coverageUsd: m.coverage, baseRateUsd: m.baseRate,
+          marketSize: m.marketSize, penetrationGap: m.gap,
+          addressableCustomersM: m.addressableM, attachRatePct: m.attachRatePct,
+          cessionRatePct: m.cessionPct, lossRatioPct: m.lossRatioPct, expenseRatioPct: m.expenseRatioPct,
+          pitchDate: m.pitchDate,
+          proportionalSizing: {
+            addressableLives: m.addressable, writtenLives: Math.round(m.writtenLives),
+            gwp: Math.round(m.gwp), cededPremium: Math.round(m.ceded),
+            netPremium: Math.round(m.net), expectedClaims: Math.round(m.claims),
+            operatingExpenses: Math.round(m.expenses), underwritingContribution: Math.round(m.uw),
+            uwMarginPct: Math.round(m.uwMargin * 10) / 10
+          },
           premiumByAge: modifyAgeFactors.map(function(af) {
-            var usd = baseRate * (coverage/1000) * af[1];
-            return { age: af[0], factor: af[1], usd: Math.round(usd*100)/100, local: Math.round(usd*rate*100)/100 };
+            var usd = m.baseRate * (m.coverage/1000) * af[1];
+            return { age: af[0], factor: af[1], usd: Math.round(usd*100)/100, local: Math.round(usd*m.rate*100)/100, riskPortion: Math.round(usd*m.rate*50)/100, savingsPortion: Math.round(usd*m.rate*50)/100 };
           }),
           premiumByRisk: modifyRiskFactors.map(function(rf) {
-            var usd = baseRate * (coverage/1000) * 1.150 * rf[1];
-            return { risk: rf[0], factor: rf[1], usd: Math.round(usd*100)/100, local: Math.round(usd*rate*100)/100 };
+            var usd = m.baseRate * (m.coverage/1000) * 1.150 * rf[1];
+            return { risk: rf[0], factor: rf[1], usd: Math.round(usd*100)/100, local: Math.round(usd*m.rate*100)/100, riskPortion: Math.round(usd*m.rate*50)/100, savingsPortion: Math.round(usd*m.rate*50)/100 };
           }),
-          integrity: "Reported public evidence is separate from pitch parameter adjustments."
+          integrity: "Reported public evidence is separate from pitch parameter adjustments. Proportional sizing uses scenario lab methodology."
         };
-        var blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
-        a.href = url; a.download = key + "-pitch-parameters.json";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-        statusEl.textContent = "Parameters exported for " + d.name + ".";
+        triggerDownload(m.key + "-pitch-parameters.json", "application/json", JSON.stringify(payload, null, 2) + "\n");
+        statusEl.textContent = "Parameters exported for " + m.d.name + ".";
         statusEl.style.color = "var(--text-soft)";
       });
 
