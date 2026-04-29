@@ -6894,8 +6894,9 @@ def _revoke_user_sessions(
     *,
     exclude_token: Optional[str] = None,
 ) -> None:
-    """Remove a user's sessions under ``STATE_LOCK`` and revoke any v2 jtids."""
+    """Remove a user's sessions and revoke any v2 jtids."""
     removed_sessions: List[Dict[str, Any]] = []
+    session_tokens_to_delete: set[str] = set()
     with STATE_LOCK:
         for session_token, sess in list(SESSIONS.items()):
             if sess.get('username') != username or session_token == exclude_token:
@@ -6903,6 +6904,21 @@ def _revoke_user_sessions(
             removed = SESSIONS.pop(session_token, None)
             if removed is not None:
                 removed_sessions.append(removed)
+                session_tokens_to_delete.add(session_token)
+
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager as _DBMgr
+            with _DBMgr() as db:
+                for db_session in db.sessions.get_by_username(username):
+                    session_token = getattr(db_session, 'token', None)
+                    if session_token and session_token != exclude_token:
+                        session_tokens_to_delete.add(session_token)
+                for session_token in session_tokens_to_delete:
+                    db.sessions.delete(session_token)
+        except Exception:
+            for session_token in session_tokens_to_delete:
+                _delete_session_from_db(session_token)
 
     for sess in removed_sessions:
         jti = sess.get('jti')
@@ -8209,7 +8225,7 @@ def cleanup_stale_data():
 
     # Also clean expired sessions from the database (outside STATE_LOCK to
     # avoid holding the lock during a potentially slow DB round-trip).
-    if expired_sessions and USE_DATABASE and database_enabled:
+    if USE_DATABASE and database_enabled:
         try:
             from database.manager import DatabaseManager as _DBMgr
             with _DBMgr() as db:
