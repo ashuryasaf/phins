@@ -151,6 +151,18 @@ def test_start_voice_input_sets_input_method():
     assert "lastInputMethod = 'voice';" in content
 
 
+def test_stop_voice_input_resets_input_method_by_default():
+    content = DASHBOARD_PATH.read_text(encoding="utf-8")
+    assert "function stopVoiceInput(resetInputMethod = true)" in content
+    assert "if (resetInputMethod) {" in content
+    assert "lastInputMethod = 'text';" in content
+
+
+def test_successful_voice_result_preserves_voice_input_method():
+    content = DASHBOARD_PATH.read_text(encoding="utf-8")
+    assert "stopVoiceInput(false);" in content
+
+
 def test_quick_action_passes_input_method():
     content = DASHBOARD_PATH.read_text(encoding="utf-8")
     assert "processAIQuery('quick_action')" in content
@@ -245,7 +257,7 @@ def test_original_voice_button_and_recording_indicator_present():
     assert 'id="voice-transcript"' in content
     assert "function initVoiceRecognition()" in content
     assert "function startVoiceInput()" in content
-    assert "function stopVoiceInput()" in content
+    assert "function stopVoiceInput(" in content
     assert "function showVoiceFeedback(transcript)" in content
 
 
