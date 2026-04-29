@@ -2634,7 +2634,7 @@
 
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
           <button type="button" class="export-btn" id="modify-apply-btn" style="background:var(--green-1);color:#fff;border:none;">✓ Apply &amp; Recalculate</button>
-          <button type="button" class="export-btn" id="modify-download-pdf-btn" style="background:var(--gradient-hdr);color:#fff;border:none;">📄 Download Modified Pitch PDF</button>
+          <button type="button" class="export-btn" id="modify-download-pdf-btn" style="background:var(--gradient-hdr);color:#fff;border:none;">📄 Download Investor Pitch PDF</button>
           <button type="button" class="export-btn" id="modify-export-json-btn">Export Parameters JSON</button>
           <button type="button" class="export-btn" id="modify-reset-btn">Reset to Defaults</button>
         </div>
@@ -4360,7 +4360,7 @@
         if (!m) return;
         if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") { alert("PDF library not loaded. Please refresh."); return; }
         try {
-          statusEl.textContent = "Generating modified pitch PDF...";
+          statusEl.textContent = "Generating investor-grade pitch PDF...";
           var jsPDF = window.jspdf.jsPDF;
           var doc = new jsPDF({ unit: "pt", format: "a4" });
           var pw = doc.internal.pageSize.getWidth();
@@ -4369,6 +4369,9 @@
           var tw = pw - mg * 2;
           var printedAt = new Date().toLocaleString("en-US", { hour12: false });
           var y = mg;
+          var at = typeof doc.autoTable === "function";
+          var sym = m.sym;
+          var lastY = function() { return doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 80; };
 
           var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = mg; } };
           var heading = function(text, sz) {
@@ -4377,121 +4380,307 @@
             doc.text(text, mg, y); y += sz + 6;
             doc.setTextColor(0, 0, 0); doc.setFont(undefined, "normal");
           };
+          var subheading = function(text) {
+            ensureSpace(24);
+            doc.setFontSize(10); doc.setFont(undefined, "bold"); doc.setTextColor(21, 101, 192);
+            doc.text(text, mg, y); y += 14;
+            doc.setTextColor(0, 0, 0); doc.setFont(undefined, "normal");
+          };
           var para = function(text, fs, gap) {
-            fs = fs || 10; gap = gap || 14;
+            fs = fs || 9.5; gap = gap || 13;
             doc.setFontSize(fs);
             var lines = doc.splitTextToSize(String(text), tw);
             ensureSpace(lines.length * gap);
             doc.text(lines, mg, y); y += lines.length * gap + 4;
           };
+          var drawBar = function(label, pct, color) {
+            ensureSpace(22);
+            doc.setFontSize(8); doc.setFont(undefined, "normal");
+            doc.text(label, mg, y + 10);
+            var bx = mg + 150, bw = tw - 195;
+            doc.setFillColor(230, 238, 249);
+            doc.roundedRect(bx, y, bw, 14, 7, 7, "F");
+            doc.setFillColor(color[0], color[1], color[2]);
+            if (pct > 0) doc.roundedRect(bx, y, bw * pct / 100, 14, 7, 7, "F");
+            doc.setFontSize(8); doc.setFont(undefined, "bold");
+            doc.text(pct + "%", mg + tw - 2, y + 10, { align: "right" });
+            doc.setFont(undefined, "normal"); y += 20;
+          };
+
+          var yr1Gwp = m.gwp * 0.15;
+          var yr2Gwp = m.gwp * 0.40;
+          var yr3Gwp = m.gwp * 0.70;
+          var yr4Gwp = m.gwp * 0.90;
+          var yr5Gwp = m.gwp * 1.00;
+          var growthFactors = [0.15, 0.40, 0.70, 0.90, 1.00];
+          var plYears = [];
+          for (var yi = 0; yi < 5; yi++) {
+            var gf = growthFactors[yi];
+            var yGwp = m.gwp * gf;
+            var yCeded = yGwp * m.cessionPct / 100;
+            var yNet = yGwp - yCeded;
+            var yClaims = yNet * m.lossRatioPct / 100;
+            var yWalletRev = yGwp * 0.018 * gf;
+            var yInvestRev = yGwp * 0.012 * gf;
+            var yMarketplaceRev = yGwp * 0.008 * gf;
+            var yTotalRev = yNet + yWalletRev + yInvestRev + yMarketplaceRev;
+            var yExpRatio = m.expenseRatioPct - (yi * 1.5);
+            if (yExpRatio < 10) yExpRatio = 10;
+            var yExpenses = yNet * yExpRatio / 100;
+            var yTechCost = yGwp * (0.22 - yi * 0.025);
+            if (yTechCost < yGwp * 0.10) yTechCost = yGwp * 0.10;
+            var yTotalCost = yClaims + yExpenses + yTechCost;
+            var yEbitda = yTotalRev - yTotalCost;
+            var yEbitdaMargin = yTotalRev > 0 ? (yEbitda / yTotalRev * 100) : 0;
+            plYears.push({
+              year: yi + 1, gf: gf, gwp: yGwp, ceded: yCeded, net: yNet,
+              claims: yClaims, walletRev: yWalletRev, investRev: yInvestRev,
+              marketplaceRev: yMarketplaceRev, totalRev: yTotalRev,
+              expenses: yExpenses, techCost: yTechCost, totalCost: yTotalCost,
+              ebitda: yEbitda, ebitdaMargin: yEbitdaMargin
+            });
+          }
+          var yr5Rev = plYears[4].totalRev;
+          var yr5Ebitda = plYears[4].ebitda;
+          var revenueMultiple = 12;
+          var ebitdaMultiple = 25;
+          var impliedValRev = yr5Rev * revenueMultiple;
+          var impliedValEbitda = yr5Ebitda > 0 ? yr5Ebitda * ebitdaMultiple : 0;
+          var blendedVal = (impliedValRev + impliedValEbitda) / 2;
 
           doc.setFillColor(13, 71, 161);
-          doc.rect(0, 0, pw, 72, "F");
-          doc.setFontSize(18); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
-          doc.text("PHINS Modified Pitch — " + m.d.flag + " " + m.d.name, mg, 34);
-          doc.setFontSize(9); doc.setFont(undefined, "normal");
-          doc.text("Modified pitch parameters | Pitch date: " + m.pitchDate + " | Generated: " + printedAt, mg, 52);
-          doc.text("Data integrity: reported public evidence unchanged — only PHINS assumptions modified", mg, 64);
-          doc.setTextColor(0, 0, 0); y = 92;
+          doc.rect(0, 0, pw, 82, "F");
+          doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
+          doc.text("PHINS " + m.d.flag + " " + m.d.name + " — Investor Pitch", mg, 30);
+          doc.setFontSize(11); doc.setFont(undefined, "normal");
+          doc.text("AI-Native Insurtech Platform | Disability & Long-Term Care | " + m.pitchDate, mg, 48);
+          doc.setFontSize(8.5);
+          doc.text("Technology-first platform transforming disability and LTC insurance through AI automation, blockchain integrity, and health marketplace orchestration", mg, 62);
+          doc.text("Confidential — " + printedAt + " | Data integrity: public evidence unchanged, PHINS assumptions adjustable", mg, 74);
+          doc.setTextColor(0, 0, 0); y = 102;
 
-          heading("Market Sizing & Proportional Analysis", 14);
-          para("Market size: " + m.marketSize + " | Health insurance penetration gap: " + m.gap.toFixed(1) + "% | Exchange rate: " + m.d.sym + " " + m.rate + " per USD", 9.5, 13);
+          heading("Executive Summary", 16);
+          para("PHINS is an AI-native insurance technology platform purpose-built for severe disability and long-term care. The platform unifies automated underwriting, claims intelligence, care navigation, algorithmic investment management, community foundations, and a health marketplace into a single digital-first operating system. PHINS replaces legacy manual processes with machine-learning-driven risk assessment, real-time portfolio management, blockchain-anchored transaction integrity, and supplier ecosystem orchestration.", 9.5, 13);
+          para("The " + m.d.name + " market represents " + m.marketSize + " in total insurance premiums with a " + m.gap.toFixed(0) + "% health insurance penetration gap — creating a structural opportunity for a digital-first severity product. PHINS targets " + formatInteger(m.addressable) + " addressable lives with a " + m.attachRatePct.toFixed(1) + "% attach rate, yielding " + formatInteger(Math.round(m.writtenLives)) + " written policies and " + fmtModBig(m.gwp, sym) + " gross written premium at scale.", 9.5, 13);
 
-          if (typeof doc.autoTable === "function") {
-            doc.autoTable({
-              startY: y, margin: { left: mg, right: mg },
+          subheading("Investment Highlights");
+          var highlights = [
+            "AI-native platform with 64+ deployed service modules across underwriting, claims, billing, trading, and marketplace",
+            "92% underwriting automation, 88% claims triage automation, 96% billing automation — industry-leading cost structure",
+            "Blockchain-anchored NFT transaction ledger ensuring tamper-proof data integrity across the policy lifecycle",
+            "Health marketplace with AI-ranked delivery bidding, supplier ecosystem, and integrated wallet infrastructure",
+            "Multi-jurisdiction regulatory adapter architecture targeting 26 markets globally",
+            "Community foundations engine with contribution payments, voting governance, and ledger persistence",
+            "Proportional market sizing: " + formatInteger(m.addressable) + " addressable lives x " + m.attachRatePct.toFixed(1) + "% attach = " + formatInteger(Math.round(m.writtenLives)) + " written lives = " + fmtModBig(m.gwp, sym) + " GWP at scale"
+          ];
+          highlights.forEach(function(h) {
+            ensureSpace(16);
+            doc.setFontSize(8.5);
+            doc.text("  •  " + h, mg, y); y += 13;
+          });
+          y += 4;
+
+          heading("Platform Capability Maturity", 13);
+          [["AI Underwriting",92,[21,101,192]],["Claims Processing",88,[21,101,192]],["Blockchain Ledger",94,[230,81,0]],["Predictive Analytics",84,[46,125,50]],["Health Marketplace",86,[46,125,50]],["Community Foundations",90,[46,125,50]],["Portfolio Management",82,[106,27,154]],["BI / Integrity Engine",88,[106,27,154]],["Voice AI Interface",74,[21,101,192]],["Multi-Market Regulatory",62,[106,27,154]]].forEach(function(c) { drawBar(c[0], c[1], c[2]); });
+
+          heading("Market Sizing — " + m.d.name, 14);
+          para("Market size: " + m.marketSize + " | Penetration gap: " + m.gap.toFixed(1) + "% | Exchange rate: " + sym + " " + m.rate + " per USD", 9, 12);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
               head: [["Metric", "Value", "Derivation"]],
               body: [
-                ["Addressable lives", formatInteger(m.addressable), "Estimated individuals without adequate disability/LTC coverage"],
-                ["Attach rate", m.attachRatePct.toFixed(1) + "%", "PHINS assumed conversion rate of addressable lives to written policies"],
-                ["Written lives", formatInteger(Math.round(m.writtenLives)), formatInteger(m.addressable) + " x " + m.attachRatePct.toFixed(1) + "% attach rate"],
-                ["Coverage amount", fmtModLocal(m.coverageLocal, m.sym) + " ($" + formatInteger(m.coverage) + " USD)", "$" + formatInteger(m.coverage) + " x " + m.rate + " exchange rate"],
-                ["Monthly premium (Age 35)", fmtModLocal(m.age35Local, m.sym), "Base rate x coverage/1000 x age factor x exchange rate"],
-                ["Annual premium", fmtModLocal(m.annualLocal, m.sym), "Monthly premium x 12"]
+                ["Total market size", m.marketSize, "Reported insurance market (public evidence, fixed)"],
+                ["Penetration gap", m.gap.toFixed(1) + "%", "Addressable population without adequate coverage"],
+                ["Addressable lives", formatInteger(m.addressable), m.addressableM.toFixed(1) + "M individuals in target demographic"],
+                ["Attach rate", m.attachRatePct.toFixed(1) + "%", "PHINS assumed conversion of addressable lives to policies"],
+                ["Written lives (at scale)", formatInteger(Math.round(m.writtenLives)), formatInteger(m.addressable) + " x " + m.attachRatePct.toFixed(1) + "% = proportional target"],
+                ["Coverage amount", fmtModLocal(m.coverageLocal, sym), "$" + formatInteger(m.coverage) + " USD x " + m.rate + " FX rate"],
+                ["Monthly premium (age 35)", fmtModLocal(m.age35Local, sym), "Base rate x coverage/1000 x 1.150 age factor x FX"],
+                ["Annual premium per life", fmtModLocal(m.annualLocal, sym), "Monthly x 12"],
+                ["GWP at scale", fmtModBig(m.gwp, sym), formatInteger(Math.round(m.writtenLives)) + " lives x " + fmtModLocal(m.annualLocal, sym) + "/yr"]
               ],
-              styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak", valign: "top" },
+              styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak", valign: "top" },
               headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
-            });
-            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+            }); y = lastY();
           }
 
-          heading("Risk Premium Isolation (Scenario Lab Method)", 13);
-          para("The PHINS scenario lab isolates risk premium by separating gross written premium into ceded, retained, claims, expenses, and underwriting contribution layers. This mirrors the methodology used in the main dashboard scenario engine.", 9, 13);
-
-          if (typeof doc.autoTable === "function") {
-            doc.autoTable({
-              startY: y, margin: { left: mg, right: mg },
-              head: [["Layer", "Value (" + m.sym + ")", "Derivation"]],
+          heading("Risk Premium Isolation — Scenario Lab", 14);
+          para("The PHINS scenario lab isolates retained risk premium from gross written premium through reinsurance cession, then applies loss and expense ratios to determine underwriting contribution. This methodology separates reported market evidence from PHINS planning assumptions.", 9, 12);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Layer", "Amount (" + sym + ")", "% of GWP", "Method"]],
               body: [
-                ["Gross written premium", fmtModBig(m.gwp, m.sym), formatInteger(Math.round(m.writtenLives)) + " written lives x " + fmtModLocal(m.annualLocal, m.sym) + " annual premium"],
-                ["Ceded premium (" + m.cessionPct.toFixed(1) + "%)", fmtModBig(m.ceded, m.sym), "GWP x " + m.cessionPct.toFixed(1) + "% quota share / cession"],
-                ["Net retained premium", fmtModBig(m.net, m.sym), "GWP - ceded premium"],
-                ["Expected claims (" + m.lossRatioPct.toFixed(1) + "%)", fmtModBig(m.claims, m.sym), "Net premium x " + m.lossRatioPct.toFixed(1) + "% loss ratio"],
-                ["Operating expenses (" + m.expenseRatioPct.toFixed(1) + "%)", fmtModBig(m.expenses, m.sym), "Net premium x " + m.expenseRatioPct.toFixed(1) + "% expense ratio"],
-                ["Underwriting contribution", fmtModBig(m.uw, m.sym), "Net - claims - expenses (" + m.uwMargin.toFixed(1) + "% margin)"]
+                ["Gross written premium", fmtModBig(m.gwp, sym), "100.0%", "Written lives x annual premium"],
+                ["Ceded to reinsurers", "(" + fmtModBig(m.ceded, sym) + ")", m.cessionPct.toFixed(1) + "%", "GWP x quota share cession rate"],
+                ["Net retained premium", fmtModBig(m.net, sym), (100 - m.cessionPct).toFixed(1) + "%", "GWP minus ceded premium"],
+                ["Expected claims", "(" + fmtModBig(m.claims, sym) + ")", (m.lossRatioPct * (100 - m.cessionPct) / 100).toFixed(1) + "%", "Net x " + m.lossRatioPct.toFixed(1) + "% loss ratio"],
+                ["Operating expenses", "(" + fmtModBig(m.expenses, sym) + ")", (m.expenseRatioPct * (100 - m.cessionPct) / 100).toFixed(1) + "%", "Net x " + m.expenseRatioPct.toFixed(1) + "% expense ratio"],
+                ["Underwriting contribution", fmtModBig(m.uw, sym), (m.uwMargin * (100 - m.cessionPct) / 100).toFixed(1) + "%", m.uwMargin.toFixed(1) + "% margin on net retained"]
               ],
-              styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak", valign: "top" },
+              styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak", valign: "top" },
               headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" }
-            });
-            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+            }); y = lastY();
           }
 
-          heading("Premium by Age — " + fmtModLocal(m.coverageLocal, m.sym) + " Coverage", 13);
-          if (typeof doc.autoTable === "function") {
-            doc.autoTable({
-              startY: y, margin: { left: mg, right: mg },
-              head: [["Age", "Factor", "Monthly (USD)", "Monthly (" + m.sym + ")", "Risk portion", "Savings portion"]],
+          heading("5-Year Profit & Loss Forecast — " + m.d.name, 14);
+          para("Forward-looking P&L based on PHINS scenario assumptions. Revenue ramp: 15% / 40% / 70% / 90% / 100% of scale GWP. Technology costs decline as a percentage of revenue as the platform scales. Expense ratio improves 1.5pp annually through AI automation. No proprietary pricing, contract, or customer data is included.", 9, 12);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Line Item", "Year 1", "Year 2", "Year 3", "Year 4", "Year 5"]],
+              body: [
+                ["Revenue ramp (% of scale)", "15%", "40%", "70%", "90%", "100%"],
+                ["Gross written premium", fmtModBig(plYears[0].gwp,sym), fmtModBig(plYears[1].gwp,sym), fmtModBig(plYears[2].gwp,sym), fmtModBig(plYears[3].gwp,sym), fmtModBig(plYears[4].gwp,sym)],
+                ["Ceded premium", "(" + fmtModBig(plYears[0].ceded,sym) + ")", "(" + fmtModBig(plYears[1].ceded,sym) + ")", "(" + fmtModBig(plYears[2].ceded,sym) + ")", "(" + fmtModBig(plYears[3].ceded,sym) + ")", "(" + fmtModBig(plYears[4].ceded,sym) + ")"],
+                ["Net earned premium", fmtModBig(plYears[0].net,sym), fmtModBig(plYears[1].net,sym), fmtModBig(plYears[2].net,sym), fmtModBig(plYears[3].net,sym), fmtModBig(plYears[4].net,sym)],
+                ["Wallet & marketplace fees", fmtModBig(plYears[0].walletRev+plYears[0].marketplaceRev,sym), fmtModBig(plYears[1].walletRev+plYears[1].marketplaceRev,sym), fmtModBig(plYears[2].walletRev+plYears[2].marketplaceRev,sym), fmtModBig(plYears[3].walletRev+plYears[3].marketplaceRev,sym), fmtModBig(plYears[4].walletRev+plYears[4].marketplaceRev,sym)],
+                ["Investment management fees", fmtModBig(plYears[0].investRev,sym), fmtModBig(plYears[1].investRev,sym), fmtModBig(plYears[2].investRev,sym), fmtModBig(plYears[3].investRev,sym), fmtModBig(plYears[4].investRev,sym)],
+                ["Total revenue", fmtModBig(plYears[0].totalRev,sym), fmtModBig(plYears[1].totalRev,sym), fmtModBig(plYears[2].totalRev,sym), fmtModBig(plYears[3].totalRev,sym), fmtModBig(plYears[4].totalRev,sym)],
+                ["", "", "", "", "", ""],
+                ["Claims incurred", "(" + fmtModBig(plYears[0].claims,sym) + ")", "(" + fmtModBig(plYears[1].claims,sym) + ")", "(" + fmtModBig(plYears[2].claims,sym) + ")", "(" + fmtModBig(plYears[3].claims,sym) + ")", "(" + fmtModBig(plYears[4].claims,sym) + ")"],
+                ["Operating expenses", "(" + fmtModBig(plYears[0].expenses,sym) + ")", "(" + fmtModBig(plYears[1].expenses,sym) + ")", "(" + fmtModBig(plYears[2].expenses,sym) + ")", "(" + fmtModBig(plYears[3].expenses,sym) + ")", "(" + fmtModBig(plYears[4].expenses,sym) + ")"],
+                ["Technology & platform costs", "(" + fmtModBig(plYears[0].techCost,sym) + ")", "(" + fmtModBig(plYears[1].techCost,sym) + ")", "(" + fmtModBig(plYears[2].techCost,sym) + ")", "(" + fmtModBig(plYears[3].techCost,sym) + ")", "(" + fmtModBig(plYears[4].techCost,sym) + ")"],
+                ["Total costs", "(" + fmtModBig(plYears[0].totalCost,sym) + ")", "(" + fmtModBig(plYears[1].totalCost,sym) + ")", "(" + fmtModBig(plYears[2].totalCost,sym) + ")", "(" + fmtModBig(plYears[3].totalCost,sym) + ")", "(" + fmtModBig(plYears[4].totalCost,sym) + ")"],
+                ["", "", "", "", "", ""],
+                ["EBITDA", fmtModBig(plYears[0].ebitda,sym), fmtModBig(plYears[1].ebitda,sym), fmtModBig(plYears[2].ebitda,sym), fmtModBig(plYears[3].ebitda,sym), fmtModBig(plYears[4].ebitda,sym)],
+                ["EBITDA margin", plYears[0].ebitdaMargin.toFixed(1)+"%", plYears[1].ebitdaMargin.toFixed(1)+"%", plYears[2].ebitdaMargin.toFixed(1)+"%", plYears[3].ebitdaMargin.toFixed(1)+"%", plYears[4].ebitdaMargin.toFixed(1)+"%"]
+              ],
+              styles: { fontSize: 7.5, cellPadding: 4, overflow: "linebreak", valign: "top" },
+              headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" },
+              didParseCell: function(data) {
+                if (data.row.index >= 12 && data.section === "body") { data.cell.styles.fontStyle = "bold"; }
+              }
+            }); y = lastY();
+          }
+
+          heading("Equity Valuation Framework", 14);
+          para("Indicative valuation using insurtech-comparable multiples applied to Year 5 projected financials. This framework uses revenue and EBITDA multiples consistent with high-growth, AI-native insurtech platforms at scale. No proprietary valuation, cap table, or term sheet data is disclosed.", 9, 12);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Valuation Method", "Multiple", "Year 5 Base", "Implied Enterprise Value"]],
+              body: [
+                ["Revenue multiple", revenueMultiple + "x", fmtModBig(yr5Rev, sym), fmtModBig(impliedValRev, sym)],
+                ["EBITDA multiple", ebitdaMultiple + "x", fmtModBig(yr5Ebitda, sym), yr5Ebitda > 0 ? fmtModBig(impliedValEbitda, sym) : "N/A (negative EBITDA)"],
+                ["Blended valuation", "", "", fmtModBig(blendedVal, sym)]
+              ],
+              styles: { fontSize: 8.5, cellPadding: 6, overflow: "linebreak", valign: "top" },
+              headStyles: { fillColor: [46, 125, 50], textColor: [255, 255, 255], fontStyle: "bold" }
+            }); y = lastY();
+          }
+
+          subheading("Valuation Benchmarks — Insurtech Comparables");
+          para("Revenue multiples of 8-15x are observed for high-growth insurtechs with AI-driven underwriting automation and multi-market expansion potential. EBITDA multiples of 20-30x apply to platforms demonstrating margin expansion through technology leverage. The PHINS blended approach averages both methods to account for the platform's dual identity as an insurance carrier and a technology infrastructure provider.", 9, 12);
+
+          subheading("Why PHINS Commands Premium Multiples");
+          var valPoints = [
+            "AI-native architecture (not bolt-on automation): 92% underwriting, 88% claims, 96% billing automation deployed",
+            "Multi-revenue-stream model: insurance premiums + wallet fees + marketplace commissions + investment management",
+            "64+ modular services operating independently — each a potential standalone SaaS vertical",
+            "Blockchain-anchored data integrity creates institutional-grade audit trail for regulators and reinsurers",
+            "26-market regulatory adapter architecture — not a single-market platform",
+            "Network effects: supplier marketplace, community foundations, and delivery bidding create compounding value",
+            "Capital-efficient: " + m.cessionPct.toFixed(0) + "% cession reduces balance-sheet risk while retaining technology margin"
+          ];
+          valPoints.forEach(function(vp) {
+            ensureSpace(14);
+            doc.setFontSize(8.5);
+            doc.text("  •  " + vp, mg, y); y += 12;
+          });
+          y += 6;
+
+          heading("Appendix A — Premium by Age", 13);
+          para("Coverage: " + fmtModLocal(m.coverageLocal, sym) + " (" + sym + " " + m.rate + " per USD) | Medium risk | 50% risk / 50% savings allocation", 8.5, 12);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Age", "Factor", "Monthly (USD)", "Monthly (" + sym + ")", "Risk portion", "Savings portion"]],
               body: modifyAgeFactors.map(function(af) {
-                var usd = m.baseUsd * af[1];
-                var local = usd * m.rate;
-                return [af[0], af[1].toFixed(3), "$" + usd.toFixed(2), fmtModLocal(local, m.sym), fmtModLocal(local/2, m.sym), fmtModLocal(local/2, m.sym)];
+                var usd = m.baseUsd * af[1]; var local = usd * m.rate;
+                return [af[0], af[1].toFixed(3), "$" + usd.toFixed(2), fmtModLocal(local, sym), fmtModLocal(local/2, sym), fmtModLocal(local/2, sym)];
               }),
-              styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+              styles: { fontSize: 7.5, cellPadding: 4 },
               headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" }
-            });
-            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+            }); y = lastY();
           }
 
-          heading("Premium by Risk Level — Age 35", 13);
-          if (typeof doc.autoTable === "function") {
-            doc.autoTable({
-              startY: y, margin: { left: mg, right: mg },
-              head: [["Risk", "Factor", "Monthly (USD)", "Monthly (" + m.sym + ")", "Risk portion", "Savings portion"]],
+          heading("Appendix B — Premium by Risk Level (Age 35)", 13);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Risk", "Factor", "Monthly (USD)", "Monthly (" + sym + ")", "Risk portion", "Savings portion"]],
               body: modifyRiskFactors.map(function(rf) {
-                var usd = m.baseUsd * 1.150 * rf[1];
-                var local = usd * m.rate;
-                return [rf[0], rf[1].toFixed(2), "$" + usd.toFixed(2), fmtModLocal(local, m.sym), fmtModLocal(local/2, m.sym), fmtModLocal(local/2, m.sym)];
+                var usd = m.baseUsd * 1.150 * rf[1]; var local = usd * m.rate;
+                return [rf[0], rf[1].toFixed(2), "$" + usd.toFixed(2), fmtModLocal(local, sym), fmtModLocal(local/2, sym), fmtModLocal(local/2, sym)];
               }),
-              styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+              styles: { fontSize: 7.5, cellPadding: 4 },
               headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" }
-            });
-            y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 100;
+            }); y = lastY();
           }
 
-          heading("20-Year Savings Projection", 13);
-          para("Customer profile: " + fmtModLocal(m.coverageLocal, m.sym) + " coverage, age 35, medium risk, 50% savings allocation, 6% annual compound growth. Monthly premium: " + fmtModLocal(m.age35Local, m.sym) + ". After 20 years, projected savings balance: " + fmtModLocal(m.savings20yr, m.sym) + ".", 9, 13);
+          heading("Appendix C — 20-Year Savings Projection", 13);
+          para("Customer: " + fmtModLocal(m.coverageLocal, sym) + " coverage, age 35, medium risk, 50% savings split, 6% compound growth. Monthly: " + fmtModLocal(m.age35Local, sym) + ".", 8.5, 12);
+          if (at) {
+            var projRows = [];
+            var sbal = 0; var cumPaid = 0;
+            for (var p20 = 1; p20 <= 20; p20++) {
+              cumPaid += m.annualLocal;
+              sbal = (sbal + m.savingsAnnual) * 1.06;
+              if (p20 <= 5 || p20 === 10 || p20 === 15 || p20 === 20) {
+                projRows.push([p20, 34 + p20, fmtModLocal(m.age35Local, sym), fmtModLocal(m.annualLocal, sym), fmtModLocal(cumPaid, sym), fmtModLocal(sbal, sym), fmtModLocal(m.coverageLocal, sym), fmtModLocal(sbal * 0.8, sym)]);
+              }
+            }
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Year", "Age", "Monthly", "Annual", "Cumulative", "Savings (6%)", "Death benefit", "Surrender"]],
+              body: projRows,
+              styles: { fontSize: 7, cellPadding: 3 },
+              headStyles: { fillColor: [25, 118, 210], textColor: [255, 255, 255], fontStyle: "bold" }
+            }); y = lastY();
+          }
+          para("At maturity (year 20): total paid " + fmtModLocal(m.annualLocal * 20, sym) + ", savings returned " + fmtModLocal(m.savings20yr, sym) + " (" + (m.savings20yr / (m.annualLocal * 20) * 100).toFixed(1) + "% of premium). Net insurance cost: " + fmtModLocal(m.annualLocal * 20 - m.savings20yr, sym) + ". Death benefit coverage ratio: " + (m.coverageLocal / m.annualLocal).toFixed(1) + "x annual premium.", 8.5, 12);
 
-          ensureSpace(60);
+          heading("Appendix D — Assumptions & Methodology", 13);
+          if (at) {
+            doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+              head: [["Parameter", "Value", "Classification"]],
+              body: [
+                ["Exchange rate (" + m.d.sym + "/USD)", String(m.rate), "Market rate (adjustable)"],
+                ["Base rate (per $1K/month)", "$" + m.baseRate.toFixed(2), "Actuarial assumption (adjustable)"],
+                ["Coverage amount", "$" + formatInteger(m.coverage) + " USD = " + fmtModLocal(m.coverageLocal, sym), "Product parameter (adjustable)"],
+                ["Addressable lives", formatInteger(m.addressable) + " (" + m.addressableM.toFixed(1) + "M)", "Market estimate (adjustable)"],
+                ["Attach rate", m.attachRatePct.toFixed(1) + "%", "PHINS scenario assumption (adjustable)"],
+                ["Cession rate", m.cessionPct.toFixed(1) + "%", "Treaty placeholder (adjustable)"],
+                ["Loss ratio", m.lossRatioPct.toFixed(1) + "%", "Scenario assumption (adjustable)"],
+                ["Expense ratio", m.expenseRatioPct.toFixed(1) + "%", "Scenario assumption (adjustable, declining)"],
+                ["Savings growth rate", "6.0% compound annual", "Product feature (fixed)"],
+                ["Savings allocation", "50% of premium", "Product feature (fixed)"],
+                ["Revenue ramp", "15% / 40% / 70% / 90% / 100%", "Growth assumption (adjustable)"],
+                ["Revenue multiple", revenueMultiple + "x Year 5 revenue", "Insurtech benchmark range"],
+                ["EBITDA multiple", ebitdaMultiple + "x Year 5 EBITDA", "Insurtech benchmark range"],
+                ["Market evidence layer", "Fixed — not modified by this tool", "Data integrity rule"]
+              ],
+              styles: { fontSize: 7.5, cellPadding: 4, overflow: "linebreak", valign: "top" },
+              headStyles: { fillColor: [100, 116, 139], textColor: [255, 255, 255], fontStyle: "bold" }
+            }); y = lastY();
+          }
+
+          ensureSpace(70);
           y += 10;
           doc.setFillColor(240, 244, 250);
-          doc.roundedRect(mg, y, tw, 50, 6, 6, "F");
+          doc.roundedRect(mg, y, tw, 56, 6, 6, "F");
           doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
-          var intNote = doc.splitTextToSize("Data integrity notice: This document contains modified PHINS assumptions (exchange rate, attach rate, coverage, cession, loss ratio, expense ratio) applied to the " + m.d.name + " market. Reported public evidence — demand signals, premium anchors, and reinsurance markers from the evidence matrix — remains unchanged. Proportional sizing uses the scenario lab methodology: addressable lives x attach rate = written lives; written lives x annual premium = GWP.", tw - 16);
+          var intNote = doc.splitTextToSize("Data integrity notice: This document contains PHINS scenario assumptions applied to the " + m.d.name + " market. All financial projections are forward-looking estimates based on adjustable parameters and are not guarantees of future performance. Reported public evidence from the PHINS evidence matrix (demand signals, premium anchors, reinsurance markers) remains unchanged. Valuation multiples are benchmarked against publicly traded insurtech comparables and do not represent binding terms. No proprietary commercial data, customer counts, contract structures, or cap table information is disclosed.", tw - 16);
           doc.text(intNote, mg + 8, y + 12);
           doc.setTextColor(0, 0, 0);
 
           var pc = doc.getNumberOfPages();
-          for (var p = 1; p <= pc; p++) {
-            doc.setPage(p);
+          for (var pn = 1; pn <= pc; pn++) {
+            doc.setPage(pn);
             doc.setFontSize(7.5); doc.setTextColor(90, 102, 122);
-            doc.text("PHINS Modified Pitch — " + m.d.name + " · " + printedAt + " · Page " + p + " of " + pc, mg, ph - 18);
+            doc.text("PHINS Investor Pitch — " + m.d.name + " · " + printedAt + " · CONFIDENTIAL · Page " + pn + " of " + pc, mg, ph - 18);
           }
 
-          doc.save("phins-modified-pitch-" + slugify(m.d.name) + ".pdf");
-          statusEl.textContent = "Modified pitch PDF downloaded for " + m.d.name + ". Public evidence unchanged.";
+          doc.save("phins-investor-pitch-" + slugify(m.d.name) + ".pdf");
+          statusEl.textContent = "Investor-grade pitch PDF downloaded for " + m.d.name + " (" + pc + " pages). Public evidence unchanged.";
           statusEl.style.color = "var(--green-1)";
         } catch (err) {
-          statusEl.textContent = "Failed to generate PDF. Please retry.";
+          statusEl.textContent = "Failed to generate PDF: " + (err.message || "unknown error") + ". Please retry.";
           statusEl.style.color = "var(--red-1)";
         }
       });
