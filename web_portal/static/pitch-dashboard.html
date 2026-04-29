@@ -2509,6 +2509,101 @@
       </div>
     </section>
 
+    <section class="panel" id="pitch-modify-section">
+      <div class="section-label">⚙️ Pitch parameters</div>
+      <h2 class="section-title">Modify country pitch data</h2>
+      <p class="section-copy">
+        Adjust exchange rates, market sizes, coverage amounts, and pitch dates for each country.
+        Changes here do <strong>not</strong> alter reported public evidence. They only update the editable pitch
+        parameters used in actuarial tables and market sizing. Updated values are applied when you click
+        <strong>Apply &amp; Recalculate</strong>.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 8px;">
+        <button type="button" class="export-btn" id="toggle-modify-panel" style="background:var(--gradient-hdr);color:#fff;border:none;">⚙️ Open Modify Panel</button>
+        <span class="helper-note" id="modify-status"></span>
+      </div>
+
+      <div id="modify-panel" hidden style="margin-top:14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="control-group">
+            <label for="modify-country-select">Country</label>
+            <select id="modify-country-select" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;"></select>
+          </div>
+          <div class="control-group">
+            <label for="modify-pitch-date">Pitch date</label>
+            <input id="modify-pitch-date" type="month" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="control-group">
+            <label for="modify-exchange-rate">Exchange rate (USD → local)</label>
+            <input id="modify-exchange-rate" type="number" min="0" step="0.01" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="modify-market-size">Market size (local currency)</label>
+            <input id="modify-market-size" type="text" placeholder="e.g. €224B" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="modify-coverage">Coverage amount (USD)</label>
+            <input id="modify-coverage" type="number" min="0" step="1000" value="50000" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="control-group">
+            <label for="modify-base-rate">Base rate (USD per $1K/month)</label>
+            <input id="modify-base-rate" type="number" min="0" step="0.01" value="0.25" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="modify-penetration-gap">Health insurance penetration gap (%)</label>
+            <input id="modify-penetration-gap" type="number" min="0" max="100" step="0.1" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="modify-addressable">Addressable customers (millions)</label>
+            <input id="modify-addressable" type="number" min="0" step="0.1" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+        </div>
+
+        <div id="modify-preview" style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--bg-light);margin-bottom:16px;">
+          <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">Live recalculation preview</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;" id="modify-preview-grid">
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Coverage (local)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-coverage">-</div></div>
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Monthly premium (local)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-monthly">-</div></div>
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Annual premium (local)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-annual">-</div></div>
+            <div><div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">20yr savings (local, 6%)</div><div style="font-size:12pt;font-weight:850;color:var(--blue-dark);" id="mp-savings">-</div></div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;margin-bottom:6px;">Premium by age — local currency (age factor × base rate × coverage ÷ 1000 × exchange rate)</div>
+            <div style="overflow-x:auto;">
+              <table style="min-width:auto;margin:0;font-size:7.5pt;">
+                <thead><tr><th style="padding:6px 8px;">Age</th><th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">USD</th><th style="padding:6px 8px;">Local</th></tr></thead>
+                <tbody id="mp-age-table"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;margin-bottom:6px;">Premium by risk level — Age 35 (risk factor × age-35 USD × exchange rate)</div>
+            <div style="overflow-x:auto;">
+              <table style="min-width:auto;margin:0;font-size:7.5pt;">
+                <thead><tr><th style="padding:6px 8px;">Risk</th><th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">USD</th><th style="padding:6px 8px;">Local</th></tr></thead>
+                <tbody id="mp-risk-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button type="button" class="export-btn" id="modify-apply-btn" style="background:var(--green-1);color:#fff;border:none;">✓ Apply &amp; Recalculate</button>
+          <button type="button" class="export-btn" id="modify-export-json-btn">Export Parameters JSON</button>
+          <button type="button" class="export-btn" id="modify-reset-btn">Reset to Defaults</button>
+        </div>
+        <div class="helper-note" style="margin-top:10px;">
+          Modifications affect pitch parameter display only. Reported public evidence (demand signals, premium anchors, reinsurance markers) remains fixed and source-tagged. This tool is designed for pre-pitch calibration and investor meeting preparation.
+        </div>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="section-label">🌐 Global presentations</div>
       <h2 class="section-title">Country and regulator pitch library</h2>
@@ -4023,10 +4118,190 @@
       execSummaryBtn.addEventListener("click", downloadExecSummaryPdf);
     }
 
+    const pitchCountryDefaults = {
+      israel:       { flag: "🇮🇱", name: "Israel",       sym: "₪",   rate: 3.68,   market: "₪263B",     gap: 31,  addressable: 5.0, date: "2026-02" },
+      usa:          { flag: "🇺🇸", name: "USA",           sym: "$",   rate: 1.00,   market: "$2.8T",     gap: 28,  addressable: 11.3, date: "2026-02" },
+      hawaii:       { flag: "🌺", name: "Hawaii",        sym: "$",   rate: 1.00,   market: "$4.2B",     gap: 22,  addressable: 0.3, date: "2026-02" },
+      england:      { flag: "🏴", name: "England",       sym: "£",   rate: 0.79,   market: "£332B",     gap: 18,  addressable: 12.0, date: "2026-02" },
+      canada:       { flag: "🇨🇦", name: "Canada",        sym: "CA$", rate: 1.36,   market: "CA$236B",   gap: 22,  addressable: 8.0, date: "2026-02" },
+      australia:    { flag: "🇦🇺", name: "Australia",     sym: "A$",  rate: 1.53,   market: "A$98B",     gap: 24,  addressable: 5.5, date: "2026-02" },
+      japan:        { flag: "🇯🇵", name: "Japan",         sym: "¥",   rate: 154.50, market: "¥53T",      gap: 15,  addressable: 6.9, date: "2026-02" },
+      germany:      { flag: "🇩🇪", name: "Germany",       sym: "€",   rate: 0.92,   market: "€224B",     gap: 12,  addressable: 5.7, date: "2026-02" },
+      france:       { flag: "🇫🇷", name: "France",        sym: "€",   rate: 0.92,   market: "€236B",     gap: 16,  addressable: 4.2, date: "2026-02" },
+      spain:        { flag: "🇪🇸", name: "Spain",         sym: "€",   rate: 0.92,   market: "€68B",      gap: 24,  addressable: 3.5, date: "2026-02" },
+      italy:        { flag: "🇮🇹", name: "Italy",         sym: "€",   rate: 0.92,   market: "€157B",     gap: 20,  addressable: 4.8, date: "2026-02" },
+      netherlands:  { flag: "🇳🇱", name: "Netherlands",   sym: "€",   rate: 0.92,   market: "€86B",      gap: 10,  addressable: 2.1, date: "2026-02" },
+      sweden:       { flag: "🇸🇪", name: "Sweden",        sym: "kr",  rate: 10.85,  market: "kr380B",    gap: 14,  addressable: 1.5, date: "2026-02" },
+      swisserland:  { flag: "🇨🇭", name: "Switzerland",   sym: "CHF", rate: 0.88,   market: "CHF 68B",   gap: 8,   addressable: 1.2, date: "2026-02" },
+      irland:       { flag: "🇮🇪", name: "Ireland",       sym: "€",   rate: 0.92,   market: "€52B",      gap: 18,  addressable: 0.9, date: "2026-02" },
+      greece:       { flag: "🇬🇷", name: "Greece",        sym: "€",   rate: 0.92,   market: "€5.2B",     gap: 32,  addressable: 1.8, date: "2026-02" },
+      poland:       { flag: "🇵🇱", name: "Poland",        sym: "zł",  rate: 4.05,   market: "zł78B",     gap: 35,  addressable: 3.2, date: "2026-02" },
+      brazil:       { flag: "🇧🇷", name: "Brazil",        sym: "R$",  rate: 5.05,   market: "R$380B",    gap: 55,  addressable: 45.0, date: "2026-02" },
+      india:        { flag: "🇮🇳", name: "India",         sym: "₹",   rate: 83.50,  market: "₹8.3T",     gap: 72,  addressable: 120.0, date: "2026-02" },
+      mexico:       { flag: "🇲🇽", name: "Mexico",        sym: "MX$", rate: 17.20,  market: "MX$750B",   gap: 58,  addressable: 22.0, date: "2026-02" },
+      syngapore:    { flag: "🇸🇬", name: "Singapore",     sym: "S$",  rate: 1.34,   market: "S$42B",     gap: 12,  addressable: 1.2, date: "2026-02" },
+      south_africa: { flag: "🇿🇦", name: "South Africa",  sym: "R",   rate: 18.50,  market: "R780B",     gap: 62,  addressable: 8.5, date: "2026-02" },
+      emirates:     { flag: "🇦🇪", name: "UAE / Emirates", sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 2.0, date: "2026-02" },
+      dubai:        { flag: "🇦🇪", name: "Dubai",         sym: "AED", rate: 3.67,   market: "AED 59B",   gap: 15,  addressable: 1.0, date: "2026-02" },
+      portugal:     { flag: "🇵🇹", name: "Portugal",      sym: "€",   rate: 0.92,   market: "€11.2B",    gap: 34,  addressable: 2.8, date: "2026-02" },
+      albania:      { flag: "🇦🇱", name: "Albania",       sym: "ALL", rate: 96.50,  market: "ALL 30B",   gap: 72,  addressable: 1.2, date: "2026-02" }
+    };
+
+    const modifyAgeFactors  = [[25,1.000],[28,1.045],[30,1.075],[33,1.120],[35,1.150],[38,1.195],[40,1.225],[43,1.270],[45,1.300],[50,1.375],[55,1.450],[60,1.525]];
+    const modifyRiskFactors = [["Very Low",0.85],["Low",0.90],["Medium",1.00],["Moderate",1.15],["Elevated",1.25],["High",1.35],["Very High",1.50]];
+
+    function fmtModLocal(val, sym) {
+      const needsSpace = ["AED","CHF","ALL"].includes(sym);
+      const prefix = needsSpace ? sym + " " : sym;
+      if (Math.abs(val) >= 100) return prefix + Math.round(val).toLocaleString("en-US");
+      return prefix + val.toFixed(2);
+    }
+
+    function initModifyPanel() {
+      const sel = document.getElementById("modify-country-select");
+      const toggleBtn = document.getElementById("toggle-modify-panel");
+      const panel = document.getElementById("modify-panel");
+      const applyBtn = document.getElementById("modify-apply-btn");
+      const exportBtn = document.getElementById("modify-export-json-btn");
+      const resetBtn = document.getElementById("modify-reset-btn");
+      const statusEl = document.getElementById("modify-status");
+
+      sel.innerHTML = Object.entries(pitchCountryDefaults).map(function(e) {
+        return '<option value="' + e[0] + '">' + e[1].flag + ' ' + e[1].name + '</option>';
+      }).join("");
+
+      toggleBtn.addEventListener("click", function() {
+        panel.hidden = !panel.hidden;
+        toggleBtn.textContent = panel.hidden ? "⚙️ Open Modify Panel" : "⚙️ Close Modify Panel";
+      });
+
+      function loadCountryDefaults(key) {
+        var d = pitchCountryDefaults[key];
+        if (!d) return;
+        document.getElementById("modify-exchange-rate").value = d.rate;
+        document.getElementById("modify-market-size").value = d.market;
+        document.getElementById("modify-pitch-date").value = d.date;
+        document.getElementById("modify-penetration-gap").value = d.gap;
+        document.getElementById("modify-addressable").value = d.addressable;
+        document.getElementById("modify-coverage").value = 50000;
+        document.getElementById("modify-base-rate").value = 0.25;
+        updatePreview();
+      }
+
+      function updatePreview() {
+        var key = sel.value;
+        var d = pitchCountryDefaults[key];
+        if (!d) return;
+        var rate = parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate;
+        var coverage = parseFloat(document.getElementById("modify-coverage").value) || 50000;
+        var baseRate = parseFloat(document.getElementById("modify-base-rate").value) || 0.25;
+        var sym = d.sym;
+
+        var baseUsd = baseRate * (coverage / 1000);
+        var age35Usd = baseUsd * 1.150;
+        var age35Local = age35Usd * rate;
+        var coverageLocal = coverage * rate;
+        var annualLocal = age35Local * 12;
+        var savingsMonthly = age35Local / 2;
+        var savingsAnnual = savingsMonthly * 12;
+        var balance = 0;
+        for (var yr = 0; yr < 20; yr++) { balance = (balance + savingsAnnual) * 1.06; }
+
+        document.getElementById("mp-coverage").textContent = fmtModLocal(coverageLocal, sym);
+        document.getElementById("mp-monthly").textContent = fmtModLocal(age35Local, sym);
+        document.getElementById("mp-annual").textContent = fmtModLocal(annualLocal, sym);
+        document.getElementById("mp-savings").textContent = fmtModLocal(balance, sym);
+
+        var ageHtml = "";
+        modifyAgeFactors.forEach(function(af) {
+          var usd = baseUsd * af[1];
+          var local = usd * rate;
+          ageHtml += '<tr><td style="padding:4px 8px;">' + af[0] + '</td><td style="padding:4px 8px;">' + af[1].toFixed(3) + '</td><td style="padding:4px 8px;">$' + usd.toFixed(2) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local, sym) + '</td></tr>';
+        });
+        document.getElementById("mp-age-table").innerHTML = ageHtml;
+
+        var riskHtml = "";
+        modifyRiskFactors.forEach(function(rf) {
+          var usd = age35Usd * rf[1] / 1.150;
+          usd = baseUsd * 1.150 * rf[1];
+          var local = usd * rate;
+          riskHtml += '<tr><td style="padding:4px 8px;">' + rf[0] + '</td><td style="padding:4px 8px;">' + rf[1].toFixed(2) + '</td><td style="padding:4px 8px;">$' + usd.toFixed(2) + '</td><td style="padding:4px 8px;">' + fmtModLocal(local, sym) + '</td></tr>';
+        });
+        document.getElementById("mp-risk-table").innerHTML = riskHtml;
+      }
+
+      sel.addEventListener("change", function() { loadCountryDefaults(sel.value); });
+      ["modify-exchange-rate","modify-coverage","modify-base-rate","modify-market-size","modify-penetration-gap","modify-addressable"].forEach(function(id) {
+        document.getElementById(id).addEventListener("input", updatePreview);
+      });
+
+      applyBtn.addEventListener("click", function() {
+        var key = sel.value;
+        var d = pitchCountryDefaults[key];
+        pitchCountryDefaults[key] = Object.assign({}, d, {
+          rate: parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate,
+          market: document.getElementById("modify-market-size").value || d.market,
+          date: document.getElementById("modify-pitch-date").value || d.date,
+          gap: parseFloat(document.getElementById("modify-penetration-gap").value) || d.gap,
+          addressable: parseFloat(document.getElementById("modify-addressable").value) || d.addressable
+        });
+        statusEl.textContent = "Parameters applied for " + d.name + " at " + new Date().toLocaleTimeString() + ". Public evidence layer unchanged.";
+        statusEl.style.color = "var(--green-1)";
+      });
+
+      exportBtn.addEventListener("click", function() {
+        var key = sel.value;
+        var d = pitchCountryDefaults[key];
+        var rate = parseFloat(document.getElementById("modify-exchange-rate").value) || d.rate;
+        var coverage = parseFloat(document.getElementById("modify-coverage").value) || 50000;
+        var baseRate = parseFloat(document.getElementById("modify-base-rate").value) || 0.25;
+        var payload = {
+          exportedAt: new Date().toISOString(),
+          country: key,
+          name: d.name,
+          flag: d.flag,
+          localCurrency: d.sym,
+          exchangeRate: rate,
+          coverageUsd: coverage,
+          baseRateUsd: baseRate,
+          marketSize: document.getElementById("modify-market-size").value,
+          penetrationGap: parseFloat(document.getElementById("modify-penetration-gap").value),
+          addressableCustomersM: parseFloat(document.getElementById("modify-addressable").value),
+          pitchDate: document.getElementById("modify-pitch-date").value,
+          premiumByAge: modifyAgeFactors.map(function(af) {
+            var usd = baseRate * (coverage/1000) * af[1];
+            return { age: af[0], factor: af[1], usd: Math.round(usd*100)/100, local: Math.round(usd*rate*100)/100 };
+          }),
+          premiumByRisk: modifyRiskFactors.map(function(rf) {
+            var usd = baseRate * (coverage/1000) * 1.150 * rf[1];
+            return { risk: rf[0], factor: rf[1], usd: Math.round(usd*100)/100, local: Math.round(usd*rate*100)/100 };
+          }),
+          integrity: "Reported public evidence is separate from pitch parameter adjustments."
+        };
+        var blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = key + "-pitch-parameters.json";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "Parameters exported for " + d.name + ".";
+        statusEl.style.color = "var(--text-soft)";
+      });
+
+      resetBtn.addEventListener("click", function() {
+        loadCountryDefaults(sel.value);
+        statusEl.textContent = "Reset to defaults.";
+        statusEl.style.color = "var(--text-soft)";
+      });
+
+      loadCountryDefaults(sel.value);
+    }
+
     renderEvidenceTable();
     renderSources();
     renderInvestorCharts();
     initializeScenario();
+    initModifyPanel();
   </script>
 </body>
 </html>
