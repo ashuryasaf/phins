@@ -409,6 +409,16 @@ class OTPSecurityService:
     
     # ========== CAPTCHA ==========
     
+    def _cleanup_expired_challenges(self) -> None:
+        """Remove expired challenges to prevent memory buildup. Caller must hold _lock."""
+        now = datetime.now(timezone.utc)
+        expired = [
+            cid for cid, ch in self._challenges.items()
+            if now > ch.expires_at
+        ]
+        for cid in expired:
+            del self._challenges[cid]
+
     def create_captcha_challenge(
         self,
         action: str,
@@ -416,7 +426,6 @@ class OTPSecurityService:
         session_id: Optional[str] = None
     ) -> SecurityResult:
         """Create a CAPTCHA challenge"""
-        # Check if IP is blocked
         if ip_address and self._is_ip_blocked(ip_address):
             return SecurityResult(
                 success=False,
@@ -458,6 +467,8 @@ class OTPSecurityService:
             )
         
         with self._lock:
+            if len(self._challenges) > 100:
+                self._cleanup_expired_challenges()
             self._challenges[challenge_id] = challenge
         
         self._log_audit(
