@@ -2876,7 +2876,7 @@
           </div>
           <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
             <div class="stat-val" id="bp-phins-revenue">-</div>
-            <div class="stat-lbl">PHINS Revenue (royalties + share)</div>
+            <div class="stat-lbl">PHINS Revenue (royalties + share + SaaS)</div>
           </div>
           <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
             <div class="stat-val" id="bp-platform-valuation">-</div>
@@ -3010,8 +3010,8 @@
           <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--green-1);margin-bottom:10px;">Scenario Lab — Dynamic Valuation Engine</div>
           <p style="font-size:8pt;color:var(--text-sub);margin-bottom:12px;">
             This valuation uses <strong>all factors from "Modify Country Pitch Data"</strong> dynamically.
-            Changing any market parameter above (exchange rate, addressable lives, attach rate, cession rate,
-            loss ratio, expense ratio, penetration gap) immediately recalculates the accumulated JV economics below.
+            Applying any market parameter change above (exchange rate, addressable lives, attach rate, cession rate,
+            loss ratio, expense ratio, penetration gap) recalculates the accumulated JV economics below.
             Revenue multiples and EBITDA multiples reflect <strong>technology platform comparables</strong>,
             not traditional insurance carrier multiples. PHINS is valued as a <strong>software infrastructure provider</strong>
             with recurring royalty streams, SaaS fees, and equity participation across multiple regulated markets.
@@ -3061,8 +3061,8 @@
         <div style="margin-top:12px;padding:12px 14px;border-radius:12px;background:linear-gradient(180deg,#f0f4fa,#fff);border:1px solid var(--border);">
           <div style="font-size:7.5pt;color:var(--text-sub);line-height:1.7;">
             <strong>Data integrity notice:</strong> All market-level data flows from the <em>Modify Country Pitch Data</em> panel above.
-            Changes to exchange rates, addressable lives, attach rates, cession rates, loss ratios, or expense ratios for any country
-            will immediately cascade into this business plan dashboard. JV equity percentages, royalty rates, and revenue share terms
+            Applied changes to exchange rates, addressable lives, attach rates, cession rates, loss ratios, or expense ratios for any country
+            cascade into this business plan dashboard. JV equity percentages, royalty rates, and revenue share terms
             are <strong>pre-negotiated planning assumptions</strong> and do not represent binding commitments.
             Technology valuation multiples are benchmarked against <strong>publicly traded insurtech and SaaS platform comparables</strong>
             (e.g., Lemonade, Root, Hippo, Guidewire, Duck Creek, Majesco). No proprietary cap table, term sheet, or investor data is disclosed.
@@ -4978,19 +4978,6 @@
         if (el) el.addEventListener("input", recalcBusinessPlan);
       });
 
-      var modifyInputIds = ["modify-exchange-rate","modify-coverage","modify-base-rate","modify-market-size",
-                            "modify-penetration-gap","modify-addressable","modify-attach-rate","modify-cession-rate",
-                            "modify-loss-ratio","modify-expense-ratio","modify-country-select"];
-      modifyInputIds.forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.addEventListener("input", function() {
-          if (!bpPanel.hidden) recalcBusinessPlan();
-        });
-        if (el) el.addEventListener("change", function() {
-          if (!bpPanel.hidden) recalcBusinessPlan();
-        });
-      });
-
       var applyBtnOrig = document.getElementById("modify-apply-btn");
       if (applyBtnOrig) {
         applyBtnOrig.addEventListener("click", function() {
@@ -5044,8 +5031,32 @@
         };
       }
 
+      // Markets without a dedicated scorecard row inherit the closest scored market proxy.
+      var priorityScoreMarketMap = {
+        hawaii: "usa",
+        england: "wneurope",
+        germany: "wneurope",
+        france: "wneurope",
+        spain: "wneurope",
+        italy: "wneurope",
+        netherlands: "wneurope",
+        sweden: "wneurope",
+        swisserland: "wneurope",
+        irland: "wneurope",
+        greece: "wneurope",
+        poland: "wneurope",
+        syngapore: "japan",
+        south_africa: "albania",
+        brazil: "albania",
+        india: "albania",
+        mexico: "albania",
+        emirates: "middleeast",
+        dubai: "middleeast"
+      };
+
       function getPriorityScore(cKey) {
-        var md = marketData.find(function(m) { return m.id === cKey; });
+        var marketKey = priorityScoreMarketMap[cKey] || cKey;
+        var md = marketData.find(function(m) { return m.id === marketKey; });
         if (md && md.investorScores) return md.investorScores.priority;
         return 50;
       }
