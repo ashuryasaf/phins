@@ -5058,6 +5058,13 @@
         return "$" + val.toFixed(0);
       }
 
+      function calcTerminalValue(ebitda, discountRatePct) {
+        var terminalGrowthRate = 0.03;
+        var discountRateDecimal = discountRatePct / 100;
+        if (!(ebitda > 0) || discountRateDecimal <= terminalGrowthRate) return 0;
+        return (ebitda * (1 + terminalGrowthRate)) / (discountRateDecimal - terminalGrowthRate);
+      }
+
       function recalcBusinessPlan() {
         var royaltyRate = parseFloat(document.getElementById("bp-royalty-rate").value) || 0;
         var revenueShare = parseFloat(document.getElementById("bp-revenue-share").value) || 0;
@@ -5192,7 +5199,7 @@
         for (var ci = 0; ci < yearCashFlows.length; ci++) {
           npv += yearCashFlows[ci] / Math.pow(1 + discountRate / 100, ci + 1);
         }
-        var terminalValue = yr5Ebitda > 0 ? (yr5Ebitda * (1 + 0.03)) / (discountRate / 100 - 0.03) : 0;
+        var terminalValue = calcTerminalValue(yr5Ebitda, discountRate);
         var pvTerminal = terminalValue / Math.pow(1 + discountRate / 100, jvTerm);
         var dcfVal = npv + pvTerminal;
 
@@ -5397,7 +5404,7 @@
             for (var ci = 0; ci < yrCashFlows.length; ci++) {
               npvPdf += yrCashFlows[ci] / Math.pow(1 + discountRate / 100, ci + 1);
             }
-            var tvPdf = yr5Ebitda > 0 ? (yr5Ebitda * 1.03) / (discountRate / 100 - 0.03) : 0;
+            var tvPdf = calcTerminalValue(yr5Ebitda, discountRate);
             var pvTvPdf = tvPdf / Math.pow(1 + discountRate / 100, jvTerm);
             var dcfValPdf = npvPdf + pvTvPdf;
             var blendedPdf = (valByRev + valByEbitda + dcfValPdf) / 3;
