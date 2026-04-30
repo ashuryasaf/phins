@@ -7942,6 +7942,92 @@ def notify_customer_tax_year_report_available(
     }
 
 
+def _notify_password_reset_requested(
+    username: str,
+    email: str,
+    ip_address: Optional[str] = None
+) -> None:
+    """Send a notification when a password reset OTP is requested."""
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+        notification_service = get_notification_service()
+        notification_service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            subject='PHINS Security Alert: Password Reset Requested',
+            content=(
+                f"A password reset was requested for your PHINS account (username: {username}). "
+                f"If you did not request this, please ignore this message or contact support immediately. "
+                f"Request originated from IP: {ip_address or 'unknown'}."
+            ),
+            priority=NotificationPriority.HIGH,
+            metadata={
+                'category': 'security_alert',
+                'event': 'password_reset_requested',
+                'username': username,
+                'ip_address': ip_address,
+            },
+        ))
+    except Exception:
+        pass
+
+
+def _notify_password_reset_completed(
+    username: str,
+    email: str,
+    ip_address: Optional[str] = None
+) -> None:
+    """Send a notification when a password has been successfully reset."""
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+        notification_service = get_notification_service()
+        notification_service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            subject='PHINS Security Alert: Password Changed',
+            content=(
+                f"Your PHINS account password (username: {username}) has been successfully changed. "
+                f"If you did not make this change, please contact support immediately. "
+                f"Change originated from IP: {ip_address or 'unknown'}."
+            ),
+            priority=NotificationPriority.HIGH,
+            metadata={
+                'category': 'security_alert',
+                'event': 'password_reset_completed',
+                'username': username,
+                'ip_address': ip_address,
+            },
+        ))
+    except Exception:
+        pass
+
+    user = USERS.get(username, {})
+    customer_id = user.get('customer_id') if isinstance(user, dict) else None
+    if customer_id:
+        _record_customer_notification_center_event(
+            customer_id=customer_id,
+            subject='Password Changed',
+            content=(
+                'Your account password was changed. If you did not make this '
+                'change, contact support immediately.'
+            ),
+            metadata={
+                'category': 'security_alert',
+                'event': 'password_reset_completed',
+            },
+        )
+
+
 def generate_action_accounting_documents(
     *,
     action_type: str,
@@ -25454,38 +25540,194 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
             return
         
-        # Password Reset Endpoint
+        # Password Reset - Step 1: Request OTP
+        if path == '/api/request-password-reset':
+            try:
+                data = json.loads(body)
+                username = sanitize_input(data.get('username', ''), 254).lower()
+                email = sanitize_input(data.get('email', ''), 254).lower()
+
+                if not username or not email:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Username and email are required'}).encode('utf-8'))
+                    return
+
+                user = USERS.get(username)
+                if not user:
+                    user = USERS.get(email)
+                    if user:
+                        username = email
+
+                if not user:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'If the account exists, a verification code has been sent to the registered email.'
+                    }).encode('utf-8'))
+                    return
+
+                customer_id = user.get('customer_id')
+                if customer_id:
+                    customer = CUSTOMERS.get(customer_id)
+                    if customer and customer.get('email', '').lower() != email:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'If the account exists, a verification code has been sent to the registered email.'
+                        }).encode('utf-8'))
+                        return
+
+                try:
+                    from services.otp_security_service import get_otp_security_service, OTPPurpose
+                    otp_service = get_otp_security_service()
+                    otp_result = otp_service.create_otp_verification(
+                        user_type='customer',
+                        user_id=username,
+                        email=email,
+                        purpose=OTPPurpose.PASSWORD_RESET,
+                        ip_address=client_ip,
+                        user_agent=self.headers.get('User-Agent', ''),
+                    )
+
+                    if not otp_result.success:
+                        self._set_json_headers(429)
+                        self.wfile.write(json.dumps({
+                            'error': otp_result.message or 'Too many requests. Please try again later.'
+                        }).encode('utf-8'))
+                        return
+
+                    otp_code = otp_result.data.get('otp_code') if otp_result.data else None
+                    verification_id = otp_result.verification_id
+                    expiry_seconds = (otp_result.data or {}).get('expires_in_seconds', 300)
+
+                    notification_sent = False
+                    if otp_code:
+                        try:
+                            if api_extensions_enabled:
+                                try:
+                                    from web_portal.api_extensions import _send_otp_email
+                                except ImportError:
+                                    from api_extensions import _send_otp_email
+                                sent, _send_err = _send_otp_email(
+                                    email=email,
+                                    otp_code=otp_code,
+                                    expiry_seconds=expiry_seconds,
+                                    purpose='password_reset',
+                                    ip_address=client_ip,
+                                )
+                                notification_sent = sent
+                        except Exception:
+                            pass
+
+                    _notify_password_reset_requested(username, email, client_ip)
+
+                    response_data = {
+                        'success': True,
+                        'message': 'If the account exists, a verification code has been sent to the registered email.',
+                        'verification_id': verification_id,
+                        'requires_otp': True,
+                        'notification_sent': notification_sent,
+                    }
+                    if otp_result.data and otp_result.data.get('masked_email'):
+                        response_data['masked_email'] = otp_result.data['masked_email']
+                    if otp_result.data and otp_result.data.get('expires_in_seconds'):
+                        response_data['expires_in_seconds'] = otp_result.data['expires_in_seconds']
+
+                    phins_test = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+                    expose_demo = phins_test or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in ('1', 'true', 'yes', 'y')
+                    if expose_demo and otp_code:
+                        response_data['demo_otp_code'] = otp_code
+
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                except ImportError:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'OTP security service is not available. Password reset is disabled.'
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Password reset request failed'}).encode('utf-8'))
+            return
+
+        # Password Reset - Step 2: Verify OTP and reset password
         if path == '/api/reset-password':
             try:
                 data = json.loads(body)
                 username = sanitize_input(data.get('username', ''), 254).lower()
                 email = sanitize_input(data.get('email', ''), 254).lower()
                 new_password = data.get('new_password', '')
-                
-                # Validation
+                verification_id = data.get('verification_id', '')
+                otp_code = data.get('otp_code', '')
+
                 if not username or not email or not new_password:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'All fields are required'}).encode('utf-8'))
                     return
-                
+
                 if len(new_password) < 8:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
                     return
-                
-                # Verify user exists and email matches
+
+                if not verification_id or not otp_code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'OTP verification is required. Please request a password reset first.',
+                        'requires_otp': True
+                    }).encode('utf-8'))
+                    return
+
+                try:
+                    from services.otp_security_service import get_otp_security_service, OTPPurpose
+                    otp_service = get_otp_security_service()
+
+                    verify_result = otp_service.verify_otp(
+                        verification_id=verification_id,
+                        otp_code=otp_code,
+                        ip_address=client_ip,
+                    )
+                    if not verify_result.success:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({
+                            'error': verify_result.message or 'OTP verification failed',
+                            'error_code': verify_result.error_code,
+                        }).encode('utf-8'))
+                        return
+
+                    consume_result = otp_service.consume_verification(
+                        verification_id=verification_id,
+                        expected_email=email,
+                        expected_purpose=OTPPurpose.PASSWORD_RESET,
+                        ip_address=client_ip,
+                    )
+                    if not consume_result.success:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({
+                            'error': consume_result.message or 'Verification failed',
+                            'error_code': consume_result.error_code,
+                        }).encode('utf-8'))
+                        return
+                except ImportError:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'OTP security service is not available. Password reset is disabled.'
+                    }).encode('utf-8'))
+                    return
+
                 user = USERS.get(username)
                 if not user:
-                    # Try to find by email
                     user = USERS.get(email)
                     username = email
-                
+
                 if not user:
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
                     return
-                
-                # Verify email matches customer record
+
                 customer_id = user.get('customer_id')
                 if customer_id:
                     customer = CUSTOMERS.get(customer_id)
@@ -25493,8 +25735,7 @@ For claims or questions, please contact:
                         self._set_json_headers(401)
                         self.wfile.write(json.dumps({'error': 'Email does not match our records'}).encode('utf-8'))
                         return
-                
-                # Update password
+
                 pwd_hash = hash_password(new_password)
                 try:
                     updated_user = dict(user)
@@ -25510,12 +25751,11 @@ For claims or questions, please contact:
                         'hash': pwd_hash['hash'],
                         'salt': pwd_hash['salt'],
                     }
-                
-                # Invalidate all existing sessions for this user. We drop the
-                # in-memory entries AND revoke any stateless v2 ``jti`` values
-                # so tokens cached by other replicas stop validating too.
+
                 _revoke_user_sessions(username)
-                
+
+                _notify_password_reset_completed(username, email, client_ip)
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
