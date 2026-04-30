@@ -2972,22 +2972,22 @@
           and revenue share are calculated per-market based on the JV parameters. Markets are ranked by
           PHINS priority score. All values in <strong>USD equivalent</strong> for cross-market accumulation.
         </p>
-        <div style="overflow-x:auto;margin-bottom:16px;">
-          <table style="min-width:1200px;margin:0;font-size:7.5pt;" id="bp-market-table">
+        <div style="overflow-x:auto;margin-bottom:16px;border:1px solid var(--border);border-radius:14px;background:#fff;">
+          <table style="min-width:1200px;margin:0;font-size:7.5pt;border-collapse:separate;border-spacing:0;" id="bp-market-table">
             <thead>
-              <tr>
-                <th style="padding:6px 8px;">Market</th>
-                <th style="padding:6px 8px;">PHINS Equity %</th>
-                <th style="padding:6px 8px;">Addressable Lives</th>
-                <th style="padding:6px 8px;">Written Lives</th>
-                <th style="padding:6px 8px;">GWP (local)</th>
-                <th style="padding:6px 8px;">GWP (USD)</th>
-                <th style="padding:6px 8px;">Net Premium (USD)</th>
-                <th style="padding:6px 8px;">Royalty Income</th>
-                <th style="padding:6px 8px;">Revenue Share</th>
-                <th style="padding:6px 8px;">SaaS Fee</th>
-                <th style="padding:6px 8px;">Total PHINS Rev</th>
-                <th style="padding:6px 8px;">JV Equity Value</th>
+              <tr style="background:linear-gradient(135deg,#0d47a1,#1565c0);">
+                <th style="padding:10px 10px;color:#fff;font-weight:700;text-align:left;border-bottom:2px solid #0d47a1;border-radius:14px 0 0 0;">Market</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:center;border-bottom:2px solid #0d47a1;">PHINS Eq%</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Addressable</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Written Lives</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">GWP (local)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">GWP (USD)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Net (USD)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Royalty</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Rev Share</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">SaaS Fee</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Total Rev</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;border-radius:0 14px 0 0;">JV Equity Val</th>
               </tr>
             </thead>
             <tbody id="bp-market-body"></tbody>
@@ -4617,17 +4617,17 @@
             doc.text(lines, mg, y); y += lines.length * gap + 4;
           };
           var drawBar = function(label, pct, color) {
-            ensureSpace(22);
-            doc.setFontSize(8); doc.setFont(undefined, "normal");
-            doc.text(label, mg, y + 10);
-            var bx = mg + 150, bw = tw - 195;
-            doc.setFillColor(230, 238, 249);
-            doc.roundedRect(bx, y, bw, 14, 7, 7, "F");
+            ensureSpace(28);
+            doc.setFontSize(8.5); doc.setFont(undefined, "normal");
+            doc.text(label, mg, y + 12);
+            var bx = mg + 168, bw = tw - 218;
+            doc.setFillColor(237, 242, 252);
+            doc.roundedRect(bx, y + 1, bw, 16, 8, 8, "F");
             doc.setFillColor(color[0], color[1], color[2]);
-            if (pct > 0) doc.roundedRect(bx, y, bw * pct / 100, 14, 7, 7, "F");
-            doc.setFontSize(8); doc.setFont(undefined, "bold");
-            doc.text(pct + "%", mg + tw - 2, y + 10, { align: "right" });
-            doc.setFont(undefined, "normal"); y += 20;
+            if (pct > 0) doc.roundedRect(bx, y + 1, bw * pct / 100, 16, 8, 8, "F");
+            doc.setFontSize(8.5); doc.setFont(undefined, "bold");
+            doc.text(pct + "%", mg + tw - 2, y + 12, { align: "right" });
+            doc.setFont(undefined, "normal"); y += 26;
           };
 
           var yr1Gwp = m.gwp * 0.15;
@@ -4674,7 +4674,7 @@
           doc.setFillColor(13, 71, 161);
           doc.rect(0, 0, pw, 82, "F");
           doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
-          doc.text("PHINS " + m.d.flag + " " + m.d.name + " — Investor Pitch", mg, 30);
+          doc.text("PHINS — " + m.d.name + " — Investor Pitch", mg, 30);
           doc.setFontSize(11); doc.setFont(undefined, "normal");
           doc.text("AI-Native Insurtech Platform | Disability & Long-Term Care | " + m.pitchDate, mg, 48);
           doc.setFontSize(8.5);
@@ -5138,37 +5138,38 @@
         document.getElementById("bp-total-lives").textContent = formatInteger(Math.round(totalWrittenLives));
 
         var marketBody = document.getElementById("bp-market-body");
-        marketBody.innerHTML = rows.map(function(r) {
-          return '<tr>' +
-            '<td style="padding:4px 8px;white-space:nowrap;">' + r.flag + ' ' + r.name + '</td>' +
-            '<td style="padding:4px 8px;font-weight:700;color:var(--blue-dark);">' + r.equity.toFixed(1) + '%</td>' +
-            '<td style="padding:4px 8px;">' + formatInteger(r.addressable) + '</td>' +
-            '<td style="padding:4px 8px;">' + formatInteger(Math.round(r.writtenLives)) + '</td>' +
-            '<td style="padding:4px 8px;">' + fmtModBig(r.gwpLocal, r.sym) + '</td>' +
-            '<td style="padding:4px 8px;">' + fmtUsd(r.gwpUsd) + '</td>' +
-            '<td style="padding:4px 8px;">' + fmtUsd(r.netUsd) + '</td>' +
-            '<td style="padding:4px 8px;color:var(--green-1);font-weight:700;">' + fmtUsd(r.royalty) + '</td>' +
-            '<td style="padding:4px 8px;color:var(--green-1);font-weight:700;">' + fmtUsd(r.revShare) + '</td>' +
-            '<td style="padding:4px 8px;">' + fmtUsd(r.saas) + '</td>' +
-            '<td style="padding:4px 8px;font-weight:800;color:var(--blue-dark);">' + fmtUsd(r.totalRev) + '</td>' +
-            '<td style="padding:4px 8px;color:#6a1b9a;font-weight:700;">' + fmtUsd(r.jvVal) + '</td>' +
+        marketBody.innerHTML = rows.map(function(r, idx) {
+          var bgColor = idx % 2 === 0 ? '#fff' : '#f5f8fe';
+          return '<tr style="background:' + bgColor + ';transition:background 0.15s;" onmouseover="this.style.background=\'#e8f0fe\'" onmouseout="this.style.background=\'' + bgColor + '\'">' +
+            '<td style="padding:8px 10px;white-space:nowrap;font-weight:600;border-bottom:1px solid #edf0f7;">' + r.flag + ' ' + r.name + '</td>' +
+            '<td style="padding:8px 8px;font-weight:700;color:var(--blue-dark);text-align:center;border-bottom:1px solid #edf0f7;">' + r.equity.toFixed(1) + '%</td>' +
+            '<td style="padding:8px 8px;text-align:right;border-bottom:1px solid #edf0f7;">' + formatInteger(r.addressable) + '</td>' +
+            '<td style="padding:8px 8px;text-align:right;border-bottom:1px solid #edf0f7;">' + formatInteger(Math.round(r.writtenLives)) + '</td>' +
+            '<td style="padding:8px 8px;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtModBig(r.gwpLocal, r.sym) + '</td>' +
+            '<td style="padding:8px 8px;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.gwpUsd) + '</td>' +
+            '<td style="padding:8px 8px;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.netUsd) + '</td>' +
+            '<td style="padding:8px 8px;color:var(--green-1);font-weight:700;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.royalty) + '</td>' +
+            '<td style="padding:8px 8px;color:var(--green-1);font-weight:700;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.revShare) + '</td>' +
+            '<td style="padding:8px 8px;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.saas) + '</td>' +
+            '<td style="padding:8px 8px;font-weight:800;color:var(--blue-dark);text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.totalRev) + '</td>' +
+            '<td style="padding:8px 8px;color:#6a1b9a;font-weight:700;text-align:right;border-bottom:1px solid #edf0f7;">' + fmtUsd(r.jvVal) + '</td>' +
             '</tr>';
         }).join("");
 
         var marketFoot = document.getElementById("bp-market-foot");
-        marketFoot.innerHTML = '<tr style="font-weight:800;border-top:2px solid var(--blue-dark);background:var(--bg-light);">' +
-          '<td style="padding:6px 8px;">TOTAL (' + activeMarkets + ' markets)</td>' +
-          '<td style="padding:6px 8px;"></td>' +
-          '<td style="padding:6px 8px;"></td>' +
-          '<td style="padding:6px 8px;">' + formatInteger(Math.round(totalWrittenLives)) + '</td>' +
-          '<td style="padding:6px 8px;"></td>' +
-          '<td style="padding:6px 8px;">' + fmtUsd(totalGwpUsd) + '</td>' +
-          '<td style="padding:6px 8px;">' + fmtUsd(totalNetUsd) + '</td>' +
-          '<td style="padding:6px 8px;color:var(--green-1);">' + fmtUsd(totalRoyalty) + '</td>' +
-          '<td style="padding:6px 8px;color:var(--green-1);">' + fmtUsd(totalRevShare) + '</td>' +
-          '<td style="padding:6px 8px;">' + fmtUsd(totalSaas) + '</td>' +
-          '<td style="padding:6px 8px;color:var(--blue-dark);">' + fmtUsd(totalPhinsRev) + '</td>' +
-          '<td style="padding:6px 8px;color:#6a1b9a;">' + fmtUsd(totalJvEquityVal) + '</td>' +
+        marketFoot.innerHTML = '<tr style="font-weight:800;background:linear-gradient(135deg,#e8eef7,#f0f4fa);border-top:2px solid var(--blue-dark);">' +
+          '<td style="padding:10px 10px;font-size:8pt;color:var(--blue-dark);">TOTAL (' + activeMarkets + ' markets)</td>' +
+          '<td style="padding:10px 8px;"></td>' +
+          '<td style="padding:10px 8px;"></td>' +
+          '<td style="padding:10px 8px;text-align:right;">' + formatInteger(Math.round(totalWrittenLives)) + '</td>' +
+          '<td style="padding:10px 8px;"></td>' +
+          '<td style="padding:10px 8px;text-align:right;">' + fmtUsd(totalGwpUsd) + '</td>' +
+          '<td style="padding:10px 8px;text-align:right;">' + fmtUsd(totalNetUsd) + '</td>' +
+          '<td style="padding:10px 8px;color:var(--green-1);text-align:right;">' + fmtUsd(totalRoyalty) + '</td>' +
+          '<td style="padding:10px 8px;color:var(--green-1);text-align:right;">' + fmtUsd(totalRevShare) + '</td>' +
+          '<td style="padding:10px 8px;text-align:right;">' + fmtUsd(totalSaas) + '</td>' +
+          '<td style="padding:10px 8px;color:var(--blue-dark);text-align:right;font-size:8.5pt;">' + fmtUsd(totalPhinsRev) + '</td>' +
+          '<td style="padding:10px 8px;color:#6a1b9a;text-align:right;">' + fmtUsd(totalJvEquityVal) + '</td>' +
           '</tr>';
 
         var growthRamps = [0.15, 0.40, 0.70, 0.90, 1.00];
@@ -5193,11 +5194,11 @@
         revBarsEl.innerHTML = yearRevenues.map(function(rev, i) {
           var pct = Math.round(rev / maxRev * 100);
           var ramp = i < growthRamps.length ? growthRamps[i] : 1.0;
-          return '<div style="display:grid;grid-template-columns:70px 1fr 90px;align-items:center;gap:8px;">' +
+          return '<div style="display:grid;grid-template-columns:85px 1fr 100px;align-items:center;gap:10px;padding:4px 0;">' +
             '<div style="font-size:8pt;font-weight:700;color:var(--text-main);">Year ' + (i+1) + ' (' + (ramp*100).toFixed(0) + '%)</div>' +
-            '<div style="background:#e8eef7;border-radius:7px;height:18px;overflow:hidden;">' +
-            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#0d47a1,#42a5f5);border-radius:7px;"></div></div>' +
-            '<div style="font-size:8pt;font-weight:700;color:var(--blue-dark);text-align:right;">' + fmtUsd(rev) + '</div>' +
+            '<div style="background:#e8eef7;border-radius:9px;height:22px;overflow:hidden;">' +
+            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#0d47a1,#1976d2,#42a5f5);border-radius:9px;transition:width 0.4s ease;"></div></div>' +
+            '<div style="font-size:8.5pt;font-weight:700;color:var(--blue-dark);text-align:right;">' + fmtUsd(rev) + '</div>' +
             '</div>';
         }).join("");
 
@@ -5290,29 +5291,34 @@
               doc.text(lines, mg, y); y += lines.length * gap + 4;
             };
             var drawBar = function(label, pct, color) {
-              ensureSpace(22);
-              doc.setFontSize(8); doc.setFont(undefined, "normal");
-              doc.text(label, mg, y + 10);
-              var bx = mg + 150, bw = tw - 195;
-              doc.setFillColor(230, 238, 249);
-              doc.roundedRect(bx, y, bw, 14, 7, 7, "F");
+              ensureSpace(28);
+              doc.setFontSize(8.5); doc.setFont(undefined, "normal");
+              doc.text(label, mg, y + 12);
+              var bx = mg + 168, bw = tw - 218;
+              doc.setFillColor(237, 242, 252);
+              doc.roundedRect(bx, y + 1, bw, 16, 8, 8, "F");
               doc.setFillColor(color[0], color[1], color[2]);
-              if (pct > 0) doc.roundedRect(bx, y, bw * pct / 100, 14, 7, 7, "F");
-              doc.setFontSize(8); doc.setFont(undefined, "bold");
-              doc.text(pct + "%", mg + tw - 2, y + 10, { align: "right" });
-              doc.setFont(undefined, "normal"); y += 20;
+              if (pct > 0) doc.roundedRect(bx, y + 1, bw * pct / 100, 16, 8, 8, "F");
+              doc.setFontSize(8.5); doc.setFont(undefined, "bold");
+              doc.text(pct + "%", mg + tw - 2, y + 12, { align: "right" });
+              doc.setFont(undefined, "normal"); y += 26;
             };
 
             doc.setFillColor(13, 71, 161);
-            doc.rect(0, 0, pw, 90, "F");
+            doc.rect(0, 0, pw, 96, "F");
+            doc.setFillColor(21, 101, 192);
+            doc.rect(0, 84, pw, 12, "F");
             doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
-            doc.text("PHINS Technologies — Technology Investor Business Plan", mg, 30);
-            doc.setFontSize(11); doc.setFont(undefined, "normal");
-            doc.text("AI-Native Insurance Operating System | Joint Venture Model | Global Market Penetration", mg, 48);
-            doc.setFontSize(8.5);
-            doc.text("Software platform investment opportunity | " + eqMin + "-" + eqMax + "% PHINS equity | " + royaltyRate + "% royalty | " + revenueSharePct + "% revenue share", mg, 64);
-            doc.text("Confidential — " + printedAt + " | Data integrity: scenario lab methodology, public evidence unchanged", mg, 78);
-            doc.setTextColor(0, 0, 0); y = 108;
+            doc.text("PHINS Technologies", mg, 30);
+            doc.setFontSize(13); doc.setFont(undefined, "normal");
+            doc.text("Technology Investor Business Plan", mg, 48);
+            doc.setFontSize(9);
+            doc.text("AI-Native Insurance Operating System  |  Joint Venture Model  |  Global Market Penetration", mg, 64);
+            doc.setFontSize(8);
+            doc.text(eqMin + "-" + eqMax + "% PHINS equity  |  " + royaltyRate + "% royalty  |  " + revenueSharePct + "% revenue share  |  Confidential  |  " + printedAt, mg, 78);
+            doc.setFontSize(7); doc.setTextColor(180, 200, 230);
+            doc.text("Data integrity: scenario lab methodology, public evidence unchanged", mg, 92);
+            doc.setTextColor(0, 0, 0); y = 114;
 
             heading("Investment Thesis — Software as Infrastructure", 16);
             para("PHINS Technologies is an AI-native insurance operating system purpose-built for severe disability and long-term care markets globally. Unlike single-market insurance startups, PHINS is a software platform that licenses technology, earns royalties on gross written premium, and maintains majority equity (51-80%) in local insurance joint ventures across 26+ target jurisdictions.", 9.5, 13);
@@ -5332,8 +5338,10 @@
                   ["JV term (first period)", jvTerm + " years", "Terms renegotiated after initial period"],
                   ["Equity allocation method", "Priority score-weighted", "Higher priority markets receive higher PHINS equity"]
                 ],
-                styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak", valign: "top" },
-                headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
+                styles: { fontSize: 8.5, cellPadding: { top: 6, right: 6, bottom: 6, left: 6 }, overflow: "linebreak", valign: "middle", lineColor: [220, 228, 240], lineWidth: 0.5 },
+                headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" },
+                alternateRowStyles: { fillColor: [245, 248, 254] },
+                columnStyles: { 0: { fontStyle: "bold", cellWidth: 120 }, 1: { cellWidth: 100, textColor: [13, 71, 161], fontStyle: "bold" } }
               }); y = lastY();
             }
 
@@ -5361,7 +5369,7 @@
               var royalty = mkt.gwpUsd * royaltyRate / 100;
               var revShare = mkt.netUsd * revenueSharePct / 100;
               var totalRev = royalty + revShare + saasFee;
-              pdfRows.push([mkt.flag + " " + mkt.name, equity.toFixed(1) + "%", formatInteger(Math.round(mkt.writtenLives)), fmtUsd(mkt.gwpUsd), fmtUsd(mkt.netUsd), fmtUsd(royalty), fmtUsd(revShare), fmtUsd(totalRev)]);
+              pdfRows.push([mkt.name, equity.toFixed(1) + "%", formatInteger(Math.round(mkt.writtenLives)), fmtUsd(mkt.gwpUsd), fmtUsd(mkt.netUsd), fmtUsd(royalty), fmtUsd(revShare), fmtUsd(totalRev)]);
               pdfTotalGwp += mkt.gwpUsd;
               pdfTotalRev += totalRev;
               pdfTotalLives += mkt.writtenLives;
@@ -5372,12 +5380,22 @@
               doc.autoTable({ startY: y, margin: { left: mg, right: mg },
                 head: [["Market", "PHINS Eq%", "Written Lives", "GWP (USD)", "Net (USD)", "Royalty", "Rev Share", "Total PHINS Rev"]],
                 body: pdfRows,
-                styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak", valign: "top" },
-                headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" },
+                styles: { fontSize: 7.5, cellPadding: { top: 5, right: 4, bottom: 5, left: 4 }, overflow: "linebreak", valign: "middle", lineColor: [220, 228, 240], lineWidth: 0.5 },
+                headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.5, cellPadding: { top: 6, right: 4, bottom: 6, left: 4 } },
+                alternateRowStyles: { fillColor: [245, 248, 254] },
+                columnStyles: {
+                  0: { fontStyle: "bold", cellWidth: 72 },
+                  3: { halign: "right" },
+                  4: { halign: "right" },
+                  5: { halign: "right", textColor: [46, 125, 50] },
+                  6: { halign: "right", textColor: [46, 125, 50] },
+                  7: { halign: "right", fontStyle: "bold", textColor: [13, 71, 161] }
+                },
                 didParseCell: function(data) {
                   if (data.row.index === pdfRows.length - 1 && data.section === "body") {
                     data.cell.styles.fontStyle = "bold";
-                    data.cell.styles.fillColor = [240, 244, 250];
+                    data.cell.styles.fillColor = [230, 238, 250];
+                    data.cell.styles.textColor = [13, 71, 161];
                   }
                 }
               }); y = lastY();
@@ -5402,8 +5420,10 @@
               doc.autoTable({ startY: y, margin: { left: mg, right: mg },
                 head: [["Period", "PHINS Revenue", "Tech Costs", "Operating Costs", "EBITDA", "EBITDA Margin"]],
                 body: plRows,
-                styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak", valign: "top" },
-                headStyles: { fillColor: [46, 125, 50], textColor: [255, 255, 255], fontStyle: "bold" }
+                styles: { fontSize: 8, cellPadding: { top: 6, right: 5, bottom: 6, left: 5 }, overflow: "linebreak", valign: "middle", lineColor: [200, 220, 200], lineWidth: 0.5 },
+                headStyles: { fillColor: [46, 125, 50], textColor: [255, 255, 255], fontStyle: "bold" },
+                alternateRowStyles: { fillColor: [240, 250, 240] },
+                columnStyles: { 0: { fontStyle: "bold" }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right", fontStyle: "bold", textColor: [46, 125, 50] }, 5: { halign: "right", fontStyle: "bold" } }
               }); y = lastY();
             }
 
@@ -5424,19 +5444,23 @@
             para("Technology platform valuation using insurtech and SaaS comparables. PHINS is valued as a software infrastructure provider, not a traditional insurance carrier.", 9, 12);
             if (at) {
               doc.autoTable({ startY: y, margin: { left: mg, right: mg },
-                head: [["Method", "Multiple / Rate", "Base", "Implied Value"]],
+                head: [["Valuation Method", "Multiple / Rate", "Base", "Implied Value"]],
                 body: [
                   ["Revenue multiple", revMultiple + "x", "Year " + jvTerm + " revenue: " + fmtUsd(yr5Rev), fmtUsd(valByRev)],
                   ["EBITDA multiple", ebitdaMultiple + "x", "Year " + jvTerm + " EBITDA: " + fmtUsd(yr5Ebitda), yr5Ebitda > 0 ? fmtUsd(valByEbitda) : "N/A"],
-                  ["DCF (NPV)", "WACC " + discountRate + "%", jvTerm + "yr cash flows + terminal (3% growth)", fmtUsd(dcfValPdf)],
+                  ["DCF (NPV)", "WACC " + discountRate + "%", jvTerm + "-year cash flows + terminal (3% growth)", fmtUsd(dcfValPdf)],
                   ["Blended platform value", "Average of three methods", "", fmtUsd(blendedPdf)]
                 ],
-                styles: { fontSize: 8.5, cellPadding: 6, overflow: "linebreak", valign: "top" },
+                styles: { fontSize: 8.5, cellPadding: { top: 7, right: 6, bottom: 7, left: 6 }, overflow: "linebreak", valign: "middle", lineColor: [210, 200, 225], lineWidth: 0.5 },
                 headStyles: { fillColor: [106, 27, 154], textColor: [255, 255, 255], fontStyle: "bold" },
+                alternateRowStyles: { fillColor: [248, 244, 252] },
+                columnStyles: { 0: { fontStyle: "bold", cellWidth: 110 }, 3: { halign: "right", fontStyle: "bold", textColor: [106, 27, 154] } },
                 didParseCell: function(data) {
                   if (data.row.index === 3 && data.section === "body") {
                     data.cell.styles.fontStyle = "bold";
-                    data.cell.styles.fillColor = [240, 244, 250];
+                    data.cell.styles.fillColor = [230, 225, 245];
+                    data.cell.styles.textColor = [80, 20, 120];
+                    data.cell.styles.fontSize = 9.5;
                   }
                 }
               }); y = lastY();
@@ -5455,25 +5479,32 @@
               "Marginal cost of new market near zero — technology is exported, not rebuilt per jurisdiction"
             ];
             thesisPoints.forEach(function(tp) {
-              ensureSpace(14);
+              ensureSpace(18);
               doc.setFontSize(8.5);
-              doc.text("  •  " + tp, mg, y); y += 12;
+              var tpLines = doc.splitTextToSize("  \u2022  " + tp, tw - 10);
+              doc.text(tpLines, mg, y); y += tpLines.length * 12 + 4;
             });
 
-            ensureSpace(70);
-            y += 10;
-            doc.setFillColor(240, 244, 250);
-            doc.roundedRect(mg, y, tw, 56, 6, 6, "F");
-            doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
-            var intNote = doc.splitTextToSize("Data integrity notice: This business plan uses PHINS scenario lab methodology applied to all target markets. Financial projections are forward-looking estimates based on adjustable parameters from the Modify Country Pitch Data panel. JV equity percentages, royalty rates, and revenue share terms are pre-negotiated planning assumptions and do not represent binding commitments. Technology valuation multiples are benchmarked against publicly traded insurtech and SaaS platform comparables. No proprietary cap table, term sheet, or investor data is disclosed. All market evidence (demand signals, premium anchors, reinsurance markers) remains fixed and source-tagged.", tw - 16);
-            doc.text(intNote, mg + 8, y + 12);
+            ensureSpace(80);
+            y += 14;
+            doc.setDrawColor(13, 71, 161);
+            doc.setFillColor(245, 248, 254);
+            doc.roundedRect(mg, y, tw, 64, 8, 8, "FD");
+            doc.setFontSize(7.5); doc.setFont(undefined, "bold"); doc.setTextColor(13, 71, 161);
+            doc.text("DATA INTEGRITY NOTICE", mg + 10, y + 12);
+            doc.setFont(undefined, "normal"); doc.setTextColor(80, 96, 120);
+            var intNote = doc.splitTextToSize("This business plan uses PHINS scenario lab methodology applied to all target markets. Financial projections are forward-looking estimates based on adjustable parameters from the Modify Country Pitch Data panel. JV equity percentages, royalty rates, and revenue share terms are pre-negotiated planning assumptions and do not represent binding commitments. Technology valuation multiples are benchmarked against publicly traded insurtech and SaaS platform comparables. No proprietary cap table, term sheet, or investor data is disclosed. All market evidence (demand signals, premium anchors, reinsurance markers) remains fixed and source-tagged.", tw - 20);
+            doc.text(intNote, mg + 10, y + 24);
             doc.setTextColor(0, 0, 0);
 
             var pc = doc.getNumberOfPages();
             for (var pn = 1; pn <= pc; pn++) {
               doc.setPage(pn);
-              doc.setFontSize(7.5); doc.setTextColor(90, 102, 122);
-              doc.text("PHINS Technologies — Tech Investor Business Plan · " + printedAt + " · CONFIDENTIAL · Page " + pn + " of " + pc, mg, ph - 18);
+              doc.setDrawColor(200, 210, 225);
+              doc.line(mg, ph - 30, pw - mg, ph - 30);
+              doc.setFontSize(7); doc.setTextColor(90, 102, 122);
+              doc.text("PHINS Technologies  |  Technology Investor Business Plan  |  " + printedAt + "  |  CONFIDENTIAL", mg, ph - 20);
+              doc.text("Page " + pn + " of " + pc, pw - mg, ph - 20, { align: "right" });
             }
 
             doc.save("phins-tech-investor-business-plan.pdf");
