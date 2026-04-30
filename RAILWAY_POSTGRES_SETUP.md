@@ -102,3 +102,46 @@ Check the deployment logs for:
 ### Data not persisting
 - Ensure volume is mounted at `/data`
 - Check `LEDGER_PERSISTENCE_FILE` points to `/data/...`
+- Verify deployment logs show: `[PERSISTENCE] Saved ledger data to /data/phins_ledger_data.json`
+- If you see `⚠️ [PERSISTENCE] Using ephemeral path /tmp/...`, the volume is not detected
+
+---
+
+## Data Integrity Features
+
+The deployment includes automatic data integrity protections:
+
+### Graceful Shutdown
+The server intercepts SIGTERM (sent by Railway on redeploy/scale-down) and flushes
+all in-memory ledger data to disk before exiting. Look for:
+```
+[SHUTDOWN] Received SIGTERM, flushing persistence...
+[SHUTDOWN] Ledger data flushed to disk successfully
+```
+
+### Startup Integrity Validation
+On every boot, the server runs `validate_startup_integrity()` which checks:
+- Transaction ledger hash-chain validity (detects tampering/corruption)
+- Negative wallet/investment balances (detects arithmetic bugs)
+- DB vs memory entity count divergence (detects sync failures)
+
+Look for:
+```
+✓ [INTEGRITY] Startup validation passed — all data stores consistent
+```
+
+Or if issues are detected:
+```
+⚠️  [INTEGRITY] Startup validation: N issue(s) detected
+   ✗ Ledger chain invalid: 2 broken links, 0 sequence gaps, 0 duplicates
+```
+
+### DB-Authoritative Loading
+When PostgreSQL is active, the JSON persistence file only stores in-memory-only
+data (wallets, NFTs, allocations, transactions). Core entities (customers, policies,
+billing, claims) are always loaded from PostgreSQL — the database is the single
+source of truth.
+
+### Pipeline Atomic Transactions
+Pipeline operations (submit_application, etc.) use `PipelineTransaction` which
+automatically rolls back all store mutations if any step fails mid-operation.

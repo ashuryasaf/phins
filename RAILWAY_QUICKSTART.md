@@ -91,6 +91,20 @@ curl https://[your-railway-url]/api/login \
 ✅ Server auto-detects PORT from Railway
 ✅ All demo accounts configured
 ✅ Domain configuration (`www.phins.ai`)
+✅ Graceful shutdown (SIGTERM flushes data before exit)
+✅ Startup integrity validation (hash-chain, balance checks)
+
+## Required: Attach Persistent Volume
+
+**Without a volume, wallet/transaction data is lost on every redeploy.**
+
+1. Railway Dashboard → Your Service → **Settings** → **Volumes**
+2. Click **+ Add Volume**
+3. Set Mount Path: `/data`
+4. Size: 1 GB (minimum)
+
+The server automatically detects `/data` and persists ledger data there.
+See [RAILWAY_POSTGRES_SETUP.md](RAILWAY_POSTGRES_SETUP.md) for full setup.
 
 ## Troubleshooting
 
