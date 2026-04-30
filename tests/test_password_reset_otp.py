@@ -85,17 +85,22 @@ class TestRequestPasswordResetOTP:
         assert body.get("requires_otp") is True
 
     def test_request_nonexistent_user_no_info_leak(self):
-        """Should return 200 with generic message to prevent user enumeration."""
+        """Decoy response must be structurally identical to a real response."""
         status, body = _post("/api/request-password-reset", {
             "username": "ghost",
             "email": "ghost@example.com",
         })
         assert status == 200
         assert body.get("success") is True
-        assert "verification" not in body.get("message", "").lower() or "verification_id" not in body
+        # Anti-enumeration: decoy must include the same keys as a real response
+        assert "verification_id" in body
+        assert body.get("requires_otp") is True
+        assert "masked_email" in body
+        assert "expires_in_seconds" in body
+        assert body.get("notification_sent") is True
 
-    def test_request_wrong_email_no_info_leak(self):
-        """Mismatched email should still return generic message."""
+    def test_request_wrong_email_identical_structure(self):
+        """Mismatched email decoy must be structurally identical to a real response."""
         _setup_test_user(username="realuser", email="real@example.com")
         status, body = _post("/api/request-password-reset", {
             "username": "realuser",
@@ -103,6 +108,10 @@ class TestRequestPasswordResetOTP:
         })
         assert status == 200
         assert body.get("success") is True
+        assert "verification_id" in body
+        assert body.get("requires_otp") is True
+        assert "masked_email" in body
+        assert "expires_in_seconds" in body
 
     def test_request_missing_fields(self):
         status, body = _post("/api/request-password-reset", {"username": "x"})
@@ -250,8 +259,8 @@ class TestResetPasswordWithOTP:
         assert status == 400
         assert "8 characters" in body.get("error", "")
 
-    def test_reset_email_mismatch_rejected(self):
-        """Even with valid OTP, email must match the user's record."""
+    def test_reset_email_mismatch_rejected_without_wasting_otp(self):
+        """Email mismatch is checked before OTP is consumed, preserving the token."""
         username, email = _setup_test_user()
         _, req_body = _post("/api/request-password-reset", {
             "username": username, "email": email,
@@ -259,12 +268,52 @@ class TestResetPasswordWithOTP:
         vid = req_body["verification_id"]
         otp = req_body["demo_otp_code"]
 
+        # First attempt with wrong email fails but does NOT consume OTP
         status, body = _post("/api/reset-password", {
             "username": username, "email": "wrong@other.com",
             "new_password": "ValidPass1!",
             "verification_id": vid, "otp_code": otp,
         })
         assert status == 401
+
+        # OTP is still valid — retry with correct email succeeds
+        status2, body2 = _post("/api/reset-password", {
+            "username": username, "email": email,
+            "new_password": "ValidPass1!",
+            "verification_id": vid, "otp_code": otp,
+        })
+        assert status2 == 200
+        assert body2.get("success") is True
+
+    def test_pre_verified_otp_flow(self):
+        """Frontend verifies OTP via /api/security/otp/verify first, then resets."""
+        username, email = _setup_test_user()
+        old_hash = portal.USERS[username]["hash"]
+
+        _, req_body = _post("/api/request-password-reset", {
+            "username": username, "email": email,
+        })
+        vid = req_body["verification_id"]
+        otp = req_body["demo_otp_code"]
+
+        # Pre-verify via the security endpoint (like the frontend does)
+        status_v, body_v = _post("/api/security/otp/verify", {
+            "verification_id": vid, "otp_code": otp,
+        })
+        assert status_v == 200
+        assert body_v.get("success") is True
+
+        # Now reset — backend accepts the already-verified OTP
+        status, body = _post("/api/reset-password", {
+            "username": username, "email": email,
+            "new_password": "PreVerified1!",
+            "verification_id": vid, "otp_code": otp,
+        })
+        assert status == 200
+        assert body.get("success") is True
+
+        new_hash = portal.USERS[username]["hash"]
+        assert new_hash != old_hash
 
 
 # ---------- OTP Resend for password reset ----------

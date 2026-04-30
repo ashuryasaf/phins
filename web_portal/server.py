@@ -25558,12 +25558,24 @@ For claims or questions, please contact:
                     if user:
                         username = email
 
+                from services.otp_security_service import mask_email as _mask_email
+
+                def _decoy_reset_response():
+                    """Structurally identical to a real response to prevent user enumeration."""
+                    decoy_id = f"OTP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}"
+                    return {
+                        'success': True,
+                        'message': 'If the account exists, a verification code has been sent to the registered email.',
+                        'verification_id': decoy_id,
+                        'requires_otp': True,
+                        'notification_sent': True,
+                        'masked_email': _mask_email(email),
+                        'expires_in_seconds': 300,
+                    }
+
                 if not user:
                     self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'message': 'If the account exists, a verification code has been sent to the registered email.'
-                    }).encode('utf-8'))
+                    self.wfile.write(json.dumps(_decoy_reset_response()).encode('utf-8'))
                     return
 
                 customer_id = user.get('customer_id')
@@ -25571,10 +25583,7 @@ For claims or questions, please contact:
                     customer = CUSTOMERS.get(customer_id)
                     if customer and customer.get('email', '').lower() != email:
                         self._set_json_headers(200)
-                        self.wfile.write(json.dumps({
-                            'success': True,
-                            'message': 'If the account exists, a verification code has been sent to the registered email.'
-                        }).encode('utf-8'))
+                        self.wfile.write(json.dumps(_decoy_reset_response()).encode('utf-8'))
                         return
 
                 try:
@@ -25681,16 +25690,44 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
+                # Validate user and email BEFORE consuming the OTP so a
+                # failed user check does not waste the single-use token.
+                user = USERS.get(username)
+                if not user:
+                    user = USERS.get(email)
+                    username = email
+
+                if not user:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
+                    return
+
+                customer_id = user.get('customer_id')
+                if customer_id:
+                    customer = CUSTOMERS.get(customer_id)
+                    if customer and customer.get('email', '').lower() != email:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Email does not match our records'}).encode('utf-8'))
+                        return
+
                 try:
                     from services.otp_security_service import get_otp_security_service, OTPPurpose
                     otp_service = get_otp_security_service()
 
+                    # verify_otp transitions PENDING -> VERIFIED.  If the
+                    # frontend already verified via /api/security/otp/verify
+                    # the status is already VERIFIED and verify_otp returns
+                    # INVALID_STATUS.  In that case skip straight to consume.
                     verify_result = otp_service.verify_otp(
                         verification_id=verification_id,
                         otp_code=otp_code,
                         ip_address=client_ip,
                     )
-                    if not verify_result.success:
+                    already_verified = (
+                        not verify_result.success
+                        and verify_result.error_code == 'INVALID_STATUS'
+                    )
+                    if not verify_result.success and not already_verified:
                         self._set_json_headers(401)
                         self.wfile.write(json.dumps({
                             'error': verify_result.message or 'OTP verification failed',
@@ -25717,24 +25754,6 @@ For claims or questions, please contact:
                         'error': 'OTP security service is not available. Password reset is disabled.'
                     }).encode('utf-8'))
                     return
-
-                user = USERS.get(username)
-                if not user:
-                    user = USERS.get(email)
-                    username = email
-
-                if not user:
-                    self._set_json_headers(401)
-                    self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
-                    return
-
-                customer_id = user.get('customer_id')
-                if customer_id:
-                    customer = CUSTOMERS.get(customer_id)
-                    if customer and customer.get('email', '').lower() != email:
-                        self._set_json_headers(401)
-                        self.wfile.write(json.dumps({'error': 'Email does not match our records'}).encode('utf-8'))
-                        return
 
                 pwd_hash = hash_password(new_password)
                 try:
