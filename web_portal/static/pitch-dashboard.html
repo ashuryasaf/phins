@@ -2848,6 +2848,229 @@
         </a>
       </div>
     </section>
+
+    <section class="panel" id="tech-investor-section" style="border:2px solid var(--blue-dark);background:linear-gradient(180deg,#f0f5ff 0%,#fff 100%);">
+      <div class="section-label">Technology Investment Opportunity</div>
+      <h2 class="section-title">PHINS Technologies — Business Plan for Technology Investors</h2>
+      <p class="section-copy">
+        PHINS is a <strong>software platform requiring investment to develop further capabilities</strong> across target markets.
+        This business plan dashboard models <strong>joint ventures</strong> where PHINS Technologies retains a minimum of
+        <strong>51% and up to 80%</strong> equity in each local insurance partnership (first 5 years, pre-negotiated),
+        while earning <strong>technology royalties</strong> and <strong>shared revenue</strong> from platform licensing,
+        data services, and operational automation. All variables are dynamically linked to the
+        <em>Modify Country Pitch Data</em> scenario lab above.
+      </p>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 8px;">
+        <button type="button" class="export-btn" id="toggle-bp-panel" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;font-weight:700;">Open Business Plan Dashboard</button>
+        <button type="button" class="export-btn" id="bp-download-pdf-btn" style="background:var(--green-1);color:#fff;border:none;">Download Tech Investor PDF</button>
+        <span class="helper-note" id="bp-status"></span>
+      </div>
+
+      <div id="bp-panel" hidden style="margin-top:14px;">
+
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px;" id="bp-kpi-strip">
+          <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
+            <div class="stat-val" id="bp-total-gwp">-</div>
+            <div class="stat-lbl">Accumulated GWP (all markets)</div>
+          </div>
+          <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
+            <div class="stat-val" id="bp-phins-revenue">-</div>
+            <div class="stat-lbl">PHINS Revenue (royalties + share + SaaS)</div>
+          </div>
+          <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
+            <div class="stat-val" id="bp-platform-valuation">-</div>
+            <div class="stat-lbl">Platform Valuation (blended)</div>
+          </div>
+          <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
+            <div class="stat-val" id="bp-jv-count">-</div>
+            <div class="stat-lbl">Active JV Markets</div>
+          </div>
+          <div class="stat-box" style="border-radius:14px;padding:14px 10px;">
+            <div class="stat-val" id="bp-total-lives">-</div>
+            <div class="stat-lbl">Total Written Lives</div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--accent-1);border-radius:14px;padding:16px;background:linear-gradient(180deg,#eff6ff 0%,#f8fbff 100%);margin-bottom:16px;">
+          <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">Joint Venture Structure — PHINS Technologies Equity &amp; Revenue Model</div>
+          <p style="font-size:8pt;color:var(--text-sub);margin-bottom:12px;">
+            Configure the global JV parameters. <strong>PHINS equity floor (51%)</strong> ensures majority control in all local partnerships.
+            <strong>Equity ceiling (80%)</strong> applies to early-stage or greenfield markets. Technology <strong>royalty rate</strong> is earned on all GWP
+            processed through the PHINS platform. <strong>Revenue share</strong> applies to net premium after reinsurance cession.
+            These terms apply for the <strong>first 5 years</strong> of each partnership, after which they are renegotiated.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:14px;">
+            <div class="control-group">
+              <label for="bp-phins-equity-min">PHINS equity floor (%)</label>
+              <input id="bp-phins-equity-min" type="number" min="51" max="100" step="1" value="51" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-phins-equity-max">PHINS equity ceiling (%)</label>
+              <input id="bp-phins-equity-max" type="number" min="51" max="100" step="1" value="80" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-royalty-rate">Technology royalty on GWP (%)</label>
+              <input id="bp-royalty-rate" type="number" min="0" max="25" step="0.5" value="8.0" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-revenue-share">Revenue share on net premium (%)</label>
+              <input id="bp-revenue-share" type="number" min="0" max="50" step="0.5" value="15.0" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-saas-fee">Annual SaaS platform fee (USD)</label>
+              <input id="bp-saas-fee" type="number" min="0" step="50000" value="500000" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin-top:12px;">
+            <div class="control-group">
+              <label for="bp-rev-multiple">Revenue multiple (valuation)</label>
+              <input id="bp-rev-multiple" type="number" min="1" max="50" step="0.5" value="14" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-ebitda-multiple">EBITDA multiple (valuation)</label>
+              <input id="bp-ebitda-multiple" type="number" min="1" max="80" step="0.5" value="28" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-jv-term">JV term — first period (years)</label>
+              <input id="bp-jv-term" type="number" min="1" max="15" step="1" value="5" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div class="control-group">
+              <label for="bp-discount-rate">Discount rate / WACC (%)</label>
+              <input id="bp-discount-rate" type="number" min="1" max="30" step="0.5" value="12" style="border-radius:12px;border:1px solid var(--border);padding:11px 12px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">Technology Indicators — Platform Valuation Metrics</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;" id="bp-tech-indicators">
+          <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
+            <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Platform Modules</div>
+            <div style="font-size:16pt;font-weight:850;color:var(--blue-dark);">64+</div>
+            <div style="font-size:7pt;color:var(--text-soft);">Deployed service modules</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
+            <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">AI Automation Rate</div>
+            <div style="font-size:16pt;font-weight:850;color:var(--green-1);">92%</div>
+            <div style="font-size:7pt;color:var(--text-soft);">Underwriting automation</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
+            <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Target Markets</div>
+            <div style="font-size:16pt;font-weight:850;color:var(--blue-dark);" id="bp-target-markets-count">26</div>
+            <div style="font-size:7pt;color:var(--text-soft);">Regulatory jurisdictions</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
+            <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Blockchain Integrity</div>
+            <div style="font-size:16pt;font-weight:850;color:#e65100;">94%</div>
+            <div style="font-size:7pt;color:var(--text-soft);">Ledger maturity score</div>
+          </div>
+        </div>
+
+        <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin:18px 0 10px;">Market Penetration — Accumulated Target Markets</div>
+        <p style="font-size:8pt;color:var(--text-sub);margin-bottom:12px;">
+          Each row uses live data from the <em>Modify Country Pitch Data</em> scenario lab above. PHINS equity, royalties,
+          and revenue share are calculated per-market based on the JV parameters. Markets are ranked by
+          PHINS priority score. All values in <strong>USD equivalent</strong> for cross-market accumulation.
+        </p>
+        <div style="overflow-x:auto;margin-bottom:16px;">
+          <table style="min-width:1200px;margin:0;font-size:7.5pt;" id="bp-market-table">
+            <thead>
+              <tr>
+                <th style="padding:6px 8px;">Market</th>
+                <th style="padding:6px 8px;">PHINS Equity %</th>
+                <th style="padding:6px 8px;">Addressable Lives</th>
+                <th style="padding:6px 8px;">Written Lives</th>
+                <th style="padding:6px 8px;">GWP (local)</th>
+                <th style="padding:6px 8px;">GWP (USD)</th>
+                <th style="padding:6px 8px;">Net Premium (USD)</th>
+                <th style="padding:6px 8px;">Royalty Income</th>
+                <th style="padding:6px 8px;">Revenue Share</th>
+                <th style="padding:6px 8px;">SaaS Fee</th>
+                <th style="padding:6px 8px;">Total PHINS Rev</th>
+                <th style="padding:6px 8px;">JV Equity Value</th>
+              </tr>
+            </thead>
+            <tbody id="bp-market-body"></tbody>
+            <tfoot id="bp-market-foot"></tfoot>
+          </table>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:#fff;">
+            <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">5-Year JV Revenue Accumulation</div>
+            <div id="bp-revenue-bars" style="display:grid;gap:6px;"></div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:#fff;">
+            <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">Technology Valuation — Scenario Lab</div>
+            <div id="bp-valuation-summary" style="display:grid;gap:8px;"></div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--accent-1);border-radius:14px;padding:16px;background:linear-gradient(180deg,#f0fff4 0%,#f8fbff 100%);margin-bottom:16px;">
+          <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--green-1);margin-bottom:10px;">Scenario Lab — Dynamic Valuation Engine</div>
+          <p style="font-size:8pt;color:var(--text-sub);margin-bottom:12px;">
+            This valuation uses <strong>all factors from "Modify Country Pitch Data"</strong> dynamically.
+            Applying any market parameter change above (exchange rate, addressable lives, attach rate, cession rate,
+            loss ratio, expense ratio, penetration gap) recalculates the accumulated JV economics below.
+            Revenue multiples and EBITDA multiples reflect <strong>technology platform comparables</strong>,
+            not traditional insurance carrier multiples. PHINS is valued as a <strong>software infrastructure provider</strong>
+            with recurring royalty streams, SaaS fees, and equity participation across multiple regulated markets.
+          </p>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="bp-scenario-valuation">
+            <div style="background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border);">
+              <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Revenue Multiple Valuation</div>
+              <div style="font-size:14pt;font-weight:850;color:var(--blue-dark);" id="bp-val-revenue">-</div>
+              <div style="font-size:7pt;color:var(--text-soft);" id="bp-val-revenue-note">Year 5 PHINS revenue x multiple</div>
+            </div>
+            <div style="background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border);">
+              <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">EBITDA Multiple Valuation</div>
+              <div style="font-size:14pt;font-weight:850;color:var(--green-1);" id="bp-val-ebitda">-</div>
+              <div style="font-size:7pt;color:var(--text-soft);" id="bp-val-ebitda-note">Year 5 EBITDA x multiple</div>
+            </div>
+            <div style="background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border);">
+              <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">DCF Valuation (NPV)</div>
+              <div style="font-size:14pt;font-weight:850;color:#6a1b9a;" id="bp-val-dcf">-</div>
+              <div style="font-size:7pt;color:var(--text-soft);" id="bp-val-dcf-note">5yr cash flows + terminal value</div>
+            </div>
+            <div style="background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border);">
+              <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Blended Platform Value</div>
+              <div style="font-size:14pt;font-weight:850;color:var(--blue-dark);" id="bp-val-blended">-</div>
+              <div style="font-size:7pt;color:var(--text-soft);" id="bp-val-blended-note">Average of three methods</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:#fff;margin-bottom:16px;">
+          <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:10px;">Technology Investment Thesis — Why PHINS is a Platform Play</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" id="bp-thesis-cards">
+            <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#f0f5ff,#fff);">
+              <div style="font-size:10pt;margin-bottom:6px;">Software Platform</div>
+              <div style="font-size:8pt;color:var(--text-sub);">PHINS is an <strong>insurance operating system</strong>, not a single product. 64+ modular services create SaaS licensing potential per jurisdiction. Each JV market adds a recurring technology royalty stream without proportional engineering cost.</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#f0fff4,#fff);">
+              <div style="font-size:10pt;margin-bottom:6px;">JV Multiplier Effect</div>
+              <div style="font-size:8pt;color:var(--text-sub);">51-80% equity ensures <strong>majority control</strong> with local regulatory compliance. Pre-negotiated terms create a repeatable playbook: PHINS contributes technology, the local partner contributes regulatory access and distribution. Royalties flow from day one.</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#fff8e1,#fff);">
+              <div style="font-size:10pt;margin-bottom:6px;">Capital-Light Expansion</div>
+              <div style="font-size:8pt;color:var(--text-sub);">Technology licensing and royalty revenue require <strong>minimal incremental capital</strong> per new market. Reinsurance cession reduces balance-sheet risk. The JV model exports software and earns recurring fees while local partners absorb underwriting capital requirements.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;padding:12px 14px;border-radius:12px;background:linear-gradient(180deg,#f0f4fa,#fff);border:1px solid var(--border);">
+          <div style="font-size:7.5pt;color:var(--text-sub);line-height:1.7;">
+            <strong>Data integrity notice:</strong> All market-level data flows from the <em>Modify Country Pitch Data</em> panel above.
+            Applied changes to exchange rates, addressable lives, attach rates, cession rates, loss ratios, or expense ratios for any country
+            cascade into this business plan dashboard. JV equity percentages, royalty rates, and revenue share terms
+            are <strong>pre-negotiated planning assumptions</strong> and do not represent binding commitments.
+            Technology valuation multiples are benchmarked against <strong>publicly traded insurtech and SaaS platform comparables</strong>
+            (e.g., Lemonade, Root, Hippo, Guidewire, Duck Creek, Majesco). No proprietary cap table, term sheet, or investor data is disclosed.
+            PHINS scenario lab methodology separates reported public evidence from planning assumptions throughout.
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
@@ -4733,6 +4956,536 @@
     renderInvestorCharts();
     initializeScenario();
     initModifyPanel();
+
+    (function initBusinessPlanDashboard() {
+      var bpToggle = document.getElementById("toggle-bp-panel");
+      var bpPanel = document.getElementById("bp-panel");
+      var bpStatusEl = document.getElementById("bp-status");
+      var bpPdfBtn = document.getElementById("bp-download-pdf-btn");
+
+      if (!bpToggle || !bpPanel) return;
+
+      bpToggle.addEventListener("click", function() {
+        bpPanel.hidden = !bpPanel.hidden;
+        bpToggle.textContent = bpPanel.hidden ? "Open Business Plan Dashboard" : "Close Business Plan Dashboard";
+        if (!bpPanel.hidden) recalcBusinessPlan();
+      });
+
+      var bpInputIds = ["bp-phins-equity-min","bp-phins-equity-max","bp-royalty-rate","bp-revenue-share",
+                        "bp-saas-fee","bp-rev-multiple","bp-ebitda-multiple","bp-jv-term","bp-discount-rate"];
+      bpInputIds.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener("input", recalcBusinessPlan);
+      });
+
+      var applyBtnOrig = document.getElementById("modify-apply-btn");
+      if (applyBtnOrig) {
+        applyBtnOrig.addEventListener("click", function() {
+          if (!bpPanel.hidden) setTimeout(recalcBusinessPlan, 50);
+        });
+      }
+
+      function getJvEquity(priorityScore) {
+        var eqMin = parseFloat(document.getElementById("bp-phins-equity-min").value) || 51;
+        var eqMax = parseFloat(document.getElementById("bp-phins-equity-max").value) || 80;
+        if (eqMin < 51) eqMin = 51;
+        if (eqMax < eqMin) eqMax = eqMin;
+        if (eqMax > 100) eqMax = 100;
+        var score = Math.max(0, Math.min(100, priorityScore));
+        return eqMin + (eqMax - eqMin) * (score / 100);
+      }
+
+      function getMarketGwpUsd(cKey) {
+        var d = pitchCountryDefaults[cKey];
+        if (!d) return null;
+        var rate = d.rate || 1;
+        var addressable = (d.addressable || 0) * 1e6;
+        var attachRatePct = d.attachRate || 0;
+        var baseRateUsd = 0.25;
+        var coverageUsd = 50000;
+        var baseUsd = baseRateUsd * (coverageUsd / 1000);
+        var age35Usd = baseUsd * 1.150;
+        var annualUsd = age35Usd * 12;
+        var annualLocal = annualUsd * rate;
+        var writtenLives = addressable * attachRatePct / 100;
+        var gwpLocal = writtenLives * annualLocal;
+        var gwpUsd = rate > 0 ? gwpLocal / rate : 0;
+        var cessionPct = d.cessionRate || 0;
+        var lossRatioPct = d.lossRatio || 0;
+        var expenseRatioPct = d.expenseRatio || 0;
+        var ceded = gwpLocal * cessionPct / 100;
+        var net = gwpLocal - ceded;
+        var netUsd = rate > 0 ? net / rate : 0;
+        var claims = net * lossRatioPct / 100;
+        var expenses = net * expenseRatioPct / 100;
+        var uw = net - claims - expenses;
+        var uwUsd = rate > 0 ? uw / rate : 0;
+        return {
+          key: cKey, name: d.name, flag: d.flag, sym: d.sym, rate: rate,
+          addressable: addressable, writtenLives: writtenLives,
+          gwpLocal: gwpLocal, gwpUsd: gwpUsd,
+          netLocal: net, netUsd: netUsd,
+          uwLocal: uw, uwUsd: uwUsd,
+          cessionPct: cessionPct, lossRatioPct: lossRatioPct, expenseRatioPct: expenseRatioPct,
+          gap: d.gap || 0, market: d.market || ""
+        };
+      }
+
+      // Markets without a dedicated scorecard row inherit the closest scored market proxy.
+      var priorityScoreMarketMap = {
+        hawaii: "usa",
+        england: "wneurope",
+        germany: "wneurope",
+        france: "wneurope",
+        spain: "wneurope",
+        italy: "wneurope",
+        netherlands: "wneurope",
+        sweden: "wneurope",
+        swisserland: "wneurope",
+        irland: "wneurope",
+        greece: "wneurope",
+        poland: "wneurope",
+        syngapore: "japan",
+        south_africa: "albania",
+        brazil: "albania",
+        india: "albania",
+        mexico: "albania",
+        emirates: "middleeast",
+        dubai: "middleeast"
+      };
+
+      function getPriorityScore(cKey) {
+        var marketKey = priorityScoreMarketMap[cKey] || cKey;
+        var md = marketData.find(function(m) { return m.id === marketKey; });
+        if (md && md.investorScores) return md.investorScores.priority;
+        return 50;
+      }
+
+      function fmtUsd(val) {
+        if (val >= 1e12) return "$" + (val/1e12).toFixed(2) + "T";
+        if (val >= 1e9) return "$" + (val/1e9).toFixed(2) + "B";
+        if (val >= 1e6) return "$" + (val/1e6).toFixed(2) + "M";
+        if (val >= 1e3) return "$" + (val/1e3).toFixed(1) + "K";
+        return "$" + val.toFixed(0);
+      }
+
+      function calcTerminalValue(ebitda, discountRatePct) {
+        var terminalGrowthRate = 0.03;
+        var discountRateDecimal = discountRatePct / 100;
+        if (!(ebitda > 0) || discountRateDecimal <= terminalGrowthRate) return 0;
+        return (ebitda * (1 + terminalGrowthRate)) / (discountRateDecimal - terminalGrowthRate);
+      }
+
+      function recalcBusinessPlan() {
+        var royaltyRate = parseFloat(document.getElementById("bp-royalty-rate").value) || 0;
+        var revenueShare = parseFloat(document.getElementById("bp-revenue-share").value) || 0;
+        var saasFee = parseFloat(document.getElementById("bp-saas-fee").value) || 0;
+        var revMultiple = parseFloat(document.getElementById("bp-rev-multiple").value) || 14;
+        var ebitdaMultiple = parseFloat(document.getElementById("bp-ebitda-multiple").value) || 28;
+        var jvTerm = parseInt(document.getElementById("bp-jv-term").value) || 5;
+        var discountRate = parseFloat(document.getElementById("bp-discount-rate").value) || 12;
+
+        var countryKeys = Object.keys(pitchCountryDefaults);
+        var rows = [];
+        var totalGwpUsd = 0;
+        var totalNetUsd = 0;
+        var totalRoyalty = 0;
+        var totalRevShare = 0;
+        var totalSaas = 0;
+        var totalPhinsRev = 0;
+        var totalJvEquityVal = 0;
+        var totalWrittenLives = 0;
+        var activeMarkets = 0;
+
+        countryKeys.forEach(function(cKey) {
+          var mkt = getMarketGwpUsd(cKey);
+          if (!mkt || mkt.gwpUsd <= 0) return;
+          var priority = getPriorityScore(cKey);
+          var equity = getJvEquity(priority);
+          var royalty = mkt.gwpUsd * royaltyRate / 100;
+          var revShare = mkt.netUsd * revenueShare / 100;
+          var totalRev = royalty + revShare + saasFee;
+          var jvVal = mkt.uwUsd > 0 ? mkt.uwUsd * ebitdaMultiple * equity / 100 : 0;
+
+          rows.push({
+            key: cKey, name: mkt.name, flag: mkt.flag, sym: mkt.sym,
+            equity: equity, priority: priority,
+            addressable: mkt.addressable, writtenLives: mkt.writtenLives,
+            gwpLocal: mkt.gwpLocal, gwpUsd: mkt.gwpUsd,
+            netUsd: mkt.netUsd, uwUsd: mkt.uwUsd,
+            royalty: royalty, revShare: revShare, saas: saasFee,
+            totalRev: totalRev, jvVal: jvVal,
+            rate: mkt.rate, gap: mkt.gap, market: mkt.market,
+            cessionPct: mkt.cessionPct, lossRatioPct: mkt.lossRatioPct, expenseRatioPct: mkt.expenseRatioPct
+          });
+
+          totalGwpUsd += mkt.gwpUsd;
+          totalNetUsd += mkt.netUsd;
+          totalRoyalty += royalty;
+          totalRevShare += revShare;
+          totalSaas += saasFee;
+          totalPhinsRev += totalRev;
+          totalJvEquityVal += jvVal;
+          totalWrittenLives += mkt.writtenLives;
+          activeMarkets++;
+        });
+
+        rows.sort(function(a, b) { return b.priority - a.priority; });
+
+        document.getElementById("bp-total-gwp").textContent = fmtUsd(totalGwpUsd);
+        document.getElementById("bp-phins-revenue").textContent = fmtUsd(totalPhinsRev);
+        document.getElementById("bp-jv-count").textContent = activeMarkets;
+        document.getElementById("bp-total-lives").textContent = formatInteger(Math.round(totalWrittenLives));
+
+        var marketBody = document.getElementById("bp-market-body");
+        marketBody.innerHTML = rows.map(function(r) {
+          return '<tr>' +
+            '<td style="padding:4px 8px;white-space:nowrap;">' + r.flag + ' ' + r.name + '</td>' +
+            '<td style="padding:4px 8px;font-weight:700;color:var(--blue-dark);">' + r.equity.toFixed(1) + '%</td>' +
+            '<td style="padding:4px 8px;">' + formatInteger(r.addressable) + '</td>' +
+            '<td style="padding:4px 8px;">' + formatInteger(Math.round(r.writtenLives)) + '</td>' +
+            '<td style="padding:4px 8px;">' + fmtModBig(r.gwpLocal, r.sym) + '</td>' +
+            '<td style="padding:4px 8px;">' + fmtUsd(r.gwpUsd) + '</td>' +
+            '<td style="padding:4px 8px;">' + fmtUsd(r.netUsd) + '</td>' +
+            '<td style="padding:4px 8px;color:var(--green-1);font-weight:700;">' + fmtUsd(r.royalty) + '</td>' +
+            '<td style="padding:4px 8px;color:var(--green-1);font-weight:700;">' + fmtUsd(r.revShare) + '</td>' +
+            '<td style="padding:4px 8px;">' + fmtUsd(r.saas) + '</td>' +
+            '<td style="padding:4px 8px;font-weight:800;color:var(--blue-dark);">' + fmtUsd(r.totalRev) + '</td>' +
+            '<td style="padding:4px 8px;color:#6a1b9a;font-weight:700;">' + fmtUsd(r.jvVal) + '</td>' +
+            '</tr>';
+        }).join("");
+
+        var marketFoot = document.getElementById("bp-market-foot");
+        marketFoot.innerHTML = '<tr style="font-weight:800;border-top:2px solid var(--blue-dark);background:var(--bg-light);">' +
+          '<td style="padding:6px 8px;">TOTAL (' + activeMarkets + ' markets)</td>' +
+          '<td style="padding:6px 8px;"></td>' +
+          '<td style="padding:6px 8px;"></td>' +
+          '<td style="padding:6px 8px;">' + formatInteger(Math.round(totalWrittenLives)) + '</td>' +
+          '<td style="padding:6px 8px;"></td>' +
+          '<td style="padding:6px 8px;">' + fmtUsd(totalGwpUsd) + '</td>' +
+          '<td style="padding:6px 8px;">' + fmtUsd(totalNetUsd) + '</td>' +
+          '<td style="padding:6px 8px;color:var(--green-1);">' + fmtUsd(totalRoyalty) + '</td>' +
+          '<td style="padding:6px 8px;color:var(--green-1);">' + fmtUsd(totalRevShare) + '</td>' +
+          '<td style="padding:6px 8px;">' + fmtUsd(totalSaas) + '</td>' +
+          '<td style="padding:6px 8px;color:var(--blue-dark);">' + fmtUsd(totalPhinsRev) + '</td>' +
+          '<td style="padding:6px 8px;color:#6a1b9a;">' + fmtUsd(totalJvEquityVal) + '</td>' +
+          '</tr>';
+
+        var growthRamps = [0.15, 0.40, 0.70, 0.90, 1.00];
+        var yearRevenues = [];
+        var yearEbitdas = [];
+        var yearCashFlows = [];
+        var platformCostPct = [0.22, 0.195, 0.17, 0.145, 0.12];
+        for (var yi = 0; yi < jvTerm; yi++) {
+          var ramp = yi < growthRamps.length ? growthRamps[yi] : 1.0;
+          var yRev = totalPhinsRev * ramp;
+          var techCost = yRev * (yi < platformCostPct.length ? platformCostPct[yi] : 0.10);
+          var opCost = yRev * 0.15;
+          var yEbitda = yRev - techCost - opCost;
+          var yCashFlow = yEbitda * 0.75;
+          yearRevenues.push(yRev);
+          yearEbitdas.push(yEbitda);
+          yearCashFlows.push(yCashFlow);
+        }
+
+        var maxRev = Math.max.apply(null, yearRevenues) || 1;
+        var revBarsEl = document.getElementById("bp-revenue-bars");
+        revBarsEl.innerHTML = yearRevenues.map(function(rev, i) {
+          var pct = Math.round(rev / maxRev * 100);
+          var ramp = i < growthRamps.length ? growthRamps[i] : 1.0;
+          return '<div style="display:grid;grid-template-columns:70px 1fr 90px;align-items:center;gap:8px;">' +
+            '<div style="font-size:8pt;font-weight:700;color:var(--text-main);">Year ' + (i+1) + ' (' + (ramp*100).toFixed(0) + '%)</div>' +
+            '<div style="background:#e8eef7;border-radius:7px;height:18px;overflow:hidden;">' +
+            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#0d47a1,#42a5f5);border-radius:7px;"></div></div>' +
+            '<div style="font-size:8pt;font-weight:700;color:var(--blue-dark);text-align:right;">' + fmtUsd(rev) + '</div>' +
+            '</div>';
+        }).join("");
+
+        var yr5Rev = yearRevenues.length > 0 ? yearRevenues[yearRevenues.length - 1] : 0;
+        var yr5Ebitda = yearEbitdas.length > 0 ? yearEbitdas[yearEbitdas.length - 1] : 0;
+        var valByRev = yr5Rev * revMultiple;
+        var valByEbitda = yr5Ebitda > 0 ? yr5Ebitda * ebitdaMultiple : 0;
+
+        var npv = 0;
+        for (var ci = 0; ci < yearCashFlows.length; ci++) {
+          npv += yearCashFlows[ci] / Math.pow(1 + discountRate / 100, ci + 1);
+        }
+        var terminalValue = calcTerminalValue(yr5Ebitda, discountRate);
+        var pvTerminal = terminalValue / Math.pow(1 + discountRate / 100, jvTerm);
+        var dcfVal = npv + pvTerminal;
+
+        var blendedVal = (valByRev + valByEbitda + dcfVal) / 3;
+
+        document.getElementById("bp-platform-valuation").textContent = fmtUsd(blendedVal);
+        document.getElementById("bp-val-revenue").textContent = fmtUsd(valByRev);
+        document.getElementById("bp-val-revenue-note").textContent = fmtUsd(yr5Rev) + " x " + revMultiple + "x";
+        document.getElementById("bp-val-ebitda").textContent = yr5Ebitda > 0 ? fmtUsd(valByEbitda) : "N/A";
+        document.getElementById("bp-val-ebitda-note").textContent = yr5Ebitda > 0 ? fmtUsd(yr5Ebitda) + " x " + ebitdaMultiple + "x" : "Negative EBITDA";
+        document.getElementById("bp-val-dcf").textContent = fmtUsd(dcfVal);
+        document.getElementById("bp-val-dcf-note").textContent = "WACC " + discountRate + "%, 3% terminal growth";
+        document.getElementById("bp-val-blended").textContent = fmtUsd(blendedVal);
+        document.getElementById("bp-val-blended-note").textContent = "Avg of revenue, EBITDA, DCF";
+
+        var valSummaryEl = document.getElementById("bp-valuation-summary");
+        valSummaryEl.innerHTML =
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+            '<div style="font-size:7pt;color:var(--text-soft);">Year 5 PHINS Revenue:</div><div style="font-size:8pt;font-weight:700;">' + fmtUsd(yr5Rev) + '</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);">Year 5 EBITDA:</div><div style="font-size:8pt;font-weight:700;">' + fmtUsd(yr5Ebitda) + '</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);">Revenue Multiple:</div><div style="font-size:8pt;font-weight:700;">' + revMultiple + 'x</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);">EBITDA Multiple:</div><div style="font-size:8pt;font-weight:700;">' + ebitdaMultiple + 'x</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);">Discount Rate (WACC):</div><div style="font-size:8pt;font-weight:700;">' + discountRate + '%</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);">Terminal Growth:</div><div style="font-size:8pt;font-weight:700;">3.0%</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);">JV Equity Value (sum):</div><div style="font-size:8pt;font-weight:700;color:#6a1b9a;">' + fmtUsd(totalJvEquityVal) + '</div>' +
+            '<div style="font-size:7pt;color:var(--text-soft);border-top:1px solid var(--border);padding-top:4px;">Blended Platform Valuation:</div><div style="font-size:10pt;font-weight:850;color:var(--blue-dark);border-top:1px solid var(--border);padding-top:4px;">' + fmtUsd(blendedVal) + '</div>' +
+          '</div>';
+      }
+
+      if (bpPdfBtn) {
+        bpPdfBtn.addEventListener("click", function() {
+          if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+            alert("PDF library not loaded. Please refresh.");
+            return;
+          }
+          try {
+            if (bpPanel.hidden) {
+              bpPanel.hidden = false;
+              bpToggle.textContent = "Close Business Plan Dashboard";
+              recalcBusinessPlan();
+            }
+            bpStatusEl.textContent = "Generating Technology Investor PDF...";
+
+            var royaltyRate = parseFloat(document.getElementById("bp-royalty-rate").value) || 0;
+            var revenueSharePct = parseFloat(document.getElementById("bp-revenue-share").value) || 0;
+            var saasFee = parseFloat(document.getElementById("bp-saas-fee").value) || 0;
+            var revMultiple = parseFloat(document.getElementById("bp-rev-multiple").value) || 14;
+            var ebitdaMultiple = parseFloat(document.getElementById("bp-ebitda-multiple").value) || 28;
+            var jvTerm = parseInt(document.getElementById("bp-jv-term").value) || 5;
+            var discountRate = parseFloat(document.getElementById("bp-discount-rate").value) || 12;
+            var eqMin = parseFloat(document.getElementById("bp-phins-equity-min").value) || 51;
+            var eqMax = parseFloat(document.getElementById("bp-phins-equity-max").value) || 80;
+
+            var jsPDF = window.jspdf.jsPDF;
+            var doc = new jsPDF({ unit: "pt", format: "a4" });
+            var pw = doc.internal.pageSize.getWidth();
+            var ph = doc.internal.pageSize.getHeight();
+            var mg = 40;
+            var tw = pw - mg * 2;
+            var printedAt = new Date().toLocaleString("en-US", { hour12: false });
+            var y = mg;
+            var at = typeof doc.autoTable === "function";
+            var lastY = function() { return doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 80; };
+
+            var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = mg; } };
+            var heading = function(text, sz) {
+              ensureSpace(sz + 14);
+              doc.setFontSize(sz); doc.setFont(undefined, "bold"); doc.setTextColor(13, 71, 161);
+              doc.text(text, mg, y); y += sz + 6;
+              doc.setTextColor(0, 0, 0); doc.setFont(undefined, "normal");
+            };
+            var para = function(text, fs, gap) {
+              fs = fs || 9.5; gap = gap || 13;
+              doc.setFontSize(fs);
+              var lines = doc.splitTextToSize(String(text), tw);
+              ensureSpace(lines.length * gap);
+              doc.text(lines, mg, y); y += lines.length * gap + 4;
+            };
+            var drawBar = function(label, pct, color) {
+              ensureSpace(22);
+              doc.setFontSize(8); doc.setFont(undefined, "normal");
+              doc.text(label, mg, y + 10);
+              var bx = mg + 150, bw = tw - 195;
+              doc.setFillColor(230, 238, 249);
+              doc.roundedRect(bx, y, bw, 14, 7, 7, "F");
+              doc.setFillColor(color[0], color[1], color[2]);
+              if (pct > 0) doc.roundedRect(bx, y, bw * pct / 100, 14, 7, 7, "F");
+              doc.setFontSize(8); doc.setFont(undefined, "bold");
+              doc.text(pct + "%", mg + tw - 2, y + 10, { align: "right" });
+              doc.setFont(undefined, "normal"); y += 20;
+            };
+
+            doc.setFillColor(13, 71, 161);
+            doc.rect(0, 0, pw, 90, "F");
+            doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
+            doc.text("PHINS Technologies — Technology Investor Business Plan", mg, 30);
+            doc.setFontSize(11); doc.setFont(undefined, "normal");
+            doc.text("AI-Native Insurance Operating System | Joint Venture Model | Global Market Penetration", mg, 48);
+            doc.setFontSize(8.5);
+            doc.text("Software platform investment opportunity | " + eqMin + "-" + eqMax + "% PHINS equity | " + royaltyRate + "% royalty | " + revenueSharePct + "% revenue share", mg, 64);
+            doc.text("Confidential — " + printedAt + " | Data integrity: scenario lab methodology, public evidence unchanged", mg, 78);
+            doc.setTextColor(0, 0, 0); y = 108;
+
+            heading("Investment Thesis — Software as Infrastructure", 16);
+            para("PHINS Technologies is an AI-native insurance operating system purpose-built for severe disability and long-term care markets globally. Unlike single-market insurance startups, PHINS is a software platform that licenses technology, earns royalties on gross written premium, and maintains majority equity (51-80%) in local insurance joint ventures across 26+ target jurisdictions.", 9.5, 13);
+            para("The investment opportunity is in the technology layer — not the insurance balance sheet. PHINS earns recurring revenue from: (1) technology royalties on all GWP processed through the platform, (2) net premium revenue share from JV operations, (3) annual SaaS platform licensing fees per market, and (4) majority equity appreciation in each local JV. This creates a capital-light, high-margin, multi-market technology business.", 9.5, 13);
+
+            heading("Joint Venture Structure", 14);
+            para("Pre-negotiated terms for first " + jvTerm + " years of each local insurance partnership:", 9, 12);
+            if (at) {
+              doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+                head: [["Parameter", "Value", "Note"]],
+                body: [
+                  ["PHINS equity floor", eqMin + "%", "Minimum PHINS ownership in every JV (majority control)"],
+                  ["PHINS equity ceiling", eqMax + "%", "Maximum PHINS ownership for greenfield/early markets"],
+                  ["Technology royalty", royaltyRate + "% of GWP", "Earned on all premium processed through PHINS platform"],
+                  ["Revenue share", revenueSharePct + "% of net premium", "Share of retained premium after reinsurance cession"],
+                  ["SaaS platform fee", "$" + formatInteger(saasFee) + "/year per market", "Annual fixed technology licensing fee"],
+                  ["JV term (first period)", jvTerm + " years", "Terms renegotiated after initial period"],
+                  ["Equity allocation method", "Priority score-weighted", "Higher priority markets receive higher PHINS equity"]
+                ],
+                styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak", valign: "top" },
+                headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" }
+              }); y = lastY();
+            }
+
+            heading("Technology Platform Indicators", 14);
+            para("Technology readiness and automation metrics — key indicators for platform valuation:", 9, 12);
+            [["AI Underwriting Automation",92,[21,101,192]],["Claims Processing Automation",88,[21,101,192]],
+             ["Billing Automation",96,[46,125,50]],["Blockchain Ledger Maturity",94,[230,81,0]],
+             ["Predictive Analytics",84,[46,125,50]],["Health Marketplace",86,[46,125,50]],
+             ["Community Foundations",90,[46,125,50]],["BI / Integrity Engine",88,[106,27,154]],
+             ["Voice AI Interface",74,[21,101,192]],["Multi-Market Regulatory",62,[106,27,154]],
+             ["Portfolio Management",82,[106,27,154]],["Fraud Detection",88,[230,81,0]]
+            ].forEach(function(c) { drawBar(c[0], c[1], c[2]); });
+
+            heading("Market Penetration — Accumulated Target Markets", 14);
+            para("Per-market JV economics using live scenario lab data. All values in USD equivalent. PHINS equity is allocated based on market priority score.", 9, 12);
+
+            var countryKeys = Object.keys(pitchCountryDefaults);
+            var pdfRows = [];
+            var pdfTotalGwp = 0, pdfTotalRev = 0, pdfTotalLives = 0;
+            countryKeys.forEach(function(cKey) {
+              var mkt = getMarketGwpUsd(cKey);
+              if (!mkt || mkt.gwpUsd <= 0) return;
+              var priority = getPriorityScore(cKey);
+              var equity = getJvEquity(priority);
+              var royalty = mkt.gwpUsd * royaltyRate / 100;
+              var revShare = mkt.netUsd * revenueSharePct / 100;
+              var totalRev = royalty + revShare + saasFee;
+              pdfRows.push([mkt.flag + " " + mkt.name, equity.toFixed(1) + "%", formatInteger(Math.round(mkt.writtenLives)), fmtUsd(mkt.gwpUsd), fmtUsd(mkt.netUsd), fmtUsd(royalty), fmtUsd(revShare), fmtUsd(totalRev)]);
+              pdfTotalGwp += mkt.gwpUsd;
+              pdfTotalRev += totalRev;
+              pdfTotalLives += mkt.writtenLives;
+            });
+            pdfRows.push(["TOTAL", "", formatInteger(Math.round(pdfTotalLives)), fmtUsd(pdfTotalGwp), "", "", "", fmtUsd(pdfTotalRev)]);
+
+            if (at) {
+              doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+                head: [["Market", "PHINS Eq%", "Written Lives", "GWP (USD)", "Net (USD)", "Royalty", "Rev Share", "Total PHINS Rev"]],
+                body: pdfRows,
+                styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak", valign: "top" },
+                headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" },
+                didParseCell: function(data) {
+                  if (data.row.index === pdfRows.length - 1 && data.section === "body") {
+                    data.cell.styles.fontStyle = "bold";
+                    data.cell.styles.fillColor = [240, 244, 250];
+                  }
+                }
+              }); y = lastY();
+            }
+
+            heading(jvTerm + "-Year Revenue & Valuation Projection", 14);
+            var growthRamps = [0.15, 0.40, 0.70, 0.90, 1.00];
+            var platformCostPct = [0.22, 0.195, 0.17, 0.145, 0.12];
+            var plRows = [];
+            var yrRevenues = [], yrEbitdas = [], yrCashFlows = [];
+            for (var yi = 0; yi < jvTerm; yi++) {
+              var ramp = yi < growthRamps.length ? growthRamps[yi] : 1.0;
+              var yRev = pdfTotalRev * ramp;
+              var techCost = yRev * (yi < platformCostPct.length ? platformCostPct[yi] : 0.10);
+              var opCost = yRev * 0.15;
+              var yEbitda = yRev - techCost - opCost;
+              var yCashFlow = yEbitda * 0.75;
+              yrRevenues.push(yRev); yrEbitdas.push(yEbitda); yrCashFlows.push(yCashFlow);
+              plRows.push(["Year " + (yi+1) + " (" + (ramp*100).toFixed(0) + "%)", fmtUsd(yRev), fmtUsd(techCost), fmtUsd(opCost), fmtUsd(yEbitda), (yRev > 0 ? (yEbitda/yRev*100).toFixed(1) : "0.0") + "%"]);
+            }
+            if (at) {
+              doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+                head: [["Period", "PHINS Revenue", "Tech Costs", "Operating Costs", "EBITDA", "EBITDA Margin"]],
+                body: plRows,
+                styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak", valign: "top" },
+                headStyles: { fillColor: [46, 125, 50], textColor: [255, 255, 255], fontStyle: "bold" }
+              }); y = lastY();
+            }
+
+            var yr5Rev = yrRevenues.length > 0 ? yrRevenues[yrRevenues.length - 1] : 0;
+            var yr5Ebitda = yrEbitdas.length > 0 ? yrEbitdas[yrEbitdas.length - 1] : 0;
+            var valByRev = yr5Rev * revMultiple;
+            var valByEbitda = yr5Ebitda > 0 ? yr5Ebitda * ebitdaMultiple : 0;
+            var npvPdf = 0;
+            for (var ci = 0; ci < yrCashFlows.length; ci++) {
+              npvPdf += yrCashFlows[ci] / Math.pow(1 + discountRate / 100, ci + 1);
+            }
+            var tvPdf = calcTerminalValue(yr5Ebitda, discountRate);
+            var pvTvPdf = tvPdf / Math.pow(1 + discountRate / 100, jvTerm);
+            var dcfValPdf = npvPdf + pvTvPdf;
+            var blendedPdf = (valByRev + valByEbitda + dcfValPdf) / 3;
+
+            heading("Platform Valuation — Three-Method Analysis", 14);
+            para("Technology platform valuation using insurtech and SaaS comparables. PHINS is valued as a software infrastructure provider, not a traditional insurance carrier.", 9, 12);
+            if (at) {
+              doc.autoTable({ startY: y, margin: { left: mg, right: mg },
+                head: [["Method", "Multiple / Rate", "Base", "Implied Value"]],
+                body: [
+                  ["Revenue multiple", revMultiple + "x", "Year " + jvTerm + " revenue: " + fmtUsd(yr5Rev), fmtUsd(valByRev)],
+                  ["EBITDA multiple", ebitdaMultiple + "x", "Year " + jvTerm + " EBITDA: " + fmtUsd(yr5Ebitda), yr5Ebitda > 0 ? fmtUsd(valByEbitda) : "N/A"],
+                  ["DCF (NPV)", "WACC " + discountRate + "%", jvTerm + "yr cash flows + terminal (3% growth)", fmtUsd(dcfValPdf)],
+                  ["Blended platform value", "Average of three methods", "", fmtUsd(blendedPdf)]
+                ],
+                styles: { fontSize: 8.5, cellPadding: 6, overflow: "linebreak", valign: "top" },
+                headStyles: { fillColor: [106, 27, 154], textColor: [255, 255, 255], fontStyle: "bold" },
+                didParseCell: function(data) {
+                  if (data.row.index === 3 && data.section === "body") {
+                    data.cell.styles.fontStyle = "bold";
+                    data.cell.styles.fillColor = [240, 244, 250];
+                  }
+                }
+              }); y = lastY();
+            }
+
+            heading("Why Technology Investors — Not Insurance Capital", 14);
+            var thesisPoints = [
+              "Software platform with 64+ modular services — each deployable as standalone SaaS vertical",
+              "Recurring revenue: technology royalties (" + royaltyRate + "% GWP), revenue share (" + revenueSharePct + "% net), SaaS fees ($" + formatInteger(saasFee) + "/yr)",
+              "JV model: " + eqMin + "-" + eqMax + "% equity ensures majority control without full balance-sheet risk",
+              "Capital-light: reinsurance cession offloads underwriting risk; PHINS retains technology margin",
+              "Network effects: marketplace, community foundations, delivery bidding create compounding value",
+              "AI-native (not bolt-on): 92% underwriting, 88% claims, 96% billing automation deployed",
+              "Multi-market: 26 jurisdictions targeted via regulatory adapter architecture",
+              "Blockchain integrity: NFT transaction ledger creates institutional-grade audit trail",
+              "Marginal cost of new market near zero — technology is exported, not rebuilt per jurisdiction"
+            ];
+            thesisPoints.forEach(function(tp) {
+              ensureSpace(14);
+              doc.setFontSize(8.5);
+              doc.text("  •  " + tp, mg, y); y += 12;
+            });
+
+            ensureSpace(70);
+            y += 10;
+            doc.setFillColor(240, 244, 250);
+            doc.roundedRect(mg, y, tw, 56, 6, 6, "F");
+            doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
+            var intNote = doc.splitTextToSize("Data integrity notice: This business plan uses PHINS scenario lab methodology applied to all target markets. Financial projections are forward-looking estimates based on adjustable parameters from the Modify Country Pitch Data panel. JV equity percentages, royalty rates, and revenue share terms are pre-negotiated planning assumptions and do not represent binding commitments. Technology valuation multiples are benchmarked against publicly traded insurtech and SaaS platform comparables. No proprietary cap table, term sheet, or investor data is disclosed. All market evidence (demand signals, premium anchors, reinsurance markers) remains fixed and source-tagged.", tw - 16);
+            doc.text(intNote, mg + 8, y + 12);
+            doc.setTextColor(0, 0, 0);
+
+            var pc = doc.getNumberOfPages();
+            for (var pn = 1; pn <= pc; pn++) {
+              doc.setPage(pn);
+              doc.setFontSize(7.5); doc.setTextColor(90, 102, 122);
+              doc.text("PHINS Technologies — Tech Investor Business Plan · " + printedAt + " · CONFIDENTIAL · Page " + pn + " of " + pc, mg, ph - 18);
+            }
+
+            doc.save("phins-tech-investor-business-plan.pdf");
+            bpStatusEl.textContent = "Technology Investor PDF downloaded (" + pc + " pages). All data from scenario lab.";
+            bpStatusEl.style.color = "var(--green-1)";
+          } catch (err) {
+            bpStatusEl.textContent = "Failed to generate PDF: " + (err.message || "unknown error");
+            bpStatusEl.style.color = "var(--red-1)";
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>
