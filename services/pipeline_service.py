@@ -9,13 +9,16 @@ ARCHITECTURE:
 - Automatic state transitions
 - Audit trail for all transitions
 - Database persistence by default
+- Atomic multi-store operations via PipelineTransaction
 
 This service ensures data flows correctly through the admin pipeline
 when customers submit applications.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
+import copy
 import logging
 import uuid
 
@@ -36,6 +39,46 @@ def _status_eq(item: Dict, *statuses: str) -> bool:
 def _status_in(item: Dict, statuses: list) -> bool:
     """Case-insensitive check if item's status is in a list of statuses."""
     return _status_eq(item, *statuses)
+
+
+class PipelineTransaction:
+    """Provides rollback semantics for multi-store pipeline mutations.
+
+    Usage:
+        with PipelineTransaction(customers, policies, billing) as txn:
+            txn.stage('customers', cust_id, old_data, new_data)
+            customers[cust_id] = new_data
+            ...
+        # If an exception occurs inside the block, all staged changes are reverted.
+    """
+
+    def __init__(self, *stores: Dict[str, Any]):
+        self._stores = stores
+        self._snapshots: List[tuple] = []
+
+    def stage(self, store: Dict, key: str, new_value: Any) -> None:
+        """Record the current value of store[key] before mutating."""
+        old_value = copy.deepcopy(store.get(key))
+        self._snapshots.append((store, key, old_value))
+        store[key] = new_value
+
+    def _rollback(self) -> None:
+        for store, key, old_value in reversed(self._snapshots):
+            if old_value is None:
+                store.pop(key, None)
+            else:
+                store[key] = old_value
+        logger.warning("PipelineTransaction rolled back %d mutations", len(self._snapshots))
+        self._snapshots.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self._rollback()
+        self._snapshots.clear()
+        return False
 
 
 class PipelineService:
@@ -114,6 +157,7 @@ class PipelineService:
         2. Policy record (pending_underwriting)
         3. Underwriting application (pending)
         
+        Uses PipelineTransaction for atomic rollback on failure.
         Returns dict with customer, policy, and underwriting IDs.
         """
         now = datetime.now()
@@ -135,9 +179,6 @@ class PipelineService:
             'updated_date': now.isoformat()
         }
         
-        # Store customer (will update if exists)
-        self._customers[customer_id] = customer
-        
         # 2. Create policy (pending underwriting)
         policy_id = self._generate_id('POL')
         policy = {
@@ -154,7 +195,6 @@ class PipelineService:
             'created_date': now.isoformat(),
             'updated_date': now.isoformat()
         }
-        self._policies[policy_id] = policy
         
         # 3. Create underwriting application (auto-queued for admin review)
         uw_id = self._generate_id('UW')
@@ -162,7 +202,7 @@ class PipelineService:
             'id': uw_id,
             'policy_id': policy_id,
             'customer_id': customer_id,
-            'status': 'pending',  # Queued for underwriter review
+            'status': 'pending',
             'risk_assessment': policy_data.get('risk_score', 'medium'),
             'questionnaire_responses': questionnaire or {},
             'medical_exam_required': policy_data.get('risk_score') in ('high', 'very_high'),
@@ -171,11 +211,16 @@ class PipelineService:
             'created_date': now.isoformat(),
             'updated_date': now.isoformat()
         }
-        self._underwriting[uw_id] = underwriting_app
-        
-        # Link policy to underwriting
-        policy['underwriting_id'] = uw_id
-        self._policies[policy_id] = policy
+
+        # Atomic multi-store write — rolls back all on failure
+        with PipelineTransaction() as txn:
+            txn.stage(self._customers, customer_id, customer)
+            txn.stage(self._policies, policy_id, policy)
+            txn.stage(self._underwriting, uw_id, underwriting_app)
+
+            # Link policy to underwriting
+            policy['underwriting_id'] = uw_id
+            txn.stage(self._policies, policy_id, policy)
         
         self._log_event('system', 'submit_application', 'pipeline', policy_id, {
             'customer_id': customer_id,

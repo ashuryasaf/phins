@@ -3616,18 +3616,11 @@ def save_ledger_data(_periodic: bool = False):
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
                 'investment_accounts': INVESTMENT_ACCOUNTS,
                 'transaction_ledger': TRANSACTION_LEDGER,
-                'billing': BILLING,
-                'policies': POLICIES,
-                'customers': CUSTOMERS,
-                'underwriting_applications': UNDERWRITING_APPLICATIONS,
                 # v1.2 additions - algo trading data
                 'algo_trading_balances': algo_balances,
                 'trading_bots': trading_bots,
                 # v1.3 additions - PHINS Main Balance Sheet
                 'phins_balance_sheet': PHINS_BALANCE_SHEET,
-                # v1.4 additions - Claims and Claim Files
-                'claims': dict(CLAIMS),
-                'claim_files': CLAIM_FILES,
                 # v1.5 additions - Underwriting Files
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
@@ -3645,6 +3638,25 @@ def save_ledger_data(_periodic: bool = False):
                 # v2.1 additions - monthly auto-pay batch reporting
                 'auto_pay_run_reports': AUTO_PAY_RUN_REPORTS
             }
+
+            # DB-backed entities: only include in the snapshot when running
+            # in pure in-memory mode (no DB). When PostgreSQL is active these
+            # dicts are DatabaseDict facades; serializing them is redundant
+            # (the DB is authoritative) and avoids large JSON payloads.
+            if not (USE_DATABASE and database_enabled):
+                data['billing'] = BILLING
+                data['policies'] = POLICIES
+                data['customers'] = CUSTOMERS
+                data['underwriting_applications'] = UNDERWRITING_APPLICATIONS
+                data['claims'] = dict(CLAIMS)
+                data['claim_files'] = CLAIM_FILES
+            else:
+                data['billing'] = {}
+                data['policies'] = {}
+                data['customers'] = {}
+                data['underwriting_applications'] = {}
+                data['claims'] = {}
+                data['claim_files'] = CLAIM_FILES
             
             # Write to temp file first, then rename for atomic operation
             temp_file = LEDGER_PERSISTENCE_FILE + '.tmp'
@@ -3932,11 +3944,17 @@ def load_ledger_data():
         platform_event_ledger.ensure_hash_chain()
         
         # Load pipeline data (v1.1+)
+        # IMPORTANT: When database mode is active, POLICIES/CUSTOMERS/BILLING/
+        # UNDERWRITING_APPLICATIONS are DatabaseDict objects. We only restore
+        # financial/in-memory-only stores from the JSON file; DB-backed entities
+        # are authoritative from PostgreSQL. Loading stale JSON into DatabaseDict
+        # would trigger spurious upserts that could overwrite newer DB state.
         if data.get('version', '1.0') >= '1.1':
-            BILLING.update(data.get('billing', {}))
-            POLICIES.update(data.get('policies', {}))
-            CUSTOMERS.update(data.get('customers', {}))
-            UNDERWRITING_APPLICATIONS.update(data.get('underwriting_applications', {}))
+            if not (USE_DATABASE and database_enabled):
+                BILLING.update(data.get('billing', {}))
+                POLICIES.update(data.get('policies', {}))
+                CUSTOMERS.update(data.get('customers', {}))
+                UNDERWRITING_APPLICATIONS.update(data.get('underwriting_applications', {}))
         
         # Load algo trading data (v1.2+)
         if data.get('version', '1.0') >= '1.2':
@@ -3955,8 +3973,11 @@ def load_ledger_data():
             loaded_claims = data.get('claims', {})
             loaded_claim_files = data.get('claim_files', {})
             if loaded_claims:
-                CLAIMS.update(loaded_claims)
-                print(f"  - Claims: {len(CLAIMS)} claims loaded from persistence")
+                if not (USE_DATABASE and database_enabled):
+                    CLAIMS.update(loaded_claims)
+                    print(f"  - Claims: {len(loaded_claims)} claims loaded from persistence")
+                else:
+                    print(f"  - Claims: {len(loaded_claims)} in file (DB is authoritative, skipped)")
             if loaded_claim_files:
                 CLAIM_FILES.update(loaded_claim_files)
                 print(f"  - Claim Files: {len(CLAIM_FILES)} files loaded from persistence")
@@ -3992,10 +4013,11 @@ def load_ledger_data():
                 print(f"  - Invitation Codes: {len(INVITATION_CODES)} codes loaded from persistence")
             if loaded_registered:
                 REGISTERED_CUSTOMERS.update(loaded_registered)
-                # Also restore to CUSTOMERS if not already there
-                for cust_id, cust_data in loaded_registered.items():
-                    if cust_id not in CUSTOMERS:
-                        CUSTOMERS[cust_id] = cust_data
+                # Restore to CUSTOMERS only in non-DB mode to avoid stale overwrites
+                if not (USE_DATABASE and database_enabled):
+                    for cust_id, cust_data in loaded_registered.items():
+                        if cust_id not in CUSTOMERS:
+                            CUSTOMERS[cust_id] = cust_data
                 print(f"  - Registered Customers: {len(REGISTERED_CUSTOMERS)} customers loaded from persistence")
         
         # Load Customer Invitations and Referral Stats (v1.8+)
@@ -4076,6 +4098,111 @@ def schedule_periodic_save():
         save_thread = threading.Thread(target=save_loop, daemon=True)
         save_thread.start()
         print("[PERSISTENCE] Started periodic save thread (every 60 seconds)")
+
+
+def _graceful_shutdown(signum, frame):
+    """Flush ledger to disk on SIGTERM/SIGINT before the container exits.
+
+    Railway sends SIGTERM when redeploying or scaling down. Without this
+    handler, up to 60 seconds of in-memory mutations can be lost.
+    """
+    sig_name = 'SIGTERM' if signum == 15 else 'SIGINT' if signum == 2 else f'signal {signum}'
+    print(f"\n[SHUTDOWN] Received {sig_name}, flushing persistence...")
+    try:
+        mark_ledger_dirty()
+        save_ledger_data(_periodic=False)
+        print("[SHUTDOWN] Ledger data flushed to disk successfully")
+    except Exception as exc:
+        print(f"[SHUTDOWN] Error flushing ledger: {exc}")
+    # Re-raise so the default handler terminates the process.
+    raise SystemExit(0)
+
+
+import signal as _signal
+_signal.signal(_signal.SIGTERM, _graceful_shutdown)
+_signal.signal(_signal.SIGINT, _graceful_shutdown)
+
+
+def validate_startup_integrity() -> Dict[str, Any]:
+    """Run post-load integrity checks to detect memory/DB divergence.
+
+    Called after both load_ledger_data() and DB seeds have run. Reports
+    discrepancies between the transaction ledger hash chain and any
+    wallet balance mismatches without blocking startup.
+    """
+    issues: List[str] = []
+    warnings: List[str] = []
+
+    # 1. Transaction ledger hash-chain validation
+    try:
+        if TRANSACTION_LEDGER:
+            from services.platform_event_ledger_service import reconcile_ledger_entries
+            result = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
+            if not result.get('chain_valid'):
+                broken = len(result.get('broken_links', []))
+                gaps = len(result.get('sequence_gaps', []))
+                dupes = len(result.get('duplicate_ids', []))
+                issues.append(
+                    f"Ledger chain invalid: {broken} broken links, "
+                    f"{gaps} sequence gaps, {dupes} duplicates"
+                )
+    except Exception as exc:
+        warnings.append(f"Ledger chain check skipped: {exc}")
+
+    # 2. Wallet balance sanity (totals should be non-negative)
+    try:
+        for cust_id, wallet in HEALTH_WALLETS.items():
+            bal = float(wallet.get('balance', 0))
+            if bal < 0:
+                issues.append(f"Negative health wallet balance for {cust_id}: {bal}")
+    except Exception as exc:
+        warnings.append(f"Wallet balance check failed: {exc}")
+
+    # 3. Investment accounts consistency
+    try:
+        for cust_id, acct in INVESTMENT_ACCOUNTS.items():
+            total = float(acct.get('total_value', 0))
+            if total < 0:
+                issues.append(f"Negative investment total for {cust_id}: {total}")
+    except Exception as exc:
+        warnings.append(f"Investment check failed: {exc}")
+
+    # 4. If DB mode is active, verify core entity counts roughly match
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                db_customer_count = db.customers.count() if hasattr(db.customers, 'count') else -1
+                mem_customer_count = len(CUSTOMERS)
+                if db_customer_count >= 0 and abs(db_customer_count - mem_customer_count) > 5:
+                    warnings.append(
+                        f"Customer count divergence: DB={db_customer_count}, memory={mem_customer_count}"
+                    )
+        except Exception as exc:
+            warnings.append(f"DB consistency check skipped: {exc}")
+
+    status = 'critical' if issues else ('warning' if warnings else 'healthy')
+    report = {
+        'status': status,
+        'issues': issues,
+        'warnings': warnings,
+        'ledger_entries': len(TRANSACTION_LEDGER),
+        'health_wallets': len(HEALTH_WALLETS),
+        'investment_accounts': len(INVESTMENT_ACCOUNTS),
+    }
+
+    if issues:
+        print(f"⚠️  [INTEGRITY] Startup validation: {len(issues)} issue(s) detected")
+        for issue in issues:
+            print(f"   ✗ {issue}")
+    if warnings:
+        for w in warnings:
+            print(f"   ⚡ {w}")
+    if not issues and not warnings:
+        print("✓ [INTEGRITY] Startup validation passed — all data stores consistent")
+
+    return report
+
 
 # ========== END DATA PERSISTENCE LAYER ==========
 
@@ -42629,6 +42756,9 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"   ⚠️  Data integrity check error: {e}")
     
+    # Run post-load integrity validation before serving traffic
+    validate_startup_integrity()
+
     server_address = (HOST, port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
     httpd.daemon_threads = True  # Ensure worker threads exit on shutdown

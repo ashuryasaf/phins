@@ -332,28 +332,34 @@ class PlatformEventLedgerService:
         if not self._database_enabled():
             return
 
-        try:
-            db_factory = self._get_db_manager_factory()
-            with db_factory() as db:
-                if db.platform_ledger.get_by_id(entry["id"]):
-                    return
-                db.platform_ledger.record_event(
-                    id=entry["id"],
-                    sequence_no=entry["sequence_no"],
-                    timestamp=entry["timestamp"],
-                    ledger_type=entry.get("ledger_type", "event"),
-                    event_type=entry.get("event_type") or entry.get("type") or "event",
-                    entity_type=entry.get("entity_type"),
-                    entity_id=entry.get("entity_id"),
-                    customer_id=entry.get("customer_id"),
-                    actor=entry.get("actor"),
-                    amount=entry.get("amount", 0.0),
-                    currency=entry.get("currency", "USD"),
-                    status=entry.get("status", "recorded"),
-                    source_system=entry.get("source_system", "web_portal"),
-                    previous_hash=entry.get("previous_hash"),
-                    entry_hash=entry.get("entry_hash"),
-                    payload=entry,
-                )
-        except Exception as exc:
-            logger.warning("Platform ledger persistence failed for %s: %s", entry.get("id"), exc)
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                db_factory = self._get_db_manager_factory()
+                with db_factory() as db:
+                    if db.platform_ledger.get_by_id(entry["id"]):
+                        return
+                    db.platform_ledger.record_event(
+                        id=entry["id"],
+                        sequence_no=entry["sequence_no"],
+                        timestamp=entry["timestamp"],
+                        ledger_type=entry.get("ledger_type", "event"),
+                        event_type=entry.get("event_type") or entry.get("type") or "event",
+                        entity_type=entry.get("entity_type"),
+                        entity_id=entry.get("entity_id"),
+                        customer_id=entry.get("customer_id"),
+                        actor=entry.get("actor"),
+                        amount=entry.get("amount", 0.0),
+                        currency=entry.get("currency", "USD"),
+                        status=entry.get("status", "recorded"),
+                        source_system=entry.get("source_system", "web_portal"),
+                        previous_hash=entry.get("previous_hash"),
+                        entry_hash=entry.get("entry_hash"),
+                        payload=entry,
+                    )
+                return
+            except Exception as exc:
+                if attempt < max_retries:
+                    logger.debug("Ledger persist retry %d for %s: %s", attempt + 1, entry.get("id"), exc)
+                    continue
+                logger.warning("Platform ledger persistence failed for %s: %s", entry.get("id"), exc)
