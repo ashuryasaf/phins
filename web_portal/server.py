@@ -1640,6 +1640,11 @@ def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> st
     )
 
 
+def compute_media_checksum(payload: bytes) -> str:
+    """Return a SHA-256 hex digest for a binary payload."""
+    return hashlib.sha256(payload).hexdigest()
+
+
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
     """Return subtitle track metadata without embedded subtitle content."""
     return {
@@ -1691,6 +1696,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
 def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
     """Strip internal processing secrets and subtitle payloads from media responses."""
     payload = dict(asset)
+    payload.pop('file_path', None)
     processing = asset.get('processing')
     if isinstance(processing, dict):
         payload['processing'] = dict(processing)
@@ -23691,32 +23697,64 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body)
-                
-                # Generate unique ID (uuid is imported at module level)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            asset_name = str(data.get('name') or '').strip()
+            asset_type = str(data.get('type') or '').strip().lower()
+            if not asset_name:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Asset name is required'}).encode('utf-8'))
+                return
+            if asset_type not in ('video', 'image', 'document'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Asset type must be video, image, or document'}).encode('utf-8'))
+                return
+
+            raw_data = str(data.get('data') or '').strip()
+            raw_url = str(data.get('url') or '').strip()
+            if not raw_data and not raw_url:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Either data (base64) or url must be provided'}).encode('utf-8'))
+                return
+
+            try:
                 asset_id = f"media-{uuid.uuid4().hex[:12]}"
-                
-                # Create asset record
+
+                declared_size = safe_int(data.get('size'), 0)
+                checksum = ''
+                if raw_data:
+                    try:
+                        payload_bytes_for_hash, _mime = decode_media_data_url(raw_data)
+                        checksum = compute_media_checksum(payload_bytes_for_hash)
+                        if declared_size == 0:
+                            declared_size = len(payload_bytes_for_hash)
+                    except Exception:
+                        checksum = compute_media_checksum(raw_data.encode('utf-8'))
+
                 asset = {
                     'id': asset_id,
-                    'name': data.get('name', 'Unnamed'),
-                    'type': data.get('type', 'document'),  # video, image, document
-                    'format': data.get('format', ''),
-                    'size': data.get('size', 0),
-                    'url': data.get('url', ''),
-                    'data': data.get('data', ''),  # base64 for uploaded files
-                    'thumbnail': data.get('thumbnail', ''),
+                    'name': asset_name,
+                    'type': asset_type,
+                    'format': str(data.get('format') or '').strip(),
+                    'size': declared_size,
+                    'url': raw_url,
+                    'data': raw_data,
+                    'thumbnail': str(data.get('thumbnail') or '').strip(),
                     'duration': data.get('duration'),
-                    'source': data.get('source', 'upload'),  # upload, url
+                    'source': str(data.get('source') or 'upload').strip(),
                     'uploaded_at': datetime.now().isoformat(),
-                    'uploaded_by': session.get('username', 'admin')
+                    'uploaded_by': session.get('username', 'admin'),
+                    'checksum': checksum,
                 }
-                
-                # Store asset
+
+                asset = persist_media_asset_payload(asset)
                 MEDIA_ASSETS[asset_id] = asset
-                
-                # Persist
+
                 save_ledger_data()
-                
+
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -23724,10 +23762,10 @@ For claims or questions, please contact:
                     'asset': serialize_media_asset(asset)
                 }).encode('utf-8'))
                 return
-                
-            except json.JSONDecodeError:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Failed to create media asset: {str(e)}'}).encode('utf-8'))
                 return
         
         # ========== POST /api/invitations - Create new invitation code ==========
@@ -41332,19 +41370,30 @@ For claims or questions, please contact:
                 asset_id = parts[3]
                 
                 if asset_id in MEDIA_ASSETS:
-                    # Remove the asset
                     deleted = MEDIA_ASSETS.pop(asset_id)
+
+                    file_path = str(deleted.get('file_path') or '').strip()
+                    if file_path:
+                        try:
+                            os.remove(file_path)
+                        except OSError:
+                            pass
+
                     processing = deleted.get('processing') or {}
                     subtitle_job_id = str(processing.get('subtitle_job_id') or '').strip()
                     if subtitle_job_id:
                         MEDIA_PROCESSING_JOBS.pop(subtitle_job_id, None)
-                    
-                    # Clear any references in design settings
+                    orphaned_job_ids = [
+                        jid for jid, j in MEDIA_PROCESSING_JOBS.items()
+                        if j.get('asset_id') == asset_id
+                    ]
+                    for jid in orphaned_job_ids:
+                        MEDIA_PROCESSING_JOBS.pop(jid, None)
+
                     for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
                         if DESIGN_SETTINGS.get(key) == asset_id:
                             DESIGN_SETTINGS[key] = ''
-                    
-                    # Persist
+
                     save_ledger_data()
                     
                     self._set_json_headers(200)

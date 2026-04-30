@@ -949,3 +949,288 @@ def test_kling_submit_parses_root_level_task_id(monkeypatch):
         title="Nested task_id test",
     )
     assert result2["provider_job_id"] == "nested-task-002"
+
+
+# ============ NEW TESTS: media controller optimizations ============
+
+
+def test_media_create_validation_rejects_missing_name():
+    port = 8298
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_validation_name"
+    _inject_session(token, "val_admin", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={"type": "image", "url": "https://example.com/img.png"},
+        )
+        assert status == 400
+        assert "name" in resp.get("error", "").lower()
+    finally:
+        srv.stop()
+
+
+def test_media_create_validation_rejects_invalid_type():
+    port = 8299
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_validation_type"
+    _inject_session(token, "val_admin2", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={"name": "test.bin", "type": "executable", "url": "https://example.com/a.bin"},
+        )
+        assert status == 400
+        assert "type" in resp.get("error", "").lower()
+    finally:
+        srv.stop()
+
+
+def test_media_create_validation_rejects_missing_data_and_url():
+    port = 8300
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_validation_data"
+    _inject_session(token, "val_admin3", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={"name": "empty.png", "type": "image"},
+        )
+        assert status == 400
+        assert "data" in resp.get("error", "").lower() or "url" in resp.get("error", "").lower()
+    finally:
+        srv.stop()
+
+
+def test_media_create_returns_checksum_for_data_upload():
+    port = 8301
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_checksum"
+    _inject_session(token, "cksum_admin", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={
+                "name": "checksum-test.png",
+                "type": "image",
+                "format": "image/png",
+                "data": "data:image/png;base64,c3R1Yi1pbWFnZS1ieXRlcw==",
+                "source": "upload",
+            },
+        )
+        assert status == 201
+        asset = resp["asset"]
+        assert asset["checksum"], "Checksum must be a non-empty string"
+        assert len(asset["checksum"]) == 64, "SHA-256 hex digest is 64 chars"
+
+        status2, single = _json_request(
+            base + f"/api/media/{asset['id']}",
+            token=token,
+        )
+        assert status2 == 200
+        assert single["checksum"] == asset["checksum"]
+    finally:
+        srv.stop()
+
+
+def test_media_delete_cleans_up_orphaned_processing_jobs():
+    port = 8302
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_delete_cleanup"
+    _inject_session(token, "del_admin", "admin")
+
+    try:
+        status, create_resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={
+                "name": "delete-test-video.mp4",
+                "type": "video",
+                "format": "video/mp4",
+                "data": "data:video/mp4;base64,dmlkZW8tYnl0ZXM=",
+                "source": "upload",
+            },
+        )
+        assert status == 201
+        asset_id = create_resp["asset"]["id"]
+
+        orphan_job_id = f"orphan-job-{asset_id}"
+        portal.MEDIA_PROCESSING_JOBS[orphan_job_id] = {
+            "id": orphan_job_id,
+            "job_kind": "video_generation",
+            "asset_id": asset_id,
+            "status": "completed",
+        }
+        assert orphan_job_id in portal.MEDIA_PROCESSING_JOBS
+
+        status, del_resp = _json_request(
+            base + f"/api/media/{asset_id}",
+            method="DELETE",
+            token=token,
+        )
+        assert status == 200
+        assert del_resp["success"] is True
+
+        assert orphan_job_id not in portal.MEDIA_PROCESSING_JOBS
+        assert asset_id not in portal.MEDIA_ASSETS
+    finally:
+        srv.stop()
+
+
+def test_media_delete_removes_disk_file():
+    import tempfile
+    import os
+
+    port = 8303
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_delete_disk"
+    _inject_session(token, "disk_admin", "admin")
+
+    try:
+        asset_id = f"media-disktest{int(time.time())}"
+        disk_dir = tempfile.mkdtemp(prefix="phins_media_test_")
+        file_path = os.path.join(disk_dir, f"{asset_id}-test.mp4")
+        with open(file_path, "wb") as f:
+            f.write(b"fake-video-bytes")
+        assert os.path.exists(file_path)
+
+        portal.MEDIA_ASSETS[asset_id] = {
+            "id": asset_id,
+            "name": "disk-test.mp4",
+            "type": "video",
+            "format": "video/mp4",
+            "size": 16,
+            "url": f"/media-files/{asset_id}/test",
+            "data": "",
+            "file_path": file_path,
+            "stored_externally": True,
+            "source": "upload",
+            "uploaded_at": datetime.now().isoformat(),
+            "uploaded_by": "disk_admin",
+        }
+
+        status, del_resp = _json_request(
+            base + f"/api/media/{asset_id}",
+            method="DELETE",
+            token=token,
+        )
+        assert status == 200
+        assert not os.path.exists(file_path), "On-disk file should be removed on delete"
+        assert asset_id not in portal.MEDIA_ASSETS
+    finally:
+        srv.stop()
+
+
+def test_media_serialize_excludes_file_path():
+    asset = {
+        "id": "test-ser-001",
+        "name": "serialized.mp4",
+        "type": "video",
+        "file_path": "/tmp/secret/path/file.mp4",
+        "stored_externally": True,
+        "checksum": "abc123",
+    }
+    serialized = portal.serialize_media_asset(asset)
+    assert "file_path" not in serialized, "file_path must not leak in API responses"
+    assert serialized["checksum"] == "abc123"
+
+
+def test_growth_bridge_latest_campaign_includes_video_job_summary():
+    port = 8304
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_growth_bridge"
+    _inject_session(token, "bridge_admin", "admin")
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "latest_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-BRIDGE-TEST",
+                    "generated_at": datetime.now().isoformat(),
+                    "scope": {"vertical": "insurance", "objective": "growth"},
+                    "ai_video_blueprints": [
+                        {"title": "Test BP", "storyboard": ["Scene 1"]},
+                    ],
+                    "social_network_plan": [],
+                    "sales_playbooks": [],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "stub"},
+                "assets_created": [],
+            },
+        }
+
+        portal.MEDIA_PROCESSING_JOBS["vj-bridge-1"] = {
+            "id": "vj-bridge-1",
+            "job_kind": "video_generation",
+            "campaign_id": "MKT-BRIDGE-TEST",
+            "status": "completed",
+        }
+        portal.MEDIA_PROCESSING_JOBS["vj-bridge-2"] = {
+            "id": "vj-bridge-2",
+            "job_kind": "video_generation",
+            "campaign_id": "MKT-BRIDGE-TEST",
+            "status": "queued",
+        }
+
+        status, resp = _json_request(
+            base + "/api/admin/marketing-sales-agent/latest",
+            token=token,
+        )
+        assert status == 200
+        assert resp["success"] is True
+        summary = resp.get("video_job_summary")
+        assert summary is not None, "Response must include video_job_summary"
+        assert summary["total"] >= 2
+        assert summary["completed"] >= 1
+        assert summary["active"] >= 1
+    finally:
+        for jid in ["vj-bridge-1", "vj-bridge-2"]:
+            portal.MEDIA_PROCESSING_JOBS.pop(jid, None)
+        srv.stop()
+
+
+def test_compute_media_checksum_produces_hex_digest():
+    checksum = portal.compute_media_checksum(b"hello world")
+    assert isinstance(checksum, str)
+    assert len(checksum) == 64

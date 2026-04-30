@@ -887,6 +887,11 @@
             to { transform: translateX(0); opacity: 1; }
         }
         
+        .growth-bridge-kpis + .growth-bridge-kpis {
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding-top: 8px;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .admin-header { flex-direction: column; gap: 12px; }
@@ -954,8 +959,8 @@
             <div class="upload-header">
                 <h2>📤 Upload Media</h2>
                 <div class="upload-tabs">
-                    <button class="upload-tab active" onclick="switchUploadTab('file')">📁 Upload File</button>
-                    <button class="upload-tab" onclick="switchUploadTab('url')">🔗 From URL</button>
+                    <button class="upload-tab active" onclick="switchUploadTab('file', event)">📁 Upload File</button>
+                    <button class="upload-tab" onclick="switchUploadTab('url', event)">🔗 From URL</button>
                 </div>
             </div>
             
@@ -1001,10 +1006,10 @@
             <div class="library-header">
                 <h2>📚 Media Library</h2>
                 <div class="library-filters">
-                    <button class="filter-btn active" onclick="filterMedia('all')">All</button>
-                    <button class="filter-btn" onclick="filterMedia('video')">🎬 Videos</button>
-                    <button class="filter-btn" onclick="filterMedia('image')">🖼️ Images</button>
-                    <button class="filter-btn" onclick="filterMedia('document')">📄 Documents</button>
+                    <button class="filter-btn active" onclick="filterMedia('all', event)">All</button>
+                    <button class="filter-btn" onclick="filterMedia('video', event)">🎬 Videos</button>
+                    <button class="filter-btn" onclick="filterMedia('image', event)">🖼️ Images</button>
+                    <button class="filter-btn" onclick="filterMedia('document', event)">📄 Documents</button>
                 </div>
             </div>
             
@@ -1086,6 +1091,8 @@
                         <span class="growth-chip"><strong id="growth-assets-count">0</strong> synced briefs</span>
                         <span class="growth-chip"><strong id="growth-blueprint-count">0</strong> video blueprints</span>
                         <span class="growth-chip"><strong id="growth-integrity">-</strong></span>
+                    </div>
+                    <div id="growth-video-jobs-summary" class="growth-bridge-kpis" style="display:none;margin-top:8px;">
                     </div>
                 </div>
                 <div class="growth-bridge-side">
@@ -1538,7 +1545,7 @@
                 } else if (response.status === 401) {
                     showToast('Session expired. Please login again.', 'error');
                     setTimeout(() => {
-                        localStorage.removeItem('token');
+                        localStorage.removeItem('phins_token');
                         window.location.href = '/login.html';
                     }, 2000);
                 }
@@ -1569,6 +1576,18 @@
         
         async function saveAllAssignments() {
             const token = getToken();
+
+            const staleRefs = [];
+            for (const [key, id] of Object.entries(assignments)) {
+                if (id && !mediaAssets.find(m => m.id === id)) {
+                    staleRefs.push(key);
+                    assignments[key] = '';
+                }
+            }
+            if (staleRefs.length > 0) {
+                showToast(`Cleared ${staleRefs.length} stale assignment(s): ${staleRefs.join(', ')}`, 'info');
+            }
+
             try {
                 const response = await fetch('/api/design/settings', {
                     method: 'POST',
@@ -1587,8 +1606,9 @@
                 });
                 
                 if (response.ok) {
-                    showToast('✅ Assignments saved!', 'success');
+                    showToast('Assignments saved!', 'success');
                     updateAssignmentUI();
+                    populateAssignmentSelects();
                 } else {
                     showToast('Failed to save assignments', 'error');
                 }
@@ -1597,7 +1617,7 @@
             }
         }
 
-        function escapeGrowthHtml(value) {
+        function escHtml(value) {
             return String(value || '')
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
@@ -1605,13 +1625,14 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
+        const escapeGrowthHtml = escHtml;
 
         function setGrowthStatus(message) {
             const el = document.getElementById('growth-status');
             if (el) el.textContent = message;
         }
 
-        function renderGrowthBridgeCampaign(campaignEnvelope) {
+        function renderGrowthBridgeCampaign(campaignEnvelope, videoJobSummary) {
             if (!campaignEnvelope || !campaignEnvelope.campaign) {
                 setGrowthStatus('No campaign payload available.');
                 return;
@@ -1630,6 +1651,7 @@
             const summaryEl = document.getElementById('growth-bridge-summary');
             const titleEl = document.getElementById('growth-bridge-title');
             const builderLinkEl = document.getElementById('growth-bridge-link');
+            const videoJobsEl = document.getElementById('growth-video-jobs-summary');
             const blueprintCount = Array.isArray(campaign.ai_video_blueprints) ? campaign.ai_video_blueprints.length : 0;
             const socialCount = Array.isArray(campaign.social_network_plan) ? campaign.social_network_plan.length : 0;
             const playbookCount = Array.isArray(campaign.sales_playbooks) ? campaign.sales_playbooks.length : 0;
@@ -1664,7 +1686,31 @@
                 builderLinkEl.href = `/admin.html#growth-agent-section`;
             }
 
-            setGrowthStatus(`Loaded campaign ${campaign.campaign_id || ''} with ${blueprintCount} video blueprints and ${assets.length || 0} synced briefs.`);
+            if (videoJobsEl && videoJobSummary) {
+                const vjTotal = videoJobSummary.total || 0;
+                const vjCompleted = videoJobSummary.completed || 0;
+                const vjActive = videoJobSummary.active || 0;
+                const vjFailed = videoJobSummary.failed || 0;
+                if (vjTotal > 0) {
+                    videoJobsEl.innerHTML = `
+                        <span class="growth-chip"><strong>${vjCompleted}</strong> completed</span>
+                        <span class="growth-chip"><strong>${vjActive}</strong> active</span>
+                        ${vjFailed > 0 ? `<span class="growth-chip" style="border-color:rgba(239,83,80,0.5);"><strong>${vjFailed}</strong> failed</span>` : ''}
+                        <span class="growth-chip"><strong>${vjTotal}</strong> total jobs</span>
+                    `;
+                } else {
+                    videoJobsEl.innerHTML = '<span class="growth-chip">No video jobs yet</span>';
+                }
+                videoJobsEl.style.display = 'flex';
+            }
+
+            const statusParts = [`Loaded campaign ${campaign.campaign_id || ''}`];
+            statusParts.push(`${blueprintCount} video blueprints`);
+            statusParts.push(`${assets.length || 0} synced briefs`);
+            if (videoJobSummary && videoJobSummary.total > 0) {
+                statusParts.push(`${videoJobSummary.completed}/${videoJobSummary.total} video jobs completed`);
+            }
+            setGrowthStatus(statusParts.join(' | '));
         }
 
         async function loadGrowthBridgeCampaign() {
@@ -1688,7 +1734,7 @@
 
                 const data = await response.json();
                 if (data?.latest_campaign?.campaign) {
-                    renderGrowthBridgeCampaign(data.latest_campaign);
+                    renderGrowthBridgeCampaign(data.latest_campaign, data.video_job_summary || null);
                 } else {
                     setGrowthStatus('No campaign payload returned by server.');
                 }
@@ -1821,45 +1867,58 @@
             }
         }
         
+        let uploadQueue = [];
+        let isUploading = false;
+
+        async function processUploadQueue() {
+            if (isUploading || uploadQueue.length === 0) return;
+            isUploading = true;
+            while (uploadQueue.length > 0) {
+                const file = uploadQueue.shift();
+                await doUploadFile(file);
+            }
+            isUploading = false;
+        }
+
         async function uploadFile(file) {
+            uploadQueue.push(file);
+            processUploadQueue();
+        }
+
+        async function doUploadFile(file) {
             const progressSection = document.getElementById('upload-progress');
             const progressBar = document.getElementById('progress-bar');
             const progressText = document.getElementById('progress-text');
             const progressFilename = document.getElementById('progress-filename');
             const progressFilesize = document.getElementById('progress-filesize');
             const progressIcon = document.getElementById('progress-icon');
-            
-            // Show progress
+
             progressSection.classList.add('active');
             progressFilename.textContent = file.name;
             progressFilesize.textContent = formatFileSize(file.size);
             progressIcon.textContent = getFileTypeIcon(file.type);
             progressBar.style.width = '0%';
             progressText.textContent = 'Preparing upload...';
-            
+
             try {
-                // For now, use base64 encoding for smaller files
-                // For large files (>5MB), we'll simulate cloud upload
                 if (file.size > 5 * 1024 * 1024) {
-                    // Simulate chunked upload for large files
                     await simulateChunkedUpload(file, (progress) => {
                         progressBar.style.width = progress + '%';
                         progressText.textContent = `Uploading... ${progress}%`;
                     });
                 }
-                
-                // Convert to base64 for storage (for demo - in production use cloud storage)
+
+                progressText.textContent = 'Reading file...';
+                progressBar.style.width = '80%';
                 const base64 = await fileToBase64(file);
-                
-                // Determine media type
+
                 let mediaType = 'document';
                 if (file.type.startsWith('video/')) mediaType = 'video';
                 else if (file.type.startsWith('image/')) mediaType = 'image';
-                
-                // Upload to server
+
                 progressText.textContent = 'Saving to library...';
                 progressBar.style.width = '90%';
-                
+
                 const token = getToken();
                 const response = await fetch('/api/media', {
                     method: 'POST',
@@ -1876,21 +1935,29 @@
                         source: 'upload'
                     })
                 });
-                
+
                 if (response.ok) {
+                    const result = await response.json();
                     progressBar.style.width = '100%';
-                    progressText.textContent = '✅ Upload complete!';
-                    showToast(`✅ ${file.name} uploaded successfully!`, 'success');
-                    
+                    const storedAsset = result.asset || {};
+                    const checksumNote = storedAsset.checksum ? ` [SHA-256: ${storedAsset.checksum.slice(0, 12)}...]` : '';
+                    progressText.textContent = 'Upload complete!' + checksumNote;
+                    showToast(`${file.name} uploaded successfully!` + checksumNote, 'success');
+
                     setTimeout(() => {
                         progressSection.classList.remove('active');
                         loadMediaAssets();
                     }, 1500);
                 } else {
-                    throw new Error('Upload failed');
+                    let errorMsg = 'Upload failed';
+                    try {
+                        const errData = await response.json();
+                        errorMsg = errData.error || errorMsg;
+                    } catch (_) {}
+                    throw new Error(errorMsg);
                 }
             } catch (e) {
-                progressText.textContent = '❌ Upload failed: ' + e.message;
+                progressText.textContent = 'Upload failed: ' + e.message;
                 showToast('Upload failed: ' + e.message, 'error');
                 setTimeout(() => progressSection.classList.remove('active'), 3000);
             }
@@ -1904,12 +1971,18 @@
                 showToast('Please enter a URL', 'error');
                 return;
             }
+
+            try {
+                new URL(url);
+            } catch (_) {
+                showToast('Please enter a valid URL', 'error');
+                return;
+            }
             
             const token = getToken();
             try {
-                // Determine type from URL
                 let mediaType = 'video';
-                let name = url.split('/').pop() || 'media';
+                let name = decodeURIComponent(url.split('/').pop().split('?')[0] || 'media');
                 
                 if (url.includes('youtube.com') || url.includes('youtu.be')) {
                     mediaType = 'video';
@@ -1917,10 +1990,12 @@
                 } else if (url.includes('vimeo.com')) {
                     mediaType = 'video';
                     name = 'Vimeo Video';
-                } else if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url)) {
+                } else if (/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)) {
                     mediaType = 'image';
-                } else if (/\.(pdf|doc|docx)$/i.test(url)) {
+                } else if (/\.(pdf|doc|docx|txt)$/i.test(url)) {
                     mediaType = 'document';
+                } else if (/\.(mp4|mov|avi|webm|mkv)$/i.test(url)) {
+                    mediaType = 'video';
                 }
                 
                 const response = await fetch('/api/media', {
@@ -1938,11 +2013,16 @@
                 });
                 
                 if (response.ok) {
-                    showToast('✅ Media added from URL!', 'success');
+                    showToast('Media added from URL!', 'success');
                     urlInput.value = '';
                     loadMediaAssets();
                 } else {
-                    throw new Error('Failed to add media');
+                    let errorMsg = 'Failed to add media';
+                    try {
+                        const errData = await response.json();
+                        errorMsg = errData.error || errorMsg;
+                    } catch (_) {}
+                    throw new Error(errorMsg);
                 }
             } catch (e) {
                 showToast('Error: ' + e.message, 'error');
@@ -2174,15 +2254,22 @@
             }
             
             emptyState.style.display = 'none';
-            grid.innerHTML = filtered.map(media => `
-                <div class="media-card" data-id="${media.id}">
+            grid.innerHTML = filtered.map(media => {
+                const safeId = escHtml(media.id);
+                const safeName = escHtml(media.name);
+                const safeType = escHtml(media.type);
+                const sourceTag = media.source === 'ai_campaign' ? '<span class="media-type-badge document" style="right:6px;left:auto;">AI</span>' : '';
+                const checksumAttr = media.checksum ? ` data-checksum="${escHtml(media.checksum)}"` : '';
+                return `
+                <div class="media-card" data-id="${safeId}"${checksumAttr}>
                     <div class="media-thumbnail">
                         ${renderThumbnail(media)}
-                        <span class="media-type-badge ${media.type}">${media.type}</span>
+                        <span class="media-type-badge ${safeType}">${safeType}</span>
+                        ${sourceTag}
                         ${media.duration ? `<span class="media-duration">${formatDuration(media.duration)}</span>` : ''}
                     </div>
                     <div class="media-info">
-                        <div class="media-name" title="${media.name}">${media.name}</div>
+                        <div class="media-name" title="${safeName}">${safeName}</div>
                         <div class="media-meta">
                             <span>${formatFileSize(media.size || 0)}</span>
                             <span>${formatDate(media.uploaded_at)}</span>
@@ -2190,22 +2277,22 @@
                         ${renderSubtitleSummary(media)}
                     </div>
                     <div class="media-actions">
-                        <button class="media-action-btn use" onclick="useMedia('${media.id}')">Use</button>
-                        <button class="media-action-btn preview" onclick="previewMedia('${media.id}')">👁️</button>
-                        <button class="media-action-btn delete" onclick="deleteMedia('${media.id}')">🗑️</button>
+                        <button class="media-action-btn use" onclick="useMedia('${safeId}')">Use</button>
+                        <button class="media-action-btn preview" onclick="previewMedia('${safeId}')">👁️</button>
+                        <button class="media-action-btn delete" onclick="deleteMedia('${safeId}')">🗑️</button>
                     </div>
                     ${media.type === 'video' ? `
                         <div class="media-actions-secondary">
                             <button
                                 class="media-action-btn subtitle"
-                                onclick="requestSubtitleJob('${media.id}')"
+                                onclick="requestSubtitleJob('${safeId}')"
                                 ${media.processing?.subtitle_status === 'queued' ? 'disabled' : ''}
                             >
                                 💬 SRT
                             </button>
                             <button
                                 class="media-action-btn download"
-                                onclick="downloadLatestSubtitle('${media.id}')"
+                                onclick="downloadLatestSubtitle('${safeId}')"
                                 ${getLatestSubtitleTrack(media)?.download_url ? '' : 'disabled'}
                             >
                                 ⬇️ Download
@@ -2213,18 +2300,20 @@
                         </div>
                     ` : ''}
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
         
         function renderThumbnail(media) {
+            const alt = escHtml(media.name);
             if (media.thumbnail) {
-                return `<img src="${media.thumbnail}" alt="${media.name}">`;
+                return `<img src="${escHtml(media.thumbnail)}" alt="${alt}" loading="lazy">`;
             }
             if (media.type === 'image' && media.url) {
-                return `<img src="${media.url}" alt="${media.name}">`;
+                return `<img src="${escHtml(media.url)}" alt="${alt}" loading="lazy">`;
             }
             if (media.type === 'image' && media.data) {
-                return `<img src="${media.data}" alt="${media.name}">`;
+                return `<img src="${escHtml(media.data)}" alt="${alt}" loading="lazy">`;
             }
             const icons = { video: '🎬', image: '🖼️', document: '📄' };
             return `<div class="media-thumbnail-icon">${icons[media.type] || '📁'}</div>`;
@@ -2248,21 +2337,18 @@
             const posterSelect = document.getElementById('assign-video-poster');
             const bannerSelect = document.getElementById('assign-promo-banner');
             
-            // Videos
             const videos = mediaAssets.filter(m => m.type === 'video');
             videoSelect.innerHTML = '<option value="">-- No Video --</option>' +
-                videos.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+                videos.map(v => `<option value="${escHtml(v.id)}">${escHtml(v.name)}</option>`).join('');
             
-            // Images
             const images = mediaAssets.filter(m => m.type === 'image');
-            const imageOptions = '<option value="">-- None --</option>' +
-                images.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
-            bgSelect.innerHTML = imageOptions.replace('-- None --', '-- No Image --');
+            bgSelect.innerHTML = '<option value="">-- No Image --</option>' +
+                images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
             posterSelect.innerHTML = '<option value="">-- Auto Generate --</option>' +
-                images.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
-            bannerSelect.innerHTML = imageOptions.replace('-- None --', '-- No Banner --');
+                images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
+            bannerSelect.innerHTML = '<option value="">-- No Banner --</option>' +
+                images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
             
-            // Set current values
             videoSelect.value = assignments.hero_video;
             bgSelect.value = assignments.hero_background;
             posterSelect.value = assignments.video_poster;
@@ -2323,44 +2409,49 @@
             
             title.textContent = media.name;
             
-            // Render preview
             if (media.type === 'video') {
-                const url = media.url || media.data;
+                const url = media.url || media.data || '';
                 if (url.includes('youtube.com') || url.includes('youtu.be')) {
                     let embedUrl = url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/');
-                    container.innerHTML = `<iframe src="${embedUrl}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
+                    container.innerHTML = `<iframe src="${escHtml(embedUrl)}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
                 } else if (url.includes('vimeo.com')) {
                     const vimeoId = url.split('/').pop();
-                    container.innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
+                    container.innerHTML = `<iframe src="https://player.vimeo.com/video/${escHtml(vimeoId)}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
                 } else {
-                    container.innerHTML = `<video controls autoplay style="width:100%;height:100%;"><source src="${url}">Your browser does not support video.</video>`;
+                    container.innerHTML = `<video controls autoplay style="width:100%;height:100%;"><source src="${escHtml(url)}">Your browser does not support video.</video>`;
                 }
             } else if (media.type === 'image') {
-                container.innerHTML = `<img src="${media.url || media.data}" alt="${media.name}">`;
+                container.innerHTML = `<img src="${escHtml(media.url || media.data || '')}" alt="${escHtml(media.name)}">`;
             } else {
-                container.innerHTML = `<div style="text-align:center;padding:40px;"><div style="font-size:4rem;">📄</div><p>${media.name}</p><a href="${media.url || media.data}" target="_blank" class="btn btn-primary" style="margin-top:20px;">Open Document</a></div>`;
+                container.innerHTML = `<div style="text-align:center;padding:40px;"><div style="font-size:4rem;">📄</div><p>${escHtml(media.name)}</p><a href="${escHtml(media.url || media.data || '')}" target="_blank" class="btn btn-primary" style="margin-top:20px;">Open Document</a></div>`;
             }
             
-            // Render details
+            const safeId = escHtml(media.id);
             const latestTrack = getLatestSubtitleTrack(media);
             const subtitleDetail = media.type === 'video' ? `
                 <div class="preview-detail">
                     <div class="preview-detail-label">Subtitles</div>
                     <div class="preview-detail-value">
                         ${latestTrack
-                            ? `<button type="button" class="link-button" onclick="downloadLatestSubtitle('${media.id}')" style="color:#a8f0c4;text-decoration:none;">${escapeGrowthHtml(latestTrack.label || 'Download SRT')}</button>`
-                            : escapeGrowthHtml((media.processing && media.processing.subtitle_status) || 'Not generated')}
+                            ? `<button type="button" class="link-button" onclick="downloadLatestSubtitle('${safeId}')" style="color:#a8f0c4;text-decoration:none;">${escHtml(latestTrack.label || 'Download SRT')}</button>`
+                            : escHtml((media.processing && media.processing.subtitle_status) || 'Not generated')}
                     </div>
+                </div>
+            ` : '';
+            const checksumDetail = media.checksum ? `
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Checksum (SHA-256)</div>
+                    <div class="preview-detail-value" style="font-size:0.7rem;word-break:break-all;">${escHtml(media.checksum)}</div>
                 </div>
             ` : '';
             details.innerHTML = `
                 <div class="preview-detail">
                     <div class="preview-detail-label">Type</div>
-                    <div class="preview-detail-value">${media.type}</div>
+                    <div class="preview-detail-value">${escHtml(media.type)}</div>
                 </div>
                 <div class="preview-detail">
                     <div class="preview-detail-label">Format</div>
-                    <div class="preview-detail-value">${media.format || 'Unknown'}</div>
+                    <div class="preview-detail-value">${escHtml(media.format || 'Unknown')}</div>
                 </div>
                 <div class="preview-detail">
                     <div class="preview-detail-label">Size</div>
@@ -2372,13 +2463,14 @@
                 </div>
                 <div class="preview-detail">
                     <div class="preview-detail-label">Source</div>
-                    <div class="preview-detail-value">${media.source || 'Unknown'}</div>
+                    <div class="preview-detail-value">${escHtml(media.source || 'Unknown')}</div>
                 </div>
                 <div class="preview-detail">
                     <div class="preview-detail-label">ID</div>
-                    <div class="preview-detail-value" style="font-size:0.8rem;">${media.id}</div>
+                    <div class="preview-detail-value" style="font-size:0.8rem;">${safeId}</div>
                 </div>
                 ${subtitleDetail}
+                ${checksumDetail}
             `;
             
             modal.classList.add('active');
@@ -2391,17 +2483,19 @@
             container.innerHTML = '';
         }
         
-        function filterMedia(type) {
+        function filterMedia(type, evt) {
             currentFilter = type;
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            const target = (evt && evt.target) || document.querySelector(`.filter-btn[onclick*="'${type}'"]`);
+            if (target) target.classList.add('active');
             renderMediaGrid();
         }
         
-        function switchUploadTab(tab) {
+        function switchUploadTab(tab, evt) {
             document.querySelectorAll('.upload-tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            
+            const target = (evt && evt.target) || document.querySelector(`.upload-tab[onclick*="'${tab}'"]`);
+            if (target) target.classList.add('active');
+
             document.getElementById('file-upload-zone').style.display = tab === 'file' ? 'block' : 'none';
             document.getElementById('url-upload-zone').classList.toggle('active', tab === 'url');
         }
@@ -2512,6 +2606,30 @@
             }, 4000);
         }
         
+        let autoRefreshInterval = null;
+        function startAutoRefresh() {
+            if (autoRefreshInterval) return;
+            autoRefreshInterval = setInterval(() => {
+                if (document.visibilityState !== 'visible') return;
+                if (currentMainTab !== 'media') return;
+                loadMediaAssets();
+                loadGrowthBridgeCampaign();
+            }, 30000);
+        }
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                loadMediaAssets();
+                loadGrowthBridgeCampaign();
+            }
+        });
+        startAutoRefresh();
+
         // Close modal on escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closePreviewModal();
