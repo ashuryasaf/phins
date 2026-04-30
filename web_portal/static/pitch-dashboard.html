@@ -5157,19 +5157,19 @@
         }).join("");
 
         var marketFoot = document.getElementById("bp-market-foot");
-        marketFoot.innerHTML = '<tr style="font-weight:800;background:linear-gradient(135deg,#e8eef7,#f0f4fa);border-top:2px solid var(--blue-dark);">' +
-          '<td style="padding:10px 10px;font-size:8pt;color:var(--blue-dark);">TOTAL (' + activeMarkets + ' markets)</td>' +
-          '<td style="padding:10px 8px;"></td>' +
-          '<td style="padding:10px 8px;"></td>' +
-          '<td style="padding:10px 8px;text-align:right;">' + formatInteger(Math.round(totalWrittenLives)) + '</td>' +
-          '<td style="padding:10px 8px;"></td>' +
-          '<td style="padding:10px 8px;text-align:right;">' + fmtUsd(totalGwpUsd) + '</td>' +
-          '<td style="padding:10px 8px;text-align:right;">' + fmtUsd(totalNetUsd) + '</td>' +
-          '<td style="padding:10px 8px;color:var(--green-1);text-align:right;">' + fmtUsd(totalRoyalty) + '</td>' +
-          '<td style="padding:10px 8px;color:var(--green-1);text-align:right;">' + fmtUsd(totalRevShare) + '</td>' +
-          '<td style="padding:10px 8px;text-align:right;">' + fmtUsd(totalSaas) + '</td>' +
-          '<td style="padding:10px 8px;color:var(--blue-dark);text-align:right;font-size:8.5pt;">' + fmtUsd(totalPhinsRev) + '</td>' +
-          '<td style="padding:10px 8px;color:#6a1b9a;text-align:right;">' + fmtUsd(totalJvEquityVal) + '</td>' +
+        marketFoot.innerHTML = '<tr style="font-weight:800;background:linear-gradient(135deg,#e8eef7,#f0f4fa);">' +
+          '<td style="padding:10px 10px;font-size:8pt;color:var(--blue-dark);border-top:2px solid var(--blue-dark);">TOTAL (' + activeMarkets + ' markets)</td>' +
+          '<td style="padding:10px 8px;border-top:2px solid var(--blue-dark);"></td>' +
+          '<td style="padding:10px 8px;border-top:2px solid var(--blue-dark);"></td>' +
+          '<td style="padding:10px 8px;text-align:right;border-top:2px solid var(--blue-dark);">' + formatInteger(Math.round(totalWrittenLives)) + '</td>' +
+          '<td style="padding:10px 8px;border-top:2px solid var(--blue-dark);"></td>' +
+          '<td style="padding:10px 8px;text-align:right;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalGwpUsd) + '</td>' +
+          '<td style="padding:10px 8px;text-align:right;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalNetUsd) + '</td>' +
+          '<td style="padding:10px 8px;color:var(--green-1);text-align:right;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalRoyalty) + '</td>' +
+          '<td style="padding:10px 8px;color:var(--green-1);text-align:right;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalRevShare) + '</td>' +
+          '<td style="padding:10px 8px;text-align:right;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalSaas) + '</td>' +
+          '<td style="padding:10px 8px;color:var(--blue-dark);text-align:right;font-size:8.5pt;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalPhinsRev) + '</td>' +
+          '<td style="padding:10px 8px;color:#6a1b9a;text-align:right;border-top:2px solid var(--blue-dark);">' + fmtUsd(totalJvEquityVal) + '</td>' +
           '</tr>';
 
         var growthRamps = [0.15, 0.40, 0.70, 0.90, 1.00];
@@ -5479,9 +5479,9 @@
               "Marginal cost of new market near zero — technology is exported, not rebuilt per jurisdiction"
             ];
             thesisPoints.forEach(function(tp) {
-              ensureSpace(18);
               doc.setFontSize(8.5);
               var tpLines = doc.splitTextToSize("  \u2022  " + tp, tw - 10);
+              ensureSpace(tpLines.length * 12 + 4);
               doc.text(tpLines, mg, y); y += tpLines.length * 12 + 4;
             });
 
