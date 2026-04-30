@@ -290,6 +290,29 @@ def upgrade_schema(engine=None):
             except Exception as e:
                 logger.warning(f"Could not add column {column_name} to {table_name}: {e}")
 
+        # Widen columns that were originally defined too narrow.
+        # The sessions.token column was VARCHAR(100) but JWT tokens are ~220 chars.
+        # Note: SQLite does not support ALTER COLUMN TYPE, but it also does not
+        # enforce VARCHAR lengths, so this migration only matters on PostgreSQL.
+        column_widening = [
+            ('sessions', 'token', 'VARCHAR(512)'),
+        ]
+        is_sqlite = str(engine.url).startswith('sqlite')
+        if not is_sqlite:
+            for table_name, column_name, new_type in column_widening:
+                if table_name not in inspector.get_table_names():
+                    continue
+                try:
+                    sql = f"ALTER TABLE {table_name} ALTER COLUMN {column_name} TYPE {new_type}"
+                    conn.execute(text(sql))
+                    conn.commit()
+                    logger.info(f"Widened {table_name}.{column_name} to {new_type}")
+                except Exception as e:
+                    if 'already' in str(e).lower() or 'nothing to alter' in str(e).lower():
+                        pass
+                    else:
+                        logger.debug(f"Column widen {table_name}.{column_name}: {e}")
+
 
 def close_database():
     """Close database connections and clean up resources"""

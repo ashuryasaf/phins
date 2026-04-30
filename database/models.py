@@ -507,7 +507,7 @@ class Session(Base):
     """User sessions table"""
     __tablename__ = 'sessions'
     
-    token = Column(String(100), primary_key=True)
+    token = Column(String(512), primary_key=True)
     username = Column(String(100), index=True)
     customer_id = Column(String(50), index=True)
     role = Column(String(50), index=True)  # admin, underwriter, claims, accountant, customer
