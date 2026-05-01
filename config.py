@@ -63,12 +63,14 @@ class PHINSConfig:
     API_MAX_BATCH_SIZE = 100
     
     # ========== File Management ==========
-    MAX_FILE_SIZE_MB = 100
-    MAX_TOTAL_STORAGE_GB = 10000
+    MAX_FILE_SIZE_MB = 0
+    MAX_TOTAL_STORAGE_GB = 0
     ALLOWED_FILE_TYPES = [
         "pdf", "doc", "docx", "xls", "xlsx",
-        "jpg", "jpeg", "png", "gif", "tiff",
-        "txt", "csv", "zip"
+        "jpg", "jpeg", "png", "gif", "tiff", "webp", "svg",
+        "txt", "csv", "zip",
+        "mp4", "mov", "avi", "webm", "mkv", "flv", "wmv", "m4v",
+        "mp3", "wav", "aac", "ogg", "flac",
     ]
     
     # ========== Reporting ==========

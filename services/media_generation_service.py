@@ -126,8 +126,14 @@ class MediaGenerationService:
         *,
         provider: str,
         download_url: str,
+        stream_to_path: str = '',
     ) -> Dict[str, Any]:
-        """Download a completed video and return a data URL + metadata."""
+        """Download a completed video and return a data URL + metadata.
+
+        When *stream_to_path* is provided, bytes are streamed to that file
+        instead of being held entirely in memory.  The returned dict then
+        contains ``file_path`` instead of ``data_url``.
+        """
         provider_name = str(provider or "").strip().lower()
         parsed = urllib.parse.urlparse(download_url or "")
         if not parsed.scheme or not parsed.netloc:
@@ -141,9 +147,26 @@ class MediaGenerationService:
             raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
         request = urllib.request.Request(download_url, headers=headers, method="GET")
-        with validated_urlopen(request, timeout=120, allowed_schemes=("https",)) as response:
-            video_bytes = response.read()
+        with validated_urlopen(request, timeout=300, allowed_schemes=("https",)) as response:
             content_type = response.headers.get("Content-Type", "video/mp4").split(";", 1)[0].strip() or "video/mp4"
+
+            if stream_to_path:
+                total_size = 0
+                chunk_size = 256 * 1024
+                with open(stream_to_path, 'wb') as dest:
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        dest.write(chunk)
+                        total_size += len(chunk)
+                return {
+                    "file_path": stream_to_path,
+                    "content_type": content_type,
+                    "size": total_size,
+                }
+
+            video_bytes = response.read()
 
         encoded = base64.b64encode(video_bytes).decode("ascii")
         return {

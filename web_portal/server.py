@@ -1640,6 +1640,11 @@ def safe_ascii_filename_stem(value: str, fallback: str = 'subtitle_track') -> st
     )
 
 
+def compute_media_checksum(payload: bytes) -> str:
+    """Return a SHA-256 hex digest for a binary payload."""
+    return hashlib.sha256(payload).hexdigest()
+
+
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
     """Return subtitle track metadata without embedded subtitle content."""
     return {
@@ -1691,6 +1696,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
 def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
     """Strip internal processing secrets and subtitle payloads from media responses."""
     payload = dict(asset)
+    payload.pop('file_path', None)
     processing = asset.get('processing')
     if isinstance(processing, dict):
         payload['processing'] = dict(processing)
@@ -2438,39 +2444,80 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
         return None
 
     service = get_media_generation_service()
+    campaign_id = str(job.get('campaign_id') or 'MKT-UNKNOWN')
+    asset_id = f"media-{uuid.uuid4().hex[:12]}"
+    asset_name = f"{job.get('asset_name') or campaign_id}.mp4"
+
+    ensure_media_storage_dir()
+    stream_path = os.path.join(MEDIA_STORAGE_DIR, f"{asset_id}-{safe_ascii_filename_stem(asset_name, fallback=asset_id)}")
+
     try:
-        downloaded = service.download_generated_video(provider=str(job.get('provider') or ''), download_url=download_url)
+        downloaded = service.download_generated_video(
+            provider=str(job.get('provider') or ''),
+            download_url=download_url,
+            stream_to_path=stream_path,
+        )
     except MediaGenerationError as exc:
         job['status'] = 'failed'
         job['completed_at'] = datetime.now().isoformat()
         job['error'] = str(exc)
         return None
 
-    campaign_id = str(job.get('campaign_id') or 'MKT-UNKNOWN')
-    asset_id = f"media-{uuid.uuid4().hex[:12]}"
     uploaded_at = datetime.now().isoformat()
-    asset = {
-        'id': asset_id,
-        'name': f"{job.get('asset_name') or campaign_id}.mp4",
-        'type': 'video',
-        'format': str(downloaded.get('content_type') or 'video/mp4'),
-        'size': safe_int(downloaded.get('size'), 0),
-        'url': '',
-        'data': str(downloaded.get('data_url') or ''),
-        'thumbnail': str(job.get('thumbnail_url') or ''),
-        'duration': safe_int(poll_result.get('duration') or 8, 8),
-        'source': 'ai_video_generation',
-        'uploaded_at': uploaded_at,
-        'uploaded_by': str(job.get('requested_by') or 'admin'),
-        'metadata': {
-            'campaign_id': campaign_id,
-            'job_id': job.get('id'),
-            'provider': job.get('provider'),
-            'blueprint_index': job.get('blueprint_index'),
-            'generated_from': 'marketing_video_blueprint',
+    file_path = str(downloaded.get('file_path') or '').strip()
+    if file_path:
+        asset = {
+            'id': asset_id,
+            'name': asset_name,
+            'type': 'video',
+            'format': str(downloaded.get('content_type') or 'video/mp4'),
+            'size': safe_int(downloaded.get('size'), 0),
+            'url': build_internal_media_file_url(asset_id, asset_name),
+            'data': '',
+            'thumbnail': str(job.get('thumbnail_url') or ''),
+            'duration': safe_int(poll_result.get('duration') or 8, 8),
+            'source': 'ai_video_generation',
+            'uploaded_at': uploaded_at,
+            'uploaded_by': str(job.get('requested_by') or 'admin'),
+            'file_path': file_path,
+            'stored_externally': True,
+            'checksum': '',
+            'metadata': {
+                'campaign_id': campaign_id,
+                'job_id': job.get('id'),
+                'provider': job.get('provider'),
+                'blueprint_index': job.get('blueprint_index'),
+                'generated_from': 'marketing_video_blueprint',
+            }
         }
-    }
-    asset = persist_media_asset_payload(asset)
+        try:
+            with open(file_path, 'rb') as fp:
+                asset['checksum'] = compute_media_checksum(fp.read())
+        except OSError:
+            pass
+    else:
+        asset = {
+            'id': asset_id,
+            'name': asset_name,
+            'type': 'video',
+            'format': str(downloaded.get('content_type') or 'video/mp4'),
+            'size': safe_int(downloaded.get('size'), 0),
+            'url': '',
+            'data': str(downloaded.get('data_url') or ''),
+            'thumbnail': str(job.get('thumbnail_url') or ''),
+            'duration': safe_int(poll_result.get('duration') or 8, 8),
+            'source': 'ai_video_generation',
+            'uploaded_at': uploaded_at,
+            'uploaded_by': str(job.get('requested_by') or 'admin'),
+            'metadata': {
+                'campaign_id': campaign_id,
+                'job_id': job.get('id'),
+                'provider': job.get('provider'),
+                'blueprint_index': job.get('blueprint_index'),
+                'generated_from': 'marketing_video_blueprint',
+            }
+        }
+        asset = persist_media_asset_payload(asset)
     MEDIA_ASSETS[asset_id] = asset
     job['generated_asset_id'] = asset_id
     job['status'] = 'completed'
@@ -6410,7 +6457,14 @@ def is_trusted_ip(ip: str) -> bool:
     if PHINS_TEST_MODE:
         return False
     return any(ip.startswith(prefix) for prefix in TRUSTED_IP_PREFIXES)
-MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB max request size
+MAX_REQUEST_SIZE = safe_int(
+    os.environ.get('PHINS_MAX_REQUEST_SIZE'),
+    10 * 1024 * 1024,
+)
+MAX_MEDIA_UPLOAD_SIZE = safe_int(
+    os.environ.get('PHINS_MAX_MEDIA_UPLOAD_SIZE'),
+    0,
+)
 SESSION_TIMEOUT = 3600  # 1 hour session timeout
 CONNECTION_TIMEOUT = 30  # 30 seconds connection timeout
 MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
@@ -10178,29 +10232,36 @@ For claims or questions, please contact:
                     return
 
                 file_path = str(asset.get('file_path') or '').strip()
-                payload_bytes = b''
-                if file_path:
-                    try:
-                        with open(file_path, 'rb') as handle:
-                            payload_bytes = handle.read()
-                    except OSError:
-                        payload_bytes = b''
-                if not payload_bytes:
-                    data_url = str(asset.get('data') or '').strip()
-                    if not data_url:
-                        self._set_json_headers(404)
-                        self.wfile.write(json.dumps({'error': 'Media asset has no downloadable payload'}).encode('utf-8'))
-                        return
-                    try:
-                        payload_bytes, mime_type = decode_media_data_url(data_url)
-                    except Exception:
-                        self._set_json_headers(500)
-                        self.wfile.write(json.dumps({'error': 'Media asset payload is invalid'}).encode('utf-8'))
-                        return
-                else:
-                    mime_type = str(asset.get('format') or 'application/octet-stream').split(';', 1)[0].strip() or 'application/octet-stream'
-
+                mime_type = str(asset.get('format') or 'application/octet-stream').split(';', 1)[0].strip() or 'application/octet-stream'
                 filename = infer_media_asset_filename(asset, fallback_stem=asset_id)
+
+                if file_path and os.path.isfile(file_path):
+                    file_size = os.path.getsize(file_path)
+                    self.send_response(200)
+                    self.send_header('Content-Type', mime_type)
+                    self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                    self.send_header('Content-Length', str(file_size))
+                    self.end_headers()
+                    with open(file_path, 'rb') as handle:
+                        while True:
+                            chunk = handle.read(256 * 1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                    return
+
+                data_url = str(asset.get('data') or '').strip()
+                if not data_url:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Media asset has no downloadable payload'}).encode('utf-8'))
+                    return
+                try:
+                    payload_bytes, mime_type = decode_media_data_url(data_url)
+                except Exception:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Media asset payload is invalid'}).encode('utf-8'))
+                    return
+
                 self.send_response(200)
                 self.send_header('Content-Type', mime_type)
                 self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
@@ -22719,12 +22780,19 @@ For claims or questions, please contact:
                 if file_path.endswith('.html'):
                     with open(file_path, 'r', encoding='utf-8') as fh:
                         html_content = fh.read()
-                    # Inject shared UI clarity/voice quick-actions script on all HTML pages.
                     html_content = _inject_ui_clarity_script(html_content)
                     self.wfile.write(html_content.encode('utf-8'))
                 else:
+                    file_size = os.path.getsize(file_path)
                     with open(file_path, 'rb') as fh:
-                        self.wfile.write(fh.read())
+                        if file_size > 10 * 1024 * 1024:
+                            while True:
+                                chunk = fh.read(256 * 1024)
+                                if not chunk:
+                                    break
+                                self.wfile.write(chunk)
+                        else:
+                            self.wfile.write(fh.read())
             except Exception as e:
                 self.send_error(500, str(e))
         else:
@@ -22761,18 +22829,19 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
             return
         
-        # Check request size
-        # Check request size
         content_length = int(self.headers.get('Content-Length', 0))
-        if content_length > MAX_REQUEST_SIZE:
+        raw_path = urlparse.urlparse(self.path).path
+        is_media_upload = raw_path in ('/api/media', '/api/media/upload')
+        effective_max = MAX_MEDIA_UPLOAD_SIZE if (is_media_upload and MAX_MEDIA_UPLOAD_SIZE > 0) else MAX_REQUEST_SIZE
+        if content_length > effective_max:
             log_malicious_attempt(client_ip, 'Oversized Request', {
                 'size': content_length,
-                'max_allowed': MAX_REQUEST_SIZE
+                'max_allowed': effective_max
             })
             self.send_response(413)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({'error': 'Request too large'}).encode('utf-8'))
+            self.wfile.write(json.dumps({'error': 'Request too large', 'max_bytes': effective_max}).encode('utf-8'))
             return
         
         parsed = urlparse.urlparse(self.path)
@@ -23672,7 +23741,98 @@ For claims or questions, please contact:
             return
 
         # ========== MEDIA ASSETS API - POST/DELETE ==========
-        # POST /api/media - Create new media asset
+        # POST /api/media/upload - Binary multipart upload for heavy files
+        if path == '/api/media/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
+                return
+
+            upload_content_type_raw = self.headers.get('Content-Type') or ''
+            if not upload_content_type_raw.lower().startswith('multipart/form-data'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Expected multipart/form-data'}).encode('utf-8'))
+                return
+
+            boundary = upload_content_type_raw.split('boundary=')[1] if 'boundary=' in upload_content_type_raw else None
+            if not boundary:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'No boundary in multipart data'}).encode('utf-8'))
+                return
+
+            try:
+                upload_length = int(self.headers.get('Content-Length', 0))
+                upload_body = self.rfile.read(upload_length) if upload_length else b''
+                fields, files = self._parse_multipart_form(upload_body, boundary.encode())
+                uploaded_file = files.get('file')
+                if not uploaded_file:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No file field in upload'}).encode('utf-8'))
+                    return
+
+                file_data = uploaded_file.get('data', b'')
+                file_name = str(fields.get('name') or uploaded_file.get('filename') or 'Unnamed').strip() or 'Unnamed'
+                file_content_type = str(uploaded_file.get('content_type') or '').strip()
+
+                asset_type = str(fields.get('type', '')).strip().lower()
+                if not asset_type:
+                    if file_content_type.startswith('video/'):
+                        asset_type = 'video'
+                    elif file_content_type.startswith('image/'):
+                        asset_type = 'image'
+                    else:
+                        asset_type = 'document'
+                if asset_type not in ('video', 'image', 'document'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Asset type must be video, image, or document'}).encode('utf-8'))
+                    return
+
+                asset_id = f"media-{uuid.uuid4().hex[:12]}"
+                checksum = compute_media_checksum(file_data)
+
+                ensure_media_storage_dir()
+                stem = safe_ascii_filename_stem(file_name or asset_id, fallback=asset_id)
+                file_path = os.path.join(MEDIA_STORAGE_DIR, f"{asset_id}-{stem}")
+                with open(file_path, 'wb') as handle:
+                    handle.write(file_data)
+
+                asset = {
+                    'id': asset_id,
+                    'name': file_name,
+                    'type': asset_type,
+                    'format': file_content_type or 'application/octet-stream',
+                    'size': len(file_data),
+                    'url': build_internal_media_file_url(asset_id, file_name),
+                    'data': '',
+                    'thumbnail': '',
+                    'duration': None,
+                    'source': str(fields.get('source', 'upload')).strip() or 'upload',
+                    'uploaded_at': datetime.now().isoformat(),
+                    'uploaded_by': session.get('username', 'admin'),
+                    'checksum': checksum,
+                    'file_path': file_path,
+                    'stored_externally': True,
+                }
+                MEDIA_ASSETS[asset_id] = asset
+                save_ledger_data()
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Media asset uploaded',
+                    'asset': serialize_media_asset(asset)
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Upload failed: {str(e)}'}).encode('utf-8'))
+                return
+
+        # POST /api/media - Create new media asset (JSON with base64 data or URL)
         # Roles: admin, media (media_ad user has 'media' role - restricted to media dashboard only)
         if path == '/api/media':
             # Get auth token
@@ -23691,32 +23851,64 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body)
-                
-                # Generate unique ID (uuid is imported at module level)
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            asset_name = str(data.get('name') or '').strip()
+            asset_type = str(data.get('type') or '').strip().lower()
+            if not asset_name:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Asset name is required'}).encode('utf-8'))
+                return
+            if asset_type not in ('video', 'image', 'document'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Asset type must be video, image, or document'}).encode('utf-8'))
+                return
+
+            raw_data = str(data.get('data') or '').strip()
+            raw_url = str(data.get('url') or '').strip()
+            if not raw_data and not raw_url:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Either data (base64) or url must be provided'}).encode('utf-8'))
+                return
+
+            try:
                 asset_id = f"media-{uuid.uuid4().hex[:12]}"
-                
-                # Create asset record
+
+                declared_size = safe_int(data.get('size'), 0)
+                checksum = ''
+                if raw_data:
+                    try:
+                        payload_bytes_for_hash, _mime = decode_media_data_url(raw_data)
+                        checksum = compute_media_checksum(payload_bytes_for_hash)
+                        if declared_size == 0:
+                            declared_size = len(payload_bytes_for_hash)
+                    except Exception:
+                        checksum = compute_media_checksum(raw_data.encode('utf-8'))
+
                 asset = {
                     'id': asset_id,
-                    'name': data.get('name', 'Unnamed'),
-                    'type': data.get('type', 'document'),  # video, image, document
-                    'format': data.get('format', ''),
-                    'size': data.get('size', 0),
-                    'url': data.get('url', ''),
-                    'data': data.get('data', ''),  # base64 for uploaded files
-                    'thumbnail': data.get('thumbnail', ''),
+                    'name': asset_name,
+                    'type': asset_type,
+                    'format': str(data.get('format') or '').strip(),
+                    'size': declared_size,
+                    'url': raw_url,
+                    'data': raw_data,
+                    'thumbnail': str(data.get('thumbnail') or '').strip(),
                     'duration': data.get('duration'),
-                    'source': data.get('source', 'upload'),  # upload, url
+                    'source': str(data.get('source') or 'upload').strip(),
                     'uploaded_at': datetime.now().isoformat(),
-                    'uploaded_by': session.get('username', 'admin')
+                    'uploaded_by': session.get('username', 'admin'),
+                    'checksum': checksum,
                 }
-                
-                # Store asset
+
+                asset = persist_media_asset_payload(asset)
                 MEDIA_ASSETS[asset_id] = asset
-                
-                # Persist
+
                 save_ledger_data()
-                
+
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -23724,10 +23916,10 @@ For claims or questions, please contact:
                     'asset': serialize_media_asset(asset)
                 }).encode('utf-8'))
                 return
-                
-            except json.JSONDecodeError:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Failed to create media asset: {str(e)}'}).encode('utf-8'))
                 return
         
         # ========== POST /api/invitations - Create new invitation code ==========
@@ -41332,19 +41524,30 @@ For claims or questions, please contact:
                 asset_id = parts[3]
                 
                 if asset_id in MEDIA_ASSETS:
-                    # Remove the asset
                     deleted = MEDIA_ASSETS.pop(asset_id)
+
+                    file_path = str(deleted.get('file_path') or '').strip()
+                    if file_path:
+                        try:
+                            os.remove(file_path)
+                        except OSError:
+                            pass
+
                     processing = deleted.get('processing') or {}
                     subtitle_job_id = str(processing.get('subtitle_job_id') or '').strip()
                     if subtitle_job_id:
                         MEDIA_PROCESSING_JOBS.pop(subtitle_job_id, None)
-                    
-                    # Clear any references in design settings
+                    orphaned_job_ids = [
+                        jid for jid, j in MEDIA_PROCESSING_JOBS.items()
+                        if j.get('asset_id') == asset_id
+                    ]
+                    for jid in orphaned_job_ids:
+                        MEDIA_PROCESSING_JOBS.pop(jid, None)
+
                     for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
                         if DESIGN_SETTINGS.get(key) == asset_id:
                             DESIGN_SETTINGS[key] = ''
-                    
-                    # Persist
+
                     save_ledger_data()
                     
                     self._set_json_headers(200)
