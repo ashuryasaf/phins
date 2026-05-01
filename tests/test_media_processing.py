@@ -99,6 +99,12 @@ class _StubMediaGenerationService:
         self.polls = []
         self.downloads = []
 
+    def supported_provider_config(self):
+        return {
+            "gemini": {"enabled": True, "label": "Gemini / Veo (stub)", "model": "veo-3-fast-preview", "models": ["veo-3-fast-preview"]},
+            "kling": {"enabled": True, "label": "Kling (stub)", "models": ["kling-v2.6-pro"]},
+        }
+
     def submit_video_generation(self, **kwargs):
         self.submissions.append(kwargs)
         return {

@@ -2772,14 +2772,18 @@ def media_video_provider_capabilities() -> Dict[str, Any]:
         except Exception:
             provider_config = {}
     if not provider_config:
+        _fallback_kling_enabled = bool(
+            os.environ.get('KLING_API_KEY', '').strip()
+            or (os.environ.get('KLING_ACCESS_KEY', '').strip() and os.environ.get('KLING_SECRET_KEY', '').strip())
+        )
         provider_config = {
             'gemini': {
-                'enabled': True,
+                'enabled': bool(os.environ.get('GEMINI_API_KEY', '').strip()),
                 'label': 'Gemini / Veo',
                 'models': ['veo-3.1-generate-preview', 'veo-3-fast-preview'],
             },
             'kling': {
-                'enabled': True,
+                'enabled': _fallback_kling_enabled,
                 'label': 'Kling',
                 'models': ['kling-v2.6-pro', 'kling-v2.6-std'],
             },
@@ -6706,6 +6710,29 @@ def _hydrate_supplier_stores():
         print(f"Warning: Could not hydrate supplier stores from DB: {e}")
 
 _hydrate_supplier_stores()
+
+# ---------------------------------------------------------------------------
+# Video Generation Providers — startup status
+# ---------------------------------------------------------------------------
+try:
+    _startup_media_service = get_media_generation_service()
+    _startup_provider_config = _startup_media_service.supported_provider_config()
+    _gemini_status = _startup_provider_config.get('gemini', {})
+    _kling_status = _startup_provider_config.get('kling', {})
+    _gemini_enabled = _gemini_status.get('enabled', False)
+    _kling_enabled = _kling_status.get('enabled', False)
+    if _gemini_enabled:
+        print(f"✓ Gemini/Veo video generation enabled (model: {_gemini_status.get('model', 'default')})")
+    else:
+        print("⚠️  Gemini/Veo video generation not connected (set GEMINI_API_KEY)")
+    if _kling_enabled:
+        print(f"✓ Kling video generation enabled (base: {_kling_status.get('base_url', 'default')})")
+    else:
+        print("⚠️  Kling video generation not connected (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
+    _provider_count = sum(1 for p in [_gemini_enabled, _kling_enabled] if p)
+    print(f"✓ Video Agents: {_provider_count} provider(s) connected for /video-agents.html")
+except Exception as _vp_err:
+    print(f"⚠️  Video generation provider check failed: {_vp_err}")
 
 
 def _persist_supplier_invitation(code: str, data):
