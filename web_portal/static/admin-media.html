@@ -1922,11 +1922,18 @@
                         const xhr = new XMLHttpRequest();
                         xhr.open('POST', '/api/media/upload');
                         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+                        const startTime = Date.now();
                         xhr.upload.onprogress = (evt) => {
                             if (evt.lengthComputable) {
                                 const pct = Math.round((evt.loaded / evt.total) * 95);
                                 progressBar.style.width = pct + '%';
-                                progressText.textContent = `Uploading... ${pct}% (${formatFileSize(evt.loaded)} / ${formatFileSize(evt.total)})`;
+                                const elapsed = (Date.now() - startTime) / 1000;
+                                const speed = elapsed > 0 ? evt.loaded / elapsed : 0;
+                                const remaining = speed > 0 ? (evt.total - evt.loaded) / speed : 0;
+                                let speedLabel = speed > 0 ? formatFileSize(speed) + '/s' : '';
+                                let etaLabel = remaining > 1 ? ` ~ ${Math.ceil(remaining)}s left` : '';
+                                progressText.textContent = `Uploading... ${pct}% (${formatFileSize(evt.loaded)} / ${formatFileSize(evt.total)}) ${speedLabel}${etaLabel}`;
                             }
                         };
                         xhr.onload = () => {
@@ -1935,6 +1942,8 @@
                             resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, json: () => Promise.resolve(body) });
                         };
                         xhr.onerror = () => reject(new Error('Network error during upload'));
+                        xhr.ontimeout = () => reject(new Error('Upload timed out'));
+                        xhr.onabort = () => reject(new Error('Upload was cancelled'));
                         xhr.send(formData);
                     });
                 } else {
