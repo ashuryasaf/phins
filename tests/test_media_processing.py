@@ -1234,3 +1234,143 @@ def test_compute_media_checksum_produces_hex_digest():
     checksum = portal.compute_media_checksum(b"hello world")
     assert isinstance(checksum, str)
     assert len(checksum) == 64
+
+
+def test_multipart_media_upload_stores_file_on_disk():
+    import os
+
+    port = 8305
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_multipart_upload"
+    _inject_session(token, "mp_admin", "admin")
+
+    try:
+        import io
+        boundary = b"----TestBoundary12345"
+        video_bytes = b"fake-heavy-video-content-" * 100
+        body = io.BytesIO()
+        body.write(b"------TestBoundary12345\r\n")
+        body.write(b'Content-Disposition: form-data; name="file"; filename="heavy.mp4"\r\n')
+        body.write(b"Content-Type: video/mp4\r\n\r\n")
+        body.write(video_bytes)
+        body.write(b"\r\n------TestBoundary12345\r\n")
+        body.write(b'Content-Disposition: form-data; name="name"\r\n\r\n')
+        body.write(b"heavy-test-video.mp4")
+        body.write(b"\r\n------TestBoundary12345\r\n")
+        body.write(b'Content-Disposition: form-data; name="type"\r\n\r\n')
+        body.write(b"video")
+        body.write(b"\r\n------TestBoundary12345\r\n")
+        body.write(b'Content-Disposition: form-data; name="source"\r\n\r\n')
+        body.write(b"upload")
+        body.write(b"\r\n------TestBoundary12345--\r\n")
+        body_data = body.getvalue()
+
+        req = Request(
+            base + "/api/media/upload",
+            data=body_data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": f"multipart/form-data; boundary=----TestBoundary12345",
+            },
+            method="POST",
+        )
+        with urlopen(req) as resp:
+            status = resp.status
+            result = json.loads(resp.read().decode("utf-8"))
+
+        assert status == 201, f"Expected 201, got {status}: {result}"
+        asset = result["asset"]
+        assert asset["type"] == "video"
+        assert asset["name"] == "heavy-test-video.mp4"
+        assert asset["stored_externally"] is True
+        assert asset["checksum"]
+        assert len(asset["checksum"]) == 64
+        assert asset["size"] == len(video_bytes)
+        assert "file_path" not in asset, "file_path must not leak in API"
+
+        asset_id = asset["id"]
+        assert asset_id in portal.MEDIA_ASSETS
+        raw = portal.MEDIA_ASSETS[asset_id]
+        assert raw.get("file_path")
+        assert os.path.isfile(raw["file_path"])
+
+        status2, single = _json_request(base + f"/api/media/{asset_id}", token=token)
+        assert status2 == 200
+        assert single["checksum"] == asset["checksum"]
+
+        _json_request(base + f"/api/media/{asset_id}", method="DELETE", token=token)
+        assert asset_id not in portal.MEDIA_ASSETS
+    finally:
+        srv.stop()
+
+
+def test_media_upload_route_exempt_from_default_request_size_limit():
+    """The media upload paths should use MAX_MEDIA_UPLOAD_SIZE when set,
+    not the default MAX_REQUEST_SIZE."""
+    assert portal.MAX_REQUEST_SIZE >= 10 * 1024 * 1024
+    assert portal.MAX_MEDIA_UPLOAD_SIZE == 0, (
+        "Default MAX_MEDIA_UPLOAD_SIZE should be 0 (unlimited) unless env overrides"
+    )
+
+
+def test_media_download_streams_disk_files():
+    import os
+    import tempfile
+
+    port = 8306
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+    token = "phins_test_stream_dl"
+    _inject_session(token, "stream_admin", "admin")
+
+    try:
+        asset_id = f"media-stream{int(time.time())}"
+        disk_dir = tempfile.mkdtemp(prefix="phins_stream_test_")
+        file_path = os.path.join(disk_dir, f"{asset_id}-testvid.mp4")
+        content = b"streaming-test-" * 200
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        portal.MEDIA_ASSETS[asset_id] = {
+            "id": asset_id,
+            "name": "stream-test.mp4",
+            "type": "video",
+            "format": "video/mp4",
+            "size": len(content),
+            "url": f"/media-files/{asset_id}/testvid",
+            "data": "",
+            "file_path": file_path,
+            "stored_externally": True,
+            "source": "upload",
+            "uploaded_at": datetime.now().isoformat(),
+            "uploaded_by": "stream_admin",
+        }
+
+        status, downloaded_data, headers = _download(
+            base + f"/api/media/{asset_id}/download",
+            token=token,
+        )
+        assert status == 200
+        assert len(downloaded_data.encode("latin-1")) == len(content)
+
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+        os.remove(file_path)
+    finally:
+        srv.stop()
+
+
+def test_video_generation_service_supports_stream_to_path():
+    """Verify download_generated_video accepts stream_to_path parameter."""
+    import inspect
+    from services.media_generation_service import MediaGenerationService
+    sig = inspect.signature(MediaGenerationService.download_generated_video)
+    assert "stream_to_path" in sig.parameters, (
+        "download_generated_video must accept stream_to_path kwarg"
+    )
