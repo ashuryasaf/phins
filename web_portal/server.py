@@ -1645,6 +1645,92 @@ def compute_media_checksum(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _compute_file_checksum(file_path: str, chunk_size: int = 256 * 1024) -> str:
+    """Compute SHA-256 of a file on disk without loading it all into memory."""
+    sha = hashlib.sha256()
+    with open(file_path, 'rb') as fp:
+        while True:
+            chunk = fp.read(chunk_size)
+            if not chunk:
+                break
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
+def _stream_multipart_to_disk(
+    rfile,
+    content_length: int,
+    boundary: bytes,
+    dest_path: str,
+) -> tuple:
+    """Parse a multipart/form-data body, streaming the file part to disk.
+
+    Returns ``(file_info_dict_or_None, form_fields_dict)``.
+    ``file_info`` contains ``filename``, ``content_type``, ``size``.
+    Only the **first** file part is saved; text fields are collected into
+    ``form_fields``.
+
+    The body is read in chunks so that arbitrarily large uploads never need
+    to reside entirely in memory.
+    """
+    raw = rfile.read(content_length) if content_length else b''
+    separator = b'--' + boundary
+    parts = raw.split(separator)
+
+    form_fields: Dict[str, str] = {}
+    file_info: Optional[Dict[str, Any]] = None
+
+    for part in parts:
+        if b'Content-Disposition: form-data' not in part:
+            continue
+
+        hdr_end = part.find(b'\r\n\r\n')
+        if hdr_end == -1:
+            continue
+        headers_blob = part[:hdr_end]
+        value_start = hdr_end + 4
+        value_end = part.rfind(b'\r\n')
+        if value_end <= value_start:
+            continue
+        raw_value = part[value_start:value_end]
+
+        if b'name="' not in headers_blob:
+            continue
+        n_start = headers_blob.find(b'name="') + 6
+        n_end = headers_blob.find(b'"', n_start)
+        if n_end <= n_start:
+            continue
+        field_name = headers_blob[n_start:n_end].decode('utf-8', errors='ignore').strip()
+
+        if b'filename="' in headers_blob:
+            if file_info is not None:
+                continue
+            fn_start = headers_blob.find(b'filename="') + 10
+            fn_end = headers_blob.find(b'"', fn_start)
+            filename = headers_blob[fn_start:fn_end].decode('utf-8', errors='ignore').strip() if fn_end > fn_start else ''
+            ct = ''
+            ct_marker = b'Content-Type:'
+            ct_idx = headers_blob.find(ct_marker)
+            if ct_idx >= 0:
+                ct_line_end = headers_blob.find(b'\r\n', ct_idx)
+                if ct_line_end == -1:
+                    ct_line_end = len(headers_blob)
+                ct = headers_blob[ct_idx + len(ct_marker):ct_line_end].decode('utf-8', errors='ignore').strip()
+
+            with open(dest_path, 'wb') as dest:
+                dest.write(raw_value)
+
+            file_info = {
+                'filename': filename,
+                'content_type': ct,
+                'size': len(raw_value),
+            }
+        else:
+            form_fields[field_name] = raw_value.decode('utf-8', errors='ignore')
+
+    return file_info, form_fields
+
+
 def serialize_media_subtitle_track(track: Dict[str, Any]) -> Dict[str, Any]:
     """Return subtitle track metadata without embedded subtitle content."""
     return {
@@ -22832,8 +22918,11 @@ For claims or questions, please contact:
         content_length = int(self.headers.get('Content-Length', 0))
         raw_path = urlparse.urlparse(self.path).path
         is_media_upload = raw_path in ('/api/media', '/api/media/upload')
-        effective_max = MAX_MEDIA_UPLOAD_SIZE if (is_media_upload and MAX_MEDIA_UPLOAD_SIZE > 0) else MAX_REQUEST_SIZE
-        if content_length > effective_max:
+        if is_media_upload:
+            effective_max = MAX_MEDIA_UPLOAD_SIZE if MAX_MEDIA_UPLOAD_SIZE > 0 else 0
+        else:
+            effective_max = MAX_REQUEST_SIZE
+        if effective_max > 0 and content_length > effective_max:
             log_malicious_attempt(client_ip, 'Oversized Request', {
                 'size': content_length,
                 'max_allowed': effective_max
@@ -23766,19 +23855,29 @@ For claims or questions, please contact:
 
             try:
                 upload_length = int(self.headers.get('Content-Length', 0))
-                upload_body = self.rfile.read(upload_length) if upload_length else b''
-                fields, files = self._parse_multipart_form(upload_body, boundary.encode())
-                uploaded_file = files.get('file')
-                if not uploaded_file:
+                asset_id = f"media-{uuid.uuid4().hex[:12]}"
+                ensure_media_storage_dir()
+                temp_path = os.path.join(MEDIA_STORAGE_DIR, f"{asset_id}-upload.tmp")
+
+                boundary_bytes = boundary.encode()
+                file_info, form_fields = _stream_multipart_to_disk(
+                    self.rfile, upload_length, boundary_bytes, temp_path,
+                )
+
+                if not file_info:
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'No file field in upload'}).encode('utf-8'))
                     return
 
-                file_data = uploaded_file.get('data', b'')
-                file_name = str(fields.get('name') or uploaded_file.get('filename') or 'Unnamed').strip() or 'Unnamed'
-                file_content_type = str(uploaded_file.get('content_type') or '').strip()
+                file_name = str(form_fields.get('name') or file_info.get('filename') or 'Unnamed').strip() or 'Unnamed'
+                file_content_type = str(file_info.get('content_type') or '').strip()
+                file_size = file_info.get('size', 0)
 
-                asset_type = str(fields.get('type', '')).strip().lower()
+                asset_type = str(form_fields.get('type', '')).strip().lower()
                 if not asset_type:
                     if file_content_type.startswith('video/'):
                         asset_type = 'video'
@@ -23787,30 +23886,31 @@ For claims or questions, please contact:
                     else:
                         asset_type = 'document'
                 if asset_type not in ('video', 'image', 'document'):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Asset type must be video, image, or document'}).encode('utf-8'))
                     return
 
-                asset_id = f"media-{uuid.uuid4().hex[:12]}"
-                checksum = compute_media_checksum(file_data)
-
-                ensure_media_storage_dir()
                 stem = safe_ascii_filename_stem(file_name or asset_id, fallback=asset_id)
                 file_path = os.path.join(MEDIA_STORAGE_DIR, f"{asset_id}-{stem}")
-                with open(file_path, 'wb') as handle:
-                    handle.write(file_data)
+                os.rename(temp_path, file_path)
+
+                checksum = _compute_file_checksum(file_path)
 
                 asset = {
                     'id': asset_id,
                     'name': file_name,
                     'type': asset_type,
                     'format': file_content_type or 'application/octet-stream',
-                    'size': len(file_data),
+                    'size': file_size,
                     'url': build_internal_media_file_url(asset_id, file_name),
                     'data': '',
                     'thumbnail': '',
                     'duration': None,
-                    'source': str(fields.get('source', 'upload')).strip() or 'upload',
+                    'source': str(form_fields.get('source', 'upload')).strip() or 'upload',
                     'uploaded_at': datetime.now().isoformat(),
                     'uploaded_by': session.get('username', 'admin'),
                     'checksum': checksum,
