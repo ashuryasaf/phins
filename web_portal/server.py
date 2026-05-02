@@ -4410,21 +4410,18 @@ def reconcile_fresh_start_with_db() -> int:
         from database.manager import DatabaseManager
         with DatabaseManager() as db:
             all_customers = {}
-            try:
-                if hasattr(db.customers, 'get_all'):
-                    for c in db.customers.get_all():
-                        cdata = c if isinstance(c, dict) else (c.__dict__ if hasattr(c, '__dict__') else {})
-                        cid = cdata.get('id', '')
-                        if cid:
-                            all_customers[cid] = cdata
-                elif hasattr(db.customers, 'list_all'):
-                    for c in db.customers.list_all():
-                        cdata = c if isinstance(c, dict) else (c.__dict__ if hasattr(c, '__dict__') else {})
-                        cid = cdata.get('id', '')
-                        if cid:
-                            all_customers[cid] = cdata
-            except Exception:
-                pass
+            if hasattr(db.customers, 'get_all'):
+                for c in db.customers.get_all():
+                    cdata = c if isinstance(c, dict) else (c.__dict__ if hasattr(c, '__dict__') else {})
+                    cid = cdata.get('id', '')
+                    if cid:
+                        all_customers[cid] = cdata
+            elif hasattr(db.customers, 'list_all'):
+                for c in db.customers.list_all():
+                    cdata = c if isinstance(c, dict) else (c.__dict__ if hasattr(c, '__dict__') else {})
+                    cid = cdata.get('id', '')
+                    if cid:
+                        all_customers[cid] = cdata
 
             if not all_customers:
                 return 0
