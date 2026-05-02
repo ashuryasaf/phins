@@ -304,6 +304,68 @@ def test_cleanup_stale_data_prunes_db_sessions_without_memory_entries(monkeypatc
     assert repo.calls == 1
 
 
+def test_reconcile_fresh_start_with_db_uses_canonical_default_allocations(monkeypatch):
+    class _FakeCustomerRepo:
+        def get_all(self):
+            return [{"id": "CUST-RECON-001"}]
+
+    class _FakeDB:
+        def __init__(self):
+            self.customers = _FakeCustomerRepo()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+
+    with portal.STATE_LOCK:
+        portal.HEALTH_WALLETS.clear()
+        portal.INVESTMENT_ACCOUNTS.clear()
+        portal.CUSTOMER_ALLOCATIONS.clear()
+
+    expected_defaults = portal.get_customer_allocation("CUST-RECON-001")
+
+    with patch("database.manager.DatabaseManager", return_value=_FakeDB()):
+        reconciled = portal.reconcile_fresh_start_with_db()
+
+    assert reconciled == 1
+    stored = portal.CUSTOMER_ALLOCATIONS["CUST-RECON-001"]
+    for key, value in expected_defaults.items():
+        assert stored[key] == value
+    assert stored["customer_id"] == "CUST-RECON-001"
+    assert stored["_reconciled"] is True
+
+
+def test_reconcile_fresh_start_with_db_reports_customer_query_failures(monkeypatch):
+    class _ExplodingCustomerRepo:
+        def get_all(self):
+            raise RuntimeError("db unavailable")
+
+    class _FakeDB:
+        def __init__(self):
+            self.customers = _ExplodingCustomerRepo()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+
+    with patch("database.manager.DatabaseManager", return_value=_FakeDB()):
+        with patch("builtins.print") as mock_print:
+            reconciled = portal.reconcile_fresh_start_with_db()
+
+    assert reconciled == 0
+    mock_print.assert_any_call("[RECONCILE] Error during fresh-start reconciliation: db unavailable")
+
+
 def test_login_rejects_captcha_token_when_validation_errors(monkeypatch):
     port = 8060
     srv = ServerThread(port)

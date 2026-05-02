@@ -3693,7 +3693,7 @@ except (TypeError, ValueError):
 # These must exist even when load_ledger_data() is never called (e.g. unit tests importing this module).
 _loaded_algo_balances: Dict[str, Any] = {}
 _loaded_trading_bots: Dict[str, Any] = {}
-_persistence_lock = threading.Lock()
+_persistence_lock = threading.RLock()
 _persistence_dirty = True
 _persistence_log_state = {
     'saves_since_last_log': 0,
@@ -3702,9 +3702,15 @@ _persistence_log_state = {
 }
 
 def mark_ledger_dirty():
-    """Mark ledger data as modified so the next periodic save writes to disk."""
+    """Mark ledger data as modified so the next periodic save writes to disk.
+
+    Thread-safety: uses the same lock that guards ``save_ledger_data`` so the
+    dirty flag cannot be cleared between a mutation and the corresponding
+    periodic save window.
+    """
     global _persistence_dirty
-    _persistence_dirty = True
+    with _persistence_lock:
+        _persistence_dirty = True
 
 
 def save_ledger_data(_periodic: bool = False):
@@ -4318,6 +4324,47 @@ def validate_startup_integrity() -> Dict[str, Any]:
         except Exception as exc:
             warnings.append(f"DB consistency check skipped: {exc}")
 
+    # 5. Balance sheet reserves sanity
+    try:
+        claims_reserve = safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0)
+        if claims_reserve < 0:
+            issues.append(f"Negative claims reserve: ${claims_reserve:,.2f}")
+        operating_reserve = safe_float(PHINS_BALANCE_SHEET.get('operating_reserve'), 0)
+        if operating_reserve < 0:
+            issues.append(f"Negative operating reserve: ${operating_reserve:,.2f}")
+        if not PHINS_BALANCE_SHEET.get('created_at'):
+            warnings.append("Balance sheet has no created_at timestamp")
+    except Exception as exc:
+        warnings.append(f"Balance sheet check failed: {exc}")
+
+    # 6. Algo trading balance sanity
+    try:
+        if 'unified_balance_service' in globals() and unified_balance_service:
+            for cust_id, bal in unified_balance_service.algo_trading_balances.items():
+                avail = safe_float(bal.get('available') if isinstance(bal, dict) else 0, 0)
+                if avail < 0:
+                    warnings.append(f"Negative algo trading balance for {cust_id}: {avail}")
+    except Exception as exc:
+        warnings.append(f"Algo trading check failed: {exc}")
+
+    # 7. Customers with active policies should have wallet entries
+    try:
+        policy_customer_ids = set()
+        for pol in POLICIES.values():
+            pol_data = pol if isinstance(pol, dict) else {}
+            if get_status_lower(pol_data) in ('active', 'approved'):
+                cid = pol_data.get('customer_id', '')
+                if cid:
+                    policy_customer_ids.add(cid)
+        missing_wallets = policy_customer_ids - set(HEALTH_WALLETS.keys())
+        if missing_wallets:
+            warnings.append(
+                f"{len(missing_wallets)} active-policy customer(s) have no health wallet: "
+                + ", ".join(sorted(missing_wallets)[:5])
+            )
+    except Exception as exc:
+        warnings.append(f"Policy-wallet cross-check failed: {exc}")
+
     status = 'critical' if issues else ('warning' if warnings else 'healthy')
     report = {
         'status': status,
@@ -4326,6 +4373,8 @@ def validate_startup_integrity() -> Dict[str, Any]:
         'ledger_entries': len(TRANSACTION_LEDGER),
         'health_wallets': len(HEALTH_WALLETS),
         'investment_accounts': len(INVESTMENT_ACCOUNTS),
+        'balance_sheet_claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0),
+        'balance_sheet_operating_reserve': safe_float(PHINS_BALANCE_SHEET.get('operating_reserve'), 0),
     }
 
     if issues:
@@ -4339,6 +4388,93 @@ def validate_startup_integrity() -> Dict[str, Any]:
         print("✓ [INTEGRITY] Startup validation passed — all data stores consistent")
 
     return report
+
+
+def reconcile_fresh_start_with_db() -> int:
+    """Hydrate in-memory wallet/allocation stores for DB-backed customers.
+
+    When the ledger persistence file is missing (fresh container, no Railway
+    volume) but the database already has customers and policies from previous
+    runs, the in-memory stores for wallets, investments, and allocations are
+    empty.  This function reads active customers and policies from the DB and
+    creates default wallet/allocation entries so that API responses and
+    billing flows do not encounter missing data.
+
+    Returns the number of customers reconciled.
+    """
+    if not (USE_DATABASE and database_enabled):
+        return 0
+
+    reconciled = 0
+    try:
+        from database.manager import DatabaseManager
+        with DatabaseManager() as db:
+            all_customers = {}
+            if hasattr(db.customers, 'get_all'):
+                for c in db.customers.get_all():
+                    cdata = c if isinstance(c, dict) else (c.__dict__ if hasattr(c, '__dict__') else {})
+                    cid = cdata.get('id', '')
+                    if cid:
+                        all_customers[cid] = cdata
+            elif hasattr(db.customers, 'list_all'):
+                for c in db.customers.list_all():
+                    cdata = c if isinstance(c, dict) else (c.__dict__ if hasattr(c, '__dict__') else {})
+                    cid = cdata.get('id', '')
+                    if cid:
+                        all_customers[cid] = cdata
+
+            if not all_customers:
+                return 0
+
+            now_iso = datetime.now().isoformat()
+            for cust_id, cust_data in all_customers.items():
+                touched = False
+
+                if cust_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[cust_id] = {
+                        'customer_id': cust_id,
+                        'balance': 0.0,
+                        'monthly_deposit': 0.0,
+                        'transactions': [],
+                        'created_at': now_iso,
+                        '_reconciled': True,
+                    }
+                    touched = True
+
+                if cust_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[cust_id] = {
+                        'customer_id': cust_id,
+                        'balance': 0.0,
+                        'index_balance': 0.0,
+                        'bonds_balance': 0.0,
+                        'crypto_balance': 0.0,
+                        'deposits': [],
+                        'created_at': now_iso,
+                        '_reconciled': True,
+                    }
+                    touched = True
+
+                if cust_id not in CUSTOMER_ALLOCATIONS:
+                    default_allocation = get_customer_allocation(cust_id)
+                    CUSTOMER_ALLOCATIONS[cust_id] = {
+                        **default_allocation,
+                        'updated_at': now_iso,
+                        'customer_id': cust_id,
+                        '_reconciled': True,
+                    }
+                    touched = True
+
+                if touched:
+                    reconciled += 1
+
+    except Exception as exc:
+        print(f"[RECONCILE] Error during fresh-start reconciliation: {exc}")
+
+    if reconciled > 0:
+        print(f"[RECONCILE] Hydrated wallets/allocations for {reconciled} DB-backed customer(s)")
+        mark_ledger_dirty()
+
+    return reconciled
 
 
 # ========== END DATA PERSISTENCE LAYER ==========
@@ -6483,11 +6619,10 @@ def _init_billing_credit_service():
 
 _init_billing_credit_service()
 
-# Sync any loaded algo trading data to the newly initialized services
-try:
-    sync_loaded_algo_data()
-except Exception as e:
-    print(f"Note: Could not sync loaded algo data: {e}")
+# NOTE: sync_loaded_algo_data() is deliberately NOT called here at import
+# time.  load_ledger_data() runs later inside run_server(), so the staging
+# buffers are still empty at this point.  The sync is performed in
+# run_server() after the ledger file has been loaded.
 
 # Optional: admin datasets (actuarial tables) and market data (crypto/index)
 try:
@@ -41735,11 +41870,20 @@ def run_server(port: int = PORT) -> None:
 
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
-    if load_ledger_data():
+    _ledger_loaded = load_ledger_data()
+    if _ledger_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:
         print("ℹ️  Starting with fresh ledger data")
-    
+
+    # Sync algo trading data that was staged by load_ledger_data().
+    # This MUST happen after load_ledger_data() and after services are
+    # initialized at import time — both conditions are met here.
+    try:
+        sync_loaded_algo_data()
+    except Exception as _algo_exc:
+        print(f"Note: Could not sync loaded algo data: {_algo_exc}")
+
     # Load dynamic customers from registration
     print("👥 Loading dynamic customers...")
     dynamic_count = load_dynamic_customers()
@@ -43086,6 +43230,10 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"   ⚠️  Data integrity check error: {e}")
     
+    # When ledger started fresh but DB has data, reconcile in-memory stores
+    if not _ledger_loaded and USE_DATABASE and database_enabled:
+        reconcile_fresh_start_with_db()
+
     # Run post-load integrity validation before serving traffic
     validate_startup_integrity()
 
@@ -43107,10 +43255,16 @@ def run_server(port: int = PORT) -> None:
 def bootstrap_runtime_state_for_command() -> None:
     """Load persisted command/runtime state for one-shot automation tasks."""
     print("📂 Loading persisted ledger data for command execution...")
-    if load_ledger_data():
+    _cmd_loaded = load_ledger_data()
+    if _cmd_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:
         print("ℹ️  Starting with fresh ledger data")
+
+    try:
+        sync_loaded_algo_data()
+    except Exception:
+        pass
 
     print("👥 Loading dynamic customers...")
     load_dynamic_customers()
@@ -43120,6 +43274,9 @@ def bootstrap_runtime_state_for_command() -> None:
     seed_demo_documents()
     print("💰 Initializing PHINS Balance Sheet...")
     initialize_balance_sheet()
+
+    if not _cmd_loaded and USE_DATABASE and database_enabled:
+        reconcile_fresh_start_with_db()
 
 
 def execute_monthly_auto_pay_cli(argv: Optional[List[str]] = None) -> int:
