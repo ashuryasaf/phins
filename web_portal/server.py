@@ -33911,7 +33911,13 @@ For claims or questions, please contact:
                     claim['payment_method'] = 'health_wallet_transfer'
                     claim['payment_reference'] = payment_result.get('payment_reference')
                     CLAIMS[claim_id] = claim
-                    persist_claim_update_to_database(claim_id, claim)
+                    persist_claim_update_to_database(claim_id, {
+                        'status': claim.get('status'),
+                        'paid_amount': claim.get('paid_amount'),
+                        'payment_date': claim.get('payment_date'),
+                        'payment_method': claim.get('payment_method'),
+                        'payment_reference': claim.get('payment_reference'),
+                    })
                     save_ledger_data()
                     
                     self._set_json_headers()
