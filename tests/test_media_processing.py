@@ -1495,9 +1495,39 @@ def test_design_settings_post_rejects_invalid_asset_refs():
         srv.stop()
 
 
+def test_design_settings_post_rejects_non_string_asset_refs():
+    """Non-string asset refs are rejected before they can be persisted."""
+    port = 8310
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_non_string_ref"
+    _inject_session(token, "design_admin_non_string", "admin")
+
+    original_hero_video_id = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    portal.DESIGN_SETTINGS["hero_video_id"] = ""
+
+    try:
+        status, resp = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"hero_video_id": True},
+        )
+        assert status == 400
+        assert "hero_video_id" in resp.get("invalid_refs", [])
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == ""
+    finally:
+        portal.DESIGN_SETTINGS["hero_video_id"] = original_hero_video_id
+        srv.stop()
+
+
 def test_design_settings_post_accepts_empty_string_asset_refs():
     """Empty string asset refs are valid (clearing the assignment)."""
-    port = 8310
+    port = 8311
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.3)
@@ -1523,7 +1553,7 @@ def test_design_settings_post_accepts_empty_string_asset_refs():
 def test_design_settings_post_persists_nested_design_objects():
     """POST /api/design/settings persists designSettings, layoutSettings,
     and brandSettings nested objects from the admin media dashboard."""
-    port = 8311
+    port = 8312
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.3)

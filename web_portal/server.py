@@ -23057,13 +23057,15 @@ For claims or questions, please contact:
                 asset_ref_keys = ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']
                 invalid_refs = []
                 for ref_key in asset_ref_keys:
+                    if ref_key not in data:
+                        continue
                     ref_val = data.get(ref_key)
-                    if ref_val and isinstance(ref_val, str) and ref_val not in MEDIA_ASSETS:
+                    if ref_val not in ('', None) and (not isinstance(ref_val, str) or ref_val not in MEDIA_ASSETS):
                         invalid_refs.append(ref_key)
                 if invalid_refs:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
-                        'error': f'Invalid media asset references: {", ".join(invalid_refs)}. Assets do not exist.',
+                        'error': f'Invalid media asset references: {", ".join(invalid_refs)}. References must be empty or use existing asset IDs.',
                         'invalid_refs': invalid_refs
                     }).encode('utf-8'))
                     return
