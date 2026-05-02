@@ -33913,10 +33913,11 @@ For claims or questions, please contact:
                     CLAIMS[claim_id] = claim
                     persist_claim_update_to_database(claim_id, {
                         'status': claim.get('status'),
-                        'paid_amount': claim.get('paid_amount'),
                         'payment_date': claim.get('payment_date'),
                         'payment_method': claim.get('payment_method'),
                         'payment_reference': claim.get('payment_reference'),
+                        'paid_amount': claim.get('paid_amount'),
+                        'processed_by': processed_by,
                     })
                     save_ledger_data()
                     
@@ -33926,7 +33927,6 @@ For claims or questions, please contact:
                         'claim_id': claim_id,
                         'status': 'Paid',
                         'paid_amount': paid_amount,
-                        'wallet_balance': payment_result.get('new_wallet_balance'),
                         'payment_reference': payment_result.get('payment_reference')
                     }).encode('utf-8'))
                 else:
