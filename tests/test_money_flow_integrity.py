@@ -129,6 +129,29 @@ class TestClaimPaymentToWallet:
         ledger_entry = portal.TRANSACTION_LEDGER.get(tx['id'])
         assert ledger_entry is not None
 
+    def test_claim_payment_recorded_on_accounting_engine(self):
+        import web_portal.server as portal
+        from accounting_engine import EntryType, get_accounting_engine
+
+        self._setup_customer_and_policy(portal)
+
+        result = portal.process_claim_payment_to_wallet(
+            claim_id='CLM-TEST-PAY',
+            customer_id='CUST-TEST-PAY',
+            amount=4500.0,
+            processed_by='test'
+        )
+        assert result['success'] is True
+
+        claim_entries = [
+            entry for entry in get_accounting_engine().ledger_entries
+            if entry.entry_type == EntryType.CLAIM_PAYMENT
+        ]
+        assert len(claim_entries) == 1
+        assert claim_entries[0].allocation_id == 'CLM-TEST-PAY'
+        assert claim_entries[0].policy_id == 'POL-TEST-PAY'
+        assert claim_entries[0].credit_amount == Decimal('4500.0')
+
     def test_claim_payment_deducts_from_reserve(self):
         import web_portal.server as portal
         self._setup_customer_and_policy(portal)

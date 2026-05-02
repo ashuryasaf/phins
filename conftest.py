@@ -133,3 +133,10 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
+    # Reset shared accounting engine so accounting ledger tests stay isolated.
+    try:
+        from accounting_engine import reset_accounting_engine
+        reset_accounting_engine()
+    except Exception:
+        pass
+

@@ -856,3 +856,20 @@ By selecting an investment route, you confirm you understand the risks and benef
         output.append("=" * 80)
         return "\n".join(output)
 
+
+_SHARED_ACCOUNTING_ENGINE: Optional[AccountingEngine] = None
+
+
+def get_accounting_engine() -> AccountingEngine:
+    """Return the process-wide accounting engine instance."""
+    global _SHARED_ACCOUNTING_ENGINE
+    if _SHARED_ACCOUNTING_ENGINE is None:
+        _SHARED_ACCOUNTING_ENGINE = AccountingEngine()
+    return _SHARED_ACCOUNTING_ENGINE
+
+
+def reset_accounting_engine() -> None:
+    """Reset the process-wide accounting engine used by server flows."""
+    global _SHARED_ACCOUNTING_ENGINE
+    _SHARED_ACCOUNTING_ENGINE = None
+

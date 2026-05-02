@@ -3594,11 +3594,11 @@ def process_claim_payment_to_wallet(
     
     # 6. Record in accounting engine if available
     try:
-        from accounting_engine import AccountingEngine
+        from accounting_engine import get_accounting_engine
         from decimal import Decimal
         claim_obj = CLAIMS.get(claim_id, {})
         policy_id = claim_obj.get('policy_id', 'unknown')
-        ae = AccountingEngine()
+        ae = get_accounting_engine()
         ae.post_claim_payment(
             claim_id=claim_id,
             policy_id=policy_id,
@@ -42270,8 +42270,8 @@ def run_server(port: int = PORT) -> None:
                 'customer_id': 'CUST-EFRAT-001',
                 'type': 'phins_unified',
                 'coverage_amount': 500000.0,
-                'annual_premium': 5600.0,
-                'monthly_premium': 466.67,
+                'annual_premium': 1552.50,
+                'monthly_premium': 129.38,
                 'status': 'active',  # Active so claims can be filed
                 'risk_score': 'low',
                 'start_date': datetime.now().isoformat(),
@@ -42308,8 +42308,8 @@ def run_server(port: int = PORT) -> None:
                 'policy_id': efrat_policy_id,
                 'customer_id': 'CUST-EFRAT-001',
                 'customer_name': 'Efrat PHINS',
-                'amount': 466.67,
-                'amount_paid': 466.67,  # First month paid
+                'amount': 129.38,
+                'amount_paid': 129.38,  # First month paid
                 'status': 'paid',
                 'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
                 'created_date': datetime.now().isoformat()
