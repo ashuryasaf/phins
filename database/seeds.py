@@ -593,21 +593,29 @@ def seed_sample_data(session=None):
             paid_claims_total = 0.0
             for claim_data in sample_claims:
                 if claim_data['status'] == 'Paid' and claim_data.get('approved_amount'):
-                    amt = float(claim_data['approved_amount'])
-                    paid_claims_total += amt
                     cust_id = 'CUST-ASAF-001'
-                    if cust_id in HEALTH_WALLETS:
-                        HEALTH_WALLETS[cust_id]['balance'] += amt
-                        HEALTH_WALLETS[cust_id]['transactions'].append({
-                            'id': f"CLAIM-PAY-SEED-{claim_data['id']}",
-                            'type': 'claim_payment',
-                            'amount': amt,
-                            'source': 'PHINS_CLAIMS_RESERVE',
-                            'claim_id': claim_data['id'],
-                            'description': f"Claim {claim_data['id']} payment - {claim_data['description'][:50]}",
-                            'balance_after': HEALTH_WALLETS[cust_id]['balance'],
-                            'timestamp': datetime.now(timezone.utc).isoformat()
-                        })
+                    wallet = HEALTH_WALLETS.get(cust_id)
+                    if not wallet:
+                        continue
+
+                    tx_id = f"CLAIM-PAY-SEED-{claim_data['id']}"
+                    transactions = wallet.setdefault('transactions', [])
+                    if any(tx.get('id') == tx_id for tx in transactions):
+                        continue
+
+                    amt = float(claim_data['approved_amount'])
+                    wallet['balance'] += amt
+                    paid_claims_total += amt
+                    transactions.append({
+                        'id': tx_id,
+                        'type': 'claim_payment',
+                        'amount': amt,
+                        'source': 'PHINS_CLAIMS_RESERVE',
+                        'claim_id': claim_data['id'],
+                        'description': f"Claim {claim_data['id']} payment - {claim_data['description'][:50]}",
+                        'balance_after': wallet['balance'],
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
             if paid_claims_total > 0:
                 logger.info(f"Reconciled {paid_claims_total:.2f} in paid claims to CUST-ASAF-001 wallet")
         except ImportError:
