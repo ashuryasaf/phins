@@ -1597,7 +1597,7 @@ def test_design_settings_post_persists_nested_design_objects():
 def test_delete_media_clears_derived_urls_from_design_settings():
     """Deleting a media asset assigned as hero video also clears
     the derived video_url from DESIGN_SETTINGS."""
-    port = 8312
+    port = 8313
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.3)
@@ -1652,7 +1652,7 @@ def test_delete_media_clears_derived_urls_from_design_settings():
 def test_public_settings_gracefully_handles_missing_asset():
     """If a design setting references an asset ID that no longer exists,
     the public response returns empty URLs instead of erroring."""
-    port = 8313
+    port = 8314
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.3)
@@ -1675,7 +1675,7 @@ def test_public_settings_gracefully_handles_missing_asset():
 
 def test_video_section_hidden_when_show_video_false():
     """When show_video is False, the public API returns empty video URL."""
-    port = 8314
+    port = 8315
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.3)
