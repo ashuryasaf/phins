@@ -488,7 +488,7 @@
       if (!url) return;
       const hero = document.querySelector('.hero');
       if (!hero) return;
-      hero.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url('${url}')`;
+      hero.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url(${JSON.stringify(url)})`;
       hero.style.backgroundSize = 'cover';
       hero.style.backgroundPosition = 'center';
     }
