@@ -715,6 +715,29 @@ By selecting an investment route, you confirm you understand the risks and benef
             'allocations': [a.to_dict() for a in allocations]
         }
     
+    def post_claim_payment(self, claim_id: str, policy_id: str, customer_id: str,
+                           amount: Decimal, paid_by: str = "system") -> Tuple[bool, str]:
+        """
+        Record a claim payment in the accounting ledger.
+        Debits the Risk Fund (claim payout reduces risk reserves) and
+        credits the customer's account.
+        """
+        try:
+            self._create_ledger_entry(
+                allocation_id=claim_id,
+                policy_id=policy_id,
+                customer_id=customer_id,
+                entry_date=date.today(),
+                entry_type=EntryType.CLAIM_PAYMENT,
+                account_type=AccountType.RISK_FUND,
+                credit_amount=Decimal(str(amount)),
+                description=f"Claim payment {claim_id} - ${amount:.2f} to customer wallet",
+                reference_no=claim_id
+            )
+            return True, f"Claim payment {claim_id} for ${amount:.2f} recorded"
+        except Exception as e:
+            return False, f"Error recording claim payment: {str(e)}"
+
     def _create_ledger_entry(self, allocation_id: str, policy_id: str, customer_id: str,
                             entry_date: date, entry_type: EntryType, account_type: AccountType,
                             debit_amount: Decimal = Decimal(0), credit_amount: Decimal = Decimal(0),
@@ -832,4 +855,21 @@ By selecting an investment route, you confirm you understand the risks and benef
         output.append(disc.content)
         output.append("=" * 80)
         return "\n".join(output)
+
+
+_SHARED_ACCOUNTING_ENGINE: Optional[AccountingEngine] = None
+
+
+def get_accounting_engine() -> AccountingEngine:
+    """Return the process-wide accounting engine instance."""
+    global _SHARED_ACCOUNTING_ENGINE
+    if _SHARED_ACCOUNTING_ENGINE is None:
+        _SHARED_ACCOUNTING_ENGINE = AccountingEngine()
+    return _SHARED_ACCOUNTING_ENGINE
+
+
+def reset_accounting_engine() -> None:
+    """Reset the process-wide accounting engine used by server flows."""
+    global _SHARED_ACCOUNTING_ENGINE
+    _SHARED_ACCOUNTING_ENGINE = None
 

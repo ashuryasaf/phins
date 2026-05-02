@@ -3592,6 +3592,26 @@ def process_claim_payment_to_wallet(
     wallet_tx['nft_token_id'] = customer_tx.get('nft_token_id')
     wallet_tx['ledger_tx_id'] = customer_tx.get('id')
     
+    # 6. Record in accounting engine if available
+    try:
+        from accounting_engine import get_accounting_engine
+        from decimal import Decimal
+        claim_obj = CLAIMS.get(claim_id, {})
+        policy_id = claim_obj.get('policy_id', 'unknown')
+        ae = get_accounting_engine()
+        ae.post_claim_payment(
+            claim_id=claim_id,
+            policy_id=policy_id,
+            customer_id=customer_id,
+            amount=Decimal(str(amount)),
+            paid_by=processed_by
+        )
+    except Exception as ae_err:
+        import logging
+        logging.getLogger(__name__).error(
+            f"Accounting engine failed for claim {claim_id}: {ae_err}"
+        )
+    
     return {
         'success': True,
         'payment_reference': payment_ref,
@@ -33856,25 +33876,68 @@ For claims or questions, please contact:
         
         # Pay individual claim by ID: /api/claim/{id}/pay
         if path.startswith('/api/claim/') and path.endswith('/pay'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            effective_role = get_effective_role(session)
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not is_claims_payment_role(effective_role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Claims payment access required'}).encode('utf-8'))
+                return
+
             claim_id = path.replace('/api/claim/', '').replace('/pay', '')
             claim = CLAIMS.get(claim_id)
             
             if claim and claim.get('status', '').lower() == 'approved':
-                paid_amount = claim.get('approved_amount', claim.get('claimed_amount', 0))
+                paid_amount = float(claim.get('approved_amount', claim.get('claimed_amount', 0)))
+                customer_id = claim.get('customer_id', 'unknown')
+                processed_by = (
+                    (get_session_user(session) or {}).get('username')
+                    if session else 'system'
+                ) or 'system'
                 
-                claim['status'] = 'paid'
-                claim['paid_amount'] = float(paid_amount)
-                claim['payment_date'] = datetime.now().isoformat()
-                CLAIMS[claim_id] = claim
-                save_ledger_data()
+                payment_result = process_claim_payment_to_wallet(
+                    claim_id=claim_id,
+                    customer_id=customer_id,
+                    amount=paid_amount,
+                    processed_by=processed_by
+                )
                 
-                self._set_json_headers()
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'claim_id': claim_id,
-                    'status': 'Paid',
-                    'paid_amount': claim['paid_amount']
-                }).encode('utf-8'))
+                if payment_result.get('success'):
+                    claim['status'] = 'paid'
+                    claim['paid_amount'] = paid_amount
+                    claim['payment_date'] = datetime.now().isoformat()
+                    claim['payment_method'] = 'health_wallet_transfer'
+                    claim['payment_reference'] = payment_result.get('payment_reference')
+                    CLAIMS[claim_id] = claim
+                    persist_claim_update_to_database(claim_id, {
+                        'status': claim.get('status'),
+                        'payment_date': claim.get('payment_date'),
+                        'payment_method': claim.get('payment_method'),
+                        'payment_reference': claim.get('payment_reference'),
+                        'paid_amount': claim.get('paid_amount'),
+                        'processed_by': processed_by,
+                    })
+                    save_ledger_data()
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'claim_id': claim_id,
+                        'status': 'Paid',
+                        'paid_amount': paid_amount,
+                        'payment_reference': payment_result.get('payment_reference')
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': payment_result.get('error', 'Payment processing failed'),
+                        'claim_id': claim_id
+                    }).encode('utf-8'))
             elif claim:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Claim must be approved before payment'}).encode('utf-8'))
@@ -42063,8 +42126,8 @@ def run_server(port: int = PORT) -> None:
             'policy_id': 'POL-ASI-UNIFIED-001',
             'policy_type': 'phins_unified',
             'coverage_amount': 400000.0,
-            'annual_premium': 4800.0,
-            'monthly_premium': 400.0,
+            'annual_premium': 1323.0,
+            'monthly_premium': 110.25,
             'policy_status': 'pending_underwriting',
             'app_id': 'UW-ASI-001',
             'app_status': 'pending',
@@ -42085,8 +42148,8 @@ def run_server(port: int = PORT) -> None:
             'policy_id': 'POL-SHOSH-UNIFIED-001',
             'policy_type': 'phins_unified',
             'coverage_amount': 450000.0,
-            'annual_premium': 5200.0,
-            'monthly_premium': 433.33,
+            'annual_premium': 1433.70,
+            'monthly_premium': 119.48,
             'policy_status': 'pending_underwriting',
             'app_id': 'UW-SHOSH-001',
             'app_status': 'pending',
@@ -42233,8 +42296,8 @@ def run_server(port: int = PORT) -> None:
                 'customer_id': 'CUST-EFRAT-001',
                 'type': 'phins_unified',
                 'coverage_amount': 500000.0,
-                'annual_premium': 5600.0,
-                'monthly_premium': 466.67,
+                'annual_premium': 1552.50,
+                'monthly_premium': 129.38,
                 'status': 'active',  # Active so claims can be filed
                 'risk_score': 'low',
                 'start_date': datetime.now().isoformat(),
@@ -42271,8 +42334,8 @@ def run_server(port: int = PORT) -> None:
                 'policy_id': efrat_policy_id,
                 'customer_id': 'CUST-EFRAT-001',
                 'customer_name': 'Efrat PHINS',
-                'amount': 466.67,
-                'amount_paid': 466.67,  # First month paid
+                'amount': 129.38,
+                'amount_paid': 129.38,  # First month paid
                 'status': 'paid',
                 'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
                 'created_date': datetime.now().isoformat()
@@ -42826,17 +42889,19 @@ def run_server(port: int = PORT) -> None:
     try:
         now = datetime.now()
         
-        # Sample ledger entries covering all tab categories
-        # Always add to ensure demo data is available
+        # Ledger entries aligned with actual policy/billing data from seeds.py.
+        # Amounts match the calculated premiums (base rate $0.25/1000/mo, age factors).
+        # Asaf: Life $299.25/mo, Health $166.25/mo, Auto $17.96/mo
+        # Efrat: Unified $129.38/mo ($1552.50/yr, $500K, age 35, low risk)
         sample_ledger = [
-                # Policy Approvals
+                # Policy Approvals (amounts = annual premium from seeds)
                 {
                     'id': 'TX-POL-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'policy_approved',
-                    'amount': 2400.00,
-                    'description': 'Health Insurance Policy Approved - Annual Premium',
-                    'metadata': {'policy_id': 'POL-ASAF-HEALTH-001', 'coverage': 500000, 'underwriter': 'system'},
+                    'amount': 1995.00,
+                    'description': 'Health Insurance Policy Approved - Annual Premium $1,995',
+                    'metadata': {'policy_id': 'POL-ASAF-HEALTH-001', 'coverage': 500000, 'monthly_premium': 166.25, 'underwriter': 'system'},
                     'timestamp': (now - timedelta(days=30)).isoformat(),
                     'status': 'completed',
                     'nft_token_id': f'NFT-POL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
@@ -42845,33 +42910,44 @@ def run_server(port: int = PORT) -> None:
                     'id': 'TX-POL-ASAF-002',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'policy_approved',
-                    'amount': 1800.00,
-                    'description': 'Auto Insurance Policy Approved - Annual Premium',
-                    'metadata': {'policy_id': 'POL-ASAF-AUTO-001', 'coverage': 150000, 'underwriter': 'system'},
+                    'amount': 215.46,
+                    'description': 'Auto Insurance Policy Approved - Annual Premium $215.46',
+                    'metadata': {'policy_id': 'POL-ASAF-AUTO-001', 'coverage': 100000, 'monthly_premium': 17.96, 'underwriter': 'system'},
                     'timestamp': (now - timedelta(days=25)).isoformat(),
                     'status': 'completed',
                     'nft_token_id': f'NFT-POL-{(now - timedelta(days=25)).strftime("%Y%m%d")}-002'
                 },
                 {
+                    'id': 'TX-POL-ASAF-003',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'policy_approved',
+                    'amount': 3591.00,
+                    'description': 'Life Insurance Policy Approved - Annual Premium $3,591',
+                    'metadata': {'policy_id': 'POL-ASAF-LIFE-001', 'coverage': 1000000, 'monthly_premium': 299.25, 'underwriter': 'system'},
+                    'timestamp': (now - timedelta(days=30)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-004'
+                },
+                {
                     'id': 'TX-POL-EFRAT-001',
                     'customer_id': 'CUST-EFRAT-001',
                     'type': 'policy_approved',
-                    'amount': 1200.00,
-                    'description': 'Health Insurance Policy Approved',
-                    'metadata': {'policy_id': 'POL-EFRAT-HEALTH-001', 'coverage': 250000, 'underwriter': 'admin'},
+                    'amount': 1552.50,
+                    'description': 'PHINS Unified Policy Approved - Annual Premium $1,552.50',
+                    'metadata': {'policy_id': 'POL-EFRAT-UNIFIED-001', 'coverage': 500000, 'monthly_premium': 129.38, 'underwriter': 'admin'},
                     'timestamp': (now - timedelta(days=20)).isoformat(),
                     'status': 'completed',
                     'nft_token_id': f'NFT-POL-{(now - timedelta(days=20)).strftime("%Y%m%d")}-003'
                 },
                 
-                # Billing Transactions
+                # Billing Transactions (amounts = monthly premium from seeds)
                 {
                     'id': 'TX-BILL-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'billing_created',
-                    'amount': 200.00,
-                    'description': 'Monthly Premium Payment - Health Insurance',
-                    'metadata': {'bill_id': 'BILL-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'payment_method': 'credit_card'},
+                    'amount': 166.25,
+                    'description': 'Monthly Premium Bill - Health Insurance',
+                    'metadata': {'bill_id': 'BILL-ASAF-HEALTH-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'payment_method': 'credit_card'},
                     'timestamp': (now - timedelta(days=15)).isoformat(),
                     'status': 'completed',
                     'nft_token_id': f'NFT-BILL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-001'
@@ -42880,26 +42956,37 @@ def run_server(port: int = PORT) -> None:
                     'id': 'TX-BILL-ASAF-002',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'billing_created',
-                    'amount': 150.00,
-                    'description': 'Monthly Premium Payment - Auto Insurance',
-                    'metadata': {'bill_id': 'BILL-ASAF-002', 'policy_id': 'POL-ASAF-AUTO-001', 'payment_method': 'bank_transfer'},
+                    'amount': 17.96,
+                    'description': 'Monthly Premium Bill - Auto Insurance',
+                    'metadata': {'bill_id': 'BILL-ASAF-AUTO-001', 'policy_id': 'POL-ASAF-AUTO-001', 'payment_method': 'bank_transfer'},
                     'timestamp': (now - timedelta(days=14)).isoformat(),
                     'status': 'completed',
                     'nft_token_id': f'NFT-BILL-{(now - timedelta(days=14)).strftime("%Y%m%d")}-002'
                 },
                 {
+                    'id': 'TX-BILL-ASAF-003',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'billing_created',
+                    'amount': 299.25,
+                    'description': 'Monthly Premium Bill - Life Insurance',
+                    'metadata': {'bill_id': 'BILL-ASAF-LIFE-001', 'policy_id': 'POL-ASAF-LIFE-001', 'payment_method': 'credit_card'},
+                    'timestamp': (now - timedelta(days=15)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-005'
+                },
+                {
                     'id': 'TX-BILL-EFRAT-001',
                     'customer_id': 'CUST-EFRAT-001',
                     'type': 'billing_created',
-                    'amount': 100.00,
-                    'description': 'Monthly Premium Payment - Health Insurance',
-                    'metadata': {'bill_id': 'BILL-EFRAT-001', 'policy_id': 'POL-EFRAT-HEALTH-001', 'payment_method': 'credit_card'},
+                    'amount': 129.38,
+                    'description': 'Monthly Premium Bill - PHINS Unified',
+                    'metadata': {'bill_id': 'BILL-EFRAT-UNIFIED-001', 'policy_id': 'POL-EFRAT-UNIFIED-001', 'payment_method': 'credit_card'},
                     'timestamp': (now - timedelta(days=10)).isoformat(),
                     'status': 'completed',
                     'nft_token_id': f'NFT-BILL-{(now - timedelta(days=10)).strftime("%Y%m%d")}-003'
                 },
                 
-                # Claim Transactions
+                # Claim Transactions (amounts match seed claims)
                 {
                     'id': 'TX-CLM-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
@@ -42908,33 +42995,88 @@ def run_server(port: int = PORT) -> None:
                     'description': 'Claim Submitted - Emergency Room Visit',
                     'metadata': {'claim_id': 'CLM-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Medical'},
                     'timestamp': (now - timedelta(days=12)).isoformat(),
-                    'status': 'pending',
+                    'status': 'completed',
                     'nft_token_id': f'NFT-CLM-{(now - timedelta(days=12)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-CLM-ASAF-001-PAID',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_payment_received',
+                    'amount': 15000.00,
+                    'description': 'Claim CLM-ASAF-001 paid - deposited to Health Wallet',
+                    'metadata': {'claim_id': 'CLM-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'destination': 'health_wallet'},
+                    'timestamp': (now - timedelta(days=10)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=10)).strftime("%Y%m%d")}-004'
                 },
                 {
                     'id': 'TX-CLM-ASAF-002',
                     'customer_id': 'CUST-ASAF-001',
-                    'type': 'claim_payment',
-                    'amount': 3200.00,
-                    'description': 'Claim Paid - Auto Collision Repair',
-                    'metadata': {'claim_id': 'CLM-ASAF-003', 'policy_id': 'POL-ASAF-AUTO-001', 'approved_by': 'claims_adjuster'},
-                    'timestamp': (now - timedelta(days=7)).isoformat(),
+                    'type': 'claim_submitted',
+                    'amount': 850.00,
+                    'description': 'Claim Submitted - Monthly Prescription Medications',
+                    'metadata': {'claim_id': 'CLM-ASAF-002', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Prescription'},
+                    'timestamp': (now - timedelta(days=11)).isoformat(),
                     'status': 'completed',
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=7)).strftime("%Y%m%d")}-002'
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=11)).strftime("%Y%m%d")}-005'
+                },
+                {
+                    'id': 'TX-CLM-ASAF-002-PAID',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_payment_received',
+                    'amount': 850.00,
+                    'description': 'Claim CLM-ASAF-002 paid - deposited to Health Wallet',
+                    'metadata': {'claim_id': 'CLM-ASAF-002', 'policy_id': 'POL-ASAF-HEALTH-001', 'destination': 'health_wallet'},
+                    'timestamp': (now - timedelta(days=9)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=9)).strftime("%Y%m%d")}-006'
                 },
                 {
                     'id': 'TX-CLM-ASAF-003',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'claim_submitted',
+                    'amount': 3500.00,
+                    'description': 'Claim Submitted - Auto Collision Repair',
+                    'metadata': {'claim_id': 'CLM-ASAF-003', 'policy_id': 'POL-ASAF-AUTO-001', 'claim_type': 'Collision'},
+                    'timestamp': (now - timedelta(days=9)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=9)).strftime("%Y%m%d")}-007'
+                },
+                {
+                    'id': 'TX-CLM-ASAF-003-PAID',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_payment_received',
+                    'amount': 3200.00,
+                    'description': 'Claim CLM-ASAF-003 paid ($3,200 approved) - deposited to Health Wallet',
+                    'metadata': {'claim_id': 'CLM-ASAF-003', 'policy_id': 'POL-ASAF-AUTO-001', 'approved_by': 'claims_adjuster', 'destination': 'health_wallet'},
+                    'timestamp': (now - timedelta(days=7)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=7)).strftime("%Y%m%d")}-002'
+                },
+                {
+                    'id': 'TX-CLM-ASAF-004',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_submitted',
                     'amount': 2800.00,
-                    'description': 'Claim Submitted - Dental Treatment',
+                    'description': 'Claim Submitted - Dental Treatment (Pending)',
                     'metadata': {'claim_id': 'CLM-ASAF-004', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Dental'},
                     'timestamp': (now - timedelta(days=5)).isoformat(),
                     'status': 'pending',
                     'nft_token_id': f'NFT-CLM-{(now - timedelta(days=5)).strftime("%Y%m%d")}-003'
                 },
+                {
+                    'id': 'TX-CLM-ASAF-005',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_submitted',
+                    'amount': 45000.00,
+                    'description': 'Claim Submitted - Temporary Disability (Under Review)',
+                    'metadata': {'claim_id': 'CLM-ASAF-005', 'policy_id': 'POL-ASAF-LIFE-001', 'claim_type': 'Disability'},
+                    'timestamp': (now - timedelta(days=3)).isoformat(),
+                    'status': 'pending',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=3)).strftime("%Y%m%d")}-008'
+                },
                 
-                # Pipeline Events
+                # Pipeline Events (system-level, no financial amounts)
                 {
                     'id': 'TX-PIPE-001',
                     'customer_id': 'SYSTEM',
@@ -42979,10 +43121,6 @@ def run_server(port: int = PORT) -> None:
                     'status': 'completed',
                     'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=3)).strftime("%Y%m%d")}-004'
                 },
-                
-                # Note: demo deposit entries for CUST-ASAF-001 wallets/investments
-                # have been removed — financial ledger entries should only be
-                # created by real payment flows, not startup seeding.
         ]
         
         # Populate TRANSACTION_LEDGER
@@ -43018,9 +43156,9 @@ def run_server(port: int = PORT) -> None:
                 }
         
         print(f"✓ Initialized {len(sample_ledger)} ledger entries with NFT verification")
-        print(f"   - Policy Approvals: 3")
-        print(f"   - Billing Records: 3")
-        print(f"   - Claim Transactions: 3")
+        print(f"   - Policy Approvals: 4 (Asaf x3 + Efrat x1)")
+        print(f"   - Billing Records: 4 (Asaf x3 + Efrat x1)")
+        print(f"   - Claim Transactions: 8 (submitted + paid for Asaf's claims)")
         print(f"   - Pipeline Events: 4")
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:

@@ -236,6 +236,41 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         print(f"  Claims paid: ${initial_claims_paid:.2f} -> ${new_claims_paid:.2f}")
         print(f"  Claims reserve: ${initial_claims_reserve:.2f} -> ${new_claims_reserve:.2f}")
         print(f"  Customer wallet: $0.00 -> ${wallet_balance:.2f}")
+
+    def test_claims_payment_posts_to_shared_accounting_engine(self):
+        """Claim payments should be retained on the shared accounting engine ledger."""
+        from accounting_engine import get_accounting_engine, reset_accounting_engine, EntryType
+
+        reset_accounting_engine()
+        self.initialize_balance_sheet()
+
+        test_customer = 'TEST-CUST-ACCOUNTING'
+        self.HEALTH_WALLETS[test_customer] = {
+            'customer_id': test_customer,
+            'balance': 0,
+            'transactions': [],
+            'created_at': datetime.now().isoformat()
+        }
+        self.CLAIMS['TEST-CLAIM-ACCOUNTING'] = {
+            'id': 'TEST-CLAIM-ACCOUNTING',
+            'customer_id': test_customer,
+            'policy_id': 'TEST-POL-ACCOUNTING',
+            'status': 'approved'
+        }
+
+        result = self.process_claim_payment_to_wallet(
+            claim_id='TEST-CLAIM-ACCOUNTING',
+            customer_id=test_customer,
+            amount=250.0,
+            processed_by='test_accountant'
+        )
+
+        self.assertTrue(result['success'], f"Claim payment failed: {result.get('error', 'Unknown error')}")
+
+        engine = get_accounting_engine()
+        claim_entries = [e for e in engine.ledger_entries if e.entry_type == EntryType.CLAIM_PAYMENT]
+        self.assertEqual(len(claim_entries), 1)
+        self.assertEqual(float(claim_entries[0].credit_amount), 250.0)
     
     def test_net_income_calculation(self):
         """Test net income is calculated correctly"""
@@ -553,6 +588,18 @@ print(json.dumps({{
     "wallet_transactions": len(server_module.HEALTH_WALLETS["CUST-EFRAT-001"].get("transactions", [])),
     "investment_balance": server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"]["balance"],
     "investment_deposits": len(server_module.INVESTMENT_ACCOUNTS["CUST-EFRAT-001"].get("deposits", [])),
+    "policy_annual_premium": server_module.POLICIES["POL-EFRAT-UNIFIED-001"]["annual_premium"],
+    "policy_monthly_premium": server_module.POLICIES["POL-EFRAT-UNIFIED-001"]["monthly_premium"],
+    "billing_amount": next(
+        bill["amount"]
+        for bill in server_module.BILLING.values()
+        if bill.get("policy_id") == "POL-EFRAT-UNIFIED-001"
+    ),
+    "billing_amount_paid": next(
+        bill["amount_paid"]
+        for bill in server_module.BILLING.values()
+        if bill.get("policy_id") == "POL-EFRAT-UNIFIED-001"
+    ),
 }}))
 """
 
@@ -582,6 +629,10 @@ print(json.dumps({{
         self.assertEqual(payload['wallet_transactions'], 1)
         self.assertAlmostEqual(payload['investment_balance'], 654.32)
         self.assertEqual(payload['investment_deposits'], 1)
+        self.assertAlmostEqual(payload['policy_annual_premium'], 1552.50)
+        self.assertAlmostEqual(payload['policy_monthly_premium'], 129.38)
+        self.assertAlmostEqual(payload['billing_amount'], 129.38)
+        self.assertAlmostEqual(payload['billing_amount_paid'], 129.38)
 
     def test_bills_vs_billing_autopay_summary_structure(self):
         """Summary must contain all four required top-level sections."""

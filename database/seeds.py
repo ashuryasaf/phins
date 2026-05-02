@@ -339,26 +339,17 @@ def seed_sample_data(session=None):
                     'created_date': now.isoformat()
                 }
             
-            # Initialize health wallet with $20,000 deposit (as per user's test data)
+            # Initialize health wallet — balance will be populated by claim
+            # payment processing below (Paid claims deposit into wallet).
             from web_portal.server import HEALTH_WALLETS
             HEALTH_WALLETS['CUST-ASAF-001'] = {
                 'customer_id': 'CUST-ASAF-001',
-                'balance': 20000.00,
-                'monthly_deposit': 500.00,
-                'transactions': [
-                    {
-                        'id': 'TXN-SEED-001',
-                        'type': 'deposit',
-                        'amount': 20000.00,
-                        'payment_method': 'bank_transfer',
-                        'timestamp': datetime.now(timezone.utc).isoformat(),
-                        'description': 'Initial deposit via billing',
-                        'balance_after': 20000.00
-                    }
-                ],
+                'balance': 0.00,
+                'monthly_deposit': 0.00,
+                'transactions': [],
                 'created_at': datetime.now(timezone.utc).isoformat()
             }
-            logger.info(f"Created health wallet with $20,000 balance for CUST-ASAF-001")
+            logger.info(f"Created empty health wallet for CUST-ASAF-001 (claim payments will populate balance)")
         else:
             logger.info(f"Primary customer {primary_customer.email} already exists, verifying related data...")
 
@@ -450,7 +441,19 @@ def seed_sample_data(session=None):
                     'end_date': (now + timedelta(days=365)).isoformat(),
                     'approval_date': now.isoformat(),
                     'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
+                    'updated_date': now.isoformat(),
+                    'payment_setup': {
+                        'auto_pay': True,
+                        'billing_frequency': 'monthly',
+                        'card_type': 'mastercard',
+                        'card_last4': '4242',
+                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                    },
+                    'billing': {
+                        'auto_pay': True,
+                        'frequency': 'monthly',
+                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                    }
                 }
 
             # Create bill for active policy (idempotent)
@@ -582,6 +585,44 @@ def seed_sample_data(session=None):
                     }
             except Exception as e:
                 logger.warning(f"Could not create claim {claim_data['id']}: {e}")
+
+        # Reconcile paid claims → wallet: any claim with status "Paid" must
+        # have its approved_amount reflected in the customer's health wallet.
+        # Idempotent: skip claims whose payment transaction is already recorded.
+        try:
+            from web_portal.server import HEALTH_WALLETS
+            paid_claims_total = 0.0
+            for claim_data in sample_claims:
+                if claim_data['status'] == 'Paid' and claim_data.get('approved_amount'):
+                    cust_id = 'CUST-ASAF-001'
+                    wallet = HEALTH_WALLETS.get(cust_id)
+                    if not wallet:
+                        continue
+
+                    tx_id = f"CLAIM-PAY-SEED-{claim_data['id']}"
+                    transactions = wallet.setdefault('transactions', [])
+                    if any(tx.get('id') == tx_id for tx in transactions):
+                        continue
+
+                    amt = float(claim_data['approved_amount'])
+                    wallet['balance'] += amt
+                    paid_claims_total += amt
+                    transactions.append({
+                        'id': tx_id,
+                        'type': 'claim_payment',
+                        'amount': amt,
+                        'source': 'PHINS_CLAIMS_RESERVE',
+                        'claim_id': claim_data['id'],
+                        'description': f"Claim {claim_data['id']} payment - {claim_data['description'][:50]}",
+                        'balance_after': wallet['balance'],
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    })
+            if paid_claims_total > 0:
+                logger.info(f"Reconciled {paid_claims_total:.2f} in paid claims to CUST-ASAF-001 wallet")
+            else:
+                logger.info("Paid claims already reconciled in CUST-ASAF-001 wallet, skipping")
+        except ImportError:
+            logger.warning("Could not import HEALTH_WALLETS for paid claim reconciliation")
 
         # Create underwriting application for primary customer (idempotent).
         # This is the latest application that can be used for risk assessment reports.
@@ -896,7 +937,7 @@ def seed_sample_data(session=None):
                     'status': 'active'
                 }
                 
-                POLICIES[pol_data['id']] = {
+                policy_mem = {
                     'id': pol_data['id'],
                     'customer_id': phins_cust['id'],
                     'type': pol_data['type'],
@@ -909,6 +950,20 @@ def seed_sample_data(session=None):
                     'end_date': (now + timedelta(days=365)).isoformat(),
                     'created_date': now.isoformat()
                 }
+                if pol_data['status'] == 'active':
+                    policy_mem['payment_setup'] = {
+                        'auto_pay': True,
+                        'billing_frequency': 'monthly',
+                        'card_type': 'mastercard',
+                        'card_last4': '4242',
+                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                    }
+                    policy_mem['billing'] = {
+                        'auto_pay': True,
+                        'frequency': 'monthly',
+                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                    }
+                POLICIES[pol_data['id']] = policy_mem
                 
                 UNDERWRITING_APPLICATIONS[app_data['id']] = {
                     'id': app_data['id'],

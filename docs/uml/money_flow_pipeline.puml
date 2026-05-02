@@ -1,0 +1,147 @@
+@startuml PHINS Money Flow Pipeline
+!theme plain
+title PHINS Money Flow Pipeline — Data Integrity Architecture
+skinparam backgroundColor #FEFEFE
+skinparam roundcorner 10
+skinparam shadowing false
+
+' ───────────────────────────────────────────
+' ACTORS
+' ───────────────────────────────────────────
+actor "Customer" as cust
+participant "Web Portal\n(server.py)" as portal
+participant "Billing Engine\n(billing_engine.py)" as billing
+participant "Accounting Engine\n(accounting_engine.py)" as accounting
+database "POLICIES" as pol
+database "BILLING" as bills
+database "CLAIMS" as claims
+database "HEALTH_WALLETS" as wallet
+database "INVESTMENT_ACCOUNTS" as invest
+database "TRANSACTION_LEDGER" as ledger
+database "PHINS_BALANCE_SHEET" as bsheet
+database "NFT_LEDGER" as nft
+
+' ───────────────────────────────────────────
+' 1. CUSTOMER REGISTRATION & POLICY APPLICATION
+' ───────────────────────────────────────────
+== Registration & Policy Application ==
+
+cust -> portal : Register (name, email, etc.)
+portal -> portal : Create CUSTOMERS[cust_id]
+portal -> portal : Create USERS entry
+
+cust -> portal : Apply for Policy\n(type, coverage, risk_score)
+portal -> pol : Create POLICIES[pol_id]\n(status=pending_underwriting)
+portal -> ledger : record_transaction(policy_applied)
+
+portal -> portal : Underwriting Review
+portal -> pol : Update status → active
+portal -> ledger : record_transaction(policy_approved)
+portal -> nft : Mint NFT verification token
+
+' ───────────────────────────────────────────
+' 2. PREMIUM PAYMENT (Monthly)
+' ───────────────────────────────────────────
+== Monthly Premium Payment ==
+
+cust -> portal : Pay Premium ($X)
+portal -> portal : get_customer_allocation(cust_id)\n— savings_pct / risk_pct (e.g. 75/25)
+portal -> portal : Calculate split:\n  savings = X × savings_pct%\n  risk = X × risk_pct%
+
+group Premium Allocation Split
+    portal -> wallet : savings × wallet_pct% →\nHEALTH_WALLETS[cust].balance
+    portal -> invest : savings × investment_pct% →\nINVESTMENT_ACCOUNTS[cust].balance
+    note right : Sub-split: index/bonds/crypto
+    portal -> portal : savings × algo_pct% →\nalgo_trading_balances
+    portal -> bsheet : risk amount →\noperating_reserve (via record_premium_revenue)
+end
+
+portal -> bills : Update BILLING[bill_id]\n(status=paid, amount_paid=X)
+portal -> ledger : record_transaction(premium_payment)\nwith allocation metadata
+portal -> nft : Mint NFT for payment
+portal -> accounting : create_allocation() + post_allocation()\n→ Risk Fund + Savings Fund entries
+
+' ───────────────────────────────────────────
+' 3. AUTO-PAY (Monthly on 1st)
+' ───────────────────────────────────────────
+== Auto-Pay Processing (1st of Month) ==
+
+portal -> portal : run_monthly_auto_pay()
+loop For each POLICY with auto_pay=true
+    portal -> portal : Check: active/approved,\nnot suspended, due date ≤ now
+    portal -> bills : _prepare_auto_pay_bill()\n— create/find bill for cycle
+    portal -> portal : process_customer_premium_payment()\n— same flow as manual payment
+    portal -> pol : Advance next_billing_date
+    portal -> ledger : record_transaction(auto_pay_execution)
+end
+portal -> portal : save_ledger_data()\nPersist to disk/DB
+
+' ───────────────────────────────────────────
+' 4. CLAIM FILING & APPROVAL
+' ───────────────────────────────────────────
+== Claim Filing & Approval ==
+
+cust -> portal : File Claim\n(policy_id, type, amount, description)
+portal -> claims : Create CLAIMS[claim_id]\n(status=pending)
+portal -> ledger : record_transaction(claim_submitted)
+portal -> nft : Mint NFT for claim
+
+portal -> portal : Claims Review\n(adjuster / admin)
+portal -> claims : Update status → approved\n(set approved_amount)
+portal -> ledger : record_transaction(claim_approved)
+portal -> portal : persist_claim_update_to_database()
+
+' ───────────────────────────────────────────
+' 5. CLAIM PAYMENT → WALLET DEPOSIT
+' ───────────────────────────────────────────
+== Claim Payment to Customer Wallet ==
+
+portal -> portal : process_claim_payment_to_wallet()
+
+group Claim Payment Pipeline
+    portal -> bsheet : 1. Check claims_reserve ≥ amount
+    portal -> bsheet : 2. record_balance_sheet_transaction()\n   expense / claims_paid\n   (deducts from claims_reserve)
+    portal -> wallet : 3. HEALTH_WALLETS[cust].balance += amount\n   Append claim_payment transaction
+    portal -> ledger : 4. record_transaction(claim_payment_received)\n   with claim_id, payment_ref, balances
+    portal -> nft : 5. Mint NFT for claim payment
+    portal -> accounting : 6. post_claim_payment()\n   Credit Risk Fund (claim payout)
+end
+
+portal -> claims : Update claim status → paid\n(payment_method=health_wallet_transfer)
+portal -> portal : persist_claim_update_to_database()
+portal -> portal : save_ledger_data()
+
+' ───────────────────────────────────────────
+' 6. WALLET USAGE (Purchases, Transfers)
+' ───────────────────────────────────────────
+== Wallet Usage ==
+
+cust -> portal : Purchase from Supplier\n(using Health Wallet)
+portal -> wallet : Deduct from balance
+portal -> ledger : record_transaction(wallet_purchase)
+
+cust -> portal : Transfer between wallets\n(wallet ↔ investment ↔ algo)
+portal -> wallet : Adjust balances
+portal -> invest : Adjust balances
+portal -> ledger : record_transaction(wallet_transfer)
+
+' ───────────────────────────────────────────
+' KEY INVARIANTS
+' ───────────────────────────────────────────
+
+note over wallet, ledger
+  **DATA INTEGRITY INVARIANTS**
+
+  1. savings_pct + risk_pct = 100%
+  2. wallet_pct + investment_pct + algo_pct = 100%
+  3. index_pct + bonds_pct + crypto_pct = 100%
+  4. Every BILLING[bill].amount = POLICY[pol].monthly_premium
+  5. Every Paid claim → wallet transaction + ledger entry
+  6. PHINS_BALANCE_SHEET.claims_reserve ≥ 0
+  7. HEALTH_WALLETS[cust].balance = Σ deposits − Σ withdrawals
+  8. Every financial mutation → TRANSACTION_LEDGER entry + NFT
+  9. Auto-pay iterates ALL active policies with auto_pay=true
+  10. No orphan bill_ids, policy_ids, or claim_ids in ledger
+end note
+
+@enduml

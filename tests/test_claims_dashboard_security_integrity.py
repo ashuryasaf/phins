@@ -41,11 +41,13 @@ def test_claims_server_enforces_claims_auth_and_state_transitions():
     assert "if path == '/api/claims/reject':" in content
     assert "if path == '/api/claims/pay':" in content
     assert "if session and not is_claims_payment_role(effective_role):" in content
+    assert "if path.startswith('/api/claim/') and path.endswith('/pay'):" in content
     assert "if path == '/api/claims/probability-report':" in content
     assert "Claims report access denied" in content
 
     # Data integrity and leakage controls should exist.
     assert "persist_claim_update_to_database(claim_id" in content
+    assert "persist_claim_update_to_database(claim_id, claim)" not in content
     assert "sanitize_claim_probability_report(report)" in content
     assert "cleaned.pop('evidence', None)" in content
     assert "Claim has already been paid" in content
