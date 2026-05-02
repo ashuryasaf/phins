@@ -149,13 +149,13 @@
       display: flex; align-items: center; gap: 10px;
     }
     .btn-primary {
-      background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+      background: linear-gradient(135deg, var(--ds-accent, #ff6b35) 0%, var(--ds-accent-strong, #f7931e) 100%);
       color: white;
-      box-shadow: 0 8px 30px rgba(255, 107, 53, 0.4);
+      box-shadow: 0 8px 30px var(--ds-accent-shadow, rgba(255, 107, 53, 0.4));
     }
     .btn-primary:hover {
       transform: translateY(-3px);
-      box-shadow: 0 12px 40px rgba(255, 107, 53, 0.5);
+      box-shadow: 0 12px 40px var(--ds-accent-shadow-hover, rgba(255, 107, 53, 0.5));
     }
     .btn-secondary {
       background: rgba(255,255,255,0.95);
@@ -462,6 +462,9 @@
       const root = document.documentElement;
       root.style.setProperty('--ds-primary', primary);
       root.style.setProperty('--ds-accent', accent);
+      root.style.setProperty('--ds-accent-strong', `${accent}cc`);
+      root.style.setProperty('--ds-accent-shadow', `${accent}66`);
+      root.style.setProperty('--ds-accent-shadow-hover', `${accent}80`);
 
       document.body.style.background =
         `linear-gradient(180deg, ${primary} 0%, ${primaryLight} 50%, ${primary}dd 100%)`;
@@ -474,11 +477,6 @@
 
       const header = document.querySelector('.landing-header');
       if (header) header.style.background = `${primary}f2`;
-
-      document.querySelectorAll('.btn-primary').forEach(function(btn) {
-        btn.style.background = `linear-gradient(135deg, ${accent} 0%, ${accent}cc 100%)`;
-        btn.style.boxShadow = `0 8px 30px ${accent}66`;
-      });
 
       const themeColor = document.querySelector('meta[name="theme-color"]');
       if (themeColor) themeColor.setAttribute('content', primary);
