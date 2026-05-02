@@ -449,7 +449,7 @@
         var s = await r.json();
         var p = normalizeHexColor(s.primary_color, '#0d47a1');
         if (p && p !== '#0d47a1') {
-          document.body.style.background = 'linear-gradient(135deg, ' + p + ' 0%, ' + p + 'cc 50%, ' + p + 'dd 100%)';
+          document.body.style.background = 'linear-gradient(135deg, ' + p + ' 0%, ' + p + 'cc 50%, ' + p + 'bb 100%)';
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) meta.setAttribute('content', p);
         }
