@@ -1380,3 +1380,291 @@ def test_video_generation_service_supports_stream_to_path():
     assert "stream_to_path" in sig.parameters, (
         "download_generated_video must accept stream_to_path kwarg"
     )
+
+
+# ============ DESIGN SETTINGS & MEDIA DASHBOARD INTEGRATION TESTS ============
+
+
+def test_public_design_settings_includes_colors_and_background():
+    """Public GET /api/design/settings returns primary_color, accent_color,
+    hero_background_url, promo_banner_url, and section visibility flags."""
+    port = 8307
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    try:
+        portal.DESIGN_SETTINGS['primary_color'] = '#1a237e'
+        portal.DESIGN_SETTINGS['accent_color'] = '#ff9800'
+        portal.DESIGN_SETTINGS['show_contact'] = False
+        portal.DESIGN_SETTINGS['show_quote_form'] = True
+
+        status, resp = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert resp['primary_color'] == '#1a237e'
+        assert resp['accent_color'] == '#ff9800'
+        assert resp['show_contact'] is False
+        assert resp['show_quote_form'] is True
+        assert resp.get('show_products') is not None
+        assert 'hero_background_url' in resp
+        assert 'promo_banner_url' in resp
+    finally:
+        portal.DESIGN_SETTINGS['primary_color'] = '#0d47a1'
+        portal.DESIGN_SETTINGS['accent_color'] = '#ff6b35'
+        portal.DESIGN_SETTINGS['show_contact'] = True
+        portal.DESIGN_SETTINGS['show_quote_form'] = False
+        srv.stop()
+
+
+def test_public_design_settings_resolves_background_and_banner_urls():
+    """When hero_background_id and promo_banner_id point to media assets,
+    the public response resolves them to playable URLs."""
+    port = 8308
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_resolve"
+    _inject_session(token, "design_admin", "admin")
+
+    bg_id = "media-test-bg-001"
+    banner_id = "media-test-banner-001"
+
+    try:
+        portal.MEDIA_ASSETS[bg_id] = {
+            "id": bg_id, "name": "hero-bg.jpg", "type": "image",
+            "url": "/media-files/media-test-bg-001/hero_bg",
+            "data": "", "source": "upload",
+        }
+        portal.MEDIA_ASSETS[banner_id] = {
+            "id": banner_id, "name": "promo.jpg", "type": "image",
+            "url": "/media-files/media-test-banner-001/promo",
+            "data": "", "source": "upload",
+        }
+
+        status, _ = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_background_id": bg_id,
+                "promo_banner_id": banner_id,
+            },
+        )
+        assert status == 200
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert public['hero_background_url'] == "/media-files/media-test-bg-001/hero_bg"
+        assert public['promo_banner_url'] == "/media-files/media-test-banner-001/promo"
+    finally:
+        portal.MEDIA_ASSETS.pop(bg_id, None)
+        portal.MEDIA_ASSETS.pop(banner_id, None)
+        portal.DESIGN_SETTINGS['hero_background_id'] = ''
+        portal.DESIGN_SETTINGS['promo_banner_id'] = ''
+        srv.stop()
+
+
+def test_design_settings_post_rejects_invalid_asset_refs():
+    """POST /api/design/settings rejects media asset IDs that don't exist."""
+    port = 8309
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_invalid_ref"
+    _inject_session(token, "design_admin2", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"hero_background_id": "nonexistent-asset-xyz"},
+        )
+        assert status == 400
+        assert "invalid" in resp.get("error", "").lower() or "asset" in resp.get("error", "").lower()
+        assert "hero_background_id" in resp.get("invalid_refs", [])
+    finally:
+        srv.stop()
+
+
+def test_design_settings_post_accepts_empty_string_asset_refs():
+    """Empty string asset refs are valid (clearing the assignment)."""
+    port = 8310
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_empty_ref"
+    _inject_session(token, "design_admin3", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"hero_background_id": "", "promo_banner_id": ""},
+        )
+        assert status == 200
+        assert resp['success'] is True
+    finally:
+        srv.stop()
+
+
+def test_design_settings_post_persists_nested_design_objects():
+    """POST /api/design/settings persists designSettings, layoutSettings,
+    and brandSettings nested objects from the admin media dashboard."""
+    port = 8311
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_nested_settings"
+    _inject_session(token, "design_admin4", "admin")
+
+    try:
+        status, resp = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "tagline": "Test tagline",
+                "designSettings": {"darkMode": True, "animations": False},
+                "brandSettings": {"companyName": "Test Corp"},
+            },
+        )
+        assert status == 200
+        settings = resp['settings']
+        assert settings['tagline'] == 'Test tagline'
+        assert settings['designSettings']['darkMode'] is True
+        assert settings['brandSettings']['companyName'] == 'Test Corp'
+
+        status2, admin_resp = _json_request(
+            base + "/api/design/settings",
+            token=token,
+        )
+        assert status2 == 200
+        assert admin_resp['designSettings']['darkMode'] is True
+        assert admin_resp['brandSettings']['companyName'] == 'Test Corp'
+    finally:
+        portal.DESIGN_SETTINGS.pop('designSettings', None)
+        portal.DESIGN_SETTINGS.pop('brandSettings', None)
+        portal.DESIGN_SETTINGS['tagline'] = 'Comprehensive Protection for Your Future'
+        srv.stop()
+
+
+def test_delete_media_clears_derived_urls_from_design_settings():
+    """Deleting a media asset assigned as hero video also clears
+    the derived video_url from DESIGN_SETTINGS."""
+    port = 8312
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_delete_clears_url"
+    _inject_session(token, "del_admin2", "admin")
+
+    try:
+        status, create_resp = _json_request(
+            base + "/api/media",
+            method="POST",
+            token=token,
+            payload={
+                "name": "hero-video.mp4",
+                "type": "video",
+                "format": "video/mp4",
+                "size": 1024,
+                "url": "https://cdn.example.com/hero.mp4",
+                "source": "url",
+            },
+        )
+        assert status == 201
+        asset_id = create_resp["asset"]["id"]
+
+        status, _ = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_video_id": asset_id,
+                "video_url": "https://cdn.example.com/hero.mp4",
+            },
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS['hero_video_id'] == asset_id
+        assert portal.DESIGN_SETTINGS['video_url'] == "https://cdn.example.com/hero.mp4"
+
+        status, _ = _json_request(
+            base + f"/api/media/{asset_id}",
+            method="DELETE",
+            token=token,
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS['hero_video_id'] == ''
+        assert portal.DESIGN_SETTINGS['video_url'] == ''
+    finally:
+        srv.stop()
+
+
+def test_public_settings_gracefully_handles_missing_asset():
+    """If a design setting references an asset ID that no longer exists,
+    the public response returns empty URLs instead of erroring."""
+    port = 8313
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    try:
+        portal.DESIGN_SETTINGS['hero_background_id'] = 'deleted-asset-xyz'
+        portal.DESIGN_SETTINGS['promo_banner_id'] = 'deleted-asset-abc'
+
+        status, resp = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert resp['hero_background_url'] == ''
+        assert resp['promo_banner_url'] == ''
+    finally:
+        portal.DESIGN_SETTINGS['hero_background_id'] = ''
+        portal.DESIGN_SETTINGS['promo_banner_id'] = ''
+        srv.stop()
+
+
+def test_video_section_hidden_when_show_video_false():
+    """When show_video is False, the public API returns empty video URL."""
+    port = 8314
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_hide_video"
+    _inject_session(token, "hide_admin", "admin")
+
+    try:
+        portal.DESIGN_SETTINGS['video_url'] = 'https://cdn.example.com/video.mp4'
+        portal.DESIGN_SETTINGS['show_video'] = False
+
+        status, resp = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert resp['video_url'] == ''
+        assert resp['video_poster'] == ''
+        assert resp['show_video'] is False
+    finally:
+        portal.DESIGN_SETTINGS['video_url'] = ''
+        portal.DESIGN_SETTINGS['show_video'] = True
+        srv.stop()

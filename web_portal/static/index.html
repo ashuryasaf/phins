@@ -455,21 +455,98 @@
       }
     }
     
-    // Load video from admin settings
+    function applyDesignColors(settings) {
+      const primary = settings.primary_color || '#0d47a1';
+      const accent = settings.accent_color || '#ff6b35';
+      const primaryLight = primary + 'cc';
+      const root = document.documentElement;
+      root.style.setProperty('--ds-primary', primary);
+      root.style.setProperty('--ds-accent', accent);
+
+      document.body.style.background =
+        `linear-gradient(180deg, ${primary} 0%, ${primaryLight} 50%, ${primary}dd 100%)`;
+
+      const splash = document.getElementById('splash-screen');
+      if (splash) {
+        splash.style.background =
+          `linear-gradient(135deg, ${primary} 0%, ${primaryLight} 50%, ${primary}dd 100%)`;
+      }
+
+      const header = document.querySelector('.landing-header');
+      if (header) header.style.background = `${primary}f2`;
+
+      document.querySelectorAll('.btn-primary').forEach(function(btn) {
+        btn.style.background = `linear-gradient(135deg, ${accent} 0%, ${accent}cc 100%)`;
+        btn.style.boxShadow = `0 8px 30px ${accent}66`;
+      });
+
+      const themeColor = document.querySelector('meta[name="theme-color"]');
+      if (themeColor) themeColor.setAttribute('content', primary);
+    }
+
+    function applyHeroBackground(url) {
+      if (!url) return;
+      const hero = document.querySelector('.hero');
+      if (!hero) return;
+      hero.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url('${url}')`;
+      hero.style.backgroundSize = 'cover';
+      hero.style.backgroundPosition = 'center';
+    }
+
+    function applyPromoBanner(url) {
+      if (!url) return;
+      var existing = document.getElementById('promo-banner');
+      if (existing) { existing.style.display = 'block'; }
+      else {
+        var banner = document.createElement('div');
+        banner.id = 'promo-banner';
+        banner.style.cssText = 'width:100%;text-align:center;padding:0;background:rgba(0,0,0,0.15);';
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = 'Promotion';
+        img.style.cssText = 'max-width:100%;max-height:200px;object-fit:contain;display:block;margin:0 auto;';
+        img.onerror = function() { banner.style.display = 'none'; };
+        banner.appendChild(img);
+        var mainContent = document.querySelector('.main-content');
+        var heroSection = document.getElementById('home');
+        if (mainContent && heroSection) {
+          mainContent.insertBefore(banner, heroSection.nextSibling);
+        }
+      }
+    }
+
+    function applySectionVisibility(settings) {
+      var videoSection = document.getElementById('video');
+      if (videoSection) {
+        videoSection.style.display = settings.show_video === false ? 'none' : '';
+      }
+      var contactSection = document.getElementById('contact');
+      if (contactSection) {
+        contactSection.style.display = settings.show_contact === false ? 'none' : '';
+      }
+    }
+
     async function loadVideoSettings() {
       try {
         const response = await fetch('/api/design/settings');
         if (response.ok) {
           const settings = await response.json();
-          
-          // Update video if configured
+
+          applyDesignColors(settings);
+          applySectionVisibility(settings);
+
+          if (settings.hero_background_url) {
+            applyHeroBackground(settings.hero_background_url);
+          }
+
+          if (settings.promo_banner_url) {
+            applyPromoBanner(settings.promo_banner_url);
+          }
+
           if (settings.video_url) {
             const wrapper = document.getElementById('video-wrapper');
-            const placeholder = document.getElementById('video-placeholder');
-            
-            // Check if it's a YouTube/Vimeo embed or direct video
+
             if (settings.video_url.includes('youtube.com') || settings.video_url.includes('youtu.be')) {
-              // Convert to embed URL
               let embedUrl = settings.video_url;
               if (settings.video_url.includes('watch?v=')) {
                 embedUrl = settings.video_url.replace('watch?v=', 'embed/');
@@ -481,12 +558,10 @@
               const vimeoId = settings.video_url.split('/').pop();
               wrapper.innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
             } else {
-              // Direct video URL
               wrapper.innerHTML = `<video controls poster="${settings.video_poster || ''}"><source src="${settings.video_url}" type="video/mp4">Your browser does not support video.</video>`;
             }
           }
-          
-          // Update subtitle if configured
+
           if (settings.tagline) {
             document.getElementById('hero-subtitle').textContent = settings.tagline;
           }

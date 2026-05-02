@@ -453,5 +453,23 @@
   </div>
   
   <script src="/register.js"></script>
+  <script>
+    (async function applyBranding() {
+      try {
+        var r = await fetch('/api/design/settings');
+        if (!r.ok) return;
+        var s = await r.json();
+        var p = s.primary_color;
+        if (p && p !== '#0d47a1') {
+          document.body.style.background = 'linear-gradient(135deg, ' + p + ' 0%, ' + p + 'cc 50%, ' + p + 'dd 100%)';
+        }
+        if (s.hero_background_url) {
+          document.body.style.backgroundImage = 'linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.65)), url(' + s.hero_background_url + ')';
+          document.body.style.backgroundSize = 'cover';
+          document.body.style.backgroundPosition = 'center';
+        }
+      } catch (e) { /* branding optional */ }
+    })();
+  </script>
 </body>
 </html>
