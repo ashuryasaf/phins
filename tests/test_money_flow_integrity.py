@@ -272,6 +272,7 @@ class TestAccountingEnginePremiumAllocation:
         claim_entries = [e for e in engine.ledger_entries if e.entry_type == EntryType.CLAIM_PAYMENT]
         assert len(claim_entries) == 1
         assert claim_entries[0].credit_amount == Decimal('5000.00')
+        assert claim_entries[0].posted_by == 'accountant'
 
     def test_get_accounting_engine_returns_singleton(self):
         from accounting_engine import get_accounting_engine

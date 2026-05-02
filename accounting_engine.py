@@ -732,7 +732,8 @@ By selecting an investment route, you confirm you understand the risks and benef
                 account_type=AccountType.RISK_FUND,
                 credit_amount=Decimal(str(amount)),
                 description=f"Claim payment {claim_id} - ${amount:.2f} to customer wallet",
-                reference_no=claim_id
+                reference_no=claim_id,
+                posted_by=paid_by
             )
             return True, f"Claim payment {claim_id} for ${amount:.2f} recorded"
         except Exception as e:
@@ -741,7 +742,8 @@ By selecting an investment route, you confirm you understand the risks and benef
     def _create_ledger_entry(self, allocation_id: str, policy_id: str, customer_id: str,
                             entry_date: date, entry_type: EntryType, account_type: AccountType,
                             debit_amount: Decimal = Decimal(0), credit_amount: Decimal = Decimal(0),
-                            description: str = "", reference_no: str = "") -> AccountingEntry:
+                            description: str = "", reference_no: str = "",
+                            posted_by: Optional[str] = None) -> AccountingEntry:
         """Create and track ledger entry"""
         # Calculate running balance using Decimal arithmetic
         balance = self._get_account_balance(account_type)
@@ -769,7 +771,7 @@ By selecting an investment route, you confirm you understand the risks and benef
             balance=balance,
             description=description,
             reference_no=reference_no,
-            posted_by=self.engine_id
+            posted_by=posted_by or self.engine_id
         )
         
         self.ledger_entries.append(entry)
