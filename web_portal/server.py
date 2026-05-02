@@ -4458,15 +4458,9 @@ def reconcile_fresh_start_with_db() -> int:
                     touched = True
 
                 if cust_id not in CUSTOMER_ALLOCATIONS:
+                    default_allocation = get_customer_allocation(cust_id)
                     CUSTOMER_ALLOCATIONS[cust_id] = {
-                        'savings_pct': 75.0,
-                        'risk_pct': 25.0,
-                        'wallet_pct': 30.0,
-                        'investment_pct': 65.0,
-                        'algo_pct': 5.0,
-                        'index_pct': 60.0,
-                        'bonds_pct': 30.0,
-                        'crypto_pct': 10.0,
+                        **default_allocation,
                         'updated_at': now_iso,
                         'customer_id': cust_id,
                         '_reconciled': True,
