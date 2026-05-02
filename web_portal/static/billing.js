@@ -4383,3 +4383,150 @@ async function processCustomerRefund(billId, customerId, amount) {
 window.loadRefundableBills = loadRefundableBills;
 window.confirmCustomerRefund = confirmCustomerRefund;
 window.processCustomerRefund = processCustomerRefund;
+
+// ========== AUTO-PAY ALL CLIENTS (ADMIN) ==========
+
+function _getAutoPayAllResult() {
+  return document.getElementById('autopay-all-result');
+}
+
+async function runAutoPayAllDryRun() {
+  const resultDiv = _getAutoPayAllResult();
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<span style="color:white;">⏳ Running preview (dry run)...</span>';
+
+  try {
+    const response = await fetch('/api/billing/auto-pay/execute', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ dry_run: true, force: true })
+    });
+    const result = await response.json();
+
+    if (result.success || result.processed !== undefined) {
+      const count = result.processed || 0;
+      const total = result.total_amount || 0;
+      const skipped = result.skipped || 0;
+      let html = `<div style="color:white;">
+        <strong>Preview Complete</strong> — ${count} payment(s) would be processed totaling <strong>$${total.toFixed(2)}</strong>`;
+      if (skipped) html += ` | ${skipped} skipped`;
+      if (result.payments && result.payments.length > 0) {
+        html += '<div style="margin-top:8px; max-height:150px; overflow-y:auto;">';
+        result.payments.forEach(p => {
+          html += `<div style="padding:4px 8px; margin:2px 0; background:rgba(255,255,255,0.1); border-radius:4px; font-size:0.85rem;">
+            ${p.customer_name || p.customer_id} — ${p.policy_id} — $${(p.amount||0).toFixed(2)}
+          </div>`;
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      resultDiv.innerHTML = html;
+    } else {
+      resultDiv.innerHTML = `<span style="color:#fca5a5;">${result.error || result.message || 'No policies due'}</span>`;
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `<span style="color:#fca5a5;">Error: ${err.message}</span>`;
+  }
+}
+
+async function runAutoPayAll() {
+  if (!confirm('⚡ Execute Auto-Pay for ALL clients now?\n\nThis will process premium payments for every active policy with auto-pay enabled. Proceed?')) {
+    return;
+  }
+
+  const btn = document.getElementById('btn-autopay-all');
+  const resultDiv = _getAutoPayAllResult();
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing...';
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<span style="color:white;">⏳ Processing all client payments...</span>';
+
+  try {
+    const response = await fetch('/api/billing/auto-pay/execute', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        dry_run: false,
+        force: true,
+        notify_users: true
+      })
+    });
+    const result = await response.json();
+
+    if (result.success || result.processed > 0) {
+      const count = result.processed || 0;
+      const total = result.total_amount || 0;
+      const failed = result.failed || 0;
+      let html = `<div style="color:white;">
+        <div style="font-size:1.1rem; font-weight:700; margin-bottom:8px;">✅ Auto-Pay Complete</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:8px; margin-bottom:8px;">
+          <div style="background:rgba(255,255,255,0.15); padding:8px; border-radius:6px; text-align:center;">
+            <div style="font-size:1.3rem; font-weight:700;">$${total.toFixed(2)}</div>
+            <div style="font-size:0.75rem; opacity:0.8;">Total Collected</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.15); padding:8px; border-radius:6px; text-align:center;">
+            <div style="font-size:1.3rem; font-weight:700;">${count}</div>
+            <div style="font-size:0.75rem; opacity:0.8;">Payments</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.15); padding:8px; border-radius:6px; text-align:center;">
+            <div style="font-size:1.3rem; font-weight:700;">${failed}</div>
+            <div style="font-size:0.75rem; opacity:0.8;">Failed</div>
+          </div>
+        </div>`;
+
+      if (result.payments && result.payments.length > 0) {
+        html += '<div style="max-height:200px; overflow-y:auto;">';
+        result.payments.forEach(p => {
+          const status = p.status === 'paid' ? '✅' : '❌';
+          html += `<div style="padding:6px 10px; margin:3px 0; background:rgba(255,255,255,0.08); border-radius:4px; font-size:0.85rem; display:flex; justify-content:space-between; align-items:center;">
+            <span>${status} ${p.customer_name || p.customer_id}</span>
+            <span style="font-weight:600;">$${(p.amount||0).toFixed(2)}</span>
+          </div>`;
+        });
+        html += '</div>';
+      }
+
+      if (result.report_id) {
+        html += `<div style="margin-top:8px; font-size:0.8rem; opacity:0.7;">Report ID: ${result.report_id}</div>`;
+      }
+      html += '</div>';
+      resultDiv.innerHTML = html;
+
+      if (typeof showNotification === 'function') {
+        showNotification(`Auto-Pay: ${count} payment(s), $${total.toFixed(2)} collected`, 'success');
+      }
+
+      // Refresh billing data
+      if (typeof loadStats === 'function') loadStats();
+      if (typeof loadRecentTransactions === 'function') loadRecentTransactions();
+    } else {
+      resultDiv.innerHTML = `<div style="color:#fde68a;">
+        <strong>⚠️ ${result.error || 'No payments processed'}</strong>
+        ${result.message ? `<div style="font-size:0.85rem; margin-top:4px;">${result.message}</div>` : ''}
+      </div>`;
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `<span style="color:#fca5a5;">❌ Error: ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Run Auto-Pay Now';
+  }
+}
+
+// Show auto-pay-all section only for admin/accountant roles
+document.addEventListener('DOMContentLoaded', () => {
+  const role = localStorage.getItem('phins_role');
+  if (role === 'admin' || role === 'accountant') {
+    const section = document.getElementById('autopay-all-section');
+    if (section) section.style.display = 'block';
+  }
+});
+
+window.runAutoPayAll = runAutoPayAll;
+window.runAutoPayAllDryRun = runAutoPayAllDryRun;

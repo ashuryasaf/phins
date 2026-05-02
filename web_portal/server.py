@@ -6132,6 +6132,7 @@ def run_monthly_auto_pay(
             report['payments'].append({
                 'policy_id': policy_id,
                 'customer_id': customer_id,
+                'customer_name': get_customer_display_name(customer_id),
                 'bill_id': bill_id,
                 'amount': amount,
                 'billing_cycle_key': cycle_key,
@@ -6139,6 +6140,8 @@ def run_monthly_auto_pay(
                 'dry_run': True,
                 'bill_state': bill_state,
             })
+            report['processed'] += 1
+            report['total_amount'] = round(report['total_amount'] + amount, 2)
             continue
 
         try:
@@ -6190,8 +6193,10 @@ def run_monthly_auto_pay(
             payment_entry = {
                 'policy_id': policy_id,
                 'customer_id': customer_id,
+                'customer_name': get_customer_display_name(customer_id),
                 'bill_id': bill_id,
                 'amount': amount,
+                'status': 'paid',
                 'billing_cycle_key': cycle_key,
                 'payment_method': payment_method_display,
                 'next_billing_date': next_due.strftime('%Y-%m-%d'),

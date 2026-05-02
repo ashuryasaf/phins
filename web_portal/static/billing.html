@@ -412,6 +412,28 @@
   </div>
 
   <main>
+    <!-- Auto-Pay All Clients - Admin Action -->
+    <section class="card" id="autopay-all-section" style="padding: 16px; background: linear-gradient(135deg, #064e3b 0%, #065f46 100%); color: white; display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 2rem;">⚡</span>
+          <div>
+            <h2 style="margin: 0; font-size: 1.2rem; color: white;">Auto-Pay All Clients</h2>
+            <p style="margin: 4px 0 0 0; font-size: 0.85rem; opacity: 0.9;">Process all due premium payments for every active policy immediately</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn" onclick="runAutoPayAllDryRun()" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; font-size: 0.9rem;">
+            👁️ Preview
+          </button>
+          <button class="btn" id="btn-autopay-all" onclick="runAutoPayAll()" style="background: linear-gradient(135deg, #10b981 0%, #34d399 100%); color: white; padding: 10px 24px; font-size: 1rem; font-weight: 700; border: none; border-radius: 8px; box-shadow: 0 4px 15px rgba(16,185,129,0.4);">
+            ⚡ Run Auto-Pay Now
+          </button>
+        </div>
+      </div>
+      <div id="autopay-all-result" style="display: none; margin-top: 12px; padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.1);"></div>
+    </section>
+
     <!-- Test Mode Banner (Compact) -->
     <div class="test-mode-banner" style="padding: 0.5rem 1rem; margin-bottom: 0.75rem;">
       <span class="icon" style="font-size: 1.2rem;">🧪</span>
