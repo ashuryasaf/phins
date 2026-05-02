@@ -5616,18 +5616,39 @@ def _prepare_auto_pay_bill(
     """Return or create the bill that should be settled by the current auto-pay cycle."""
     now = reference_datetime or datetime.now()
     cycle_key = _compute_billing_cycle_key(due_date, frequency)
+    cycle_month = due_date.strftime('%Y-%m')
     legacy_bill = None
     for bill_id, bill in BILLING.items():
         if bill.get('policy_id') != policy_id:
             continue
         if str(bill.get('billing_cycle_key') or '') == cycle_key:
             return bill, 'matched'
+        # Broader month-match: a bill created/due in the same month for this policy
+        # that is already paid means the cycle is settled — return it as matched
+        bill_month = (bill.get('billing_period_start') or bill.get('due_date') or bill.get('created_date') or '')[:7]
+        if bill_month == cycle_month and status_in(bill, ['paid']):
+            bill['billing_cycle_key'] = cycle_key
+            BILLING[bill_id] = bill
+            return bill, 'matched'
         if (
             not legacy_bill
             and status_in(bill, ['outstanding', 'partial', 'pending'])
             and not bill.get('billing_cycle_key')
+            and bill_month == cycle_month
         ):
             legacy_bill = bill
+
+    # Fallback: grab any outstanding bill without cycle key (old behavior)
+    if not legacy_bill:
+        for bill_id, bill in BILLING.items():
+            if bill.get('policy_id') != policy_id:
+                continue
+            if (
+                status_in(bill, ['outstanding', 'partial', 'pending'])
+                and not bill.get('billing_cycle_key')
+            ):
+                legacy_bill = bill
+                break
 
     if legacy_bill:
         legacy_bill['billing_cycle_key'] = cycle_key
@@ -6076,6 +6097,12 @@ def run_monthly_auto_pay(
 
         customer_id = str(policy.get('customer_id') or '').strip()
         cycle_key = _compute_billing_cycle_key(due_date, frequency)
+
+        # Idempotency guard: skip if this cycle was already processed for this policy
+        last_processed = (billing_config.get('auto_pay_config') or {}).get('last_processed_cycle', '')
+        if last_processed == cycle_key:
+            continue
+
         monthly_premium = safe_float(policy.get('monthly_premium', 0), 0.0) or (
             safe_float(policy.get('annual_premium', 0), 0.0) / 12.0
         )
@@ -22106,6 +22133,72 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
         
+        # Billing Deduplication - Remove duplicate bills for same policy+period
+        if path == '/api/admin/billing/deduplicate':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Accountant role required'}).encode('utf-8'))
+                return
+
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            from collections import defaultdict as _dd
+            groups = _dd(list)
+            for bill_id, bill in BILLING.items():
+                cust = bill.get('customer_id', '')
+                pol = bill.get('policy_id', '')
+                if is_suspended_account(cust):
+                    continue
+                period = (bill.get('billing_period_start') or bill.get('due_date') or bill.get('created_date') or '')[:7]
+                if not period or period == 'unknown':
+                    continue
+                groups[f"{cust}:{pol}:{period}"].append(bill_id)
+
+            duplicates = []
+            voided_ids = []
+            for key, bill_ids in groups.items():
+                if len(bill_ids) <= 1:
+                    continue
+                bills = [(bid, BILLING[bid]) for bid in bill_ids]
+                bills.sort(key=lambda x: (
+                    0 if x[1].get('status') == 'paid' else 1,
+                    x[1].get('created_date', '')
+                ))
+                # Keep the first (paid or oldest); mark rest as duplicates
+                keep_id = bills[0][0]
+                dupe_ids = [b[0] for b in bills[1:]]
+                parts = key.split(':')
+                duplicates.append({
+                    'customer_id': parts[0],
+                    'policy_id': parts[1],
+                    'period': parts[2],
+                    'keep_bill': keep_id,
+                    'duplicate_bills': dupe_ids,
+                    'total_duplicates': len(dupe_ids),
+                })
+                if auto_correct:
+                    for dup_id in dupe_ids:
+                        dup_bill = BILLING.get(dup_id)
+                        if dup_bill and dup_bill.get('status') != 'paid':
+                            dup_bill['status'] = 'voided'
+                            dup_bill['voided_reason'] = 'duplicate_billing_dedup'
+                            dup_bill['voided_at'] = datetime.now().isoformat()
+                            BILLING[dup_id] = dup_bill
+                            voided_ids.append(dup_id)
+
+            if auto_correct and voided_ids:
+                save_ledger_data()
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'total_duplicate_groups': len(duplicates),
+                'total_duplicate_bills': sum(d['total_duplicates'] for d in duplicates),
+                'auto_corrected': auto_correct,
+                'voided_count': len(voided_ids),
+                'voided_bill_ids': voided_ids,
+                'duplicates': duplicates[:50],
+            }, default=str).encode('utf-8'))
+            return
+
         # Balance Sheet Reconciliation - Verify and auto-correct integrity
         if path == '/api/admin/balance-sheet/reconcile':
             # Check authorization - only admin and accountant
