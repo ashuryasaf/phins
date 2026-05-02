@@ -149,13 +149,13 @@
       display: flex; align-items: center; gap: 10px;
     }
     .btn-primary {
-      background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+      background: linear-gradient(135deg, var(--ds-accent, #ff6b35) 0%, var(--ds-accent-strong, #f7931e) 100%);
       color: white;
-      box-shadow: 0 8px 30px rgba(255, 107, 53, 0.4);
+      box-shadow: 0 8px 30px var(--ds-accent-shadow, rgba(255, 107, 53, 0.4));
     }
     .btn-primary:hover {
       transform: translateY(-3px);
-      box-shadow: 0 12px 40px rgba(255, 107, 53, 0.5);
+      box-shadow: 0 12px 40px var(--ds-accent-shadow-hover, rgba(255, 107, 53, 0.5));
     }
     .btn-secondary {
       background: rgba(255,255,255,0.95);
@@ -455,21 +455,128 @@
       }
     }
     
-    // Load video from admin settings
+    function normalizeHexColor(color, fallback) {
+      if (typeof color !== 'string') return fallback;
+      const trimmed = color.trim().toLowerCase();
+      if (/^#[0-9a-f]{6}$/.test(trimmed)) return trimmed;
+      if (/^#[0-9a-f]{3}$/.test(trimmed)) {
+        return '#' + trimmed.slice(1).split('').map((char) => char + char).join('');
+      }
+      return fallback;
+    }
+
+    function mixHexColors(color, target, ratio) {
+      const safeRatio = Math.max(0, Math.min(1, ratio));
+      const parseHex = (hex) => [
+        parseInt(hex.slice(1, 3), 16),
+        parseInt(hex.slice(3, 5), 16),
+        parseInt(hex.slice(5, 7), 16)
+      ];
+      const [r1, g1, b1] = parseHex(color);
+      const [r2, g2, b2] = parseHex(target);
+      const toHex = (value) => Math.round(value).toString(16).padStart(2, '0');
+
+      return `#${toHex(r1 + (r2 - r1) * safeRatio)}${toHex(g1 + (g2 - g1) * safeRatio)}${toHex(b1 + (b2 - b1) * safeRatio)}`;
+    }
+
+    function applyDesignColors(settings) {
+      const defaultPrimary = '#0d47a1';
+      const defaultAccent = '#ff6b35';
+      const primary = normalizeHexColor(settings.primary_color, defaultPrimary);
+      const accent = normalizeHexColor(settings.accent_color, defaultAccent);
+      const accentStrong =
+        accent === defaultAccent ? '#f7931e' : mixHexColors(accent, '#ffffff', 0.18);
+      const root = document.documentElement;
+      root.style.setProperty('--ds-primary', primary);
+      root.style.setProperty('--ds-accent', accent);
+      root.style.setProperty('--ds-accent-strong', accentStrong);
+      root.style.setProperty('--ds-accent-shadow', `${accent}66`);
+      root.style.setProperty('--ds-accent-shadow-hover', `${accent}80`);
+
+      const splash = document.getElementById('splash-screen');
+      const header = document.querySelector('.landing-header');
+      if (primary !== defaultPrimary) {
+        const primaryMid = mixHexColors(primary, '#ffffff', 0.18);
+        const primaryEnd = mixHexColors(primary, '#ffffff', 0.28);
+
+        document.body.style.background =
+          `linear-gradient(180deg, ${primary} 0%, ${primaryMid} 50%, ${primaryEnd} 100%)`;
+
+        if (splash) {
+          splash.style.background =
+            `linear-gradient(135deg, ${primary} 0%, ${primaryMid} 50%, ${primaryEnd} 100%)`;
+        }
+
+        if (header) header.style.background = `${primary}f2`;
+      }
+
+      const themeColor = document.querySelector('meta[name="theme-color"]');
+      if (themeColor) themeColor.setAttribute('content', primary);
+    }
+
+    function applyHeroBackground(url) {
+      if (!url) return;
+      const hero = document.querySelector('.hero');
+      if (!hero) return;
+      hero.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url(${JSON.stringify(url)})`;
+      hero.style.backgroundSize = 'cover';
+      hero.style.backgroundPosition = 'center';
+    }
+
+    function applyPromoBanner(url) {
+      if (!url) return;
+      var existing = document.getElementById('promo-banner');
+      if (existing) { existing.style.display = 'block'; }
+      else {
+        var banner = document.createElement('div');
+        banner.id = 'promo-banner';
+        banner.style.cssText = 'width:100%;text-align:center;padding:0;background:rgba(0,0,0,0.15);';
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = 'Promotion';
+        img.style.cssText = 'max-width:100%;max-height:200px;object-fit:contain;display:block;margin:0 auto;';
+        img.onerror = function() { banner.style.display = 'none'; };
+        banner.appendChild(img);
+        var mainContent = document.querySelector('.main-content');
+        var heroSection = document.getElementById('home');
+        if (mainContent && heroSection) {
+          mainContent.insertBefore(banner, heroSection.nextSibling);
+        }
+      }
+    }
+
+    function applySectionVisibility(settings) {
+      var videoSection = document.getElementById('video');
+      if (videoSection) {
+        videoSection.style.display = settings.show_video === false ? 'none' : '';
+      }
+      var contactSection = document.getElementById('contact');
+      if (contactSection) {
+        contactSection.style.display = settings.show_contact === false ? 'none' : '';
+      }
+    }
+
     async function loadVideoSettings() {
       try {
         const response = await fetch('/api/design/settings');
         if (response.ok) {
           const settings = await response.json();
-          
-          // Update video if configured
+
+          applyDesignColors(settings);
+          applySectionVisibility(settings);
+
+          if (settings.hero_background_url) {
+            applyHeroBackground(settings.hero_background_url);
+          }
+
+          if (settings.promo_banner_url) {
+            applyPromoBanner(settings.promo_banner_url);
+          }
+
           if (settings.video_url) {
             const wrapper = document.getElementById('video-wrapper');
-            const placeholder = document.getElementById('video-placeholder');
-            
-            // Check if it's a YouTube/Vimeo embed or direct video
+
             if (settings.video_url.includes('youtube.com') || settings.video_url.includes('youtu.be')) {
-              // Convert to embed URL
               let embedUrl = settings.video_url;
               if (settings.video_url.includes('watch?v=')) {
                 embedUrl = settings.video_url.replace('watch?v=', 'embed/');
@@ -481,12 +588,10 @@
               const vimeoId = settings.video_url.split('/').pop();
               wrapper.innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
             } else {
-              // Direct video URL
               wrapper.innerHTML = `<video controls poster="${settings.video_poster || ''}"><source src="${settings.video_url}" type="video/mp4">Your browser does not support video.</video>`;
             }
           }
-          
-          // Update subtitle if configured
+
           if (settings.tagline) {
             document.getElementById('hero-subtitle').textContent = settings.tagline;
           }

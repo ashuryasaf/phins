@@ -10407,31 +10407,48 @@ For claims or questions, please contact:
             if require_role(session, ['admin', 'media']):
                 self.wfile.write(json.dumps(DESIGN_SETTINGS).encode('utf-8'))
             else:
-                # Public view - only return what's needed for landing page
-                # Include resolved URLs from media assets
                 hero_video_url = ''
                 video_poster_url = ''
+                hero_background_url = ''
+                promo_banner_url = ''
                 hero_video_id = DESIGN_SETTINGS.get('hero_video_id', '')
                 video_poster_id = DESIGN_SETTINGS.get('video_poster_id', '')
-                
+                hero_background_id = DESIGN_SETTINGS.get('hero_background_id', '')
+                promo_banner_id = DESIGN_SETTINGS.get('promo_banner_id', '')
+
                 if hero_video_id and hero_video_id in MEDIA_ASSETS:
                     media = MEDIA_ASSETS[hero_video_id]
                     hero_video_url = media.get('url') or media.get('data', '')
                 elif DESIGN_SETTINGS.get('video_url'):
                     hero_video_url = DESIGN_SETTINGS.get('video_url', '')
-                
+
                 if video_poster_id and video_poster_id in MEDIA_ASSETS:
                     media = MEDIA_ASSETS[video_poster_id]
                     video_poster_url = media.get('url') or media.get('data', '')
                 elif DESIGN_SETTINGS.get('video_poster'):
                     video_poster_url = DESIGN_SETTINGS.get('video_poster', '')
-                
+
+                if hero_background_id and hero_background_id in MEDIA_ASSETS:
+                    media = MEDIA_ASSETS[hero_background_id]
+                    hero_background_url = media.get('url') or media.get('data', '')
+
+                if promo_banner_id and promo_banner_id in MEDIA_ASSETS:
+                    media = MEDIA_ASSETS[promo_banner_id]
+                    promo_banner_url = media.get('url') or media.get('data', '')
+
+                show_video = DESIGN_SETTINGS.get('show_video', True)
                 public_settings = {
-                    'video_url': hero_video_url if DESIGN_SETTINGS.get('show_video', True) else '',
-                    'video_poster': video_poster_url if DESIGN_SETTINGS.get('show_video', True) else '',
+                    'video_url': hero_video_url if show_video else '',
+                    'video_poster': video_poster_url if show_video else '',
                     'tagline': DESIGN_SETTINGS.get('tagline', 'Comprehensive Protection for Your Future'),
-                    'show_video': DESIGN_SETTINGS.get('show_video', True),
-                    'show_contact': DESIGN_SETTINGS.get('show_contact', True)
+                    'show_video': show_video,
+                    'show_contact': DESIGN_SETTINGS.get('show_contact', True),
+                    'show_quote_form': DESIGN_SETTINGS.get('show_quote_form', False),
+                    'show_products': DESIGN_SETTINGS.get('show_products', False),
+                    'primary_color': DESIGN_SETTINGS.get('primary_color', '#0d47a1'),
+                    'accent_color': DESIGN_SETTINGS.get('accent_color', '#ff6b35'),
+                    'hero_background_url': hero_background_url,
+                    'promo_banner_url': promo_banner_url,
                 }
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
@@ -23171,20 +23188,38 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body)
-                
-                # Update only provided fields
+
+                asset_ref_keys = ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']
+                invalid_refs = []
+                for ref_key in asset_ref_keys:
+                    if ref_key not in data:
+                        continue
+                    ref_val = data.get(ref_key)
+                    if ref_val not in ('', None) and (not isinstance(ref_val, str) or ref_val not in MEDIA_ASSETS):
+                        invalid_refs.append(ref_key)
+                if invalid_refs:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': f'Invalid media asset references: {", ".join(invalid_refs)}. References must be empty or use existing asset IDs.',
+                        'invalid_refs': invalid_refs
+                    }).encode('utf-8'))
+                    return
+
                 for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
                            'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting',
                            'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
                     if key in data:
                         DESIGN_SETTINGS[key] = data[key]
-                
+
+                for nested_key in ['designSettings', 'layoutSettings', 'brandSettings']:
+                    if nested_key in data and isinstance(data[nested_key], dict):
+                        DESIGN_SETTINGS[nested_key] = data[nested_key]
+
                 DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
                 DESIGN_SETTINGS['updated_by'] = session.get('username', 'admin')
-                
-                # Persist settings
+
                 save_ledger_data()
-                
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -41809,6 +41844,10 @@ For claims or questions, please contact:
                     for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
                         if DESIGN_SETTINGS.get(key) == asset_id:
                             DESIGN_SETTINGS[key] = ''
+                            if key == 'hero_video_id':
+                                DESIGN_SETTINGS['video_url'] = ''
+                            elif key == 'video_poster_id':
+                                DESIGN_SETTINGS['video_poster'] = ''
 
                     save_ledger_data()
                     

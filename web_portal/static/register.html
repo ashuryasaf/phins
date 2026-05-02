@@ -453,5 +453,33 @@
   </div>
   
   <script src="/register.js"></script>
+  <script>
+    function normalizeHexColor(color, fallback) {
+      if (typeof color !== 'string') return fallback;
+      var trimmed = color.trim().toLowerCase();
+      if (/^#[0-9a-f]{6}$/.test(trimmed)) return trimmed;
+      if (/^#[0-9a-f]{3}$/.test(trimmed)) {
+        return '#' + trimmed.slice(1).split('').map(function(char) { return char + char; }).join('');
+      }
+      return fallback;
+    }
+
+    (async function applyBranding() {
+      try {
+        var r = await fetch('/api/design/settings');
+        if (!r.ok) return;
+        var s = await r.json();
+        var p = normalizeHexColor(s.primary_color, '#0d47a1');
+        if (p && p !== '#0d47a1') {
+          document.body.style.background = 'linear-gradient(135deg, ' + p + ' 0%, ' + p + 'cc 50%, ' + p + 'bb 100%)';
+        }
+        if (s.hero_background_url) {
+          document.body.style.backgroundImage = 'linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.65)), url(' + JSON.stringify(s.hero_background_url) + ')';
+          document.body.style.backgroundSize = 'cover';
+          document.body.style.backgroundPosition = 'center';
+        }
+      } catch (e) { /* branding optional */ }
+    })();
+  </script>
 </body>
 </html>
