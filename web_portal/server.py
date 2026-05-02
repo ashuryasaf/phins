@@ -3607,7 +3607,10 @@ def process_claim_payment_to_wallet(
             paid_by=processed_by
         )
     except Exception as ae_err:
-        print(f"[ACCOUNTING] Warning: could not record claim payment {claim_id} in accounting engine: {ae_err}")
+        import logging
+        logging.getLogger(__name__).error(
+            f"Accounting engine failed for claim {claim_id}: {ae_err}"
+        )
     
     return {
         'success': True,
