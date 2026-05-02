@@ -588,6 +588,7 @@ def seed_sample_data(session=None):
 
         # Reconcile paid claims → wallet: any claim with status "Paid" must
         # have its approved_amount reflected in the customer's health wallet.
+        # Idempotent: skip claims whose payment transaction is already recorded.
         try:
             from web_portal.server import HEALTH_WALLETS
             paid_claims_total = 0.0
@@ -618,6 +619,8 @@ def seed_sample_data(session=None):
                     })
             if paid_claims_total > 0:
                 logger.info(f"Reconciled {paid_claims_total:.2f} in paid claims to CUST-ASAF-001 wallet")
+            else:
+                logger.info("Paid claims already reconciled in CUST-ASAF-001 wallet, skipping")
         except ImportError:
             logger.warning("Could not import HEALTH_WALLETS for paid claim reconciliation")
 

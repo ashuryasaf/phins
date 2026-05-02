@@ -273,6 +273,12 @@ class TestAccountingEnginePremiumAllocation:
         assert len(claim_entries) == 1
         assert claim_entries[0].credit_amount == Decimal('5000.00')
 
+    def test_get_accounting_engine_returns_singleton(self):
+        from accounting_engine import get_accounting_engine
+        ae1 = get_accounting_engine()
+        ae2 = get_accounting_engine()
+        assert ae1 is ae2
+
 
 class TestAutoPayProcessesAllPolicies:
     """Ensure auto-pay processes all active policies with auto_pay enabled."""

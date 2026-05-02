@@ -3606,8 +3606,8 @@ def process_claim_payment_to_wallet(
             amount=Decimal(str(amount)),
             paid_by=processed_by
         )
-    except Exception:
-        pass
+    except Exception as ae_err:
+        print(f"[ACCOUNTING] Warning: could not record claim payment {claim_id} in accounting engine: {ae_err}")
     
     return {
         'success': True,
@@ -33873,18 +33873,35 @@ For claims or questions, please contact:
         
         # Pay individual claim by ID: /api/claim/{id}/pay
         if path.startswith('/api/claim/') and path.endswith('/pay'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            effective_role = get_effective_role(session)
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not is_claims_payment_role(effective_role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Claims payment access required'}).encode('utf-8'))
+                return
+
             claim_id = path.replace('/api/claim/', '').replace('/pay', '')
             claim = CLAIMS.get(claim_id)
             
             if claim and claim.get('status', '').lower() == 'approved':
                 paid_amount = float(claim.get('approved_amount', claim.get('claimed_amount', 0)))
                 customer_id = claim.get('customer_id', 'unknown')
+                processed_by = (
+                    (get_session_user(session) or {}).get('username')
+                    if session else 'system'
+                ) or 'system'
                 
                 payment_result = process_claim_payment_to_wallet(
                     claim_id=claim_id,
                     customer_id=customer_id,
                     amount=paid_amount,
-                    processed_by='system'
+                    processed_by=processed_by
                 )
                 
                 if payment_result.get('success'):
