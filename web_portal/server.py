@@ -40253,6 +40253,10 @@ For claims or questions, please contact:
                 notify_users = bool(data.get('notify_users', True))
                 force = bool(data.get('force', False))
 
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+
                 authorized = False
                 if session and require_role(session, ['admin', 'accountant']):
                     authorized = True
