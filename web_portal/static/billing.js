@@ -4521,7 +4521,13 @@ async function runAutoPayAll() {
 
 // Show auto-pay-all section only for admin/accountant roles
 document.addEventListener('DOMContentLoaded', () => {
-  const role = localStorage.getItem('phins_role');
+  let role = '';
+  try {
+    const session = JSON.parse(localStorage.getItem('session') || '{}');
+    role = session.role || sessionStorage.getItem('user_role') || '';
+  } catch (e) {
+    role = sessionStorage.getItem('user_role') || '';
+  }
   if (role === 'admin' || role === 'accountant') {
     const section = document.getElementById('autopay-all-section');
     if (section) section.style.display = 'block';
