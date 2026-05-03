@@ -140,3 +140,15 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
+    # Reset security hardening modules between tests.
+    try:
+        from security.firewall import reset_firewall
+        reset_firewall()
+    except Exception:
+        pass
+    try:
+        from security.intrusion_detector import reset_ids
+        reset_ids()
+    except Exception:
+        pass
+
