@@ -81,6 +81,8 @@ class BaseRepository(Generic[T]):
         Returns:
             Model instance or None if not found
         """
+        if id_value is None:
+            return None
         try:
             return self.session.query(self.model_class).get(id_value)
         except SQLAlchemyError as e:

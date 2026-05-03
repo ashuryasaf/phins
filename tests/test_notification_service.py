@@ -684,7 +684,7 @@ class TestNotificationService:
         sent_messages = []
 
         class _FakeSMTP:
-            def __init__(self, host, port):
+            def __init__(self, host, port, timeout=None):
                 self.host = host
                 self.port = port
 
@@ -735,7 +735,7 @@ class TestNotificationService:
         sent_messages = []
 
         class _FakeSMTP:
-            def __init__(self, host, port):
+            def __init__(self, host, port, timeout=None):
                 self.host = host
                 self.port = port
 
