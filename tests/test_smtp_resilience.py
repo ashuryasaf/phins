@@ -30,11 +30,13 @@ def _isolate_circuit_breaker():
     _smtp_circuit_breaker._state = 'closed'
     _smtp_circuit_breaker._opened_at = None
     _smtp_circuit_breaker._last_failure_error = None
+    _smtp_circuit_breaker._half_open_probe_in_flight = False
     yield
     _smtp_circuit_breaker._consecutive_failures = 0
     _smtp_circuit_breaker._state = 'closed'
     _smtp_circuit_breaker._opened_at = None
     _smtp_circuit_breaker._last_failure_error = None
+    _smtp_circuit_breaker._half_open_probe_in_flight = False
 
 
 @pytest.fixture
@@ -99,6 +101,7 @@ class TestSMTPCircuitBreaker:
         cb._opened_at = datetime.now(timezone.utc) - timedelta(seconds=cb.RECOVERY_TIMEOUT + 1)
         assert cb.state == 'half_open'
         assert cb.allow_request() is True
+        assert cb.allow_request() is False
 
     def test_get_status_returns_dict(self, cb):
         status = cb.get_status()
@@ -149,7 +152,32 @@ class TestSMTPEmailProviderRetry:
         assert error is not None
         assert 'Authentication failed' in error
         assert mock_smtp.call_count == 1
-        assert cb.get_status()['consecutive_failures'] == 1
+        assert cb.get_status()['consecutive_failures'] == 0
+
+    def test_half_open_non_transient_smtp_error_does_not_reopen_breaker(self, cb):
+        from services.notification_service import SMTPEmailProvider
+        from datetime import timedelta
+
+        for i in range(cb.FAILURE_THRESHOLD):
+            cb.record_failure(f'fail-{i}')
+        cb._opened_at = datetime.now(timezone.utc) - timedelta(seconds=cb.RECOVERY_TIMEOUT + 1)
+        assert cb.state == 'half_open'
+
+        provider = SMTPEmailProvider()
+        provider.MAX_RETRIES = 3
+        provider.RETRY_DELAY_BASE = 0.01
+
+        with patch('smtplib.SMTP') as mock_smtp:
+            mock_smtp.side_effect = smtplib.SMTPAuthenticationError(535, b'Authentication failed')
+            success, msg_id, error = provider.send(
+                'test@example.com', 'Test', 'Body'
+            )
+
+        assert success is False
+        assert msg_id is None
+        assert error is not None
+        assert cb.state == 'closed'
+        assert cb.get_status()['consecutive_failures'] == 0
 
     def test_success_after_transient_failure(self, cb):
         from services.notification_service import SMTPEmailProvider

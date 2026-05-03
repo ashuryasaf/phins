@@ -1024,6 +1024,7 @@ class _SMTPCircuitBreaker:
         self._state: str = 'closed'
         self._opened_at: Optional[datetime] = None
         self._last_failure_error: Optional[str] = None
+        self._half_open_probe_in_flight: bool = False
 
     @property
     def state(self) -> str:
@@ -1035,7 +1036,15 @@ class _SMTPCircuitBreaker:
             return self._state
 
     def allow_request(self) -> bool:
-        return self.state != 'open'
+        with self._lock:
+            current_state = self.state
+            if current_state == 'open':
+                return False
+            if current_state == 'half_open':
+                if self._half_open_probe_in_flight:
+                    return False
+                self._half_open_probe_in_flight = True
+            return True
 
     def record_success(self) -> None:
         with self._lock:
@@ -1043,11 +1052,22 @@ class _SMTPCircuitBreaker:
             self._state = 'closed'
             self._opened_at = None
             self._last_failure_error = None
+            self._half_open_probe_in_flight = False
+
+    def record_non_transient_failure(self) -> None:
+        with self._lock:
+            self._consecutive_failures = 0
+            self._last_failure_error = None
+            self._half_open_probe_in_flight = False
+            if self._state == 'half_open':
+                self._state = 'closed'
+                self._opened_at = None
 
     def record_failure(self, error: str) -> None:
         with self._lock:
             self._consecutive_failures += 1
             self._last_failure_error = error
+            self._half_open_probe_in_flight = False
             if self._consecutive_failures >= self.FAILURE_THRESHOLD:
                 if self._state != 'open':
                     logger.warning(
@@ -1171,7 +1191,7 @@ class SMTPEmailProvider(EmailProvider):
             except smtplib.SMTPException as e:
                 last_error = str(e)
                 logger.error("SMTP protocol error (attempt %d/%d): %s", attempt, self.MAX_RETRIES, last_error)
-                circuit_breaker_error = last_error
+                _smtp_circuit_breaker.record_non_transient_failure()
                 break
 
             except (ConnectionRefusedError, OSError) as e:
@@ -1192,6 +1212,7 @@ class SMTPEmailProvider(EmailProvider):
             except Exception as e:
                 last_error = str(e)
                 logger.error("SMTP send error: %s", last_error)
+                _smtp_circuit_breaker.record_non_transient_failure()
                 break
 
         if circuit_breaker_error is not None:
