@@ -10158,8 +10158,8 @@ For claims or questions, please contact:
                 cb_status = cb.get_status()
                 provider_type = get_active_email_provider_type()
                 notification_health = {
-                    'status': 'degraded' if cb_status['state'] != 'closed' else (
-                        'no_provider' if provider_type == 'noop' else 'ok'
+                    'status': 'no_provider' if provider_type == 'noop' else (
+                        'degraded' if cb_status['state'] != 'closed' else 'ok'
                     ),
                     'email_provider': provider_type,
                     'smtp_circuit_breaker': cb_status['state'],
