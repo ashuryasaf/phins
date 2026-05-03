@@ -9921,6 +9921,20 @@ For claims or questions, please contact:
             except Exception:
                 pass
             
+            # Notification subsystem health (SMTP circuit breaker)
+            notification_health = {'status': 'ok'}
+            try:
+                from services.notification_service import get_smtp_circuit_breaker
+                cb = get_smtp_circuit_breaker()
+                cb_status = cb.get_status()
+                notification_health = {
+                    'status': 'degraded' if cb_status['state'] != 'closed' else 'ok',
+                    'smtp_circuit_breaker': cb_status['state'],
+                    'smtp_consecutive_failures': cb_status['consecutive_failures'],
+                }
+            except Exception:
+                pass
+
             health_status = {
                 'status': 'healthy',
                 'service': 'phins-portal',
@@ -9930,6 +9944,7 @@ For claims or questions, please contact:
                 'database_connected': db_connected,
                 'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
                 'customers_available': customers_count,
+                'notifications': notification_health,
                 'version': '2.0.0'
             }
             

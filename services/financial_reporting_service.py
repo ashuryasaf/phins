@@ -1086,11 +1086,31 @@ class FinancialReportingService:
             },
         }
         
+        # 6. Notification subsystem health
+        notification_integrity = {'status': 'ok', 'smtp_circuit_breaker': 'unknown'}
+        try:
+            from services.notification_service import get_smtp_circuit_breaker
+            cb = get_smtp_circuit_breaker()
+            cb_status = cb.get_status()
+            cb_state = cb_status['state']
+            if cb_state == 'open':
+                warnings.append("SMTP circuit breaker is OPEN – email delivery is paused")
+                notification_integrity['status'] = 'degraded'
+            elif cb_state == 'half_open':
+                warnings.append("SMTP circuit breaker is HALF_OPEN – probing email delivery")
+                notification_integrity['status'] = 'recovering'
+            else:
+                notification_integrity['status'] = 'ok'
+            notification_integrity['smtp_circuit_breaker'] = cb_state
+            notification_integrity['consecutive_failures'] = cb_status['consecutive_failures']
+        except Exception:
+            pass
+
         return {
             'status': 'healthy' if not issues else 'issues_found',
             'issues_count': len(issues),
             'warnings_count': len(warnings),
-            'issues': issues[:20],  # Limit to first 20
+            'issues': issues[:20],
             'warnings': warnings[:20],
             'financial_reconciliation': financial_summary,
             'data_counts': {
@@ -1107,8 +1127,9 @@ class FinancialReportingService:
                 'passed': actuarial_checks['passed'],
                 'needs_review': actuarial_checks['failed'],
                 'status': 'COMPLIANT' if actuarial_checks['failed'] == 0 else 'REVIEW_NEEDED',
-                'details': actuarial_checks['details'][:10]  # Limit to first 10
+                'details': actuarial_checks['details'][:10]
             },
+            'notification_integrity': notification_integrity,
             'validated_at': datetime.now().isoformat()
         }
     

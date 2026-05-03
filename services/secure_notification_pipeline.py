@@ -960,12 +960,16 @@ class SecureNotificationPipeline:
         """
         Send push notification across multiple channels.
         
-        Supports: Email, SMS, WhatsApp
+        Supports: Email, SMS, WhatsApp.
+        Includes channel-level error tracking, circuit breaker awareness,
+        and structured audit data for downstream integrity analysis.
         """
         notification_id = f"PUSH_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(6)}"
         
         channel_results = {}
         any_success = False
+        failed_channels: List[str] = []
+        channel_errors: Dict[str, str] = {}
         
         for channel in request.channels:
             result = self._send_to_channel(
@@ -982,29 +986,51 @@ class SecureNotificationPipeline:
             channel_results[channel.value] = result
             if result.get('success'):
                 any_success = True
+            else:
+                failed_channels.append(channel.value)
+                channel_errors[channel.value] = result.get('error') or 'Unknown error'
         
-        # Audit
+        success_count = sum(1 for r in channel_results.values() if r.get('success'))
+        total_channels = len(request.channels)
+
+        audit_details: Dict[str, Any] = {
+            'notification_type': request.notification_type.value,
+            'channels': [c.value for c in request.channels],
+            'success_count': success_count,
+            'total_channels': total_channels,
+        }
+        if failed_channels:
+            audit_details['failed_channels'] = failed_channels
+            audit_details['channel_errors'] = channel_errors
+
         self._audit_operation(
             action='push_notification_sent',
             notification_id=notification_id,
             customer_id=request.customer_id,
-            details={
-                'notification_type': request.notification_type.value,
-                'channels': [c.value for c in request.channels],
-                'success_count': sum(1 for r in channel_results.values() if r.get('success'))
-            },
+            details=audit_details,
             success=any_success
         )
         
-        # Trigger callback
+        if failed_channels and not any_success:
+            logger.warning(
+                "All channels failed for notification %s (customer=%s, type=%s): %s",
+                notification_id, request.customer_id,
+                request.notification_type.value, channel_errors,
+            )
+
         self._trigger_event('notification_sent', notification_id, request)
         
-        return PushNotificationResult(
+        result_obj = PushNotificationResult(
             success=any_success,
             notification_id=notification_id,
             notification_type=request.notification_type,
-            channel_results=channel_results
+            channel_results=channel_results,
         )
+        if not any_success and channel_errors:
+            result_obj.error_message = '; '.join(
+                f"{ch}: {err}" for ch, err in channel_errors.items()
+            )
+        return result_obj
     
     def notify_policy_event(
         self,
@@ -1449,7 +1475,7 @@ class SecureNotificationPipeline:
         data: Optional[Dict[str, Any]] = None,
         priority: NotificationPriority = NotificationPriority.NORMAL
     ) -> Dict[str, Any]:
-        """Send notification to a specific channel"""
+        """Send notification to a specific channel with resilient error handling."""
         sanitized_data = dict(data or {})
         recipient_for_validation = email if channel == NotificationChannel.EMAIL else phone
         otp_error = self._validate_push_notification_otp(
@@ -1465,7 +1491,6 @@ class SecureNotificationPipeline:
                 'error': otp_error
             }
 
-        # OTP fields are consumed by validation and should not be forwarded.
         for otp_field in (
             'require_otp_validation',
             'otp_code',
@@ -1476,7 +1501,7 @@ class SecureNotificationPipeline:
         
         if channel == NotificationChannel.EMAIL:
             if not email:
-                return {'success': False, 'error': 'No email address provided'}
+                return {'success': False, 'error_code': 'NO_RECIPIENT', 'error': 'No email address provided'}
             
             request = NotificationRequest(
                 channel=NotificationChannel.EMAIL,
@@ -1487,18 +1512,39 @@ class SecureNotificationPipeline:
                 priority=priority,
                 metadata={'notification_type': notification_type.value, **sanitized_data}
             )
-            result = self._notification_service.send(request)
+            try:
+                result = self._notification_service.send(request)
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error sending email to customer %s: %s",
+                    customer_id, exc,
+                )
+                return {
+                    'success': False,
+                    'error_code': 'SEND_EXCEPTION',
+                    'error': str(exc),
+                }
+
+            error_code = None
+            if not result.success and result.error_message:
+                if 'circuit breaker' in (result.error_message or '').lower():
+                    error_code = 'SMTP_CIRCUIT_BREAKER_OPEN'
+                elif 'connection refused' in (result.error_message or '').lower():
+                    error_code = 'SMTP_CONNECTION_REFUSED'
+                else:
+                    error_code = result.error_code or 'DELIVERY_FAILED'
+
             return {
                 'success': result.success,
                 'message_id': result.notification_id,
-                'error': result.error_message
+                'error': result.error_message,
+                'error_code': error_code,
             }
         
         elif channel == NotificationChannel.SMS:
             if not phone:
-                return {'success': False, 'error': 'No phone number provided'}
+                return {'success': False, 'error_code': 'NO_RECIPIENT', 'error': 'No phone number provided'}
             
-            # Truncate for SMS
             sms_message = f"{title}: {message}"[:160]
             
             request = NotificationRequest(
@@ -1509,26 +1555,49 @@ class SecureNotificationPipeline:
                 priority=priority,
                 metadata={'notification_type': notification_type.value, **sanitized_data}
             )
-            result = self._notification_service.send(request)
+            try:
+                result = self._notification_service.send(request)
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error sending SMS to customer %s: %s",
+                    customer_id, exc,
+                )
+                return {
+                    'success': False,
+                    'error_code': 'SEND_EXCEPTION',
+                    'error': str(exc),
+                }
             return {
                 'success': result.success,
                 'message_id': result.notification_id,
-                'error': result.error_message
+                'error': result.error_message,
+                'error_code': result.error_code if not result.success else None,
             }
         
         elif channel.value == 'whatsapp':
             if not phone:
-                return {'success': False, 'error': 'No phone number provided'}
+                return {'success': False, 'error_code': 'NO_RECIPIENT', 'error': 'No phone number provided'}
             
             whatsapp_message = f"*{title}*\n\n{message}"
-            success, message_id, error = self._whatsapp.send(phone, whatsapp_message)
+            try:
+                success, message_id, error = self._whatsapp.send(phone, whatsapp_message)
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error sending WhatsApp to customer %s: %s",
+                    customer_id, exc,
+                )
+                return {
+                    'success': False,
+                    'error_code': 'WHATSAPP_EXCEPTION',
+                    'error': str(exc),
+                }
             return {
                 'success': success,
                 'message_id': message_id,
-                'error': error
+                'error': error,
             }
         
-        return {'success': False, 'error': f'Unsupported channel: {channel.value}'}
+        return {'success': False, 'error_code': 'UNSUPPORTED_CHANNEL', 'error': f'Unsupported channel: {channel.value}'}
 
     def _validate_push_notification_otp(
         self,

@@ -1001,9 +1001,88 @@ def _plain_text_to_html(body: str) -> str:
     return f"<div>{escaped.replace(chr(10), '<br/>')}</div>"
 
 
+class _SMTPCircuitBreaker:
+    """
+    Circuit breaker for SMTP connections.
+
+    Tracks consecutive failures and temporarily disables SMTP sends when
+    the failure threshold is hit, preventing cascading connection storms
+    against an unreachable mail server.
+
+    States:
+        CLOSED  – normal operation, sends pass through.
+        OPEN    – too many failures; sends are rejected immediately.
+        HALF_OPEN – recovery window; a single probe send is allowed.
+    """
+
+    FAILURE_THRESHOLD = int(os.environ.get('SMTP_CB_FAILURE_THRESHOLD', '5'))
+    RECOVERY_TIMEOUT = int(os.environ.get('SMTP_CB_RECOVERY_TIMEOUT_SECS', '120'))
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._consecutive_failures: int = 0
+        self._state: str = 'closed'
+        self._opened_at: Optional[datetime] = None
+        self._last_failure_error: Optional[str] = None
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            if self._state == 'open' and self._opened_at:
+                elapsed = (datetime.now(timezone.utc) - self._opened_at).total_seconds()
+                if elapsed >= self.RECOVERY_TIMEOUT:
+                    self._state = 'half_open'
+            return self._state
+
+    def allow_request(self) -> bool:
+        return self.state != 'open'
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._consecutive_failures = 0
+            self._state = 'closed'
+            self._opened_at = None
+            self._last_failure_error = None
+
+    def record_failure(self, error: str) -> None:
+        with self._lock:
+            self._consecutive_failures += 1
+            self._last_failure_error = error
+            if self._consecutive_failures >= self.FAILURE_THRESHOLD:
+                if self._state != 'open':
+                    logger.warning(
+                        "SMTP circuit breaker OPEN after %d consecutive failures (last: %s). "
+                        "Will retry after %ds.",
+                        self._consecutive_failures, error, self.RECOVERY_TIMEOUT,
+                    )
+                self._state = 'open'
+                self._opened_at = datetime.now(timezone.utc)
+
+    def get_status(self) -> Dict[str, Any]:
+        with self._lock:
+            return {
+                'state': self.state,
+                'consecutive_failures': self._consecutive_failures,
+                'last_failure': self._last_failure_error,
+                'opened_at': self._opened_at.isoformat() if self._opened_at else None,
+            }
+
+
+_smtp_circuit_breaker = _SMTPCircuitBreaker()
+
+
+def get_smtp_circuit_breaker() -> _SMTPCircuitBreaker:
+    """Expose the SMTP circuit breaker for health checks and monitoring."""
+    return _smtp_circuit_breaker
+
+
 class SMTPEmailProvider(EmailProvider):
-    """SMTP-based email provider"""
-    
+    """SMTP-based email provider with retry logic and circuit breaker protection"""
+
+    MAX_RETRIES = int(os.environ.get('SMTP_MAX_RETRIES', '3'))
+    RETRY_DELAY_BASE = float(os.environ.get('SMTP_RETRY_DELAY_BASE', '1.0'))
+    CONNECTION_TIMEOUT = int(os.environ.get('SMTP_CONNECTION_TIMEOUT', '10'))
+
     def send(
         self,
         to: str,
@@ -1015,51 +1094,91 @@ class SMTPEmailProvider(EmailProvider):
         reply_to: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None
     ) -> Tuple[bool, Optional[str], Optional[str]]:
-        """Send email via SMTP"""
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            
-            from_addr, from_display = _resolve_email_sender(
-                provider_type='smtp',
-                from_address=from_address,
-                from_name=from_name
+        """Send email via SMTP with retry and circuit-breaker protection"""
+        import smtplib
+        import time as _time
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        if not _smtp_circuit_breaker.allow_request():
+            cb_status = _smtp_circuit_breaker.get_status()
+            logger.warning(
+                "SMTP circuit breaker is OPEN – skipping send to %s (state: %s)",
+                to, cb_status['state'],
             )
-            reply_to_address = _resolve_reply_to_address(reply_to)
-            
-            # Create message
-            if html_body:
-                msg = MIMEMultipart('alternative')
-                msg.attach(MIMEText(body, 'plain'))
-                msg.attach(MIMEText(html_body, 'html'))
-            else:
-                msg = MIMEText(body, 'plain')
-            
-            msg['Subject'] = subject
-            msg['From'] = f"{from_display} <{from_addr}>"
-            msg['To'] = to
-            if reply_to_address:
-                msg['Reply-To'] = reply_to_address
-            
-            # Generate message ID
-            from_domain = from_addr.split('@', 1)[1] if '@' in from_addr else 'phins.local'
-            message_id = f"<{generate_id('MSG')}@{from_domain}>"
-            msg['Message-ID'] = message_id
-            
-            # Connect and send
-            with smtplib.SMTP(NotificationConfig.SMTP_HOST, NotificationConfig.SMTP_PORT) as server:
-                if NotificationConfig.SMTP_USE_TLS:
-                    server.starttls()
-                if NotificationConfig.SMTP_USERNAME:
-                    server.login(NotificationConfig.SMTP_USERNAME, NotificationConfig.SMTP_PASSWORD)
-                server.sendmail(from_addr, [to], msg.as_string())
-            
-            return True, message_id, None
-            
-        except Exception as e:
-            logger.error(f"SMTP send error: {str(e)}")
-            return False, None, str(e)
+            return False, None, f"SMTP circuit breaker open: {cb_status['last_failure']}"
+
+        from_addr, from_display = _resolve_email_sender(
+            provider_type='smtp',
+            from_address=from_address,
+            from_name=from_name
+        )
+        reply_to_address = _resolve_reply_to_address(reply_to)
+
+        if html_body:
+            msg = MIMEMultipart('alternative')
+            msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(html_body, 'html'))
+        else:
+            msg = MIMEText(body, 'plain')
+
+        msg['Subject'] = subject
+        msg['From'] = f"{from_display} <{from_addr}>"
+        msg['To'] = to
+        if reply_to_address:
+            msg['Reply-To'] = reply_to_address
+
+        from_domain = from_addr.split('@', 1)[1] if '@' in from_addr else 'phins.local'
+        message_id = f"<{generate_id('MSG')}@{from_domain}>"
+        msg['Message-ID'] = message_id
+
+        last_error: Optional[str] = None
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            try:
+                with smtplib.SMTP(
+                    NotificationConfig.SMTP_HOST,
+                    NotificationConfig.SMTP_PORT,
+                    timeout=self.CONNECTION_TIMEOUT,
+                ) as server:
+                    if NotificationConfig.SMTP_USE_TLS:
+                        server.starttls()
+                    if NotificationConfig.SMTP_USERNAME:
+                        server.login(
+                            NotificationConfig.SMTP_USERNAME,
+                            NotificationConfig.SMTP_PASSWORD,
+                        )
+                    server.sendmail(from_addr, [to], msg.as_string())
+
+                _smtp_circuit_breaker.record_success()
+                return True, message_id, None
+
+            except (ConnectionRefusedError, OSError, smtplib.SMTPConnectError) as e:
+                last_error = str(e)
+                _smtp_circuit_breaker.record_failure(last_error)
+                if attempt < self.MAX_RETRIES:
+                    delay = self.RETRY_DELAY_BASE * (2 ** (attempt - 1))
+                    logger.warning(
+                        "SMTP connection failed (attempt %d/%d): %s – retrying in %.1fs",
+                        attempt, self.MAX_RETRIES, last_error, delay,
+                    )
+                    _time.sleep(delay)
+                else:
+                    logger.error(
+                        "SMTP send failed after %d attempts: %s", self.MAX_RETRIES, last_error,
+                    )
+
+            except smtplib.SMTPException as e:
+                last_error = str(e)
+                logger.error("SMTP protocol error (attempt %d/%d): %s", attempt, self.MAX_RETRIES, last_error)
+                _smtp_circuit_breaker.record_failure(last_error)
+                break
+
+            except Exception as e:
+                last_error = str(e)
+                logger.error("SMTP send error: %s", last_error)
+                break
+
+        return False, None, last_error
 
 
 class MockEmailProvider(EmailProvider):
@@ -3480,6 +3599,9 @@ __all__ = [
     'get_notification_service',
     'reset_notification_service',
     'should_use_mock_notifications',
+    
+    # SMTP resilience
+    'get_smtp_circuit_breaker',
     
     # Helper functions
     'generate_id',
