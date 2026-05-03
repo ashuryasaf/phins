@@ -6650,10 +6650,18 @@ def _init_billing_credit_service():
             from services.notification_service import (
                 create_notification_service,
                 should_use_mock_notifications,
+                get_active_email_provider_type,
             )
             notification_svc = create_notification_service(
                 use_mock=should_use_mock_notifications()
             )
+            email_provider = get_active_email_provider_type()
+            if email_provider == 'noop':
+                print("⚠️  No email provider configured – email delivery disabled (set SMTP_HOST or API key)")
+            elif email_provider == 'mock':
+                print(f"ℹ️  Email provider: mock (test mode)")
+            else:
+                print(f"✓ Email provider: {email_provider}")
         except ImportError:
             pass
         
@@ -10142,14 +10150,18 @@ For claims or questions, please contact:
             except Exception:
                 pass
             
-            # Notification subsystem health (SMTP circuit breaker)
+            # Notification subsystem health (SMTP circuit breaker + provider)
             notification_health = {'status': 'ok'}
             try:
-                from services.notification_service import get_smtp_circuit_breaker
+                from services.notification_service import get_smtp_circuit_breaker, get_active_email_provider_type
                 cb = get_smtp_circuit_breaker()
                 cb_status = cb.get_status()
+                provider_type = get_active_email_provider_type()
                 notification_health = {
-                    'status': 'degraded' if cb_status['state'] != 'closed' else 'ok',
+                    'status': 'no_provider' if provider_type == 'noop' else (
+                        'degraded' if cb_status['state'] != 'closed' else 'ok'
+                    ),
+                    'email_provider': provider_type,
                     'smtp_circuit_breaker': cb_status['state'],
                     'smtp_consecutive_failures': cb_status['consecutive_failures'],
                 }

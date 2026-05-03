@@ -1,10 +1,12 @@
 """
-Tests for SMTP resilience: circuit breaker, retry logic, and notification
-pipeline error handling.
+Tests for SMTP resilience: circuit breaker, retry logic, notification
+pipeline error handling, and NoOp email provider fallback.
 
 Covers:
 - SMTP circuit breaker state transitions (closed → open → half_open → closed)
 - SMTPEmailProvider retry behaviour on connection errors
+- NoOpEmailProvider when SMTP is unconfigured
+- Active email provider type detection
 - Secure notification pipeline structured error responses
 - Base repository NULL primary key guard
 - Health endpoint notification status
@@ -15,6 +17,7 @@ import os
 import smtplib
 import time
 import pytest
+import requests
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
@@ -333,6 +336,133 @@ class TestPipelineChannelErrorHandling:
         email_result = result.channel_results.get('email', {})
         assert email_result.get('success') is False
         assert email_result.get('error_code') == 'NO_RECIPIENT'
+
+
+# ---------------------------------------------------------------------------
+# NoOpEmailProvider Tests
+# ---------------------------------------------------------------------------
+
+class TestNoOpEmailProvider:
+
+    def test_noop_provider_returns_failure(self):
+        from services.notification_service import NoOpEmailProvider
+        provider = NoOpEmailProvider()
+        success, msg_id, error = provider.send('test@example.com', 'Subject', 'Body')
+        assert success is False
+        assert msg_id is None
+        assert error is not None
+        assert 'No email provider configured' in error
+
+    def test_noop_provider_no_network_calls(self):
+        from services.notification_service import NoOpEmailProvider
+        provider = NoOpEmailProvider()
+        with patch('smtplib.SMTP') as mock_smtp:
+            provider.send('test@example.com', 'Subject', 'Body')
+        mock_smtp.assert_not_called()
+
+    def test_build_email_provider_returns_noop_when_unconfigured(self):
+        from services.notification_service import _build_email_provider, NoOpEmailProvider
+        env = {
+            'SMTP_HOST': 'localhost',
+            'SMTP_USERNAME': '',
+            'SMTP_PASSWORD': '',
+            'SENDGRID_API_KEY': '',
+            'MAILGUN_API_KEY': '',
+            'RESEND_API_KEY': '',
+            'ACTIVE_NOTIFICATIONS_API_KEY': '',
+            'PINGRAM_API_KEY': '',
+            'NOTIFICATIONAPI_API_KEY': '',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            provider = _build_email_provider('smtp')
+        assert isinstance(provider, NoOpEmailProvider)
+
+    def test_build_email_provider_returns_smtp_when_configured(self):
+        from services.notification_service import _build_email_provider, SMTPEmailProvider
+        env = {
+            'SMTP_HOST': 'smtp.sendgrid.net',
+            'SMTP_USERNAME': 'apikey',
+            'SMTP_PASSWORD': 'SG.fake-key',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            provider = _build_email_provider('smtp')
+        assert isinstance(provider, SMTPEmailProvider)
+
+
+# ---------------------------------------------------------------------------
+# get_active_email_provider_type Tests
+# ---------------------------------------------------------------------------
+
+class TestActiveEmailProviderType:
+
+    def test_returns_mock_in_test_mode(self):
+        from services.notification_service import get_active_email_provider_type
+        with patch.dict(os.environ, {'PHINS_TEST_MODE': 'true'}, clear=False):
+            assert get_active_email_provider_type() == 'mock'
+
+    def test_returns_noop_when_smtp_unconfigured(self):
+        from services.notification_service import get_active_email_provider_type
+        env = {
+            'PHINS_TEST_MODE': '',
+            'PHINS_USE_MOCK_NOTIFICATIONS': '',
+            'SMTP_HOST': 'localhost',
+            'SMTP_USERNAME': '',
+            'SMTP_PASSWORD': '',
+            'EMAIL_PROVIDER': 'smtp',
+            'SENDGRID_API_KEY': '',
+            'MAILGUN_API_KEY': '',
+            'RESEND_API_KEY': '',
+            'ACTIVE_NOTIFICATIONS_API_KEY': '',
+            'PINGRAM_API_KEY': '',
+            'NOTIFICATIONAPI_API_KEY': '',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            assert get_active_email_provider_type() == 'noop'
+
+    def test_returns_provider_name_when_api_configured(self):
+        from services.notification_service import get_active_email_provider_type
+        env = {
+            'PHINS_TEST_MODE': '',
+            'PHINS_USE_MOCK_NOTIFICATIONS': '',
+            'EMAIL_PROVIDER': 'sendgrid',
+            'SENDGRID_API_KEY': 'SG.fake-key',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            assert get_active_email_provider_type() == 'sendgrid'
+
+
+class TestHealthEndpointNotificationStatus:
+
+    def test_noop_provider_takes_precedence_over_open_circuit_breaker(self, cb):
+        for i in range(cb.FAILURE_THRESHOLD):
+            cb.record_failure(f'fail-{i}')
+        assert cb.state == 'open'
+
+        env = {
+            'PHINS_TEST_MODE': '',
+            'PHINS_USE_MOCK_NOTIFICATIONS': '',
+            'SMTP_HOST': 'localhost',
+            'SMTP_USERNAME': '',
+            'SMTP_PASSWORD': '',
+            'EMAIL_PROVIDER': 'smtp',
+            'SENDGRID_API_KEY': '',
+            'MAILGUN_API_KEY': '',
+            'RESEND_API_KEY': '',
+            'ACTIVE_NOTIFICATIONS_API_KEY': '',
+            'PINGRAM_API_KEY': '',
+            'NOTIFICATIONAPI_API_KEY': '',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = requests.get(
+                os.environ.get('TEST_BASE_URL', 'http://localhost:8000') + '/api/health',
+                timeout=5,
+            )
+
+        assert response.status_code == 200
+        notifications = response.json()['notifications']
+        assert notifications['email_provider'] == 'noop'
+        assert notifications['smtp_circuit_breaker'] == 'open'
+        assert notifications['status'] == 'no_provider'
 
 
 # ---------------------------------------------------------------------------

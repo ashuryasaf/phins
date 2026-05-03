@@ -1089,11 +1089,15 @@ class FinancialReportingService:
         # 6. Notification subsystem health
         notification_integrity = {'status': 'ok', 'smtp_circuit_breaker': 'unknown'}
         try:
-            from services.notification_service import get_smtp_circuit_breaker
+            from services.notification_service import get_smtp_circuit_breaker, get_active_email_provider_type
             cb = get_smtp_circuit_breaker()
             cb_status = cb.get_status()
             cb_state = cb_status['state']
-            if cb_state == 'open':
+            provider_type = get_active_email_provider_type()
+            if provider_type == 'noop':
+                warnings.append("No email provider configured – email delivery disabled")
+                notification_integrity['status'] = 'no_provider'
+            elif cb_state == 'open':
                 warnings.append("SMTP circuit breaker is OPEN – email delivery is paused")
                 notification_integrity['status'] = 'degraded'
             elif cb_state == 'half_open':
@@ -1101,6 +1105,7 @@ class FinancialReportingService:
                 notification_integrity['status'] = 'recovering'
             else:
                 notification_integrity['status'] = 'ok'
+            notification_integrity['email_provider'] = provider_type
             notification_integrity['smtp_circuit_breaker'] = cb_state
             notification_integrity['consecutive_failures'] = cb_status['consecutive_failures']
         except Exception:
