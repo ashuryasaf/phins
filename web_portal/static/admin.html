@@ -332,17 +332,18 @@
       color: white;
     }
     #admin-ai-assistant-panel[data-minimized="true"] {
-      padding: 18px;
+      padding: 14px 18px;
+    }
+    #admin-ai-assistant-panel[data-minimized="true"] > div:first-child {
+      margin-bottom: 0 !important;
     }
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-help-panel,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-voice-recording-indicator,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-tab-bar,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-quick-actions,
-    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area {
-      display: none !important;
-    }
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
-      margin-bottom: 0 !important;
+      display: none !important;
     }
     .admin-ai-tab-bar {
       display: flex;
