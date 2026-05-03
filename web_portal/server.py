@@ -9715,6 +9715,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                     story.append(Paragraph(f"Expected Impact: {impact}", styles['BodyText']))
                 story.append(Spacer(1, 6))
 
+        story.append(Spacer(1, 20))
+        footer_style = styles['Normal'].clone('phins_footer')
+        footer_style.fontSize = 9
+        footer_style.textColor = colors.grey
+        footer_style.alignment = 1
+        story.append(Paragraph('PHINS - Safe Assurance', footer_style))
+
         doc.build(story)
         return buffer.getvalue()
     
@@ -13900,6 +13907,12 @@ For claims or questions, please contact:
                 policy documents for full terms and conditions.
                 """
                 story.append(Paragraph(terms_text, terms_style))
+                
+                story.append(Spacer(1, 20))
+                phins_footer_style = ParagraphStyle('PhinsFooter', parent=styles['Normal'],
+                                                     fontSize=9, alignment=TA_CENTER,
+                                                     textColor=colors.grey)
+                story.append(Paragraph('PHINS - Safe Assurance', phins_footer_style))
                 
                 # Build PDF
                 doc.build(story)

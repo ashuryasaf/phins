@@ -4635,6 +4635,14 @@
         yPosition += lineHeight;
       });
       
+      // Add PHINS footer on the last page
+      checkAddPage();
+      yPosition += lineHeight;
+      doc.setFontSize(9);
+      doc.setTextColor(136);
+      doc.text('PHINS - Safe Assurance', doc.internal.pageSize.width / 2, pageHeight - 15, { align: 'center' });
+      doc.setTextColor(0);
+      
       // Save the PDF
       const filename = `phins_risk_report_${new Date().getTime()}.pdf`;
       doc.save(filename);

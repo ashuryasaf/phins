@@ -4003,7 +4003,7 @@
           doc.setPage(page);
           doc.setFontSize(8);
           doc.setTextColor(90, 102, 122);
-          doc.text(`PHINS Executive Assessment PDF · Page ${page} of ${pageCount}`, margin, pageHeight - 18);
+          doc.text(`PHINS - Safe Assurance · Executive Assessment PDF · Page ${page} of ${pageCount}`, margin, pageHeight - 18);
         }
 
         const filename = `phi-permanent-3-adl-executive-business-assessment-${slugify(region.name)}.pdf`;
@@ -4371,7 +4371,7 @@
           doc.setPage(p);
           doc.setFontSize(7.5);
           doc.setTextColor(90, 102, 122);
-          doc.text("PHINS Executive Summary · " + printedAt + " · Page " + p + " of " + pc, m, ph - 18);
+          doc.text("PHINS - Safe Assurance · Executive Summary · " + printedAt + " · Page " + p + " of " + pc, m, ph - 18);
         }
 
         doc.save("phins-executive-summary.pdf");
@@ -4896,7 +4896,7 @@
           for (var pn = 1; pn <= pc; pn++) {
             doc.setPage(pn);
             doc.setFontSize(7.5); doc.setTextColor(90, 102, 122);
-            doc.text("PHINS Investor Pitch — " + m.d.name + " · " + printedAt + " · CONFIDENTIAL · Page " + pn + " of " + pc, mg, ph - 18);
+            doc.text("PHINS - Safe Assurance · Investor Pitch — " + m.d.name + " · " + printedAt + " · CONFIDENTIAL · Page " + pn + " of " + pc, mg, ph - 18);
           }
 
           doc.save("phins-investor-pitch-" + slugify(m.d.name) + ".pdf");
@@ -5503,7 +5503,7 @@
               doc.setDrawColor(200, 210, 225);
               doc.line(mg, ph - 30, pw - mg, ph - 30);
               doc.setFontSize(7); doc.setTextColor(90, 102, 122);
-              doc.text("PHINS Technologies  |  Technology Investor Business Plan  |  " + printedAt + "  |  CONFIDENTIAL", mg, ph - 20);
+              doc.text("PHINS - Safe Assurance  |  Technology Investor Business Plan  |  " + printedAt + "  |  CONFIDENTIAL", mg, ph - 20);
               doc.text("Page " + pn + " of " + pc, pw - mg, ph - 20, { align: "right" });
             }
 
