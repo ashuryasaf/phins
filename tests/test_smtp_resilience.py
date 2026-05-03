@@ -130,6 +130,7 @@ class TestSMTPEmailProviderRetry:
         assert error is not None
         assert 'Connection refused' in error
         assert mock_smtp.call_count == 2
+        assert cb.get_status()['consecutive_failures'] == 1
 
     def test_smtp_protocol_errors_do_not_retry(self, cb):
         from services.notification_service import SMTPEmailProvider

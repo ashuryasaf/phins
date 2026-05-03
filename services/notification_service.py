@@ -1133,6 +1133,7 @@ class SMTPEmailProvider(EmailProvider):
         msg['Message-ID'] = message_id
 
         last_error: Optional[str] = None
+        circuit_breaker_error: Optional[str] = None
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
                 with smtplib.SMTP(
@@ -1154,7 +1155,7 @@ class SMTPEmailProvider(EmailProvider):
 
             except smtplib.SMTPConnectError as e:
                 last_error = str(e)
-                _smtp_circuit_breaker.record_failure(last_error)
+                circuit_breaker_error = last_error
                 if attempt < self.MAX_RETRIES:
                     delay = self.RETRY_DELAY_BASE * (2 ** (attempt - 1))
                     logger.warning(
@@ -1170,12 +1171,12 @@ class SMTPEmailProvider(EmailProvider):
             except smtplib.SMTPException as e:
                 last_error = str(e)
                 logger.error("SMTP protocol error (attempt %d/%d): %s", attempt, self.MAX_RETRIES, last_error)
-                _smtp_circuit_breaker.record_failure(last_error)
+                circuit_breaker_error = last_error
                 break
 
             except (ConnectionRefusedError, OSError) as e:
                 last_error = str(e)
-                _smtp_circuit_breaker.record_failure(last_error)
+                circuit_breaker_error = last_error
                 if attempt < self.MAX_RETRIES:
                     delay = self.RETRY_DELAY_BASE * (2 ** (attempt - 1))
                     logger.warning(
@@ -1192,6 +1193,9 @@ class SMTPEmailProvider(EmailProvider):
                 last_error = str(e)
                 logger.error("SMTP send error: %s", last_error)
                 break
+
+        if circuit_breaker_error is not None:
+            _smtp_circuit_breaker.record_failure(circuit_breaker_error)
 
         return False, None, last_error
 
