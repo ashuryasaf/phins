@@ -2445,7 +2445,8 @@
         return;
       }
 
-      adminAssistantSetStatus('ready', `⏳ Running: ${action.label}`);
+      const runningStatusText = `⏳ Running: ${action.label}`;
+      adminAssistantSetStatus('ready', runningStatusText);
 
       try {
         if (typeof action.fn !== 'function') {
@@ -2459,10 +2460,16 @@
         if (adminAssistantState.recentActions.length > 6) {
           adminAssistantState.recentActions = adminAssistantState.recentActions.slice(0, 6);
         }
-        adminAssistantSetStatus('success', `✅ Completed: ${action.label}`);
+        const chip = document.getElementById('admin-ai-status-chip');
+        if (!chip || chip.textContent === runningStatusText) {
+          adminAssistantSetStatus('success', `✅ Completed: ${action.label}`);
+        }
       } catch (err) {
         console.error('[Admin AI Assistant] action failed:', resolvedActionId, err);
-        adminAssistantSetStatus('error', `❌ Failed: ${action.label}`);
+        const chip = document.getElementById('admin-ai-status-chip');
+        if (!chip || chip.textContent === runningStatusText) {
+          adminAssistantSetStatus('error', `❌ Failed: ${action.label}`);
+        }
       }
     }
 
@@ -2660,6 +2667,15 @@
       adminAssistantSetStatus('warning', '🤖 Try: "run actuary simulation", "open console", "system health", "refresh customers"');
     }
 
+    function adminAssistantEscapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     async function adminRunActuarySimulation() {
       adminAssistantSetStatus('ready', '⏳ Running actuarial portfolio simulation...');
       const area = document.getElementById('admin-ai-response-area');
@@ -2674,13 +2690,15 @@
         if (!response.ok) throw new Error(data.error || 'Simulation failed');
         const sim = data.simulation || {};
         const summary = sim.summary || {};
+        const simulationId = adminAssistantEscapeHtml(sim.simulation_id || 'N/A');
+        const runBy = adminAssistantEscapeHtml(sim.run_by || 'admin');
         if (area) {
           area.innerHTML = `
             <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">📐 Actuarial Simulation Complete</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
               <div style="background:#e3f2fd;padding:10px;border-radius:8px;text-align:center;">
                 <div style="font-size:0.75rem;color:#546e7a;">Simulation ID</div>
-                <div style="font-weight:700;font-size:0.85rem;word-break:break-all;">${sim.simulation_id || 'N/A'}</div>
+                <div style="font-weight:700;font-size:0.85rem;word-break:break-all;">${simulationId}</div>
               </div>
               <div style="background:#e8f5e9;padding:10px;border-radius:8px;text-align:center;">
                 <div style="font-size:0.75rem;color:#546e7a;">Customers</div>
@@ -2695,13 +2713,15 @@
                 <div style="font-weight:700;">$${(summary.total_coverage || 0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
               </div>
             </div>
-            <div style="font-size:0.82rem;color:#546e7a;">Run by: ${sim.run_by || 'admin'} | <a href="/actuary-dashboard.html" target="_blank" style="color:#1565c0;">Open Actuary Dashboard →</a></div>
+            <div style="font-size:0.82rem;color:#546e7a;">Run by: ${runBy} | <a href="/actuary-dashboard.html" target="_blank" style="color:#1565c0;">Open Actuary Dashboard →</a></div>
           `;
         }
         adminAssistantSetStatus('success', '✅ Actuary simulation complete');
       } catch (err) {
-        if (area) area.innerHTML = `<div style="color:#c62828;font-weight:600;">❌ Simulation Error</div><div style="color:#546e7a;font-size:0.88rem;margin-top:4px;">${err.message}</div>`;
+        const errorMessage = adminAssistantEscapeHtml(err?.message || 'Simulation failed');
+        if (area) area.innerHTML = `<div style="color:#c62828;font-weight:600;">❌ Simulation Error</div><div style="color:#546e7a;font-size:0.88rem;margin-top:4px;">${errorMessage}</div>`;
         adminAssistantSetStatus('error', '❌ Simulation failed');
+        throw err;
       }
     }
 
