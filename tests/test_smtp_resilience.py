@@ -17,6 +17,7 @@ import os
 import smtplib
 import time
 import pytest
+import requests
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
@@ -428,6 +429,40 @@ class TestActiveEmailProviderType:
         }
         with patch.dict(os.environ, env, clear=False):
             assert get_active_email_provider_type() == 'sendgrid'
+
+
+class TestHealthEndpointNotificationStatus:
+
+    def test_noop_provider_takes_precedence_over_open_circuit_breaker(self, cb):
+        for i in range(cb.FAILURE_THRESHOLD):
+            cb.record_failure(f'fail-{i}')
+        assert cb.state == 'open'
+
+        env = {
+            'PHINS_TEST_MODE': '',
+            'PHINS_USE_MOCK_NOTIFICATIONS': '',
+            'SMTP_HOST': 'localhost',
+            'SMTP_USERNAME': '',
+            'SMTP_PASSWORD': '',
+            'EMAIL_PROVIDER': 'smtp',
+            'SENDGRID_API_KEY': '',
+            'MAILGUN_API_KEY': '',
+            'RESEND_API_KEY': '',
+            'ACTIVE_NOTIFICATIONS_API_KEY': '',
+            'PINGRAM_API_KEY': '',
+            'NOTIFICATIONAPI_API_KEY': '',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = requests.get(
+                os.environ.get('TEST_BASE_URL', 'http://localhost:8000') + '/api/health',
+                timeout=5,
+            )
+
+        assert response.status_code == 200
+        notifications = response.json()['notifications']
+        assert notifications['email_provider'] == 'noop'
+        assert notifications['smtp_circuit_breaker'] == 'open'
+        assert notifications['status'] == 'no_provider'
 
 
 # ---------------------------------------------------------------------------
