@@ -619,3 +619,126 @@ class TestSecurityIntegration:
             assert stuffing_alert["source_ip"] == "10.0.0.88"
         finally:
             ids.CREDENTIAL_STUFFING_THRESHOLD = old_threshold
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DASHBOARD API
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestCyberSecurityDashboardAPI:
+    """Tests for the /api/security/dashboard endpoint."""
+
+    BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
+
+    def _login_admin(self):
+        import urllib.request
+        data = json.dumps({"username": "admin", "password": "admin123"}).encode()
+        req = urllib.request.Request(
+            f"{self.BASE}/api/login",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                body = json.loads(resp.read())
+                return body.get("token")
+        except Exception:
+            return None
+
+    def test_dashboard_requires_auth(self):
+        import urllib.request
+        import urllib.error
+        req = urllib.request.Request(f"{self.BASE}/api/security/dashboard")
+        try:
+            urllib.request.urlopen(req)
+            assert False, "Should have been rejected"
+        except urllib.error.HTTPError as e:
+            assert e.code in (401, 403)
+
+    def test_dashboard_returns_all_sections(self):
+        import urllib.request
+        token = self._login_admin()
+        if not token:
+            pytest.skip("Could not obtain admin token")
+        req = urllib.request.Request(
+            f"{self.BASE}/api/security/dashboard",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+
+        assert "ai_report" in data
+        assert "threat_intel" in data
+        assert "login_activity" in data
+        assert "application_stats" in data
+        assert "supplier_stats" in data
+        assert "firewall" in data
+        assert "ids_summary" in data
+        assert "ids_alerts" in data
+        assert "ids_events" in data
+        assert "sessions" in data
+        assert "system" in data
+        assert "quarantine" in data
+
+    def test_ai_report_structure(self):
+        import urllib.request
+        token = self._login_admin()
+        if not token:
+            pytest.skip("Could not obtain admin token")
+        req = urllib.request.Request(
+            f"{self.BASE}/api/security/dashboard",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+
+        ai = data["ai_report"]
+        assert "risk_level" in ai
+        assert "risk_score" in ai
+        assert "findings" in ai
+        assert "recommendations" in ai
+        assert "protections_active" in ai
+        assert "summary" in ai
+        assert ai["risk_level"] in ("LOW", "MEDIUM", "HIGH", "CRITICAL")
+        assert isinstance(ai["risk_score"], (int, float))
+        assert 0 <= ai["risk_score"] <= 100
+
+    def test_dashboard_system_flags(self):
+        import urllib.request
+        token = self._login_admin()
+        if not token:
+            pytest.skip("Could not obtain admin token")
+        req = urllib.request.Request(
+            f"{self.BASE}/api/security/dashboard",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+
+        system = data["system"]
+        assert "firewall_enabled" in system
+        assert "file_scanner_enabled" in system
+        assert "ids_enabled" in system
+        assert "request_sanitizer_enabled" in system
+
+    def test_acknowledge_endpoint(self):
+        import urllib.request
+        import urllib.error
+        token = self._login_admin()
+        if not token:
+            pytest.skip("Could not obtain admin token")
+        data = json.dumps({"alert_id": "NONEXISTENT"}).encode()
+        req = urllib.request.Request(
+            f"{self.BASE}/api/security/ids/acknowledge",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                body = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            body = json.loads(e.read())
+        assert body.get("success") is False or body.get("message") == "Alert not found"
