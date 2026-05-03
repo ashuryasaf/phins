@@ -66,6 +66,20 @@ class TestSMTPCircuitBreaker:
         assert cb.state == 'open'
         assert cb.allow_request() is False
 
+    def test_opened_at_does_not_reset_while_already_open(self, cb):
+        from datetime import timedelta
+
+        for i in range(cb.FAILURE_THRESHOLD):
+            cb.record_failure(f'fail-{i}')
+
+        original_opened_at = datetime.now(timezone.utc) - timedelta(seconds=30)
+        cb._opened_at = original_opened_at
+
+        cb.record_failure('still-failing')
+
+        assert cb.state == 'open'
+        assert cb._opened_at == original_opened_at
+
     def test_success_resets_to_closed(self, cb):
         for i in range(cb.FAILURE_THRESHOLD):
             cb.record_failure(f'fail-{i}')

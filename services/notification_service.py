@@ -1055,8 +1055,8 @@ class _SMTPCircuitBreaker:
                         "Will retry after %ds.",
                         self._consecutive_failures, error, self.RECOVERY_TIMEOUT,
                     )
-                self._state = 'open'
-                self._opened_at = datetime.now(timezone.utc)
+                    self._state = 'open'
+                    self._opened_at = datetime.now(timezone.utc)
 
     def get_status(self) -> Dict[str, Any]:
         with self._lock:
