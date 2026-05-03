@@ -583,34 +583,29 @@
     </div>
 
     <!-- ==================== PHINS ADMIN AI ASSISTANT ==================== -->
-    <div id="admin-ai-assistant-panel">
+    <div id="admin-ai-assistant-panel" data-minimized="true">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:12px;">
           <div style="width:46px;height:46px;background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
           <div>
             <h2 style="margin:0;color:white;font-size:1.3rem;font-weight:700;">PHINS admin AI Assistant</h2>
-            <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.84);font-size:0.84rem;">Ask me anything about the admin dashboard (voice or text)</p>
-            <p style="margin:2px 0 0 0;color:rgba(255,255,255,0.72);font-size:0.74rem;">Design adapted from customer PHINS AI Assistant for style integrity</p>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
-          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Minimize">➖</button>
+          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">🎤➕</button>
         </div>
       </div>
 
       <div id="admin-ai-help-panel" style="display:none;background:rgba(255,255,255,0.12);border-radius:12px;padding:14px;margin-bottom:12px;">
-        <h4 style="margin:0 0 8px 0;">💬 Try asking (voice or text):</h4>
+        <h4 style="margin:0 0 8px 0;">💬 Commands (voice or text):</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:0.84rem;">
-          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Refresh customers”<br>• “Open underwriting”<br>• “Load claims pipeline”</div>
-          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Show balance sheet”<br>• “Reconcile reserves”<br>• “Run platform analytics”</div>
-          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• “Load invitation codes”<br>• “Open marketplace”<br>• “Refresh growth campaign”</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Run actuary simulation"<br>• "Open console"<br>• "System health check"</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Reconcile balance sheet"<br>• "Run AI BI insights"<br>• "Process all claims"</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Refresh customers"<br>• "Approve all underwriting"<br>• "Bill all policies"</div>
         </div>
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.22);font-size:0.8rem;opacity:0.92;">
-          💡 <strong>Tip:</strong> Press 🎤 and speak naturally. Voice, text, and quick-action buttons all use the same AI/BI dispatcher.
-        </div>
-        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions stay confirmation-gated to preserve data integrity.</p>
+        <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;">⚠️ High-impact actions are confirmation-gated for data integrity.</p>
       </div>
 
       <div id="admin-ai-query-row" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -618,7 +613,7 @@
           <input
             id="admin-ai-query-input"
             type="text"
-            placeholder="Ask admin assistant... e.g. 'refresh underwriting' or 'show platform analytics'"
+            placeholder="e.g. 'run actuary simulation', 'open console', 'refresh customers'"
             style="width:100%;padding:14px 16px;border-radius:12px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.95);font-size:0.95rem;outline:none;"
             onkeypress="if(event.key==='Enter') adminAssistantProcessQuery()"
           >
@@ -645,7 +640,6 @@
 
       <div class="admin-ai-tab-bar" id="admin-ai-tab-bar">
         <button class="admin-ai-tab-btn active" data-tab="overview" onclick="adminAssistantSwitchTab('overview')">🏠 Overview</button>
-        <button class="admin-ai-tab-btn" data-tab="financials" onclick="adminAssistantSwitchTab('financials')">🏦 Financials</button>
         <button class="admin-ai-tab-btn" data-tab="customers" onclick="adminAssistantSwitchTab('customers')">👥 Customers</button>
         <button class="admin-ai-tab-btn" data-tab="policies" onclick="adminAssistantSwitchTab('policies')">📋 Policies</button>
         <button class="admin-ai-tab-btn" data-tab="underwriting" onclick="adminAssistantSwitchTab('underwriting')">🔍 Underwriting</button>
@@ -654,46 +648,32 @@
         <button class="admin-ai-tab-btn" data-tab="marketplace" onclick="adminAssistantSwitchTab('marketplace')">🛒 Marketplace</button>
         <button class="admin-ai-tab-btn" data-tab="analytics" onclick="adminAssistantSwitchTab('analytics')">📊 Analytics</button>
         <button class="admin-ai-tab-btn" data-tab="invitations" onclick="adminAssistantSwitchTab('invitations')">🎟️ Invitations</button>
-        <button class="admin-ai-tab-btn" data-tab="reinsurance" onclick="adminAssistantSwitchTab('reinsurance')">🤝 Reinsurance</button>
-        <button class="admin-ai-tab-btn" data-tab="legal" onclick="adminAssistantSwitchTab('legal')">⚖️ Legal</button>
         <button class="admin-ai-tab-btn" data-tab="growth" onclick="adminAssistantSwitchTab('growth')">🚀 Growth/Media</button>
+        <button class="admin-ai-tab-btn" data-tab="operations" onclick="adminAssistantSwitchTab('operations')">⚙️ Operations</button>
       </div>
 
       <div id="admin-ai-quick-actions" style="margin-bottom:12px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-          <button onclick="adminAssistantQuickAction('refresh_overview')" class="admin-ai-quick-btn">🏠 Refresh Overview</button>
-          <button onclick="adminAssistantQuickAction('refresh_financials')" class="admin-ai-quick-btn">🏦 Refresh Financials</button>
-          <button onclick="adminAssistantQuickAction('refresh_customers')" class="admin-ai-quick-btn">👥 Refresh Customers</button>
-          <button onclick="adminAssistantQuickAction('refresh_underwriting')" class="admin-ai-quick-btn">🔍 Refresh Underwriting</button>
-          <button onclick="adminAssistantQuickAction('refresh_claims')" class="admin-ai-quick-btn">📝 Refresh Claims</button>
+          <button onclick="adminAssistantQuickAction('refresh_overview')" class="admin-ai-quick-btn">🔄 Refresh All</button>
           <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(123,31,162,0.36) 0%, rgba(25,118,210,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">🤖📊 AI + BI Insights</button>
-          <button onclick="adminAssistantQuickAction('refresh_analytics')" class="admin-ai-quick-btn">📊 Refresh Analytics</button>
+          <button onclick="adminAssistantQuickAction('run_actuary_simulation')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(13,71,161,0.36) 0%, rgba(66,165,245,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">📐 Actuary Simulation</button>
+          <button onclick="adminAssistantQuickAction('open_console')" class="admin-ai-quick-btn" style="background:rgba(79,172,254,0.22);border:1px solid rgba(79,172,254,0.45);">⌨️ Console</button>
+          <button onclick="adminAssistantQuickAction('system_health')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.22);">🏥 System Health</button>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+        <div id="admin-ai-more-actions" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
           <button onclick="adminAssistantQuickAction('validate_all_customer_pipelines')" class="admin-ai-quick-btn">🧪 Validate Pipelines</button>
           <button onclick="adminAssistantQuickAction('activate_approved_policies')" class="admin-ai-quick-btn">✅ Activate Policies</button>
           <button onclick="adminAssistantQuickAction('process_all_claims')" class="admin-ai-quick-btn">⚡ Process Claims</button>
-          <button onclick="adminAssistantQuickAction('refresh_marketplace')" class="admin-ai-quick-btn">🛒 Refresh Marketplace</button>
-          <button onclick="adminAssistantQuickAction('refresh_invitations')" class="admin-ai-quick-btn">🎟️ Refresh Invitations</button>
-          <button onclick="adminAssistantQuickAction('refresh_growth_media')" class="admin-ai-quick-btn">🚀 Refresh Growth</button>
-        </div>
-        <div id="admin-ai-more-actions" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-          <button onclick="adminAssistantQuickAction('refresh_billing')" class="admin-ai-quick-btn">💰 Refresh Billing</button>
-          <button onclick="adminAssistantQuickAction('refresh_transactions')" class="admin-ai-quick-btn">🧾 Refresh Transactions</button>
-          <button onclick="adminAssistantQuickAction('load_invitation_stats')" class="admin-ai-quick-btn">📈 Invitation Stats</button>
-          <button onclick="adminAssistantQuickAction('refresh_reinsurance')" class="admin-ai-quick-btn">🤝 Refresh Reinsurance</button>
-          <button onclick="adminAssistantQuickAction('refresh_legal')" class="admin-ai-quick-btn">⚖️ Refresh Legal</button>
-          <button onclick="adminAssistantQuickAction('refresh_video_jobs')" class="admin-ai-quick-btn">🎬 Refresh Video Jobs</button>
           <button onclick="adminAssistantQuickAction('reconcile_balance_sheet')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.28);">✅ Reconcile</button>
           <button onclick="adminAssistantQuickAction('bill_all_policies')" class="admin-ai-quick-btn" style="background:rgba(255,152,0,0.28);">⚠️ Bill All</button>
           <button onclick="adminAssistantQuickAction('cleanup_demo_data')" class="admin-ai-quick-btn" style="background:rgba(244,67,54,0.28);">🧹 Clean Demo Data</button>
         </div>
-        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">⬇️ Show More Actions</button>
+        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">⬇️ More Actions</button>
       </div>
 
       <div id="admin-ai-response-area" style="background:white;border-radius:14px;padding:18px;color:#263238;">
-        <div style="font-size:1.05rem;font-weight:700;margin-bottom:8px;">Admin assistant is ready</div>
-        <div style="color:#546e7a;font-size:0.92rem;">Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards.</div>
+        <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px;">Ready</div>
+        <div style="color:#546e7a;font-size:0.88rem;">Voice, text, or buttons. Integrity-gated.</div>
       </div>
     </div>
 
@@ -2152,17 +2132,10 @@
     const ADMIN_ASSISTANT_TABS = {
       overview: {
         title: 'Overview',
-        description: 'Unified system snapshot across all issued admin tabs.',
+        description: 'Unified system snapshot across all admin sections.',
         sectionId: null,
         defaultAction: 'refresh_overview',
-        actions: ['refresh_overview', 'refresh_all_core']
-      },
-      financials: {
-        title: 'Financials',
-        description: 'Balance sheet, reserves, reconciliation and AI financial insights.',
-        sectionId: 'balance-sheet-section',
-        defaultAction: 'refresh_financials',
-        actions: ['refresh_financials', 'load_ai_financial_insights', 'reconcile_balance_sheet', 'cleanup_demo_data']
+        actions: ['refresh_overview', 'refresh_all_core', 'system_health']
       },
       customers: {
         title: 'Customers',
@@ -2173,7 +2146,7 @@
       },
       policies: {
         title: 'Policies',
-        description: 'Sales division policy operations, premium generation and reports.',
+        description: 'Policy operations, premium generation and reports.',
         sectionId: 'policies',
         defaultAction: 'refresh_policies',
         actions: ['refresh_policies', 'activate_approved_policies', 'generate_premiums', 'generate_policy_report']
@@ -2187,21 +2160,21 @@
       },
       claims: {
         title: 'Claims',
-        description: 'ADL claims processing, validation, and claims intelligence.',
+        description: 'ADL claims processing, validation, and intelligence.',
         sectionId: 'claims',
         defaultAction: 'refresh_claims',
         actions: ['refresh_claims', 'process_all_claims', 'validate_adl_assessments', 'generate_claims_report']
       },
       billing: {
         title: 'Billing',
-        description: 'Accounting transactions, revenue view, and bill-all operations.',
+        description: 'Transactions, revenue view, and bill-all operations.',
         sectionId: 'billing',
         defaultAction: 'refresh_billing',
         actions: ['refresh_billing', 'refresh_transactions', 'bill_all_policies']
       },
       marketplace: {
         title: 'Marketplace',
-        description: 'Medical services/products marketplace, NFT integrity and approvals.',
+        description: 'Medical services/products marketplace and approvals.',
         sectionId: 'marketplace',
         defaultAction: 'refresh_marketplace',
         actions: ['refresh_marketplace']
@@ -2211,35 +2184,28 @@
         description: 'Platform ledger analytics, BI insights, and predictive metrics.',
         sectionId: 'platform-analytics',
         defaultAction: 'refresh_analytics',
-        actions: ['refresh_analytics', 'refresh_ai_insights']
+        actions: ['refresh_analytics', 'refresh_ai_insights', 'run_ai_bi_insights']
       },
       invitations: {
         title: 'Invitations',
-        description: 'Invitation code lifecycle, referral visibility and registration metrics.',
+        description: 'Invitation code lifecycle and registration metrics.',
         sectionId: 'invitation-management',
         defaultAction: 'refresh_invitations',
         actions: ['refresh_invitations', 'load_invitation_stats']
       },
-      reinsurance: {
-        title: 'Reinsurance',
-        description: 'Partner and cession management in the reinsurance division.',
-        sectionId: 'reinsurance',
-        defaultAction: 'refresh_reinsurance',
-        actions: ['refresh_reinsurance']
-      },
-      legal: {
-        title: 'Legal',
-        description: 'Compliance posture, open disputes and legal dashboard metrics.',
-        sectionId: 'legal',
-        defaultAction: 'refresh_legal',
-        actions: ['refresh_legal']
-      },
       growth: {
         title: 'Growth/Media',
-        description: 'Marketing AI campaign outputs and media/video orchestration.',
+        description: 'Marketing AI campaigns and media orchestration.',
         sectionId: 'growth-agent-section',
         defaultAction: 'refresh_growth_media',
         actions: ['refresh_growth_media', 'refresh_marketing_media', 'refresh_video_jobs']
+      },
+      operations: {
+        title: 'Operations',
+        description: 'System health, actuary simulation, console, and admin tools.',
+        sectionId: null,
+        defaultAction: 'system_health',
+        actions: ['system_health', 'run_actuary_simulation', 'open_console', 'reconcile_balance_sheet', 'refresh_financials', 'refresh_reinsurance', 'refresh_legal', 'cleanup_demo_data']
       }
     };
 
@@ -2247,7 +2213,6 @@
       refresh_overview: { label: '🔄 Refresh Overview', fn: async () => { await loadDashboardStats(); await loadPipelineStats(); }, integrity: 'safe' },
       refresh_all_core: { label: '🧭 Refresh Core Dashboard', fn: async () => { await refreshAllData(); }, integrity: 'safe' },
       refresh_financials: { label: '🏦 Refresh Financials', fn: async () => { await loadBalanceSheet(); }, integrity: 'safe' },
-      load_ai_financial_insights: { label: '🤖 Load AI Financial Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
       refresh_ai_insights: { label: '🤖 Refresh AI Insights', fn: async () => { await loadAIInsights(); }, integrity: 'safe' },
       run_ai_bi_insights: { label: '🤖📊 Run AI + BI Insights', fn: async () => { await loadPlatformAnalytics(); await loadAIInsights(); }, integrity: 'safe' },
       reconcile_balance_sheet: {
@@ -2300,12 +2265,37 @@
       refresh_growth_media: { label: '🚀 Refresh Growth Campaign', fn: async () => { await loadLatestMarketingCampaign(); }, integrity: 'safe' },
       refresh_marketing_media: { label: '🗂️ Refresh Media Assets', fn: async () => { await loadMarketingMediaAssets(); }, integrity: 'safe' },
       refresh_video_jobs: { label: '🎬 Refresh Video Jobs', fn: async () => { await loadMarketingVideoJobs({ silent: false }); if (latestMarketingCampaignPayload?.campaign) renderMarketingCampaign(latestMarketingCampaignPayload); }, integrity: 'safe' },
-      refresh_active_tab: { label: '🔄 Refresh Active Tab', dynamic: true, integrity: 'safe' }
+      refresh_active_tab: { label: '🔄 Refresh Active Tab', dynamic: true, integrity: 'safe' },
+      run_actuary_simulation: {
+        label: '📐 Run Actuary Simulation',
+        confirm: '📐 Run portfolio actuarial simulation?\n\nThis generates a full portfolio simulation using actuarial tables.\nDefault: 100k customers, age 3-55, standard demographics.',
+        fn: async () => { await adminRunActuarySimulation(); },
+        integrity: 'guarded'
+      },
+      open_console: {
+        label: '⌨️ Open Console',
+        fn: async () => { toggleAdminConsole(); },
+        integrity: 'safe'
+      },
+      open_actuary_dashboard: {
+        label: '📐 Actuary Dashboard',
+        fn: async () => { window.open('/actuary-dashboard.html', '_blank'); },
+        integrity: 'safe'
+      },
+      system_health: {
+        label: '🏥 System Health Check',
+        fn: async () => { await adminRunSystemHealth(); },
+        integrity: 'safe'
+      },
+      navigate_section: {
+        label: '📍 Go to Section',
+        fn: async () => { adminAssistantNavigateToTabSection(); },
+        integrity: 'safe'
+      }
     };
 
     const adminAssistantQuickActions = {
       refresh_overview: 'overview',
-      refresh_financials: 'financials',
       refresh_customers: 'customers',
       refresh_underwriting: 'underwriting',
       refresh_claims: 'claims',
@@ -2320,12 +2310,16 @@
       refresh_billing: 'billing',
       refresh_transactions: 'billing',
       load_invitation_stats: 'invitations',
-      refresh_reinsurance: 'reinsurance',
-      refresh_legal: 'legal',
       refresh_video_jobs: 'growth',
-      reconcile_balance_sheet: 'financials',
+      reconcile_balance_sheet: 'operations',
       bill_all_policies: 'billing',
-      cleanup_demo_data: 'financials'
+      cleanup_demo_data: 'operations',
+      run_actuary_simulation: 'operations',
+      open_console: 'operations',
+      system_health: 'operations',
+      refresh_financials: 'operations',
+      refresh_reinsurance: 'operations',
+      refresh_legal: 'operations'
     };
 
     function initAdminAssistant() {
@@ -2477,6 +2471,10 @@
       if (!normalized) return null;
 
       const actionKeywords = [
+        { test: ['actuary sim', 'actuarial sim', 'run simulation', 'portfolio simulation', 'run actuary'], action: 'run_actuary_simulation' },
+        { test: ['open console', 'go to console', 'terminal', 'go to terminal', 'show console'], action: 'open_console' },
+        { test: ['system health', 'health check', 'api health', 'server health', 'status check'], action: 'system_health' },
+        { test: ['actuary dashboard', 'open actuary', 'go to actuary'], action: 'open_actuary_dashboard' },
         { test: ['ai bi', 'bi insights', 'ai insights', 'business intelligence'], action: 'run_ai_bi_insights' },
         { test: ['reconcile', 'reconciliation'], action: 'reconcile_balance_sheet' },
         { test: ['cleanup', 'clean demo', 'demo data'], action: 'cleanup_demo_data' },
@@ -2488,7 +2486,15 @@
         { test: ['refresh transactions', 'load transactions'], action: 'refresh_transactions' },
         { test: ['validate pipelines', 'validate customers'], action: 'validate_all_customer_pipelines' },
         { test: ['process claims', 'run claims'], action: 'process_all_claims' },
-        { test: ['approve policies', 'activate policies'], action: 'activate_approved_policies' }
+        { test: ['approve policies', 'activate policies'], action: 'activate_approved_policies' },
+        { test: ['generate premiums', 'calculate premiums'], action: 'generate_premiums' },
+        { test: ['generate policy report', 'policy report'], action: 'generate_policy_report' },
+        { test: ['generate claims report', 'claims report'], action: 'generate_claims_report' },
+        { test: ['validate adl', 'adl assessment'], action: 'validate_adl_assessments' },
+        { test: ['approve all pending', 'approve all underwriting'], action: 'approve_all_pending_underwriting' },
+        { test: ['process pipelines', 'run pipelines'], action: 'process_all_pipelines' },
+        { test: ['sync ledger', 'customer ledger'], action: 'sync_customer_ledgers' },
+        { test: ['activate wallet', 'health wallet'], action: 'activate_all_wallets' }
       ];
 
       for (const item of actionKeywords) {
@@ -2499,7 +2505,6 @@
 
       const tabKeywords = [
         { test: ['overview', 'dashboard'], tab: 'overview' },
-        { test: ['financial', 'balance sheet', 'reserve'], tab: 'financials' },
         { test: ['customer', 'customers'], tab: 'customers' },
         { test: ['policy', 'policies'], tab: 'policies' },
         { test: ['underwriting', 'underwriter'], tab: 'underwriting' },
@@ -2508,9 +2513,8 @@
         { test: ['marketplace', 'nft'], tab: 'marketplace' },
         { test: ['analytics', 'bi', 'ledger analytics'], tab: 'analytics' },
         { test: ['invitation', 'referral code'], tab: 'invitations' },
-        { test: ['reinsurance', 'partner'], tab: 'reinsurance' },
-        { test: ['legal', 'compliance'], tab: 'legal' },
-        { test: ['growth', 'marketing', 'media'], tab: 'growth' }
+        { test: ['growth', 'marketing', 'media'], tab: 'growth' },
+        { test: ['operations', 'system', 'console', 'actuary', 'financial', 'balance sheet', 'reserve', 'reinsurance', 'legal', 'compliance'], tab: 'operations' }
       ];
 
       for (const item of tabKeywords) {
@@ -2653,7 +2657,87 @@
         return;
       }
 
-      adminAssistantSetStatus('warning', '🤖 Try voice/text/button: "refresh customers", "show analytics", "reconcile balance sheet"');
+      adminAssistantSetStatus('warning', '🤖 Try: "run actuary simulation", "open console", "system health", "refresh customers"');
+    }
+
+    async function adminRunActuarySimulation() {
+      adminAssistantSetStatus('ready', '⏳ Running actuarial portfolio simulation...');
+      const area = document.getElementById('admin-ai-response-area');
+      if (area) area.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:1.5rem;margin-bottom:8px;">📐</div><div style="font-weight:600;">Running actuarial simulation...</div><div style="color:#546e7a;font-size:0.85rem;margin-top:4px;">Generating 100k customer portfolio with actuarial tables</div></div>';
+      try {
+        const response = await fetch('/api/actuarial/simulate', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_count: 100000 })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Simulation failed');
+        const sim = data.simulation || {};
+        const summary = sim.summary || {};
+        if (area) {
+          area.innerHTML = `
+            <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">📐 Actuarial Simulation Complete</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+              <div style="background:#e3f2fd;padding:10px;border-radius:8px;text-align:center;">
+                <div style="font-size:0.75rem;color:#546e7a;">Simulation ID</div>
+                <div style="font-weight:700;font-size:0.85rem;word-break:break-all;">${sim.simulation_id || 'N/A'}</div>
+              </div>
+              <div style="background:#e8f5e9;padding:10px;border-radius:8px;text-align:center;">
+                <div style="font-size:0.75rem;color:#546e7a;">Customers</div>
+                <div style="font-weight:700;">${(summary.total_customers || 0).toLocaleString()}</div>
+              </div>
+              <div style="background:#fff3e0;padding:10px;border-radius:8px;text-align:center;">
+                <div style="font-size:0.75rem;color:#546e7a;">Total Premium</div>
+                <div style="font-weight:700;">$${(summary.total_annual_premium || 0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+              </div>
+              <div style="background:#fce4ec;padding:10px;border-radius:8px;text-align:center;">
+                <div style="font-size:0.75rem;color:#546e7a;">Total Coverage</div>
+                <div style="font-weight:700;">$${(summary.total_coverage || 0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+              </div>
+            </div>
+            <div style="font-size:0.82rem;color:#546e7a;">Run by: ${sim.run_by || 'admin'} | <a href="/actuary-dashboard.html" target="_blank" style="color:#1565c0;">Open Actuary Dashboard →</a></div>
+          `;
+        }
+        adminAssistantSetStatus('success', '✅ Actuary simulation complete');
+      } catch (err) {
+        if (area) area.innerHTML = `<div style="color:#c62828;font-weight:600;">❌ Simulation Error</div><div style="color:#546e7a;font-size:0.88rem;margin-top:4px;">${err.message}</div>`;
+        adminAssistantSetStatus('error', '❌ Simulation failed');
+      }
+    }
+
+    async function adminRunSystemHealth() {
+      adminAssistantSetStatus('ready', '⏳ Checking system health...');
+      const area = document.getElementById('admin-ai-response-area');
+      if (area) area.innerHTML = '<div style="text-align:center;padding:16px;"><div style="font-size:1.3rem;">🏥</div><div style="font-weight:600;">Running health checks...</div></div>';
+      const checks = [];
+      const endpoints = [
+        { name: 'API Health', url: '/api/health' },
+        { name: 'Dashboard Stats', url: '/api/bi/dashboard' },
+        { name: 'Balance Sheet', url: '/api/admin/balance-sheet' },
+        { name: 'Pipeline Stats', url: '/api/admin/pipeline-stats' }
+      ];
+      for (const ep of endpoints) {
+        const t0 = performance.now();
+        try {
+          const res = await fetch(ep.url, { headers: { 'Authorization': `Bearer ${token}` } });
+          checks.push({ name: ep.name, ok: res.ok, status: res.status, ms: Math.round(performance.now() - t0) });
+        } catch (e) {
+          checks.push({ name: ep.name, ok: false, status: 'ERR', ms: Math.round(performance.now() - t0) });
+        }
+      }
+      const allOk = checks.every(c => c.ok);
+      if (area) {
+        area.innerHTML = `
+          <div style="font-weight:700;font-size:1.02rem;margin-bottom:10px;">${allOk ? '✅' : '⚠️'} System Health</div>
+          <div style="display:grid;gap:6px;">
+            ${checks.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${c.ok ? '#e8f5e9' : '#fce4ec'};border-radius:8px;font-size:0.88rem;">
+              <span style="font-weight:600;">${c.ok ? '✅' : '❌'} ${c.name}</span>
+              <span style="color:#546e7a;">${c.status} · ${c.ms}ms</span>
+            </div>`).join('')}
+          </div>
+        `;
+      }
+      adminAssistantSetStatus(allOk ? 'success' : 'warning', allOk ? '✅ All systems healthy' : '⚠️ Some checks failed');
     }
 
     function adminAssistantSetStatus(kind, text) {
