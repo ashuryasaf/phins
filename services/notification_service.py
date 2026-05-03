@@ -1019,7 +1019,7 @@ class _SMTPCircuitBreaker:
     RECOVERY_TIMEOUT = int(os.environ.get('SMTP_CB_RECOVERY_TIMEOUT_SECS', '120'))
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._consecutive_failures: int = 0
         self._state: str = 'closed'
         self._opened_at: Optional[datetime] = None
