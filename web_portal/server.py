@@ -8858,6 +8858,137 @@ def detect_malicious_payload(value: str) -> bool:
     value_lower = value.lower()
     return any(pattern.lower() in value_lower for pattern in malicious_patterns)
 
+def _generate_security_ai_report(
+    threat_intel: dict,
+    fw_status: dict,
+    ids_summary: dict,
+    ids_alerts: list,
+    login_activity: dict,
+    app_stats: dict,
+    quarantine_data: list,
+) -> dict:
+    """Generate an AI-style security posture report from current telemetry."""
+    findings: list = []
+    risk_score = 0
+    recommendations: list = []
+
+    total_attempts = threat_intel.get('total_malicious_attempts', 0)
+    total_blocked = threat_intel.get('total_blocked', 0)
+    permanent = threat_intel.get('permanent_blocks', 0)
+    active_alerts = len([a for a in ids_alerts if not a.get('acknowledged')])
+    lockouts = login_activity.get('active_lockouts', 0)
+    quarantined = len(quarantine_data)
+    active_sessions = login_activity.get('total_active_sessions', 0)
+
+    # Threat level assessment
+    if total_attempts > 100:
+        findings.append(f"HIGH: {total_attempts} malicious attempts detected — sustained attack activity")
+        risk_score += 30
+    elif total_attempts > 20:
+        findings.append(f"MEDIUM: {total_attempts} malicious attempts detected")
+        risk_score += 15
+    elif total_attempts > 0:
+        findings.append(f"LOW: {total_attempts} malicious attempt(s) logged")
+        risk_score += 5
+
+    if permanent > 5:
+        findings.append(f"ALERT: {permanent} IPs permanently blocked — possible coordinated attack")
+        risk_score += 20
+    elif permanent > 0:
+        findings.append(f"INFO: {permanent} IP(s) permanently blocked")
+
+    if active_alerts > 5:
+        findings.append(f"CRITICAL: {active_alerts} unacknowledged security alerts require immediate review")
+        risk_score += 25
+    elif active_alerts > 0:
+        findings.append(f"WARNING: {active_alerts} unacknowledged alert(s)")
+        risk_score += 10
+
+    if lockouts > 3:
+        findings.append(f"WARNING: {lockouts} active login lockouts — possible brute-force in progress")
+        risk_score += 15
+    elif lockouts > 0:
+        findings.append(f"INFO: {lockouts} active login lockout(s)")
+
+    if quarantined > 0:
+        findings.append(f"WARNING: {quarantined} file(s) quarantined — malicious upload attempts detected")
+        risk_score += 10
+        recommendations.append("Review quarantined files and trace source IPs for further investigation")
+
+    # Credential stuffing check
+    for alert in ids_alerts:
+        if alert.get('rule') == 'credential_stuffing' and not alert.get('acknowledged'):
+            findings.append(f"CRITICAL: Credential stuffing attack detected from {alert.get('source_ip', 'unknown')}")
+            risk_score += 20
+            recommendations.append("Enable CAPTCHA enforcement and consider temporary IP range block")
+            break
+
+    # System health
+    fw_enabled = bool(fw_status)
+    if not fw_enabled:
+        findings.append("WARNING: Firewall module not active")
+        risk_score += 10
+        recommendations.append("Enable the firewall module for IP-layer protection")
+
+    # Recommendations
+    if total_blocked > 10:
+        recommendations.append("Review blocked IP list for false positives from legitimate users")
+    if active_sessions > 50:
+        recommendations.append("Monitor high session count for potential session fixation attacks")
+    if risk_score < 10:
+        recommendations.append("Security posture is healthy. Continue monitoring.")
+    if total_attempts > 50:
+        recommendations.append("Consider enabling stricter rate limits during peak attack periods")
+    if quarantined > 5:
+        recommendations.append("Tighten file upload policies — multiple malicious uploads detected")
+
+    # Determine overall risk level
+    if risk_score >= 60:
+        risk_level = "CRITICAL"
+    elif risk_score >= 40:
+        risk_level = "HIGH"
+    elif risk_score >= 20:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "LOW"
+
+    # Protection summary
+    protections = []
+    protections.append("IP Firewall with adaptive threat scoring: ACTIVE" if fw_enabled else "IP Firewall: INACTIVE")
+    if _ids_enabled:
+        protections.append("Intrusion Detection System (IDS): ACTIVE")
+    else:
+        protections.append("Intrusion Detection System (IDS): INACTIVE")
+    if _file_scanner_enabled:
+        protections.append("File Upload Scanner with quarantine: ACTIVE")
+    else:
+        protections.append("File Upload Scanner: INACTIVE")
+    if _request_sanitizer_enabled:
+        protections.append("Request Sanitizer (XSS/Injection): ACTIVE")
+    else:
+        protections.append("Request Sanitizer: INACTIVE")
+    protections.append("HMAC-SHA256 Token Authentication (v2): ACTIVE")
+    protections.append("PBKDF2 Password Hashing: ACTIVE")
+    protections.append("Security Headers (CSP, HSTS, X-Frame): ACTIVE")
+    protections.append("Rate Limiting & Brute-Force Protection: ACTIVE")
+    protections.append("Input Validation (SQLi/XSS/Path Traversal): ACTIVE")
+    protections.append("Login Lockout After Failed Attempts: ACTIVE")
+
+    return {
+        'risk_level': risk_level,
+        'risk_score': min(risk_score, 100),
+        'findings': findings,
+        'recommendations': recommendations,
+        'protections_active': protections,
+        'generated_at': datetime.now().isoformat(),
+        'summary': (
+            f"Security posture: {risk_level} (score {min(risk_score, 100)}/100). "
+            f"{total_attempts} attack attempts detected, {total_blocked} IPs blocked, "
+            f"{active_alerts} active alerts, {quarantined} files quarantined."
+        ),
+    }
+
+
 def cleanup_stale_data():
     """Clean up expired sessions, old rate limits, and stale security data"""
     global last_cleanup
@@ -11023,6 +11154,141 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'quarantine_log': get_quarantine_log(limit),
+            }, default=str).encode('utf-8'))
+            return
+
+        # ── Comprehensive Cyber Security Dashboard API ──
+        if path == '/api/security/dashboard':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            now = datetime.now()
+            now_ts = now.timestamp()
+
+            # Login activity
+            login_activity = {
+                'failed_logins': {},
+                'active_lockouts': 0,
+                'total_active_sessions': len(SESSIONS),
+            }
+            for k, v in list(FAILED_LOGINS.items()):
+                login_activity['failed_logins'][k] = {
+                    'count': v.get('count', 0),
+                    'lockout_until': v.get('lockout_until'),
+                    'locked': v.get('lockout_until', 0) > now_ts,
+                }
+                if v.get('lockout_until', 0) > now_ts:
+                    login_activity['active_lockouts'] += 1
+
+            # Application / underwriting stats
+            app_stats = {
+                'total_applications': len(UNDERWRITING_APPLICATIONS),
+                'recent_applications': [],
+            }
+            sorted_apps = sorted(
+                UNDERWRITING_APPLICATIONS.values(),
+                key=lambda a: a.get('submitted_at', a.get('created_at', '')),
+                reverse=True,
+            )
+            for app in sorted_apps[:20]:
+                app_stats['recent_applications'].append({
+                    'id': app.get('id', ''),
+                    'customer_id': app.get('customer_id', ''),
+                    'status': app.get('status', ''),
+                    'submitted_at': app.get('submitted_at', app.get('created_at', '')),
+                    'type': app.get('coverage_type', app.get('policy_type', '')),
+                })
+
+            # Supplier activity
+            supplier_stats = {'total_suppliers': 0, 'recent_registrations': []}
+            try:
+                if supply_chain_service:
+                    suppliers = getattr(supply_chain_service, 'suppliers', {})
+                    supplier_stats['total_suppliers'] = len(suppliers)
+                    sorted_suppliers = sorted(
+                        suppliers.values(),
+                        key=lambda s: s.get('registered_at', s.get('created_at', '')),
+                        reverse=True,
+                    )
+                    for s in sorted_suppliers[:10]:
+                        supplier_stats['recent_registrations'].append({
+                            'id': s.get('id', s.get('supplier_id', '')),
+                            'name': s.get('name', s.get('company_name', '')),
+                            'status': s.get('status', ''),
+                            'registered_at': s.get('registered_at', s.get('created_at', '')),
+                        })
+            except Exception:
+                pass
+
+            # Threat intel
+            threat_intel = {
+                'total_malicious_attempts': len(MALICIOUS_ATTEMPTS),
+                'recent_attempts': MALICIOUS_ATTEMPTS[-30:],
+                'blocked_ips': dict(list(BLOCKED_IPS.items())[-50:]),
+                'total_blocked': len(BLOCKED_IPS),
+                'permanent_blocks': sum(1 for b in BLOCKED_IPS.values() if b.get('permanent')),
+                'suspicious_patterns': dict(list(SUSPICIOUS_PATTERNS.items())[-30:]),
+            }
+
+            # Firewall status
+            fw_status = {}
+            if _firewall_enabled:
+                fw_status = get_firewall_status()
+
+            # IDS summary
+            ids_summary_data = {}
+            ids_alerts_data = []
+            ids_events_data = []
+            if _ids_enabled:
+                ids_summary_data = ids_get_security_summary()
+                ids_alerts_data = ids_get_active_alerts(include_acknowledged=True)
+                ids_events_data = ids_get_recent_events(100)
+
+            # Quarantine
+            quarantine_data = []
+            if _file_scanner_enabled:
+                quarantine_data = get_quarantine_log(30)
+
+            # AI security report generation
+            ai_report = _generate_security_ai_report(
+                threat_intel, fw_status, ids_summary_data, ids_alerts_data,
+                login_activity, app_stats, quarantine_data,
+            )
+
+            # Session overview
+            session_overview = []
+            for sid, sess in list(SESSIONS.items())[-30:]:
+                session_overview.append({
+                    'session_id': sid[:12] + '...',
+                    'username': sess.get('username', ''),
+                    'role': sess.get('role', ''),
+                    'expires': sess.get('expires', ''),
+                })
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'timestamp': now.isoformat(),
+                'login_activity': login_activity,
+                'application_stats': app_stats,
+                'supplier_stats': supplier_stats,
+                'threat_intel': threat_intel,
+                'firewall': fw_status,
+                'ids_summary': ids_summary_data,
+                'ids_alerts': ids_alerts_data,
+                'ids_events': ids_events_data,
+                'quarantine': quarantine_data,
+                'ai_report': ai_report,
+                'sessions': session_overview,
+                'system': {
+                    'firewall_enabled': _firewall_enabled,
+                    'file_scanner_enabled': _file_scanner_enabled,
+                    'ids_enabled': _ids_enabled,
+                    'request_sanitizer_enabled': _request_sanitizer_enabled,
+                    'total_users': len(USERS),
+                    'total_customers': len(CUSTOMERS),
+                    'total_policies': len(POLICIES),
+                },
             }, default=str).encode('utf-8'))
             return
 
@@ -23451,7 +23717,36 @@ For claims or questions, please contact:
         if path == '/api/submit-quote':
             self.handle_quote_submission()
             return
-        
+
+        # ── IDS Alert Acknowledge (POST) ──
+        if path == '/api/security/ids/acknowledge' and _ids_enabled:
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                body_data = json.loads(body)
+            except json.JSONDecodeError:
+                body_data = {}
+            alert_id = body_data.get('alert_id', '')
+            if not alert_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'alert_id required'}).encode('utf-8'))
+                return
+            ok = ids_acknowledge_alert(alert_id)
+            self._set_json_headers(200 if ok else 404)
+            self.wfile.write(json.dumps({
+                'success': ok,
+                'alert_id': alert_id,
+                'message': 'Alert acknowledged' if ok else 'Alert not found',
+            }).encode('utf-8'))
+            return
+
         # =====================================================================
         # API EXTENSIONS - Community Foundations & OTP Security (POST)
         # =====================================================================
