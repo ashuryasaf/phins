@@ -225,6 +225,17 @@ class TestFirewall:
         v = check_request("10.0.0.1", user_agent="sqlmap/1.5")
         assert "suspicious_user_agent" in v.signals
 
+    def test_common_api_clients_not_flagged_as_suspicious(self):
+        from security.firewall import check_request
+
+        requests_verdict = check_request(
+            "10.0.0.2", user_agent="python-requests/2.32.3"
+        )
+        curl_verdict = check_request("10.0.0.3", user_agent="curl/8.7.1")
+
+        assert "suspicious_user_agent" not in requests_verdict.signals
+        assert "suspicious_user_agent" not in curl_verdict.signals
+
     def test_directory_scan_detected(self):
         from security.firewall import check_request
         v = check_request("10.0.0.1", path="/.env")

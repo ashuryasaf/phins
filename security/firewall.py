@@ -122,8 +122,6 @@ _SUSPICIOUS_UA_PATTERNS: List[re.Pattern[str]] = [
     re.compile(r"metasploit", re.IGNORECASE),
     re.compile(r"burpsuite", re.IGNORECASE),
     re.compile(r"zgrab", re.IGNORECASE),
-    re.compile(r"python-requests/\d", re.IGNORECASE),
-    re.compile(r"curl/\d", re.IGNORECASE),
 ]
 
 _DIRECTORY_SCAN_PATHS: FrozenSet[str] = frozenset({
