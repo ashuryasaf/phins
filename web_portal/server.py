@@ -7215,6 +7215,60 @@ import base64
 from security import auth_tokens as _auth_tokens
 from security.auth_tokens import TokenSecretError
 
+# Security hardening modules — firewall, file scanner, intrusion detection,
+# request sanitisation.  Imported with fallbacks so the server can still
+# start if one of them has an import-time error during development.
+try:
+    from security.firewall import (
+        check_request as firewall_check_request,
+        record_threat_signal as firewall_record_threat,
+        get_firewall_status,
+        reset_firewall,
+    )
+    _firewall_enabled = True
+except Exception:
+    _firewall_enabled = False
+
+try:
+    from security.file_scanner import (
+        scan_file_bytes,
+        scan_base64_payload,
+        sanitize_filename as secure_sanitize_filename,
+        quarantine_file,
+        get_quarantine_log,
+    )
+    _file_scanner_enabled = True
+except Exception:
+    _file_scanner_enabled = False
+
+try:
+    from security.intrusion_detector import (
+        record_event as ids_record_event,
+        get_recent_events as ids_get_recent_events,
+        get_active_alerts as ids_get_active_alerts,
+        acknowledge_alert as ids_acknowledge_alert,
+        check_session_anomaly as ids_check_session_anomaly,
+        get_security_summary as ids_get_security_summary,
+        record_upload_threat as ids_record_upload_threat,
+        record_failed_login as ids_record_failed_login,
+        Severity as IDSSeverity,
+        reset_ids,
+    )
+    _ids_enabled = True
+except Exception:
+    _ids_enabled = False
+
+try:
+    from security.request_sanitizer import (
+        sanitize_request_body,
+        safe_json_loads,
+        validate_content_length,
+        sanitize_header_value,
+    )
+    _request_sanitizer_enabled = True
+except Exception:
+    _request_sanitizer_enabled = False
+
 # Retained for backward compatibility with legacy v1 tokens minted before the
 # v2 upgrade. New tokens derive their key via ``security.auth_tokens``.
 _TOKEN_SECRET = (
@@ -8663,6 +8717,42 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
             if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
                 block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
 
+    # Feed into intrusion detection system for correlation
+    if _ids_enabled:
+        _ids_signal = 'malicious_payload'
+        reason_lower = reason.lower()
+        if 'sql' in reason_lower:
+            _ids_signal = 'sql_injection'
+        elif 'xss' in reason_lower:
+            _ids_signal = 'xss_attempt'
+        elif 'path traversal' in reason_lower:
+            _ids_signal = 'path_traversal'
+        elif 'command injection' in reason_lower:
+            _ids_signal = 'command_injection'
+        elif 'rate limit' in reason_lower:
+            _ids_signal = 'rate_limit_exceeded'
+        elif 'oversize' in reason_lower:
+            _ids_signal = 'oversized_request'
+        ids_record_event(
+            _ids_signal,
+            severity=IDSSeverity.WARNING,
+            client_ip=client_ip,
+            details=details or {},
+        )
+
+    if _firewall_enabled and not is_trusted_ip(client_ip):
+        _fw_signal = 'malicious_payload'
+        reason_lower = reason.lower()
+        if 'sql' in reason_lower:
+            _fw_signal = 'sql_injection'
+        elif 'xss' in reason_lower:
+            _fw_signal = 'xss_attempt'
+        elif 'path traversal' in reason_lower:
+            _fw_signal = 'path_traversal'
+        elif 'command injection' in reason_lower:
+            _fw_signal = 'command_injection'
+        firewall_record_threat(client_ip, _fw_signal)
+
     # Print to console for real-time monitoring
     print(f"🚨 SECURITY ALERT: {client_ip} - {reason}")
     if details:
@@ -9980,7 +10070,30 @@ For claims or questions, please contact:
         client_ip = self.client_address[0]
         server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
         _ensure_test_port_state(server_port)
-        
+
+        # ── Firewall check (runs before legacy IP block) ──
+        if _firewall_enabled:
+            _fw_verdict = firewall_check_request(
+                client_ip,
+                path=self.path,
+                method='GET',
+                user_agent=self.headers.get('User-Agent', ''),
+            )
+            if not _fw_verdict.allowed:
+                if _ids_enabled:
+                    ids_record_event(
+                        'firewall_block',
+                        severity=IDSSeverity.WARNING,
+                        client_ip=client_ip,
+                        details={'reason': _fw_verdict.reason, 'path': self.path},
+                    )
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Access denied',
+                    'message': 'Request blocked by firewall'
+                }).encode('utf-8'))
+                return
+
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
         if is_blocked:
@@ -9996,6 +10109,8 @@ For claims or questions, please contact:
         # Rate limiting
         if not check_rate_limit(client_ip, server_port):
             log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
+            if _firewall_enabled:
+                firewall_record_threat(client_ip, 'rate_limit_exceeded')
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Retry-After', '60')
@@ -10019,6 +10134,8 @@ For claims or questions, please contact:
             for value in values:
                 is_valid, error = validate_input_security(value, client_ip, f"query_param_{key}")
                 if not is_valid:
+                    if _firewall_enabled:
+                        firewall_record_threat(client_ip, 'xss_attempt')
                     self.send_response(400)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
@@ -10848,6 +10965,67 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
         
+        # ── Enhanced security dashboard endpoints ──
+        if path == '/api/security/firewall' and _firewall_enabled:
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(get_firewall_status(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/security/ids/events' and _ids_enabled:
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            limit = int(qs.get('limit', [50])[0])
+            severity_filter = qs.get('severity', [None])[0]
+            _sev = None
+            if severity_filter:
+                try:
+                    _sev = IDSSeverity(severity_filter)
+                except ValueError:
+                    pass
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'events': ids_get_recent_events(limit, severity=_sev),
+            }, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/security/ids/alerts' and _ids_enabled:
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'alerts': ids_get_active_alerts(include_acknowledged=True),
+            }, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/security/ids/summary' and _ids_enabled:
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(ids_get_security_summary(), default=str).encode('utf-8'))
+            return
+
+        if path == '/api/security/quarantine' and _file_scanner_enabled:
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            limit = int(qs.get('limit', [50])[0])
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'quarantine_log': get_quarantine_log(limit),
+            }, default=str).encode('utf-8'))
+            return
+
         # System status endpoint - shows real-time connection status
         if path == '/api/system/status':
             self._set_json_headers()
@@ -23189,7 +23367,30 @@ For claims or questions, please contact:
         client_ip = self.client_address[0]
         server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
         _ensure_test_port_state(server_port)
-        
+
+        # ── Firewall check ──
+        if _firewall_enabled:
+            _fw_verdict = firewall_check_request(
+                client_ip,
+                path=self.path,
+                method='POST',
+                user_agent=self.headers.get('User-Agent', ''),
+            )
+            if not _fw_verdict.allowed:
+                if _ids_enabled:
+                    ids_record_event(
+                        'firewall_block',
+                        severity=IDSSeverity.WARNING,
+                        client_ip=client_ip,
+                        details={'reason': _fw_verdict.reason, 'path': self.path, 'method': 'POST'},
+                    )
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Access denied',
+                    'message': 'Request blocked by firewall'
+                }).encode('utf-8'))
+                return
+
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
         if is_blocked:
@@ -23205,6 +23406,8 @@ For claims or questions, please contact:
         # Rate limiting
         if not check_rate_limit(client_ip, server_port):
             log_malicious_attempt(client_ip, 'Rate Limit Exceeded (POST)', {'endpoint': self.path})
+            if _firewall_enabled:
+                firewall_record_threat(client_ip, 'rate_limit_exceeded')
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Retry-After', '60')
@@ -23224,6 +23427,8 @@ For claims or questions, please contact:
                 'size': content_length,
                 'max_allowed': effective_max
             })
+            if _firewall_enabled:
+                firewall_record_threat(client_ip, 'oversized_request')
             self.send_response(413)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -24192,6 +24397,39 @@ For claims or questions, please contact:
                 file_content_type = str(file_info.get('content_type') or '').strip()
                 file_size = file_info.get('size', 0)
 
+                # ── File security scan ──
+                if _file_scanner_enabled:
+                    try:
+                        with open(temp_path, 'rb') as _scan_fh:
+                            _scan_data = _scan_fh.read()
+                        _scan_verdict = scan_file_bytes(
+                            _scan_data,
+                            filename=file_name,
+                            declared_content_type=file_content_type,
+                        )
+                        if not _scan_verdict.safe:
+                            quarantine_file(
+                                _scan_data, filename=file_name,
+                                reason=_scan_verdict.threat_summary,
+                                client_ip=client_ip,
+                            )
+                            if _ids_enabled:
+                                ids_record_upload_threat(client_ip, file_name, _scan_verdict.threats)
+                            if _firewall_enabled:
+                                firewall_record_threat(client_ip, 'malicious_upload')
+                            try:
+                                os.remove(temp_path)
+                            except OSError:
+                                pass
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'File rejected by security scan',
+                                'details': _scan_verdict.threat_summary,
+                            }).encode('utf-8'))
+                            return
+                    except Exception:
+                        pass
+
                 asset_type = str(form_fields.get('type', '')).strip().lower()
                 if not asset_type:
                     if file_content_type.startswith('video/'):
@@ -24288,6 +24526,25 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Either data (base64) or url must be provided'}).encode('utf-8'))
                 return
+
+            # ── Scan base64 media payload for malicious content ──
+            if raw_data and _file_scanner_enabled:
+                _b64_scan = scan_base64_payload(
+                    raw_data.split(',', 1)[-1] if ',' in raw_data else raw_data,
+                    filename=asset_name,
+                    declared_content_type=str(data.get('format', '')),
+                )
+                if not _b64_scan.safe:
+                    if _ids_enabled:
+                        ids_record_upload_threat(client_ip, asset_name, _b64_scan.threats)
+                    if _firewall_enabled:
+                        firewall_record_threat(client_ip, 'malicious_upload')
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'File rejected by security scan',
+                        'details': _b64_scan.threat_summary,
+                    }).encode('utf-8'))
+                    return
 
             try:
                 asset_id = f"media-{uuid.uuid4().hex[:12]}"
@@ -41920,7 +42177,52 @@ For claims or questions, please contact:
         
         # Get client IP
         client_ip = self.client_address[0]
-        
+
+        # ── Security guards (aligned with do_GET / do_POST) ──
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self._set_json_headers(403)
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+
+        if _firewall_enabled:
+            _fw_verdict = firewall_check_request(
+                client_ip,
+                path=path,
+                method='PUT',
+                user_agent=self.headers.get('User-Agent', ''),
+            )
+            if not _fw_verdict.allowed:
+                if _ids_enabled:
+                    ids_record_event(
+                        'firewall_block',
+                        severity=IDSSeverity.WARNING,
+                        client_ip=client_ip,
+                        details={'reason': _fw_verdict.reason, 'path': path, 'method': 'PUT'},
+                    )
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Access denied',
+                    'message': 'Request blocked by firewall'
+                }).encode('utf-8'))
+                return
+
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+        if not check_rate_limit(client_ip, server_port):
+            self._set_json_headers(429)
+            self.wfile.write(json.dumps({'error': 'Too many requests'}).encode('utf-8'))
+            return
+
+        # Size limit for PUT bodies
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > MAX_REQUEST_SIZE:
+            self._set_json_headers(413)
+            self.wfile.write(json.dumps({'error': 'Request too large'}).encode('utf-8'))
+            return
+
         # Get auth token
         auth_header = self.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -41966,7 +42268,40 @@ For claims or questions, please contact:
         """Handle DELETE requests"""
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
-        
+
+        # ── Security guards (aligned with do_GET / do_POST) ──
+        client_ip = self.client_address[0]
+
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self._set_json_headers(403)
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+
+        if _firewall_enabled:
+            _fw_verdict = firewall_check_request(
+                client_ip,
+                path=path,
+                method='DELETE',
+                user_agent=self.headers.get('User-Agent', ''),
+            )
+            if not _fw_verdict.allowed:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Access denied',
+                    'message': 'Request blocked by firewall'
+                }).encode('utf-8'))
+                return
+
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+        if not check_rate_limit(client_ip, server_port):
+            self._set_json_headers(429)
+            self.wfile.write(json.dumps({'error': 'Too many requests'}).encode('utf-8'))
+            return
+
         # Get auth token
         auth_header = self.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None

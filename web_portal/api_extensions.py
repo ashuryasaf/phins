@@ -1700,7 +1700,28 @@ def handle_contribution_document_upload(session: Dict, body_data: Dict) -> Tuple
             "error": f"File too large. Maximum size is {MAX_UPLOAD_SIZE / (1024*1024):.0f}MB",
             "estimated_size_mb": estimated_size / (1024*1024)
         }
-    
+
+    # Security scan uploaded file content
+    try:
+        from security.file_scanner import scan_base64_payload
+        scan_result = scan_base64_payload(
+            file_data,
+            filename=file_name,
+            declared_content_type=file_type,
+        )
+        if not scan_result.safe:
+            try:
+                from security.intrusion_detector import record_upload_threat
+                record_upload_threat("api_extension", file_name, scan_result.threats)
+            except Exception:
+                pass
+            return 400, {
+                "error": "File rejected by security scan",
+                "details": scan_result.threat_summary,
+            }
+    except ImportError:
+        pass
+
     payment_service = get_payment_service(
         ledger=_contribution_ledger,
         admin_dashboard=_admin_dashboard_data,
