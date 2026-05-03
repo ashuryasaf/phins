@@ -530,17 +530,23 @@
     const token = localStorage.getItem('phins_token');
     if (!token) { appendConsoleOutput('Error: Not authenticated', '#ef5350'); return; }
 
-    // Detect JavaScript: if input contains ( or = or ; or starts with fetch/const/let/var/await
-    const isJS = /^(fetch|const |let |var |await |\(|window\.|document\.|localStorage)/.test(cmd) || cmd.includes('(') && cmd.includes(')');
-
-    if (isJS) {
+    // Detect fetch() calls and extract URL + method
+    const fetchMatch = cmd.match(/fetch\s*\(\s*['"]([^'"]+)['"]/);
+    if (fetchMatch) {
+      const url = fetchMatch[1];
+      const methodMatch = cmd.match(/method\s*:\s*['"](\w+)['"]/i);
+      const bodyMatch = cmd.match(/body\s*:\s*(?:JSON\.stringify\s*\()?(\{[^}]*\})/);
+      const method = methodMatch ? methodMatch[1].toUpperCase() : 'GET';
       try {
-        const result = await eval(cmd);
-        if (result !== undefined) {
-          let display;
-          try { display = JSON.stringify(result, null, 2); } catch { display = String(result); }
-          appendConsoleOutput(display, '#43e97b');
-        }
+        appendConsoleOutput(method + ' ' + url + ' ...', '#888');
+        const opts = { method, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } };
+        if (bodyMatch && method !== 'GET') opts.body = bodyMatch[1];
+        const res = await fetch(url, opts);
+        const text = await res.text();
+        let display;
+        try { display = JSON.stringify(JSON.parse(text), null, 2); } catch { display = text; }
+        const color = res.ok ? '#43e97b' : '#ef5350';
+        appendConsoleOutput('[' + res.status + '] ' + display, color);
       } catch (err) {
         appendConsoleOutput('Error: ' + err.message, '#ef5350');
       }
