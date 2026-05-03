@@ -12,6 +12,7 @@ Covers:
 """
 
 import os
+import smtplib
 import time
 import pytest
 from unittest.mock import patch, MagicMock
@@ -115,6 +116,25 @@ class TestSMTPEmailProviderRetry:
         assert error is not None
         assert 'Connection refused' in error
         assert mock_smtp.call_count == 2
+
+    def test_smtp_protocol_errors_do_not_retry(self, cb):
+        from services.notification_service import SMTPEmailProvider
+        provider = SMTPEmailProvider()
+        provider.MAX_RETRIES = 3
+        provider.RETRY_DELAY_BASE = 0.01
+
+        with patch('smtplib.SMTP') as mock_smtp:
+            mock_smtp.side_effect = smtplib.SMTPAuthenticationError(535, b'Authentication failed')
+            success, msg_id, error = provider.send(
+                'test@example.com', 'Test', 'Body'
+            )
+
+        assert success is False
+        assert msg_id is None
+        assert error is not None
+        assert 'Authentication failed' in error
+        assert mock_smtp.call_count == 1
+        assert cb.get_status()['consecutive_failures'] == 1
 
     def test_success_after_transient_failure(self, cb):
         from services.notification_service import SMTPEmailProvider
