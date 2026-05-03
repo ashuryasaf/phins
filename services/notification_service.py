@@ -1253,6 +1253,34 @@ class MockEmailProvider(EmailProvider):
         return True, message_id, None
 
 
+class NoOpEmailProvider(EmailProvider):
+    """No-op email provider for deployments with no SMTP or API email configured.
+
+    Immediately returns failure without making any network connections,
+    avoiding blocking threads with TCP timeouts against unreachable servers.
+    """
+
+    REASON = (
+        'No email provider configured. Set SMTP_HOST/SMTP_USERNAME or an API '
+        'provider (SENDGRID_API_KEY, MAILGUN_API_KEY, RESEND_API_KEY, '
+        'ACTIVE_NOTIFICATIONS_API_KEY) to enable email delivery.'
+    )
+
+    def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+        from_address: Optional[str] = None,
+        from_name: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        logger.debug("NoOpEmailProvider: skipping send to %s (no provider configured)", to)
+        return False, None, self.REASON
+
+
 class SendGridEmailProvider(EmailProvider):
     """SendGrid email provider"""
     
@@ -3478,6 +3506,13 @@ def _build_email_provider(provider_type: str) -> EmailProvider:
         return ResendEmailProvider()
     if provider_type == 'active_notifications':
         return ActiveNotificationsEmailProvider()
+    if _smtp_looks_unconfigured():
+        logger.warning(
+            "SMTP is not configured (host=%s, no credentials) and no API email "
+            "provider detected. Email delivery disabled — using NoOpEmailProvider.",
+            _env_or_default('SMTP_HOST', NotificationConfig.SMTP_HOST),
+        )
+        return NoOpEmailProvider()
     return SMTPEmailProvider()
 
 
@@ -3584,6 +3619,16 @@ def reset_notification_service():
     _notification_service_instances.clear()
 
 
+def get_active_email_provider_type() -> str:
+    """Return the canonical name of the email provider that would be used for delivery."""
+    if should_use_mock_notifications():
+        return 'mock'
+    provider_type = _select_email_provider_type()
+    if provider_type == 'smtp' and _smtp_looks_unconfigured():
+        return 'noop'
+    return provider_type
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -3642,6 +3687,8 @@ __all__ = [
     
     # SMTP resilience
     'get_smtp_circuit_breaker',
+    'get_active_email_provider_type',
+    'NoOpEmailProvider',
     
     # Helper functions
     'generate_id',
