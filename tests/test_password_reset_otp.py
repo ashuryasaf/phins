@@ -344,3 +344,68 @@ class TestPasswordResetOTPResend:
         })
         assert status == 200
         assert body.get("success") is True or body.get("verification_id")
+
+
+# ---------- Notification delivery reporting ----------
+
+class TestPasswordResetNotificationReporting:
+
+    def setup_method(self):
+        portal.USERS.clear()
+        portal.CUSTOMERS.clear()
+        portal.SESSIONS.clear()
+        _teardown_otp()
+
+    def test_notification_sent_field_present(self):
+        """Response must include notification_sent so frontend can react."""
+        username, email = _setup_test_user()
+        status, body = _post("/api/request-password-reset", {
+            "username": username, "email": email,
+        })
+        assert status == 200
+        assert "notification_sent" in body
+
+    def test_decoy_response_includes_notification_sent(self):
+        """Decoy responses for nonexistent users must also include notification_sent."""
+        status, body = _post("/api/request-password-reset", {
+            "username": "noone", "email": "noone@nowhere.com",
+        })
+        assert status == 200
+        assert body.get("notification_sent") is True
+
+    def test_response_includes_verification_id_and_masked_email(self):
+        """Both verification_id and masked_email must be present for a valid user."""
+        username, email = _setup_test_user()
+        status, body = _post("/api/request-password-reset", {
+            "username": username, "email": email,
+        })
+        assert status == 200
+        assert body.get("verification_id")
+        assert body.get("masked_email")
+
+    def test_full_flow_with_notification_tracking(self):
+        """End-to-end flow: OTP requested, verified, and password reset, with notification tracking."""
+        username, email = _setup_test_user()
+        old_hash = portal.USERS[username]["hash"]
+
+        # Step 1
+        _, req_body = _post("/api/request-password-reset", {
+            "username": username, "email": email,
+        })
+        vid = req_body["verification_id"]
+        otp_code = req_body.get("demo_otp_code")
+        assert otp_code
+        assert "notification_sent" in req_body
+
+        # Step 2
+        status, body = _post("/api/reset-password", {
+            "username": username, "email": email,
+            "new_password": "TrackedReset1!",
+            "verification_id": vid, "otp_code": otp_code,
+        })
+        assert status == 200
+        assert body.get("success") is True
+
+        new_hash = portal.USERS[username]["hash"]
+        assert new_hash != old_hash
+        assert portal.verify_password("TrackedReset1!", new_hash, portal.USERS[username]["salt"])
