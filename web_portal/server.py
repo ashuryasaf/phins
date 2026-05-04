@@ -11190,133 +11190,227 @@ For claims or questions, please contact:
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
-            now = datetime.now()
-            now_ts = now.timestamp()
-
-            # Login activity
-            login_activity = {
-                'failed_logins': {},
-                'active_lockouts': 0,
-                'total_active_sessions': len(SESSIONS),
-            }
-            for k, v in list(FAILED_LOGINS.items()):
-                login_activity['failed_logins'][k] = {
-                    'count': v.get('count', 0),
-                    'lockout_until': v.get('lockout_until'),
-                    'locked': v.get('lockout_until', 0) > now_ts,
-                }
-                if v.get('lockout_until', 0) > now_ts:
-                    login_activity['active_lockouts'] += 1
-
-            # Application / underwriting stats
-            app_stats = {
-                'total_applications': len(UNDERWRITING_APPLICATIONS),
-                'recent_applications': [],
-            }
-            sorted_apps = sorted(
-                UNDERWRITING_APPLICATIONS.values(),
-                key=lambda a: a.get('submitted_at', a.get('created_at', '')),
-                reverse=True,
-            )
-            for app in sorted_apps[:20]:
-                app_stats['recent_applications'].append({
-                    'id': app.get('id', ''),
-                    'customer_id': app.get('customer_id', ''),
-                    'status': app.get('status', ''),
-                    'submitted_at': app.get('submitted_at', app.get('created_at', '')),
-                    'type': app.get('coverage_type', app.get('policy_type', '')),
-                })
-
-            # Supplier activity
-            supplier_stats = {'total_suppliers': 0, 'recent_registrations': []}
             try:
-                if supply_chain_service:
-                    suppliers = getattr(supply_chain_service, 'suppliers', {})
-                    supplier_stats['total_suppliers'] = len(suppliers)
-                    sorted_suppliers = sorted(
-                        suppliers.values(),
-                        key=lambda s: s.get('registered_at', s.get('created_at', '')),
+                now = datetime.now()
+                now_ts = now.timestamp()
+
+                def _safe_sort_key(*fields):
+                    """Return a sort-key extractor that never yields None."""
+                    def _key(item):
+                        for f in fields:
+                            v = item.get(f) if isinstance(item, dict) else None
+                            if v is not None:
+                                return str(v)
+                        return ''
+                    return _key
+
+                # Login activity
+                login_activity = {
+                    'failed_logins': {},
+                    'active_lockouts': 0,
+                    'total_active_sessions': 0,
+                }
+                try:
+                    login_activity['total_active_sessions'] = len(SESSIONS)
+                except Exception:
+                    pass
+                try:
+                    for k, v in list(FAILED_LOGINS.items()):
+                        if not isinstance(v, dict):
+                            continue
+                        lockout_ts = v.get('lockout_until') or 0
+                        try:
+                            lockout_ts = float(lockout_ts)
+                        except (TypeError, ValueError):
+                            lockout_ts = 0
+                        login_activity['failed_logins'][str(k)] = {
+                            'count': v.get('count', 0),
+                            'lockout_until': v.get('lockout_until'),
+                            'locked': lockout_ts > now_ts,
+                        }
+                        if lockout_ts > now_ts:
+                            login_activity['active_lockouts'] += 1
+                except Exception:
+                    pass
+
+                # Application / underwriting stats
+                app_stats = {
+                    'total_applications': 0,
+                    'recent_applications': [],
+                }
+                try:
+                    app_values = list(UNDERWRITING_APPLICATIONS.values()) if UNDERWRITING_APPLICATIONS else []
+                    app_stats['total_applications'] = len(app_values)
+                    sorted_apps = sorted(
+                        app_values,
+                        key=_safe_sort_key('submitted_at', 'created_at'),
                         reverse=True,
                     )
-                    for s in sorted_suppliers[:10]:
-                        supplier_stats['recent_registrations'].append({
-                            'id': s.get('id', s.get('supplier_id', '')),
-                            'name': s.get('name', s.get('company_name', '')),
-                            'status': s.get('status', ''),
-                            'registered_at': s.get('registered_at', s.get('created_at', '')),
+                    for app in sorted_apps[:20]:
+                        if not isinstance(app, dict):
+                            continue
+                        app_stats['recent_applications'].append({
+                            'id': str(app.get('id') or ''),
+                            'customer_id': str(app.get('customer_id') or ''),
+                            'status': str(app.get('status') or ''),
+                            'submitted_at': str(app.get('submitted_at') or app.get('created_at') or ''),
+                            'type': str(app.get('coverage_type') or app.get('policy_type') or ''),
                         })
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
-            # Threat intel
-            threat_intel = {
-                'total_malicious_attempts': len(MALICIOUS_ATTEMPTS),
-                'recent_attempts': MALICIOUS_ATTEMPTS[-30:],
-                'blocked_ips': dict(list(BLOCKED_IPS.items())[-50:]),
-                'total_blocked': len(BLOCKED_IPS),
-                'permanent_blocks': sum(1 for b in BLOCKED_IPS.values() if b.get('permanent')),
-                'suspicious_patterns': dict(list(SUSPICIOUS_PATTERNS.items())[-30:]),
-            }
+                # Supplier activity
+                supplier_stats = {'total_suppliers': 0, 'recent_registrations': []}
+                try:
+                    if supply_chain_service:
+                        _sup_dict = getattr(supply_chain_service, 'suppliers', None) or {}
+                        supplier_stats['total_suppliers'] = len(_sup_dict)
+                        sorted_suppliers = sorted(
+                            list(_sup_dict.values()),
+                            key=_safe_sort_key('registered_at', 'created_at'),
+                            reverse=True,
+                        )
+                        for s in sorted_suppliers[:10]:
+                            if not isinstance(s, dict):
+                                continue
+                            supplier_stats['recent_registrations'].append({
+                                'id': str(s.get('id') or s.get('supplier_id') or ''),
+                                'name': str(s.get('name') or s.get('company_name') or ''),
+                                'status': str(s.get('status') or ''),
+                                'registered_at': str(s.get('registered_at') or s.get('created_at') or ''),
+                            })
+                except Exception:
+                    pass
 
-            # Firewall status
-            fw_status = {}
-            if _firewall_enabled:
-                fw_status = get_firewall_status()
+                # Threat intel
+                threat_intel = {
+                    'total_malicious_attempts': 0,
+                    'recent_attempts': [],
+                    'blocked_ips': {},
+                    'total_blocked': 0,
+                    'permanent_blocks': 0,
+                    'suspicious_patterns': {},
+                }
+                try:
+                    threat_intel['total_malicious_attempts'] = len(MALICIOUS_ATTEMPTS)
+                    threat_intel['recent_attempts'] = list(MALICIOUS_ATTEMPTS[-30:])
+                    threat_intel['blocked_ips'] = dict(list(BLOCKED_IPS.items())[-50:])
+                    threat_intel['total_blocked'] = len(BLOCKED_IPS)
+                    threat_intel['permanent_blocks'] = sum(
+                        1 for b in BLOCKED_IPS.values()
+                        if isinstance(b, dict) and b.get('permanent')
+                    )
+                    threat_intel['suspicious_patterns'] = dict(list(SUSPICIOUS_PATTERNS.items())[-30:])
+                except Exception:
+                    pass
 
-            # IDS summary
-            ids_summary_data = {}
-            ids_alerts_data = []
-            ids_events_data = []
-            if _ids_enabled:
-                ids_summary_data = ids_get_security_summary()
-                ids_alerts_data = ids_get_active_alerts(include_acknowledged=True)
-                ids_events_data = ids_get_recent_events(100)
+                # Firewall status
+                fw_status = {}
+                try:
+                    if _firewall_enabled:
+                        fw_status = get_firewall_status()
+                except Exception:
+                    pass
 
-            # Quarantine
-            quarantine_data = []
-            if _file_scanner_enabled:
-                quarantine_data = get_quarantine_log(30)
+                # IDS summary
+                ids_summary_data = {}
+                ids_alerts_data = []
+                ids_events_data = []
+                try:
+                    if _ids_enabled:
+                        ids_summary_data = ids_get_security_summary()
+                        ids_alerts_data = ids_get_active_alerts(include_acknowledged=True)
+                        ids_events_data = ids_get_recent_events(100)
+                except Exception:
+                    pass
 
-            # AI security report generation
-            ai_report = _generate_security_ai_report(
-                threat_intel, fw_status, ids_summary_data, ids_alerts_data,
-                login_activity, app_stats, quarantine_data,
-            )
+                # Quarantine
+                quarantine_data = []
+                try:
+                    if _file_scanner_enabled:
+                        quarantine_data = get_quarantine_log(30)
+                except Exception:
+                    pass
 
-            # Session overview
-            session_overview = []
-            for sid, sess in list(SESSIONS.items())[-30:]:
-                session_overview.append({
-                    'session_id': sid[:12] + '...',
-                    'username': sess.get('username', ''),
-                    'role': sess.get('role', ''),
-                    'expires': sess.get('expires', ''),
-                })
+                # AI security report generation
+                try:
+                    ai_report = _generate_security_ai_report(
+                        threat_intel, fw_status, ids_summary_data, ids_alerts_data,
+                        login_activity, app_stats, quarantine_data,
+                    )
+                except Exception:
+                    ai_report = {
+                        'risk_level': 'LOW', 'risk_score': 0,
+                        'findings': [], 'recommendations': [],
+                        'protections_active': [], 'summary': 'Report generation failed.',
+                        'generated_at': now.isoformat(),
+                    }
 
-            self._set_json_headers()
-            self.wfile.write(json.dumps({
-                'timestamp': now.isoformat(),
-                'login_activity': login_activity,
-                'application_stats': app_stats,
-                'supplier_stats': supplier_stats,
-                'threat_intel': threat_intel,
-                'firewall': fw_status,
-                'ids_summary': ids_summary_data,
-                'ids_alerts': ids_alerts_data,
-                'ids_events': ids_events_data,
-                'quarantine': quarantine_data,
-                'ai_report': ai_report,
-                'sessions': session_overview,
-                'system': {
-                    'firewall_enabled': _firewall_enabled,
-                    'file_scanner_enabled': _file_scanner_enabled,
-                    'ids_enabled': _ids_enabled,
-                    'request_sanitizer_enabled': _request_sanitizer_enabled,
-                    'total_users': len(USERS),
-                    'total_customers': len(CUSTOMERS),
-                    'total_policies': len(POLICIES),
-                },
-            }, default=str).encode('utf-8'))
+                # Session overview
+                session_overview = []
+                try:
+                    for sid, sess in list(SESSIONS.items())[-30:]:
+                        if not isinstance(sess, dict):
+                            continue
+                        session_overview.append({
+                            'session_id': str(sid)[:12] + '...' if len(str(sid)) > 12 else str(sid),
+                            'username': str(sess.get('username') or ''),
+                            'role': str(sess.get('role') or ''),
+                            'expires': str(sess.get('expires') or ''),
+                        })
+                except Exception:
+                    pass
+
+                # System counts (safe)
+                _total_users = 0
+                _total_customers = 0
+                _total_policies = 0
+                try:
+                    _total_users = len(USERS)
+                except Exception:
+                    pass
+                try:
+                    _total_customers = len(CUSTOMERS)
+                except Exception:
+                    pass
+                try:
+                    _total_policies = len(POLICIES)
+                except Exception:
+                    pass
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'timestamp': now.isoformat(),
+                    'login_activity': login_activity,
+                    'application_stats': app_stats,
+                    'supplier_stats': supplier_stats,
+                    'threat_intel': threat_intel,
+                    'firewall': fw_status,
+                    'ids_summary': ids_summary_data,
+                    'ids_alerts': ids_alerts_data,
+                    'ids_events': ids_events_data,
+                    'quarantine': quarantine_data,
+                    'ai_report': ai_report,
+                    'sessions': session_overview,
+                    'system': {
+                        'firewall_enabled': _firewall_enabled,
+                        'file_scanner_enabled': _file_scanner_enabled,
+                        'ids_enabled': _ids_enabled,
+                        'request_sanitizer_enabled': _request_sanitizer_enabled,
+                        'total_users': _total_users,
+                        'total_customers': _total_customers,
+                        'total_policies': _total_policies,
+                    },
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                try:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Dashboard data assembly failed',
+                        'detail': str(e),
+                    }).encode('utf-8'))
+                except Exception:
+                    pass
             return
 
         # System status endpoint - shows real-time connection status
