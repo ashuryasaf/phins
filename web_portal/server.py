@@ -27017,6 +27017,7 @@ For claims or questions, please contact:
                     expiry_seconds = (otp_result.data or {}).get('expires_in_seconds', 300)
 
                     notification_sent = False
+                    notification_error = None
                     if otp_code:
                         try:
                             if api_extensions_enabled:
@@ -27024,7 +27025,7 @@ For claims or questions, please contact:
                                     from web_portal.api_extensions import _send_otp_email
                                 except ImportError:
                                     from api_extensions import _send_otp_email
-                                sent, _send_err = _send_otp_email(
+                                sent, send_err = _send_otp_email(
                                     email=email,
                                     otp_code=otp_code,
                                     expiry_seconds=expiry_seconds,
@@ -27032,10 +27033,48 @@ For claims or questions, please contact:
                                     ip_address=client_ip,
                                 )
                                 notification_sent = sent
-                        except Exception:
-                            pass
+                                if not sent:
+                                    notification_error = send_err
+                            else:
+                                try:
+                                    from services.notification_service import (
+                                        NotificationRequest,
+                                        NotificationChannel,
+                                        NotificationPriority,
+                                        get_notification_service,
+                                    )
+                                    ns = get_notification_service()
+                                    nr = ns.send(NotificationRequest(
+                                        channel=NotificationChannel.EMAIL,
+                                        recipient=email,
+                                        template_id='otp_email',
+                                        template_vars={
+                                            'code': otp_code,
+                                            'expiry_minutes': max(1, int(expiry_seconds // 60)),
+                                        },
+                                        priority=NotificationPriority.HIGH,
+                                        ip_address=client_ip,
+                                        metadata={'purpose': 'password_reset'},
+                                    ))
+                                    notification_sent = bool(nr.success)
+                                    if not nr.success:
+                                        notification_error = nr.error_message
+                                except Exception as ns_exc:
+                                    notification_error = str(ns_exc)
+                        except Exception as mail_exc:
+                            notification_error = str(mail_exc)
+                            try:
+                                print(f"[PASSWORD-RESET] OTP email delivery error: {mail_exc}")
+                            except Exception:
+                                pass
 
                     _notify_password_reset_requested(username, email, client_ip)
+
+                    if not notification_sent and notification_error:
+                        try:
+                            print(f"[PASSWORD-RESET] Verification code email not delivered to {email}: {notification_error}")
+                        except Exception:
+                            pass
 
                     response_data = {
                         'success': True,
@@ -27044,6 +27083,8 @@ For claims or questions, please contact:
                         'requires_otp': True,
                         'notification_sent': notification_sent,
                     }
+                    if not notification_sent and notification_error:
+                        response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
                     if otp_result.data and otp_result.data.get('masked_email'):
                         response_data['masked_email'] = otp_result.data['masked_email']
                     if otp_result.data and otp_result.data.get('expires_in_seconds'):
