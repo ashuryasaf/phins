@@ -8,26 +8,32 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~42k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~2900 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~44k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~2.9k lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`)
 - service-layer logic in `services/` (64 modules)
-- database access in `database/`
-- security utilities in `security/`
+- database access in `database/` (13 repository modules)
+- security utilities in `security/` (vault, auth tokens, headers, network,
+  secrets policy, **and** firewall / file scanner / IDS / request sanitizer)
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (81 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (85 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
 - `web_portal/server.py` defaults to `USE_DATABASE=true`
 - pytest config in root `conftest.py` sets `USE_DATABASE=false`,
-  `USE_SQLITE=true`, `PHINS_TEST_MODE=true`, and starts an embedded server on
+  `USE_SQLITE=true`, `SQLITE_PATH=<tmp>/phins_test.db`, `PHINS_TEST_MODE=true`,
+  `TEST_BASE_URL=http://localhost:8000`, and starts an embedded server on
   `127.0.0.1:8000`
 - a separate `tests/conftest.py` only adds `sys.path` and sets
   `PHINS_TEST_MODE`; the embedded server and env defaults live in the
   **root** `conftest.py`
+- the root `conftest.py` also resets per-test state for the firewall,
+  intrusion detector, options wheel, document processing, and accounting
+  engine; new global modules with mutable state should expose a `reset_*`
+  helper and be wired in there
 - many features still have in-memory/demo behavior, so preserve compatibility
   with both database-backed and in-memory flows unless the task explicitly says
   otherwise
@@ -85,11 +91,15 @@ Preferred file-by-task:
 |  |- headers.py
 |  |- network.py
 |  |- secrets_policy.py
+|  |- firewall.py                       # IP allow/deny + rate limiting
+|  |- file_scanner.py                   # upload payload scanning
+|  |- intrusion_detector.py             # IDS heuristics
+|  |- request_sanitizer.py              # request-body sanitization
 |  `- migrate_passwords.py
 |- scheduler/
 |  `- runner.py
 |- scripts/                             # operational utilities
-|- tests/                               # 81 test files
+|- tests/                               # 85 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -298,9 +308,13 @@ Important test harness facts:
 - **`tests/conftest.py`** only adds `sys.path` and sets `PHINS_TEST_MODE`; it
   does **not** start the server
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
-  `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
-- Options wheel service and document processing service are also reset per test
-- 81 test files under `tests/`, 11 root-level `test_*.py` files
+  `CLAIMS`, `CUSTOMERS`, `UNDERWRITING_APPLICATIONS`, `SESSIONS`, `BILLING`,
+  `HEALTH_WALLETS`, `MEDICAL_PURCHASES`, `INVESTMENT_ACCOUNTS`,
+  `CUSTOMER_ALLOCATIONS`, `TRANSACTION_LEDGER`, `RATE_LIMIT`,
+  `FAILED_LOGINS`, `BLOCKED_IPS`, `SUSPICIOUS_PATTERNS`)
+- Options wheel, document processing, accounting engine, firewall, and IDS
+  singletons are also reset per test (via their `reset_*` helpers)
+- 85 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -321,6 +335,13 @@ referenced files, commands, paths, and ports still exist.
 - The two `conftest.py` files (root vs `tests/`) serve different purposes;
   putting server setup in `tests/conftest.py` will not apply to root-level
   test files.
+- New global/singleton state must be reset between tests in the root
+  `conftest.py` `pytest_runtest_setup` hook, otherwise prior-test data leaks
+  into later tests (firewall blocks, IDS flags, accounting ledger entries,
+  etc.).
+- Notification code paths assume the SMTP circuit breaker / `NoOpEmailProvider`
+  contract from `services/notification_service.py`; calling `smtplib`
+  directly bypasses retry, breaker, and health-endpoint reporting.
 
 ## 10) Security and Reliability
 
@@ -330,9 +351,17 @@ referenced files, commands, paths, and ports still exist.
 - Preserve graceful fallback behavior for external dependencies.
 - Use audit-oriented patterns for sensitive operations if the surrounding code
   already does so.
-- Security utilities live in `security/` (`vault.py`, `auth_tokens.py`,
-  `headers.py`, `network.py`, `secrets_policy.py`); reuse them rather than
-  rolling custom auth/crypto.
+- Security utilities live in `security/`; reuse them rather than rolling custom
+  auth/crypto/perimeter logic:
+  - **Identity & secrets:** `vault.py`, `auth_tokens.py`, `secrets_policy.py`,
+    `migrate_passwords.py`
+  - **Transport & headers:** `headers.py`, `network.py`
+  - **Perimeter & runtime hardening:** `firewall.py` (IP allow/deny and rate
+    limits), `file_scanner.py` (upload scanning), `intrusion_detector.py`
+    (heuristic IDS), `request_sanitizer.py` (request-body sanitization)
+- Notifications go through `services/notification_service.py`, which includes
+  an SMTP circuit breaker and a `NoOpEmailProvider` fallback; do not bypass
+  it with raw `smtplib` calls.
 
 ## 11) Minimal Task Workflow
 
@@ -356,4 +385,4 @@ If you update this file again:
 
 ---
 
-Last updated: April 28, 2026
+Last updated: May 4, 2026
