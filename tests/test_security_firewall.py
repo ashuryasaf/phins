@@ -753,3 +753,40 @@ class TestCyberSecurityDashboardAPI:
         except urllib.error.HTTPError as e:
             body = json.loads(e.read())
         assert body.get("success") is False or body.get("message") == "Alert not found"
+
+    def test_dashboard_handles_none_dates_in_applications(self):
+        """Regression: sorted() crashed when application dates were None."""
+        import urllib.request
+        import web_portal.server as portal
+
+        token = self._login_admin()
+        if not token:
+            pytest.skip("Could not obtain admin token")
+
+        portal.UNDERWRITING_APPLICATIONS['TEST-NONE'] = {
+            'id': 'TEST-NONE',
+            'customer_id': 'CUST-001',
+            'status': 'pending',
+            'submitted_at': None,
+            'created_at': None,
+            'coverage_type': 'health',
+        }
+        portal.UNDERWRITING_APPLICATIONS['TEST-GOOD'] = {
+            'id': 'TEST-GOOD',
+            'customer_id': 'CUST-002',
+            'status': 'approved',
+            'submitted_at': '2026-01-01T00:00:00',
+            'coverage_type': 'life',
+        }
+
+        req = urllib.request.Request(
+            f"{self.BASE}/api/security/dashboard",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+
+        assert data.get("application_stats", {}).get("total_applications", 0) >= 2
+        app_ids = [a['id'] for a in data['application_stats']['recent_applications']]
+        assert 'TEST-NONE' in app_ids
+        assert 'TEST-GOOD' in app_ids

@@ -823,43 +823,52 @@
 const token = localStorage.getItem('phins_token');
 let refreshTimer = null;
 let threatChart = null;
+let loadAttempts = 0;
 
 if (!token) {
   window.location.href = '/login.html';
 }
 
+function safeStr(v) { return (v == null || v === undefined) ? '' : String(v); }
+function safeArr(v) { return Array.isArray(v) ? v : []; }
+function safeObj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
+function safeNum(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
+
 function formatTime(ts) {
-  if (!ts) return '—';
+  if (!ts || ts === 'None') return '—';
   try {
-    const d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+    const d = new Date(typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : ts);
+    if (isNaN(d.getTime())) return String(ts).substring(11, 19) || '—';
     return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch { return ts; }
+  } catch { return '—'; }
 }
 
 function formatDateTime(ts) {
-  if (!ts) return '—';
+  if (!ts || ts === 'None') return '—';
   try {
-    const d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+    const d = new Date(typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : ts);
+    if (isNaN(d.getTime())) return String(ts).substring(0, 16) || '—';
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' +
            d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  } catch { return ts; }
+  } catch { return '—'; }
 }
 
 function severityClass(severity) {
   if (!severity) return 'log-info';
-  const s = severity.toLowerCase();
+  const s = String(severity).toLowerCase();
   if (s === 'critical') return 'log-critical';
   if (s === 'warning') return 'log-warning';
   return 'log-info';
 }
 
 function chipForStatus(status) {
-  if (!status) return '<span class="status-chip chip-info">unknown</span>';
-  const s = status.toLowerCase();
-  if (['approved', 'active', 'verified'].includes(s)) return `<span class="status-chip chip-active">${status}</span>`;
-  if (['blocked', 'rejected', 'denied'].includes(s)) return `<span class="status-chip chip-blocked">${status}</span>`;
-  if (['pending', 'under_review', 'review'].includes(s)) return `<span class="status-chip chip-pending">${status}</span>`;
-  return `<span class="status-chip chip-info">${status}</span>`;
+  if (!status || status === 'None') return '<span class="status-chip chip-info">unknown</span>';
+  const str = String(status);
+  const s = str.toLowerCase();
+  if (['approved', 'active', 'verified'].includes(s)) return `<span class="status-chip chip-active">${str}</span>`;
+  if (['blocked', 'rejected', 'denied'].includes(s)) return `<span class="status-chip chip-blocked">${str}</span>`;
+  if (['pending', 'under_review', 'review'].includes(s)) return `<span class="status-chip chip-pending">${str}</span>`;
+  return `<span class="status-chip chip-info">${str}</span>`;
 }
 
 function findingIcon(text) {
@@ -874,33 +883,62 @@ function findingIcon(text) {
 
 async function loadDashboard() {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     const res = await fetch('/api/security/dashboard', {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
+
     if (res.status === 401 || res.status === 403) {
-      window.location.href = '/login.html';
+      if (loadAttempts === 0) {
+        window.location.href = '/login.html';
+      }
       return;
     }
-    const data = await res.json();
+
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      console.error('Invalid JSON from dashboard API:', text.substring(0, 200));
+      document.getElementById('last-updated').textContent =
+        `Server returned invalid data (status ${res.status}). Retrying...`;
+      return;
+    }
+
+    if (data.error) {
+      document.getElementById('last-updated').textContent =
+        `Server error: ${data.error}${data.detail ? ' — ' + data.detail : ''}. Retrying...`;
+      console.warn('Dashboard API error:', data);
+      return;
+    }
+
+    loadAttempts++;
     renderDashboard(data);
   } catch (err) {
     console.error('Dashboard load failed:', err);
-    document.getElementById('last-updated').textContent = `Error loading: ${err.message}`;
+    const msg = err.name === 'AbortError' ? 'Request timed out' : err.message;
+    document.getElementById('last-updated').textContent = `Connection issue: ${msg}. Retrying...`;
   }
 }
 
 function renderDashboard(data) {
-  const ai = data.ai_report || {};
-  const threats = data.threat_intel || {};
-  const login = data.login_activity || {};
-  const apps = data.application_stats || {};
-  const suppliers = data.supplier_stats || {};
-  const fw = data.firewall || {};
-  const alerts = data.ids_alerts || [];
-  const events = data.ids_events || [];
-  const sessions = data.sessions || [];
-  const quarantine = data.quarantine || [];
-  const system = data.system || {};
+  if (!data || typeof data !== 'object') return;
+  const ai = safeObj(data.ai_report);
+  const threats = safeObj(data.threat_intel);
+  const login = safeObj(data.login_activity);
+  const apps = safeObj(data.application_stats);
+  const suppliers = safeObj(data.supplier_stats);
+  const fw = safeObj(data.firewall);
+  const alerts = safeArr(data.ids_alerts);
+  const events = safeArr(data.ids_events);
+  const sessions = safeArr(data.sessions);
+  const quarantine = safeArr(data.quarantine);
+  const system = safeObj(data.system);
 
   // AI Report
   const riskScore = ai.risk_score || 0;
@@ -987,9 +1025,10 @@ function renderDashboard(data) {
 
 function renderThreatChart(attempts) {
   const buckets = {};
-  attempts.forEach(a => {
-    const ts = a.timestamp || '';
-    const hour = ts.substring(11, 16) || 'unknown';
+  safeArr(attempts).forEach(a => {
+    const item = safeObj(a);
+    const ts = safeStr(item.timestamp);
+    const hour = (ts.length >= 16 ? ts.substring(11, 16) : ts.substring(0, 5)) || 'unknown';
     buckets[hour] = (buckets[hour] || 0) + 1;
   });
 
@@ -1035,16 +1074,19 @@ function renderThreatChart(attempts) {
 
 function renderThreatLog(attempts) {
   const el = document.getElementById('threat-log');
-  if (!attempts.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div>No threats detected</div>'; return; }
-  el.innerHTML = attempts.slice(-15).reverse().map(a => `
+  if (!attempts || !attempts.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div>No threats detected</div>'; return; }
+  el.innerHTML = attempts.slice(-15).reverse().map(a => {
+    const item = safeObj(a);
+    const details = safeObj(item.details);
+    return `
     <div class="log-entry log-warning">
       <div class="log-header">
-        <span class="log-type">${a.reason || 'Unknown'}</span>
-        <span class="log-time">${formatTime(a.timestamp)}</span>
+        <span class="log-type">${safeStr(item.reason) || 'Unknown'}</span>
+        <span class="log-time">${formatTime(item.timestamp)}</span>
       </div>
-      <div class="log-detail">IP: <span class="log-ip">${a.ip || '—'}</span>${a.details ? ' | ' + (a.details.endpoint || a.details.field || '') : ''}</div>
-    </div>
-  `).join('');
+      <div class="log-detail">IP: <span class="log-ip">${safeStr(item.ip) || '—'}</span>${details.endpoint || details.field ? ' | ' + safeStr(details.endpoint || details.field) : ''}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderLoginActivity(login, data) {
@@ -1169,7 +1211,7 @@ function renderFirewall(fw, system) {
 
 function renderBlockedIPs(blocked) {
   const el = document.getElementById('blocked-ips-table');
-  const entries = Object.entries(blocked);
+  const entries = Object.entries(safeObj(blocked));
   if (!entries.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div>No blocked IPs</div>';
     return;
@@ -1177,34 +1219,40 @@ function renderBlockedIPs(blocked) {
   el.innerHTML = `
     <table class="cyber-table">
       <thead><tr><th>IP</th><th>Reason</th><th>Blocked At</th><th>Type</th></tr></thead>
-      <tbody>${entries.reverse().map(([ip, info]) => `
+      <tbody>${entries.slice().reverse().map(([ip, info]) => {
+        const item = safeObj(info);
+        return `
         <tr>
-          <td class="log-ip">${ip}</td>
-          <td style="font-size:0.75rem">${info.reason || '—'}</td>
-          <td style="font-size:0.73rem;color:var(--cyber-muted)">${formatDateTime(info.blocked_at)}</td>
-          <td>${info.permanent ? '<span class="status-chip chip-blocked">PERMANENT</span>' : '<span class="status-chip chip-warning">TEMPORARY</span>'}</td>
-        </tr>
-      `).join('')}</tbody>
+          <td class="log-ip">${safeStr(ip)}</td>
+          <td style="font-size:0.75rem">${safeStr(item.reason) || '—'}</td>
+          <td style="font-size:0.73rem;color:var(--cyber-muted)">${formatDateTime(item.blocked_at)}</td>
+          <td>${item.permanent ? '<span class="status-chip chip-blocked">PERMANENT</span>' : '<span class="status-chip chip-warning">TEMPORARY</span>'}</td>
+        </tr>`;
+      }).join('')}</tbody>
     </table>`;
 }
 
 function renderAlerts(alerts) {
   const el = document.getElementById('alerts-list');
-  if (!alerts.length) {
+  if (!alerts || !alerts.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔔</div>No security alerts</div>';
     return;
   }
-  el.innerHTML = alerts.map(a => `
-    <div class="alert-card alert-${a.severity === 'critical' ? 'critical' : 'warning'}">
+  el.innerHTML = alerts.map(a => {
+    const al = safeObj(a);
+    const sev = safeStr(al.severity).toLowerCase();
+    const rule = safeStr(al.rule).replace(/_/g, ' ').toUpperCase() || 'ALERT';
+    return `
+    <div class="alert-card alert-${sev === 'critical' ? 'critical' : 'warning'}">
       <div class="alert-header">
-        <span class="alert-rule">${a.severity === 'critical' ? '🔴' : '🟡'} ${a.rule.replace(/_/g, ' ').toUpperCase()}</span>
-        <span class="alert-time">${formatDateTime(a.created_at)}</span>
+        <span class="alert-rule">${sev === 'critical' ? '🔴' : '🟡'} ${rule}</span>
+        <span class="alert-time">${formatDateTime(al.created_at)}</span>
       </div>
-      <div class="alert-message">${a.message}</div>
-      <div style="margin-top:4px;font-size:0.73rem;color:var(--cyber-muted)">Source: <span class="log-ip">${a.source_ip}</span> | ID: ${a.alert_id}</div>
-      ${!a.acknowledged ? `<button class="alert-ack-btn" onclick="acknowledgeAlert('${a.alert_id}')">Acknowledge</button>` : '<span style="font-size:0.72rem;color:var(--cyber-green);margin-top:6px;display:inline-block">✓ Acknowledged</span>'}
-    </div>
-  `).join('');
+      <div class="alert-message">${safeStr(al.message)}</div>
+      <div style="margin-top:4px;font-size:0.73rem;color:var(--cyber-muted)">Source: <span class="log-ip">${safeStr(al.source_ip)}</span> | ID: ${safeStr(al.alert_id)}</div>
+      ${!al.acknowledged ? `<button class="alert-ack-btn" onclick="acknowledgeAlert('${safeStr(al.alert_id)}')">Acknowledge</button>` : '<span style="font-size:0.72rem;color:var(--cyber-green);margin-top:6px;display:inline-block">✓ Acknowledged</span>'}
+    </div>`;
+  }).join('');
 }
 
 function renderSessions(sessions) {
@@ -1229,45 +1277,54 @@ function renderSessions(sessions) {
 
 function renderQuarantine(quarantine) {
   const el = document.getElementById('quarantine-log');
-  if (!quarantine.length) {
+  if (!quarantine || !quarantine.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div>No quarantined files</div>';
     return;
   }
-  el.innerHTML = quarantine.reverse().map(q => `
+  el.innerHTML = quarantine.slice().reverse().map(q => {
+    const item = safeObj(q);
+    return `
     <div class="log-entry log-critical">
       <div class="log-header">
-        <span class="log-type">${q.filename || 'unknown'}</span>
-        <span class="log-time">${formatTime(q.timestamp)}</span>
+        <span class="log-type">${safeStr(item.filename) || 'unknown'}</span>
+        <span class="log-time">${formatTime(item.timestamp)}</span>
       </div>
       <div class="log-detail">
-        Reason: ${q.reason || '—'}<br>
-        IP: <span class="log-ip">${q.client_ip || '—'}</span> |
-        Size: ${q.size ? Math.round(q.size / 1024) + ' KB' : '—'} |
-        Hash: <span style="font-family:'JetBrains Mono'">${q.hash || '—'}</span>
+        Reason: ${safeStr(item.reason) || '—'}<br>
+        IP: <span class="log-ip">${safeStr(item.client_ip) || '—'}</span> |
+        Size: ${item.size ? Math.round(safeNum(item.size) / 1024) + ' KB' : '—'} |
+        Hash: <span style="font-family:'JetBrains Mono'">${safeStr(item.hash) || '—'}</span>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderEvents(events) {
   const el = document.getElementById('events-log');
-  if (!events.length) {
+  if (!events || !events.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">📜</div>No security events recorded</div>';
     return;
   }
-  el.innerHTML = events.reverse().map(e => `
-    <div class="log-entry ${severityClass(e.severity)}">
+  el.innerHTML = events.slice().reverse().map(e => {
+    const ev = safeObj(e);
+    const details = safeObj(ev.details);
+    const detailStr = Object.entries(details).slice(0, 5).map(([k,v]) => {
+      try { return `${k}: ${typeof v === 'object' ? JSON.stringify(v) : safeStr(v)}`; }
+      catch { return `${k}: ${safeStr(v)}`; }
+    }).join(', ');
+    return `
+    <div class="log-entry ${severityClass(ev.severity)}">
       <div class="log-header">
-        <span class="log-type">${e.event_type.replace(/_/g, ' ')}</span>
-        <span class="log-time">${formatTime(e.timestamp)}</span>
+        <span class="log-type">${safeStr(ev.event_type).replace(/_/g, ' ') || 'event'}</span>
+        <span class="log-time">${formatTime(ev.timestamp)}</span>
       </div>
       <div class="log-detail">
-        IP: <span class="log-ip">${e.client_ip || '—'}</span>
-        ${e.session_id ? ' | Session: ' + e.session_id : ''}
-        ${e.details ? ' | ' + Object.entries(e.details).map(([k,v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ') : ''}
+        IP: <span class="log-ip">${safeStr(ev.client_ip) || '—'}</span>
+        ${ev.session_id ? ' | Session: ' + safeStr(ev.session_id) : ''}
+        ${detailStr ? ' | ' + detailStr : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function acknowledgeAlert(alertId) {
