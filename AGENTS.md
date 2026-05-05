@@ -8,8 +8,8 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~42k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~2900 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~44k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~2910 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`)
 - service-layer logic in `services/` (64 modules)
@@ -17,7 +17,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (81 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (85 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -54,6 +54,7 @@ Preferred file-by-task:
 |- AGENTS.md
 |- README.md
 |- DEPLOYMENT.md
+|- requirements.txt
 |- conftest.py                          # pytest embedded server + env defaults
 |- config.py                            # root config module
 |- billing_engine.py
@@ -61,6 +62,7 @@ Preferred file-by-task:
 |- validate_system.py
 |- validate_external_services.py
 |- check_database_connection.py
+|- init_database.py                     # DB bootstrap / schema init
 |- web_portal/
 |  |- server.py
 |  |- api_extensions.py
@@ -78,18 +80,22 @@ Preferred file-by-task:
 |  |- notification_models.py
 |  |- migrate_data.py
 |  |- migrations/
-|  `- repositories/                     # 13 repository modules
+|  |- repositories/                     # 13 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
 |  |- headers.py
 |  |- network.py
 |  |- secrets_policy.py
+|  |- firewall.py
+|  |- intrusion_detector.py
+|  |- request_sanitizer.py
+|  |- file_scanner.py
 |  `- migrate_passwords.py
 |- scheduler/
 |  `- runner.py
 |- scripts/                             # operational utilities
-|- tests/                               # 81 test files
+|- tests/                               # 85 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -209,8 +215,9 @@ Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
 - `DatabaseManager` exposes 18 repository properties (see §4 for the full list).
-- Repository modules: `customer_repository.py`, `policy_repository.py`,
-  `claim_repository.py`, `underwriting_repository.py`, `billing_repository.py`,
+- Repository modules (13 `*_repository.py` + `base.py`):
+  `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
+  `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
   `token_repository.py`, `document_repository.py`, `supplier_repository.py`
@@ -300,7 +307,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 81 test files under `tests/`, 11 root-level `test_*.py` files
+- 85 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -331,8 +338,9 @@ referenced files, commands, paths, and ports still exist.
 - Use audit-oriented patterns for sensitive operations if the surrounding code
   already does so.
 - Security utilities live in `security/` (`vault.py`, `auth_tokens.py`,
-  `headers.py`, `network.py`, `secrets_policy.py`); reuse them rather than
-  rolling custom auth/crypto.
+  `headers.py`, `network.py`, `secrets_policy.py`, `firewall.py`,
+  `intrusion_detector.py`, `request_sanitizer.py`, `file_scanner.py`); reuse
+  them rather than rolling custom auth/crypto.
 
 ## 11) Minimal Task Workflow
 
@@ -356,4 +364,4 @@ If you update this file again:
 
 ---
 
-Last updated: April 28, 2026
+Last updated: May 5, 2026
