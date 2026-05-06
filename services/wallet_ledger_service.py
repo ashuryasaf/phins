@@ -154,9 +154,11 @@ class WalletLedgerService:
                 available_delta=float(amount),
                 posted_delta=float(amount),
             )
+            if not updated:
+                return WalletLedgerResult(success=False, error='balance_update_failed')
             return WalletLedgerResult(
                 success=True,
-                wallet=updated.to_dict() if updated else wallet.to_dict(),
+                wallet=updated.to_dict(),
                 entry_group_id=entry_group,
             )
 
@@ -232,9 +234,11 @@ class WalletLedgerService:
                 available_delta=-float(amount),
                 held_delta=float(amount),
             )
+            if not updated:
+                return WalletLedgerResult(success=False, error='balance_update_failed')
             return WalletLedgerResult(
                 success=True,
-                wallet=updated.to_dict() if updated else wallet.to_dict(),
+                wallet=updated.to_dict(),
                 hold=hold.to_dict(),
                 entry_group_id=entry_group,
             )
@@ -292,9 +296,11 @@ class WalletLedgerService:
                 available_delta=remainder,
                 posted_delta=-captured,
             )
+            if not updated:
+                return WalletLedgerResult(success=False, error='balance_update_failed')
             return WalletLedgerResult(
                 success=True,
-                wallet=updated.to_dict() if updated else wallet.to_dict(),
+                wallet=updated.to_dict(),
                 hold=hold.to_dict(),
                 entry_group_id=entry_group,
             )
@@ -330,9 +336,11 @@ class WalletLedgerService:
                 held_delta=-float(hold.amount),
                 available_delta=float(hold.amount),
             )
+            if not updated:
+                return WalletLedgerResult(success=False, error='balance_update_failed')
             return WalletLedgerResult(
                 success=True,
-                wallet=updated.to_dict() if updated else wallet.to_dict(),
+                wallet=updated.to_dict(),
                 hold=hold.to_dict(),
                 entry_group_id=entry_group,
             )
@@ -415,9 +423,11 @@ class WalletLedgerService:
                 available_delta=float(amount),
                 posted_delta=float(amount),
             )
+            if not updated:
+                return WalletLedgerResult(success=False, error='balance_update_failed')
             return WalletLedgerResult(
                 success=True,
-                wallet=updated.to_dict() if updated else wallet.to_dict(),
+                wallet=updated.to_dict(),
                 entry_group_id=entry_group,
             )
 

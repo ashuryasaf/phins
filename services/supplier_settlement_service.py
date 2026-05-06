@@ -192,12 +192,14 @@ class SupplierSettlementService:
 
             net_payout = float(run.net_amount or 0.0)
             if net_payout > 0:
-                self._accounting.post_settlement_payout_entries(
+                posting_result = self._accounting.post_settlement_payout_entries(
                     run.id,
                     run.supplier_id,
                     net_payout,
                     currency=getattr(run, 'currency', 'USD') or 'USD',
                 )
+                if not posting_result.success:
+                    return {'success': False, 'error': 'accounting_post_failed', 'run': run.to_dict()}
 
             return {'success': True, 'run': run.to_dict()}
 

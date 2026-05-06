@@ -789,6 +789,7 @@ class PlatformIntegrityService:
                 deferred_rev = db.journal.account_balance('deferred_marketplace_revenue').get('balance', 0.0)
                 contra = db.journal.account_balance('marketplace_contra_revenue').get('balance', 0.0)
                 net_rev = rev + deferred_rev + contra
+                gross_rev = rev + deferred_rev
                 items = db.supplier_settlement_items.get_all() or []
                 markup_total_items = sum(float(i.markup_amount or 0.0) for i in items)
                 report['markup_recognition']['details'] = {
@@ -805,13 +806,13 @@ class PlatformIntegrityService:
                         'severity': 'error',
                         'message': f"Net marketplace revenue is negative ({net_rev}) - check contra-revenue",
                     })
-                elif (net_rev - markup_total_items) < -1e-4:
+                elif (gross_rev - markup_total_items) < -1e-4:
                     report['markup_recognition']['status'] = 'FAIL'
                     self.errors.append({
                         'category': 'marketplace_accounting',
                         'severity': 'error',
                         'message': (
-                            f"Markup mismatch: journal net revenue ({round(net_rev, 4)}) "
+                            f"Markup mismatch: journal gross revenue ({round(gross_rev, 4)}) "
                             f"< settlement item markup ({round(markup_total_items, 4)})"
                         ),
                     })
