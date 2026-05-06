@@ -35,6 +35,20 @@ from database.repositories import (
     SupplierOrderRepository,
     SupplierDocumentRepository,
     SupplyChainLedgerRepository,
+    WalletAccountRepository,
+    WalletHoldRepository,
+    WalletLedgerRepository,
+    PaymentIntentRepository,
+    RefundRepository,
+    JournalRepository,
+    SupplierSettlementRunRepository,
+    SupplierSettlementItemRepository,
+    ExternalPayerRepository,
+    MarketplaceClaimRepository,
+    RemittanceRepository,
+    PayerReceivableRepository,
+    IdempotencyRepository,
+    OutboxRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +98,21 @@ class DatabaseManager:
         self._supplier_orders = None
         self._supplier_documents = None
         self._supply_chain_ledger = None
+        # Health-marketplace foundation repositories.
+        self._wallet_accounts = None
+        self._wallet_holds = None
+        self._wallet_ledger = None
+        self._payment_intents = None
+        self._refunds = None
+        self._journal = None
+        self._supplier_settlement_runs = None
+        self._supplier_settlement_items = None
+        self._external_payers = None
+        self._marketplace_claims = None
+        self._remittances = None
+        self._payer_receivables = None
+        self._idempotency = None
+        self._outbox = None
     
     def _ensure_session(self) -> Session:
         """
@@ -121,6 +150,20 @@ class DatabaseManager:
         self._supplier_orders = None
         self._supplier_documents = None
         self._supply_chain_ledger = None
+        self._wallet_accounts = None
+        self._wallet_holds = None
+        self._wallet_ledger = None
+        self._payment_intents = None
+        self._refunds = None
+        self._journal = None
+        self._supplier_settlement_runs = None
+        self._supplier_settlement_items = None
+        self._external_payers = None
+        self._marketplace_claims = None
+        self._remittances = None
+        self._payer_receivables = None
+        self._idempotency = None
+        self._outbox = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -254,6 +297,109 @@ class DatabaseManager:
         if self._supply_chain_ledger is None:
             self._supply_chain_ledger = SupplyChainLedgerRepository(self._ensure_session())
         return self._supply_chain_ledger
+
+    # ------------------------------------------------------------------
+    # Health-marketplace foundation repositories (wallet, settlement,
+    # payer recovery, integrity). See docs/health_marketplace_*.md.
+    # ------------------------------------------------------------------
+
+    @property
+    def wallet_accounts(self) -> WalletAccountRepository:
+        """Get wallet account repository (durable wallet balances)."""
+        if self._wallet_accounts is None:
+            self._wallet_accounts = WalletAccountRepository(self._ensure_session())
+        return self._wallet_accounts
+
+    @property
+    def wallet_holds(self) -> WalletHoldRepository:
+        """Get wallet hold repository (authorize-then-capture)."""
+        if self._wallet_holds is None:
+            self._wallet_holds = WalletHoldRepository(self._ensure_session())
+        return self._wallet_holds
+
+    @property
+    def wallet_ledger(self) -> WalletLedgerRepository:
+        """Get wallet ledger repository (append-only sub-ledger)."""
+        if self._wallet_ledger is None:
+            self._wallet_ledger = WalletLedgerRepository(self._ensure_session())
+        return self._wallet_ledger
+
+    @property
+    def payment_intents(self) -> PaymentIntentRepository:
+        """Get payment-intent repository."""
+        if self._payment_intents is None:
+            self._payment_intents = PaymentIntentRepository(self._ensure_session())
+        return self._payment_intents
+
+    @property
+    def refunds(self) -> RefundRepository:
+        """Get refund repository."""
+        if self._refunds is None:
+            self._refunds = RefundRepository(self._ensure_session())
+        return self._refunds
+
+    @property
+    def journal(self) -> JournalRepository:
+        """Get accounting journal repository."""
+        if self._journal is None:
+            self._journal = JournalRepository(self._ensure_session())
+        return self._journal
+
+    @property
+    def supplier_settlement_runs(self) -> SupplierSettlementRunRepository:
+        """Get supplier-settlement-run repository."""
+        if self._supplier_settlement_runs is None:
+            self._supplier_settlement_runs = SupplierSettlementRunRepository(self._ensure_session())
+        return self._supplier_settlement_runs
+
+    @property
+    def supplier_settlement_items(self) -> SupplierSettlementItemRepository:
+        """Get supplier-settlement-item repository."""
+        if self._supplier_settlement_items is None:
+            self._supplier_settlement_items = SupplierSettlementItemRepository(self._ensure_session())
+        return self._supplier_settlement_items
+
+    @property
+    def external_payers(self) -> ExternalPayerRepository:
+        """Get external payer repository."""
+        if self._external_payers is None:
+            self._external_payers = ExternalPayerRepository(self._ensure_session())
+        return self._external_payers
+
+    @property
+    def marketplace_claims(self) -> MarketplaceClaimRepository:
+        """Get marketplace-claim repository."""
+        if self._marketplace_claims is None:
+            self._marketplace_claims = MarketplaceClaimRepository(self._ensure_session())
+        return self._marketplace_claims
+
+    @property
+    def remittances(self) -> RemittanceRepository:
+        """Get remittance repository (advice + lines)."""
+        if self._remittances is None:
+            self._remittances = RemittanceRepository(self._ensure_session())
+        return self._remittances
+
+    @property
+    def payer_receivables(self) -> PayerReceivableRepository:
+        """Get payer-receivable repository."""
+        if self._payer_receivables is None:
+            self._payer_receivables = PayerReceivableRepository(self._ensure_session())
+        return self._payer_receivables
+
+    @property
+    def idempotency(self) -> IdempotencyRepository:
+        """Get idempotency-key repository."""
+        if self._idempotency is None:
+            self._idempotency = IdempotencyRepository(self._ensure_session())
+        return self._idempotency
+
+    @property
+    def outbox(self) -> OutboxRepository:
+        """Get outbox-event repository."""
+        if self._outbox is None:
+            self._outbox = OutboxRepository(self._ensure_session())
+        return self._outbox
 
     def commit(self):
         """Commit current transaction"""
