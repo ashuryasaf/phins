@@ -787,7 +787,7 @@ class PlatformIntegrityService:
                 # Markup recognition consistency
                 rev = db.journal.account_balance('marketplace_revenue').get('balance', 0.0)
                 contra = db.journal.account_balance('marketplace_contra_revenue').get('balance', 0.0)
-                net_rev = rev - contra
+                net_rev = rev + contra
                 items = db.supplier_settlement_items.get_all() or []
                 markup_total_items = sum(float(i.markup_amount or 0.0) for i in items)
                 report['markup_recognition']['details'] = {
@@ -800,6 +800,16 @@ class PlatformIntegrityService:
                         'category': 'marketplace_accounting',
                         'severity': 'error',
                         'message': f"Net marketplace revenue is negative ({net_rev}) - check contra-revenue",
+                    })
+                elif (net_rev - markup_total_items) < -1e-4:
+                    report['markup_recognition']['status'] = 'FAIL'
+                    self.errors.append({
+                        'category': 'marketplace_accounting',
+                        'severity': 'error',
+                        'message': (
+                            f"Markup mismatch: journal net revenue ({round(net_rev, 4)}) "
+                            f"< settlement item markup ({round(markup_total_items, 4)})"
+                        ),
                     })
 
                 # Payer receivable aging
@@ -821,11 +831,17 @@ class PlatformIntegrityService:
                     if not refund.order_id:
                         orphaned.append({'refund_id': refund.id, 'reason': 'missing_order_id'})
                         continue
-                    if refund.funding_source == 'wallet' and not refund.wallet_ledger_entry_id:
-                        orphaned.append({
-                            'refund_id': refund.id,
-                            'reason': 'missing_wallet_ledger_entry',
-                        })
+                    if refund.funding_source == 'wallet':
+                        if not refund.wallet_ledger_entry_id:
+                            orphaned.append({
+                                'refund_id': refund.id,
+                                'reason': 'missing_wallet_ledger_entry',
+                            })
+                        elif not db.wallet_ledger.get_by_id(refund.wallet_ledger_entry_id):
+                            orphaned.append({
+                                'refund_id': refund.id,
+                                'reason': 'invalid_wallet_ledger_entry',
+                            })
                 if orphaned:
                     report['refund_lineage']['status'] = 'FAIL'
                     report['refund_lineage']['orphaned_refunds'] = orphaned
@@ -842,7 +858,9 @@ class PlatformIntegrityService:
 
         # Roll an overall status
         statuses = [v.get('status') for v in report.values() if isinstance(v, dict) and 'status' in v]
-        if any(s == 'FAIL' for s in statuses):
+        if 'error' in report:
+            report['overall_status'] = 'FAIL'
+        elif any(s == 'FAIL' for s in statuses):
             report['overall_status'] = 'FAIL'
         elif any(s == 'WARN' for s in statuses):
             report['overall_status'] = 'WARN'

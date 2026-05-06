@@ -144,11 +144,10 @@ class MarketplaceAccountingService:
         reference_type: str,
         reference_id: str,
         description: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         if amount is None or float(amount) == 0:
             return []
         amount = float(amount)
-        rows: List[Dict[str, Any]] = []
         debit = db.journal.create(
             id=_new_id('JE'),
             entry_group_id=entry_group_id,
@@ -171,11 +170,13 @@ class MarketplaceAccountingService:
             reference_id=reference_id,
             description=description,
         )
-        if debit:
-            rows.append(debit.to_dict())
-        if credit:
-            rows.append(credit.to_dict())
-        return rows
+        if not debit or not credit:
+            logger.error(
+                "Partial journal pair for group %s: debit=%s credit=%s",
+                entry_group_id, 'OK' if debit else 'FAIL', 'OK' if credit else 'FAIL',
+            )
+            return None
+        return [debit.to_dict(), credit.to_dict()]
 
     # ------------------------------------------------------------------
     # Capture posting (order paid + supplier owed + markup recognized)
@@ -198,20 +199,23 @@ class MarketplaceAccountingService:
         with self._db_manager_factory() as db:
             # 1. Customer-side cash flow (wallet or external)
             customer_account = 'wallet_cash' if funding_source == 'wallet' else 'psp_clearing'
-            rows.extend(self._post_pair(
+            pair = self._post_pair(
                 db,
                 entry_group,
-                debit_account='marketplace_clearing',
-                credit_account=customer_account,
+                debit_account=customer_account,
+                credit_account='marketplace_clearing',
                 amount=financials.gross_sales_amount,
                 currency=financials.currency,
                 reference_type='order',
                 reference_id=order_id,
                 description='Capture: customer funds clear into marketplace',
-            ))
+            )
+            if pair is None:
+                return JournalPostingResult(success=False, error='journal_post_failed')
+            rows.extend(pair)
 
             # 2. Supplier payable arises from the supplier cost
-            rows.extend(self._post_pair(
+            pair = self._post_pair(
                 db,
                 entry_group,
                 debit_account='marketplace_clearing',
@@ -221,11 +225,14 @@ class MarketplaceAccountingService:
                 reference_type='order',
                 reference_id=order_id,
                 description='Capture: supplier payable recognized',
-            ))
+            )
+            if pair is None:
+                return JournalPostingResult(success=False, error='journal_post_failed')
+            rows.extend(pair)
 
             # 3. Markup recognized as revenue (or deferred)
             revenue_account = 'deferred_marketplace_revenue' if defer_revenue else 'marketplace_revenue'
-            rows.extend(self._post_pair(
+            pair = self._post_pair(
                 db,
                 entry_group,
                 debit_account='marketplace_clearing',
@@ -235,11 +242,14 @@ class MarketplaceAccountingService:
                 reference_type='order',
                 reference_id=order_id,
                 description='Capture: markup recognized',
-            ))
+            )
+            if pair is None:
+                return JournalPostingResult(success=False, error='journal_post_failed')
+            rows.extend(pair)
 
             # 4. Optional reserve holdback against supplier payable
             if financials.holdback_amount and financials.holdback_amount > 0:
-                rows.extend(self._post_pair(
+                pair = self._post_pair(
                     db,
                     entry_group,
                     debit_account='supplier_payable',
@@ -249,7 +259,10 @@ class MarketplaceAccountingService:
                     reference_type='order',
                     reference_id=order_id,
                     description='Capture: supplier reserve holdback',
-                ))
+                )
+                if pair is None:
+                    return JournalPostingResult(success=False, error='journal_post_failed')
+                rows.extend(pair)
 
         return JournalPostingResult(success=True, entry_group_id=entry_group, journal_entries=rows)
 
@@ -284,7 +297,7 @@ class MarketplaceAccountingService:
             customer_account = 'wallet_cash' if funding_source == 'wallet' else 'psp_clearing'
 
             # 1. Refund liability returned to customer
-            rows.extend(self._post_pair(
+            pair = self._post_pair(
                 db,
                 entry_group,
                 debit_account='refund_liability',
@@ -294,11 +307,14 @@ class MarketplaceAccountingService:
                 reference_type='order',
                 reference_id=order_id,
                 description='Refund: customer reimbursement',
-            ))
+            )
+            if pair is None:
+                return JournalPostingResult(success=False, error='journal_post_failed')
+            rows.extend(pair)
 
             # 2. Reverse supplier payable for supplier portion
             if supplier_share > 0:
-                rows.extend(self._post_pair(
+                pair = self._post_pair(
                     db,
                     entry_group,
                     debit_account='supplier_payable',
@@ -308,11 +324,14 @@ class MarketplaceAccountingService:
                     reference_type='order',
                     reference_id=order_id,
                     description='Refund: supplier payable reduction',
-                ))
+                )
+                if pair is None:
+                    return JournalPostingResult(success=False, error='journal_post_failed')
+                rows.extend(pair)
 
             # 3. Reverse markup recognition through contra-revenue
             if markup_share > 0:
-                rows.extend(self._post_pair(
+                pair = self._post_pair(
                     db,
                     entry_group,
                     debit_account='marketplace_contra_revenue',
@@ -322,7 +341,10 @@ class MarketplaceAccountingService:
                     reference_type='order',
                     reference_id=order_id,
                     description='Refund: markup contra-revenue',
-                ))
+                )
+                if pair is None:
+                    return JournalPostingResult(success=False, error='journal_post_failed')
+                rows.extend(pair)
 
         return JournalPostingResult(success=True, entry_group_id=entry_group, journal_entries=rows)
 
@@ -352,7 +374,7 @@ class MarketplaceAccountingService:
             summary['kpis'] = {
                 'gross_marketplace_revenue': round(revenue, 4),
                 'contra_revenue': round(contra, 4),
-                'net_marketplace_revenue': round(revenue - contra, 4),
+                'net_marketplace_revenue': round(revenue + contra, 4),
                 'open_supplier_payable': round(summary['accounts']['supplier_payable']['balance'], 4),
                 'open_payer_receivable': round(summary['accounts']['payer_receivable']['balance'], 4),
                 'refund_liability': round(summary['accounts']['refund_liability']['balance'], 4),

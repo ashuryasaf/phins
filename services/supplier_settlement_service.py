@@ -143,10 +143,10 @@ class SupplierSettlementService:
                 )
                 if item:
                     items.append(item.to_dict())
-                gross_total += financials.gross_sales_amount
-                net_total += net_payout
-                holdback_total += financials.holdback_amount
-                adjustment_total += adjustment
+                    gross_total += financials.gross_sales_amount
+                    net_total += net_payout
+                    holdback_total += financials.holdback_amount
+                    adjustment_total += adjustment
 
             run.gross_amount = gross_total
             run.net_amount = net_total
@@ -184,12 +184,11 @@ class SupplierSettlementService:
             if executed_by:
                 run.executed_by = executed_by
             run.updated_date = datetime.utcnow()
-            db.supplier_settlement_runs.session.commit()
 
             for item in db.supplier_settlement_items.get_for_run(run.id):
                 item.status = 'paid'
                 item.created_date = item.created_date or datetime.utcnow()
-            db.supplier_settlement_items.session.commit()
+            db.supplier_settlement_runs.session.commit()
 
             return {'success': True, 'run': run.to_dict()}
 

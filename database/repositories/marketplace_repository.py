@@ -58,13 +58,17 @@ class WalletAccountRepository(BaseRepository):
         customer_id: str,
         wallet_type: str = 'health',
         currency: str = 'USD',
+        *,
+        for_update: bool = False,
     ) -> Optional[WalletAccount]:
         try:
-            return (
+            q = (
                 self.session.query(WalletAccount)
                 .filter_by(customer_id=customer_id, wallet_type=wallet_type, currency=currency)
-                .first()
             )
+            if for_update:
+                q = q.with_for_update()
+            return q.first()
         except SQLAlchemyError as e:
             logger.error(f"Error fetching wallet for {customer_id}: {e}")
             return None
@@ -323,7 +327,7 @@ class SupplierSettlementRunRepository(BaseRepository):
         try:
             rows = (
                 self.session.query(SupplierSettlementRun)
-                .filter(SupplierSettlementRun.status.in_(['pending', 'queued']))
+                .filter(SupplierSettlementRun.status.in_(['pending', 'queued', 'calculated']))
                 .all()
             )
             for r in rows:
@@ -464,8 +468,8 @@ class PayerReceivableRepository(BaseRepository):
         try:
             rows = self.session.query(PayerReceivable).filter_by(status='open').all()
             for r in rows:
-                created = r.created_date or now
-                age = (now - created).days if created else 0
+                due = r.due_date or r.created_date or now
+                age = (now - due).days if due else 0
                 if age <= 30:
                     key = '0_30'
                 elif age <= 60:

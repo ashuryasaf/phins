@@ -183,6 +183,8 @@ class WalletLedgerService:
             if idempotency_key:
                 existing = db.wallet_holds.get_by_idempotency(idempotency_key)
                 if existing:
+                    if existing.customer_id != customer_id:
+                        return WalletLedgerResult(success=False, error='idempotency_key_conflict')
                     wallet = db.wallet_accounts.get_by_id(existing.wallet_account_id)
                     return WalletLedgerResult(
                         success=True,
@@ -190,7 +192,7 @@ class WalletLedgerService:
                         hold=existing.to_dict(),
                     )
 
-            wallet = db.wallet_accounts.get_for_customer(customer_id, wallet_type, currency)
+            wallet = db.wallet_accounts.get_for_customer(customer_id, wallet_type, currency, for_update=True)
             if not wallet:
                 return WalletLedgerResult(success=False, error='wallet_not_found')
             if float(wallet.available_balance or 0.0) < float(amount):
@@ -254,7 +256,7 @@ class WalletLedgerService:
             remainder = float(hold.amount) - captured
 
             entry_group = _new_id('GRP')
-            db.wallet_ledger.create(
+            entry = db.wallet_ledger.create(
                 id=_new_id('LEDG'),
                 wallet_account_id=wallet.id,
                 customer_id=hold.customer_id,
@@ -269,6 +271,8 @@ class WalletLedgerService:
                 counterparty_id=hold.order_id,
                 status='posted',
             )
+            if not entry:
+                return WalletLedgerResult(success=False, error='ledger_post_failed')
 
             hold.status = 'captured'
             hold.capture_reference = capture_reference
@@ -364,8 +368,10 @@ class WalletLedgerService:
                 reference_id=order_id,
                 status='posted',
             )
+            if not ledger:
+                return WalletLedgerResult(success=False, error='ledger_post_failed')
 
-            db.refunds.create(
+            refund_record = db.refunds.create(
                 id=_new_id('REF'),
                 order_id=order_id,
                 funding_source=funding_source,
@@ -375,8 +381,10 @@ class WalletLedgerService:
                 currency=currency,
                 approved_by=approved_by,
                 processed_date=datetime.utcnow(),
-                wallet_ledger_entry_id=ledger.id if ledger else None,
+                wallet_ledger_entry_id=ledger.id,
             )
+            if not refund_record:
+                return WalletLedgerResult(success=False, error='refund_record_failed')
 
             updated = db.wallet_accounts.adjust_balances(
                 wallet.id,
