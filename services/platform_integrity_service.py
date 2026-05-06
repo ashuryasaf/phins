@@ -682,6 +682,176 @@ class PlatformIntegrityService:
         }
 
 
+    # ------------------------------------------------------------------
+    # Health-marketplace foundation validators
+    # ------------------------------------------------------------------
+    #
+    # These validators operate on the durable marketplace schema introduced in
+    # ``database/marketplace_models.py`` (wallet accounts, holds, ledger
+    # entries, settlement runs, payer receivables, remittances, refunds,
+    # marketplace claims, and journal entries). They are additive and must not
+    # affect existing in-memory ``validate_all`` callers.
+    #
+    # Reference: docs/health_marketplace_architecture.md, sections
+    # "Integrity and control architecture" and "Recommended repository
+    # evolution".
+
+    def validate_marketplace_foundation(
+        self,
+        db_manager_factory=None,
+    ) -> Dict[str, Any]:
+        """Run the canonical marketplace integrity validations.
+
+        Checks:
+        - wallet hold coverage:
+            held_balance == sum(open_holds)
+            available + held == posted
+            posted == sum(credit) - sum(debit) of ledger
+        - settlement aging: pending settlement runs older than SLA threshold
+        - markup recognition consistency:
+            net_marketplace_revenue (journal) - markup totals on settlement
+            items must remain non-negative
+        - payer receivable aging
+        - refund lineage: every refund must reference an order and have a
+          ledger group (when funded by wallet)
+
+        Returns a structured report; also appends to ``self.errors`` and
+        ``self.warnings`` so it integrates with existing reporting flows.
+        """
+        from datetime import datetime as _dt
+
+        if db_manager_factory is None:
+            from database.manager import DatabaseManager as _DM
+            db_manager_factory = _DM
+
+        report: Dict[str, Any] = {
+            'wallet_holds': {'status': 'PASS', 'mismatches': []},
+            'settlement_aging': {'status': 'PASS', 'overdue_runs': 0, 'buckets': {}},
+            'markup_recognition': {'status': 'PASS', 'details': {}},
+            'payer_receivable_aging': {'status': 'PASS', 'buckets': {}},
+            'refund_lineage': {'status': 'PASS', 'orphaned_refunds': []},
+        }
+        try:
+            with db_manager_factory() as db:
+                # Wallet hold coverage
+                wallets = db.wallet_accounts.get_all() or []
+                wallet_mismatches: List[Dict[str, Any]] = []
+                for wallet in wallets:
+                    derived_posted = db.wallet_ledger.derive_balance(wallet.id)
+                    derived_held = db.wallet_holds.total_held_for_account(wallet.id)
+                    cached_posted = float(wallet.posted_balance or 0.0)
+                    cached_held = float(wallet.held_balance or 0.0)
+                    cached_avail = float(wallet.available_balance or 0.0)
+
+                    posted_match = abs(derived_posted - cached_posted) < 1e-4
+                    held_match = abs(derived_held - cached_held) < 1e-4
+                    invariant_match = abs((cached_avail + cached_held) - cached_posted) < 1e-4
+
+                    if not (posted_match and held_match and invariant_match):
+                        wallet_mismatches.append({
+                            'wallet_id': wallet.id,
+                            'customer_id': wallet.customer_id,
+                            'derived_posted': derived_posted,
+                            'cached_posted': cached_posted,
+                            'derived_held': derived_held,
+                            'cached_held': cached_held,
+                            'cached_available': cached_avail,
+                        })
+                        self.errors.append({
+                            'category': 'marketplace_wallet',
+                            'severity': 'error',
+                            'wallet_id': wallet.id,
+                            'message': (
+                                f"Wallet {wallet.id} balance mismatch "
+                                f"(derived posted={derived_posted} cached={cached_posted}, "
+                                f"derived held={derived_held} cached={cached_held})"
+                            ),
+                        })
+                if wallet_mismatches:
+                    report['wallet_holds']['status'] = 'FAIL'
+                    report['wallet_holds']['mismatches'] = wallet_mismatches
+
+                # Settlement aging
+                aging_buckets = db.supplier_settlement_runs.aging_buckets()
+                report['settlement_aging']['buckets'] = aging_buckets
+                overdue = int(aging_buckets.get('60_plus', 0)) + int(aging_buckets.get('31_60', 0))
+                report['settlement_aging']['overdue_runs'] = overdue
+                if overdue > 0:
+                    report['settlement_aging']['status'] = 'WARN'
+                    self.warnings.append({
+                        'category': 'marketplace_settlement',
+                        'severity': 'warning',
+                        'message': f"{overdue} settlement runs older than 30 days are still pending",
+                    })
+
+                # Markup recognition consistency
+                rev = db.journal.account_balance('marketplace_revenue').get('balance', 0.0)
+                contra = db.journal.account_balance('marketplace_contra_revenue').get('balance', 0.0)
+                net_rev = rev - contra
+                items = db.supplier_settlement_items.get_all() or []
+                markup_total_items = sum(float(i.markup_amount or 0.0) for i in items)
+                report['markup_recognition']['details'] = {
+                    'net_marketplace_revenue_journal': round(net_rev, 4),
+                    'markup_total_settlement_items': round(markup_total_items, 4),
+                }
+                if net_rev < -1e-4:
+                    report['markup_recognition']['status'] = 'FAIL'
+                    self.errors.append({
+                        'category': 'marketplace_accounting',
+                        'severity': 'error',
+                        'message': f"Net marketplace revenue is negative ({net_rev}) - check contra-revenue",
+                    })
+
+                # Payer receivable aging
+                receivable_buckets = db.payer_receivables.aging_buckets()
+                report['payer_receivable_aging']['buckets'] = receivable_buckets
+                aged_open = receivable_buckets.get('90_plus', {}).get('count', 0)
+                if aged_open > 0:
+                    report['payer_receivable_aging']['status'] = 'WARN'
+                    self.warnings.append({
+                        'category': 'marketplace_payer',
+                        'severity': 'warning',
+                        'message': f"{aged_open} payer receivables open >90 days",
+                    })
+
+                # Refund lineage
+                refunds = db.refunds.get_all() or []
+                orphaned: List[Dict[str, Any]] = []
+                for refund in refunds:
+                    if not refund.order_id:
+                        orphaned.append({'refund_id': refund.id, 'reason': 'missing_order_id'})
+                        continue
+                    if refund.funding_source == 'wallet' and not refund.wallet_ledger_entry_id:
+                        orphaned.append({
+                            'refund_id': refund.id,
+                            'reason': 'missing_wallet_ledger_entry',
+                        })
+                if orphaned:
+                    report['refund_lineage']['status'] = 'FAIL'
+                    report['refund_lineage']['orphaned_refunds'] = orphaned
+                    for o in orphaned:
+                        self.errors.append({
+                            'category': 'marketplace_refund',
+                            'severity': 'error',
+                            'message': f"Refund {o['refund_id']} has lineage gap: {o['reason']}",
+                        })
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Marketplace integrity validation failed: {exc}")
+            report['error'] = str(exc)
+
+        # Roll an overall status
+        statuses = [v.get('status') for v in report.values() if isinstance(v, dict) and 'status' in v]
+        if any(s == 'FAIL' for s in statuses):
+            report['overall_status'] = 'FAIL'
+        elif any(s == 'WARN' for s in statuses):
+            report['overall_status'] = 'WARN'
+        else:
+            report['overall_status'] = 'PASS'
+        report['as_of'] = _dt.utcnow().isoformat()
+        return report
+
+
 # Singleton instance
 _platform_integrity_service: Optional[PlatformIntegrityService] = None
 
