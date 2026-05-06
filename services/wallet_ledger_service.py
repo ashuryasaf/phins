@@ -185,6 +185,13 @@ class WalletLedgerService:
                 if existing:
                     if existing.customer_id != customer_id:
                         return WalletLedgerResult(success=False, error='idempotency_key_conflict')
+                    if (
+                        float(existing.amount) != float(amount)
+                        or existing.currency != currency
+                        or existing.order_id != order_id
+                        or existing.payment_intent_id != payment_intent_id
+                    ):
+                        return WalletLedgerResult(success=False, error='idempotency_key_conflict')
                     wallet = db.wallet_accounts.get_by_id(existing.wallet_account_id)
                     return WalletLedgerResult(
                         success=True,
