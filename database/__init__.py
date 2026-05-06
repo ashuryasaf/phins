@@ -22,6 +22,10 @@ import tempfile
 
 from .config import DatabaseConfig
 from .models import Base
+# Register marketplace foundation tables on the shared metadata so that
+# `Base.metadata.create_all` includes them. The import is intentionally
+# side-effect only.
+from . import marketplace_models  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
