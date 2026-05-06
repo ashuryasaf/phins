@@ -26,6 +26,22 @@ from .supplier_repository import (
     SupplierDocumentRepository,
     SupplyChainLedgerRepository,
 )
+from .marketplace_repository import (
+    WalletAccountRepository,
+    WalletHoldRepository,
+    WalletLedgerRepository,
+    PaymentIntentRepository,
+    RefundRepository,
+    JournalRepository,
+    SupplierSettlementRunRepository,
+    SupplierSettlementItemRepository,
+    ExternalPayerRepository,
+    MarketplaceClaimRepository,
+    RemittanceRepository,
+    PayerReceivableRepository,
+    IdempotencyRepository,
+    OutboxRepository,
+)
 
 __all__ = [
     'BaseRepository',
@@ -48,4 +64,18 @@ __all__ = [
     'SupplierOrderRepository',
     'SupplierDocumentRepository',
     'SupplyChainLedgerRepository',
+    'WalletAccountRepository',
+    'WalletHoldRepository',
+    'WalletLedgerRepository',
+    'PaymentIntentRepository',
+    'RefundRepository',
+    'JournalRepository',
+    'SupplierSettlementRunRepository',
+    'SupplierSettlementItemRepository',
+    'ExternalPayerRepository',
+    'MarketplaceClaimRepository',
+    'RemittanceRepository',
+    'PayerReceivableRepository',
+    'IdempotencyRepository',
+    'OutboxRepository',
 ]
