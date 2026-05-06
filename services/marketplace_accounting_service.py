@@ -349,6 +349,47 @@ class MarketplaceAccountingService:
         return JournalPostingResult(success=True, entry_group_id=entry_group, journal_entries=rows)
 
     # ------------------------------------------------------------------
+    # Settlement payout (reduces supplier payable)
+    # ------------------------------------------------------------------
+
+    def post_settlement_payout_entries(
+        self,
+        settlement_run_id: str,
+        supplier_id: str,
+        amount: float,
+        *,
+        currency: str = 'USD',
+    ) -> JournalPostingResult:
+        """Post journal entries that reduce ``supplier_payable`` when a
+        settlement run is paid out.  The offsetting credit goes to
+        ``marketplace_clearing`` (i.e. cash leaves the clearing account to
+        the supplier's bank)."""
+        amount = float(amount or 0.0)
+        if amount <= 0:
+            return JournalPostingResult(success=True, journal_entries=[])
+
+        entry_group = _new_id('JG')
+        rows: List[Dict[str, Any]] = []
+
+        with self._db_manager_factory() as db:
+            pair = self._post_pair(
+                db,
+                entry_group,
+                debit_account='supplier_payable',
+                credit_account='marketplace_clearing',
+                amount=amount,
+                currency=currency,
+                reference_type='settlement_run',
+                reference_id=settlement_run_id,
+                description='Settlement payout: supplier payable reduction',
+            )
+            if pair is None:
+                return JournalPostingResult(success=False, error='journal_post_failed')
+            rows.extend(pair)
+
+        return JournalPostingResult(success=True, entry_group_id=entry_group, journal_entries=rows)
+
+    # ------------------------------------------------------------------
     # Balance-sheet style summaries
     # ------------------------------------------------------------------
 

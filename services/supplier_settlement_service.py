@@ -190,6 +190,15 @@ class SupplierSettlementService:
                 item.created_date = item.created_date or datetime.utcnow()
             db.supplier_settlement_runs.session.commit()
 
+            net_payout = float(run.net_amount or 0.0)
+            if net_payout > 0:
+                self._accounting.post_settlement_payout_entries(
+                    run.id,
+                    run.supplier_id,
+                    net_payout,
+                    currency=getattr(run, 'currency', 'USD') or 'USD',
+                )
+
             return {'success': True, 'run': run.to_dict()}
 
     def apply_clawback(

@@ -786,12 +786,16 @@ class PlatformIntegrityService:
 
                 # Markup recognition consistency
                 rev = db.journal.account_balance('marketplace_revenue').get('balance', 0.0)
+                deferred_rev = db.journal.account_balance('deferred_marketplace_revenue').get('balance', 0.0)
                 contra = db.journal.account_balance('marketplace_contra_revenue').get('balance', 0.0)
-                net_rev = rev + contra
+                net_rev = rev + deferred_rev + contra
                 items = db.supplier_settlement_items.get_all() or []
                 markup_total_items = sum(float(i.markup_amount or 0.0) for i in items)
                 report['markup_recognition']['details'] = {
                     'net_marketplace_revenue_journal': round(net_rev, 4),
+                    'recognized_revenue': round(rev, 4),
+                    'deferred_revenue': round(deferred_rev, 4),
+                    'contra_revenue': round(contra, 4),
                     'markup_total_settlement_items': round(markup_total_items, 4),
                 }
                 if net_rev < -1e-4:

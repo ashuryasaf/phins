@@ -85,15 +85,25 @@ class MarketplaceEventService:
         aggregate_id: str,
         payload: Optional[Dict[str, Any]] = None,
         event_version: str = '1',
+        db=None,
     ) -> Optional[Dict[str, Any]]:
+        """Publish a canonical marketplace event to the outbox.
+
+        When *db* is supplied (an active ``DatabaseManager`` context) the
+        outbox row is created inside the caller's transaction so the event
+        and the business write commit or roll back together.  When *db* is
+        ``None`` (the default), the service opens its own connection for
+        backward compatibility.
+        """
         if event_type not in CANONICAL_EVENT_TYPES:
             logger.warning(f"Non-canonical event type emitted: {event_type}")
         if not aggregate_id or not aggregate_type:
             return None
         payload = payload or {}
         payload.setdefault('emitted_at', datetime.utcnow().isoformat())
-        with self._db_manager_factory() as db:
-            event = db.outbox.create(
+
+        def _create_event(session):
+            event = session.outbox.create(
                 id=_new_id('EVT'),
                 aggregate_type=aggregate_type,
                 aggregate_id=aggregate_id,
@@ -103,6 +113,12 @@ class MarketplaceEventService:
                 status='pending',
             )
             return event.to_dict() if event else None
+
+        if db is not None:
+            return _create_event(db)
+
+        with self._db_manager_factory() as own_db:
+            return _create_event(own_db)
 
     # Convenience helpers used by other services.
 

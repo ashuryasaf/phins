@@ -352,6 +352,7 @@ class WalletLedgerService:
         reason_code: str = 'customer_cancel',
         funding_source: str = 'wallet',
         approved_by: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> WalletLedgerResult:
         if amount is None or float(amount) <= 0:
             return WalletLedgerResult(success=False, error='amount must be positive')
@@ -360,6 +361,22 @@ class WalletLedgerService:
             wallet = db.wallet_accounts.get_for_customer(customer_id, wallet_type, currency)
             if not wallet:
                 return WalletLedgerResult(success=False, error='wallet_not_found')
+
+            existing_refunds = db.refunds.get_for_order(order_id)
+            for existing in existing_refunds:
+                if (existing.status == 'processed'
+                        and abs(float(existing.amount) - float(amount)) < 1e-6
+                        and existing.currency == currency
+                        and existing.funding_source == funding_source):
+                    ledger_entry = (
+                        db.wallet_ledger.get_by_id(existing.wallet_ledger_entry_id)
+                        if existing.wallet_ledger_entry_id else None
+                    )
+                    return WalletLedgerResult(
+                        success=True,
+                        wallet=wallet.to_dict(),
+                        entry_group_id=ledger_entry.entry_group_id if ledger_entry else None,
+                    )
 
             entry_group = _new_id('GRP')
             ledger = db.wallet_ledger.create(
