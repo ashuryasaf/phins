@@ -6,6 +6,9 @@
   <title>PHINS — Executive 1-Pager · Risk Factors · Avi Goldsobel, Advocate</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- PDF generation libraries (defer-loaded; the print fallback always works even if the CDN is blocked) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
   <style>
     :root {
       --blue-dark:  #0d47a1;
@@ -38,11 +41,16 @@
       line-height: 1.45;
     }
 
-    .download-btn {
+    .download-bar {
       position: fixed;
-      bottom: 28px;
-      right: 28px;
+      bottom: 24px;
+      right: 24px;
       z-index: 9999;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .download-btn {
       background: var(--gradient-hdr);
       color: #fff;
       border: none;
@@ -56,6 +64,17 @@
       transition: opacity .2s, transform .2s;
     }
     .download-btn:hover { opacity: .9; transform: translateY(-2px); }
+    .download-btn.ghost {
+      background: #fff;
+      color: var(--blue-dark);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10);
+    }
+    .download-btn[disabled] {
+      opacity: .55;
+      cursor: progress;
+      transform: none;
+    }
 
     .page {
       width: 210mm;
@@ -496,13 +515,19 @@
     @media print {
       body { background: #fff; }
       .download-btn { display: none; }
+      .download-bar { display: none; }
       .page { margin: 0; box-shadow: none; }
     }
   </style>
 </head>
 <body>
 
-  <button type="button" class="download-btn" onclick="window.print()">⬇️ Download / Print PDF</button>
+  <div class="download-bar" role="toolbar" aria-label="Document actions">
+    <button type="button" class="download-btn primary" id="btn-download-pdf"
+            title="Generate and download a PDF copy of this 1-pager">⬇️ Download PDF</button>
+    <button type="button" class="download-btn ghost" id="btn-print-pdf"
+            onclick="window.print()" title="Open the system print dialog (use 'Save as PDF')">🖨️ Print / Save as PDF</button>
+  </div>
 
   <!-- ───────── PAGE 1 — EXECUTIVE 1-PAGER ───────── -->
   <div class="page">
@@ -974,6 +999,69 @@
       document.getElementById('integrity-stamp').textContent = stampText;
       document.getElementById('appendix-integrity-stamp').textContent = stampText;
     })();
+
+    // ── Client-side PDF generation (jsPDF + html2canvas) ─────────────────
+    // Renders each .page node into a canvas, then stitches them into one
+    // A4 PDF. Falls back to window.print() if either CDN library failed
+    // to load (offline / CSP-restricted environments).
+    async function downloadPdf() {
+      const btn = document.getElementById('btn-download-pdf');
+      const original = btn ? btn.innerHTML : '';
+      try {
+        if (!window.jspdf || !window.html2canvas) {
+          alert("PDF libraries did not load \u2014 falling back to the system Print dialog. Use 'Save as PDF' from there.");
+          window.print();
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.innerHTML = '\u23F3 Generating PDF\u2026'; }
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        const A4_W = 210, A4_H = 297;
+
+        const pages = document.querySelectorAll('.page');
+        for (let i = 0; i < pages.length; i++) {
+          const node = pages[i];
+          const canvas = await window.html2canvas(node, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            useCORS: true,
+            logging: false,
+            windowWidth: node.scrollWidth
+          });
+          const img = canvas.toDataURL('image/png');
+          const ratio = canvas.width / canvas.height;
+          let w = A4_W, h = A4_W / ratio;
+          if (h > A4_H) { h = A4_H; w = A4_H * ratio; }
+          if (i > 0) pdf.addPage();
+          pdf.addImage(img, 'PNG', (A4_W - w) / 2, (A4_H - h) / 2, w, h, undefined, 'FAST');
+        }
+
+        const docId   = (document.getElementById('doc-id') ? document.getElementById('doc-id').textContent : '').trim();
+        const docHash = (document.getElementById('doc-hash') ? document.getElementById('doc-hash').textContent : '').trim();
+        pdf.setProperties({
+          title:    'PHINS Executive 1-Pager \u2014 Risk Brief (Goldsobel)',
+          subject:  'PHINS adjustable-risk cover \u00B7 Life + Disability ages 3-65 / Life-only 65+',
+          author:   'PHINS',
+          keywords: 'PHINS, risk, life, disability, adjustable, confidential, ' + docId + ', ' + docHash,
+          creator:  'PHINS Pitch Dashboard'
+        });
+
+        const fname = (docId || 'PHINS-RISK-1P-IL') + '_Goldsobel_CONFIDENTIAL.pdf';
+        pdf.save(fname);
+      } catch (err) {
+        console.error('PDF generation failed:', err);
+        alert('PDF generation failed \u2014 falling back to the system Print dialog.');
+        window.print();
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const btn = document.getElementById('btn-download-pdf');
+      if (btn) btn.addEventListener('click', downloadPdf);
+    });
 
     function djb2(str) {
       let h = 5381;
