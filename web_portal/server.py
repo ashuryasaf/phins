@@ -23985,6 +23985,9 @@ For claims or questions, please contact:
                     self._set_json_headers(status_code)
                     self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
                     return
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
             except Exception as e:
                 print(f"Assessment Center error (POST {path}): {e}")
                 import traceback
@@ -25770,7 +25773,7 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                report_text, metadata, _ = build_mislaka_report_text(result)
+                report_text, metadata, _ = build_mislaka_report_text(result, include_aggregates=True)
 
                 filename = f'mislaka_report_{id_number[-4:]}.pdf'
                 try:
