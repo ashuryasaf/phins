@@ -799,12 +799,13 @@
     // Every number on this document is computed from the constants below.
     // Changing any constant re-flows page 1 + page 2 + integrity hash.
     // ──────────────────────────────────────────────────────────────────────
+    const _L = 500000;
     const PHINS_RISK_MODEL = Object.freeze({
       version: "v1.0",
       docDate: "2026-05-07",
       // Reference sums insured (USD)
-      L: 500000,                 // Life sum insured
-      D: 500000 / 4,             // Disability sum insured = L / 4
+      L: _L,                     // Life sum insured
+      D: _L / 4,                 // Disability sum insured = L / 4
       // Base rates (USD per $1,000 sum insured per month)
       lifeBaseRate: 0.25,
       disabilityBaseRate: 0.20,
@@ -836,16 +837,16 @@
         const a = Math.max(M.youthAnchorAge, age);
         return +(M.youthAnchorFactor + (a - M.youthAnchorAge) * (rise / span)).toFixed(4);
       }
-      if (age <= 65) {
-        return +(1.0 + (age - 25) * M.coreSlope).toFixed(4);
+      if (age <= M.disabilityCutOffAge) {
+        return +(M.adultAnchorFactor + (age - M.adultAnchorAge) * M.coreSlope).toFixed(4);
       }
       // Senior curve
-      let f = ageFactor(65);
+      let f = ageFactor(M.disabilityCutOffAge);
       const a = Math.min(age, 80);
       if (a <= 75) {
-        f = f + (a - 65) * M.seniorSlope1;
+        f = f + (a - M.disabilityCutOffAge) * M.seniorSlope1;
       } else {
-        f = f + (75 - 65) * M.seniorSlope1 + (a - 75) * M.seniorSlope2;
+        f = f + (75 - M.disabilityCutOffAge) * M.seniorSlope1 + (a - 75) * M.seniorSlope2;
       }
       return +f.toFixed(4);
     }
