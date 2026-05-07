@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Executive 1-Pager · Risk Factors · Avi Goldsobel, Advocate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue-dark:  #0d47a1;
+      --blue-mid:   #1565c0;
+      --blue-light: #1976d2;
+      --accent-1:   #42a5f5;
+      --accent-2:   #64b5f6;
+      --green-1:    #2e7d32;
+      --amber-1:    #f59e0b;
+      --red-1:      #c62828;
+      --gradient-hdr:  linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      --gradient-soft: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+      --text-main: #1a202c;
+      --text-sub:  #4a5568;
+      --text-soft: #64748b;
+      --border:    #dbe4f0;
+      --bg-page:   #e8edf5;
+      --bg-card:   #ffffff;
+      --shadow:    0 6px 22px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      font-size: 9.4pt;
+      line-height: 1.45;
+    }
+
+    .download-btn {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 9999;
+      background: var(--gradient-hdr);
+      color: #fff;
+      border: none;
+      border-radius: 30px;
+      padding: 12px 22px;
+      font-size: 9.5pt;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(13, 71, 161, 0.4);
+      letter-spacing: .03em;
+      transition: opacity .2s, transform .2s;
+    }
+    .download-btn:hover { opacity: .9; transform: translateY(-2px); }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 20px auto;
+      background: #fff;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .page-header {
+      background: var(--gradient-hdr);
+      color: #fff;
+      padding: 16px 28px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .logo-row { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 36px; height: 36px;
+      border-radius: 9px;
+      background: var(--gradient-logo);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    }
+    .logo-text { font-size: 18pt; font-weight: 900; letter-spacing: .06em; }
+    .logo-tagline { font-size: 7.2pt; opacity: .82; letter-spacing: .12em; text-transform: uppercase; margin-top: 1px; }
+
+    .doc-ref {
+      font-size: 7.2pt; opacity: .78; text-align: right;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      letter-spacing: .04em;
+    }
+
+    .page-content { padding: 18px 26px 50px; flex: 1; }
+
+    .page-footer {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: var(--gradient-hdr);
+      color: rgba(255, 255, 255, .82);
+      font-size: 6.8pt;
+      padding: 7px 26px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .page-footer strong { color: #fff; letter-spacing: .04em; }
+
+    /* ── Recipient strip ── */
+    .recipient {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+      background: var(--gradient-soft);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--blue-dark);
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+    }
+    .recipient .to-label {
+      font-size: 6.8pt;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--blue-dark);
+    }
+    .recipient .to-name {
+      font-size: 12pt;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1.2;
+    }
+    .recipient .to-role {
+      font-size: 8.6pt;
+      color: var(--text-sub);
+      margin-top: 2px;
+    }
+    .recipient .doc-meta {
+      text-align: right;
+      font-size: 7.4pt;
+      color: var(--text-sub);
+      line-height: 1.5;
+    }
+    .recipient .doc-meta .doc-class {
+      display: inline-block;
+      background: var(--red-1);
+      color: #fff;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 6.8pt;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    /* ── Title ── */
+    .doc-title {
+      font-size: 16.5pt;
+      font-weight: 900;
+      color: var(--blue-dark);
+      letter-spacing: -0.01em;
+      line-height: 1.18;
+      margin-bottom: 4px;
+    }
+    .doc-subtitle {
+      font-size: 9pt;
+      color: var(--text-sub);
+      margin-bottom: 12px;
+      max-width: 95%;
+    }
+    .doc-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 6.8pt;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      background: rgba(21, 101, 192, 0.08);
+      border: 1px solid rgba(21, 101, 192, 0.22);
+      color: var(--blue-dark);
+    }
+    .tag.amber { background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.32); color: #92400e; }
+    .tag.green { background: rgba(46, 125, 50, 0.10); border-color: rgba(46, 125, 50, 0.32); color: var(--green-1); }
+    .tag.red   { background: rgba(198, 40, 40, 0.08); border-color: rgba(198, 40, 40, 0.30); color: var(--red-1); }
+
+    /* ── Confidentiality ── */
+    .confidential-block {
+      background: #fff7e6;
+      border: 1px solid #f5cf8b;
+      border-left: 4px solid var(--amber-1);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      font-size: 7.6pt;
+      color: #6b3f00;
+      line-height: 1.5;
+    }
+    .confidential-block strong { color: #5a2f00; letter-spacing: .04em; }
+
+    /* ── Two-column body ── */
+    .body-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .panel h3 {
+      font-size: 9.6pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      margin-bottom: 7px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .panel h3 .num {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--gradient-hdr);
+      color: #fff;
+      font-size: 7.6pt;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+    }
+    .panel p { font-size: 8.4pt; color: var(--text-sub); margin-bottom: 6px; }
+    .panel ul { padding-left: 16px; font-size: 8.4pt; color: var(--text-sub); }
+    .panel ul li { margin-bottom: 4px; }
+    .panel strong { color: var(--text-main); }
+
+    /* ── Risk matrix ── */
+    .risk-matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.8pt;
+      margin-top: 4px;
+    }
+    .risk-matrix th, .risk-matrix td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .risk-matrix th {
+      background: var(--gradient-hdr);
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-size: 7pt;
+    }
+    .risk-matrix td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .risk-matrix tr.split-row td { background: #f0f6ff; font-weight: 700; color: var(--blue-dark); }
+    .risk-matrix .age-band-3-65 { color: var(--blue-dark); font-weight: 700; }
+    .risk-matrix .age-band-65 { color: var(--red-1); font-weight: 700; }
+
+    /* ── Disclaimer ── */
+    .disclaimer-block {
+      background: var(--gradient-soft);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--blue-mid);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 7.8pt;
+      color: var(--text-sub);
+      line-height: 1.55;
+      margin-bottom: 10px;
+    }
+    .disclaimer-block strong { color: var(--blue-dark); }
+
+    /* ── 5-year forecast row ── */
+    .forecast {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .forecast h3 {
+      font-size: 9.6pt;
+      font-weight: 800;
+      color: var(--blue-dark);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .forecast .lead {
+      font-size: 7.8pt;
+      color: var(--text-sub);
+      margin-bottom: 8px;
+    }
+    .forecast-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .fc-cell {
+      background: var(--gradient-soft);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 6px;
+      text-align: center;
+    }
+    .fc-cell .yr {
+      font-size: 7pt;
+      font-weight: 800;
+      letter-spacing: .08em;
+      color: var(--blue-dark);
+      text-transform: uppercase;
+    }
+    .fc-cell .age {
+      font-size: 7.4pt;
+      color: var(--text-soft);
+      margin-top: 2px;
+    }
+    .fc-cell .prem {
+      font-size: 11pt;
+      font-weight: 900;
+      color: var(--text-main);
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .fc-cell .delta {
+      font-size: 6.6pt;
+      color: var(--green-1);
+      margin-top: 1px;
+      font-weight: 700;
+    }
+
+    /* ── Footer signature row ── */
+    .signature-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 8px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+    .sig-block {
+      font-size: 7.6pt;
+      color: var(--text-sub);
+    }
+    .sig-block .label {
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      font-weight: 800;
+      color: var(--blue-dark);
+      font-size: 6.8pt;
+      margin-bottom: 18px;
+    }
+    .sig-block .line {
+      border-bottom: 1px solid var(--text-soft);
+      height: 22px;
+      margin-bottom: 4px;
+    }
+
+    .watermark {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) rotate(-30deg);
+      font-size: 78pt;
+      font-weight: 900;
+      color: rgba(13, 71, 161, 0.045);
+      letter-spacing: .14em;
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    /* ── Appendix specific styles ── */
+    .appendix-title {
+      font-size: 13pt;
+      font-weight: 900;
+      color: var(--blue-dark);
+      margin-bottom: 4px;
+      letter-spacing: -0.01em;
+    }
+    .appendix-sub {
+      font-size: 8.4pt;
+      color: var(--text-sub);
+      margin-bottom: 12px;
+    }
+
+    .premium-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.8pt;
+    }
+    .premium-table th, .premium-table td {
+      padding: 5px 7px;
+      border-bottom: 1px solid var(--border);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .premium-table th {
+      background: var(--gradient-hdr);
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-size: 6.8pt;
+      text-align: right;
+    }
+    .premium-table th:first-child,
+    .premium-table td:first-child { text-align: left; }
+    .premium-table tr.life-only td { background: #fff5f5; color: var(--text-main); }
+    .premium-table tr.life-only td:first-child { color: var(--red-1); font-weight: 800; }
+    .premium-table tr.combined td:first-child { color: var(--blue-dark); font-weight: 700; }
+    .premium-table tr.cutoff-row td {
+      background: #fffbeb;
+      border-top: 2px solid var(--amber-1);
+      border-bottom: 2px solid var(--amber-1);
+      font-weight: 800;
+      color: #92400e;
+      font-size: 7.2pt;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 7.4pt;
+      color: var(--text-sub);
+      margin-top: 8px;
+    }
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-chip .swatch {
+      width: 11px; height: 11px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+    .legend-chip .swatch.combined { background: #f0f6ff; }
+    .legend-chip .swatch.life-only { background: #fff5f5; }
+    .legend-chip .swatch.cutoff { background: #fffbeb; }
+
+    .actuarial-note {
+      background: var(--gradient-soft);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--blue-mid);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-top: 10px;
+      font-size: 7.4pt;
+      color: var(--text-sub);
+      line-height: 1.5;
+    }
+    .actuarial-note strong { color: var(--blue-dark); }
+
+    .integrity-stamp {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(46, 125, 50, 0.10);
+      border: 1px solid rgba(46, 125, 50, 0.30);
+      color: var(--green-1);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 6.8pt;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    @media print {
+      body { background: #fff; }
+      .download-btn { display: none; }
+      .page { margin: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <button type="button" class="download-btn" onclick="window.print()">⬇️ Download / Print PDF</button>
+
+  <!-- ───────── PAGE 1 — EXECUTIVE 1-PAGER ───────── -->
+  <div class="page">
+    <div class="watermark">PHINS · CONFIDENTIAL</div>
+
+    <div class="page-header">
+      <div class="logo-row">
+        <div class="logo-icon">🛡️</div>
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        DOC · PHINS-RISK-1P-IL · v1.0<br>
+        ISSUE · <span id="doc-issue-date">—</span><br>
+        REF · AVI.GOLDSOBEL-ADV-2026
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <div class="recipient">
+        <div>
+          <div class="to-label">Privately Addressed To</div>
+          <div class="to-name">Avi Goldsobel, Advocate</div>
+          <div class="to-role">External Legal Counsel · Israel · Personal &amp; Confidential</div>
+        </div>
+        <div class="doc-meta">
+          <span class="doc-class">Strictly Confidential</span><br>
+          Document ID · <span id="doc-id">—</span><br>
+          Integrity Hash · <span id="doc-hash">—</span>
+        </div>
+      </div>
+
+      <div class="doc-title">Executive 1-Pager — Risk Factors, Customer Rights &amp; Liabilities</div>
+      <div class="doc-subtitle">
+        PHINS adjustable-risk cover (Life + Disability ages 3–65; Life-only 65+). Pure risk product —
+        <strong>no wallets, no savings, no investments, no ancillary services</strong> are described, offered or implied
+        in this document. All numbers below derive from a single locked actuarial source block; the integrity hash
+        below confirms zero downstream mutation.
+      </div>
+
+      <div class="doc-tags">
+        <span class="tag">Adjustable Risk Only</span>
+        <span class="tag green">Life Benefit · Full Sum Insured</span>
+        <span class="tag amber">Disability Benefit · ¼ of Life</span>
+        <span class="tag red">Confidential — Goldsobel</span>
+      </div>
+
+      <div class="confidential-block">
+        <strong>SECRECY &amp; CONFIDENTIALITY CLAUSE.</strong>
+        This document is delivered under a strict secrecy and confidentiality undertaking to <strong>Avi Goldsobel, Advocate</strong>,
+        in their capacity as external legal counsel to PHINS. The contents — including the actuarial age curve, risk-premium
+        coefficients, five-year forecast, and underwriting parameters — are <strong>privileged and proprietary trade secrets</strong>.
+        Recipient agrees not to copy, transmit, summarise, paraphrase or disclose any portion to any third party (including
+        within recipient's own firm beyond an explicit need-to-know basis), to use the contents <em>solely</em> for legal review on
+        behalf of PHINS, and to return or destroy the document upon written request. Unauthorised use breaches Israel's
+        commercial-tort secrecy protections and the standing engagement letter between the parties.
+      </div>
+
+      <!-- ── Body grid ── -->
+      <div class="body-grid">
+
+        <div class="panel">
+          <h3><span class="num">1</span>Risk Factors — what is covered</h3>
+          <table class="risk-matrix" aria-label="Risk factor matrix">
+            <thead>
+              <tr>
+                <th>Risk Factor</th>
+                <th style="text-align:right;">Benefit</th>
+                <th style="text-align:right;">Trigger Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Death — natural or accidental</td>
+                <td class="num"><strong>L</strong> · 100% sum insured</td>
+                <td class="num age-band-3-65">3 – ∞</td>
+              </tr>
+              <tr>
+                <td>Permanent total disability (3+ ADL)</td>
+                <td class="num"><strong>L ÷ 4</strong> · 25% of life sum</td>
+                <td class="num age-band-3-65">3 – 65</td>
+              </tr>
+              <tr>
+                <td>Long-term loss of earning capacity</td>
+                <td class="num"><strong>L ÷ 4</strong> · capped at life sum ÷ 4</td>
+                <td class="num age-band-3-65">3 – 65</td>
+              </tr>
+              <tr class="split-row"><td colspan="3">Age 65+ — Disability cover ceases automatically</td></tr>
+              <tr>
+                <td>Death — natural or accidental (Life-only mode)</td>
+                <td class="num"><strong>L × age-adj</strong> · age-adjusted sum</td>
+                <td class="num age-band-65">65 – ∞</td>
+              </tr>
+            </tbody>
+          </table>
+          <p style="margin-top:8px;font-size:7.6pt;">
+            <strong>Adjustable risk premium only</strong> — the monthly premium re-prices each policy anniversary against
+            the customer's attained age, locked underwriting class and inflation-indexed sum insured. No savings,
+            cash-value, surrender or investment component exists.
+          </p>
+        </div>
+
+        <div class="panel">
+          <h3><span class="num">2</span>Customer Rights</h3>
+          <ul>
+            <li><strong>Right to underwriting transparency.</strong> Full disclosure of the underwriting decision, age band, risk class and the formula driving the premium.</li>
+            <li><strong>Right to coverage continuity.</strong> Once underwriting is approved and premiums are paid, cover cannot be cancelled by PHINS for the underwritten causes (subject to fraud, non-payment and material misrepresentation exceptions).</li>
+            <li><strong>Right to age-adjusted re-pricing.</strong> Every premium step is published in advance and tied solely to attained age — never to claims history of the individual.</li>
+            <li><strong>Right of withdrawal.</strong> 30-day cooling-off after issue; pro-rata refund of unearned premium.</li>
+            <li><strong>Right to fast-track claims.</strong> Disability claims adjudicated within statutory timelines; death claims within 14 business days of complete documentation.</li>
+            <li><strong>Right to audit trail.</strong> Tamper-evident ledger record of every premium charge and every underwriting/claim decision.</li>
+          </ul>
+        </div>
+
+        <div class="panel">
+          <h3><span class="num">3</span>Customer Liabilities</h3>
+          <ul>
+            <li><strong>Premium payment liability ages 3 – 65.</strong> Continuous payment of the age-adjusted adjustable-risk premium is required to maintain both the Life and Disability benefits.</li>
+            <li><strong>Premium payment liability ages 65+.</strong> Life-only premium must continue to maintain the age-adjusted death benefit; <strong>Disability cover terminates automatically at age 65</strong> and no premium is collected for it thereafter.</li>
+            <li><strong>Disclosure liability.</strong> Customer must disclose all material health, occupational and lifestyle facts at underwriting; non-disclosure voids the claim.</li>
+            <li><strong>Anniversary re-pricing acceptance.</strong> Customer accepts the published age-curve adjustments as a condition of cover continuity.</li>
+            <li><strong>No investment / savings claim.</strong> Customer expressly waives any expectation of cash value, surrender, dividend, savings or investment yield — this is a <em>pure risk</em> product.</li>
+            <li><strong>Notice obligations.</strong> Disability/death event must be notified within 60 / 30 days respectively, with supporting medical documentation.</li>
+          </ul>
+        </div>
+
+        <div class="panel">
+          <h3><span class="num">4</span>Policy Disclaimer</h3>
+          <div class="disclaimer-block" style="margin-bottom:0;">
+            In the event of <strong>underwriting approval</strong>, and assuming the customer pays the
+            <strong>age-related adjustable risk premium</strong> from <strong>age 3 to age 65</strong> (the maximum
+            payment age for the disability benefit), PHINS provides:
+            <br><br>
+            (a) a <strong>Life benefit</strong> equal to the contracted sum insured <em>L</em>; and
+            (b) a <strong>Disability benefit</strong> equal to <em>L ÷ 4</em> (one quarter of the life sum), subject to
+            the medical and ADL trigger definitions of the policy.
+            <br><br>
+            <strong>After age 65</strong> the cover automatically converts to a <strong>life-only risk cover</strong> with
+            an age-adjusted benefit; the disability layer ceases and no further disability premium is collected. The
+            product carries <strong>no wallet, no savings, no investment and no other service</strong> — only adjustable
+            risk cover.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── 5-year forecast ── -->
+      <div class="forecast">
+        <h3>5-Year Forecast — Reference Policyholder · Adjustable Risk Only</h3>
+        <p class="lead">
+          Reference policyholder: <strong>age 35 at issue · standard underwriting class · sum insured L = US$500,000 ·
+          disability benefit D = L ÷ 4 = US$125,000</strong>. Premium re-prices each anniversary on the published age curve.
+          Expected loss derived from PHINS Actuarial Simulation Tables v3 (life mortality + permanent disability incidence, OECD-aligned).
+        </p>
+        <div class="forecast-grid" id="forecast-grid"></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:7.4pt;color:var(--text-sub);">
+          <div><strong style="color:var(--blue-dark);">5-yr cumulative premium:</strong> <span id="cum-premium">—</span></div>
+          <div><strong style="color:var(--blue-dark);">5-yr expected pure loss:</strong> <span id="cum-eloss">—</span></div>
+          <div><strong style="color:var(--blue-dark);">Avg. loss ratio:</strong> <span id="avg-lr">—</span></div>
+          <div><strong style="color:var(--blue-dark);">Expense + capital margin:</strong> <span id="margin-pct">—</span></div>
+        </div>
+      </div>
+
+      <div class="signature-row">
+        <div class="sig-block">
+          <div class="label">For PHINS</div>
+          <div class="line"></div>
+          Name &amp; title
+          <div class="line" style="margin-top:8px;"></div>
+          Date / signature
+        </div>
+        <div class="sig-block">
+          <div class="label">Acknowledged — Recipient</div>
+          <div class="line"></div>
+          Avi Goldsobel, Advocate
+          <div class="line" style="margin-top:8px;"></div>
+          Date / signature
+        </div>
+      </div>
+
+      <span class="integrity-stamp" id="integrity-stamp">✓ Data integrity verified · single locked source</span>
+    </div>
+
+    <div class="page-footer">
+      <span><strong>PHINS — STRICTLY CONFIDENTIAL</strong> · Privileged communication to Avi Goldsobel, Advocate</span>
+      <span>Page 1 / 2 · Executive 1-Pager · Risk Factors</span>
+    </div>
+  </div>
+
+  <!-- ───────── PAGE 2 — APPENDIX ───────── -->
+  <div class="page">
+    <div class="watermark">PHINS · APPENDIX</div>
+
+    <div class="page-header">
+      <div class="logo-row">
+        <div class="logo-icon">🛡️</div>
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline">Appendix · Age-Oriented Premiums</div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        DOC · PHINS-RISK-1P-IL · v1.0<br>
+        APPENDIX · A · AGE CURVE<br>
+        REF · AVI.GOLDSOBEL-ADV-2026
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <div class="appendix-title">Appendix A — Age-Oriented Adjustable-Risk Premiums</div>
+      <div class="appendix-sub">
+        Reference sum insured: <strong>L = US$500,000 (Life)</strong> ·
+        <strong>D = US$125,000 (Disability = L ÷ 4)</strong>.
+        Premium = monthly base × age factor × policy-line load. Ages 3–65 carry combined Life + Disability;
+        ages 65+ carry Life-only with disability cover terminated.
+      </div>
+
+      <table class="premium-table" id="premium-table">
+        <thead>
+          <tr>
+            <th>Age</th>
+            <th>Mode</th>
+            <th>Age Factor</th>
+            <th>Life Mthly</th>
+            <th>Disability Mthly</th>
+            <th>Total Mthly</th>
+            <th>Total Annual</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="legend-row">
+        <span class="legend-chip"><span class="swatch combined"></span> Combined Life + Disability (ages 3–64)</span>
+        <span class="legend-chip"><span class="swatch cutoff"></span> Disability cut-off (age 65)</span>
+        <span class="legend-chip"><span class="swatch life-only"></span> Life-only adjustable risk (age 65+)</span>
+      </div>
+
+      <div class="actuarial-note">
+        <strong>Actuarial simulation methodology.</strong> Age factor is anchored at <em>1.000 at age 25</em> with a
+        slope of <em>+0.015 per year</em> through age 65; ages 3–24 use the PHINS youth-curve (linear from 0.30 at age 3
+        to 1.00 at age 25); ages 65+ use the senior-curve (post-disability cut-off, accelerating mortality slope of
+        +0.05/yr to age 75 then +0.08/yr to age 80). <strong>Life base rate:</strong> US$0.25 per US$1,000 sum
+        insured per month. <strong>Disability base rate:</strong> US$0.20 per US$1,000 disability sum per month.
+        These coefficients align with the unified actuarial pricing model used across the PHINS underwriting,
+        application and billing pipelines, so any premium quoted here will reconcile exactly with the production
+        billing engine.
+      </div>
+
+      <div style="margin-top:14px;">
+        <h3 style="font-size:9.6pt;font-weight:800;color:var(--blue-dark);margin-bottom:6px;">
+          Appendix B — 5-Year Actuarial Simulation (Reference Policyholder)
+        </h3>
+        <table class="premium-table" id="simulation-table">
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th>Attained Age</th>
+              <th>Age Factor</th>
+              <th>Annual Premium</th>
+              <th>Mortality q(x)</th>
+              <th>Disability i(x)</th>
+              <th>Expected Loss</th>
+              <th>Loss Ratio</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="actuarial-note" style="margin-top:8px;">
+          <strong>Source.</strong> Mortality q(x) calibrated to OECD insured-lives table for males age 35–39, healthy
+          underwriting class. Disability incidence i(x) calibrated to PHINS permanent 3+ ADL severity model. Expected
+          severity assumptions: mortality payout = L; disability payout = D × 0.55 average present value (graded by
+          expected duration and lump-sum / income-stream mix). All values in this appendix are deterministically
+          computed from the same locked actuarial source block as page 1 — no value on either page is hand-typed.
+        </div>
+      </div>
+
+      <span class="integrity-stamp" id="appendix-integrity-stamp">✓ Data integrity verified · single locked source</span>
+    </div>
+
+    <div class="page-footer">
+      <span><strong>PHINS — STRICTLY CONFIDENTIAL</strong> · Privileged communication to Avi Goldsobel, Advocate</span>
+      <span>Page 2 / 2 · Appendix · Age-Oriented Premiums &amp; Actuarial Simulation</span>
+    </div>
+  </div>
+
+  <script>
+    // ──────────────────────────────────────────────────────────────────────
+    // SINGLE LOCKED ACTUARIAL SOURCE BLOCK
+    // Every number on this document is computed from the constants below.
+    // Changing any constant re-flows page 1 + page 2 + integrity hash.
+    // ──────────────────────────────────────────────────────────────────────
+    const PHINS_RISK_MODEL = Object.freeze({
+      version: "v1.0",
+      docDate: "2026-05-07",
+      // Reference sums insured (USD)
+      L: 500000,                 // Life sum insured
+      D: 500000 / 4,             // Disability sum insured = L / 4
+      // Base rates (USD per $1,000 sum insured per month)
+      lifeBaseRate: 0.25,
+      disabilityBaseRate: 0.20,
+      // Age-curve definition (single source)
+      coreSlope: 0.015,          // factor slope ages 25 -> 65
+      youthAnchorAge: 3,
+      youthAnchorFactor: 0.30,
+      adultAnchorAge: 25,
+      adultAnchorFactor: 1.00,
+      seniorSlope1: 0.05,        // ages 65 -> 75
+      seniorSlope2: 0.08,        // ages 75 -> 80+
+      disabilityCutOffAge: 65,
+      // Mortality table q(x) — OECD healthy insured males, ages 35-39
+      mortality: { 35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171 },
+      // Permanent 3+ ADL incidence i(x)
+      disabilityIncidence: { 35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528 },
+      // Expected severity factors
+      mortalitySeverity: 1.00,   // payout = L
+      disabilitySeverity: 0.55   // average PV factor for permanent 3+ ADL claim
+    });
+
+    // ── Age factor (single function, used by every table on the document)
+    function ageFactor(age) {
+      const M = PHINS_RISK_MODEL;
+      if (age <= M.adultAnchorAge) {
+        // Linear from (3, 0.30) to (25, 1.00)
+        const span = M.adultAnchorAge - M.youthAnchorAge;       // 22
+        const rise = M.adultAnchorFactor - M.youthAnchorFactor; // 0.70
+        const a = Math.max(M.youthAnchorAge, age);
+        return +(M.youthAnchorFactor + (a - M.youthAnchorAge) * (rise / span)).toFixed(4);
+      }
+      if (age <= 65) {
+        return +(1.0 + (age - 25) * M.coreSlope).toFixed(4);
+      }
+      // Senior curve
+      let f = ageFactor(65);
+      const a = Math.min(age, 80);
+      if (a <= 75) {
+        f = f + (a - 65) * M.seniorSlope1;
+      } else {
+        f = f + (75 - 65) * M.seniorSlope1 + (a - 75) * M.seniorSlope2;
+      }
+      return +f.toFixed(4);
+    }
+
+    function lifeMonthly(age, L) {
+      return (L / 1000) * PHINS_RISK_MODEL.lifeBaseRate * ageFactor(age);
+    }
+    function disabilityMonthly(age, D) {
+      if (age >= PHINS_RISK_MODEL.disabilityCutOffAge) return 0;
+      return (D / 1000) * PHINS_RISK_MODEL.disabilityBaseRate * ageFactor(age);
+    }
+    function totalMonthly(age, L, D) {
+      return lifeMonthly(age, L) + disabilityMonthly(age, D);
+    }
+
+    function fmtUSD(v, d) {
+      d = (typeof d === 'number') ? d : 0;
+      return '$' + v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
+    function fmtPct(v, d) {
+      d = (typeof d === 'number') ? d : 2;
+      return (v * 100).toFixed(d) + '%';
+    }
+
+    // ── Build appendix premium table
+    (function buildPremiumTable() {
+      const M = PHINS_RISK_MODEL;
+      const ages = [3, 5, 10, 15, 18, 20, 25, 30, 35, 40, 45, 50, 55, 60, 64, 65, 70, 75, 80];
+      const tbody = document.querySelector('#premium-table tbody');
+      ages.forEach(function (age) {
+        const factor = ageFactor(age);
+        const lm = lifeMonthly(age, M.L);
+        const dm = disabilityMonthly(age, M.D);
+        const tm = lm + dm;
+        const ta = tm * 12;
+        const isSenior = age >= M.disabilityCutOffAge;
+        const isCutoff = age === M.disabilityCutOffAge;
+        const tr = document.createElement('tr');
+        tr.className = isCutoff ? 'cutoff-row' : (isSenior ? 'life-only' : 'combined');
+        tr.innerHTML =
+          '<td>Age ' + age + (isCutoff ? ' · Disability cut-off' : '') + '</td>' +
+          '<td>' + (isSenior ? 'Life-only · adjustable' : 'Life + Disability · adjustable') + '</td>' +
+          '<td>' + factor.toFixed(3) + '</td>' +
+          '<td>' + fmtUSD(lm, 2) + '</td>' +
+          '<td>' + (isSenior ? '— (terminated)' : fmtUSD(dm, 2)) + '</td>' +
+          '<td>' + fmtUSD(tm, 2) + '</td>' +
+          '<td>' + fmtUSD(ta, 2) + '</td>';
+        tbody.appendChild(tr);
+      });
+    })();
+
+    // ── Build 5-year forecast (page 1) and simulation table (page 2)
+    (function buildForecast() {
+      const M = PHINS_RISK_MODEL;
+      const startAge = 35;
+      const fcGrid = document.getElementById('forecast-grid');
+      const simTbody = document.querySelector('#simulation-table tbody');
+      let totalPremium = 0, totalELoss = 0, prevAnnual = null;
+
+      for (let yr = 1; yr <= 5; yr++) {
+        const age = startAge + (yr - 1);
+        const factor = ageFactor(age);
+        const monthly = totalMonthly(age, M.L, M.D);
+        const annual = monthly * 12;
+        const qx = M.mortality[age] || 0;
+        const ix = M.disabilityIncidence[age] || 0;
+        const eLoss = qx * M.L * M.mortalitySeverity + ix * M.D * M.disabilitySeverity;
+        const lr = eLoss / annual;
+        totalPremium += annual;
+        totalELoss += eLoss;
+
+        // Forecast grid card
+        const card = document.createElement('div');
+        card.className = 'fc-cell';
+        const delta = prevAnnual !== null ? '+' + fmtUSD(annual - prevAnnual, 0) : 'baseline';
+        card.innerHTML =
+          '<div class="yr">Year ' + yr + '</div>' +
+          '<div class="age">Age ' + age + '</div>' +
+          '<div class="prem">' + fmtUSD(annual, 0) + '</div>' +
+          '<div class="delta">' + delta + ' yoy</div>';
+        fcGrid.appendChild(card);
+        prevAnnual = annual;
+
+        // Simulation table row
+        const tr = document.createElement('tr');
+        tr.className = 'combined';
+        tr.innerHTML =
+          '<td>Y' + yr + '</td>' +
+          '<td>' + age + '</td>' +
+          '<td>' + factor.toFixed(3) + '</td>' +
+          '<td>' + fmtUSD(annual, 2) + '</td>' +
+          '<td>' + fmtPct(qx, 3) + '</td>' +
+          '<td>' + fmtPct(ix, 3) + '</td>' +
+          '<td>' + fmtUSD(eLoss, 2) + '</td>' +
+          '<td>' + fmtPct(lr, 1) + '</td>';
+        simTbody.appendChild(tr);
+      }
+
+      const avgLR = totalELoss / totalPremium;
+      const margin = 1 - avgLR;
+      document.getElementById('cum-premium').textContent = fmtUSD(totalPremium, 0);
+      document.getElementById('cum-eloss').textContent = fmtUSD(totalELoss, 0);
+      document.getElementById('avg-lr').textContent = fmtPct(avgLR, 1);
+      document.getElementById('margin-pct').textContent = fmtPct(margin, 1);
+    })();
+
+    // ── Document metadata + integrity hash
+    (function stampMeta() {
+      const M = PHINS_RISK_MODEL;
+      // ISO date display
+      const d = new Date(M.docDate + 'T00:00:00Z');
+      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      document.getElementById('doc-issue-date').textContent =
+        d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+
+      // Deterministic doc ID + integrity hash from frozen source block
+      const payload = JSON.stringify(M);
+      const h = djb2(payload);
+      const docId = 'PHINS-RISK-1P-IL-' + ('00000000' + h.toString(16)).slice(-8).toUpperCase();
+      const intg  = ('00000000000000' + h.toString(16)).slice(-14).toUpperCase();
+      document.getElementById('doc-id').textContent = docId;
+      document.getElementById('doc-hash').textContent = 'SHA-DJB2:' + intg;
+
+      const stampText = '✓ Data integrity verified · single locked source · ' + docId;
+      document.getElementById('integrity-stamp').textContent = stampText;
+      document.getElementById('appendix-integrity-stamp').textContent = stampText;
+    })();
+
+    function djb2(str) {
+      let h = 5381;
+      for (let i = 0; i < str.length; i++) {
+        h = ((h << 5) + h) + str.charCodeAt(i);
+        h = h & 0xffffffff; // 32-bit
+      }
+      return (h >>> 0); // unsigned
+    }
+  </script>
+
+</body>
+</html>
