@@ -220,7 +220,7 @@ _DOB_RE = re.compile(
 _IBAN_RE = re.compile(r"\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b")
 _AMOUNT_RE = re.compile(
     r"(?P<currency>USD|EUR|GBP|ILS|NIS|₪|\$|€|£|ש\"ח)?\s*"
-    r"(?P<amount>\d{1,3}(?:[,\.]\d{3})*(?:[\.,]\d{2})?)\s*"
+    r"(?P<amount>(?:\d{1,3}(?:[,\.]\d{3})+|\d+)(?:[\.,]\d{2})?)\s*"
     r"(?P<currency2>USD|EUR|GBP|ILS|NIS|₪|\$|€|£|ש\"ח)?",
     re.IGNORECASE,
 )
@@ -535,7 +535,8 @@ class AssessmentCenterService:
                 elif f.label == "date_of_birth":
                     profile["identity"]["dates_of_birth"].append(f.value)
             elif f.fact_type == "contact":
-                target = profile["contact"].get(f.label + "s")
+                plural = f.label + "es" if f.label.endswith("s") else f.label + "s"
+                target = profile["contact"].get(plural)
                 if isinstance(target, list):
                     target.append(f.value)
             elif f.fact_type == "photo":
