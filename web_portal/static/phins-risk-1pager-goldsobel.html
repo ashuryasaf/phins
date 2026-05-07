@@ -819,9 +819,9 @@
       seniorSlope2: 0.08,        // ages 75 -> 80+
       disabilityCutOffAge: 65,
       // Mortality table q(x) — OECD healthy insured males, ages 35-39
-      mortality: { 35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171 },
+      mortality: Object.freeze({ 35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171 }),
       // Permanent 3+ ADL incidence i(x)
-      disabilityIncidence: { 35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528 },
+      disabilityIncidence: Object.freeze({ 35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528 }),
       // Expected severity factors
       mortalitySeverity: 1.00,   // payout = L
       disabilitySeverity: 0.55   // average PV factor for permanent 3+ ADL claim
