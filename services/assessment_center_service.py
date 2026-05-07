@@ -346,10 +346,27 @@ class AssessmentCenterService:
         return self._document_service
 
     def reset(self) -> None:
-        """Drop all in-memory state. Mainly used by tests."""
+        """Drop all in-memory state and persisted facts. Mainly used by tests."""
         with self._lock:
             self._facts.clear()
             self._external.clear()
+            self._clear_persisted_facts()
+
+    def _clear_persisted_facts(self) -> None:
+        """Remove all JSON fact files from the fact store directory."""
+        try:
+            if not os.path.isdir(self._fact_store_dir):
+                return
+            for name in os.listdir(self._fact_store_dir):
+                if not name.endswith(".json"):
+                    continue
+                path = os.path.join(self._fact_store_dir, name)
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        except Exception as exc:
+            logger.warning("Failed clearing persisted facts: %s", exc)
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -593,9 +610,10 @@ class AssessmentCenterService:
 
         return profile
 
-    def compute_risk_indicators(self, customer_id: str) -> Dict[str, Any]:
+    def compute_risk_indicators(self, customer_id: str, *, profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Derive a deterministic risk score from the unified fact store."""
-        profile = self.build_customer_360(customer_id)
+        if profile is None:
+            profile = self.build_customer_360(customer_id)
         score = 0.0
         contributors: List[Dict[str, Any]] = []
 
@@ -670,7 +688,7 @@ class AssessmentCenterService:
         render with whichever charting library is in use.
         """
         profile = self.build_customer_360(customer_id)
-        risk = self.compute_risk_indicators(customer_id)
+        risk = self.compute_risk_indicators(customer_id, profile=profile)
 
         condition_counts: Dict[str, int] = {}
         for cond in profile["medical"]["conditions"]:
