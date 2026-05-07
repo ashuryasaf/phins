@@ -1290,6 +1290,28 @@ except ImportError:
         api_ext_put = None
         print("Warning: API extensions not available.")
 
+# Import API extensions for the unified Assessment Center
+try:
+    from web_portal.api_assessment_center import (
+        dispatch_get as api_ac_get,
+        dispatch_post as api_ac_post,
+    )
+    assessment_center_enabled = True
+    print("✓ Assessment Center API loaded")
+except ImportError:
+    try:
+        from api_assessment_center import (
+            dispatch_get as api_ac_get,
+            dispatch_post as api_ac_post,
+        )
+        assessment_center_enabled = True
+        print("✓ Assessment Center API loaded")
+    except ImportError:
+        assessment_center_enabled = False
+        api_ac_get = None
+        api_ac_post = None
+        print("Warning: Assessment Center API not available.")
+
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
@@ -8108,9 +8130,10 @@ def store_policy_document(
     }
     POLICY_DOCUMENTS[doc_id] = doc
 
+    persisted_doc_id = None
     try:
         doc_svc = get_document_service()
-        doc_svc.upload_document(
+        upload_result = doc_svc.upload_document(
             file_name=file_name,
             file_data_b64=file_data_b64,
             mime_type=mime_type,
@@ -8120,10 +8143,26 @@ def store_policy_document(
             description=description,
             uploaded_by=uploaded_by,
             customer_id=owner_customer_id,
-            skip_processing=True,
+            skip_processing=False,
         )
+        persisted_doc_id = upload_result.document_id
+        doc['persistent_doc_id'] = persisted_doc_id
+        doc['storage_path'] = upload_result.storage_path
     except Exception as e:
         print(f"[doc-service] Disk persistence warning for {doc_id}: {e}")
+
+    if persisted_doc_id:
+        try:
+            from services.assessment_center_service import get_assessment_center
+            center = get_assessment_center()
+            assessment = center.assess_document(
+                persisted_doc_id,
+                customer_id=owner_customer_id or None,
+                source_context=f"{entity_type or 'general'}_upload",
+            )
+            doc['assessment_summary'] = assessment.summary
+        except Exception as e:
+            print(f"[assessment-center] Auto-assessment skipped for {doc_id}: {e}")
 
     return doc
 
@@ -10568,6 +10607,23 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"API extension error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
+        # ASSESSMENT CENTER (GET) - Customer 360, risk indicators, charts
+        # =====================================================================
+        if assessment_center_enabled and api_ac_get:
+            try:
+                ac_result = api_ac_get(path, session, qs, client_ip)
+                if ac_result is not None:
+                    status_code, response_data = ac_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Assessment Center error (GET {path}): {e}")
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
@@ -23905,7 +23961,38 @@ For claims or questions, please contact:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                     return
-        
+
+        # =====================================================================
+        # ASSESSMENT CENTER (POST) - upload, scan, mislaka link, fact import
+        # =====================================================================
+        if assessment_center_enabled and api_ac_post and path.startswith('/api/assessment-center/'):
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                user_agent = self.headers.get('User-Agent', '')
+
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    body_data = json.loads(body)
+                except json.JSONDecodeError:
+                    body_data = {}
+
+                ac_result = api_ac_post(path, session, body_data, client_ip, user_agent)
+                if ac_result is not None:
+                    status_code, response_data = ac_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Assessment Center error (POST {path}): {e}")
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
         # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
             # Get auth token
@@ -30595,6 +30682,12 @@ For claims or questions, please contact:
                     uploaded_by_role=effective_role,
                 )
 
+                try:
+                    from services.assessment_center_service import get_assessment_center
+                    _ac_center = get_assessment_center()
+                except Exception:
+                    _ac_center = None
+
                 uploaded = []
                 errors = []
                 for r in results:
@@ -30602,6 +30695,16 @@ For claims or questions, please contact:
                     if r.status == 'error':
                         errors.append(rd)
                     else:
+                        if _ac_center is not None:
+                            try:
+                                ac_result = _ac_center.assess_document(
+                                    r.document_id,
+                                    customer_id=customer_id or None,
+                                    source_context='doc_service_upload',
+                                )
+                                rd['assessment'] = ac_result.summary
+                            except Exception as ac_err:
+                                print(f"[assessment-center] Skipped for {r.document_id}: {ac_err}")
                         uploaded.append(rd)
 
                         POLICY_DOCUMENTS[r.document_id] = {

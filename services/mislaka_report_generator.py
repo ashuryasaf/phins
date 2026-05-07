@@ -1,10 +1,22 @@
 """
 Mislaka Report Generator
 ========================
-Builds a downloadable report (PDF/text) for Mislaka data.
+Builds a fact projection (and optional downloadable PDF) for Mislaka data.
 
-This module normalizes Mislaka API data into the PensionDataAgent schema,
-generates the professional report text, and renders it to PDF.
+The Mislaka clearinghouse already returns *authoritative* policy rows. The
+platform therefore treats every record as a fact and never re-aggregates the
+clearinghouse response on top of itself. Statistical reviews, risk scoring and
+chart synthesis live in the Assessment Center
+(:mod:`services.assessment_center_service`).
+
+This module is responsible for three things:
+
+1. Normalising the Mislaka response into PHINS' canonical schema so the rest of
+   the platform sees the same shape regardless of provider.
+2. Emitting a flat list of facts that can be ingested by the Assessment Center.
+3. Rendering an optional, audit-grade PDF that simply lists the facts. The
+   renderer no longer prints aggregate totals so dashboards do not present
+   numbers that look like derived analysis.
 """
 
 from __future__ import annotations
@@ -89,8 +101,19 @@ def _register_fonts() -> Tuple[str, str, str]:
     return base_font, mono_font, bold_font
 
 
-def normalize_mislaka_result(result: MislakaQueryResult) -> Dict[str, Any]:
-    """Normalize Mislaka API result into PensionDataAgent-like structure."""
+def normalize_mislaka_result(
+    result: MislakaQueryResult,
+    *,
+    include_aggregates: bool = False,
+) -> Dict[str, Any]:
+    """Normalize Mislaka API result into PensionDataAgent-like structure.
+
+    Aggregate totals (count, balance, coverage, premium) are *not* included by
+    default because the Mislaka response is treated as a fact set rather than a
+    statistical sample. Pass ``include_aggregates=True`` only when the caller
+    needs raw sums for legacy compatibility - downstream analysis should rely
+    on the Assessment Center instead.
+    """
     accounts: List[Dict[str, Any]] = []
     providers = set()
 
@@ -133,21 +156,8 @@ def normalize_mislaka_result(result: MislakaQueryResult) -> Dict[str, Any]:
             providers.add(policy.company_name)
 
     client_name = " ".join([result.person.first_name, result.person.last_name]).strip()
-    totals = {
-        "total_balance": total_balance,
-        "total_savings": total_balance,
-        "total_severance": Decimal("0"),
-        "total_coverage": total_coverage,
-        "total_monthly_premium": total_premium,
-        "account_count": len(accounts),
-        "provider_count": len(providers),
-        "providers": list(providers),
-        "contributions": {
-            "grand_total": total_premium
-        },
-    }
 
-    return {
+    base = {
         "header": {
             "source": "Mislaka API",
             "request_id": result.request_id,
@@ -163,13 +173,90 @@ def normalize_mislaka_result(result: MislakaQueryResult) -> Dict[str, Any]:
         "contributions": [],
         "severance": [],
         "employers": [],
-        "totals": totals,
     }
 
+    if include_aggregates:
+        base["totals"] = {
+            "total_balance": total_balance,
+            "total_savings": total_balance,
+            "total_severance": Decimal("0"),
+            "total_coverage": total_coverage,
+            "total_monthly_premium": total_premium,
+            "account_count": len(accounts),
+            "provider_count": len(providers),
+            "providers": list(providers),
+            "contributions": {
+                "grand_total": total_premium,
+            },
+        }
 
-def build_mislaka_report_text(result: MislakaQueryResult) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
-    """Generate the report text and metadata from a Mislaka result."""
-    data = normalize_mislaka_result(result)
+    return base
+
+
+def mislaka_facts(result: MislakaQueryResult) -> List[Dict[str, Any]]:
+    """Convert a Mislaka result into Assessment-Center fact rows.
+
+    Each row is a self-contained fact: the assessment center is in charge of
+    aggregation, the renderer never sums on its own.
+    """
+    rows: List[Dict[str, Any]] = []
+    for policy in result.policies:
+        rows.append({
+            "policy_id": policy.policy_id,
+            "policy_number": policy.policy_number,
+            "product_type": policy.product_type,
+            "company_name": policy.company_name,
+            "company_code": policy.company_code,
+            "start_date": policy.start_date,
+            "status": policy.status,
+            "premium_monthly": float(_safe_decimal(policy.premium_monthly)),
+            "cover_amount": float(_safe_decimal(policy.cover_amount)),
+            "accumulated_value": float(_safe_decimal(policy.accumulated_value)),
+            "management_fee_percent": float(_safe_decimal(policy.management_fee_percent)),
+            "investment_track": policy.investment_track,
+            "beneficiaries": list(policy.beneficiaries or []),
+            "last_update": policy.last_update,
+        })
+    return rows
+
+
+def link_to_assessment_center(
+    result: MislakaQueryResult,
+    *,
+    customer_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Push the raw Mislaka rows into the Assessment Center as facts.
+
+    Returns the Assessment Center's ingestion summary, which already contains
+    the per-fact provenance the dashboards need to render data integrity.
+    """
+    from services.assessment_center_service import get_assessment_center
+
+    center = get_assessment_center()
+    cust = (customer_id or result.person.id_number or "anonymous").strip() or "anonymous"
+    rows = mislaka_facts(result)
+    assessment = center.ingest_external_facts(
+        customer_id=cust,
+        source="mislaka",
+        records=rows,
+        fact_type="external_policy",
+    )
+    return assessment.to_dict()
+
+
+def build_mislaka_report_text(
+    result: MislakaQueryResult,
+    *,
+    include_aggregates: bool = False,
+) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
+    """Generate the report text and metadata from a Mislaka result.
+
+    By default the rendered text presents only factual line items; aggregate
+    statistics are produced by the Assessment Center to keep responsibilities
+    separate. Set ``include_aggregates=True`` for legacy callers that still
+    expect totals in the printout.
+    """
+    data = normalize_mislaka_result(result, include_aggregates=include_aggregates)
     agent = get_pension_agent()
     report_text = agent.generate_report_text(data)
 

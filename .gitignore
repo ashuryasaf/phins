@@ -181,3 +181,5 @@ yarn-error.log
 # Generated documentation
 docs/_build/
 data/*.json
+data/assessment_center/
+data/documents/
