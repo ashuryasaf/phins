@@ -383,8 +383,8 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if not cust:
                 return 400, {"error": "pack.customer_id required"}
 
-            pack["customer_id"] = cust
-            return 200, svc.import_customer_pack(pack)
+            result = svc.import_customer_pack(pack, customer_id_override=cust)
+            return 200, result
     except ValueError as exc:
         return 400, {"error": str(exc)}
     except Exception as exc:

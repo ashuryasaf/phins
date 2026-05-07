@@ -701,6 +701,8 @@ class AssessmentCenterService:
         savings_total = 0.0
         savings_series: List[Dict[str, Any]] = []
         for ind in profile["savings_indicators"]:
+            if isinstance(ind["value"], bool):
+                continue
             try:
                 amount = float(ind["value"]) if not isinstance(ind["value"], dict) else float(ind["value"].get("amount", 0))
             except (TypeError, ValueError):
@@ -710,6 +712,8 @@ class AssessmentCenterService:
 
         coverage_series: List[Dict[str, Any]] = []
         for ind in profile["insurance_indicators"]:
+            if isinstance(ind["value"], bool):
+                continue
             try:
                 amount = float(ind["value"]) if not isinstance(ind["value"], dict) else float(ind["value"].get("amount", 0))
             except (TypeError, ValueError):
@@ -757,19 +761,19 @@ class AssessmentCenterService:
         payload["sha256"] = digest
         return payload
 
-    def import_customer_pack(self, pack: Dict[str, Any]) -> Dict[str, Any]:
+    def import_customer_pack(self, pack: Dict[str, Any], customer_id_override: Optional[str] = None) -> Dict[str, Any]:
         """Re-import a previously exported customer pack with integrity check."""
         if not isinstance(pack, dict) or "facts" not in pack:
             raise ValueError("Invalid customer pack payload")
-        cust = str(pack.get("customer_id") or "").strip()
-        if not cust:
-            raise ValueError("customer_id required in pack")
         verifier = dict(pack)
         digest = verifier.pop("sha256", None)
         recomputed = hashlib.sha256(
             json.dumps(verifier, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()
         integrity = digest == recomputed
+        cust = (customer_id_override or str(pack.get("customer_id") or "")).strip()
+        if not cust:
+            raise ValueError("customer_id required in pack")
         facts = []
         for raw in pack.get("facts", []):
             try:
