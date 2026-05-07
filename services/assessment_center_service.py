@@ -198,8 +198,8 @@ _ID_PATTERNS: Tuple[Tuple[str, str, "re.Pattern[str]", Optional[Any]], ...] = (
     ("spain_dni", "ES", re.compile(r"\b([XYZ]?\d{7,8}[A-Z])\b"), _spain_dni_valid),
     ("italy_codice_fiscale", "IT",
         re.compile(r"\b([A-Z]{6}\d{2}[A-EHLMPRT][0-9]{2}[A-Z]\d{3}[A-Z])\b"), None),
-    ("germany_steuer_id", "DE", re.compile(r"(?<!\d)(\d{11})(?!\d)"), None),
     ("brazil_cpf", "BR", re.compile(r"(?<!\d)(\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d)"), _cpf_valid),
+    ("germany_steuer_id", "DE", re.compile(r"(?<!\d)(\d{11})(?!\d)"), None),
     ("india_aadhaar", "IN", re.compile(r"(?<!\d)(\d{4}\s?\d{4}\s?\d{4})(?!\d)"), _aadhaar_valid),
     ("france_insee", "FR", re.compile(r"(?<!\d)([12]\d{2}(0[1-9]|1[0-2])\d{2}\d{3}\d{3}\d{2})(?!\d)"), None),
     ("passport_generic", "ANY", re.compile(r"\b([A-Z]{1,2}\d{6,9})\b"), None),
@@ -770,7 +770,11 @@ class AssessmentCenterService:
                 ))
             except Exception as exc:
                 logger.warning("Skipping invalid fact in pack import: %s", exc)
-        self._store_facts(cust, facts)
+        if integrity:
+            self._store_facts(cust, facts)
+        else:
+            logger.warning("Rejecting tampered customer pack for %s: SHA-256 mismatch", cust)
+            facts = []
         return {
             "customer_id": cust,
             "imported_facts": len(facts),
@@ -916,8 +920,12 @@ class AssessmentCenterService:
                     facts.append(_make_fact(customer_id, "savings", keyword, True,
                                             document_id, sha256, source, 0.55))
 
-        for marker in _RISK_KEYWORDS:
+        matched_risk: List[str] = []
+        for marker in sorted(_RISK_KEYWORDS, key=len, reverse=True):
             if marker in lower:
+                if any(marker in longer for longer in matched_risk):
+                    continue
+                matched_risk.append(marker)
                 facts.append(_make_fact(customer_id, "risk_indicator", marker, marker,
                                         document_id, sha256, source, 0.80))
 
