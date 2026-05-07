@@ -922,8 +922,12 @@ class AssessmentCenterService:
             facts.append(_make_fact(customer_id, "vital_sign", "blood_pressure_diastolic",
                                     float(bp_match.group(2)), document_id, sha256, source, 0.90))
 
-        for keyword in _INSURANCE_KEYWORDS:
+        matched_insurance: List[str] = []
+        for keyword in sorted(_INSURANCE_KEYWORDS, key=len, reverse=True):
             if keyword in lower:
+                if any(keyword in longer for longer in matched_insurance):
+                    continue
+                matched_insurance.append(keyword)
                 amount = _amount_near(text, keyword)
                 if amount is not None:
                     facts.append(_make_fact(customer_id, "insurance", keyword, amount,
@@ -932,8 +936,12 @@ class AssessmentCenterService:
                     facts.append(_make_fact(customer_id, "insurance", keyword, True,
                                             document_id, sha256, source, 0.55))
 
-        for keyword in _SAVINGS_KEYWORDS:
+        matched_savings: List[str] = []
+        for keyword in sorted(_SAVINGS_KEYWORDS, key=len, reverse=True):
             if keyword in lower:
+                if any(keyword in longer for longer in matched_savings):
+                    continue
+                matched_savings.append(keyword)
                 amount = _amount_near(text, keyword)
                 if amount is not None:
                     facts.append(_make_fact(customer_id, "savings", keyword, amount,
@@ -1130,28 +1138,35 @@ def _id_number_view(fact: Fact) -> Dict[str, Any]:
 
 
 def _amount_near(text: str, keyword: str) -> Optional[float]:
-    """Look for a monetary amount within 80 characters of ``keyword``."""
+    """Look for a monetary amount within 80 characters of ``keyword``.
+
+    Searches near *all* occurrences of the keyword and returns the largest
+    amount found.
+    """
     lower = text.lower()
-    idx = lower.find(keyword)
-    if idx < 0:
-        return None
-    window = text[max(0, idx - 40): idx + len(keyword) + 80]
     best: Optional[float] = None
-    for match in _AMOUNT_RE.finditer(window):
-        raw = match.group("amount") or ""
-        if not raw:
-            continue
-        cleaned = raw.replace(",", "")
-        if cleaned.count(".") > 1:
-            cleaned = cleaned.replace(".", "", cleaned.count(".") - 1)
-        try:
-            value = float(cleaned)
-        except ValueError:
-            continue
-        if not math.isfinite(value):
-            continue
-        if best is None or value > best:
-            best = value
+    start = 0
+    while True:
+        idx = lower.find(keyword, start)
+        if idx < 0:
+            break
+        window = text[max(0, idx - 40): idx + len(keyword) + 80]
+        for match in _AMOUNT_RE.finditer(window):
+            raw = match.group("amount") or ""
+            if not raw:
+                continue
+            cleaned = raw.replace(",", "")
+            if cleaned.count(".") > 1:
+                cleaned = cleaned.replace(".", "", cleaned.count(".") - 1)
+            try:
+                value = float(cleaned)
+            except ValueError:
+                continue
+            if not math.isfinite(value):
+                continue
+            if best is None or value > best:
+                best = value
+        start = idx + len(keyword)
     return best
 
 

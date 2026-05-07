@@ -219,6 +219,8 @@ def _registry_payload() -> Dict[str, Any]:
 def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any],
                  client_ip: str) -> Optional[Tuple[int, Dict[str, Any]]]:
     if path == "/api/assessment-center/upload-endpoints":
+        if not session:
+            return 401, {"error": "Authentication required"}
         return 200, _registry_payload()
 
     if not path.startswith("/api/assessment-center/customer/"):

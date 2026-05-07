@@ -35,13 +35,9 @@ def _b64(text: str) -> str:
 
 class TestUploadEndpointRegistry:
     def test_returns_unauthenticated(self):
-        # Registry is informational; should still require auth context to
-        # avoid leaking private routes from inside the platform.
+        # Registry requires auth to avoid leaking internal route structure.
         resp = requests.get(f"{BASE_URL}/api/assessment-center/upload-endpoints")
-        # Public registry: returns the catalogue but never the per-route auth
-        # rules. Status 200 is acceptable here because the payload contains no
-        # sensitive data.
-        assert resp.status_code in (200, 401)
+        assert resp.status_code == 401
 
     def test_registry_lists_assessment_center_route(self):
         headers = _admin_session()
