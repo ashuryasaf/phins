@@ -3357,111 +3357,43 @@
       const resMeta = (swiftnessResources && swiftnessResources.metadata) || {};
       const totalResources = resMeta.total_resources || 0;
 
+      // Show only stats that describe the user's upload, not the
+      // platform's internal schema catalogue. "Interfaces / Environments
+      // / Swiftness Resources" used to be shown here but they describe
+      // the system's own configuration, not the customer's file.
       statsGrid.innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 3; background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); color: white;">
-          <h5 style="color: white;">🧭 Swiftness Affiliation Output</h5>
+          <h5 style="color: white;">🧭 Mislaka Document Insights</h5>
           <div class="value" style="font-size: 1.6rem; color: white;">${analysisTypeLabel || 'Auto-detect'}</div>
-          <small style="color: rgba(255,255,255,0.9);">Files: ${fileSummary.length} • Interfaces: ${summary.interfaceCount} • Language: ${languageLabel}</small>
+          <small style="color: rgba(255,255,255,0.9);">Files: ${fileSummary.length} • Language: ${languageLabel}</small>
         </div>
         <div class="stat-card fade-in">
           <h5>📁 Files</h5>
           <div class="value">${fileSummary.length}</div>
           <small>${fileTypeLabel}</small>
         </div>
-        <div class="stat-card fade-in">
-          <h5>🏷️ Entity Types</h5>
-          <div class="value">${summary.entityCount}</div>
-          <small>Affiliation map</small>
-        </div>
-        <div class="stat-card fade-in">
-          <h5>🧾 Product Types</h5>
-          <div class="value">${summary.productCount}</div>
-          <small>Mislaka schemas</small>
-        </div>
-        <div class="stat-card fade-in">
-          <h5>📌 Status Codes</h5>
-          <div class="value">${summary.statusCount}</div>
-          <small>Lifecycle coverage</small>
-        </div>
-        <div class="stat-card fade-in">
-          <h5>🆔 ID Types</h5>
-          <div class="value">${summary.idCount}</div>
-          <small>Identity mapping</small>
-        </div>
-        <div class="stat-card fade-in">
-          <h5>🧬 Interfaces</h5>
-          <div class="value">${summary.interfaceCount}</div>
-          <small>Integration endpoints</small>
-        </div>
-        <div class="stat-card fade-in">
-          <h5>🌐 Environments</h5>
-          <div class="value">${summary.environmentCount}</div>
-          <small>Deployment targets</small>
-        </div>
-        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white;">
-          <h5 style="color: white;">📥 Swiftness Resources</h5>
-          <div class="value" style="color: white;">${totalResources}</div>
-          <small style="color: rgba(255,255,255,0.9);">Data files & schemas</small>
-        </div>
       `;
 
       if (insightsHeader) {
         insightsHeader.innerHTML = `
-          <h3>🧭 Swiftness Affiliation Intelligence</h3>
-          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Combined affiliations + uploaded documents + Swiftness resources at analysis time</p>
+          <h3>🧠 Mislaka Document Insights</h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Smart analysis derived from your uploaded file</p>
         `;
       }
 
-      const interfaceTags = summary.interfaceNames.slice(0, 10)
-        .map(name => `<span class="tag">${name}</span>`)
-        .join('') || '<span style="color: var(--text-muted);">No interface tags available</span>';
-      const topSchemas = Object.entries(summary.schemaCounts || {})
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 4);
-
+      // No more abstract Interface Tags / Schema Distribution / Swiftness
+      // catalog cards - those describe the platform, not the customer's
+      // upload. We keep only the upload-context card so the user can
+      // confirm which file produced the report.
       insightsGrid.innerHTML = `
         <div class="insight-card fade-in">
-          <h5>🔗 Coverage Snapshot</h5>
-          <div class="insight-detail">
-            <div class="stat-detail"><span class="label">Entities</span><span class="val">${summary.entityCount}</span></div>
-            <div class="stat-detail"><span class="label">Products</span><span class="val">${summary.productCount}</span></div>
-            <div class="stat-detail"><span class="label">Statuses</span><span class="val">${summary.statusCount}</span></div>
-            <div class="stat-detail"><span class="label">IDs</span><span class="val">${summary.idCount}</span></div>
-          </div>
-          <span class="insight-badge">Affiliation Map</span>
-        </div>
-        <div class="insight-card fade-in">
-          <h5>🧬 Interface Tags</h5>
-          <div class="insight-value">${interfaceTags}</div>
-          <span class="insight-badge">Top Interfaces</span>
-        </div>
-        <div class="insight-card fade-in">
-          <h5>🧩 Schema Distribution</h5>
-          <div class="insight-detail">
-            ${topSchemas.length ? topSchemas.map(([schema, count]) => `
-              <div class="stat-detail"><span class="label">${schema}</span><span class="val">${count}</span></div>
-            `).join('') : '<div class="stat-detail"><span class="label">Schemas</span><span class="val">—</span></div>'}
-          </div>
-          <span class="insight-badge">Interfaces</span>
-        </div>
-        <div class="insight-card fade-in">
-          <h5>📁 Upload Alignment</h5>
+          <h5>📁 Upload Context</h5>
           <div class="insight-detail">
             <div class="stat-detail"><span class="label">Files</span><span class="val">${fileSummary.length}</span></div>
             <div class="stat-detail"><span class="label">Types</span><span class="val">${fileTypeLabel}</span></div>
             <div class="stat-detail"><span class="label">Analysis Type</span><span class="val">${analysisTypeLabel || 'Auto-detect'}</span></div>
           </div>
-          <span class="insight-badge">Upload Sync</span>
-        </div>
-        <div class="insight-card fade-in" style="border-left-color: #059669;">
-          <h5>📥 Swiftness Data Resources</h5>
-          <div class="insight-detail">
-            <div class="stat-detail"><span class="label">System General</span><span class="val">${resMeta.system_general_count || 0} files</span></div>
-            <div class="stat-detail"><span class="label">Mislaka Work Files</span><span class="val">${resMeta.mislaka_work_files_count || 0} files</span></div>
-            <div class="stat-detail"><span class="label">Quick Links</span><span class="val">${resMeta.links_count || 0}</span></div>
-            <div class="stat-detail"><span class="label">Report Sections</span><span class="val">${swiftnessReportModel ? swiftnessReportModel.sections.length : 0}</span></div>
-          </div>
-          <span class="insight-badge" style="background: rgba(5, 150, 105, 0.1); color: #059669;">Swiftness Catalog</span>
+          <span class="insight-badge">From your upload</span>
         </div>
       `;
 
@@ -3470,17 +3402,6 @@
             <li><strong>${file.name}</strong> (${file.sizeLabel}${file.extension ? ` • ${file.extension.toUpperCase()}` : ''})</li>
           `).join('')}</ul>`
         : '<p>No uploaded files were included in this run.</p>';
-
-      const schemaGridHtml = Object.entries(summary.schemaCounts || {}).length
-        ? `<div class="affiliations-grid">
-            ${Object.entries(summary.schemaCounts).map(([schema, count]) => `
-              <div class="affiliation-item">
-                <div class="label">${schema}</div>
-                <div class="value">${count}</div>
-              </div>
-            `).join('')}
-          </div>`
-        : '<p style="color: var(--text-muted);">Schema coverage unavailable.</p>';
 
       // Build Swiftness links section for report
       const swiftnessLinksHtml = (swiftnessResources && swiftnessResources.quick_links)
@@ -3554,21 +3475,14 @@
         : '';
 
       reportTitle.textContent = `🧭 Swiftness Affiliation Report${titleSuffix}`;
+      // The user explicitly asked us to drop the platform-internal
+      // "Interface & Schema Coverage", "Swiftness Affiliation Snapshot",
+      // "Swiftness Data Resources" and "Report Model Structure (Nituach
+      // Tik)" sections - they describe the system's own schema catalog,
+      // not the customer's uploaded file. The affiliation knowledge is
+      // still used internally to drive the parser, but it does not
+      // belong in the user-facing report.
       reportBody.innerHTML = `
-        <div class="report-section fade-in">
-          <h3>🧭 Affiliation Snapshot</h3>
-          <div class="content">
-            <p>Generated from Swiftness affiliation mappings.</p>
-            ${affiliationNotice}
-            <p><strong>Snapshot Timestamp:</strong> ${updatedAtLabel}</p>
-            <div class="affiliations-grid">
-              <div class="affiliation-item"><div class="label">Entity Types</div><div class="value">${summary.entityCount}</div></div>
-              <div class="affiliation-item"><div class="label">Product Types</div><div class="value">${summary.productCount}</div></div>
-              <div class="affiliation-item"><div class="label">Status Codes</div><div class="value">${summary.statusCount}</div></div>
-              <div class="affiliation-item"><div class="label">ID Types</div><div class="value">${summary.idCount}</div></div>
-            </div>
-          </div>
-        </div>
         <div class="report-section fade-in">
           <h3>📁 Uploaded Document Context</h3>
           <div class="content">
@@ -3578,33 +3492,10 @@
           </div>
         </div>
         <div class="report-section fade-in">
-          <h3>🧬 Interface & Schema Coverage</h3>
-          <div class="content">
-            <div class="tag-grid" style="margin-bottom: 1rem;">${interfaceTags}</div>
-            ${schemaGridHtml}
-          </div>
-        </div>
-        <div class="report-section fade-in" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-left: 4px solid #10b981; border-radius: 12px; padding: 1.5rem;">
-          <h3 style="color: #047857;">📥 Swiftness Data Resources</h3>
-          <div class="content">
-            <p><strong>Source:</strong> <a href="https://www.swiftness.co.il" target="_blank" rel="noopener">swiftness.co.il</a></p>
-            <p><strong>Total Resources:</strong> ${totalResources} files and schemas</p>
-            <div style="margin: 0.75rem 0;">${swiftnessLinksHtml}</div>
-          </div>
-        </div>
-        <div class="report-section fade-in" style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #2563eb; border-radius: 12px; padding: 1.5rem;">
-          <h3 style="color: #1e40af;">📊 Report Model Structure (Nituach Tik)</h3>
-          <div class="content">
-            <p>Professional portfolio analysis report based on Mislaka standards with <strong>${swiftnessReportModel ? swiftnessReportModel.sections.length : 0} sections</strong>.</p>
-            ${reportModelSummary}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>🛡️ Data Integrity & Swiftness Safe</h3>
+          <h3>🛡️ Data Integrity</h3>
           <div class="content">
             <p><strong>Safe Status:</strong> ${safeSnapshot.status}</p>
-            <p>${safeSnapshot.message || 'Swiftness Safe status snapshot captured.'}</p>
-            <p>Data integrity is enforced with row-level ownership and schema-controlled affiliations.</p>
+            <p>${safeSnapshot.message || 'Data integrity snapshot captured.'}</p>
             ${integrityHtml}
           </div>
         </div>
@@ -3677,11 +3568,15 @@
         renderInsights(analysis, analysis.key_metrics || {});
       }
       
-      // Charts (merge generated report charts with affiliation coverage charts)
+      // Charts come from the report (driven by the customer's actual
+      // uploaded data). Affiliation-coverage charts ("Interface Mix",
+      // "Schema Distribution", etc.) describe the platform's own
+      // schema catalog, not the user's file, so we no longer surface
+      // them. The affiliation summary is still computed and used by
+      // the recommendations engine below.
       const baseCharts = Array.isArray(report.charts) ? [...report.charts] : [];
       const affiliationSummary = options.affiliations ? summarizeAffiliations(options.affiliations) : null;
-      const mergedCharts = affiliationSummary ? [...baseCharts, ...buildAffiliationCharts(affiliationSummary)] : baseCharts;
-      renderCharts(mergedCharts);
+      renderCharts(baseCharts);
       
       // Report Title
       document.getElementById('reportTitle').textContent = `📋 ${report.title || 'Analysis Report'}`;
@@ -3754,78 +3649,25 @@
 
     function appendAffiliationCompanionSection(reportBody, payload) {
       if (!reportBody || !payload) return;
-      const summary = payload.summary || {};
       const files = payload.files || [];
-      const analysisTypeLabel = payload.analysisTypeLabel || 'Auto-detect';
-      const updatedAtLabel = swiftnessAffiliationsUpdatedAt
-        ? swiftnessAffiliationsUpdatedAt.toLocaleString()
-        : 'Not available';
 
-      const schemaRows = Object.entries(summary.schemaCounts || {}).map(([schema, count]) => ({
-        Schema: schema,
-        Count: count
-      }));
-
+      // The platform-internal schema affiliation (entity types, product
+      // types, schema counts, report-model section catalogue) is used
+      // *internally* to drive the parser - it should not be presented
+      // to end-users as report tabs because it does not describe their
+      // file. We surface only sections whose content is derived from
+      // the actual upload.
       const fileRows = files.map(file => ({
         File: file.name || 'Unknown',
         Type: (file.extension || '').toUpperCase() || 'N/A',
         Size: file.sizeLabel || 'N/A'
       }));
 
-      const modelRows = (swiftnessReportModel?.sections || []).map(section => ({
-        Section: section.order,
-        Hebrew: getModelSectionTitle(section, 'he'),
-        English: getModelSectionTitle(section, 'en'),
-        Fields: (section.data_fields || []).length,
-        Charts: (section.charts || []).length
-      }));
-
-      const integrityRules = (swiftnessReportModel?.metadata?.data_integrity_rules || [])
-        .map(rule => `<span class="integrity-badge pass">✓ ${escapeHtml(rule)}</span>`)
-        .join('');
-
       reportBody.insertAdjacentHTML('beforeend', `
         <div class="report-section fade-in">
-          <h3>🧭 Affiliation Snapshot</h3>
-          <div class="content">
-            <p><strong>Run Type:</strong> ${escapeHtml(analysisTypeLabel)}</p>
-            <p><strong>Snapshot Timestamp:</strong> ${escapeHtml(updatedAtLabel)}</p>
-            ${renderDataTable({
-              columns: ['Entity Types', 'Product Types', 'Status Codes', 'ID Types', 'Interfaces', 'Environments'],
-              rows: [{
-                'Entity Types': summary.entityCount || 0,
-                'Product Types': summary.productCount || 0,
-                'Status Codes': summary.statusCount || 0,
-                'ID Types': summary.idCount || 0,
-                'Interfaces': summary.interfaceCount || 0,
-                'Environments': summary.environmentCount || 0
-              }]
-            })}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>📊 Report Model Alignment (Nituach Tik)</h3>
-          <div class="content">
-            <p>Model sections, affiliated fields, and chart expectations aligned to Swiftness/Mislaka standards.</p>
-            ${modelRows.length ? renderDataTable({ columns: ['Section', 'Hebrew', 'English', 'Fields', 'Charts'], rows: modelRows }) : '<p style="color: var(--text-muted);">Report model is unavailable.</p>'}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>🧬 Interface Schema Coverage</h3>
-          <div class="content">
-            ${schemaRows.length ? renderDataTable({ columns: ['Schema', 'Count'], rows: schemaRows }) : '<p style="color: var(--text-muted);">No schema data available.</p>'}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>📁 Uploaded Evidence Register</h3>
+          <h3>📁 Uploaded Files</h3>
           <div class="content">
             ${fileRows.length ? renderDataTable({ columns: ['File', 'Type', 'Size'], rows: fileRows }) : '<p style="color: var(--text-muted);">No uploaded files available for this run.</p>'}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>🛡️ Data Integrity Rules</h3>
-          <div class="content">
-            ${integrityRules || '<p style="color: var(--text-muted);">No integrity rules loaded.</p>'}
           </div>
         </div>
       `);
