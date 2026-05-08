@@ -311,6 +311,51 @@ class TestReuploadablePack:
         assert report["imported_facts"] == len(original_facts)
         assert len(fresh.get_facts("CUST-PACK")) == len(original_facts)
 
+    def test_backfill_assesses_pre_existing_documents(self, center, doc_service):
+        # Simulate a document that was uploaded before the Assessment Center
+        # was wired (skip_processing means no extracted text on disk).
+        upload = doc_service.upload_document(
+            file_name="legacy.txt",
+            file_data_b64=_b64("Customer 123456782 was diagnosed with diabetes. BMI: 31."),
+            mime_type="text/plain",
+            customer_id="CUST-LEGACY",
+            skip_processing=True,
+        )
+        # Before backfill, no facts exist for the legacy customer.
+        assert center.get_facts("CUST-LEGACY") == []
+        status = center.backfill_status()
+        assert status["without_facts"] >= 1
+
+        result = center.backfill_documents()
+        assert result["scanned"] >= 1
+        assert result["assessed"] >= 1
+        assert "CUST-LEGACY" in result["customers_updated"]
+        assert center.get_facts("CUST-LEGACY"), "expected facts after backfill"
+
+        # Idempotency: a second run skips the same document.
+        again = center.backfill_documents()
+        assert again["assessed"] == 0
+        assert again["skipped"] >= 1
+
+        # Force: re-extract even when facts exist.
+        forced = center.backfill_documents(force=True, document_ids=[upload.document_id])
+        assert forced["scanned"] == 1
+        assert forced["assessed"] == 1
+
+    def test_backfill_filters_by_customer(self, center, doc_service):
+        d1 = doc_service.upload_document(
+            file_name="a.txt", file_data_b64=_b64("ID 123456782. Diagnosis: cancer."),
+            mime_type="text/plain", customer_id="CUST-A", skip_processing=True,
+        )
+        d2 = doc_service.upload_document(
+            file_name="b.txt", file_data_b64=_b64("ID 234567880. Diagnosis: stroke."),
+            mime_type="text/plain", customer_id="CUST-B", skip_processing=True,
+        )
+        result = center.backfill_documents(customer_id="CUST-A")
+        assert "CUST-A" in result["customers_updated"]
+        assert "CUST-B" not in result["customers_updated"]
+        assert center.get_facts("CUST-B") == []
+
     def test_tampered_pack_flags_integrity(self, center, doc_service):
         text = "ID 123456782. Diagnosis: cancer."
         upload = doc_service.upload_document(

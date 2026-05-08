@@ -136,6 +136,31 @@
     platform can run a single source of truth for underwriting and risk.
   </div>
 
+  <!-- Backfill banner (admin only) -->
+  <div class="card" id="backfill-card" style="display:none; border-left: 5px solid #f57c00;">
+    <div class="card-title">🔁 Backfill previously uploaded documents
+      <span class="meta" id="backfill-meta">checking…</span>
+    </div>
+    <p style="font-size: 0.88rem; color: #455a64; margin: 0 0 12px;">
+      Documents uploaded before the Assessment Center was wired do not yet
+      have facts in the unified store. Run a backfill to scan every
+      pre-existing document and rebuild Customer 360. The pipeline is
+      idempotent - documents that already have facts are skipped unless
+      <strong>force re-extract</strong> is checked.
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+      <input type="text" id="backfill-customer" placeholder="Optional customer_id filter" style="width:240px;">
+      <input type="number" id="backfill-limit" placeholder="Limit (optional)" min="1" style="width:140px;">
+      <label style="font-size:0.85rem; display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" id="backfill-force"> force re-extract
+      </label>
+      <button class="warn" id="backfill-run-btn" onclick="runBackfill()">🔁 Run backfill</button>
+      <button class="ghost" onclick="loadBackfillStatus()">↻ Refresh status</button>
+      <span id="backfill-status" style="font-size:0.85rem;"></span>
+    </div>
+    <div id="backfill-result" style="display:none; margin-top:14px;"></div>
+  </div>
+
   <!-- Customer picker -->
   <div class="card" id="picker-card">
     <div class="card-title">
@@ -675,6 +700,79 @@
     }
   }
 
+  // ── Backfill ───────────────────────────────────────────────────────────
+  async function loadBackfillStatus() {
+    if (!IS_ADMIN) return;
+    show('backfill-card', true);
+    const meta = document.getElementById('backfill-meta');
+    const cidInput = document.getElementById('backfill-customer');
+    const cidParam = cidInput && cidInput.value.trim() ? '?customer_id=' + encodeURIComponent(cidInput.value.trim()) : '';
+    try {
+      const res = await api('/api/assessment-center/backfill-status' + cidParam);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      const pending = json.pending_total || ((json.without_facts || 0) + (json.legacy_pending || 0));
+      meta.innerHTML = pending > 0
+        ? `<span style="color:#c62828;font-weight:600;">${pending} document(s) need backfill</span> · ${json.with_facts || 0} already have facts · ${json.legacy_pending || 0} only in legacy store`
+        : `<span style="color:#2e7d32;font-weight:600;">✓ All ${json.total_documents || 0} document(s) have assessment facts</span>`;
+    } catch (e) {
+      meta.textContent = 'Status check failed: ' + e.message;
+    }
+  }
+
+  async function runBackfill() {
+    if (!IS_ADMIN) return;
+    const btn = document.getElementById('backfill-run-btn');
+    const statusEl = document.getElementById('backfill-status');
+    const resultEl = document.getElementById('backfill-result');
+    const cid = document.getElementById('backfill-customer').value.trim();
+    const limitRaw = document.getElementById('backfill-limit').value.trim();
+    const limit = limitRaw ? Number(limitRaw) : null;
+    const force = document.getElementById('backfill-force').checked;
+    btn.disabled = true;
+    btn.textContent = '⏳ Running…';
+    statusEl.textContent = 'Backfilling — this may take a moment…';
+    statusEl.style.color = '#546e7a';
+    try {
+      const body = { include_legacy: true, force };
+      if (cid) body.customer_id = cid;
+      if (limit && Number.isFinite(limit)) body.limit = limit;
+      const res = await api('/api/assessment-center/backfill', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      const r = json.result || {};
+      const b = json.bridge || {};
+      const errs = (r.errors || []).map(e => `<li><code>${escHtml(e.document_id)}</code>: ${escHtml(e.error)}</li>`).join('');
+      const customers = (r.customers_updated || []).map(c => `<span class="chip chip-green">${escHtml(c)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+      resultEl.style.display = '';
+      resultEl.innerHTML = `
+        <div class="grid-3">
+          <div class="stat-tile good"><div class="label">Documents scanned</div><div class="value">${r.scanned || 0}</div><div class="sub">incl. ${b.bridged || 0} bridged from legacy</div></div>
+          <div class="stat-tile"><div class="label">Documents assessed</div><div class="value">${r.assessed || 0}</div><div class="sub">${r.skipped || 0} skipped (already had facts)</div></div>
+          <div class="stat-tile ${(r.error_count || 0) > 0 ? 'bad' : 'muted'}"><div class="label">Errors</div><div class="value">${r.error_count || 0}</div><div class="sub">${r.force ? 'force re-extract was on' : 'idempotent run'}</div></div>
+        </div>
+        <div style="margin-top:12px;"><strong>Customers updated</strong><div>${customers}</div></div>
+        ${errs ? `<div style="margin-top:12px;"><strong>Error sample</strong><ul>${errs}</ul></div>` : ''}
+      `;
+      statusEl.textContent = `✓ Done. Assessed ${r.assessed || 0} document(s).`;
+      statusEl.style.color = '#2e7d32';
+      // Refresh dependent panels
+      await loadBackfillStatus();
+      await loadCustomers();
+      const cidSel = document.getElementById('customer-select');
+      if (cidSel.value) loadAll();
+    } catch (e) {
+      statusEl.textContent = '❌ ' + e.message;
+      statusEl.style.color = '#c62828';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔁 Run backfill';
+    }
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────
   (async function init() {
     await loadCustomers();
@@ -688,6 +786,7 @@
     }
     if (sel.value) loadAll();
     loadRegistry();
+    loadBackfillStatus();
   })();
 </script>
 

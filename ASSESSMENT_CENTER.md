@@ -172,6 +172,58 @@ linked document count, breakdown by `fact_type`, latest capture timestamp
 and current risk score / level. Used by the Assessment Center dashboard to
 populate the admin customer picker.
 
+### GET `/api/assessment-center/backfill-status`
+
+Reports how many already-stored documents still need to be mined for facts:
+
+```json
+{
+  "total_documents": 137,
+  "with_facts": 12,
+  "without_facts": 125,
+  "legacy_pending": 4,
+  "pending_total": 129,
+  "customer_id": ""
+}
+```
+
+`legacy_pending` counts files that only exist in the legacy in-memory
+`POLICY_DOCUMENTS` mirror and have not yet been written to the document
+service. The backfill endpoint will bridge those automatically.
+
+### POST `/api/assessment-center/backfill` (admin-only)
+
+Re-runs the assessment pipeline on every previously uploaded document.
+The operation is idempotent - a document that already has facts is
+skipped unless `force=true` is passed. Optional body:
+
+```json
+{
+  "customer_id": "CUST-1",      // restrict to a single customer
+  "limit": 200,                  // hard cap on docs processed in this run
+  "force": false,                // re-extract even when facts already exist
+  "include_legacy": true         // also bridge POLICY_DOCUMENTS into the doc service
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "bridge": {"bridged": 4, "ids": ["DOC-..."], "errors": []},
+  "result": {
+    "scanned": 137,
+    "assessed": 129,
+    "skipped": 8,
+    "error_count": 0,
+    "errors": [],
+    "customers_updated": ["CUST-1", "CUST-2", "..."],
+    "deltas": {"CUST-1": 14, "CUST-2": 7}
+  }
+}
+```
+
 ---
 
 ## Where to see the changes in the UI
@@ -213,7 +265,10 @@ provides:
 - a Mislaka quick-link form that calls `/api/assessment-center/mislaka/link`
   for the picked customer;
 - a re-uploadable pack export button that downloads the SHA-256-sealed JSON;
-- the live upload endpoint registry (admin only).
+- the live upload endpoint registry (admin only);
+- a backfill banner (admin only) that surfaces how many previously
+  uploaded documents still need to be mined for facts and runs the
+  pipeline against them with optional customer/limit/force controls.
 
 ---
 

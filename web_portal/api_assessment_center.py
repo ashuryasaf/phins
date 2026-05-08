@@ -84,6 +84,111 @@ def _service():
     return get_assessment_center()
 
 
+def _policy_documents() -> Dict[str, Any]:
+    """Return the live legacy POLICY_DOCUMENTS dict, or an empty dict.
+
+    The legacy in-memory mirror sits inside ``web_portal.server`` so we
+    import it lazily to avoid a circular dependency at module import time.
+    Tests run without that import path available, so the helper degrades
+    gracefully to an empty dict when the symbol is missing.
+    """
+    try:
+        from web_portal import server as portal
+    except Exception:
+        return {}
+    docs = getattr(portal, "POLICY_DOCUMENTS", None)
+    return docs if isinstance(docs, dict) else {}
+
+
+def _legacy_documents_pending(customer_id: Optional[str]) -> int:
+    """Count legacy documents that have never been written to the doc service."""
+    pending = 0
+    for doc in _policy_documents().values():
+        if not isinstance(doc, dict):
+            continue
+        if doc.get("persistent_doc_id"):
+            continue
+        if customer_id and doc.get("uploaded_by_customer") != customer_id:
+            continue
+        if doc.get("data") or doc.get("storage_path"):
+            pending += 1
+    return pending
+
+
+def _bridge_legacy_documents(
+    *,
+    customer_id: Optional[str],
+    limit: Optional[int],
+) -> Dict[str, Any]:
+    """Push legacy ``POLICY_DOCUMENTS`` into the doc service so backfill can mine them.
+
+    Older uploads sometimes only landed in the in-memory ``POLICY_DOCUMENTS``
+    mirror because the document service hadn't been wired into that route yet.
+    This helper detects those cases, persists them through
+    :class:`DocumentProcessingService` (so they get a SHA-256 envelope and
+    survive restarts), tags them with ``persistent_doc_id`` for future runs,
+    and returns the new IDs ready to be assessed.
+    """
+    bridged: List[str] = []
+    errors: List[Dict[str, Any]] = []
+    docs = _policy_documents()
+    if not docs:
+        return {"bridged": 0, "ids": [], "errors": []}
+
+    try:
+        from services.document_processing_service import get_document_service
+        doc_svc = get_document_service()
+    except Exception as exc:
+        return {"bridged": 0, "ids": [], "errors": [{"error": f"doc_service_unavailable: {exc}"}]}
+
+    for legacy_id, doc in list(docs.items()):
+        if limit is not None and len(bridged) >= int(limit):
+            break
+        if not isinstance(doc, dict):
+            continue
+        if doc.get("persistent_doc_id"):
+            continue
+        owner = doc.get("uploaded_by_customer") or doc.get("customer_id") or ""
+        if customer_id and owner != customer_id:
+            continue
+
+        file_data_b64 = doc.get("data")
+        if not file_data_b64:
+            # Some legacy docs only have a storage_path; rebuild base64 from disk.
+            storage_path = doc.get("storage_path")
+            if storage_path:
+                try:
+                    import base64 as _b64
+                    with open(storage_path, "rb") as fh:
+                        file_data_b64 = _b64.b64encode(fh.read()).decode("ascii")
+                except Exception as exc:
+                    errors.append({"document_id": legacy_id, "error": f"read_failed: {exc}"})
+                    continue
+        if not file_data_b64:
+            continue
+
+        try:
+            upload = doc_svc.upload_document(
+                file_name=doc.get("name") or f"{legacy_id}.bin",
+                file_data_b64=file_data_b64,
+                mime_type=doc.get("type") or "application/octet-stream",
+                entity_type=doc.get("entity_type"),
+                entity_id=doc.get("entity_id"),
+                document_type=doc.get("document_type"),
+                description=doc.get("description"),
+                customer_id=owner or None,
+                uploaded_by=doc.get("uploaded_by") or "backfill",
+                skip_processing=False,
+            )
+            doc["persistent_doc_id"] = upload.document_id
+            doc["storage_path"] = upload.storage_path
+            bridged.append(upload.document_id)
+        except Exception as exc:
+            errors.append({"document_id": legacy_id, "error": str(exc)})
+
+    return {"bridged": len(bridged), "ids": bridged, "errors": errors}
+
+
 # ── Upload endpoint registry ──────────────────────────────────────────────────
 #
 # This registry is the single source of truth for which upload endpoints the
@@ -105,6 +210,22 @@ _UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
         "method": "GET",
         "module": "web_portal/api_assessment_center.py",
         "purpose": "Admin: list customers with assessment facts",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
+        "path": "/api/assessment-center/backfill-status",
+        "method": "GET",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "How many existing documents still lack assessment facts",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
+        "path": "/api/assessment-center/backfill",
+        "method": "POST",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "Re-run extraction on every previously uploaded document (admin)",
         "assessment_center": True,
         "persistent": True,
     },
@@ -242,6 +363,36 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             return 200, {"items": rows, "total": len(rows)}
         except Exception as exc:
             logger.exception("assessment-center customers GET failed: %s", exc)
+            return 500, {"error": "Assessment center error", "details": str(exc)}
+
+    if path == "/api/assessment-center/backfill-status":
+        if not session:
+            return 401, {"error": "Authentication required"}
+        role = str(session.get("role") or "").lower()
+        is_admin = role in _ADMIN_ROLES
+        target_customer = None
+        if not is_admin:
+            target_customer = (
+                session.get("customer_id")
+                or (session.get("user") or {}).get("customer_id")
+                or ""
+            )
+            if not target_customer:
+                return 403, {"error": "Customer session invalid - no customer_id"}
+        else:
+            qp_customer = query_params.get("customer_id") if isinstance(query_params, dict) else None
+            if isinstance(qp_customer, list):
+                qp_customer = qp_customer[0] if qp_customer else None
+            target_customer = (qp_customer or "").strip() or None
+
+        legacy_pending = _legacy_documents_pending(target_customer)
+        try:
+            payload = _service().backfill_status(customer_id=target_customer)
+            payload["legacy_pending"] = legacy_pending
+            payload["pending_total"] = payload.get("without_facts", 0) + legacy_pending
+            return 200, payload
+        except Exception as exc:
+            logger.exception("assessment-center backfill-status failed: %s", exc)
             return 500, {"error": "Assessment center error", "details": str(exc)}
 
     if not path.startswith("/api/assessment-center/customer/"):
@@ -393,6 +544,44 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 fact_type=fact_type,
             )
             return 200, assessment.to_dict()
+
+        if path == "/api/assessment-center/backfill":
+            if role not in _ADMIN_ROLES:
+                return 403, {"error": "Admin role required"}
+            requested_customer = str(body.get("customer_id") or "").strip() or None
+            try:
+                limit_raw = body.get("limit")
+                limit_value = int(limit_raw) if limit_raw not in (None, "", 0) else None
+            except (TypeError, ValueError):
+                return 400, {"error": "limit must be an integer"}
+            force = bool(body.get("force"))
+            include_legacy = body.get("include_legacy")
+            if include_legacy is None:
+                include_legacy = True
+            include_legacy = bool(include_legacy)
+
+            bridge_summary = (
+                _bridge_legacy_documents(customer_id=requested_customer, limit=limit_value)
+                if include_legacy
+                else {"bridged": 0, "ids": [], "errors": []}
+            )
+
+            try:
+                result = svc.backfill_documents(
+                    customer_id=requested_customer,
+                    force=force,
+                    limit=limit_value,
+                )
+            except Exception as exc:
+                logger.exception("assessment-center backfill failed: %s", exc)
+                return 500, {"error": "Backfill failed", "details": str(exc)}
+
+            return 200, {
+                "success": True,
+                "bridge": bridge_summary,
+                "result": result,
+                "customer_id": requested_customer or "all",
+            }
 
         if path == "/api/assessment-center/import":
             pack = body.get("pack")

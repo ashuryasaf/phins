@@ -548,6 +548,166 @@ class AssessmentCenterService:
         rows.sort(key=lambda r: r.get("latest_capture", ""), reverse=True)
         return rows
 
+    def backfill_documents(
+        self,
+        *,
+        document_ids: Optional[Iterable[str]] = None,
+        customer_id: Optional[str] = None,
+        force: bool = False,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Run the assessment pipeline on documents that pre-date this service.
+
+        The backend can land before any UI for the Assessment Center is in
+        place, which means there is normally a population of older documents
+        sitting in :class:`DocumentProcessingService` (and the legacy
+        ``POLICY_DOCUMENTS`` mirror) that have never been mined for facts.
+        This method walks those documents and runs ``assess_document`` on
+        each one.
+
+        The operation is intentionally **idempotent**: a document that already
+        has at least one fact recorded against it is skipped unless the caller
+        passes ``force=True``. Errors per document are captured and reported
+        but never abort the run, so a single bad file cannot poison a large
+        batch.
+
+        Args:
+            document_ids: optional explicit list of persistent document IDs.
+                When ``None``, every document in the document service is
+                considered.
+            customer_id: optional filter; only documents owned by this
+                customer are processed.
+            force: re-extract even when facts already exist.
+            limit: hard cap on the number of documents processed in this run.
+
+        Returns:
+            A dict with ``scanned``, ``assessed``, ``skipped``, ``errors``
+            and ``customers_updated`` counters plus the per-customer fact
+            delta in ``deltas``.
+        """
+        ids: List[str] = []
+        if document_ids is not None:
+            ids = [str(d) for d in document_ids if d]
+        else:
+            try:
+                page = 1
+                page_size = 200
+                while True:
+                    response = self.document_service.list_documents(
+                        customer_id=customer_id,
+                        page=page,
+                        page_size=page_size,
+                    )
+                    items = response.get("items") if isinstance(response, dict) else response
+                    if not items:
+                        break
+                    for item in items:
+                        if isinstance(item, dict):
+                            doc_id = item.get("id") or item.get("document_id")
+                        else:
+                            doc_id = getattr(item, "id", None)
+                        if doc_id:
+                            ids.append(str(doc_id))
+                    if len(items) < page_size:
+                        break
+                    page += 1
+            except Exception as exc:
+                logger.warning("backfill_documents listing failed: %s", exc)
+
+        if limit is not None:
+            ids = ids[: max(0, int(limit))]
+
+        existing = self.get_document_assessments(ids) if ids else {}
+        scanned = 0
+        assessed = 0
+        skipped = 0
+        errors: List[Dict[str, Any]] = []
+        customers_updated: set = set()
+        deltas: Dict[str, int] = {}
+
+        for doc_id in ids:
+            scanned += 1
+            current = existing.get(doc_id, {})
+            if not force and current.get("facts_extracted"):
+                skipped += 1
+                continue
+            try:
+                result = self.assess_document(
+                    doc_id,
+                    customer_id=customer_id,
+                    source_context="backfill",
+                )
+                facts_added = result.summary.get("facts_extracted", 0) if result.summary else 0
+                if facts_added:
+                    assessed += 1
+                    customers_updated.add(result.customer_id)
+                    deltas[result.customer_id] = deltas.get(result.customer_id, 0) + facts_added
+                else:
+                    # No new facts could be mined from this file (unsupported
+                    # binary format, empty text, etc.). Treat it as scanned
+                    # but not assessed so the dashboard does not double-count.
+                    skipped += 1
+            except Exception as exc:
+                logger.warning("backfill_documents assess failed for %s: %s", doc_id, exc)
+                errors.append({"document_id": doc_id, "error": str(exc)})
+
+        return {
+            "scanned": scanned,
+            "assessed": assessed,
+            "skipped": skipped,
+            "error_count": len(errors),
+            "errors": errors[:50],
+            "customers_updated": sorted(customers_updated),
+            "deltas": deltas,
+            "force": bool(force),
+        }
+
+    def backfill_status(self, customer_id: Optional[str] = None) -> Dict[str, Any]:
+        """Summarise how many documents are still missing assessment facts.
+
+        Used by the admin tile to surface a "backfill needed" prompt without
+        having to actually run the heavy pipeline.
+        """
+        ids: List[str] = []
+        try:
+            page = 1
+            page_size = 200
+            while True:
+                response = self.document_service.list_documents(
+                    customer_id=customer_id,
+                    page=page,
+                    page_size=page_size,
+                )
+                items = response.get("items") if isinstance(response, dict) else response
+                if not items:
+                    break
+                for item in items:
+                    doc_id = (item.get("id") or item.get("document_id")
+                              if isinstance(item, dict)
+                              else getattr(item, "id", None))
+                    if doc_id:
+                        ids.append(str(doc_id))
+                if len(items) < page_size:
+                    break
+                page += 1
+        except Exception as exc:
+            logger.warning("backfill_status listing failed: %s", exc)
+            return {
+                "total_documents": 0,
+                "with_facts": 0,
+                "without_facts": 0,
+                "error": str(exc),
+            }
+
+        summaries = self.get_document_assessments(ids) if ids else {}
+        with_facts = sum(1 for d in ids if summaries.get(d, {}).get("facts_extracted"))
+        return {
+            "total_documents": len(ids),
+            "with_facts": with_facts,
+            "without_facts": max(0, len(ids) - with_facts),
+            "customer_id": customer_id or "",
+        }
+
     def get_document_assessments(self, document_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
         """Return per-document summary derived from the unified fact store.
 

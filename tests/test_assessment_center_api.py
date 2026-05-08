@@ -300,6 +300,56 @@ class TestDashboardSurfaces:
         assert row["fact_count"] >= 1
         assert "risk_level" in row
 
+    def test_backfill_status_and_run_via_api(self):
+        headers = _admin_session()
+        # Seed a legacy upload that stores in the doc service without running
+        # the Assessment Center (skip_processing=True via the doc-service API).
+        seed_text = "ID 123456782. Diagnosis: hypertension. Medication: lisinopril."
+        upload = requests.post(
+            f"{BASE_URL}/api/doc-service/upload",
+            json={
+                "files": [{"name": "legacy.txt", "type": "text/plain", "data": _b64(seed_text)}],
+                "entity_type": "customer",
+                "entity_id": "CUST-BACKFILL",
+                "customer_id": "CUST-BACKFILL",
+            },
+            headers=headers,
+        )
+        assert upload.status_code == 201, upload.text
+
+        status = requests.get(
+            f"{BASE_URL}/api/assessment-center/backfill-status",
+            headers=headers,
+        )
+        assert status.status_code == 200
+        before = status.json()
+        assert "total_documents" in before
+
+        run = requests.post(
+            f"{BASE_URL}/api/assessment-center/backfill",
+            json={"force": True, "include_legacy": True},
+            headers=headers,
+        )
+        assert run.status_code == 200, run.text
+        body = run.json()
+        result = body.get("result") or {}
+        assert result.get("scanned", 0) >= 1
+        assert "bridge" in body
+
+        status_after = requests.get(
+            f"{BASE_URL}/api/assessment-center/backfill-status",
+            headers=headers,
+        )
+        assert status_after.status_code == 200
+        after = status_after.json()
+        # After a forced run, the with_facts count must not decrease.
+        assert after.get("with_facts", 0) >= before.get("with_facts", 0)
+
+    def test_backfill_requires_admin(self):
+        # An unauthenticated POST is rejected with 401, not 200.
+        resp = requests.post(f"{BASE_URL}/api/assessment-center/backfill", json={})
+        assert resp.status_code == 401
+
     def test_assessment_center_page_is_served(self):
         # The dashboards rely on /assessment-center.html being reachable as a
         # static file. A regression where the file is missing would make every
