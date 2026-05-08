@@ -366,32 +366,81 @@
   let SESSION_USERNAME = '';
   let SESSION_ROLE = '';
 
+  async function _authFetch(path) {
+    return fetch(path, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+  }
+
   async function ensureServerSession() {
+    // Source of truth for "who am I and what customer can I access".
+    // Preference order:
+    //   1. /api/assessment-center/me  (always returns the canonical
+    //      customer_id, with the backend recovery chain applied for
+    //      tokens that lost the claim).
+    //   2. /api/session/validate     (legacy fallback if the new
+    //      endpoint isn't deployed yet).
+    //   3. /api/customer/summary     (returns the caller's customer
+    //      record; used to recover customer_id when both above paths
+    //      came back empty).
+    //   4. localStorage              (last-ditch; shouldn't happen on
+    //      a healthy session).
     try {
-      const res = await fetch('/api/session/validate', {
-        headers: { 'Authorization': 'Bearer ' + TOKEN },
-      });
-      if (!res.ok) {
-        // Token rejected by the server; clear local state so the next
-        // load redirects to /login.html cleanly.
+      const meRes = await _authFetch('/api/assessment-center/me');
+      if (meRes.status === 401) {
         localStorage.removeItem('phins_token');
         localStorage.removeItem('phins_session');
         window.location.href = '/login.html';
         return null;
       }
-      const body = await res.json();
-      SERVER_SESSION = body;
-      SESSION_CUSTOMER_ID = String(body.customer_id || '').trim();
-      SESSION_USERNAME = String(body.username || '').trim();
-      SESSION_ROLE = String(body.role || '').toLowerCase();
-      return body;
-    } catch (e) {
-      console.warn('Session validation failed; falling back to localStorage', e);
+      if (meRes.ok) {
+        const body = await meRes.json();
+        SERVER_SESSION = body;
+        SESSION_CUSTOMER_ID = String(body.customer_id || '').trim();
+        SESSION_USERNAME = String(body.username || '').trim();
+        SESSION_ROLE = String(body.role || '').toLowerCase();
+        if (SESSION_CUSTOMER_ID || body.is_admin) return body;
+      }
+    } catch (_) { /* fall through */ }
+
+    try {
+      const validateRes = await _authFetch('/api/session/validate');
+      if (validateRes.status === 401) {
+        localStorage.removeItem('phins_token');
+        localStorage.removeItem('phins_session');
+        window.location.href = '/login.html';
+        return null;
+      }
+      if (validateRes.ok) {
+        const body = await validateRes.json();
+        SESSION_USERNAME = SESSION_USERNAME || String(body.username || '').trim();
+        SESSION_ROLE = SESSION_ROLE || String(body.role || '').toLowerCase();
+        if (!SESSION_CUSTOMER_ID && body.customer_id) {
+          SESSION_CUSTOMER_ID = String(body.customer_id).trim();
+        }
+        if (SESSION_CUSTOMER_ID) return body;
+      }
+    } catch (_) { /* fall through */ }
+
+    try {
+      const summaryRes = await _authFetch('/api/customer/summary');
+      if (summaryRes.ok) {
+        const body = await summaryRes.json();
+        const candidate = String((body && (body.customer_id || (body.customer || {}).id)) || '').trim();
+        if (candidate && !SESSION_CUSTOMER_ID) {
+          SESSION_CUSTOMER_ID = candidate;
+        }
+      }
+    } catch (_) { /* fall through */ }
+
+    if (!SESSION_CUSTOMER_ID) {
       SESSION_CUSTOMER_ID = String(SESSION.customer_id || '').trim();
-      SESSION_USERNAME = String(SESSION.username || '').trim();
-      SESSION_ROLE = ROLE;
-      return null;
     }
+    if (!SESSION_USERNAME) {
+      SESSION_USERNAME = String(SESSION.username || '').trim();
+    }
+    if (!SESSION_ROLE) {
+      SESSION_ROLE = ROLE;
+    }
+    return SERVER_SESSION;
   }
 
   function actingAsAdmin() {
@@ -435,13 +484,28 @@
       // for the customer_id, period. URL params and localStorage are
       // ignored to prevent the "Access denied on my own data" bug.
       const cid = SESSION_CUSTOMER_ID;
-      const label = cid || '(no customer linked to your account)';
-      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(label)}</option>`;
+      // Always render the option as the customer themselves, even when
+      // the canonical id isn't available yet, so the dropdown is never
+      // empty / opaque. The actual upload uses SESSION_CUSTOMER_ID
+      // exclusively, so showing 'self' as a label has no security risk.
+      const optionLabel = cid
+        ? `${cid} · ${SESSION_USERNAME || 'me'}`
+        : `${SESSION_USERNAME || 'me'} (resolving customer record…)`;
+      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(optionLabel)}</option>`;
       sel.disabled = true;
+      const meta = document.getElementById('picker-meta');
+      if (meta) {
+        meta.textContent = cid
+          ? `Signed in as ${SESSION_USERNAME} → ${cid}`
+          : `Signed in as ${SESSION_USERNAME} (customer linkage pending)`;
+      }
       if (ctxLabel) {
         ctxLabel.innerHTML = cid
           ? `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. All uploads attach to your account: <strong>${escHtml(cid)}</strong>.`
-          : `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong> but no customer record is linked to your account. Please contact support before uploading.`;
+          : (
+              `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong> but the system could not resolve your customer record. ` +
+              `<a href="#" onclick="ensureServerSession().then(loadCustomers); return false;" style="color:#1565c0;font-weight:600;">Try again</a>, log out and back in, or contact support if this keeps happening.`
+            );
       }
     }
   }
@@ -492,14 +556,11 @@
       customerId = override || CURRENT_CUSTOMER || SESSION_CUSTOMER_ID;
     } else {
       customerId = SESSION_CUSTOMER_ID;
-      if (!customerId) {
-        setStatus('upload-status',
-          'Your account is not linked to a customer record. Please contact support before uploading.',
-          'error');
-        btn.textContent = '📤 Upload & assess';
-        btn.disabled = SELECTED_FILES.length === 0;
-        return;
-      }
+      // Empty client-side customer_id is fine: the server will try to
+      // recover it from the bearer token's username (mirrors the
+      // recovery chain used by /api/session/validate). If even the
+      // server can't resolve a customer record we surface the
+      // friendlier message returned by the API.
     }
 
     let totalFacts = 0;

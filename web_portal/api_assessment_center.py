@@ -62,6 +62,67 @@ _ADMIN_ROLES = {"admin", "underwriter", "actuary", "analyst", "claims",
                 "claims_agent", "claims_manager", "underwriting_admin"}
 
 
+def _recover_customer_id(session: Dict[str, Any]) -> str:
+    """Best-effort recovery of the customer_id when the session token
+    lost it (older tokens, DB seed race, etc.).
+
+    Mirrors the chain used by ``/api/session/validate`` so the upload
+    pipeline never fails with "Customer session invalid - no
+    customer_id" while the same browser tab can hit
+    ``/api/session/validate`` and get a valid id back. The recovered
+    value is written back to the in-memory session dict so subsequent
+    calls in the same request thread see it without paying the lookup
+    cost again.
+    """
+    if not session:
+        return ""
+    username = (session.get("username")
+                or (session.get("user") or {}).get("username")
+                or "").strip()
+    if not username:
+        return ""
+
+    recovered = ""
+    try:
+        from web_portal import server as portal
+    except Exception:
+        portal = None  # type: ignore[assignment]
+
+    if portal is not None:
+        for store_name in ("CUSTOMERS", "REGISTERED_CUSTOMERS"):
+            store = getattr(portal, store_name, None)
+            if not isinstance(store, dict):
+                continue
+            for cid, cust in store.items():
+                if not isinstance(cust, dict):
+                    continue
+                email = (cust.get("email") or "").strip().lower()
+                if email and email == username.lower():
+                    recovered = str(cid)
+                    break
+            if recovered:
+                break
+
+    if not recovered:
+        try:
+            from database.manager import DatabaseManager  # type: ignore
+            with DatabaseManager() as db:
+                row = db.customers.get_by_email(username.lower())
+                if row is not None:
+                    recovered = str(getattr(row, "id", "") or "")
+        except Exception as exc:
+            logger.debug("DB recovery for customer_id failed: %s", exc)
+
+    if recovered:
+        # Cache on the session dict so the rest of the request flow
+        # picks it up without re-running the lookup.
+        try:
+            session["customer_id"] = recovered
+        except Exception:
+            pass
+    return recovered
+
+
 def _normalise_customer_id(value: Any) -> str:
     """Return a comparable customer_id (trim + uppercase + collapse whitespace).
 
@@ -103,7 +164,15 @@ def _resolve_customer(session: Dict[str, Any], requested_customer_id: str) -> Tu
         return requested_raw or session_customer or "", None
 
     if not session_customer:
-        return "", "Customer session invalid - no customer_id"
+        # The token may have been minted before the customer was linked
+        # (older tokens, race during seed). Try the same recovery chain
+        # /api/session/validate runs so the upload doesn't fail just
+        # because the JWT is missing the customer_id claim.
+        recovered = _recover_customer_id(session)
+        if recovered:
+            session_customer = recovered
+        else:
+            return "", "Customer session invalid - no customer_id"
 
     if requested_raw:
         if _normalise_customer_id(requested_raw) != _normalise_customer_id(session_customer):
@@ -508,6 +577,32 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
         except Exception as exc:
             logger.exception("assessment-center health check failed: %s", exc)
             return 500, {"ok": False, "error": "Health check failed"}
+
+    if path == "/api/assessment-center/me":
+        # Authoritative "who am I" for the workbench. Tells the front-end
+        # the role, the canonical customer_id (after recovery), and
+        # whether the caller has admin-level access. This is the only
+        # source of truth the workbench should trust - localStorage and
+        # URL params are discarded for non-admins.
+        if not session:
+            return 401, {"error": "Authentication required"}
+        role = str(session.get("role") or "").lower()
+        username = (session.get("username")
+                    or (session.get("user") or {}).get("username")
+                    or "")
+        is_admin = role in _ADMIN_ROLES
+        token_customer_id = str(session.get("customer_id") or "").strip()
+        customer_id = token_customer_id
+        if not customer_id and not is_admin:
+            customer_id = _recover_customer_id(session)
+        return 200, {
+            "ok": True,
+            "username": username,
+            "role": role,
+            "is_admin": is_admin,
+            "customer_id": customer_id,
+            "customer_id_recovered": bool(customer_id and not token_customer_id),
+        }
 
     if path == "/api/assessment-center/upload-endpoints":
         if not session:

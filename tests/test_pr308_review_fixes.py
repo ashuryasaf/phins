@@ -260,6 +260,73 @@ class TestBackfillLimitSemantics:
         assert result["limit_applied"] == center.BACKFILL_DEFAULT_LIMIT
 
 
+# ── customer_id recovery for tokens that lost the claim ─────────────────
+
+class TestCustomerIdRecovery:
+    """Some session tokens were minted before the customer record was
+    fully linked, or after a DB seed race. ``/api/session/validate``
+    already runs a recovery chain that re-derives the customer_id from
+    the username; the upload pipeline must do the same so the customer
+    can immediately use the workbench instead of being told their
+    'Customer session is invalid'.
+    """
+
+    def setup_method(self):
+        from web_portal import api_assessment_center as mod
+        from web_portal import server as portal
+        self.mod = mod
+        self.portal = portal
+        self._snapshot = dict(portal.CUSTOMERS)
+        portal.CUSTOMERS.clear()
+        portal.CUSTOMERS["CUST-RECOVER-001"] = {
+            "id": "CUST-RECOVER-001",
+            "email": "lostid@example.com",
+            "name": "Lost ID",
+        }
+
+    def teardown_method(self):
+        self.portal.CUSTOMERS.clear()
+        self.portal.CUSTOMERS.update(self._snapshot)
+
+    def test_recovers_customer_id_from_username(self):
+        session = {"role": "customer", "username": "lostid@example.com"}
+        recovered = self.mod._recover_customer_id(session)
+        assert recovered == "CUST-RECOVER-001"
+        # Cached on the session so subsequent calls don't repeat the lookup.
+        assert session.get("customer_id") == "CUST-RECOVER-001"
+
+    def test_resolve_customer_uses_recovery_when_token_missing_id(self):
+        session = {"role": "customer", "username": "lostid@example.com"}
+        cust, err = self.mod._resolve_customer(session, "")
+        assert err is None
+        assert cust == "CUST-RECOVER-001"
+
+    def test_me_endpoint_returns_recovered_customer_id(self):
+        session = {"role": "customer", "username": "lostid@example.com"}
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", session, {}, "127.0.0.1"
+        )
+        assert status == 200, body
+        assert body["customer_id"] == "CUST-RECOVER-001"
+        assert body["is_admin"] is False
+        assert body["customer_id_recovered"] is True
+
+    def test_me_endpoint_admin_role(self):
+        session = {"role": "admin", "username": "admin"}
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", session, {}, "127.0.0.1"
+        )
+        assert status == 200, body
+        assert body["is_admin"] is True
+
+    def test_me_endpoint_requires_authentication(self):
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", None, {}, "127.0.0.1"
+        )
+        assert status == 401
+        assert "error" in body
+
+
 # ── _resolve_customer is forgiving of cosmetic differences ───────────────
 
 class TestResolveCustomerIsForgiving:
