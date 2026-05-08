@@ -327,6 +327,80 @@ class TestCustomerIdRecovery:
         assert "error" in body
 
 
+# ── workbench is usable even without a formal customer record ────────────
+
+class TestSyntheticCustomerForUnlinkedUsers:
+    """Production reproducer: an authenticated user whose account has
+    not yet been linked to a formal CUST-* record was getting "Pick a
+    customer first" on every analysis / upload / download. The
+    workbench must remain usable for any authenticated user; their
+    facts attach to a synthesised ``USER:<email>`` bucket that an
+    admin can later migrate to the real customer record (each fact
+    carries the source-document SHA-256 for provenance).
+    """
+
+    def setup_method(self):
+        from web_portal import api_assessment_center as mod
+        from web_portal import server as portal
+        self.mod = mod
+        self.portal = portal
+        # Make sure the user is NOT in any customer store so we exercise
+        # the synthetic-id path explicitly.
+        self._snapshot = dict(portal.CUSTOMERS)
+        portal.CUSTOMERS.clear()
+
+    def teardown_method(self):
+        self.portal.CUSTOMERS.clear()
+        self.portal.CUSTOMERS.update(self._snapshot)
+
+    def test_synthetic_id_helper_normalises_username(self):
+        assert self.mod._synthetic_customer_id("Asaf@Example.COM") == "USER:asaf@example.com"
+        assert self.mod._synthetic_customer_id("  spaced user  ") == "USER:spaceduser"
+        assert self.mod._synthetic_customer_id("") == ""
+
+    def test_recovery_falls_back_to_synthetic_id(self):
+        session = {"role": "customer", "username": "newuser@example.com"}
+        cid = self.mod._recover_customer_id(session)
+        assert cid == "USER:newuser@example.com"
+        # Same id shape regardless of cosmetic differences.
+        session2 = {"role": "customer", "username": "  NEWUSER@example.com  "}
+        assert self.mod._recover_customer_id(session2) == "USER:newuser@example.com"
+
+    def test_resolve_customer_returns_synthetic_id_for_unlinked_user(self):
+        session = {"role": "customer", "username": "newuser@example.com"}
+        cust, err = self.mod._resolve_customer(session, "")
+        assert err is None
+        assert cust == "USER:newuser@example.com"
+
+    def test_me_endpoint_marks_synthetic_id(self):
+        session = {"role": "customer", "username": "newuser@example.com"}
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", session, {}, "127.0.0.1"
+        )
+        assert status == 200, body
+        assert body["customer_id"] == "USER:newuser@example.com"
+        assert body["customer_id_is_synthetic"] is True
+        # Friendly label hides the USER: prefix from the front-end.
+        assert body["display_label"] == "newuser@example.com"
+
+    def test_upload_succeeds_for_unlinked_user(self):
+        import base64
+        session = {"role": "customer", "username": "newuser@example.com"}
+        body = {
+            "file_name": "me.txt",
+            "file_data_b64": base64.b64encode(
+                b"ID 123456782. Diagnosis: diabetes."
+            ).decode(),
+            "mime_type": "text/plain",
+        }
+        status, payload = self.mod.dispatch_post(
+            "/api/assessment-center/upload", session, body, "127.0.0.1", ""
+        )
+        assert status == 201, payload
+        assert payload["customer_id"] == "USER:newuser@example.com"
+        assert payload["summary"]["facts_extracted"] > 0
+
+
 # ── _resolve_customer is forgiving of cosmetic differences ───────────────
 
 class TestResolveCustomerIsForgiving:
@@ -380,10 +454,11 @@ class TestResolveCustomerIsForgiving:
             # Whitespace is trimmed for admins too.
             assert cust.strip() == target.strip()
 
-    def test_customer_session_with_no_customer_id_returns_invalid_session_error(self):
+    def test_customer_session_with_no_username_returns_invalid_session_error(self):
+        # No username means there's no way to recover or synthesise an id.
         cust, err = self.mod._resolve_customer({"role": "customer"}, "CUST-ANY")
         assert cust == ""
-        assert err == "Customer session invalid - no customer_id"
+        assert err == "Customer session invalid - no username"
 
 
 # ── /data fallback is gated against dev-system hijack ─────────────────────

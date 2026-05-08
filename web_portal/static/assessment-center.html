@@ -365,6 +365,8 @@
   let SESSION_CUSTOMER_ID = '';
   let SESSION_USERNAME = '';
   let SESSION_ROLE = '';
+  let SESSION_IS_SYNTHETIC = false;
+  let SESSION_DISPLAY_LABEL = '';
 
   async function _authFetch(path) {
     return fetch(path, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
@@ -397,6 +399,10 @@
         SESSION_CUSTOMER_ID = String(body.customer_id || '').trim();
         SESSION_USERNAME = String(body.username || '').trim();
         SESSION_ROLE = String(body.role || '').toLowerCase();
+        SESSION_IS_SYNTHETIC = !!body.customer_id_is_synthetic;
+        SESSION_DISPLAY_LABEL = String(body.display_label || body.username || '').trim();
+        // /me always returns a usable id for an authenticated user
+        // (real, recovered, or synthesised), so we can return early.
         if (SESSION_CUSTOMER_ID || body.is_admin) return body;
       }
     } catch (_) { /* fall through */ }
@@ -480,32 +486,43 @@
         ctxLabel.innerHTML = `Acting as <strong>${escHtml(SESSION_USERNAME)}</strong> (${escHtml(SESSION_ROLE)}). Pick a customer below; uploads attach to whoever you select.`;
       }
     } else {
-      // Non-admin: server-validated session is the only source of truth
-      // for the customer_id, period. URL params and localStorage are
-      // ignored to prevent the "Access denied on my own data" bug.
+      // Non-admin: the server-validated /me endpoint always gives us
+      // a usable customer_id (real, recovered, or synthesised
+      // USER:<email>), so the dropdown is never empty and the
+      // workbench is never deadlocked on missing customer records.
       const cid = SESSION_CUSTOMER_ID;
-      // Always render the option as the customer themselves, even when
-      // the canonical id isn't available yet, so the dropdown is never
-      // empty / opaque. The actual upload uses SESSION_CUSTOMER_ID
-      // exclusively, so showing 'self' as a label has no security risk.
-      const optionLabel = cid
-        ? `${cid} · ${SESSION_USERNAME || 'me'}`
-        : `${SESSION_USERNAME || 'me'} (resolving customer record…)`;
-      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(optionLabel)}</option>`;
+      const friendlyLabel = SESSION_IS_SYNTHETIC
+        ? `${SESSION_USERNAME || 'me'} (no formal customer record - using your account)`
+        : (cid
+            ? `${cid}${SESSION_USERNAME ? ' · ' + SESSION_USERNAME : ''}`
+            : (SESSION_USERNAME || 'me'));
+      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(friendlyLabel)}</option>`;
       sel.disabled = true;
       const meta = document.getElementById('picker-meta');
       if (meta) {
         meta.textContent = cid
-          ? `Signed in as ${SESSION_USERNAME} → ${cid}`
-          : `Signed in as ${SESSION_USERNAME} (customer linkage pending)`;
+          ? (SESSION_IS_SYNTHETIC
+              ? `Signed in as ${SESSION_USERNAME} (uploads attach to your account)`
+              : `Signed in as ${SESSION_USERNAME} → ${cid}`)
+          : `Signed in as ${SESSION_USERNAME}`;
       }
       if (ctxLabel) {
-        ctxLabel.innerHTML = cid
-          ? `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. All uploads attach to your account: <strong>${escHtml(cid)}</strong>.`
-          : (
-              `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong> but the system could not resolve your customer record. ` +
-              `<a href="#" onclick="ensureServerSession().then(loadCustomers); return false;" style="color:#1565c0;font-weight:600;">Try again</a>, log out and back in, or contact support if this keeps happening.`
-            );
+        if (SESSION_IS_SYNTHETIC) {
+          ctxLabel.innerHTML =
+            `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. ` +
+            `Your account is not yet linked to a formal customer record, so all your uploads ` +
+            `and analysis are stored under your username and will be migrated automatically once ` +
+            `the linkage is set up.`;
+        } else if (cid) {
+          ctxLabel.innerHTML =
+            `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. ` +
+            `All uploads attach to your account: <strong>${escHtml(cid)}</strong>.`;
+        } else {
+          ctxLabel.innerHTML =
+            `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. ` +
+            `<a href="#" onclick="ensureServerSession().then(loadCustomers).then(()=>onCustomerChange()); return false;" ` +
+            `style="color:#1565c0;font-weight:600;">Try again</a> if the workbench seems stuck.`;
+        }
       }
     }
   }
@@ -641,13 +658,16 @@
 
   // ── Documents picker ────────────────────────────────────────────────────
   async function loadDocuments() {
-    const cid = CURRENT_CUSTOMER;
+    const cid = _resolveCurrentCustomer();
     const list = document.getElementById('doc-list');
     if (!cid) {
-      list.innerHTML = '<div class="empty">Pick a customer first.</div>';
+      list.innerHTML = '<div class="empty">'
+        + (actingAsAdmin() ? 'Pick a customer first.' : 'Sign in again - your session has no customer link.')
+        + '</div>';
       CURRENT_DOCUMENTS = [];
       return;
     }
+    CURRENT_CUSTOMER = cid;
     list.innerHTML = '<div class="empty">Loading…</div>';
     try {
       const res = await api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/documents`);
@@ -678,9 +698,29 @@
     if (on) SELECTED_DOC_IDS.add(docId); else SELECTED_DOC_IDS.delete(docId);
   }
 
+  function _resolveCurrentCustomer() {
+    // Single helper used by every analysis / download / load path.
+    // Order: explicit picker selection > session-resolved id > username
+    // synthetic. Non-admin users always end up with a usable id so the
+    // workbench is never blocked on "Pick a customer first".
+    if (CURRENT_CUSTOMER) return CURRENT_CUSTOMER;
+    if (SESSION_CUSTOMER_ID) return SESSION_CUSTOMER_ID;
+    if (!actingAsAdmin() && SESSION_USERNAME) {
+      return 'USER:' + SESSION_USERNAME.toLowerCase();
+    }
+    return '';
+  }
+
   // ── Run analysis ────────────────────────────────────────────────────────
   async function runAnalysis() {
-    if (!CURRENT_CUSTOMER) { setStatus('analysis-status', 'Pick a customer first.', 'error'); return; }
+    const cid = _resolveCurrentCustomer();
+    if (!cid) {
+      setStatus('analysis-status',
+        actingAsAdmin() ? 'Pick a customer from the dropdown above.' : 'Sign in again - your session has no customer link.',
+        'error');
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
     const type = document.getElementById('analysis-type').value;
     const docIds = SELECTED_DOC_IDS.size > 0 ? Array.from(SELECTED_DOC_IDS) : null;
     setStatus('analysis-status', 'Running analysis…');
@@ -846,7 +886,14 @@
 
   // ── Download ────────────────────────────────────────────────────────────
   async function downloadReport(format) {
-    if (!CURRENT_CUSTOMER) { setStatus('analysis-status', 'Pick a customer first.', 'error'); return; }
+    const cid = _resolveCurrentCustomer();
+    if (!cid) {
+      setStatus('analysis-status',
+        actingAsAdmin() ? 'Pick a customer from the dropdown above.' : 'Sign in again - your session has no customer link.',
+        'error');
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
     const type = document.getElementById('analysis-type').value;
     const docIds = SELECTED_DOC_IDS.size > 0 ? Array.from(SELECTED_DOC_IDS) : null;
     setStatus('analysis-status', `Building ${format.toUpperCase()}…`);
@@ -988,10 +1035,19 @@
   // ── Customer change ─────────────────────────────────────────────────────
   async function onCustomerChange() {
     const sel = document.getElementById('customer-select');
-    CURRENT_CUSTOMER = sel.value;
+    // For a non-admin user the dropdown may render an empty option
+    // value while we await the server-validated id; fall through to
+    // the resolver so we never lose the active customer context.
+    CURRENT_CUSTOMER = sel.value || _resolveCurrentCustomer();
     setUrlCustomer(CURRENT_CUSTOMER);
     SELECTED_DOC_IDS.clear();
-    if (!CURRENT_CUSTOMER) { document.getElementById('doc-list').innerHTML = '<div class="empty">Pick a customer first.</div>'; return; }
+    if (!CURRENT_CUSTOMER) {
+      document.getElementById('doc-list').innerHTML =
+        '<div class="empty">'
+        + (actingAsAdmin() ? 'Pick a customer first.' : 'Sign in again - your session has no customer link.')
+        + '</div>';
+      return;
+    }
     try {
       const [profileRes, riskRes, chartsRes] = await Promise.all([
         api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/profile`),
@@ -1045,7 +1101,13 @@
       sel.value = SESSION_CUSTOMER_ID;
       setUrlCustomer(SESSION_CUSTOMER_ID);
     }
-    if (sel.value) onCustomerChange();
+    // Always run onCustomerChange for non-admins so the workbench
+    // commits a usable CURRENT_CUSTOMER (real or synthetic) and the
+    // analysis / download buttons are immediately functional. For
+    // admins we only run when a target is explicitly chosen.
+    if (sel.value || !actingAsAdmin()) {
+      await onCustomerChange();
+    }
     loadRegistry();
     loadBackfillStatus();
   })();
