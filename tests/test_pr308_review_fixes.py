@@ -170,6 +170,96 @@ class TestExportRuntimeErrorIsSanitised:
         assert "Unsupported export_format" in _json.loads(body.decode("utf-8"))["error"]
 
 
+# ── backfill_status sanitises its error path ─────────────────────────────
+
+class TestBackfillStatusErrorIsSanitised:
+    """The `backfill_status` method is called from a GET endpoint reachable
+    by every authenticated user. Any internal error from the document
+    listing must surface as a generic message - never as ``str(exc)`` -
+    so a hostile or unlucky caller cannot harvest filesystem paths or
+    SQLAlchemy connection strings.
+    """
+
+    def test_backfill_status_returns_generic_error_on_failure(self, tmp_path, monkeypatch):
+        from services.assessment_center_service import AssessmentCenterService
+        from services.document_processing_service import DocumentProcessingService
+
+        doc_svc = DocumentProcessingService(storage_root=str(tmp_path / "docs"))
+        center = AssessmentCenterService(
+            document_service=doc_svc,
+            fact_store_dir=str(tmp_path / "facts"),
+        )
+
+        # Force the document service listing to raise an error containing
+        # information that would normally be sensitive.
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError(
+                "could not connect to server: Connection refused "
+                "Is the server running on host \"db.internal\" "
+                "and accepting TCP/IP connections on port 5432? "
+                "[file=/var/lib/phins/secrets.json]"
+            )
+
+        monkeypatch.setattr(doc_svc, "list_documents", _boom)
+
+        result = center.backfill_status()
+        assert result["error"] == "Document listing unavailable"
+        # The original error string must not bleed into the response.
+        assert "Connection refused" not in str(result)
+        assert "5432" not in str(result)
+        assert "/var/lib/phins" not in str(result)
+        assert "db.internal" not in str(result)
+        # Other counters remain valid even on failure.
+        assert result["total_documents"] == 0
+        assert result["with_facts"] == 0
+        assert result["without_facts"] == 0
+
+
+# ── backfill limit semantics: None means MAX, not DEFAULT ────────────────
+
+class TestBackfillLimitSemantics:
+    """Bugbot review flagged that ``limit=None`` was silently falling back
+    to ``BACKFILL_DEFAULT_LIMIT`` (200), which was strictly fewer than an
+    explicit ``limit=500``. ``limit=None`` now means "process as many as
+    we can" up to ``BACKFILL_MAX_LIMIT`` (still bounded by the wall-clock
+    time budget so the worker can't hang).
+    """
+
+    def test_none_limit_uses_max_not_default(self, tmp_path):
+        from services.assessment_center_service import AssessmentCenterService
+        from services.document_processing_service import DocumentProcessingService
+
+        center = AssessmentCenterService(
+            document_service=DocumentProcessingService(storage_root=str(tmp_path / "d")),
+            fact_store_dir=str(tmp_path / "f"),
+        )
+        result = center.backfill_documents()
+        assert result["limit_applied"] == center.BACKFILL_MAX_LIMIT
+
+    def test_explicit_limit_is_clamped_to_max(self, tmp_path):
+        from services.assessment_center_service import AssessmentCenterService
+        from services.document_processing_service import DocumentProcessingService
+
+        center = AssessmentCenterService(
+            document_service=DocumentProcessingService(storage_root=str(tmp_path / "d")),
+            fact_store_dir=str(tmp_path / "f"),
+        )
+        # 99999 must be clamped down to BACKFILL_MAX_LIMIT.
+        result = center.backfill_documents(limit=99999)
+        assert result["limit_applied"] == center.BACKFILL_MAX_LIMIT
+
+    def test_invalid_limit_falls_back_to_default(self, tmp_path):
+        from services.assessment_center_service import AssessmentCenterService
+        from services.document_processing_service import DocumentProcessingService
+
+        center = AssessmentCenterService(
+            document_service=DocumentProcessingService(storage_root=str(tmp_path / "d")),
+            fact_store_dir=str(tmp_path / "f"),
+        )
+        result = center.backfill_documents(limit="not-a-number")  # type: ignore[arg-type]
+        assert result["limit_applied"] == center.BACKFILL_DEFAULT_LIMIT
+
+
 # ── /data fallback is gated against dev-system hijack ─────────────────────
 
 class TestDataVolumeGate:

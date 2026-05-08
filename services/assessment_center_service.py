@@ -714,10 +714,21 @@ class AssessmentCenterService:
             except Exception as exc:
                 logger.warning("backfill_documents listing failed: %s", exc)
 
-        # Resolve the effective per-call cap. We always apply BACKFILL_MAX_LIMIT
-        # so a buggy or hostile caller cannot hang the worker.
-        effective_limit = self.BACKFILL_DEFAULT_LIMIT
-        if limit is not None:
+        # Resolve the effective per-call cap.
+        #
+        # Semantics chosen to remove the asymmetry the bug review flagged:
+        #   - ``limit=None`` (caller did not specify) means "process as many
+        #     as we can" and is bounded by ``BACKFILL_MAX_LIMIT`` plus the
+        #     wall-clock ``BACKFILL_TIME_BUDGET_S``. Previously this silently
+        #     fell back to ``BACKFILL_DEFAULT_LIMIT`` (200) which meant a
+        #     "no limit" request processed *fewer* docs than an explicit
+        #     ``limit=500``.
+        #   - ``limit=N`` is clamped to ``[1, BACKFILL_MAX_LIMIT]``.
+        #   - ``limit`` parsing failures fall back to ``BACKFILL_DEFAULT_LIMIT``
+        #     to preserve the conservative behaviour for malformed input.
+        if limit is None:
+            effective_limit = self.BACKFILL_MAX_LIMIT
+        else:
             try:
                 effective_limit = max(1, min(int(limit), self.BACKFILL_MAX_LIMIT))
             except (TypeError, ValueError):
@@ -810,12 +821,18 @@ class AssessmentCenterService:
                     break
                 page += 1
         except Exception as exc:
+            # SECURITY: This endpoint is reachable by every authenticated
+            # user (admins see everything, customers see their own
+            # backfill status). The exception object can carry filesystem
+            # paths, SQLAlchemy connection strings, or library internals,
+            # so we never echo str(exc) back to the caller. Operators
+            # already get the full diagnostics from logger.warning above.
             logger.warning("backfill_status listing failed: %s", exc)
             return {
                 "total_documents": 0,
                 "with_facts": 0,
                 "without_facts": 0,
-                "error": str(exc),
+                "error": "Document listing unavailable",
             }
 
         summaries = self.get_document_assessments(ids) if ids else {}
