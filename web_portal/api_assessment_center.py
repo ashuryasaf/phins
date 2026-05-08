@@ -276,22 +276,6 @@ _UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
         "persistent": True,
     },
     {
-        "path": "/api/assessment-center/customers",
-        "method": "GET",
-        "module": "web_portal/api_assessment_center.py",
-        "purpose": "Admin: list customers with assessment facts",
-        "assessment_center": True,
-        "persistent": True,
-    },
-    {
-        "path": "/api/assessment-center/backfill-status",
-        "method": "GET",
-        "module": "web_portal/api_assessment_center.py",
-        "purpose": "How many existing documents still lack assessment facts",
-        "assessment_center": True,
-        "persistent": True,
-    },
-    {
         "path": "/api/assessment-center/backfill",
         "method": "POST",
         "module": "web_portal/api_assessment_center.py",
@@ -312,22 +296,6 @@ _UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
         "method": "POST",
         "module": "web_portal/api_assessment_center.py",
         "purpose": "Downloadable analysis report (CSV / XLSX / PDF)",
-        "assessment_center": True,
-        "persistent": True,
-    },
-    {
-        "path": "/api/assessment-center/customer/<id>/describe",
-        "method": "GET",
-        "module": "web_portal/api_assessment_center.py",
-        "purpose": "Describe-data-with-data view organized by relevance category",
-        "assessment_center": True,
-        "persistent": True,
-    },
-    {
-        "path": "/api/assessment-center/customer/<id>/documents",
-        "method": "GET",
-        "module": "web_portal/api_assessment_center.py",
-        "purpose": "Documents owned by the customer with per-doc fact counts",
         "assessment_center": True,
         "persistent": True,
     },
@@ -712,7 +680,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             requested_customer = str(body.get("customer_id") or "").strip() or None
             try:
                 limit_raw = body.get("limit")
-                limit_value = int(limit_raw) if limit_raw not in (None, "", 0) else None
+                limit_value = int(limit_raw) if limit_raw not in (None, "") else None
             except (TypeError, ValueError):
                 return 400, {"error": "limit must be an integer"}
             force = bool(body.get("force"))

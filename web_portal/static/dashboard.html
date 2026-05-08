@@ -3628,7 +3628,7 @@
           if (result.status === 'rejected') {
             const funcNames = ['loadWalletBalance', 'loadPolicies', 'loadClaims', 'loadBillingInfo', 
                               'loadTransactionHistory', 'loadCustomerNFTs', 'loadInvestmentPortfolio', 
-                              'loadPortfolioData', 'loadPipelineInfo'];
+                              'loadPortfolioData', 'loadPipelineInfo', 'refreshAssessmentBadge'];
             console.warn(`[Dashboard Init] ${funcNames[index]} failed:`, result.reason);
           }
         });
