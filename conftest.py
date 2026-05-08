@@ -133,6 +133,13 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     except Exception:
         pass
 
+    # Reset assessment center in-memory state so customer 360 facts don't bleed between tests.
+    try:
+        from services.assessment_center_service import reset_assessment_center
+        reset_assessment_center()
+    except Exception:
+        pass
+
     # Reset shared accounting engine so accounting ledger tests stay isolated.
     try:
         from accounting_engine import reset_accounting_engine
