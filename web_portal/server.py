@@ -15357,6 +15357,7 @@ For claims or questions, please contact:
                 document_type_filter = qs.get('document_type', [None])[0]
 
                 docs = []
+                persistent_ids: list[str] = []
                 for doc in POLICY_DOCUMENTS.values():
                     doc_customer_id = resolve_document_owner_customer_id(doc)
                     # Permission: customers can only see their own documents
@@ -15371,6 +15372,9 @@ For claims or questions, please contact:
                         continue
                     if document_type_filter and doc.get('document_type') != document_type_filter:
                         continue
+                    persistent_id = doc.get('persistent_doc_id') or doc.get('id')
+                    if persistent_id:
+                        persistent_ids.append(persistent_id)
                     docs.append({
                         'id': doc.get('id'),
                         'name': doc.get('name'),
@@ -15383,9 +15387,27 @@ For claims or questions, please contact:
                         'uploaded_at': doc.get('uploaded_at'),
                         'uploaded_by': doc.get('uploaded_by'),
                         'uploaded_by_customer': doc_customer_id,
-                        'has_data': bool(doc.get('data')),
+                        'has_data': bool(doc.get('data')) or bool(doc.get('persistent_doc_id')),
                         'ai_analysis': doc.get('ai_analysis'),
+                        'assessment_summary': doc.get('assessment_summary'),
+                        'persistent_doc_id': doc.get('persistent_doc_id'),
                     })
+
+                # Hydrate per-document assessment facts from the unified store.
+                # The mirror dict may not yet contain summaries written by
+                # legacy code paths so we always cross-reference the live
+                # service. Errors here are non-fatal because the documents
+                # themselves are fully usable without the enriched summary.
+                try:
+                    from services.assessment_center_service import get_assessment_center
+                    ac_summary = get_assessment_center().get_document_assessments(persistent_ids)
+                    for entry in docs:
+                        key = entry.get('persistent_doc_id') or entry.get('id')
+                        live = ac_summary.get(key) if key else None
+                        if live and live.get('facts_extracted'):
+                            entry['assessment_summary'] = live
+                except Exception as ac_err:
+                    print(f"[assessment-center] List enrichment skipped: {ac_err}")
 
                 docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
                 self._set_json_headers(200)
@@ -30555,6 +30577,8 @@ For claims or questions, please contact:
                         'document_type': document_type,
                         'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
                         'uploaded_at': doc['uploaded_at'],
+                        'assessment_summary': doc.get('assessment_summary'),
+                        'persistent_doc_id': doc.get('persistent_doc_id'),
                     })
                     print(
                         f"   📄 Stored document {doc['id']}: {fname} ({doc['size']} bytes) "

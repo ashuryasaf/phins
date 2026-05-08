@@ -101,6 +101,14 @@ _UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
         "persistent": True,
     },
     {
+        "path": "/api/assessment-center/customers",
+        "method": "GET",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "Admin: list customers with assessment facts",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
         "path": "/api/doc-service/upload",
         "method": "POST",
         "module": "web_portal/server.py",
@@ -222,6 +230,19 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
         if not session:
             return 401, {"error": "Authentication required"}
         return 200, _registry_payload()
+
+    if path == "/api/assessment-center/customers":
+        if not session:
+            return 401, {"error": "Authentication required"}
+        role = str(session.get("role") or "").lower()
+        if role not in _ADMIN_ROLES:
+            return 403, {"error": "Admin role required"}
+        try:
+            rows = _service().list_customers_with_facts()
+            return 200, {"items": rows, "total": len(rows)}
+        except Exception as exc:
+            logger.exception("assessment-center customers GET failed: %s", exc)
+            return 500, {"error": "Assessment center error", "details": str(exc)}
 
     if not path.startswith("/api/assessment-center/customer/"):
         return None

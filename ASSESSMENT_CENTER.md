@@ -165,6 +165,56 @@ SHA-256 envelope.
 Live registry of every upload route on the platform plus whether each one is
 already routed through the Assessment Center.
 
+### GET `/api/assessment-center/customers` (admin-only)
+
+Lists every customer with assessment facts on file plus their fact count,
+linked document count, breakdown by `fact_type`, latest capture timestamp
+and current risk score / level. Used by the Assessment Center dashboard to
+populate the admin customer picker.
+
+---
+
+## Where to see the changes in the UI
+
+After uploading a document you should now see assessment progress in **four**
+places:
+
+1. **`/documents.html` upload status banner** - the green confirmation now
+   reads e.g. `🧠 Extracted 14 facts → Customer 360 updated (identity:1,
+   medical_condition:3, insurance:6, savings:4). View Assessment Center →`.
+2. **`/documents.html` documents table** - a new `360° Facts` column shows a
+   `🧠 N facts` chip per document; clicking it opens the Assessment Center
+   pre-filtered to that customer.
+3. **Customer dashboard (`/dashboard.html`)** - a new green
+   `🧠 Assessment Center` action card displays live `N facts` and risk level.
+4. **Admin dashboard (`/admin.html`)** - a `🧠 Assessment Center` stat tile
+   shows the total number of customers with facts, the platform-wide fact
+   count and the high-risk customer count.
+
+### `/assessment-center.html` (new dedicated page)
+
+Available to every logged-in role from the nav bar of the customer
+dashboard, admin portal, underwriter dashboard and documents page. It
+provides:
+
+- a customer picker (admin only; customers see only themselves);
+- four snapshot tiles (facts on file, risk score, documents linked,
+  external rows);
+- four Customer 360 cards (identity, contact, medical, insurance &
+  savings);
+- a risk indicator panel with weighted contributors;
+- chart-ready data series (risk breakdown, condition distribution,
+  external sources, coverage / savings) rendered as in-page bar charts
+  with no external libraries;
+- an external sources card listing each Mislaka / Swiftness row verbatim
+  for full provenance;
+- a fact table filterable by `fact_type` with a column linking back to the
+  source document SHA-256;
+- a Mislaka quick-link form that calls `/api/assessment-center/mislaka/link`
+  for the picked customer;
+- a re-uploadable pack export button that downloads the SHA-256-sealed JSON;
+- the live upload endpoint registry (admin only).
+
 ---
 
 ## Upload endpoint registry

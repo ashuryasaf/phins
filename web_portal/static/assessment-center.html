@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHINS — Assessment Center</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a237e; }
+
+    .phins-header {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      color: white;
+      box-shadow: 0 2px 12px rgba(13,71,161,0.3);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .phins-header-inner {
+      max-width: 1280px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: white; }
+    .phins-logo-icon {
+      width: 40px; height: 40px; background: rgba(255,255,255,0.2);
+      border-radius: 10px; display: flex; align-items: center;
+      justify-content: center; font-size: 1.4rem;
+    }
+    .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; }
+    .phins-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .phins-nav a {
+      color: rgba(255,255,255,0.85); text-decoration: none;
+      padding: 6px 14px; border-radius: 8px; font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+    .phins-nav a:hover, .phins-nav a.active {
+      background: rgba(255,255,255,0.2); color: white;
+    }
+    .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%) !important; color: white !important; font-weight: 600 !important; }
+
+    .page-container { max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
+    .page-title { font-size: 1.85rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
+    .page-subtitle { color: #546e7a; margin-bottom: 1.5rem; font-size: 0.95rem; }
+
+    .card { background: white; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+    .card-title { font-size: 1.05rem; font-weight: 600; color: #1a237e; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .card-title .meta { font-size: 0.78rem; color: #78909c; font-weight: 400; margin-left: auto; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    @media (max-width: 900px) {
+      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    }
+
+    .stat-tile {
+      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
+      color: white; padding: 1rem; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(21,101,192,0.25);
+    }
+    .stat-tile.warn  { background: linear-gradient(135deg, #f57c00 0%, #fb8c00 100%); }
+    .stat-tile.bad   { background: linear-gradient(135deg, #c62828 0%, #d32f2f 100%); }
+    .stat-tile.good  { background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); }
+    .stat-tile.muted { background: linear-gradient(135deg, #455a64 0%, #546e7a 100%); }
+    .stat-tile .label { font-size: 0.78rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-tile .value { font-size: 1.85rem; font-weight: 700; margin-top: 4px; }
+    .stat-tile .sub   { font-size: 0.78rem; opacity: 0.85; margin-top: 4px; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 600; background: #eceff1; color: #455a64; }
+    .badge.high     { background: #ffcdd2; color: #b71c1c; }
+    .badge.veryhigh { background: #b71c1c; color: white; }
+    .badge.medium   { background: #fff3e0; color: #ef6c00; }
+    .badge.low      { background: #e8f5e9; color: #2e7d32; }
+    .badge.minimal  { background: #e3f2fd; color: #1565c0; }
+    .badge.unknown  { background: #eceff1; color: #546e7a; }
+
+    .chip { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 0.78rem; background: #e3f2fd; color: #1565c0; margin: 2px; font-weight: 500; }
+    .chip-red { background: #ffebee; color: #b71c1c; }
+    .chip-green { background: #e8f5e9; color: #2e7d32; }
+    .chip-amber { background: #fff3e0; color: #ef6c00; }
+
+    table.list { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    table.list th, table.list td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eceff1; }
+    table.list th { color: #546e7a; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    table.list tr:hover td { background: #f8fbff; }
+
+    .bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; margin: 4px 0; }
+    .bar-row .label { flex: 0 0 200px; color: #455a64; word-break: break-word; }
+    .bar-row .bar { flex: 1; height: 14px; background: #eceff1; border-radius: 7px; overflow: hidden; }
+    .bar-row .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #1565c0, #42a5f5); }
+    .bar-row .value { flex: 0 0 80px; text-align: right; font-weight: 600; color: #1a237e; }
+
+    select, input { padding: 9px 11px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 0.9rem; }
+    button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: none; background: #1565c0; color: white; font-weight: 600; font-size: 0.85rem; }
+    button.ghost { background: white; color: #1565c0; border: 1px solid #1565c0; }
+    button.warn  { background: #f57c00; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .empty {
+      padding: 2rem; text-align: center; color: #78909c;
+      border: 2px dashed #cfd8dc; border-radius: 12px; background: #fafbfc;
+    }
+
+    .source-pill { display: inline-block; padding: 2px 8px; background: #f3e5f5; color: #6a1b9a; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-right: 4px; }
+    .src-mislaka { background: #e8eaf6; color: #283593; }
+    .src-document { background: #e3f2fd; color: #1565c0; }
+    .src-image { background: #fff3e0; color: #e65100; }
+
+    .integrity-ok  { color: #2e7d32; font-weight: 600; }
+    .integrity-bad { color: #c62828; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<header class="phins-header">
+  <div class="phins-header-inner">
+    <a href="/dashboard.html" class="phins-logo">
+      <div class="phins-logo-icon">🛡️</div>
+      <span class="phins-logo-text">PHINS</span>
+    </a>
+    <nav class="phins-nav">
+      <a href="/dashboard.html">Dashboard</a>
+      <a href="/risk-reports-dashboard.html">📊 Reports</a>
+      <a href="/risk-dashboard.html">🎯 Risk</a>
+      <a href="/documents.html">📁 Documents</a>
+      <a href="/assessment-center.html" class="active">🧠 Assessment</a>
+      <a href="#" class="btn-logout" onclick="logout()">Logout</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page-container">
+  <div class="page-title">🧠 Assessment Center</div>
+  <div class="page-subtitle">
+    Unified Customer 360, risk indicators and statistical review.
+    Every uploaded document and ingested clearinghouse fact lands here so the
+    platform can run a single source of truth for underwriting and risk.
+  </div>
+
+  <!-- Customer picker -->
+  <div class="card" id="picker-card">
+    <div class="card-title">
+      🎯 Select customer
+      <span class="meta" id="picker-meta"></span>
+    </div>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+      <select id="customer-select" style="min-width: 320px;">
+        <option value="">— loading customers —</option>
+      </select>
+      <button id="refresh-btn" class="ghost" onclick="loadAll()">↻ Refresh</button>
+      <button id="export-btn" class="ghost" onclick="exportPack()">⬇ Export pack</button>
+      <span id="status-msg" style="font-size: 0.85rem;"></span>
+    </div>
+    <div id="picker-empty" class="empty" style="display:none; margin-top: 12px;">
+      No customers with assessment facts yet. Upload documents or call
+      <code>/api/assessment-center/mislaka/link</code> to seed data.
+    </div>
+  </div>
+
+  <!-- Snapshot tiles -->
+  <div class="grid-4" id="tiles" style="display:none;">
+    <div class="stat-tile" id="tile-facts">
+      <div class="label">Facts on file</div>
+      <div class="value" id="tile-facts-value">—</div>
+      <div class="sub" id="tile-facts-sub">across uploads + external sources</div>
+    </div>
+    <div class="stat-tile good" id="tile-risk">
+      <div class="label">Risk score</div>
+      <div class="value" id="tile-risk-value">—</div>
+      <div class="sub" id="tile-risk-sub">level</div>
+    </div>
+    <div class="stat-tile muted" id="tile-docs">
+      <div class="label">Documents linked</div>
+      <div class="value" id="tile-docs-value">—</div>
+      <div class="sub" id="tile-docs-sub">all SHA-256 verified</div>
+    </div>
+    <div class="stat-tile" id="tile-external">
+      <div class="label">External rows</div>
+      <div class="value" id="tile-external-value">—</div>
+      <div class="sub" id="tile-external-sub">Mislaka + connected providers</div>
+    </div>
+  </div>
+
+  <!-- Customer 360 -->
+  <div class="grid-2" id="profile-grid" style="display:none;">
+    <div class="card">
+      <div class="card-title">🪪 Identity</div>
+      <div id="profile-identity"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📍 Contact</div>
+      <div id="profile-contact"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🏥 Medical 360</div>
+      <div id="profile-medical"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">💼 Insurance &amp; Savings</div>
+      <div id="profile-financial"></div>
+    </div>
+  </div>
+
+  <!-- Risk + charts -->
+  <div class="grid-2" id="risk-grid" style="display:none;">
+    <div class="card">
+      <div class="card-title">⚠️ Risk indicators
+        <span class="meta" id="risk-meta"></span>
+      </div>
+      <div id="risk-contributors"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📊 Charts (data series)</div>
+      <div id="charts-container"></div>
+    </div>
+  </div>
+
+  <!-- External sources -->
+  <div class="card" id="external-card" style="display:none;">
+    <div class="card-title">🌐 External fact sources
+      <span class="meta">Clearinghouse rows are stored verbatim and never re-aggregated upstream.</span>
+    </div>
+    <div id="external-sources"></div>
+  </div>
+
+  <!-- Fact table -->
+  <div class="card" id="facts-card" style="display:none;">
+    <div class="card-title">🧾 All facts
+      <span class="meta">
+        <select id="fact-type-filter" onchange="renderFacts()">
+          <option value="">all types</option>
+        </select>
+      </span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="list" id="facts-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Label</th>
+            <th>Value</th>
+            <th>Source</th>
+            <th>Document</th>
+            <th>Confidence</th>
+            <th>Captured</th>
+          </tr>
+        </thead>
+        <tbody id="facts-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Mislaka -->
+  <div class="card" id="mislaka-card">
+    <div class="card-title">🇮🇱 Pull Mislaka facts</div>
+    <p style="font-size: 0.85rem; color: #546e7a; margin: 0 0 12px;">
+      The Mislaka (מסלקה) clearinghouse already returns authoritative policy rows.
+      We push every row into the Assessment Center as a fact and let this page
+      perform the only statistical review.
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <input type="text" id="mislaka-id" placeholder="Israeli ID (9 digits)" maxlength="9" style="width:200px;">
+      <select id="mislaka-product">
+        <option value="all">All products</option>
+        <option value="pension">Pension</option>
+        <option value="provident">Provident fund</option>
+        <option value="education_fund">Education fund</option>
+        <option value="life_insurance">Life insurance</option>
+        <option value="health_insurance">Health insurance</option>
+        <option value="managers_insurance">Managers insurance</option>
+        <option value="savings">Savings</option>
+      </select>
+      <button onclick="linkMislaka()">🔗 Link to Customer 360</button>
+      <span id="mislaka-status" style="font-size:0.85rem;"></span>
+    </div>
+  </div>
+
+  <!-- Upload registry (admin only) -->
+  <div class="card" id="registry-card" style="display:none;">
+    <div class="card-title">📡 Upload endpoint registry
+      <span class="meta">Live - fetched from <code>/api/assessment-center/upload-endpoints</code></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="list" id="registry-table">
+        <thead>
+          <tr><th>Method</th><th>Path</th><th>Module</th><th>Purpose</th><th>Pipeline</th><th>Persistent</th></tr>
+        </thead>
+        <tbody id="registry-tbody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:0.78rem; color:#78909c; margin-top:8px;" id="registry-notes"></div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = localStorage.getItem('phins_token') || '';
+  const SESSION = (() => {
+    try { return JSON.parse(localStorage.getItem('phins_session') || '{}'); }
+    catch { return {}; }
+  })();
+  const ROLE = String(SESSION.role || '').toLowerCase();
+  const ADMIN_ROLES = new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims', 'claims_agent', 'claims_manager', 'underwriting_admin']);
+  const IS_ADMIN = ADMIN_ROLES.has(ROLE);
+
+  function logout() {
+    localStorage.removeItem('phins_token');
+    localStorage.removeItem('phins_session');
+    window.location.href = '/login.html';
+  }
+
+  if (!TOKEN) { window.location.href = '/login.html'; }
+
+  function api(path, opts) {
+    return fetch(path, {
+      headers: {
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json',
+        ...((opts||{}).headers || {})
+      },
+      ...opts
+    });
+  }
+
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function show(id, on) { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
+  function status(msg, kind) {
+    const el = document.getElementById('status-msg');
+    el.textContent = msg || '';
+    el.style.color = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#546e7a');
+  }
+
+  function urlCustomer() {
+    const url = new URL(window.location.href);
+    return url.searchParams.get('customer_id') || '';
+  }
+
+  function setUrlCustomer(cid) {
+    const url = new URL(window.location.href);
+    if (cid) url.searchParams.set('customer_id', cid);
+    else url.searchParams.delete('customer_id');
+    window.history.replaceState({}, '', url);
+  }
+
+  let CURRENT_CUSTOMER = '';
+  let LAST_FACTS = [];
+
+  // ── Customer picker ─────────────────────────────────────────────────────
+  async function loadCustomers() {
+    const sel = document.getElementById('customer-select');
+    if (IS_ADMIN) {
+      try {
+        const res = await api('/api/assessment-center/customers');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const items = json.items || [];
+        if (items.length === 0) {
+          sel.innerHTML = '<option value="">— no customers with facts yet —</option>';
+          show('picker-empty', true);
+          return;
+        }
+        sel.innerHTML = items.map(it => {
+          const lvl = it.risk_level || 'minimal';
+          const score = ((it.risk_score || 0) * 100).toFixed(0);
+          return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}% (${escHtml(lvl)})</option>`;
+        }).join('');
+        show('picker-empty', false);
+        document.getElementById('picker-meta').textContent = `${items.length} customer(s) with facts on file`;
+      } catch (e) {
+        sel.innerHTML = '<option value="">— failed to load customer list —</option>';
+        status('Could not load customers: ' + e.message, 'error');
+      }
+    } else {
+      const cid = SESSION.customer_id || urlCustomer();
+      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(cid || 'self')}</option>`;
+      sel.disabled = true;
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────
+  function tile(idValue, idSub, value, sub, kind) {
+    document.getElementById(idValue).textContent = value;
+    document.getElementById(idSub).textContent = sub;
+    if (kind) {
+      const tileEl = document.getElementById(idValue).closest('.stat-tile');
+      tileEl.classList.remove('good', 'warn', 'bad', 'muted');
+      if (kind !== 'default') tileEl.classList.add(kind);
+    }
+  }
+
+  function renderProfile(profile) {
+    show('profile-grid', true);
+
+    const id = profile.identity || {};
+    const contact = profile.contact || {};
+    const med = profile.medical || {};
+
+    const idHtml = (id.id_numbers || []).length
+      ? id.id_numbers.map(n => `<div><span class="chip">${escHtml(n.country || '?')}</span> <strong>${escHtml(n.value)}</strong> <small style="color:#78909c;">(${escHtml(n.id_type || '')})</small></div>`).join('')
+      : '<div class="empty" style="padding:12px;">No identity numbers extracted yet.</div>';
+    const namesHtml = (id.full_names || []).map(n => `<span class="chip">${escHtml(n)}</span>`).join('');
+    const dobHtml = (id.dates_of_birth || []).map(d => `<span class="chip">${escHtml(d)}</span>`).join('');
+    document.getElementById('profile-identity').innerHTML = idHtml + (
+      namesHtml || dobHtml
+        ? `<div style="margin-top:10px;">${namesHtml}${dobHtml}</div>`
+        : ''
+    );
+
+    const renderList = (arr, cls) =>
+      (arr && arr.length) ? arr.map(v => `<span class="chip ${cls || ''}">${escHtml(typeof v === 'string' ? v : JSON.stringify(v))}</span>`).join('') : '<small style="color:#90a4ae;">none</small>';
+    document.getElementById('profile-contact').innerHTML = `
+      <div><strong>Addresses</strong><div>${renderList(contact.addresses)}</div></div>
+      <div style="margin-top:8px;"><strong>Phones</strong><div>${renderList(contact.phones)}</div></div>
+      <div style="margin-top:8px;"><strong>Emails</strong><div>${renderList(contact.emails)}</div></div>
+    `;
+
+    const conds = renderList(med.conditions, 'chip-red');
+    const meds  = renderList(med.medications, 'chip-amber');
+    const allg  = renderList(med.allergies, 'chip-amber');
+    const vitals = (med.vital_signs || []).map(v => `<span class="chip">${escHtml(v.label)}: <strong>${escHtml(v.value)}</strong></span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    document.getElementById('profile-medical').innerHTML = `
+      <div><strong>Conditions</strong><div>${conds}</div></div>
+      <div style="margin-top:8px;"><strong>Medications</strong><div>${meds}</div></div>
+      <div style="margin-top:8px;"><strong>Allergies</strong><div>${allg}</div></div>
+      <div style="margin-top:8px;"><strong>Vital signs</strong><div>${vitals}</div></div>
+    `;
+
+    const ins = (profile.insurance_indicators || []).map(i => `<div class="chip">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    const sav = (profile.savings_indicators || []).map(i => `<div class="chip chip-green">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    const refs = (profile.policy_references || []).map(r => `<span class="chip">${escHtml(r)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    document.getElementById('profile-financial').innerHTML = `
+      <div><strong>Insurance signals</strong><div>${ins}</div></div>
+      <div style="margin-top:8px;"><strong>Savings signals</strong><div>${sav}</div></div>
+      <div style="margin-top:8px;"><strong>Policy / claim refs</strong><div>${refs}</div></div>
+    `;
+
+    const di = profile.data_integrity || {};
+    document.getElementById('tile-docs-value').textContent = (di.documents || []).length;
+    document.getElementById('tile-docs-sub').innerHTML = `<span class="integrity-ok">✓ ${ (di.sha256_set || []).length } SHA-256 hashes</span>`;
+  }
+
+  function renderRisk(risk) {
+    show('risk-grid', true);
+    document.getElementById('risk-meta').textContent = `Computed at ${escHtml(risk.computed_at || '')}`;
+    const lvl = risk.risk_level || 'minimal';
+    const score = (risk.risk_score || 0) * 100;
+    tile('tile-risk-value', 'tile-risk-sub', score.toFixed(0) + '%', `level: ${lvl}`,
+      lvl === 'very_high' ? 'bad' : lvl === 'high' ? 'warn' : (lvl === 'medium' ? 'warn' : 'good'));
+
+    const contribs = (risk.contributors || []);
+    if (contribs.length === 0) {
+      document.getElementById('risk-contributors').innerHTML = '<div class="empty" style="padding:12px;">No risk contributors yet.</div>';
+      return;
+    }
+    const max = contribs.reduce((m, c) => Math.max(m, c.weight || 0), 0.01);
+    document.getElementById('risk-contributors').innerHTML = contribs
+      .sort((a, b) => (b.weight || 0) - (a.weight || 0))
+      .map(c => {
+        const pct = ((c.weight || 0) / max) * 100;
+        return `
+          <div class="bar-row">
+            <div class="label"><span class="badge">${escHtml(c.factor)}</span> ${escHtml(c.value)}</div>
+            <div class="bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+            <div class="value">+${(c.weight || 0).toFixed(2)}</div>
+          </div>`;
+      }).join('');
+  }
+
+  function renderChart(title, series) {
+    if (!series || !series.length) {
+      return `<div style="margin-bottom:14px;"><strong>${escHtml(title)}</strong><div class="empty" style="padding:10px; margin-top:4px;">no data</div></div>`;
+    }
+    const max = series.reduce((m, e) => Math.max(m, Number(e.value || 0)), 0.01);
+    return `
+      <div style="margin-bottom:18px;">
+        <strong>${escHtml(title)}</strong>
+        ${series.slice(0, 12).map(e => {
+          const pct = (Number(e.value || 0) / max) * 100;
+          return `<div class="bar-row">
+            <div class="label">${escHtml(e.label)}</div>
+            <div class="bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+            <div class="value">${typeof e.value === 'number' ? e.value.toLocaleString() : escHtml(e.value)}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
+
+  function renderCharts(charts) {
+    const c = charts.charts || {};
+    document.getElementById('charts-container').innerHTML =
+      renderChart('Risk breakdown', c.risk_breakdown) +
+      renderChart('Condition distribution', c.condition_distribution) +
+      renderChart('External source records', c.external_sources) +
+      renderChart('Coverage signals', c.coverage_distribution) +
+      renderChart('Savings signals', c.savings_distribution);
+    const totals = charts.totals || {};
+    document.getElementById('tile-external-value').textContent = totals.external_records || 0;
+    document.getElementById('tile-external-sub').textContent = totals.coverage_items
+      ? `${totals.coverage_items} coverage items, ${totals.savings_total ? '$' + Number(totals.savings_total).toLocaleString() : '0'} savings`
+      : 'no external records yet';
+  }
+
+  function renderExternalSources(profile) {
+    const ext = profile.external_sources || {};
+    const keys = Object.keys(ext);
+    if (keys.length === 0) {
+      show('external-card', false);
+      return;
+    }
+    show('external-card', true);
+    document.getElementById('external-sources').innerHTML = keys.map(src => `
+      <div style="margin-bottom:10px;">
+        <span class="source-pill src-${escHtml(src)}">${escHtml(src)}</span>
+        <span style="color:#546e7a;">${ext[src].length} record(s)</span>
+        <table class="list" style="margin-top:6px;">
+          <thead><tr><th>Type</th><th>Label</th><th>Value</th><th>Row</th></tr></thead>
+          <tbody>${ext[src].slice(0, 10).map(r => `
+            <tr>
+              <td><span class="badge">${escHtml(r.fact_type)}</span></td>
+              <td>${escHtml(r.label || '')}</td>
+              <td>${escHtml(r.value || '')}</td>
+              <td><code style="font-size:0.72rem;color:#546e7a;">${escHtml(JSON.stringify(r.row || {}).slice(0, 80))}…</code></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('');
+  }
+
+  function renderFacts() {
+    const filter = document.getElementById('fact-type-filter').value;
+    const rows = filter ? LAST_FACTS.filter(f => f.fact_type === filter) : LAST_FACTS;
+    document.getElementById('facts-tbody').innerHTML = rows.slice(0, 500).map(f => {
+      const sourceCls = f.source === 'mislaka' ? 'src-mislaka' : (f.source === 'image_analysis' ? 'src-image' : 'src-document');
+      const docLink = f.source_document_id
+        ? `<a href="/documents.html" title="${escHtml(f.source_document_sha256 || '')}">${escHtml(f.source_document_id)}</a>`
+        : '—';
+      let value = f.value;
+      if (typeof value === 'object' && value !== null) value = JSON.stringify(value);
+      return `<tr>
+        <td><span class="badge">${escHtml(f.fact_type)}</span></td>
+        <td>${escHtml(f.label || '')}</td>
+        <td>${escHtml(value)}</td>
+        <td><span class="source-pill ${sourceCls}">${escHtml(f.source || '')}</span></td>
+        <td>${docLink}</td>
+        <td>${(Number(f.confidence || 0) * 100).toFixed(0)}%</td>
+        <td style="font-size:0.72rem; color:#78909c;">${escHtml(f.captured_at || '')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Loaders ────────────────────────────────────────────────────────────
+  async function loadAll() {
+    const cid = document.getElementById('customer-select').value;
+    if (!cid) { status('Pick a customer first.', 'error'); return; }
+    CURRENT_CUSTOMER = cid;
+    setUrlCustomer(cid);
+    status('Loading…');
+
+    show('tiles', true);
+    show('profile-grid', false);
+    show('risk-grid', false);
+    show('external-card', false);
+    show('facts-card', false);
+
+    try {
+      const [profileRes, riskRes, factsRes, chartsRes] = await Promise.all([
+        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/profile`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/risk-indicators`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/facts`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/charts`),
+      ]);
+
+      if (!profileRes.ok) throw new Error('profile HTTP ' + profileRes.status);
+      const profile = await profileRes.json();
+      const risk = riskRes.ok ? await riskRes.json() : { risk_score: 0, risk_level: 'unknown', contributors: [] };
+      const facts = factsRes.ok ? (await factsRes.json()).items || [] : [];
+      const charts = chartsRes.ok ? await chartsRes.json() : { charts: {}, totals: {} };
+
+      tile('tile-facts-value', 'tile-facts-sub', profile.fact_count || 0, 'across uploads + external sources', 'default');
+      renderProfile(profile);
+      renderRisk(risk);
+      renderExternalSources(profile);
+      renderCharts(charts);
+
+      LAST_FACTS = facts;
+      const types = Array.from(new Set(facts.map(f => f.fact_type))).sort();
+      document.getElementById('fact-type-filter').innerHTML =
+        '<option value="">all types</option>' +
+        types.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
+      show('facts-card', true);
+      renderFacts();
+      status('Loaded ' + (profile.fact_count || 0) + ' facts.', 'ok');
+    } catch (e) {
+      status('Load failed: ' + e.message, 'error');
+    }
+  }
+
+  // ── Mislaka link ───────────────────────────────────────────────────────
+  async function linkMislaka() {
+    const id = document.getElementById('mislaka-id').value.trim();
+    const product = document.getElementById('mislaka-product').value;
+    const cid = document.getElementById('customer-select').value || id;
+    if (!/^\d{9}$/.test(id)) {
+      document.getElementById('mislaka-status').textContent = 'ID must be 9 digits';
+      document.getElementById('mislaka-status').style.color = '#c62828';
+      return;
+    }
+    document.getElementById('mislaka-status').textContent = 'Linking…';
+    try {
+      const res = await api('/api/assessment-center/mislaka/link', {
+        method: 'POST',
+        body: JSON.stringify({ id_number: id, product_type: product, customer_id: cid }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      document.getElementById('mislaka-status').textContent =
+        `✓ ${json.policies_received || 0} policies stored as facts.`;
+      document.getElementById('mislaka-status').style.color = '#2e7d32';
+      loadAll();
+    } catch (e) {
+      document.getElementById('mislaka-status').textContent = '❌ ' + e.message;
+      document.getElementById('mislaka-status').style.color = '#c62828';
+    }
+  }
+
+  // ── Export pack ────────────────────────────────────────────────────────
+  async function exportPack() {
+    if (!CURRENT_CUSTOMER) { status('Pick a customer first.', 'error'); return; }
+    try {
+      const res = await api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/export`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `assessment_pack_${CURRENT_CUSTOMER}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      status('Pack exported.', 'ok');
+    } catch (e) {
+      status('Export failed: ' + e.message, 'error');
+    }
+  }
+
+  // ── Registry (admin only) ──────────────────────────────────────────────
+  async function loadRegistry() {
+    if (!IS_ADMIN) return;
+    show('registry-card', true);
+    try {
+      const res = await api('/api/assessment-center/upload-endpoints');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      document.getElementById('registry-tbody').innerHTML = (json.endpoints || []).map(e => {
+        const ac = e.assessment_center;
+        const acText = ac === true ? '<span class="chip chip-green">native</span>'
+          : ac === 'delegated' ? '<span class="chip">delegated</span>'
+          : ac === 'supersede' ? '<span class="chip chip-amber">supersede</span>'
+          : '<span class="chip">—</span>';
+        return `<tr>
+          <td><span class="badge">${escHtml(e.method)}</span></td>
+          <td><code>${escHtml(e.path)}</code></td>
+          <td><small>${escHtml(e.module)}</small></td>
+          <td>${escHtml(e.purpose)}</td>
+          <td>${acText}</td>
+          <td>${e.persistent ? '✓' : '—'}</td>
+        </tr>`;
+      }).join('');
+      document.getElementById('registry-notes').innerHTML = (json.notes || []).map(n => `• ${escHtml(n)}`).join('<br>');
+    } catch (e) {
+      document.getElementById('registry-tbody').innerHTML = `<tr><td colspan="6">Failed to load registry: ${escHtml(e.message)}</td></tr>`;
+    }
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  (async function init() {
+    await loadCustomers();
+    const sel = document.getElementById('customer-select');
+    sel.addEventListener('change', loadAll);
+    const url = urlCustomer();
+    if (url && [...sel.options].some(o => o.value === url)) {
+      sel.value = url;
+    } else if (!IS_ADMIN && SESSION.customer_id) {
+      sel.value = SESSION.customer_id;
+    }
+    if (sel.value) loadAll();
+    loadRegistry();
+  })();
+</script>
+
+</body>
+</html>

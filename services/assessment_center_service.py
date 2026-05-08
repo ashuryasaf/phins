@@ -508,6 +508,77 @@ class AssessmentCenterService:
             facts = [f for f in facts if f.fact_type == fact_type]
         return [f.to_dict() for f in facts]
 
+    def list_customers_with_facts(self) -> List[Dict[str, Any]]:
+        """Return one summary row per customer that has any facts on file.
+
+        Each row contains the fact count, the most recent capture timestamp,
+        the document set that contributed to the profile, and the cached risk
+        level. Used by the Assessment Center dashboard to populate the admin
+        customer picker.
+        """
+        with self._lock:
+            snapshot = {cid: list(facts) for cid, facts in self._facts.items()}
+
+        rows: List[Dict[str, Any]] = []
+        for cid, facts in snapshot.items():
+            if not facts:
+                continue
+            doc_ids = sorted({f.source_document_id for f in facts if f.source_document_id})
+            latest = max((f.captured_at for f in facts), default="")
+            try:
+                risk = self.compute_risk_indicators(cid)
+                risk_score = risk.get("risk_score", 0.0)
+                risk_level = risk.get("risk_level", "minimal")
+            except Exception:
+                risk_score = 0.0
+                risk_level = "unknown"
+            by_type: Dict[str, int] = {}
+            for f in facts:
+                by_type[f.fact_type] = by_type.get(f.fact_type, 0) + 1
+            rows.append({
+                "customer_id": cid,
+                "fact_count": len(facts),
+                "document_count": len(doc_ids),
+                "documents": doc_ids,
+                "by_type": by_type,
+                "latest_capture": latest,
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+            })
+        rows.sort(key=lambda r: r.get("latest_capture", ""), reverse=True)
+        return rows
+
+    def get_document_assessments(self, document_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        """Return per-document summary derived from the unified fact store.
+
+        For each requested ``document_id`` we report how many facts were
+        extracted, the breakdown by ``fact_type`` and the highest fact
+        confidence. The result is keyed by ``document_id`` so callers can
+        attach it directly to existing document listing payloads.
+        """
+        wanted = {d for d in document_ids if d}
+        if not wanted:
+            return {}
+        with self._lock:
+            all_facts = [f for facts in self._facts.values() for f in facts]
+        out: Dict[str, Dict[str, Any]] = {d: {
+            "facts_extracted": 0,
+            "by_type": {},
+            "top_confidence": 0.0,
+            "customer_id": "",
+        } for d in wanted}
+        for f in all_facts:
+            if f.source_document_id not in wanted:
+                continue
+            entry = out[f.source_document_id]
+            entry["facts_extracted"] += 1
+            entry["by_type"][f.fact_type] = entry["by_type"].get(f.fact_type, 0) + 1
+            if f.confidence > entry["top_confidence"]:
+                entry["top_confidence"] = round(f.confidence, 3)
+            if not entry["customer_id"]:
+                entry["customer_id"] = f.customer_id
+        return out
+
     def build_customer_360(self, customer_id: str) -> Dict[str, Any]:
         """Aggregate every collected fact into a deterministic profile snapshot."""
         with self._lock:

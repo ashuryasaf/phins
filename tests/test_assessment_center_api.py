@@ -227,3 +227,84 @@ class TestAccessControl:
             headers=headers,
         )
         assert resp.status_code == 400
+
+
+class TestDashboardSurfaces:
+    """The legacy upload path must surface the assessment summary so the user
+    sees post-upload progress without leaving documents.html."""
+
+    def test_documents_upload_returns_assessment_summary(self):
+        headers = _admin_session()
+        text = "Customer ID 123456782. Diagnosis: diabetes. Premium: 1,200 USD."
+        resp = requests.post(
+            f"{BASE_URL}/api/documents/upload",
+            json={
+                "files": [{"name": "intake.txt", "type": "text/plain", "data": _b64(text)}],
+                "entity_type": "customer",
+                "entity_id": "CUST-DASH-1",
+                "customer_id": "CUST-DASH-1",
+                "document_type": "id",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["uploaded"], body
+        first = body["uploaded"][0]
+        # The Assessment Center has run and the summary must be visible to UI.
+        assert isinstance(first.get("assessment_summary"), dict)
+        assert first["assessment_summary"].get("facts_extracted", 0) > 0
+
+    def test_documents_list_includes_assessment_summary(self):
+        headers = _admin_session()
+        text = "Customer ID 123456782. BP: 145/92. BMI: 32."
+        upload = requests.post(
+            f"{BASE_URL}/api/documents/upload",
+            json={
+                "files": [{"name": "list.txt", "type": "text/plain", "data": _b64(text)}],
+                "entity_type": "customer",
+                "entity_id": "CUST-DASH-2",
+                "customer_id": "CUST-DASH-2",
+                "document_type": "medical",
+            },
+            headers=headers,
+        )
+        assert upload.status_code == 201, upload.text
+        listing = requests.get(f"{BASE_URL}/api/documents/list", headers=headers)
+        assert listing.status_code == 200
+        docs = listing.json().get("documents", [])
+        assert docs, listing.text
+        with_summary = [d for d in docs if d.get("assessment_summary")
+                        and d["assessment_summary"].get("facts_extracted", 0) > 0]
+        assert with_summary, "expected at least one document with an assessment summary"
+
+    def test_admin_customers_endpoint_lists_assessed_customers(self):
+        headers = _admin_session()
+        text = "ID 123456782. Diagnosis: cancer."
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={
+                "file_name": "seed.txt",
+                "file_data_b64": _b64(text),
+                "mime_type": "text/plain",
+                "customer_id": "CUST-DASH-LIST",
+            },
+            headers=headers,
+        )
+        resp = requests.get(f"{BASE_URL}/api/assessment-center/customers", headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        ids = [it["customer_id"] for it in body.get("items", [])]
+        assert "CUST-DASH-LIST" in ids
+        row = next(it for it in body["items"] if it["customer_id"] == "CUST-DASH-LIST")
+        assert row["fact_count"] >= 1
+        assert "risk_level" in row
+
+    def test_assessment_center_page_is_served(self):
+        # The dashboards rely on /assessment-center.html being reachable as a
+        # static file. A regression where the file is missing would make every
+        # nav link silently 404.
+        resp = requests.get(f"{BASE_URL}/assessment-center.html")
+        assert resp.status_code == 200
+        assert "Assessment Center" in resp.text
+        assert "/api/assessment-center/customer/" in resp.text
