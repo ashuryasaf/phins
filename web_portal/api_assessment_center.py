@@ -607,7 +607,6 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
         return 401, {"error": "Authentication required"}
 
     body = body_data or {}
-    svc = _service()
     role = str(session.get("role") or "").lower()
 
     try:
@@ -622,6 +621,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if err:
                 return 403, {"error": err}
 
+            svc = _service()
             assessment = svc.upload_and_assess(
                 file_name=file_name,
                 file_data_b64=file_data_b64,
@@ -647,6 +647,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if err:
                 return 403, {"error": err}
 
+            svc = _service()
             assessment = svc.assess_document(
                 doc_id,
                 customer_id=cust or None,
@@ -698,6 +699,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if not isinstance(records, list):
                 return 400, {"error": "records must be a list"}
 
+            svc = _service()
             assessment = svc.ingest_external_facts(
                 customer_id=cust,
                 source=source,
@@ -727,6 +729,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 else {"bridged": 0, "ids": [], "errors": []}
             )
 
+            svc = _service()
             try:
                 result = svc.backfill_documents(
                     customer_id=requested_customer,
@@ -756,6 +759,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if doc_ids is not None and not isinstance(doc_ids, list):
                 return 400, {"error": "document_ids must be a list"}
             options = body.get("options") if isinstance(body.get("options"), dict) else {}
+            svc = _service()
             try:
                 return 200, svc.run_analysis(
                     cust, analysis_type,
@@ -784,6 +788,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if not cust:
                 return 400, {"error": "pack.customer_id required"}
 
+            svc = _service()
             result = svc.import_customer_pack(pack, customer_id_override=cust)
             return 200, result
     except ValueError as exc:

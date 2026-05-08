@@ -82,6 +82,10 @@ def _resolve_fact_store_dir() -> str:
     if railway_mount and os.path.isdir(railway_mount):
         return os.path.join(railway_mount, "assessment_center")
 
+    docker_volume = "/data/assessment_center"
+    if os.path.isdir("/data"):
+        return docker_volume
+
     fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",

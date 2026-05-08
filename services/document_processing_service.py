@@ -59,6 +59,10 @@ def _resolve_document_storage_root() -> str:
     if railway_mount and os.path.isdir(railway_mount):
         return os.path.join(railway_mount, 'documents')
 
+    docker_volume = '/data/documents'
+    if os.path.isdir('/data'):
+        return docker_volume
+
     fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'data', 'documents',
