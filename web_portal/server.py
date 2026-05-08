@@ -24145,6 +24145,10 @@ For claims or questions, please contact:
                 auth_header = self.headers.get('Authorization', '')
                 token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
                 session = validate_session(token) if token else None
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
                 user_agent = self.headers.get('User-Agent', '')
 
                 length = int(self.headers.get('Content-Length', 0))
