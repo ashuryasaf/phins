@@ -50,7 +50,9 @@ Every response uses the platform's standard JSON envelope. Error payloads use
 from __future__ import annotations
 
 import logging
+import os
 import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -266,7 +268,12 @@ def _bridge_legacy_documents(
 # Assessment Center pipeline. It is returned as live JSON so dashboards never
 # go stale relative to the codebase.
 
-_UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
+# Catalogue of every Assessment Center HTTP route plus the cross-platform
+# upload routes that feed it. Originally named ``_UPLOAD_REGISTRY`` (only
+# upload routes), it now includes the full Assessment Center surface so the
+# workbench's discovery panel is accurate. The alias below preserves the
+# old symbol for any external callers that may have imported it.
+_API_REGISTRY: Tuple[Dict[str, Any], ...] = (
     {
         "path": "/api/assessment-center/upload",
         "method": "POST",
@@ -399,9 +406,13 @@ _UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
 
 
 def _registry_payload() -> Dict[str, Any]:
+    upload_only = [e for e in _API_REGISTRY
+                   if e.get("method") == "POST" and "upload" in (e.get("path") or "").lower()]
     return {
-        "endpoints": list(_UPLOAD_REGISTRY),
-        "count": len(_UPLOAD_REGISTRY),
+        "endpoints": list(_API_REGISTRY),
+        "count": len(_API_REGISTRY),
+        "upload_endpoints": upload_only,
+        "upload_count": len(upload_only),
         "assessment_center_canonical": "/api/assessment-center/upload",
         "notes": [
             "Routes marked 'delegated' already persist via DocumentProcessingService.",
@@ -409,8 +420,15 @@ def _registry_payload() -> Dict[str, Any]:
             "be migrated to the unified Assessment Center pipeline.",
             "External clearinghouses (Mislaka) push their rows as facts; the "
             "Assessment Center is the only place that performs aggregation.",
+            "'endpoints' includes the full Assessment Center API surface; "
+            "'upload_endpoints' is the filtered POST-upload subset.",
         ],
     }
+
+
+# Back-compat alias: external code (and older tests) imported ``_UPLOAD_REGISTRY``
+# directly; keep the symbol pointing at the same tuple so nothing breaks.
+_UPLOAD_REGISTRY = _API_REGISTRY
 
 
 # ── Dispatchers ───────────────────────────────────────────────────────────────
@@ -419,23 +437,35 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                  client_ip: str) -> Optional[Tuple[int, Dict[str, Any]]]:
     if path == "/api/assessment-center/health":
         # Public, lightweight liveness probe that confirms the service can
-        # construct its singleton without touching disk-heavy code paths. The
-        # Railway healthcheck on /api/health stays the source of truth for
-        # the whole portal; this is for the platform/operations dashboards
-        # that want a per-feature ping.
+        # construct its singleton without touching disk-heavy code paths.
+        #
+        # SECURITY: this endpoint is intentionally unauthenticated (so
+        # uptime monitors can poll it) and therefore must not leak any
+        # information beyond a binary "is the feature alive" signal.
+        # We previously exposed the absolute fact-store path and the live
+        # customer-count - both were flagged as Medium-severity information
+        # disclosure in the PR review, so the response is now reduced to
+        # ``{"ok": True, "fact_store_writable": <bool>, "ts": <iso>}`` and
+        # the error branch returns a generic message (full diagnostics are
+        # already captured by ``logger.exception`` for operators).
         try:
             svc = _service()
-            with svc._lock:  # noqa: SLF001 - intentional internal check
-                customer_count = len(svc._facts)  # noqa: SLF001
+            fact_store_writable = False
+            try:
+                fact_store_writable = bool(
+                    os.path.isdir(svc._fact_store_dir)  # noqa: SLF001
+                    and os.access(svc._fact_store_dir, os.W_OK)  # noqa: SLF001
+                )
+            except Exception:
+                fact_store_writable = False
             return 200, {
                 "ok": True,
-                "fact_store_dir": svc._fact_store_dir,  # noqa: SLF001
-                "customers_in_memory": customer_count,
-                "ts": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "fact_store_writable": fact_store_writable,
+                "ts": datetime.utcnow().isoformat() + "Z",
             }
         except Exception as exc:
             logger.exception("assessment-center health check failed: %s", exc)
-            return 500, {"ok": False, "error": str(exc)}
+            return 500, {"ok": False, "error": "Health check failed"}
 
     if path == "/api/assessment-center/upload-endpoints":
         if not session:
@@ -453,7 +483,7 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             return 200, {"items": rows, "total": len(rows)}
         except Exception as exc:
             logger.exception("assessment-center customers GET failed: %s", exc)
-            return 500, {"error": "Assessment center error", "details": str(exc)}
+            return 500, {"error": "Assessment center error"}
 
     if path == "/api/assessment-center/backfill-status":
         if not session:
@@ -483,7 +513,7 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             return 200, payload
         except Exception as exc:
             logger.exception("assessment-center backfill-status failed: %s", exc)
-            return 500, {"error": "Assessment center error", "details": str(exc)}
+            return 500, {"error": "Assessment center error"}
 
     if not path.startswith("/api/assessment-center/customer/"):
         return None
@@ -533,7 +563,7 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     customer_id=cust, page=1, page_size=200,
                 )
             except Exception as exc:
-                return 500, {"error": "Document listing failed", "details": str(exc)}
+                return 500, {"error": "Document listing failed"}
             items = listing.get("items", []) if isinstance(listing, dict) else []
             doc_summaries = svc.get_document_assessments([
                 (d.get("id") if isinstance(d, dict) else getattr(d, "id", None))
@@ -561,7 +591,7 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             return 200, svc.export_customer_pack(cust)
     except Exception as exc:
         logger.exception("assessment-center GET failed for %s/%s: %s", cust, resource, exc)
-        return 500, {"error": "Assessment center error", "details": str(exc)}
+        return 500, {"error": "Assessment center error"}
 
     return None
 
@@ -703,7 +733,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 )
             except Exception as exc:
                 logger.exception("assessment-center backfill failed: %s", exc)
-                return 500, {"error": "Backfill failed", "details": str(exc)}
+                return 500, {"error": "Backfill failed"}
 
             return 200, {
                 "success": True,
@@ -731,6 +761,14 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 )
             except ValueError as exc:
                 return 400, {"error": str(exc)}
+            except Exception as exc:
+                # Mirror the explicit catch-all used by /backfill so a
+                # malformed document_ids entry, an unexpected data shape, or
+                # any other surprise from the analysis pipeline returns a
+                # structured 500 instead of a raw traceback. The full
+                # exception is captured server-side by ``logger.exception``.
+                logger.exception("assessment-center analysis failed for %s: %s", cust, exc)
+                return 500, {"error": "Analysis failed"}
 
         if path == "/api/assessment-center/import":
             pack = body.get("pack")
@@ -750,6 +788,6 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
         return 400, {"error": str(exc)}
     except Exception as exc:
         logger.exception("assessment-center POST failed for %s: %s", path, exc)
-        return 500, {"error": "Assessment center error", "details": str(exc)}
+        return 500, {"error": "Assessment center error"}
 
     return None

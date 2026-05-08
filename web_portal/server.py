@@ -9719,6 +9719,11 @@ def _should_silence_internal_probe(client_ip: str, path: str, code: object) -> b
 
 _REPEAT_LOG_WINDOW_S = float(os.environ.get('PHINS_REPEAT_LOG_WINDOW_S', 300))
 _REPEAT_LOG_THRESHOLD = int(os.environ.get('PHINS_REPEAT_LOG_THRESHOLD', 3))
+# Hard cap on the number of distinct (client_ip, path, code) tuples we track.
+# Without this, rotating bot IPs / paths could grow the dict without bound on
+# a long-running Railway container (slow memory leak). When we hit the cap we
+# evict the oldest entries by ``first_at`` to make room.
+_REPEAT_LOG_MAX_ENTRIES = int(os.environ.get('PHINS_REPEAT_LOG_MAX_ENTRIES', 10000))
 _REPEAT_LOG_STATE: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
 _REPEAT_LOG_LOCK = threading.Lock()
 
@@ -9745,6 +9750,17 @@ def _should_suppress_repeat_4xx(client_ip: str, path: str, code: object) -> Tupl
         state = _REPEAT_LOG_STATE.get(key)
         if state is None or now - state.get('first_at', now) > _REPEAT_LOG_WINDOW_S:
             suppressed = state.get('suppressed', 0) if state else 0
+            # Bound the dict so a long-running Railway container exposed
+            # to rotating bot IPs / paths can't grow it without limit.
+            if state is None and len(_REPEAT_LOG_STATE) >= _REPEAT_LOG_MAX_ENTRIES:
+                # Evict ~10% of the oldest entries by first_at so the cap
+                # doesn't trigger eviction on every subsequent insert.
+                evict_target = max(1, _REPEAT_LOG_MAX_ENTRIES // 10)
+                for stale_key, _ in sorted(
+                    _REPEAT_LOG_STATE.items(),
+                    key=lambda kv: kv[1].get('first_at', 0),
+                )[:evict_target]:
+                    _REPEAT_LOG_STATE.pop(stale_key, None)
             _REPEAT_LOG_STATE[key] = {
                 'first_at': now,
                 'count': 1,

@@ -142,6 +142,32 @@ def test_internal_probe_silence_targets_security_dashboard():
     ) is False
 
 
+def test_repeat_log_state_is_bounded():
+    """Long-running Railway containers exposed to rotating bot IPs must not
+    leak memory in the suppressor's tracking dict.
+    """
+    import web_portal.server as portal
+
+    with portal._REPEAT_LOG_LOCK:
+        portal._REPEAT_LOG_STATE.clear()
+
+    original_max = portal._REPEAT_LOG_MAX_ENTRIES
+    portal._REPEAT_LOG_MAX_ENTRIES = 50  # type: ignore[assignment]
+
+    try:
+        # Push past the cap with unique tuples - eviction must keep us at
+        # or below the max.
+        for i in range(200):
+            portal._should_suppress_repeat_4xx(
+                f"10.0.0.{i % 256}", f"/api/synthetic/{i}", "404"
+            )
+        assert len(portal._REPEAT_LOG_STATE) <= portal._REPEAT_LOG_MAX_ENTRIES
+    finally:
+        portal._REPEAT_LOG_MAX_ENTRIES = original_max  # type: ignore[assignment]
+        with portal._REPEAT_LOG_LOCK:
+            portal._REPEAT_LOG_STATE.clear()
+
+
 def test_only_4xx_api_paths_are_suppressed():
     import web_portal.server as portal
 

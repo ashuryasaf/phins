@@ -422,15 +422,19 @@ class TestDashboardSurfaces:
             assert res.content[:max(2, len(expect_prefix))].startswith(expect_prefix[:2]) or expect_prefix in res.content[:200]
 
     def test_health_endpoint_is_public_and_fast(self):
-        # The health probe must work without an auth token and report the
-        # fact-store directory so operators can spot ephemeral configs in
-        # Railway logs.
+        # The health probe must work without an auth token. After the PR
+        # review tightened the response, it returns a minimal envelope
+        # only - no absolute filesystem path, no live customer count -
+        # so it cannot fingerprint the deployment to anonymous callers.
         resp = requests.get(f"{BASE_URL}/api/assessment-center/health")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body.get("ok") is True
-        assert "fact_store_dir" in body
-        assert "customers_in_memory" in body
+        # Boolean writeability flag is the only operational signal we keep.
+        assert isinstance(body.get("fact_store_writable"), bool)
+        # Information-disclosure fields must be gone.
+        assert "fact_store_dir" not in body
+        assert "customers_in_memory" not in body
 
     def test_export_error_returns_valid_json(self):
         # An unsupported format used to build the error JSON via string
