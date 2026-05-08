@@ -113,6 +113,58 @@ class TestDocumentExtraction:
         assert fact.source_document_sha256 == upload.sha256
         assert fact.confidence >= 0.9
 
+    def test_extracts_hebrew_israeli_id_with_label(self, center, doc_service):
+        text = "שם מלא: אסף אשורי\nת.ז. 123456782\nכתובת: רחוב הרצל 12"
+        upload = doc_service.upload_document(
+            file_name="hebrew.txt",
+            file_data_b64=_b64(text),
+            mime_type="text/plain",
+            customer_id="CUST-HEB",
+        )
+        result = center.assess_document(upload.document_id, customer_id="CUST-HEB")
+        types = {f.fact_type for f in result.facts}
+        assert "identity" in types
+        # Should extract a name and an Israeli id (hebrew-prefixed pattern).
+        id_facts = [f for f in result.facts
+                    if f.fact_type == "identity" and f.label == "id_number"]
+        name_facts = [f for f in result.facts
+                      if f.fact_type == "identity" and f.label == "full_name"]
+        assert any(f.value == "123456782" for f in id_facts)
+        assert any(name_facts), "expected a name extracted from Hebrew label"
+
+    def test_always_emits_metadata_fact_for_any_upload(self, center, doc_service):
+        # A non-empty upload that yields no extractable identity / medical
+        # / financial signal still produces at least the document_meta
+        # fact, so the workbench never shows "facts: 0" for a successful
+        # upload. We send a tiny binary blob that isn't a recognised
+        # text format so the parsers find nothing.
+        upload = doc_service.upload_document(
+            file_name="opaque.txt",
+            file_data_b64=_b64("zzz"),
+            mime_type="text/plain",
+            customer_id="CUST-BLANK",
+        )
+        result = center.assess_document(upload.document_id, customer_id="CUST-BLANK")
+        types = {f.fact_type for f in result.facts}
+        assert "document_meta" in types
+        assert result.summary["facts_extracted"] >= 1
+
+    def test_extraction_hint_when_no_text_mined(self, center, doc_service):
+        # Image upload with no embedded text triggers the hint fact so
+        # the user knows why facts are sparse and can take action.
+        png_header = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        import base64 as _b64m
+        upload = doc_service.upload_document(
+            file_name="id-scan.png",
+            file_data_b64=_b64m.b64encode(png_header).decode(),
+            mime_type="image/png",
+            customer_id="CUST-IMG",
+        )
+        result = center.assess_document(upload.document_id, customer_id="CUST-IMG")
+        types = {f.fact_type for f in result.facts}
+        assert "document_meta" in types
+        assert "extraction_hint" in types
+
     def test_extracts_us_ssn_only_when_valid(self, center, doc_service):
         text = "SSN: 123-45-6789. Other ref 000-12-3456."
         upload = doc_service.upload_document(

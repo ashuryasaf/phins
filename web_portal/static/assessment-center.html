@@ -683,11 +683,14 @@
           ? `<span class="doc-facts">🧠 ${d.facts_extracted} facts</span>`
           : `<span class="doc-facts" style="color:#90a4ae;">no facts</span>`;
         const checked = SELECTED_DOC_IDS.has(d.id) ? 'checked' : '';
-        return `<label class="doc-item${SELECTED_DOC_IDS.has(d.id) ? ' selected' : ''}">
+        return `<label class="doc-item${SELECTED_DOC_IDS.has(d.id) ? ' selected' : ''}" data-doc-id="${escHtml(d.id)}">
           <input type="checkbox" ${checked} onchange="toggleDoc('${escHtml(d.id)}', this.checked)">
           <span class="doc-name" title="${escHtml(d.sha256 || '')}">${escHtml(d.name || d.id)}</span>
           <span class="badge">${escHtml(d.document_type || d.category || 'general')}</span>
           ${tagsBadge}
+          <button class="ghost" style="margin-left:6px; padding:2px 8px; font-size:0.72rem;"
+                  onclick="event.preventDefault(); rescanDocument('${escHtml(d.id)}'); return false;"
+                  title="Re-run extraction on this document">🔁</button>
         </label>`;
       }).join('');
     } catch (e) {
@@ -696,6 +699,32 @@
   }
   function toggleDoc(docId, on) {
     if (on) SELECTED_DOC_IDS.add(docId); else SELECTED_DOC_IDS.delete(docId);
+  }
+
+  async function rescanDocument(docId) {
+    const cid = _resolveCurrentCustomer();
+    if (!cid) { setStatus('analysis-status', 'No active customer.', 'error'); return; }
+    setStatus('analysis-status', `🔁 Re-scanning ${docId}…`);
+    try {
+      const body = { document_id: docId };
+      // Only attach customer_id for admins; non-admins always use session.
+      if (actingAsAdmin()) body.customer_id = cid;
+      const res = await api('/api/assessment-center/scan', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      const got = (json.summary && json.summary.facts_extracted) || 0;
+      setStatus('analysis-status',
+        got > 0 ? `✅ Re-scan complete: ${got} fact(s) extracted from ${docId}.`
+                : `ℹ️ Re-scan finished but no new text was extracted from ${docId}. Try re-uploading a typed/searchable copy.`,
+        got > 0 ? 'ok' : 'error');
+      await loadDocuments();
+      await onCustomerChange();
+    } catch (e) {
+      setStatus('analysis-status', `❌ Re-scan failed: ${e.message}`, 'error');
+    }
   }
 
   function _resolveCurrentCustomer() {

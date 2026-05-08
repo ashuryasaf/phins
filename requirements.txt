@@ -16,6 +16,11 @@ alembic>=1.12.0  # Database migrations
 cryptography>=45.0.0
 openpyxl>=3.1.5
 xlrd>=2.0.1  # For older .xls Excel files
+# Real PDF text extraction for the Assessment Center (so scanned + typed
+# PDFs actually surface facts instead of returning empty extraction).
+pypdf>=4.0
+# Image processing for the Assessment Center portrait crop / metadata.
+Pillow>=10.0
 # Date manipulation for billing projections
 python-dateutil>=2.8.0
 defusedxml>=0.7.1

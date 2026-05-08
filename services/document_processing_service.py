@@ -906,17 +906,60 @@ class DocumentProcessingService:
             return ''
 
     def _extract_pdf_text(self, raw: bytes) -> str:
-        """Best-effort PDF text extraction without external libraries."""
+        """Extract text from a PDF using pypdf, with a regex fallback.
+
+        Modern PDFs hide their text inside compressed (FlateDecode)
+        streams, which the regex-only fallback cannot see, so most
+        typed-PDF uploads used to surface zero facts. We now use pypdf
+        for proper extraction, then fall back to the original regex
+        heuristic if pypdf isn't available or the PDF is encrypted /
+        broken. Scanned PDFs (image-only pages) still produce no text
+        - those need OCR which we surface via the assessment center.
+        """
+        text = ''
         try:
-            text = raw.decode('latin-1', errors='replace')
-            parts = []
-            for match in re.finditer(r'\(([^)]{1,500})\)', text):
-                chunk = match.group(1)
-                if any(c.isalpha() for c in chunk):
-                    parts.append(chunk)
-            return ' '.join(parts)[:50_000] if parts else '[PDF content - binary extraction needed]'
-        except Exception:
-            return '[PDF content - extraction failed]'
+            from pypdf import PdfReader  # type: ignore
+            from pypdf.errors import PdfReadError  # type: ignore
+            import io as _io
+            try:
+                reader = PdfReader(_io.BytesIO(raw))
+                if getattr(reader, 'is_encrypted', False):
+                    try:
+                        reader.decrypt('')
+                    except Exception:
+                        pass
+                pages_text = []
+                for page in reader.pages[:50]:  # cap at 50 pages
+                    try:
+                        page_text = page.extract_text() or ''
+                    except Exception:
+                        page_text = ''
+                    if page_text:
+                        pages_text.append(page_text)
+                text = '\n'.join(pages_text).strip()
+            except PdfReadError:
+                text = ''
+            except Exception as exc:
+                logger.debug('pypdf extraction failed, falling back to regex: %s', exc)
+                text = ''
+        except ImportError:
+            text = ''
+
+        if not text:
+            try:
+                latin = raw.decode('latin-1', errors='replace')
+                parts = []
+                for match in re.finditer(r'\(([^)]{1,500})\)', latin):
+                    chunk = match.group(1)
+                    if any(c.isalpha() for c in chunk):
+                        parts.append(chunk)
+                text = ' '.join(parts)
+            except Exception:
+                text = ''
+
+        if not text:
+            return '[PDF content - extraction yielded no text; image-only or encrypted]'
+        return text[:200_000]
 
     def _extract_spreadsheet_summary(self, raw: bytes, ext: str) -> str:
         return f'[Spreadsheet content ({ext}) - {len(raw)} bytes]'
