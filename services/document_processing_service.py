@@ -905,16 +905,95 @@ class DocumentProcessingService:
         except Exception:
             return ''
 
-    def _extract_pdf_text(self, raw: bytes) -> str:
-        """Extract text from a PDF using pypdf, with a regex fallback.
+    # Conservative caps so a single huge upload can never hang the worker.
+    _OCR_LANGS = os.environ.get('PHINS_OCR_LANGS', 'heb+eng+ara')
+    _OCR_DPI = int(os.environ.get('PHINS_OCR_DPI', '200'))
+    _OCR_MAX_PDF_PAGES = int(os.environ.get('PHINS_OCR_MAX_PDF_PAGES', '15'))
+    _OCR_MAX_IMAGE_BYTES = int(os.environ.get('PHINS_OCR_MAX_IMAGE_BYTES', 25 * 1024 * 1024))
+    _OCR_MIN_TEXT_THRESHOLD = int(os.environ.get('PHINS_OCR_MIN_TEXT_THRESHOLD', '40'))
 
-        Modern PDFs hide their text inside compressed (FlateDecode)
-        streams, which the regex-only fallback cannot see, so most
-        typed-PDF uploads used to surface zero facts. We now use pypdf
-        for proper extraction, then fall back to the original regex
-        heuristic if pypdf isn't available or the PDF is encrypted /
-        broken. Scanned PDFs (image-only pages) still produce no text
-        - those need OCR which we surface via the assessment center.
+    @staticmethod
+    def _has_meaningful_text(text: str) -> bool:
+        """Heuristic: if pypdf returns mostly garbage from a scanned PDF
+        we want to fall through to OCR. A real text layer normally has
+        spaces and a high ratio of letters."""
+        if not text:
+            return False
+        sample = text[:5000]
+        letters = sum(1 for c in sample if c.isalpha())
+        return letters >= max(20, len(sample) // 4)
+
+    def _ocr_image_bytes(self, raw: bytes) -> str:
+        """Run Tesseract OCR on raw image bytes.
+
+        Returns the extracted text, or '' when OCR is unavailable
+        (system tesseract / Hebrew language pack missing) or the image
+        is too large / corrupt. Languages are configurable via
+        PHINS_OCR_LANGS (default ``heb+eng+ara``).
+        """
+        if not raw or len(raw) > self._OCR_MAX_IMAGE_BYTES:
+            return ''
+        try:
+            import pytesseract  # type: ignore
+            from PIL import Image  # type: ignore
+        except ImportError:
+            return ''
+        try:
+            import io as _io
+            with Image.open(_io.BytesIO(raw)) as img:
+                if img.mode not in ('RGB', 'L'):
+                    img = img.convert('RGB')
+                text = pytesseract.image_to_string(img, lang=self._OCR_LANGS)
+            return (text or '').strip()
+        except pytesseract.TesseractNotFoundError:
+            return ''
+        except Exception as exc:
+            logger.debug('OCR failed: %s', exc)
+            return ''
+
+    def _ocr_pdf_pages(self, raw: bytes) -> str:
+        """Rasterise each page of a scanned PDF and OCR it.
+
+        Capped at ``PHINS_OCR_MAX_PDF_PAGES`` pages so a 100-page
+        scanned document can't blow the request budget. Returns ''
+        if pdf2image / poppler / tesseract aren't all available.
+        """
+        try:
+            from pdf2image import convert_from_bytes  # type: ignore
+            import pytesseract  # type: ignore
+        except ImportError:
+            return ''
+        try:
+            pages = convert_from_bytes(raw, dpi=self._OCR_DPI,
+                                       first_page=1, last_page=self._OCR_MAX_PDF_PAGES)
+        except Exception as exc:
+            logger.debug('pdf2image rasterisation failed: %s', exc)
+            return ''
+        chunks = []
+        for page_img in pages:
+            try:
+                if page_img.mode not in ('RGB', 'L'):
+                    page_img = page_img.convert('RGB')
+                page_text = pytesseract.image_to_string(page_img, lang=self._OCR_LANGS)
+                if page_text:
+                    chunks.append(page_text.strip())
+            except Exception as exc:
+                logger.debug('OCR page failed: %s', exc)
+        return '\n\n'.join(chunks).strip()
+
+    def _extract_pdf_text(self, raw: bytes) -> str:
+        """Extract text from a PDF, escalating from cheapest to most powerful.
+
+        Order:
+          1. **pypdf** for proper text-layer PDFs (cheap, fast).
+          2. **Regex fallback** over the raw bytes (cheap, last resort
+             for tiny PDFs without proper text objects).
+          3. **OCR via pdf2image + tesseract** for scanned PDFs (slow
+             but extracts text from images embedded inside the PDF).
+
+        Returns '' or an explanatory marker when nothing could be
+        extracted; the assessment center detects that and surfaces
+        an extraction_hint fact so the user knows OCR is needed.
         """
         text = ''
         try:
@@ -929,7 +1008,7 @@ class DocumentProcessingService:
                     except Exception:
                         pass
                 pages_text = []
-                for page in reader.pages[:50]:  # cap at 50 pages
+                for page in reader.pages[:50]:
                     try:
                         page_text = page.extract_text() or ''
                     except Exception:
@@ -945,7 +1024,7 @@ class DocumentProcessingService:
         except ImportError:
             text = ''
 
-        if not text:
+        if not self._has_meaningful_text(text):
             try:
                 latin = raw.decode('latin-1', errors='replace')
                 parts = []
@@ -953,16 +1032,122 @@ class DocumentProcessingService:
                     chunk = match.group(1)
                     if any(c.isalpha() for c in chunk):
                         parts.append(chunk)
-                text = ' '.join(parts)
+                regex_text = ' '.join(parts)
+                if self._has_meaningful_text(regex_text):
+                    text = regex_text
             except Exception:
-                text = ''
+                pass
+
+        if not self._has_meaningful_text(text):
+            ocr_text = self._ocr_pdf_pages(raw)
+            if ocr_text:
+                text = ocr_text
 
         if not text:
             return '[PDF content - extraction yielded no text; image-only or encrypted]'
         return text[:200_000]
 
+    def _extract_zip_contents(self, raw: bytes) -> str:
+        """Concatenate text from every supported file inside a ZIP.
+
+        Limits: at most ``PHINS_ZIP_MAX_FILES`` entries, no recursion
+        into nested zips, individual entries capped at 25MB. Each
+        entry is dispatched back through the standard text-extraction
+        helpers so PDFs and Excel files inside a zip get the same
+        treatment as if they were uploaded directly.
+        """
+        try:
+            import io as _io
+            import zipfile as _zip
+        except ImportError:
+            return ''
+        max_files = int(os.environ.get('PHINS_ZIP_MAX_FILES', '25'))
+        max_entry_bytes = int(os.environ.get('PHINS_ZIP_MAX_ENTRY_BYTES', 25 * 1024 * 1024))
+        chunks = []
+        try:
+            with _zip.ZipFile(_io.BytesIO(raw)) as zf:
+                for info in zf.infolist()[:max_files]:
+                    if info.is_dir() or info.file_size > max_entry_bytes:
+                        continue
+                    name = info.filename or ''
+                    ext = ''
+                    if '.' in name:
+                        ext = '.' + name.rsplit('.', 1)[-1].lower()
+                    if ext not in ALLOWED_EXTENSIONS or ext == '.zip':
+                        continue
+                    try:
+                        entry_raw = zf.read(info)
+                    except Exception as exc:
+                        logger.debug('ZIP entry read failed (%s): %s', name, exc)
+                        continue
+                    entry_text = self._extract_text_for_file(name, ext, entry_raw)
+                    if entry_text:
+                        chunks.append(f'--- {name} ---\n{entry_text}')
+        except _zip.BadZipFile:
+            return ''
+        except Exception as exc:
+            logger.debug('ZIP traversal failed: %s', exc)
+            return ''
+        return ('\n\n'.join(chunks))[:400_000]
+
+    def _extract_text_for_file(self, name: str, ext: str, raw: bytes) -> str:
+        """Best-effort text extraction dispatcher used by the ZIP walker."""
+        mime = mimetypes.guess_type(name)[0] or ''
+        if ext == '.pdf' or mime == 'application/pdf':
+            return self._extract_pdf_text(raw)
+        if ext in ('.xls', '.xlsx'):
+            return self._extract_spreadsheet_summary(raw, ext)
+        if ext in ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'):
+            return self._ocr_image_bytes(raw)
+        return self._extract_text_content(raw, mime, ext)
+
     def _extract_spreadsheet_summary(self, raw: bytes, ext: str) -> str:
-        return f'[Spreadsheet content ({ext}) - {len(raw)} bytes]'
+        """Pull every cell value across every sheet so insurance /
+        savings / medical text inside an Excel file is mineable.
+
+        openpyxl handles .xlsx; xlrd is the fallback for legacy .xls.
+        Both are bounded by row / sheet caps so a 1M-row sheet can't
+        blow the budget.
+        """
+        max_rows = int(os.environ.get('PHINS_XLSX_MAX_ROWS_PER_SHEET', '5000'))
+        max_sheets = int(os.environ.get('PHINS_XLSX_MAX_SHEETS', '10'))
+        chunks: List[str] = []
+        if ext == '.xlsx':
+            try:
+                from openpyxl import load_workbook  # type: ignore
+                import io as _io
+                wb = load_workbook(_io.BytesIO(raw), read_only=True, data_only=True)
+                for sheet_name in wb.sheetnames[:max_sheets]:
+                    ws = wb[sheet_name]
+                    chunks.append(f'### {sheet_name}')
+                    for i, row in enumerate(ws.iter_rows(values_only=True)):
+                        if i >= max_rows:
+                            break
+                        cells = [str(c) for c in row if c is not None and str(c).strip()]
+                        if cells:
+                            chunks.append(' | '.join(cells))
+            except Exception as exc:
+                logger.debug('openpyxl extraction failed: %s', exc)
+        elif ext == '.xls':
+            try:
+                import xlrd  # type: ignore
+                book = xlrd.open_workbook(file_contents=raw)
+                for sheet_index in range(min(book.nsheets, max_sheets)):
+                    sheet = book.sheet_by_index(sheet_index)
+                    chunks.append(f'### {sheet.name}')
+                    for r in range(min(sheet.nrows, max_rows)):
+                        cells = [str(sheet.cell_value(r, c))
+                                 for c in range(sheet.ncols)
+                                 if str(sheet.cell_value(r, c)).strip()]
+                        if cells:
+                            chunks.append(' | '.join(cells))
+            except Exception as exc:
+                logger.debug('xlrd extraction failed: %s', exc)
+
+        if not chunks:
+            return f'[Spreadsheet content ({ext}) - {len(raw)} bytes; could not parse]'
+        text = '\n'.join(chunks)
+        return text[:200_000]
 
     def _extract_table_data(self, raw: bytes, mime: str, ext: str) -> Dict[str, Any]:
         if ext == '.csv' or mime == 'text/csv':

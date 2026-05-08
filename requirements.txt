@@ -21,6 +21,10 @@ xlrd>=2.0.1  # For older .xls Excel files
 pypdf>=4.0
 # Image processing for the Assessment Center portrait crop / metadata.
 Pillow>=10.0
+# OCR pipeline (image / scanned PDF / multi-language). Requires the
+# system-level tesseract-ocr + tesseract-ocr-{eng,heb,ara} packages
+# (installed in Dockerfile) and poppler-utils for pdf2image.
+pytesseract>=0.3.13
 # Date manipulation for billing projections
 python-dateutil>=2.8.0
 defusedxml>=0.7.1

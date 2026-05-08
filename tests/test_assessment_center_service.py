@@ -63,6 +63,10 @@ def _b64(text: str) -> str:
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
+def _b64_bytes(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
 # ── ID validators ────────────────────────────────────────────────────────────
 
 class TestIdValidators:
@@ -148,6 +152,52 @@ class TestDocumentExtraction:
         types = {f.fact_type for f in result.facts}
         assert "document_meta" in types
         assert result.summary["facts_extracted"] >= 1
+
+    def test_extracts_facts_from_excel_workbook(self, center, doc_service):
+        # Real xlsx with cell content - openpyxl-based extraction must
+        # surface the identity / medical / insurance signal so the
+        # workbench can describe the data.
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            import pytest
+            pytest.skip("openpyxl unavailable")
+        import io as _io
+        wb = Workbook(); ws = wb.active
+        ws.append(['Name', 'ID', 'Premium', 'Diagnosis'])
+        ws.append(['Asaf', '123456782', 1500.0, 'diabetes'])
+        buf = _io.BytesIO(); wb.save(buf)
+        upload = doc_service.upload_document(
+            file_name='premium.xlsx',
+            file_data_b64=_b64_bytes(buf.getvalue()),
+            mime_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            customer_id='CUST-XLS',
+        )
+        result = center.assess_document(upload.document_id, customer_id='CUST-XLS')
+        types = {f.fact_type for f in result.facts}
+        assert 'identity' in types
+        assert 'medical_condition' in types
+
+    def test_extracts_facts_from_zip_bundle(self, center, doc_service):
+        # Bundle of mixed documents inside a zip - the extractor must
+        # walk every entry and surface the union of facts.
+        import io as _io
+        import zipfile as _zip
+        buf = _io.BytesIO()
+        with _zip.ZipFile(buf, 'w') as zf:
+            zf.writestr('id.txt', 'Israeli ID 123456782. Full Name: Asaf')
+            zf.writestr('med.txt', 'Diagnosis: diabetes. Medication: metformin. BMI: 31.')
+        upload = doc_service.upload_document(
+            file_name='bundle.zip',
+            file_data_b64=_b64_bytes(buf.getvalue()),
+            mime_type='application/zip',
+            customer_id='CUST-ZIP',
+        )
+        result = center.assess_document(upload.document_id, customer_id='CUST-ZIP')
+        types = {f.fact_type for f in result.facts}
+        assert 'identity' in types
+        assert 'medical_condition' in types
+        assert 'medication' in types
 
     def test_extraction_hint_when_no_text_mined(self, center, doc_service):
         # Image upload with no embedded text triggers the hint fact so

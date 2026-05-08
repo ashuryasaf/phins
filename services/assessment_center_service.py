@@ -1697,15 +1697,36 @@ class AssessmentCenterService:
         if not raw_bytes:
             return ""
         try:
+            doc_svc = self.document_service
             if mime.startswith("text/") or ext in (".csv", ".txt", ".json", ".xml", ".html", ".htm"):
                 return raw_bytes.decode("utf-8", errors="replace")[:MAX_TEXT_SCAN]
             if mime == "application/pdf" or ext == ".pdf":
-                # Reuse the document service PDF heuristic if available.
-                doc_svc = self.document_service
                 pdf_helper = getattr(doc_svc, "_extract_pdf_text", None)
                 if callable(pdf_helper):
                     return pdf_helper(raw_bytes)[:MAX_TEXT_SCAN]
                 return raw_bytes.decode("latin-1", errors="replace")[:MAX_TEXT_SCAN]
+            if mime.startswith("image/") or ext in (".png", ".jpg", ".jpeg",
+                                                    ".tiff", ".bmp", ".gif", ".webp"):
+                # OCR the image (Hebrew + English + Arabic) so scanned ID
+                # cards / handwritten labels / photographed receipts
+                # always feed real text into the assessment center.
+                ocr_helper = getattr(doc_svc, "_ocr_image_bytes", None)
+                if callable(ocr_helper):
+                    return (ocr_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
+                return ""
+            if ext in (".xlsx", ".xls"):
+                xlsx_helper = getattr(doc_svc, "_extract_spreadsheet_summary", None)
+                if callable(xlsx_helper):
+                    return (xlsx_helper(raw_bytes, ext) or "")[:MAX_TEXT_SCAN]
+                return ""
+            if ext == ".zip" or mime == "application/zip":
+                # Walk the zip and concatenate text from every supported
+                # entry so customers can upload a folder of mixed
+                # documents (ID + medical + financial) in one go.
+                zip_helper = getattr(doc_svc, "_extract_zip_contents", None)
+                if callable(zip_helper):
+                    return (zip_helper(raw_bytes) or "")[:MAX_TEXT_SCAN]
+                return ""
             return raw_bytes.decode("utf-8", errors="replace")[:MAX_TEXT_SCAN]
         except Exception:
             return ""

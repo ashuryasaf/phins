@@ -4,8 +4,21 @@ FROM python:3.12-slim
 # Set working directory
 WORKDIR /app
 
-# Install curl for lightweight health checks
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# System dependencies:
+#   curl              - lightweight health checks
+#   tesseract-ocr     - OCR engine for scanned ID cards / photographed receipts
+#   tesseract-ocr-eng - English language pack
+#   tesseract-ocr-heb - Hebrew language pack (Israeli IDs, medical reports)
+#   tesseract-ocr-ara - Arabic language pack
+#   poppler-utils     - PDF rasterisation backing pdf2image (scanned PDF OCR)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-heb \
+        tesseract-ocr-ara \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
