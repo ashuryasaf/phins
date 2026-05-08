@@ -176,6 +176,7 @@
 
       <div class="card">
         <div class="card-title">📤 Upload &amp; assess</div>
+        <div id="upload-context" style="font-size: 0.85rem; color: #455a64; background: #e3f2fd; border-left: 4px solid #1565c0; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;">Loading session…</div>
         <div class="drop-zone" id="drop-zone"
              onclick="document.getElementById('file-input').click()"
              ondragover="onDragOver(event)"
@@ -188,9 +189,11 @@
         <input type="file" id="file-input" multiple
                accept=".pdf,.doc,.docx,.xls,.xlsx,.xsd,.csv,.txt,.json,.xml,.png,.jpg,.jpeg,.tiff,.bmp,.gif"
                onchange="onFileSelect(event)">
-        <div id="upload-target" style="margin-bottom: 10px;">
-          <label style="font-size: 0.82rem; color: #546e7a;">Customer ID</label>
-          <input type="text" id="upload-customer-id" placeholder="leave empty to use selected" style="width: 100%; margin-top: 4px;">
+        <!-- Admin-only override; hidden for customers so the only accepted
+             customer_id is the one bound to their session. -->
+        <div id="upload-target" style="margin-bottom: 10px; display: none;">
+          <label style="font-size: 0.82rem; color: #546e7a;">Override customer_id (admin only)</label>
+          <input type="text" id="upload-customer-id" placeholder="leave empty to use the selected customer" style="width: 100%; margin-top: 4px;">
         </div>
         <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items: center;">
           <select id="upload-doctype" style="flex: 1; min-width: 150px;">
@@ -354,11 +357,54 @@
   let CURRENT_DOCUMENTS = [];      // list from /documents endpoint
   let SELECTED_DOC_IDS = new Set();
   let LAST_ANALYSIS = null;
+  // Server-validated session info. Populated by ensureServerSession()
+  // before any UI work happens so we never trust localStorage / URL
+  // params for a customer's own ID. For admins we still allow URL
+  // ?customer_id= so they can deep-link into a specific customer.
+  let SERVER_SESSION = null;
+  let SESSION_CUSTOMER_ID = '';
+  let SESSION_USERNAME = '';
+  let SESSION_ROLE = '';
+
+  async function ensureServerSession() {
+    try {
+      const res = await fetch('/api/session/validate', {
+        headers: { 'Authorization': 'Bearer ' + TOKEN },
+      });
+      if (!res.ok) {
+        // Token rejected by the server; clear local state so the next
+        // load redirects to /login.html cleanly.
+        localStorage.removeItem('phins_token');
+        localStorage.removeItem('phins_session');
+        window.location.href = '/login.html';
+        return null;
+      }
+      const body = await res.json();
+      SERVER_SESSION = body;
+      SESSION_CUSTOMER_ID = String(body.customer_id || '').trim();
+      SESSION_USERNAME = String(body.username || '').trim();
+      SESSION_ROLE = String(body.role || '').toLowerCase();
+      return body;
+    } catch (e) {
+      console.warn('Session validation failed; falling back to localStorage', e);
+      SESSION_CUSTOMER_ID = String(SESSION.customer_id || '').trim();
+      SESSION_USERNAME = String(SESSION.username || '').trim();
+      SESSION_ROLE = ROLE;
+      return null;
+    }
+  }
+
+  function actingAsAdmin() {
+    return new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims',
+                    'claims_agent', 'claims_manager', 'underwriting_admin'])
+      .has(SESSION_ROLE || ROLE);
+  }
 
   // ── Customer picker ─────────────────────────────────────────────────────
   async function loadCustomers() {
     const sel = document.getElementById('customer-select');
-    if (IS_ADMIN) {
+    const ctxLabel = document.getElementById('upload-context');
+    if (actingAsAdmin()) {
       try {
         const res = await api('/api/assessment-center/customers');
         if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -374,15 +420,29 @@
             return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}% (${escHtml(lvl)})</option>`;
           }).join('');
           show('picker-empty', false);
-          document.getElementById('picker-meta').textContent = `${items.length} customer(s) with facts on file`;
+          document.getElementById('picker-meta').textContent =
+            `${items.length} customer(s) with facts on file · acting as ${escHtml(SESSION_USERNAME || 'admin')}`;
         }
+        sel.disabled = false;
       } catch (e) {
         sel.innerHTML = '<option value="">— failed to load —</option>';
       }
+      if (ctxLabel) {
+        ctxLabel.innerHTML = `Acting as <strong>${escHtml(SESSION_USERNAME)}</strong> (${escHtml(SESSION_ROLE)}). Pick a customer below; uploads attach to whoever you select.`;
+      }
     } else {
-      const cid = SESSION.customer_id || urlCustomer();
-      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(cid || 'self')}</option>`;
+      // Non-admin: server-validated session is the only source of truth
+      // for the customer_id, period. URL params and localStorage are
+      // ignored to prevent the "Access denied on my own data" bug.
+      const cid = SESSION_CUSTOMER_ID;
+      const label = cid || '(no customer linked to your account)';
+      sel.innerHTML = `<option value="${escHtml(cid)}">${escHtml(label)}</option>`;
       sel.disabled = true;
+      if (ctxLabel) {
+        ctxLabel.innerHTML = cid
+          ? `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. All uploads attach to your account: <strong>${escHtml(cid)}</strong>.`
+          : `You are signed in as <strong>${escHtml(SESSION_USERNAME)}</strong> but no customer record is linked to your account. Please contact support before uploading.`;
+      }
     }
   }
 
@@ -418,25 +478,58 @@
     btn.disabled = true;
     btn.textContent = '⏳ Uploading…';
     const docType = document.getElementById('upload-doctype').value;
-    const customerId = document.getElementById('upload-customer-id').value.trim() || CURRENT_CUSTOMER;
+
+    // Resolve the target customer:
+    //   - non-admin: locked to the server-validated session_customer_id.
+    //                Anything in the optional override input is ignored,
+    //                so a stale URL or pasted ID can never produce
+    //                "Access denied" on the customer's own files.
+    //   - admin:     prefer the picker selection, then the optional
+    //                override field, then the session.
+    let customerId = '';
+    if (actingAsAdmin()) {
+      const override = (document.getElementById('upload-customer-id').value || '').trim();
+      customerId = override || CURRENT_CUSTOMER || SESSION_CUSTOMER_ID;
+    } else {
+      customerId = SESSION_CUSTOMER_ID;
+      if (!customerId) {
+        setStatus('upload-status',
+          'Your account is not linked to a customer record. Please contact support before uploading.',
+          'error');
+        btn.textContent = '📤 Upload & assess';
+        btn.disabled = SELECTED_FILES.length === 0;
+        return;
+      }
+    }
+
     let totalFacts = 0;
     let totalDocs = 0;
     const errors = [];
     for (const f of SELECTED_FILES) {
       try {
         const b64 = await readFileAsBase64(f);
+        const payload = {
+          file_name: f.name,
+          file_data_b64: b64,
+          mime_type: f.type || 'application/octet-stream',
+          category: docType,
+        };
+        // Only attach customer_id for admins. For non-admins the server
+        // already knows the customer from the session token, and sending
+        // anything else would risk the rejected case.
+        if (actingAsAdmin() && customerId) {
+          payload.customer_id = customerId;
+        }
         const res = await api('/api/assessment-center/upload', {
           method: 'POST',
-          body: JSON.stringify({
-            file_name: f.name,
-            file_data_b64: b64,
-            mime_type: f.type || 'application/octet-stream',
-            customer_id: customerId,
-            category: docType,
-          }),
+          body: JSON.stringify(payload),
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // Surface a friendlier message for the common rejection paths.
+          const raw = json.error || ('HTTP ' + res.status);
+          throw new Error(friendlyUploadError(raw, f, customerId));
+        }
         totalFacts += (json.summary && json.summary.facts_extracted) || 0;
         totalDocs += 1;
       } catch (e) {
@@ -447,22 +540,42 @@
     document.getElementById('file-input').value = '';
     btn.textContent = '📤 Upload & assess';
     btn.disabled = true;
-    setStatus('upload-status',
-      `✅ Uploaded ${totalDocs} file(s). 🧠 Extracted ${totalFacts} fact(s) → Customer 360 updated.${errors.length ? ' Errors: ' + errors.join('; ') : ''}`,
-      errors.length ? 'error' : 'ok');
-    // Refresh selectors and analysis
+    const intel = totalDocs > 0
+      ? `✅ Uploaded ${totalDocs} file(s) for <strong>${escHtml(customerId)}</strong>. 🧠 Extracted ${totalFacts} fact(s) → Customer 360 updated.`
+      : `❌ No files uploaded for <strong>${escHtml(customerId)}</strong>.`;
+    const errBlock = errors.length
+      ? `<div style="margin-top:6px;color:#c62828;">${errors.map(e => `• ${escHtml(e)}`).join('<br>')}</div>`
+      : '';
+    document.getElementById('upload-status').innerHTML = intel + errBlock;
+    document.getElementById('upload-status').style.color = errors.length ? '#c62828' : '#2e7d32';
+
+    // Refresh selectors and analysis on the new customer context.
     await loadCustomers();
     if (customerId) {
       const sel = document.getElementById('customer-select');
       if ([...sel.options].some(o => o.value === customerId)) {
         sel.value = customerId;
-      } else {
-        // newly created customer not yet in list; refresh and try again
-        await loadCustomers();
-        if ([...sel.options].some(o => o.value === customerId)) sel.value = customerId;
       }
       await onCustomerChange();
     }
+  }
+
+  function friendlyUploadError(rawMessage, file, customerId) {
+    const msg = String(rawMessage || '').trim();
+    if (/access denied|cross-tenant|customer session invalid/i.test(msg)) {
+      const target = customerId || SESSION_CUSTOMER_ID || 'your account';
+      return `You can only upload to your own account (${target}). Refresh the page if you switched accounts.`;
+    }
+    if (/file type .* not allowed|extension/i.test(msg)) {
+      return `${msg} (rename the file or convert it to PDF/DOCX/CSV/PNG/JPG before re-uploading).`;
+    }
+    if (/exceeds maximum allowed size/i.test(msg)) {
+      return `File too large for one upload. Split it into chunks under 50 MB.`;
+    }
+    if (/invalid base64/i.test(msg)) {
+      return `Browser could not encode "${file.name}". Try a different copy of the file.`;
+    }
+    return msg;
   }
 
   // ── Documents picker ────────────────────────────────────────────────────
@@ -849,14 +962,27 @@
 
   // ── Init ───────────────────────────────────────────────────────────────
   (async function init() {
+    await ensureServerSession();
+    if (actingAsAdmin()) {
+      // Show the admin override field for whoever can target arbitrary
+      // customers; customers never see it.
+      const target = document.getElementById('upload-target');
+      if (target) target.style.display = '';
+    }
     await loadCustomers();
     const sel = document.getElementById('customer-select');
     sel.addEventListener('change', onCustomerChange);
-    const url = urlCustomer();
-    if (url && [...sel.options].some(o => o.value === url)) {
-      sel.value = url;
-    } else if (!IS_ADMIN && SESSION.customer_id) {
-      sel.value = SESSION.customer_id;
+    if (actingAsAdmin()) {
+      // Admins may deep-link with ?customer_id=...
+      const url = urlCustomer();
+      if (url && [...sel.options].some(o => o.value === url)) {
+        sel.value = url;
+      }
+    } else if (SESSION_CUSTOMER_ID) {
+      // Customers always operate on their own customer_id; ignore URL
+      // params so a stale link can't trick the page into a wrong target.
+      sel.value = SESSION_CUSTOMER_ID;
+      setUrlCustomer(SESSION_CUSTOMER_ID);
     }
     if (sel.value) onCustomerChange();
     loadRegistry();

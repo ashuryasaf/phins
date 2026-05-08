@@ -260,6 +260,65 @@ class TestBackfillLimitSemantics:
         assert result["limit_applied"] == center.BACKFILL_DEFAULT_LIMIT
 
 
+# ── _resolve_customer is forgiving of cosmetic differences ───────────────
+
+class TestResolveCustomerIsForgiving:
+    """Production logs showed customers occasionally hitting "Access denied"
+    while uploading their own files because their stale URL or
+    localStorage held the same customer_id in a slightly different form
+    (lowercase, surrounding whitespace, etc.). The resolver must
+    canonicalise both sides before comparing so a customer is never
+    locked out of their own data; cross-tenant attempts must still be
+    rejected with an actionable message.
+    """
+
+    def setup_method(self):
+        from web_portal import api_assessment_center as mod
+        self.mod = mod
+        self.session = {"username": "asaf", "role": "customer", "customer_id": "CUST-ASAF-001"}
+
+    def test_matches_session_customer_with_exact_value(self):
+        cust, err = self.mod._resolve_customer(self.session, "CUST-ASAF-001")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_matches_session_customer_case_insensitively(self):
+        cust, err = self.mod._resolve_customer(self.session, "cust-asaf-001")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_matches_session_customer_with_whitespace(self):
+        cust, err = self.mod._resolve_customer(self.session, "  CUST-ASAF-001  ")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_empty_request_uses_session_value(self):
+        cust, err = self.mod._resolve_customer(self.session, "")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_cross_tenant_request_rejected_with_actionable_message(self):
+        cust, err = self.mod._resolve_customer(self.session, "CUST-OTHER-001")
+        assert cust == ""
+        assert err is not None
+        # The message tells the customer exactly which account they ARE
+        # signed in as so they can take action without trial and error.
+        assert "CUST-ASAF-001" in err
+
+    def test_admin_can_target_any_customer(self):
+        admin = {"username": "admin", "role": "admin"}
+        for target in ("CUST-X", "cust-y", " CUST-Z "):
+            cust, err = self.mod._resolve_customer(admin, target)
+            assert err is None
+            # Whitespace is trimmed for admins too.
+            assert cust.strip() == target.strip()
+
+    def test_customer_session_with_no_customer_id_returns_invalid_session_error(self):
+        cust, err = self.mod._resolve_customer({"role": "customer"}, "CUST-ANY")
+        assert cust == ""
+        assert err == "Customer session invalid - no customer_id"
+
+
 # ── /data fallback is gated against dev-system hijack ─────────────────────
 
 class TestDataVolumeGate:

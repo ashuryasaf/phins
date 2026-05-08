@@ -62,23 +62,64 @@ _ADMIN_ROLES = {"admin", "underwriter", "actuary", "analyst", "claims",
                 "claims_agent", "claims_manager", "underwriting_admin"}
 
 
+def _normalise_customer_id(value: Any) -> str:
+    """Return a comparable customer_id (trim + uppercase + collapse whitespace).
+
+    Production logs showed customers occasionally hitting "Access denied"
+    when uploading their own files because their stale localStorage
+    session, a URL param like ``?customer_id=cust-asaf-001`` (lower
+    case) or a copy/paste with leading whitespace produced an ID that
+    only differed cosmetically from the canonical value held by the
+    server (``CUST-ASAF-001``). The session token is the source of
+    truth for the customer's identity, so we just compare canonical
+    forms here instead of failing fast on cosmetic differences.
+    """
+    if value is None:
+        return ""
+    return re.sub(r"\s+", "", str(value)).strip().upper()
+
+
 def _resolve_customer(session: Dict[str, Any], requested_customer_id: str) -> Tuple[str, Optional[str]]:
-    """Return (customer_id, error). ``error`` is None on success."""
+    """Return (customer_id, error). ``error`` is None on success.
+
+    Comparison is case-insensitive and whitespace-tolerant so a customer
+    cannot lock themselves out of their own data via a stale URL or
+    localStorage value. Admin roles can target any customer.
+    """
     if not session:
         return "", "Authentication required"
     role = str(session.get("role") or "").lower()
-    session_customer = (
+    session_customer_raw = (
         session.get("customer_id")
         or (session.get("user") or {}).get("customer_id")
         or ""
     )
-    requested = (requested_customer_id or "").strip()
+    session_customer = str(session_customer_raw or "").strip()
+    requested_raw = str(requested_customer_id or "").strip()
+
     if role in _ADMIN_ROLES:
-        return requested or session_customer or "", None
+        # Admins can target any customer. We still trim cosmetic
+        # whitespace from the input for a friendlier experience.
+        return requested_raw or session_customer or "", None
+
     if not session_customer:
         return "", "Customer session invalid - no customer_id"
-    if requested and requested != session_customer:
-        return "", "Access denied"
+
+    if requested_raw:
+        if _normalise_customer_id(requested_raw) != _normalise_customer_id(session_customer):
+            logger.warning(
+                "_resolve_customer: rejecting cross-tenant request from %s for %r",
+                session.get("username") or session.get("user", {}).get("username") or "?",
+                requested_raw,
+            )
+            return "", (
+                f"You can only upload to your own account ({session_customer}). "
+                "Refresh the page if you switched accounts."
+            )
+
+    # Always return the server's canonical customer_id, never the value
+    # the caller sent, so downstream code never has to second-guess
+    # which form to trust.
     return session_customer, None
 
 
