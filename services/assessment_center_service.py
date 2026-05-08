@@ -166,6 +166,9 @@ FACT_TYPES = (
     "external_policy",     # Mislaka and similar clearinghouse rows
     "external_account",    # external savings/pension accounts
     "external_contribution",  # contribution rows from external providers
+    # Always-on metadata so a successful upload always produces ≥1 fact.
+    "document_meta",       # file name, mime type, size, ocr_required hint
+    "extraction_hint",     # explanatory hint when no text could be mined
 )
 
 # Maximum text length we are willing to scan in a single document
@@ -269,7 +272,16 @@ def _spain_dni_valid(value: str) -> bool:
 
 # Order matters: more specific / more validated patterns first so a 9-digit
 # number that is a valid Israeli ID is not first claimed by the SSN regex.
+# The two Israeli patterns below capture both the bare 9-digit form and the
+# common Hebrew-prefixed forms ("ת.ז.", "תעודת זהות", "מספר זהות") that
+# show up in scanned ID PDFs and Mislaka downloads.
 _ID_PATTERNS: Tuple[Tuple[str, str, "re.Pattern[str]", Optional[Any]], ...] = (
+    ("israeli_id_hebrew", "IL",
+        re.compile(
+            r"(?:ת\.?\s*ז\.?|תעודת\s+זהות|מספר\s+זהות)\s*[:\-]?\s*(\d{9})",
+            re.IGNORECASE,
+        ),
+        _israeli_id_valid),
     ("israeli_id", "IL", re.compile(r"(?<!\d)(\d{9})(?!\d)"), _israeli_id_valid),
     ("us_ssn", "US", re.compile(r"(?<!\d)(\d{3}-\d{2}-\d{4})(?!\d)"), _us_ssn_valid),
     ("uk_nin", "UK", re.compile(r"\b([A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D])\b", re.IGNORECASE), None),
@@ -307,6 +319,12 @@ _BP_RE = re.compile(r"\b(?:BP|blood pressure)\s*[:=]?\s*(\d{2,3})\s*/\s*(\d{2,3}
 
 _ADDRESS_RE = re.compile(
     r"(?:address|כתובת|מען|residence)\s*[:\-]?\s*([^\n\r]{6,160})",
+    re.IGNORECASE,
+)
+
+_NAME_RE = re.compile(
+    r"(?:full\s+name|name|שם\s+מלא|שם\s+פרטי|שם\s+משפחה|nombre|nom)\s*[:\-]?\s*"
+    r"([A-Za-z\u0590-\u05FF\u0621-\u064A][A-Za-z\u0590-\u05FF\u0621-\u064A '\-]{2,80})",
     re.IGNORECASE,
 )
 
@@ -482,6 +500,42 @@ class AssessmentCenterService:
                 customer_id=cust,
                 document_id=document_id,
                 sha256=sha,
+            ))
+
+        # Always emit a baseline metadata fact so the customer sees the
+        # document in their Customer 360 even when no text could be
+        # extracted (scanned PDFs without OCR, image-only IDs, novel
+        # binary formats). This guarantees "facts: 0" never happens for
+        # a successful upload.
+        meta_value = {
+            "file_name": record.get("original_file_name") or record.get("file_name") or "",
+            "mime_type": mime,
+            "size_bytes": record.get("file_size") or len(raw_bytes),
+            "extracted_text_chars": len(text or ""),
+            "ocr_required": bool(
+                (mime.startswith("image/") or ext in (".jpg", ".jpeg", ".png", ".tiff", ".bmp"))
+                or (text and text.startswith("[PDF content"))
+            ),
+        }
+        facts.append(_make_fact(
+            cust, "document_meta", "uploaded", meta_value,
+            document_id, sha, source_context or "document_upload",
+            confidence=0.99,
+        ))
+
+        # If no real intelligence came out of the file, surface an
+        # explicit hint so the workbench can show a clear "extraction
+        # incomplete - re-scan or upload a typed copy" badge instead of
+        # a confusing "no facts".
+        non_meta_facts = [f for f in facts if f.fact_type != "document_meta"]
+        if not non_meta_facts:
+            facts.append(_make_fact(
+                cust, "extraction_hint", "no_text_extracted",
+                "No text could be mined from this file. If it is a "
+                "scanned PDF or photograph, re-upload a typed/searchable "
+                "copy or run OCR before re-scanning.",
+                document_id, sha, source_context or "document_upload",
+                confidence=0.95,
             ))
 
         self._store_facts(cust, facts)
@@ -864,6 +918,8 @@ class AssessmentCenterService:
         "external_policy": "External clearinghouse",
         "external_account": "External clearinghouse",
         "external_contribution": "External clearinghouse",
+        "document_meta": "Document metadata",
+        "extraction_hint": "Document metadata",
     }
 
     _CATEGORY_ORDER = (
@@ -876,6 +932,7 @@ class AssessmentCenterService:
         "Policy / Claim references",
         "Risk markers",
         "External clearinghouse",
+        "Document metadata",
     )
 
     def describe_data_with_data(
@@ -1691,6 +1748,12 @@ class AssessmentCenterService:
                     source=source,
                     metadata={"id_type": label, "country": country, "raw": raw_value},
                 ))
+
+        for match in _NAME_RE.finditer(text):
+            value = match.group(1).strip().rstrip(",.;:")
+            if value:
+                facts.append(_make_fact(customer_id, "identity", "full_name", value,
+                                        document_id, sha256, source, 0.65))
 
         for match in _EMAIL_RE.finditer(text):
             facts.append(_make_fact(customer_id, "contact", "email", match.group(0).lower(),
