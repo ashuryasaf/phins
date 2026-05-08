@@ -1935,7 +1935,7 @@
           
           if (event.results[0].isFinal) {
             document.getElementById('ai-query-input').value = transcript;
-            stopVoiceInput();
+            stopVoiceInput(false);
             // Show confirmation feedback
             showVoiceFeedback(transcript);
             // Auto-process after voice input with slight delay for UX
@@ -1961,55 +1961,99 @@
       }
     }
     
-    // Preprocess voice input for better intent matching
+    // Preprocess voice input for better intent matching across ALL customer commands
     function preprocessVoiceInput(transcript) {
       let processed = transcript.toLowerCase().trim();
       
-      // Common voice command variations mapping to standard queries
       const voicePatterns = [
-        // Community
+        // ---- Community ----
         [/(?:i want to |help me |please )?(?:join|sign up for|become member of) (?:a |the )?community/i, 'join community foundation'],
         [/show (?:me )?(?:my )?community/i, 'show my community'],
-        
-        // Policy
+        [/(?:i want to |help me )?(?:create|start|begin|launch) (?:a |my own |new )?(?:community|foundation)/i, 'create foundation'],
+
+        // ---- Policy ----
         [/(?:i want to |help me |i need to )?(?:apply|sign up|get) (?:for )?(?:a |new )?(?:policy|insurance|coverage)/i, 'apply for new policy'],
         [/(?:get|give) (?:me )?(?:a |an )?(?:insurance )?quote/i, 'apply for new policy'],
-        
-        // Medical Equipment
-        [/(?:i want to |help me |i need to )?(?:buy|purchase|order|get) (?:some )?medical (?:equipment|device|supplies)/i, 'buy medical equipment'],
-        [/(?:i need |get me )(?:a )?wheelchair/i, 'buy medical equipment'],
-        [/(?:i need |get me )(?:a )?walker/i, 'buy medical equipment'],
-        
-        // Consultation
-        [/(?:i want to |help me |i need to )?(?:book|schedule|make) (?:a |an )?(?:doctor |medical )?(?:appointment|consultation)/i, 'book doctor consultation'],
-        [/(?:see|talk to|speak with) (?:a )?doctor/i, 'book doctor consultation'],
-        
-        // Pharmacy
-        [/(?:i want to |help me |i need to )?(?:order|buy|get|refill) (?:my )?(?:medication|medicine|prescription|drugs)/i, 'order medication'],
-        
-        // Billing
-        [/show (?:me )?(?:my |all )?bills/i, 'show me all my billings'],
-        [/(?:i want to |help me )?pay (?:my )?(?:bill|premium)/i, 'pay my bills'],
-        
-        // Claims
-        [/(?:i want to |help me |i need to )?(?:file|submit|make) (?:a |an )?(?:new )?claim/i, 'file a claim'],
-        [/(?:check|track|see) (?:my )?claim/i, 'track my claim'],
-        
-        // Support
-        [/(?:i need |get me |connect me to )?(?:help|support|assistance)/i, 'contact support'],
-        [/talk to (?:a |an )?(?:agent|human|person|representative)/i, 'contact support'],
-        
-        // Referral
-        [/(?:i want to )?(?:refer|invite) (?:a )?friend/i, 'refer a friend'],
-        
-        // Balance
-        [/(?:what(?:'s| is) |check |show (?:me )?)?my (?:wallet )?balance/i, 'check wallet balance'],
-        
-        // Savings
-        [/how much (?:will i |do i )(?:have|save) in (\d+) years/i, 'how much savings will I have in $1 years']
+        [/(?:upgrade|increase|expand) (?:my )?(?:coverage|policy|insurance)/i, 'apply for new policy'],
+        [/(?:show|list|display|what are) (?:me )?(?:my |all )?polic(?:y|ies)/i, 'show me my policies'],
+        [/(?:policy|coverage|insurance) (?:report|summary|details|overview)/i, 'policy report'],
+
+        // ---- Medical Equipment ----
+        [/(?:i want to |help me |i need to )?(?:buy|purchase|order|get) (?:some )?(?:medical )?(?:equipment|device|supplies|devices)/i, 'buy medical equipment'],
+        [/(?:i need |get me )(?:a )?(?:wheelchair|walker|crutch(?:es)?|brace|splint|monitor)/i, 'buy medical equipment'],
+        [/(?:medical|health) (?:shop|store|marketplace)/i, 'buy medical equipment'],
+
+        // ---- Consultation ----
+        [/(?:i want to |help me |i need to )?(?:book|schedule|make|set up) (?:a |an )?(?:doctor |medical |health )?(?:appointment|consultation|check-?up|visit)/i, 'book doctor consultation'],
+        [/(?:see|talk to|speak with|consult|visit) (?:a |my )?(?:doctor|physician|specialist)/i, 'book doctor consultation'],
+        [/(?:telemedicine|tele-?health|virtual (?:doctor|visit|appointment|consultation))/i, 'book doctor consultation'],
+
+        // ---- Pharmacy ----
+        [/(?:i want to |help me |i need to )?(?:order|buy|get|refill|renew) (?:my )?(?:medication|medicine|prescription|drugs|pills|meds)/i, 'order medication'],
+        [/(?:pharmacy|drug ?store|med ?refill)/i, 'order medication'],
+
+        // ---- Home Care ----
+        [/(?:i need |i want |help me (?:find |get )?)?(?:home ?care|home ?nursing|home ?health|caregiver|nurse (?:at home|visit)|in-?home (?:care|assistance|help))/i, 'home care services'],
+        [/(?:visiting|mobile) (?:nurse|caregiver|health ?aide)/i, 'home care services'],
+
+        // ---- Billing ----
+        [/(?:show|display|list|get) (?:me )?(?:my |all )?(?:bill(?:s|ing)?|invoice(?:s)?|payment(?:s)?)/i, 'show me all my billings'],
+        [/billing (?:report|history|summary|details|overview)/i, 'billing report'],
+        [/(?:i want to |help me |let me )?pay (?:my )?(?:bill(?:s)?|premium(?:s)?|invoice(?:s)?|payment)/i, 'pay my bills'],
+        [/(?:make|submit) (?:a )?payment/i, 'pay my bills'],
+        [/(?:how much do i |what do i |what's my monthly )(?:pay|owe|spend)(?: (?:each|every|per) month)?/i, 'how much do i pay monthly'],
+        [/(?:monthly|premium) (?:cost|payment|amount|charge|fee)/i, 'monthly payment amount'],
+
+        // ---- Claims ----
+        [/(?:i want to |help me |i need to )?(?:file|submit|make|open|start|create) (?:a |an )?(?:new )?(?:insurance )?claim/i, 'file a claim'],
+        [/(?:check|track|see|view|follow up on|status of) (?:my )?claim(?:s)?/i, 'track my claim'],
+        [/claim(?:s)? (?:report|history|summary|status|details)/i, 'claims report'],
+
+        // ---- Support ----
+        [/(?:i need |get me |connect me to |i want )?(?:help|support|assistance|customer service)/i, 'contact support'],
+        [/(?:talk to|speak (?:with|to)|connect (?:me )?(?:with|to)) (?:a |an )?(?:agent|human|person|representative|advisor)/i, 'contact support'],
+        [/(?:open|create|submit) (?:a )?(?:support )?ticket/i, 'contact support'],
+
+        // ---- Referral ----
+        [/(?:i want to )?(?:refer|invite|recommend) (?:a |my )?(?:friend|family|colleague|someone)/i, 'refer a friend'],
+        [/(?:referral|invite) (?:code|link|program)/i, 'refer a friend'],
+        [/(?:share|send|give) (?:my )?referral/i, 'refer a friend'],
+
+        // ---- Balance / Wallet ----
+        [/(?:what(?:'s| is) |check |show (?:me )?|tell me )?(?:my )?(?:wallet |account )?balance/i, 'check wallet balance'],
+        [/how much (?:money )?(?:do i have|is in my (?:wallet|account))/i, 'check wallet balance'],
+        [/(?:wallet|account) (?:info|summary|status)/i, 'check wallet balance'],
+
+        // ---- Savings / Investments ----
+        [/(?:show|display|view|check|see) (?:me )?(?:my )?(?:savings|investment(?:s)?|portfolio)/i, 'savings report'],
+        [/(?:savings|investment) (?:report|summary|performance|overview|details)/i, 'savings report'],
+        [/(?:my |show me (?:my )?)?(?:stock|crypto|fund) portfolio/i, 'view investments'],
+        [/how much (?:(?:will i |do i |can i )(?:have|save|earn|accumulate)|savings)(?: in)? (\d+(?:\.\d+)?) ?(?:years?|yr)/i, 'how much savings will I have in $1 years'],
+        [/(?:savings |investment )?(?:projection|forecast|future value|compound)/i, 'savings projection forecast'],
+        [/(?:how much (?:am i |do i )?sav(?:e|ing)|(?:my )?monthly (?:savings|contribution))/i, 'monthly savings amount'],
+
+        // ---- Personal Data / Profile ----
+        [/(?:show|display|view|see) (?:me )?(?:my )?(?:personal (?:data|info(?:rmation)?|details|profile)|profile|account (?:info|details))/i, 'personal data report'],
+        [/(?:who am i|about me|my (?:information|details|account|profile))/i, 'my personal data'],
+        [/(?:update|change|edit|modify) (?:my )?(?:profile|personal (?:info(?:rmation)?|data|details)|address|phone|email|name)/i, 'update my profile'],
+
+        // ---- Password ----
+        [/(?:change|reset|update|modify|set (?:a )?new) (?:my )?password/i, 'change password'],
+        [/(?:forgot|lost) (?:my )?password/i, 'reset password'],
+
+        // ---- Coverage ----
+        [/(?:what(?:'s| is)|show|check|tell me(?: about)?) (?:my )?coverage(?: amount)?/i, 'my coverage amount'],
+        [/how much (?:am i |(?:is )?(?:my )?)?(?:covered|insured)(?: for)?/i, 'my coverage amount'],
+
+        // ---- Transfer ----
+        [/(?:i want to |help me |let me )?(?:transfer|move|send) (?:some )?(?:funds|money|balance)/i, 'transfer funds'],
+        [/(?:transfer|move)(?: funds?)? (?:to|from|between) (?:my )?(?:wallet|account|investment|savings)/i, 'transfer to wallet'],
+
+        // ---- Deposit / Save ----
+        [/(?:i want to |let me |help me )?(?:deposit|add|put)(?: funds| money)?(?: (?:to|into|in)(?: my)? (?:wallet|account|savings))?/i, 'add funds deposit'],
+        [/(?:i want to |let me )?(?:save|invest) \$?([\d,]+(?:\.\d{2})?)/i, 'invest $$$1'],
       ];
       
-      // Apply pattern matching
       for (const [pattern, replacement] of voicePatterns) {
         if (pattern.test(processed)) {
           processed = processed.replace(pattern, replacement);
@@ -2020,7 +2064,26 @@
       return processed;
     }
     
-    // Show voice confirmation feedback
+    let lastInputMethod = 'text';
+
+    function speakResponse(text) {
+      if (lastInputMethod !== 'voice') return;
+      if (!('speechSynthesis' in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        const savedLang = localStorage.getItem('phins_language') || 'en';
+        const ttsLangMap = { 'en': 'en-US', 'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'he': 'he-IL' };
+        utterance.lang = ttsLangMap[savedLang] || 'en-US';
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+        utterance.volume = 0.85;
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        // TTS is non-critical
+      }
+    }
+
     function showVoiceFeedback(transcript) {
       const voiceBtn = document.getElementById('voice-btn');
       if (!voiceBtn) return;
@@ -2032,7 +2095,6 @@
       }, 1500);
     }
     
-    // Start voice input
     function startVoiceInput() {
       const voiceBtn = document.getElementById('voice-btn');
       if (voiceBtn?.disabled) {
@@ -2048,6 +2110,7 @@
         return;
       }
       
+      lastInputMethod = 'voice';
       isListening = true;
       document.getElementById('voice-recording-indicator').style.display = 'block';
       document.getElementById('voice-btn').style.background = 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)';
@@ -2063,7 +2126,7 @@
     }
     
     // Stop voice input
-    function stopVoiceInput() {
+    function stopVoiceInput(resetInputMethod = true) {
       isListening = false;
       document.getElementById('voice-recording-indicator').style.display = 'none';
       const voiceBtn = document.getElementById('voice-btn');
@@ -2076,6 +2139,10 @@
         try {
           recognition.stop();
         } catch (e) {}
+      }
+
+      if (resetInputMethod) {
+        lastInputMethod = 'text';
       }
     }
 
@@ -2121,7 +2188,7 @@
     }
     
     // Process AI query
-    async function processAIQuery() {
+    async function processAIQuery(inputMethodOverride) {
       const input = document.getElementById('ai-query-input');
       const query = input.value.trim().toLowerCase();
       
@@ -2130,12 +2197,15 @@
         return;
       }
       
+      if (inputMethodOverride) {
+        lastInputMethod = inputMethodOverride;
+      }
+
       showAILoading();
       
-      // Classify intent
       const intent = classifyIntent(query);
+      intent.input_method = lastInputMethod;
       
-      // Execute based on intent
       try {
         await executeIntent(intent, query);
       } catch (error) {
@@ -2269,16 +2339,46 @@
       return entities;
     }
     
-    // Execute intent - Extended handler for all customer services
+    const VOICE_CONFIRMATIONS = {
+      REPORT_BILLING: 'Here is your billing report.',
+      REPORT_PERSONAL: 'Here is your personal data report.',
+      REPORT_POLICY: 'Here is your policy report.',
+      REPORT_SAVINGS: 'Here is your savings report.',
+      REPORT_CLAIMS: 'Here is your claims report.',
+      INFO_MONTHLY_COST: 'Here is your monthly cost information.',
+      INFO_MONTHLY_SAVINGS: 'Here is your monthly savings information.',
+      INFO_COVERAGE: 'Here is your coverage information.',
+      INFO_BALANCE: 'Here is your wallet balance.',
+      CALC_PROJECTION: 'Here is your savings projection.',
+      ACTION_JOIN_COMMUNITY: 'Opening community options for you.',
+      ACTION_SHOW_COMMUNITY: 'Loading your community dashboard.',
+      ACTION_CREATE_FOUNDATION: 'Opening the foundation creation page.',
+      ACTION_APPLY: 'Opening the policy application page.',
+      ACTION_BUY_EQUIPMENT: 'Opening the medical equipment store.',
+      ACTION_BOOK_CONSULTATION: 'Opening the consultation booking page.',
+      ACTION_PHARMACY: 'Opening the pharmacy ordering page.',
+      ACTION_HOME_CARE: 'Opening home care services.',
+      ACTION_PAY: 'Opening the payment page.',
+      ACTION_SAVE: 'Opening the savings deposit page.',
+      ACTION_TRANSFER: 'Opening the fund transfer page.',
+      ACTION_CLAIM: 'Opening the claims filing page.',
+      ACTION_UPDATE: 'Opening your profile editor.',
+      ACTION_CHANGE_PASSWORD: 'Opening the password change page.',
+      ACTION_REFERRAL: 'Opening the referral program.',
+      ACTION_CONTACT_SUPPORT: 'Connecting you to support.',
+      ACTION_INVESTMENT: 'Opening your investment portfolio.',
+      UNKNOWN: "I didn't quite understand that. Please try one of the suggested actions."
+    };
+
     async function executeIntent(intent, originalQuery) {
-      // Load customer data if not cached
       await loadCustomerDataForAI();
       
-      // Record AI interaction for data integrity (non-blocking)
-      recordAIInteraction(intent.type, originalQuery);
+      recordAIInteraction(intent.type, originalQuery, intent.input_method);
+
+      const voiceMsg = VOICE_CONFIRMATIONS[intent.type] || VOICE_CONFIRMATIONS.UNKNOWN;
+      speakResponse(voiceMsg);
       
       switch (intent.type) {
-        // ============== REPORT INTENTS ==============
         case 'REPORT_BILLING':
           await generateBillingReport();
           break;
@@ -2295,7 +2395,6 @@
           await generateClaimsReport();
           break;
           
-        // ============== INFO INTENTS ==============
         case 'INFO_MONTHLY_COST':
           await showMonthlyCost();
           break;
@@ -2309,12 +2408,10 @@
           await showBalanceInfo();
           break;
           
-        // ============== CALCULATION INTENTS ==============
         case 'CALC_PROJECTION':
           await calculateProjection(intent.entities);
           break;
           
-        // ============== COMMUNITY ACTIONS ==============
         case 'ACTION_JOIN_COMMUNITY':
           await navigateToCommunity('join');
           break;
@@ -2325,12 +2422,10 @@
           await navigateToCommunity('create');
           break;
           
-        // ============== POLICY ACTIONS ==============
         case 'ACTION_APPLY':
           await navigateToAction('apply');
           break;
           
-        // ============== MEDICAL SERVICES ==============
         case 'ACTION_BUY_EQUIPMENT':
           await navigateToMedical('equipment');
           break;
@@ -2344,7 +2439,6 @@
           await navigateToMedical('homecare');
           break;
           
-        // ============== PAYMENT ACTIONS ==============
         case 'ACTION_PAY':
           await navigateToAction('pay');
           break;
@@ -2355,12 +2449,10 @@
           await navigateToAction('transfer');
           break;
           
-        // ============== CLAIMS ACTIONS ==============
         case 'ACTION_CLAIM':
           await navigateToAction('claim');
           break;
           
-        // ============== ACCOUNT ACTIONS ==============
         case 'ACTION_UPDATE':
           await navigateToAction('update');
           break;
@@ -2374,12 +2466,10 @@
           await navigateToAction('support');
           break;
           
-        // ============== INVESTMENT ACTIONS ==============
         case 'ACTION_INVESTMENT':
           await navigateToAction('investment');
           break;
           
-        // ============== UNKNOWN INTENT ==============
         default:
           showAIResponse(`
             <div style="text-align: center; padding: 20px;">
@@ -2400,8 +2490,7 @@
       }
     }
     
-    // Record AI interaction for data integrity and analytics
-    async function recordAIInteraction(intentType, query) {
+    async function recordAIInteraction(intentType, query, inputMethod) {
       try {
         const cid = customerId || sessionStorage.getItem('customer_id');
         if (!cid) return;
@@ -2417,11 +2506,11 @@
             intent_type: intentType,
             query: query,
             timestamp: new Date().toISOString(),
-            source: 'ai_assistant'
+            source: 'ai_assistant',
+            input_method: inputMethod || lastInputMethod || 'text'
           })
         });
       } catch (err) {
-        // Non-critical, don't block UI
         console.log('AI interaction recording (non-critical):', err);
       }
     }
@@ -3056,7 +3145,7 @@
       };
       
       document.getElementById('ai-query-input').value = queryMap[action] || '';
-      processAIQuery();
+      processAIQuery('quick_action');
     }
     
     // Toggle more AI actions visibility
