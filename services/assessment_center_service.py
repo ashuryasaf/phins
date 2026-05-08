@@ -81,8 +81,6 @@ def _resolve_fact_store_dir() -> str:
     railway_mount = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
     if railway_mount and os.path.isdir(railway_mount):
         return os.path.join(railway_mount, "assessment_center")
-    if os.path.isdir("/data"):
-        return "/data/assessment_center"
 
     fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -712,7 +710,7 @@ class AssessmentCenterService:
             try:
                 result = self.assess_document(
                     doc_id,
-                    customer_id=customer_id,
+                    customer_id=None,
                     source_context="backfill",
                 )
                 facts_added = result.summary.get("facts_extracted", 0) if result.summary else 0

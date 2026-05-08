@@ -566,8 +566,10 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                 return 500, {"error": "Document listing failed"}
             items = listing.get("items", []) if isinstance(listing, dict) else []
             doc_summaries = svc.get_document_assessments([
-                (d.get("id") if isinstance(d, dict) else getattr(d, "id", None))
-                for d in items
+                did for did in (
+                    (d.get("id") if isinstance(d, dict) else getattr(d, "id", None))
+                    for d in items
+                ) if did
             ])
             enriched = []
             for d in items:

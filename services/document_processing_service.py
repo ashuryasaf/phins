@@ -58,8 +58,6 @@ def _resolve_document_storage_root() -> str:
     railway_mount = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '').strip()
     if railway_mount and os.path.isdir(railway_mount):
         return os.path.join(railway_mount, 'documents')
-    if os.path.isdir('/data'):
-        return '/data/documents'
 
     fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
