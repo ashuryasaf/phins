@@ -708,6 +708,439 @@ class AssessmentCenterService:
             "customer_id": customer_id or "",
         }
 
+    # ── BI / "describe data with data" ──────────────────────────────────────
+
+    # Each fact_type is mapped to a human-friendly relevance category. The
+    # workbench surfaces the categories in this order so identity always
+    # appears above contact, medical above financial, etc.
+    _CATEGORY_FOR_FACT = {
+        "identity": "Identity",
+        "contact": "Contact",
+        "photo": "Photo / Portrait",
+        "medical_condition": "Medical",
+        "medication": "Medical",
+        "allergy": "Medical",
+        "vital_sign": "Medical",
+        "insurance": "Insurance",
+        "savings": "Financial",
+        "policy_reference": "Policy / Claim references",
+        "risk_indicator": "Risk markers",
+        "external_policy": "External clearinghouse",
+        "external_account": "External clearinghouse",
+        "external_contribution": "External clearinghouse",
+    }
+
+    _CATEGORY_ORDER = (
+        "Identity",
+        "Contact",
+        "Photo / Portrait",
+        "Medical",
+        "Insurance",
+        "Financial",
+        "Policy / Claim references",
+        "Risk markers",
+        "External clearinghouse",
+    )
+
+    def describe_data_with_data(
+        self,
+        customer_id: str,
+        document_ids: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
+        """Return a hierarchical 'describe data with data' view.
+
+        Every fact stored for the customer is grouped by relevance category
+        (Identity, Contact, Medical, Insurance, Financial, ...) and within
+        each category by ``label``. Each entry keeps the source document ID,
+        document type (id / medical / receipt / financial / general), and
+        SHA-256 hash so the workbench can prove provenance.
+
+        When ``document_ids`` is provided the description is restricted to
+        the union of facts that come from those documents - this is the
+        cross-document mode used by the workbench when an admin picks a
+        subset of files.
+        """
+        with self._lock:
+            facts = list(self._facts.get(customer_id, ()))
+        ids_set = {str(d) for d in document_ids} if document_ids else None
+        if ids_set is not None:
+            facts = [f for f in facts if (f.source_document_id or "") in ids_set]
+
+        # Build a lookup of document metadata so we can label each entry with
+        # the originating document_type (id / medical / receipt / financial).
+        doc_lookup: Dict[str, Dict[str, Any]] = {}
+        for f in facts:
+            if not f.source_document_id or f.source_document_id in doc_lookup:
+                continue
+            try:
+                rec = self.document_service.get_document(f.source_document_id) or {}
+            except Exception:
+                rec = {}
+            if isinstance(rec, dict):
+                doc_lookup[f.source_document_id] = {
+                    "name": rec.get("file_name") or rec.get("original_file_name") or f.source_document_id,
+                    "document_type": rec.get("document_type") or "general",
+                    "category": rec.get("category") or "general",
+                    "mime_type": rec.get("mime_type") or "",
+                    "uploaded_at": rec.get("uploaded_date")
+                                   or rec.get("uploaded_at")
+                                   or rec.get("created_at"),
+                }
+            else:
+                doc_lookup[f.source_document_id] = {"name": f.source_document_id}
+
+        sections: Dict[str, Dict[str, Any]] = {}
+        for f in facts:
+            cat = self._CATEGORY_FOR_FACT.get(f.fact_type, "Other")
+            sec = sections.setdefault(cat, {
+                "category": cat,
+                "fact_count": 0,
+                "by_label": {},
+                "documents": set(),
+                "top_confidence": 0.0,
+            })
+            label_bucket = sec["by_label"].setdefault(f.label or f.fact_type, [])
+            doc_meta = doc_lookup.get(f.source_document_id or "", {})
+            label_bucket.append({
+                "value": f.value,
+                "fact_type": f.fact_type,
+                "confidence": round(f.confidence, 3),
+                "source": f.source,
+                "document_id": f.source_document_id,
+                "document_name": doc_meta.get("name", ""),
+                "document_type": doc_meta.get("document_type", ""),
+                "document_category": doc_meta.get("category", ""),
+                "sha256": f.source_document_sha256,
+                "captured_at": f.captured_at,
+                "metadata": f.metadata,
+            })
+            sec["fact_count"] += 1
+            if f.source_document_id:
+                sec["documents"].add(f.source_document_id)
+            if f.confidence > sec["top_confidence"]:
+                sec["top_confidence"] = round(f.confidence, 3)
+
+        ordered_sections: List[Dict[str, Any]] = []
+        for cat in self._CATEGORY_ORDER:
+            if cat in sections:
+                sec = sections.pop(cat)
+                sec["documents"] = sorted(sec["documents"])
+                ordered_sections.append(sec)
+        for cat, sec in sorted(sections.items()):
+            sec["documents"] = sorted(sec["documents"])
+            ordered_sections.append(sec)
+
+        return {
+            "customer_id": customer_id,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "fact_count": len(facts),
+            "document_count": len(doc_lookup),
+            "documents": [
+                {"id": did, **meta} for did, meta in sorted(doc_lookup.items())
+            ],
+            "sections": ordered_sections,
+            "filtered_to_documents": sorted(ids_set) if ids_set else None,
+        }
+
+    def run_analysis(
+        self,
+        customer_id: str,
+        analysis_type: str,
+        *,
+        document_ids: Optional[Iterable[str]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Single dispatcher returning a normalised analysis payload.
+
+        The supported analyses are:
+
+        - ``customer_360``: full Customer 360 profile (alias for ``profile``).
+        - ``risk_assessment``: risk score + weighted contributors.
+        - ``bi_summary``: BI roll-up across categories with chart series.
+        - ``describe_data``: ``describe_data_with_data`` output.
+        - ``cross_document``: describe_data restricted to the provided docs
+           plus a "consolidated facts" table designed for cross-document
+           review.
+
+        Each return value includes ``analysis_type``, ``customer_id``,
+        ``sections`` (when applicable) and a ``download`` block enumerating
+        the table rows that the export endpoint will render to CSV/XLSX/PDF.
+        """
+        analysis = (analysis_type or "customer_360").lower()
+        options = dict(options or {})
+        ids = list(document_ids) if document_ids else None
+
+        if analysis in ("customer_360", "profile"):
+            profile = self.build_customer_360(customer_id)
+            return {
+                "analysis_type": "customer_360",
+                "customer_id": customer_id,
+                "title": "Customer 360 profile",
+                "profile": profile,
+                "download": self._profile_to_rows(profile),
+            }
+        if analysis in ("risk_assessment", "risk"):
+            risk = self.compute_risk_indicators(customer_id)
+            return {
+                "analysis_type": "risk_assessment",
+                "customer_id": customer_id,
+                "title": "Risk assessment",
+                "risk": risk,
+                "download": {
+                    "headers": ["factor", "value", "weight"],
+                    "rows": [
+                        [c.get("factor"), str(c.get("value")), c.get("weight")]
+                        for c in risk.get("contributors", [])
+                    ],
+                    "summary": {"risk_score": risk.get("risk_score"),
+                                "risk_level": risk.get("risk_level")},
+                },
+            }
+        if analysis in ("bi_summary", "bi"):
+            charts = self.build_chart_data(customer_id)
+            risk = self.compute_risk_indicators(customer_id)
+            return {
+                "analysis_type": "bi_summary",
+                "customer_id": customer_id,
+                "title": "BI summary",
+                "charts": charts,
+                "risk": risk,
+                "download": self._bi_to_rows(charts, risk),
+            }
+        if analysis in ("describe_data", "describe"):
+            description = self.describe_data_with_data(customer_id, ids)
+            return {
+                "analysis_type": "describe_data",
+                "customer_id": customer_id,
+                "title": "Describe data with data",
+                "description": description,
+                "download": self._description_to_rows(description),
+            }
+        if analysis in ("cross_document", "cross_doc", "compare"):
+            description = self.describe_data_with_data(customer_id, ids)
+            risk = self.compute_risk_indicators(customer_id)
+            return {
+                "analysis_type": "cross_document",
+                "customer_id": customer_id,
+                "title": "Cross-document review",
+                "description": description,
+                "risk": risk,
+                "download": self._description_to_rows(description),
+            }
+        raise ValueError(f"Unknown analysis_type: {analysis_type!r}")
+
+    # ── Download row builders ──────────────────────────────────────────────
+
+    @staticmethod
+    def _profile_to_rows(profile: Dict[str, Any]) -> Dict[str, Any]:
+        rows: List[List[Any]] = []
+        for section in ("identity",):
+            for label, items in (profile.get(section) or {}).items():
+                for item in items or []:
+                    if isinstance(item, dict):
+                        rows.append(["identity", label, json.dumps(item, ensure_ascii=False, default=str)])
+                    else:
+                        rows.append(["identity", label, str(item)])
+        for label, items in (profile.get("contact") or {}).items():
+            for item in items or []:
+                rows.append(["contact", label, str(item)])
+        for label, items in (profile.get("medical") or {}).items():
+            for item in items or []:
+                if isinstance(item, dict):
+                    rows.append(["medical", label, json.dumps(item, ensure_ascii=False, default=str)])
+                else:
+                    rows.append(["medical", label, str(item)])
+        for entry in profile.get("insurance_indicators") or []:
+            rows.append(["insurance", entry.get("label", ""), str(entry.get("value", ""))])
+        for entry in profile.get("savings_indicators") or []:
+            rows.append(["financial", entry.get("label", ""), str(entry.get("value", ""))])
+        for entry in profile.get("risk_indicators") or []:
+            rows.append(["risk", "marker", str(entry)])
+        for src, items in (profile.get("external_sources") or {}).items():
+            for entry in items or []:
+                rows.append([f"external:{src}", entry.get("label", ""), str(entry.get("value", ""))])
+        return {"headers": ["category", "label", "value"], "rows": rows}
+
+    @staticmethod
+    def _description_to_rows(description: Dict[str, Any]) -> Dict[str, Any]:
+        rows: List[List[Any]] = []
+        for section in description.get("sections", []):
+            cat = section.get("category", "Other")
+            for label, entries in (section.get("by_label") or {}).items():
+                for entry in entries:
+                    value = entry.get("value")
+                    if isinstance(value, (dict, list)):
+                        value = json.dumps(value, ensure_ascii=False, default=str)
+                    rows.append([
+                        cat,
+                        label,
+                        str(value),
+                        entry.get("document_id") or "",
+                        entry.get("document_type") or "",
+                        entry.get("sha256") or "",
+                        entry.get("confidence"),
+                    ])
+        return {
+            "headers": ["category", "label", "value", "document_id",
+                        "document_type", "sha256", "confidence"],
+            "rows": rows,
+        }
+
+    @staticmethod
+    def _bi_to_rows(charts: Dict[str, Any], risk: Dict[str, Any]) -> Dict[str, Any]:
+        rows: List[List[Any]] = []
+        for series_name, entries in (charts.get("charts") or {}).items():
+            for entry in entries or []:
+                rows.append([series_name, entry.get("label"), entry.get("value")])
+        for c in risk.get("contributors", []):
+            rows.append(["risk_contributors", f"{c.get('factor')}:{c.get('value')}", c.get("weight")])
+        return {"headers": ["series", "label", "value"], "rows": rows}
+
+    # ── Export to CSV / XLSX / PDF ─────────────────────────────────────────
+
+    def export_analysis(
+        self,
+        customer_id: str,
+        analysis_type: str,
+        export_format: str,
+        *,
+        document_ids: Optional[Iterable[str]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bytes, str, str]:
+        """Build a downloadable representation of an analysis.
+
+        Returns ``(bytes, mime_type, filename)``. Supported formats: ``csv``,
+        ``xlsx``, ``pdf``. The CSV path uses only the standard library, the
+        XLSX path uses ``openpyxl``, and the PDF path uses ``reportlab`` -
+        all already required by the platform.
+        """
+        result = self.run_analysis(
+            customer_id, analysis_type,
+            document_ids=document_ids, options=options,
+        )
+        download = result.get("download") or {"headers": [], "rows": []}
+        headers = download.get("headers") or []
+        rows = download.get("rows") or []
+        title = result.get("title") or analysis_type
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "_", f"{customer_id}_{analysis_type}").strip("_")
+        fmt = (export_format or "csv").lower()
+
+        if fmt == "csv":
+            import csv as _csv
+            import io as _io
+            buf = _io.StringIO()
+            writer = _csv.writer(buf)
+            if headers:
+                writer.writerow(headers)
+            for row in rows:
+                writer.writerow(row)
+            payload = buf.getvalue().encode("utf-8")
+            return payload, "text/csv", f"{slug}.csv"
+
+        if fmt == "xlsx":
+            try:
+                from openpyxl import Workbook  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError("openpyxl is required for XLSX export") from exc
+            wb = Workbook()
+            ws = wb.active
+            ws.title = analysis_type[:30] or "analysis"
+            ws.append([title])
+            ws.append([f"Customer: {customer_id}",
+                       f"Generated: {datetime.utcnow().isoformat() + 'Z'}"])
+            ws.append([])
+            if headers:
+                ws.append(headers)
+            for row in rows:
+                ws.append([self._xlsx_cell(v) for v in row])
+            import io as _io
+            buf = _io.BytesIO()
+            wb.save(buf)
+            return (buf.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    f"{slug}.xlsx")
+
+        if fmt == "pdf":
+            try:
+                from reportlab.lib.pagesizes import A4  # type: ignore
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore
+                from reportlab.platypus import (
+                    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+                )  # type: ignore
+                from reportlab.lib import colors  # type: ignore
+                from reportlab.lib.units import mm  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError("reportlab is required for PDF export") from exc
+            import io as _io
+            buf = _io.BytesIO()
+            doc = SimpleDocTemplate(
+                buf, pagesize=A4,
+                leftMargin=14 * mm, rightMargin=14 * mm,
+                topMargin=14 * mm, bottomMargin=14 * mm,
+            )
+            styles = getSampleStyleSheet()
+            heading = ParagraphStyle("Heading", parent=styles["Title"], fontSize=15, leading=18)
+            meta = ParagraphStyle("Meta", parent=styles["Normal"], fontSize=8, textColor=colors.grey)
+            story: List[Any] = [
+                Paragraph(self._pdf_safe(title), heading),
+                Paragraph(self._pdf_safe(
+                    f"Customer: {customer_id}  |  Generated: {datetime.utcnow().isoformat()}Z  |  Rows: {len(rows)}"
+                ), meta),
+                Spacer(1, 6),
+            ]
+            if headers and rows:
+                truncated = [headers] + [
+                    [self._pdf_safe(v, 80) for v in row] for row in rows[:300]
+                ]
+                table = Table(truncated, repeatRows=1)
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1565c0")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cfd8dc")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+                     [colors.white, colors.HexColor("#f5f7fa")]),
+                ]))
+                story.append(table)
+                if len(rows) > 300:
+                    story.append(Spacer(1, 4))
+                    story.append(Paragraph(
+                        f"Showing first 300 of {len(rows)} rows. Export to CSV/XLSX for full data.",
+                        meta,
+                    ))
+            else:
+                story.append(Paragraph("No tabular data available for this analysis.", meta))
+            doc.build(story)
+            return buf.getvalue(), "application/pdf", f"{slug}.pdf"
+
+        raise ValueError(f"Unsupported export_format: {export_format!r}")
+
+    @staticmethod
+    def _xlsx_cell(value: Any) -> Any:
+        if isinstance(value, (str, int, float)) or value is None:
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _pdf_safe(value: Any, max_length: Optional[int] = None) -> str:
+        if value is None:
+            text = ""
+        elif isinstance(value, str):
+            text = value
+        else:
+            try:
+                text = json.dumps(value, ensure_ascii=False, default=str)
+            except Exception:
+                text = str(value)
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if max_length and len(text) > max_length:
+            text = text[: max_length - 1] + "…"
+        return text
+
     def get_document_assessments(self, document_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
         """Return per-document summary derived from the unified fact store.
 

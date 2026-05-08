@@ -50,6 +50,7 @@ Every response uses the platform's standard JSON envelope. Error payloads use
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,58 @@ def _legacy_documents_pending(customer_id: Optional[str]) -> int:
         if doc.get("data") or doc.get("storage_path"):
             pending += 1
     return pending
+
+
+def export_analysis_binary(
+    *,
+    session: Optional[Dict[str, Any]],
+    body: Dict[str, Any],
+) -> Tuple[int, Dict[str, str], bytes]:
+    """Helper used by ``web_portal/server.py`` to stream binary exports.
+
+    Returns ``(status_code, headers, body_bytes)``. The dispatcher in
+    ``server.py`` calls this directly because the regular dispatcher path
+    is JSON-only.
+    """
+    if not session:
+        return 401, {"Content-Type": "application/json"}, b'{"error": "Authentication required"}'
+    requested_customer = str(body.get("customer_id") or "").strip()
+    cust, err = _resolve_customer(session, requested_customer)
+    if err:
+        return 403, {"Content-Type": "application/json"}, (
+            ('{"error": "' + err.replace('"', "'") + '"}').encode("utf-8")
+        )
+    if not cust:
+        return 400, {"Content-Type": "application/json"}, b'{"error": "customer_id required"}'
+
+    analysis_type = str(body.get("analysis_type") or "describe_data").strip()
+    export_format = str(body.get("format") or "csv").strip().lower()
+    doc_ids = body.get("document_ids") or None
+    if doc_ids is not None and not isinstance(doc_ids, list):
+        return 400, {"Content-Type": "application/json"}, b'{"error": "document_ids must be a list"}'
+    options = body.get("options") if isinstance(body.get("options"), dict) else {}
+
+    try:
+        payload, mime, filename = _service().export_analysis(
+            cust, analysis_type, export_format,
+            document_ids=doc_ids, options=options,
+        )
+    except ValueError as exc:
+        msg = '{"error": "' + str(exc).replace('"', "'") + '"}'
+        return 400, {"Content-Type": "application/json"}, msg.encode("utf-8")
+    except RuntimeError as exc:
+        msg = '{"error": "' + str(exc).replace('"', "'") + '"}'
+        return 500, {"Content-Type": "application/json"}, msg.encode("utf-8")
+    except Exception as exc:
+        logger.exception("assessment-center export failed: %s", exc)
+        return 500, {"Content-Type": "application/json"}, b'{"error": "Export failed"}'
+
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', '_', filename) or "analysis.bin"
+    return 200, {
+        "Content-Type": mime,
+        "Content-Disposition": f'attachment; filename="{safe_name}"',
+        "Content-Length": str(len(payload)),
+    }, payload
 
 
 def _bridge_legacy_documents(
@@ -226,6 +279,38 @@ _UPLOAD_REGISTRY: Tuple[Dict[str, Any], ...] = (
         "method": "POST",
         "module": "web_portal/api_assessment_center.py",
         "purpose": "Re-run extraction on every previously uploaded document (admin)",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
+        "path": "/api/assessment-center/analysis",
+        "method": "POST",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "Run any analysis (customer_360 / risk / bi / describe / cross_document)",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
+        "path": "/api/assessment-center/export-file",
+        "method": "POST",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "Downloadable analysis report (CSV / XLSX / PDF)",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
+        "path": "/api/assessment-center/customer/<id>/describe",
+        "method": "GET",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "Describe-data-with-data view organized by relevance category",
+        "assessment_center": True,
+        "persistent": True,
+    },
+    {
+        "path": "/api/assessment-center/customer/<id>/documents",
+        "method": "GET",
+        "module": "web_portal/api_assessment_center.py",
+        "purpose": "Documents owned by the customer with per-doc fact counts",
         "assessment_center": True,
         "persistent": True,
     },
@@ -428,6 +513,45 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             return 200, svc.compute_risk_indicators(cust)
         if resource == "charts":
             return 200, svc.build_chart_data(cust)
+        if resource == "describe":
+            doc_ids = None
+            if isinstance(query_params, dict):
+                qp = query_params.get("document_ids") or query_params.get("doc_ids")
+                if isinstance(qp, list):
+                    qp = qp[0] if qp else None
+                if qp:
+                    doc_ids = [d.strip() for d in str(qp).split(",") if d.strip()]
+            return 200, svc.describe_data_with_data(cust, doc_ids)
+        if resource == "documents":
+            try:
+                listing = svc.document_service.list_documents(
+                    customer_id=cust, page=1, page_size=200,
+                )
+            except Exception as exc:
+                return 500, {"error": "Document listing failed", "details": str(exc)}
+            items = listing.get("items", []) if isinstance(listing, dict) else []
+            doc_summaries = svc.get_document_assessments([
+                (d.get("id") if isinstance(d, dict) else getattr(d, "id", None))
+                for d in items
+            ])
+            enriched = []
+            for d in items:
+                rec = d if isinstance(d, dict) else {"id": getattr(d, "id", None)}
+                doc_id = rec.get("id")
+                summary = doc_summaries.get(doc_id, {})
+                enriched.append({
+                    "id": doc_id,
+                    "name": rec.get("file_name") or rec.get("original_file_name") or doc_id,
+                    "document_type": rec.get("document_type") or "general",
+                    "category": rec.get("category") or "general",
+                    "mime_type": rec.get("mime_type") or "",
+                    "size": rec.get("file_size"),
+                    "uploaded_at": rec.get("uploaded_date") or rec.get("uploaded_at") or rec.get("created_at"),
+                    "sha256": rec.get("sha256_checksum") or rec.get("sha256"),
+                    "facts_extracted": summary.get("facts_extracted", 0),
+                    "by_type": summary.get("by_type", {}),
+                })
+            return 200, {"customer_id": cust, "items": enriched, "total": len(enriched)}
         if resource == "export":
             return 200, svc.export_customer_pack(cust)
     except Exception as exc:
@@ -582,6 +706,26 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 "result": result,
                 "customer_id": requested_customer or "all",
             }
+
+        if path == "/api/assessment-center/analysis":
+            requested_customer = str(body.get("customer_id") or "").strip()
+            cust, err = _resolve_customer(session, requested_customer)
+            if err:
+                return 403, {"error": err}
+            if not cust:
+                return 400, {"error": "customer_id required"}
+            analysis_type = str(body.get("analysis_type") or "customer_360").strip()
+            doc_ids = body.get("document_ids") or None
+            if doc_ids is not None and not isinstance(doc_ids, list):
+                return 400, {"error": "document_ids must be a list"}
+            options = body.get("options") if isinstance(body.get("options"), dict) else {}
+            try:
+                return 200, svc.run_analysis(
+                    cust, analysis_type,
+                    document_ids=doc_ids, options=options,
+                )
+            except ValueError as exc:
+                return 400, {"error": str(exc)}
 
         if path == "/api/assessment-center/import":
             pack = body.get("pack")

@@ -350,11 +350,87 @@ class TestDashboardSurfaces:
         resp = requests.post(f"{BASE_URL}/api/assessment-center/backfill", json={})
         assert resp.status_code == 401
 
+    def test_describe_data_endpoint_returns_categories(self):
+        headers = _admin_session()
+        # Three different document types in one customer profile
+        for name, doc_type, text in (
+            ("id.txt", "id", "Customer Jane Doe. Israeli ID 123456782. Address: 1 Allenby St."),
+            ("med.txt", "medical", "Diagnosis: diabetes. Medication: metformin. BMI: 32."),
+            ("fin.txt", "financial", "Account balance: 25000. IBAN: GB82WEST12345698765432."),
+        ):
+            up = requests.post(
+                f"{BASE_URL}/api/assessment-center/upload",
+                json={"file_name": name, "file_data_b64": _b64(text),
+                      "mime_type": "text/plain", "customer_id": "CUST-API-DESC",
+                      "category": doc_type},
+                headers=headers,
+            )
+            assert up.status_code == 201, up.text
+        desc = requests.get(
+            f"{BASE_URL}/api/assessment-center/customer/CUST-API-DESC/describe",
+            headers=headers,
+        )
+        assert desc.status_code == 200, desc.text
+        body = desc.json()
+        cats = {s["category"] for s in body.get("sections", [])}
+        assert "Identity" in cats
+        assert "Medical" in cats
+
+    def test_analysis_endpoint_runs_each_type(self):
+        headers = _admin_session()
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={"file_name": "all.txt",
+                  "file_data_b64": _b64("ID 123456782. Diagnosis: cancer. Premium: 1000. Balance: 5000."),
+                  "mime_type": "text/plain", "customer_id": "CUST-API-DISP"},
+            headers=headers,
+        )
+        for analysis_type in ("describe_data", "risk_assessment", "bi_summary", "customer_360"):
+            res = requests.post(
+                f"{BASE_URL}/api/assessment-center/analysis",
+                json={"customer_id": "CUST-API-DISP", "analysis_type": analysis_type},
+                headers=headers,
+            )
+            assert res.status_code == 200, f"{analysis_type}: {res.text}"
+            payload = res.json()
+            assert "download" in payload
+            assert "headers" in payload["download"]
+
+    def test_export_file_endpoint_returns_binary(self):
+        headers = _admin_session()
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={"file_name": "exp.txt",
+                  "file_data_b64": _b64("ID 123456782. Diagnosis: diabetes. Premium: 1500."),
+                  "mime_type": "text/plain", "customer_id": "CUST-API-EXP"},
+            headers=headers,
+        )
+        for fmt, expect_mime, expect_prefix in (
+            ("csv", "text/csv", b"category"),
+            ("xlsx", "spreadsheetml.sheet", b"PK"),
+            ("pdf", "application/pdf", b"%PDF"),
+        ):
+            res = requests.post(
+                f"{BASE_URL}/api/assessment-center/export-file",
+                json={"customer_id": "CUST-API-EXP", "analysis_type": "describe_data", "format": fmt},
+                headers=headers,
+            )
+            assert res.status_code == 200, f"{fmt}: {res.text}"
+            assert expect_mime in res.headers.get("Content-Type", "")
+            disp = res.headers.get("Content-Disposition", "")
+            assert "attachment" in disp
+            assert res.content[:max(2, len(expect_prefix))].startswith(expect_prefix[:2]) or expect_prefix in res.content[:200]
+
     def test_assessment_center_page_is_served(self):
         # The dashboards rely on /assessment-center.html being reachable as a
         # static file. A regression where the file is missing would make every
         # nav link silently 404.
         resp = requests.get(f"{BASE_URL}/assessment-center.html")
         assert resp.status_code == 200
-        assert "Assessment Center" in resp.text
-        assert "/api/assessment-center/customer/" in resp.text
+        body = resp.text
+        # The unified workbench replaces the old "Assessment Center" page; the
+        # page must still expose the new analysis endpoints regardless of the
+        # title we pick.
+        assert "Assessment Workbench" in body or "Assessment Center" in body
+        assert "/api/assessment-center/analysis" in body
+        assert "/api/assessment-center/export-file" in body

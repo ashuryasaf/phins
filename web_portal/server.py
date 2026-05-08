@@ -23985,7 +23985,8 @@ For claims or questions, please contact:
                     return
 
         # =====================================================================
-        # ASSESSMENT CENTER (POST) - upload, scan, mislaka link, fact import
+        # ASSESSMENT CENTER (POST) - upload, scan, mislaka link, fact import,
+        # binary export-file (downloadable PDF/XLSX/CSV)
         # =====================================================================
         if assessment_center_enabled and api_ac_post and path.startswith('/api/assessment-center/'):
             try:
@@ -24000,6 +24001,22 @@ For claims or questions, please contact:
                     body_data = json.loads(body)
                 except json.JSONDecodeError:
                     body_data = {}
+
+                if path == '/api/assessment-center/export-file':
+                    try:
+                        from web_portal.api_assessment_center import export_analysis_binary
+                    except ImportError:
+                        from api_assessment_center import export_analysis_binary  # type: ignore
+                    status_code, headers_map, payload = export_analysis_binary(
+                        session=session, body=body_data,
+                    )
+                    self.send_response(status_code)
+                    for hk, hv in headers_map.items():
+                        self.send_header(hk, hv)
+                    self.end_headers()
+                    if payload:
+                        self.wfile.write(payload)
+                    return
 
                 ac_result = api_ac_post(path, session, body_data, client_ip, user_agent)
                 if ac_result is not None:

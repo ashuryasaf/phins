@@ -3,41 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PHINS — Assessment Center</title>
+  <title>PHINS — Assessment Workbench</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a237e; }
 
-    .phins-header {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
-      color: white;
-      box-shadow: 0 2px 12px rgba(13,71,161,0.3);
-      position: sticky; top: 0; z-index: 100;
-    }
-    .phins-header-inner {
-      max-width: 1280px; margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem;
-    }
+    .phins-header { background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 2px 12px rgba(13,71,161,0.3); position: sticky; top: 0; z-index: 100; }
+    .phins-header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem; }
     .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: white; }
-    .phins-logo-icon {
-      width: 40px; height: 40px; background: rgba(255,255,255,0.2);
-      border-radius: 10px; display: flex; align-items: center;
-      justify-content: center; font-size: 1.4rem;
-    }
+    .phins-logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
     .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; }
     .phins-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .phins-nav a {
-      color: rgba(255,255,255,0.85); text-decoration: none;
-      padding: 6px 14px; border-radius: 8px; font-size: 0.9rem;
-      transition: background 0.2s;
-    }
-    .phins-nav a:hover, .phins-nav a.active {
-      background: rgba(255,255,255,0.2); color: white;
-    }
+    .phins-nav a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 0.9rem; transition: background 0.2s; }
+    .phins-nav a:hover, .phins-nav a.active { background: rgba(255,255,255,0.2); color: white; }
     .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%) !important; color: white !important; font-weight: 600 !important; }
 
-    .page-container { max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
+    .page-container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
     .page-title { font-size: 1.85rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
     .page-subtitle { color: #546e7a; margin-bottom: 1.5rem; font-size: 0.95rem; }
 
@@ -45,18 +26,15 @@
     .card-title { font-size: 1.05rem; font-weight: 600; color: #1a237e; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .card-title .meta { font-size: 0.78rem; color: #78909c; font-weight: 400; margin-left: auto; }
 
+    .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.25rem; align-items: start; }
+    @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
     .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem; }
     .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-    @media (max-width: 900px) {
-      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
 
-    .stat-tile {
-      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
-      color: white; padding: 1rem; border-radius: 12px;
-      box-shadow: 0 2px 12px rgba(21,101,192,0.25);
-    }
+    .stat-tile { background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 1rem; border-radius: 12px; box-shadow: 0 2px 12px rgba(21,101,192,0.25); }
     .stat-tile.warn  { background: linear-gradient(135deg, #f57c00 0%, #fb8c00 100%); }
     .stat-tile.bad   { background: linear-gradient(135deg, #c62828 0%, #d32f2f 100%); }
     .stat-tile.good  { background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); }
@@ -71,15 +49,20 @@
     .badge.medium   { background: #fff3e0; color: #ef6c00; }
     .badge.low      { background: #e8f5e9; color: #2e7d32; }
     .badge.minimal  { background: #e3f2fd; color: #1565c0; }
-    .badge.unknown  { background: #eceff1; color: #546e7a; }
 
     .chip { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 0.78rem; background: #e3f2fd; color: #1565c0; margin: 2px; font-weight: 500; }
     .chip-red { background: #ffebee; color: #b71c1c; }
     .chip-green { background: #e8f5e9; color: #2e7d32; }
     .chip-amber { background: #fff3e0; color: #ef6c00; }
+    .chip-purple { background: #f3e5f5; color: #6a1b9a; }
+
+    .source-pill { display: inline-block; padding: 2px 8px; background: #f3e5f5; color: #6a1b9a; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-right: 4px; }
+    .src-mislaka { background: #e8eaf6; color: #283593; }
+    .src-document { background: #e3f2fd; color: #1565c0; }
+    .src-image { background: #fff3e0; color: #e65100; }
 
     table.list { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    table.list th, table.list td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eceff1; }
+    table.list th, table.list td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eceff1; vertical-align: top; }
     table.list th { color: #546e7a; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
     table.list tr:hover td { background: #f8fbff; }
 
@@ -89,24 +72,40 @@
     .bar-row .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #1565c0, #42a5f5); }
     .bar-row .value { flex: 0 0 80px; text-align: right; font-weight: 600; color: #1a237e; }
 
-    select, input { padding: 9px 11px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 0.9rem; }
+    select, input[type="text"], input[type="number"] { padding: 9px 11px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 0.9rem; background: white; }
     button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: none; background: #1565c0; color: white; font-weight: 600; font-size: 0.85rem; }
     button.ghost { background: white; color: #1565c0; border: 1px solid #1565c0; }
     button.warn  { background: #f57c00; }
+    button.green { background: #2e7d32; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .empty {
-      padding: 2rem; text-align: center; color: #78909c;
-      border: 2px dashed #cfd8dc; border-radius: 12px; background: #fafbfc;
-    }
+    .empty { padding: 1.5rem; text-align: center; color: #78909c; border: 2px dashed #cfd8dc; border-radius: 12px; background: #fafbfc; font-size: 0.88rem; }
 
-    .source-pill { display: inline-block; padding: 2px 8px; background: #f3e5f5; color: #6a1b9a; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-right: 4px; }
-    .src-mislaka { background: #e8eaf6; color: #283593; }
-    .src-document { background: #e3f2fd; color: #1565c0; }
-    .src-image { background: #fff3e0; color: #e65100; }
+    .drop-zone { border: 2px dashed #90caf9; border-radius: 12px; padding: 24px; text-align: center; background: #f8fbff; cursor: pointer; transition: all 0.2s; margin-bottom: 12px; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #1565c0; background: #e3f2fd; }
+    .drop-zone-icon { font-size: 2rem; margin-bottom: 6px; }
+    .drop-zone-text { font-weight: 600; color: #1a237e; font-size: 0.92rem; }
+    .drop-zone-hint { color: #78909c; font-size: 0.78rem; margin-top: 4px; }
+    #file-input, #file-input-quick { display: none; }
 
-    .integrity-ok  { color: #2e7d32; font-weight: 600; }
-    .integrity-bad { color: #c62828; font-weight: 600; }
+    .doc-list { max-height: 320px; overflow-y: auto; border: 1px solid #eceff1; border-radius: 10px; }
+    .doc-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f5f7fa; font-size: 0.85rem; cursor: pointer; }
+    .doc-item:last-child { border-bottom: none; }
+    .doc-item:hover { background: #f8fbff; }
+    .doc-item.selected { background: #e3f2fd; }
+    .doc-item input[type="checkbox"] { margin: 0 4px 0 0; }
+    .doc-item .doc-name { flex: 1; color: #1a237e; font-weight: 500; word-break: break-all; }
+    .doc-item .doc-facts { font-size: 0.72rem; color: #2e7d32; font-weight: 600; white-space: nowrap; }
+
+    .section-block { border: 1px solid #eceff1; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; background: #fafbfc; }
+    .section-block-title { font-size: 1rem; font-weight: 700; color: #1a237e; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .section-block-title .badge { font-size: 0.7rem; }
+    .section-block .label-group { padding: 6px 0; border-top: 1px dashed #eceff1; }
+    .section-block .label-group:first-of-type { border-top: none; padding-top: 0; }
+    .section-block .label-name { font-weight: 600; color: #455a64; font-size: 0.83rem; margin-bottom: 4px; }
+    .section-block .entry { display: flex; gap: 8px; font-size: 0.83rem; padding: 2px 0; align-items: center; flex-wrap: wrap; }
+    .section-block .entry .value { color: #1a237e; font-weight: 600; }
+    .section-block .entry .meta { color: #90a4ae; font-size: 0.72rem; }
   </style>
 </head>
 <body>
@@ -119,21 +118,20 @@
     </a>
     <nav class="phins-nav">
       <a href="/dashboard.html">Dashboard</a>
-      <a href="/risk-reports-dashboard.html">📊 Reports</a>
-      <a href="/risk-dashboard.html">🎯 Risk</a>
       <a href="/documents.html">📁 Documents</a>
-      <a href="/assessment-center.html" class="active">🧠 Assessment</a>
+      <a href="/assessment-center.html" class="active">🧠 Assessment Workbench</a>
       <a href="#" class="btn-logout" onclick="logout()">Logout</a>
     </nav>
   </div>
 </header>
 
 <div class="page-container">
-  <div class="page-title">🧠 Assessment Center</div>
+  <div class="page-title">🧠 Assessment Workbench</div>
   <div class="page-subtitle">
-    Unified Customer 360, risk indicators and statistical review.
-    Every uploaded document and ingested clearinghouse fact lands here so the
-    platform can run a single source of truth for underwriting and risk.
+    One place to upload any document, run any analysis, and download the
+    result. Drop an ID, a medical report and a financial statement, then
+    click <strong>Describe data</strong> to see every fact sorted by category
+    with full provenance back to the source SHA-256.
   </div>
 
   <!-- Backfill banner (admin only) -->
@@ -141,14 +139,12 @@
     <div class="card-title">🔁 Backfill previously uploaded documents
       <span class="meta" id="backfill-meta">checking…</span>
     </div>
-    <p style="font-size: 0.88rem; color: #455a64; margin: 0 0 12px;">
-      Documents uploaded before the Assessment Center was wired do not yet
+    <p style="font-size: 0.85rem; color: #455a64; margin: 0 0 10px;">
+      Documents uploaded before the Assessment Workbench was wired do not yet
       have facts in the unified store. Run a backfill to scan every
-      pre-existing document and rebuild Customer 360. The pipeline is
-      idempotent - documents that already have facts are skipped unless
-      <strong>force re-extract</strong> is checked.
+      pre-existing document and rebuild Customer 360.
     </p>
-    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
       <input type="text" id="backfill-customer" placeholder="Optional customer_id filter" style="width:240px;">
       <input type="number" id="backfill-limit" placeholder="Limit (optional)" min="1" style="width:140px;">
       <label style="font-size:0.85rem; display:flex; align-items:center; gap:6px;">
@@ -158,170 +154,150 @@
       <button class="ghost" onclick="loadBackfillStatus()">↻ Refresh status</button>
       <span id="backfill-status" style="font-size:0.85rem;"></span>
     </div>
-    <div id="backfill-result" style="display:none; margin-top:14px;"></div>
+    <div id="backfill-result" style="display:none; margin-top:12px;"></div>
   </div>
 
-  <!-- Customer picker -->
-  <div class="card" id="picker-card">
-    <div class="card-title">
-      🎯 Select customer
-      <span class="meta" id="picker-meta"></span>
-    </div>
-    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
-      <select id="customer-select" style="min-width: 320px;">
-        <option value="">— loading customers —</option>
-      </select>
-      <button id="refresh-btn" class="ghost" onclick="loadAll()">↻ Refresh</button>
-      <button id="export-btn" class="ghost" onclick="exportPack()">⬇ Export pack</button>
-      <span id="status-msg" style="font-size: 0.85rem;"></span>
-    </div>
-    <div id="picker-empty" class="empty" style="display:none; margin-top: 12px;">
-      No customers with assessment facts yet. Upload documents or call
-      <code>/api/assessment-center/mislaka/link</code> to seed data.
-    </div>
-  </div>
+  <!-- Workbench layout -->
+  <div class="layout">
 
-  <!-- Snapshot tiles -->
-  <div class="grid-4" id="tiles" style="display:none;">
-    <div class="stat-tile" id="tile-facts">
-      <div class="label">Facts on file</div>
-      <div class="value" id="tile-facts-value">—</div>
-      <div class="sub" id="tile-facts-sub">across uploads + external sources</div>
-    </div>
-    <div class="stat-tile good" id="tile-risk">
-      <div class="label">Risk score</div>
-      <div class="value" id="tile-risk-value">—</div>
-      <div class="sub" id="tile-risk-sub">level</div>
-    </div>
-    <div class="stat-tile muted" id="tile-docs">
-      <div class="label">Documents linked</div>
-      <div class="value" id="tile-docs-value">—</div>
-      <div class="sub" id="tile-docs-sub">all SHA-256 verified</div>
-    </div>
-    <div class="stat-tile" id="tile-external">
-      <div class="label">External rows</div>
-      <div class="value" id="tile-external-value">—</div>
-      <div class="sub" id="tile-external-sub">Mislaka + connected providers</div>
-    </div>
-  </div>
-
-  <!-- Customer 360 -->
-  <div class="grid-2" id="profile-grid" style="display:none;">
-    <div class="card">
-      <div class="card-title">🪪 Identity</div>
-      <div id="profile-identity"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">📍 Contact</div>
-      <div id="profile-contact"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">🏥 Medical 360</div>
-      <div id="profile-medical"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">💼 Insurance &amp; Savings</div>
-      <div id="profile-financial"></div>
-    </div>
-  </div>
-
-  <!-- Risk + charts -->
-  <div class="grid-2" id="risk-grid" style="display:none;">
-    <div class="card">
-      <div class="card-title">⚠️ Risk indicators
-        <span class="meta" id="risk-meta"></span>
-      </div>
-      <div id="risk-contributors"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">📊 Charts (data series)</div>
-      <div id="charts-container"></div>
-    </div>
-  </div>
-
-  <!-- External sources -->
-  <div class="card" id="external-card" style="display:none;">
-    <div class="card-title">🌐 External fact sources
-      <span class="meta">Clearinghouse rows are stored verbatim and never re-aggregated upstream.</span>
-    </div>
-    <div id="external-sources"></div>
-  </div>
-
-  <!-- Fact table -->
-  <div class="card" id="facts-card" style="display:none;">
-    <div class="card-title">🧾 All facts
-      <span class="meta">
-        <select id="fact-type-filter" onchange="renderFacts()">
-          <option value="">all types</option>
+    <!-- ── LEFT: customer + upload + document picker ─────────────────── -->
+    <div>
+      <div class="card">
+        <div class="card-title">🎯 Customer
+          <span class="meta" id="picker-meta"></span>
+        </div>
+        <select id="customer-select" style="width: 100%;">
+          <option value="">— loading customers —</option>
         </select>
-      </span>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="list" id="facts-table">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Label</th>
-            <th>Value</th>
-            <th>Source</th>
-            <th>Document</th>
-            <th>Confidence</th>
-            <th>Captured</th>
-          </tr>
-        </thead>
-        <tbody id="facts-tbody"></tbody>
-      </table>
-    </div>
-  </div>
+        <div id="picker-empty" class="empty" style="display:none; margin-top: 10px;">
+          No customers with facts yet. Upload below to seed the first profile.
+        </div>
+      </div>
 
-  <!-- Mislaka -->
-  <div class="card" id="mislaka-card">
-    <div class="card-title">🇮🇱 Pull Mislaka facts</div>
-    <p style="font-size: 0.85rem; color: #546e7a; margin: 0 0 12px;">
-      The Mislaka (מסלקה) clearinghouse already returns authoritative policy rows.
-      We push every row into the Assessment Center as a fact and let this page
-      perform the only statistical review.
-    </p>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-      <input type="text" id="mislaka-id" placeholder="Israeli ID (9 digits)" maxlength="9" style="width:200px;">
-      <select id="mislaka-product">
-        <option value="all">All products</option>
-        <option value="pension">Pension</option>
-        <option value="provident">Provident fund</option>
-        <option value="education_fund">Education fund</option>
-        <option value="life_insurance">Life insurance</option>
-        <option value="health_insurance">Health insurance</option>
-        <option value="managers_insurance">Managers insurance</option>
-        <option value="savings">Savings</option>
-      </select>
-      <button onclick="linkMislaka()">🔗 Link to Customer 360</button>
-      <span id="mislaka-status" style="font-size:0.85rem;"></span>
-    </div>
-  </div>
+      <div class="card">
+        <div class="card-title">📤 Upload &amp; assess</div>
+        <div class="drop-zone" id="drop-zone"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="onDragOver(event)"
+             ondragleave="onDragLeave(event)"
+             ondrop="onDrop(event)">
+          <div class="drop-zone-icon">📂</div>
+          <div class="drop-zone-text">Drop files or click to browse</div>
+          <div class="drop-zone-hint">PDF, DOC, DOCX, XLS, XLSX, CSV, PNG, JPG, TXT…</div>
+        </div>
+        <input type="file" id="file-input" multiple
+               accept=".pdf,.doc,.docx,.xls,.xlsx,.xsd,.csv,.txt,.json,.xml,.png,.jpg,.jpeg,.tiff,.bmp,.gif"
+               onchange="onFileSelect(event)">
+        <div id="upload-target" style="margin-bottom: 10px;">
+          <label style="font-size: 0.82rem; color: #546e7a;">Customer ID</label>
+          <input type="text" id="upload-customer-id" placeholder="leave empty to use selected" style="width: 100%; margin-top: 4px;">
+        </div>
+        <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <select id="upload-doctype" style="flex: 1; min-width: 150px;">
+            <option value="general">📄 General</option>
+            <option value="id">🪪 Identity</option>
+            <option value="medical">🏥 Medical</option>
+            <option value="financial">💰 Financial</option>
+            <option value="receipt">🧾 Receipt</option>
+            <option value="authority">📜 Authority</option>
+          </select>
+          <button id="upload-btn" onclick="uploadFiles()" disabled>📤 Upload &amp; assess</button>
+        </div>
+        <div id="upload-status" style="margin-top: 8px; font-size: 0.85rem;"></div>
+      </div>
 
-  <!-- Upload registry (admin only) -->
-  <div class="card" id="registry-card" style="display:none;">
-    <div class="card-title">📡 Upload endpoint registry
-      <span class="meta">Live - fetched from <code>/api/assessment-center/upload-endpoints</code></span>
+      <div class="card">
+        <div class="card-title">📁 Documents on file
+          <button class="ghost" style="margin-left:auto; padding:4px 10px; font-size:0.75rem;" onclick="loadDocuments()">↻</button>
+        </div>
+        <div style="font-size: 0.78rem; color: #546e7a; margin-bottom: 6px;">
+          Select one or more documents to scope the analysis. Empty selection = all customer data.
+        </div>
+        <div id="doc-list" class="doc-list">
+          <div class="empty">No documents yet for this customer.</div>
+        </div>
+      </div>
     </div>
-    <div style="overflow-x:auto;">
-      <table class="list" id="registry-table">
-        <thead>
-          <tr><th>Method</th><th>Path</th><th>Module</th><th>Purpose</th><th>Pipeline</th><th>Persistent</th></tr>
-        </thead>
-        <tbody id="registry-tbody"></tbody>
-      </table>
+
+    <!-- ── RIGHT: analysis + results ─────────────────────────────────── -->
+    <div>
+      <div class="grid-4" id="tiles">
+        <div class="stat-tile"><div class="label">Facts</div><div class="value" id="tile-facts-value">—</div><div class="sub" id="tile-facts-sub">across uploads + clearinghouses</div></div>
+        <div class="stat-tile good" id="tile-risk"><div class="label">Risk score</div><div class="value" id="tile-risk-value">—</div><div class="sub" id="tile-risk-sub">level</div></div>
+        <div class="stat-tile muted"><div class="label">Documents</div><div class="value" id="tile-docs-value">—</div><div class="sub" id="tile-docs-sub">SHA-256 verified</div></div>
+        <div class="stat-tile"><div class="label">External rows</div><div class="value" id="tile-external-value">—</div><div class="sub" id="tile-external-sub">Mislaka + connected</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔬 Analysis
+          <span class="meta" id="analysis-meta"></span>
+        </div>
+        <div style="display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+          <select id="analysis-type" style="min-width: 280px;">
+            <option value="describe_data">🗂️ Describe data with data (sorted by category)</option>
+            <option value="customer_360">👤 Customer 360 profile</option>
+            <option value="risk_assessment">⚠️ Risk assessment</option>
+            <option value="bi_summary">📊 BI summary (AI charts + risk)</option>
+            <option value="cross_document">🔀 Cross-document review (selected docs)</option>
+          </select>
+          <button class="green" onclick="runAnalysis()">▶ Run analysis</button>
+          <span style="margin-left: auto; font-size: 0.85rem; color: #546e7a;">Download:</span>
+          <button class="ghost" onclick="downloadReport('csv')">⬇ CSV</button>
+          <button class="ghost" onclick="downloadReport('xlsx')">⬇ XLSX</button>
+          <button class="ghost" onclick="downloadReport('pdf')">⬇ PDF</button>
+        </div>
+        <div id="analysis-status" style="font-size: 0.85rem; color: #546e7a;"></div>
+      </div>
+
+      <!-- Result panel (always visible once analysis ran) -->
+      <div id="result-panel" style="display: none;">
+        <div class="card">
+          <div class="card-title" id="result-title">Result</div>
+          <div id="result-body"></div>
+        </div>
+      </div>
+
+      <!-- Mislaka quick action -->
+      <div class="card">
+        <div class="card-title">🇮🇱 Pull Mislaka facts</div>
+        <p style="font-size: 0.85rem; color: #546e7a; margin: 0 0 10px;">
+          The Mislaka clearinghouse already returns authoritative policy rows.
+          Each row is stored as a fact - the workbench is the only place that
+          performs statistical review.
+        </p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="mislaka-id" placeholder="Israeli ID (9 digits)" maxlength="9" style="width:200px;">
+          <select id="mislaka-product">
+            <option value="all">All products</option>
+            <option value="pension">Pension</option>
+            <option value="provident">Provident fund</option>
+            <option value="life_insurance">Life insurance</option>
+            <option value="health_insurance">Health insurance</option>
+          </select>
+          <button onclick="linkMislaka()">🔗 Link to Customer 360</button>
+          <span id="mislaka-status" style="font-size:0.85rem;"></span>
+        </div>
+      </div>
+
+      <!-- Upload registry (admin only) -->
+      <div class="card" id="registry-card" style="display:none;">
+        <div class="card-title">📡 Upload endpoint registry
+          <span class="meta">Live - <code>/api/assessment-center/upload-endpoints</code></span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="list" id="registry-table">
+            <thead><tr><th>Method</th><th>Path</th><th>Module</th><th>Purpose</th><th>Pipeline</th></tr></thead>
+            <tbody id="registry-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
-    <div style="font-size:0.78rem; color:#78909c; margin-top:8px;" id="registry-notes"></div>
   </div>
 </div>
 
 <script>
   const TOKEN = localStorage.getItem('phins_token') || '';
-  const SESSION = (() => {
-    try { return JSON.parse(localStorage.getItem('phins_session') || '{}'); }
-    catch { return {}; }
-  })();
+  const SESSION = (() => { try { return JSON.parse(localStorage.getItem('phins_session') || '{}'); } catch { return {}; } })();
   const ROLE = String(SESSION.role || '').toLowerCase();
   const ADMIN_ROLES = new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims', 'claims_agent', 'claims_manager', 'underwriting_admin']);
   const IS_ADMIN = ADMIN_ROLES.has(ROLE);
@@ -331,7 +307,6 @@
     localStorage.removeItem('phins_session');
     window.location.href = '/login.html';
   }
-
   if (!TOKEN) { window.location.href = '/login.html'; }
 
   function api(path, opts) {
@@ -344,34 +319,41 @@
       ...opts
     });
   }
-
+  function apiBlob(path, opts) {
+    return fetch(path, {
+      headers: {
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json',
+        ...((opts||{}).headers || {})
+      },
+      ...opts
+    });
+  }
   function escHtml(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
-
   function show(id, on) { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
-  function status(msg, kind) {
-    const el = document.getElementById('status-msg');
+  function setStatus(id, msg, kind) {
+    const el = document.getElementById(id);
+    if (!el) return;
     el.textContent = msg || '';
     el.style.color = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#546e7a');
   }
-
   function urlCustomer() {
-    const url = new URL(window.location.href);
-    return url.searchParams.get('customer_id') || '';
+    return new URL(window.location.href).searchParams.get('customer_id') || '';
   }
-
   function setUrlCustomer(cid) {
     const url = new URL(window.location.href);
-    if (cid) url.searchParams.set('customer_id', cid);
-    else url.searchParams.delete('customer_id');
+    if (cid) url.searchParams.set('customer_id', cid); else url.searchParams.delete('customer_id');
     window.history.replaceState({}, '', url);
   }
 
   let CURRENT_CUSTOMER = '';
-  let LAST_FACTS = [];
+  let CURRENT_DOCUMENTS = [];      // list from /documents endpoint
+  let SELECTED_DOC_IDS = new Set();
+  let LAST_ANALYSIS = null;
 
   // ── Customer picker ─────────────────────────────────────────────────────
   async function loadCustomers() {
@@ -385,18 +367,17 @@
         if (items.length === 0) {
           sel.innerHTML = '<option value="">— no customers with facts yet —</option>';
           show('picker-empty', true);
-          return;
+        } else {
+          sel.innerHTML = items.map(it => {
+            const lvl = it.risk_level || 'minimal';
+            const score = ((it.risk_score || 0) * 100).toFixed(0);
+            return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}% (${escHtml(lvl)})</option>`;
+          }).join('');
+          show('picker-empty', false);
+          document.getElementById('picker-meta').textContent = `${items.length} customer(s) with facts on file`;
         }
-        sel.innerHTML = items.map(it => {
-          const lvl = it.risk_level || 'minimal';
-          const score = ((it.risk_score || 0) * 100).toFixed(0);
-          return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}% (${escHtml(lvl)})</option>`;
-        }).join('');
-        show('picker-empty', false);
-        document.getElementById('picker-meta').textContent = `${items.length} customer(s) with facts on file`;
       } catch (e) {
-        sel.innerHTML = '<option value="">— failed to load customer list —</option>';
-        status('Could not load customers: ' + e.message, 'error');
+        sel.innerHTML = '<option value="">— failed to load —</option>';
       }
     } else {
       const cid = SESSION.customer_id || urlCustomer();
@@ -405,236 +386,334 @@
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────
-  function tile(idValue, idSub, value, sub, kind) {
-    document.getElementById(idValue).textContent = value;
-    document.getElementById(idSub).textContent = sub;
-    if (kind) {
-      const tileEl = document.getElementById(idValue).closest('.stat-tile');
-      tileEl.classList.remove('good', 'warn', 'bad', 'muted');
-      if (kind !== 'default') tileEl.classList.add(kind);
+  // ── Upload ──────────────────────────────────────────────────────────────
+  let SELECTED_FILES = [];
+  function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('dragover'); }
+  function onDragLeave() { document.getElementById('drop-zone').classList.remove('dragover'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('dragover');
+    addFiles(Array.from(e.dataTransfer.files));
+  }
+  function onFileSelect(e) { addFiles(Array.from(e.target.files)); }
+  function addFiles(files) {
+    files.forEach(f => {
+      if (SELECTED_FILES.length >= 20) return;
+      if (SELECTED_FILES.find(x => x.name === f.name && x.size === f.size)) return;
+      SELECTED_FILES.push(f);
+    });
+    document.getElementById('upload-btn').disabled = SELECTED_FILES.length === 0;
+    setStatus('upload-status', `${SELECTED_FILES.length} file(s) ready`, 'ok');
+  }
+  async function readFileAsBase64(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+  }
+  async function uploadFiles() {
+    const btn = document.getElementById('upload-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Uploading…';
+    const docType = document.getElementById('upload-doctype').value;
+    const customerId = document.getElementById('upload-customer-id').value.trim() || CURRENT_CUSTOMER;
+    let totalFacts = 0;
+    let totalDocs = 0;
+    const errors = [];
+    for (const f of SELECTED_FILES) {
+      try {
+        const b64 = await readFileAsBase64(f);
+        const res = await api('/api/assessment-center/upload', {
+          method: 'POST',
+          body: JSON.stringify({
+            file_name: f.name,
+            file_data_b64: b64,
+            mime_type: f.type || 'application/octet-stream',
+            customer_id: customerId,
+            category: docType,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+        totalFacts += (json.summary && json.summary.facts_extracted) || 0;
+        totalDocs += 1;
+      } catch (e) {
+        errors.push(`${f.name}: ${e.message}`);
+      }
     }
+    SELECTED_FILES = [];
+    document.getElementById('file-input').value = '';
+    btn.textContent = '📤 Upload & assess';
+    btn.disabled = true;
+    setStatus('upload-status',
+      `✅ Uploaded ${totalDocs} file(s). 🧠 Extracted ${totalFacts} fact(s) → Customer 360 updated.${errors.length ? ' Errors: ' + errors.join('; ') : ''}`,
+      errors.length ? 'error' : 'ok');
+    // Refresh selectors and analysis
+    await loadCustomers();
+    if (customerId) {
+      const sel = document.getElementById('customer-select');
+      if ([...sel.options].some(o => o.value === customerId)) {
+        sel.value = customerId;
+      } else {
+        // newly created customer not yet in list; refresh and try again
+        await loadCustomers();
+        if ([...sel.options].some(o => o.value === customerId)) sel.value = customerId;
+      }
+      await onCustomerChange();
+    }
+  }
+
+  // ── Documents picker ────────────────────────────────────────────────────
+  async function loadDocuments() {
+    const cid = CURRENT_CUSTOMER;
+    const list = document.getElementById('doc-list');
+    if (!cid) {
+      list.innerHTML = '<div class="empty">Pick a customer first.</div>';
+      CURRENT_DOCUMENTS = [];
+      return;
+    }
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const res = await api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/documents`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      CURRENT_DOCUMENTS = json.items || [];
+      if (CURRENT_DOCUMENTS.length === 0) {
+        list.innerHTML = '<div class="empty">No documents yet. Upload above.</div>';
+        return;
+      }
+      list.innerHTML = CURRENT_DOCUMENTS.map(d => {
+        const tagsBadge = (d.facts_extracted || 0) > 0
+          ? `<span class="doc-facts">🧠 ${d.facts_extracted} facts</span>`
+          : `<span class="doc-facts" style="color:#90a4ae;">no facts</span>`;
+        const checked = SELECTED_DOC_IDS.has(d.id) ? 'checked' : '';
+        return `<label class="doc-item${SELECTED_DOC_IDS.has(d.id) ? ' selected' : ''}">
+          <input type="checkbox" ${checked} onchange="toggleDoc('${escHtml(d.id)}', this.checked)">
+          <span class="doc-name" title="${escHtml(d.sha256 || '')}">${escHtml(d.name || d.id)}</span>
+          <span class="badge">${escHtml(d.document_type || d.category || 'general')}</span>
+          ${tagsBadge}
+        </label>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = `<div class="empty">Failed to load documents: ${escHtml(e.message)}</div>`;
+    }
+  }
+  function toggleDoc(docId, on) {
+    if (on) SELECTED_DOC_IDS.add(docId); else SELECTED_DOC_IDS.delete(docId);
+  }
+
+  // ── Run analysis ────────────────────────────────────────────────────────
+  async function runAnalysis() {
+    if (!CURRENT_CUSTOMER) { setStatus('analysis-status', 'Pick a customer first.', 'error'); return; }
+    const type = document.getElementById('analysis-type').value;
+    const docIds = SELECTED_DOC_IDS.size > 0 ? Array.from(SELECTED_DOC_IDS) : null;
+    setStatus('analysis-status', 'Running analysis…');
+    try {
+      const res = await api('/api/assessment-center/analysis', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: CURRENT_CUSTOMER,
+          analysis_type: type,
+          document_ids: docIds,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      LAST_ANALYSIS = json;
+      renderResult(json);
+      setStatus('analysis-status', 'Done.', 'ok');
+    } catch (e) {
+      setStatus('analysis-status', '❌ ' + e.message, 'error');
+    }
+  }
+
+  function renderResult(result) {
+    show('result-panel', true);
+    document.getElementById('result-title').textContent =
+      `🔎 ${result.title || result.analysis_type || 'Result'} ${SELECTED_DOC_IDS.size ? `· scoped to ${SELECTED_DOC_IDS.size} doc(s)` : ''}`;
+    const body = document.getElementById('result-body');
+    const t = (result.analysis_type || '').toLowerCase();
+    if (t === 'describe_data' || t === 'cross_document') {
+      body.innerHTML = renderDescribe(result.description || {});
+    } else if (t === 'risk_assessment') {
+      body.innerHTML = renderRisk(result.risk || {});
+    } else if (t === 'bi_summary') {
+      body.innerHTML = renderRisk(result.risk || {}) + renderCharts((result.charts || {}).charts || {});
+    } else {
+      // customer_360
+      body.innerHTML = renderProfile(result.profile || {});
+    }
+  }
+
+  function renderDescribe(desc) {
+    const sections = desc.sections || [];
+    if (!sections.length) {
+      return '<div class="empty">No facts on file for this customer yet. Upload a document to begin.</div>';
+    }
+    const docs = (desc.documents || []).map(d => `
+      <span class="chip ${docTypeChipCls(d.document_type)}" title="SHA: ${escHtml(d.sha256 || '')}">
+        ${escHtml(d.name || d.id)} · ${escHtml(d.document_type || d.category || 'general')}
+      </span>
+    `).join('');
+    const docHeader = docs ? `<div style="margin-bottom: 10px;"><strong>Documents in scope:</strong> ${docs}</div>` : '';
+    const sectionsHtml = sections.map(sec => {
+      const labels = Object.entries(sec.by_label || {}).map(([label, entries]) => `
+        <div class="label-group">
+          <div class="label-name">${escHtml(label)}</div>
+          ${entries.slice(0, 30).map(e => {
+            let val = e.value;
+            if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+            return `<div class="entry">
+              <span class="value">${escHtml(val)}</span>
+              <span class="badge">${escHtml(e.fact_type || '')}</span>
+              <span class="meta">from ${escHtml(e.document_name || e.document_id || '?')} · ${escHtml(e.document_type || 'general')} · conf ${(Number(e.confidence || 0) * 100).toFixed(0)}%</span>
+            </div>`;
+          }).join('')}
+        </div>
+      `).join('');
+      return `<div class="section-block">
+        <div class="section-block-title">${categoryEmoji(sec.category)} ${escHtml(sec.category)}
+          <span class="badge">${sec.fact_count} fact${sec.fact_count === 1 ? '' : 's'}</span>
+        </div>
+        ${labels || '<div class="empty">No entries.</div>'}
+      </div>`;
+    }).join('');
+    return docHeader + sectionsHtml;
+  }
+
+  function categoryEmoji(cat) {
+    const map = {
+      'Identity': '🪪',
+      'Contact': '📍',
+      'Photo / Portrait': '🖼️',
+      'Medical': '🏥',
+      'Insurance': '💼',
+      'Financial': '💰',
+      'Policy / Claim references': '📂',
+      'Risk markers': '⚠️',
+      'External clearinghouse': '🌐',
+    };
+    return map[cat] || '📄';
+  }
+  function docTypeChipCls(t) {
+    const map = { id: 'chip', medical: 'chip-red', financial: 'chip-green', receipt: 'chip-amber', authority: 'chip-purple' };
+    return map[t] || '';
   }
 
   function renderProfile(profile) {
-    show('profile-grid', true);
-
     const id = profile.identity || {};
     const contact = profile.contact || {};
     const med = profile.medical || {};
-
-    const idHtml = (id.id_numbers || []).length
-      ? id.id_numbers.map(n => `<div><span class="chip">${escHtml(n.country || '?')}</span> <strong>${escHtml(n.value)}</strong> <small style="color:#78909c;">(${escHtml(n.id_type || '')})</small></div>`).join('')
-      : '<div class="empty" style="padding:12px;">No identity numbers extracted yet.</div>';
+    const idHtml = (id.id_numbers || []).map(n => `<div><span class="chip">${escHtml(n.country || '?')}</span> <strong>${escHtml(n.value)}</strong> <small style="color:#78909c;">(${escHtml(n.id_type || '')})</small></div>`).join('') || '<div class="empty">No IDs detected.</div>';
     const namesHtml = (id.full_names || []).map(n => `<span class="chip">${escHtml(n)}</span>`).join('');
-    const dobHtml = (id.dates_of_birth || []).map(d => `<span class="chip">${escHtml(d)}</span>`).join('');
-    document.getElementById('profile-identity').innerHTML = idHtml + (
-      namesHtml || dobHtml
-        ? `<div style="margin-top:10px;">${namesHtml}${dobHtml}</div>`
-        : ''
-    );
-
-    const renderList = (arr, cls) =>
-      (arr && arr.length) ? arr.map(v => `<span class="chip ${cls || ''}">${escHtml(typeof v === 'string' ? v : JSON.stringify(v))}</span>`).join('') : '<small style="color:#90a4ae;">none</small>';
-    document.getElementById('profile-contact').innerHTML = `
-      <div><strong>Addresses</strong><div>${renderList(contact.addresses)}</div></div>
-      <div style="margin-top:8px;"><strong>Phones</strong><div>${renderList(contact.phones)}</div></div>
-      <div style="margin-top:8px;"><strong>Emails</strong><div>${renderList(contact.emails)}</div></div>
-    `;
-
-    const conds = renderList(med.conditions, 'chip-red');
-    const meds  = renderList(med.medications, 'chip-amber');
-    const allg  = renderList(med.allergies, 'chip-amber');
-    const vitals = (med.vital_signs || []).map(v => `<span class="chip">${escHtml(v.label)}: <strong>${escHtml(v.value)}</strong></span>`).join('') || '<small style="color:#90a4ae;">none</small>';
-    document.getElementById('profile-medical').innerHTML = `
-      <div><strong>Conditions</strong><div>${conds}</div></div>
-      <div style="margin-top:8px;"><strong>Medications</strong><div>${meds}</div></div>
-      <div style="margin-top:8px;"><strong>Allergies</strong><div>${allg}</div></div>
-      <div style="margin-top:8px;"><strong>Vital signs</strong><div>${vitals}</div></div>
-    `;
-
+    const conds = (med.conditions || []).map(v => `<span class="chip chip-red">${escHtml(v)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+    const meds = (med.medications || []).map(v => `<span class="chip chip-amber">${escHtml(v)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
     const ins = (profile.insurance_indicators || []).map(i => `<div class="chip">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
     const sav = (profile.savings_indicators || []).map(i => `<div class="chip chip-green">${escHtml(i.label)}: ${escHtml(i.value)}</div>`).join('') || '<small style="color:#90a4ae;">none</small>';
-    const refs = (profile.policy_references || []).map(r => `<span class="chip">${escHtml(r)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
-    document.getElementById('profile-financial').innerHTML = `
-      <div><strong>Insurance signals</strong><div>${ins}</div></div>
-      <div style="margin-top:8px;"><strong>Savings signals</strong><div>${sav}</div></div>
-      <div style="margin-top:8px;"><strong>Policy / claim refs</strong><div>${refs}</div></div>
-    `;
-
-    const di = profile.data_integrity || {};
-    document.getElementById('tile-docs-value').textContent = (di.documents || []).length;
-    document.getElementById('tile-docs-sub').innerHTML = `<span class="integrity-ok">✓ ${ (di.sha256_set || []).length } SHA-256 hashes</span>`;
+    return `
+      <div class="grid-2">
+        <div class="section-block"><div class="section-block-title">🪪 Identity</div>${idHtml}<div style="margin-top:8px;">${namesHtml}</div></div>
+        <div class="section-block"><div class="section-block-title">📍 Contact</div>
+          <div><strong>Addresses</strong>: ${(contact.addresses || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
+          <div style="margin-top:6px;"><strong>Phones</strong>: ${(contact.phones || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
+          <div style="margin-top:6px;"><strong>Emails</strong>: ${(contact.emails || []).map(v => `<span class="chip">${escHtml(v)}</span>`).join('') || '<small>none</small>'}</div>
+        </div>
+        <div class="section-block"><div class="section-block-title">🏥 Medical</div>
+          <div><strong>Conditions</strong>: ${conds}</div>
+          <div style="margin-top:6px;"><strong>Medications</strong>: ${meds}</div>
+        </div>
+        <div class="section-block"><div class="section-block-title">💼 Insurance &amp; 💰 Financial</div>
+          <div><strong>Insurance</strong>: ${ins}</div>
+          <div style="margin-top:6px;"><strong>Savings</strong>: ${sav}</div>
+        </div>
+      </div>`;
   }
-
   function renderRisk(risk) {
-    show('risk-grid', true);
-    document.getElementById('risk-meta').textContent = `Computed at ${escHtml(risk.computed_at || '')}`;
     const lvl = risk.risk_level || 'minimal';
-    const score = (risk.risk_score || 0) * 100;
-    tile('tile-risk-value', 'tile-risk-sub', score.toFixed(0) + '%', `level: ${lvl}`,
-      lvl === 'very_high' ? 'bad' : lvl === 'high' ? 'warn' : (lvl === 'medium' ? 'warn' : 'good'));
-
+    const score = ((risk.risk_score || 0) * 100).toFixed(0);
     const contribs = (risk.contributors || []);
-    if (contribs.length === 0) {
-      document.getElementById('risk-contributors').innerHTML = '<div class="empty" style="padding:12px;">No risk contributors yet.</div>';
-      return;
-    }
     const max = contribs.reduce((m, c) => Math.max(m, c.weight || 0), 0.01);
-    document.getElementById('risk-contributors').innerHTML = contribs
-      .sort((a, b) => (b.weight || 0) - (a.weight || 0))
-      .map(c => {
-        const pct = ((c.weight || 0) / max) * 100;
-        return `
-          <div class="bar-row">
+    const bars = contribs.length === 0
+      ? '<div class="empty">No risk contributors yet.</div>'
+      : contribs.sort((a, b) => (b.weight || 0) - (a.weight || 0)).map(c => {
+          const pct = ((c.weight || 0) / max) * 100;
+          return `<div class="bar-row">
             <div class="label"><span class="badge">${escHtml(c.factor)}</span> ${escHtml(c.value)}</div>
             <div class="bar"><span style="width:${pct.toFixed(1)}%"></span></div>
             <div class="value">+${(c.weight || 0).toFixed(2)}</div>
           </div>`;
-      }).join('');
+        }).join('');
+    return `<div class="section-block"><div class="section-block-title">⚠️ Risk · ${score}% (${escHtml(lvl)})</div>${bars}</div>`;
   }
-
-  function renderChart(title, series) {
-    if (!series || !series.length) {
-      return `<div style="margin-bottom:14px;"><strong>${escHtml(title)}</strong><div class="empty" style="padding:10px; margin-top:4px;">no data</div></div>`;
-    }
-    const max = series.reduce((m, e) => Math.max(m, Number(e.value || 0)), 0.01);
-    return `
-      <div style="margin-bottom:18px;">
-        <strong>${escHtml(title)}</strong>
-        ${series.slice(0, 12).map(e => {
+  function renderCharts(charts) {
+    const renderOne = (title, series) => {
+      if (!series || !series.length) return `<div class="section-block"><div class="section-block-title">${escHtml(title)}</div><div class="empty">no data</div></div>`;
+      const max = series.reduce((m, e) => Math.max(m, Number(e.value || 0)), 0.01);
+      return `<div class="section-block"><div class="section-block-title">${escHtml(title)}</div>` +
+        series.slice(0, 12).map(e => {
           const pct = (Number(e.value || 0) / max) * 100;
           return `<div class="bar-row">
             <div class="label">${escHtml(e.label)}</div>
             <div class="bar"><span style="width:${pct.toFixed(1)}%"></span></div>
             <div class="value">${typeof e.value === 'number' ? e.value.toLocaleString() : escHtml(e.value)}</div>
           </div>`;
-        }).join('')}
-      </div>`;
+        }).join('') + '</div>';
+    };
+    return `<div class="grid-2">
+      ${renderOne('Risk breakdown', charts.risk_breakdown)}
+      ${renderOne('Condition distribution', charts.condition_distribution)}
+      ${renderOne('External sources', charts.external_sources)}
+      ${renderOne('Coverage signals', charts.coverage_distribution)}
+      ${renderOne('Savings signals', charts.savings_distribution)}
+    </div>`;
   }
 
-  function renderCharts(charts) {
-    const c = charts.charts || {};
-    document.getElementById('charts-container').innerHTML =
-      renderChart('Risk breakdown', c.risk_breakdown) +
-      renderChart('Condition distribution', c.condition_distribution) +
-      renderChart('External source records', c.external_sources) +
-      renderChart('Coverage signals', c.coverage_distribution) +
-      renderChart('Savings signals', c.savings_distribution);
-    const totals = charts.totals || {};
-    document.getElementById('tile-external-value').textContent = totals.external_records || 0;
-    document.getElementById('tile-external-sub').textContent = totals.coverage_items
-      ? `${totals.coverage_items} coverage items, ${totals.savings_total ? '$' + Number(totals.savings_total).toLocaleString() : '0'} savings`
-      : 'no external records yet';
-  }
-
-  function renderExternalSources(profile) {
-    const ext = profile.external_sources || {};
-    const keys = Object.keys(ext);
-    if (keys.length === 0) {
-      show('external-card', false);
-      return;
-    }
-    show('external-card', true);
-    document.getElementById('external-sources').innerHTML = keys.map(src => `
-      <div style="margin-bottom:10px;">
-        <span class="source-pill src-${escHtml(src)}">${escHtml(src)}</span>
-        <span style="color:#546e7a;">${ext[src].length} record(s)</span>
-        <table class="list" style="margin-top:6px;">
-          <thead><tr><th>Type</th><th>Label</th><th>Value</th><th>Row</th></tr></thead>
-          <tbody>${ext[src].slice(0, 10).map(r => `
-            <tr>
-              <td><span class="badge">${escHtml(r.fact_type)}</span></td>
-              <td>${escHtml(r.label || '')}</td>
-              <td>${escHtml(r.value || '')}</td>
-              <td><code style="font-size:0.72rem;color:#546e7a;">${escHtml(JSON.stringify(r.row || {}).slice(0, 80))}…</code></td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    `).join('');
-  }
-
-  function renderFacts() {
-    const filter = document.getElementById('fact-type-filter').value;
-    const rows = filter ? LAST_FACTS.filter(f => f.fact_type === filter) : LAST_FACTS;
-    document.getElementById('facts-tbody').innerHTML = rows.slice(0, 500).map(f => {
-      const sourceCls = f.source === 'mislaka' ? 'src-mislaka' : (f.source === 'image_analysis' ? 'src-image' : 'src-document');
-      const docLink = f.source_document_id
-        ? `<a href="/documents.html" title="${escHtml(f.source_document_sha256 || '')}">${escHtml(f.source_document_id)}</a>`
-        : '—';
-      let value = f.value;
-      if (typeof value === 'object' && value !== null) value = JSON.stringify(value);
-      return `<tr>
-        <td><span class="badge">${escHtml(f.fact_type)}</span></td>
-        <td>${escHtml(f.label || '')}</td>
-        <td>${escHtml(value)}</td>
-        <td><span class="source-pill ${sourceCls}">${escHtml(f.source || '')}</span></td>
-        <td>${docLink}</td>
-        <td>${(Number(f.confidence || 0) * 100).toFixed(0)}%</td>
-        <td style="font-size:0.72rem; color:#78909c;">${escHtml(f.captured_at || '')}</td>
-      </tr>`;
-    }).join('');
-  }
-
-  // ── Loaders ────────────────────────────────────────────────────────────
-  async function loadAll() {
-    const cid = document.getElementById('customer-select').value;
-    if (!cid) { status('Pick a customer first.', 'error'); return; }
-    CURRENT_CUSTOMER = cid;
-    setUrlCustomer(cid);
-    status('Loading…');
-
-    show('tiles', true);
-    show('profile-grid', false);
-    show('risk-grid', false);
-    show('external-card', false);
-    show('facts-card', false);
-
+  // ── Download ────────────────────────────────────────────────────────────
+  async function downloadReport(format) {
+    if (!CURRENT_CUSTOMER) { setStatus('analysis-status', 'Pick a customer first.', 'error'); return; }
+    const type = document.getElementById('analysis-type').value;
+    const docIds = SELECTED_DOC_IDS.size > 0 ? Array.from(SELECTED_DOC_IDS) : null;
+    setStatus('analysis-status', `Building ${format.toUpperCase()}…`);
     try {
-      const [profileRes, riskRes, factsRes, chartsRes] = await Promise.all([
-        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/profile`),
-        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/risk-indicators`),
-        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/facts`),
-        api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/charts`),
-      ]);
-
-      if (!profileRes.ok) throw new Error('profile HTTP ' + profileRes.status);
-      const profile = await profileRes.json();
-      const risk = riskRes.ok ? await riskRes.json() : { risk_score: 0, risk_level: 'unknown', contributors: [] };
-      const facts = factsRes.ok ? (await factsRes.json()).items || [] : [];
-      const charts = chartsRes.ok ? await chartsRes.json() : { charts: {}, totals: {} };
-
-      tile('tile-facts-value', 'tile-facts-sub', profile.fact_count || 0, 'across uploads + external sources', 'default');
-      renderProfile(profile);
-      renderRisk(risk);
-      renderExternalSources(profile);
-      renderCharts(charts);
-
-      LAST_FACTS = facts;
-      const types = Array.from(new Set(facts.map(f => f.fact_type))).sort();
-      document.getElementById('fact-type-filter').innerHTML =
-        '<option value="">all types</option>' +
-        types.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
-      show('facts-card', true);
-      renderFacts();
-      status('Loaded ' + (profile.fact_count || 0) + ' facts.', 'ok');
+      const res = await apiBlob('/api/assessment-center/export-file', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: CURRENT_CUSTOMER,
+          analysis_type: type,
+          document_ids: docIds,
+          format,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || ('HTTP ' + res.status));
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const matchName = /filename="?([^";]+)"?/.exec(disp);
+      const fileName = (matchName && matchName[1]) || `${type}_${CURRENT_CUSTOMER}.${format}`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus('analysis-status', `Downloaded ${fileName}`, 'ok');
     } catch (e) {
-      status('Load failed: ' + e.message, 'error');
+      setStatus('analysis-status', '❌ ' + e.message, 'error');
     }
   }
 
-  // ── Mislaka link ───────────────────────────────────────────────────────
+  // ── Mislaka ─────────────────────────────────────────────────────────────
   async function linkMislaka() {
     const id = document.getElementById('mislaka-id').value.trim();
     const product = document.getElementById('mislaka-product').value;
-    const cid = document.getElementById('customer-select').value || id;
+    const cid = CURRENT_CUSTOMER || id;
     if (!/^\d{9}$/.test(id)) {
-      document.getElementById('mislaka-status').textContent = 'ID must be 9 digits';
-      document.getElementById('mislaka-status').style.color = '#c62828';
-      return;
+      setStatus('mislaka-status', 'ID must be 9 digits', 'error'); return;
     }
-    document.getElementById('mislaka-status').textContent = 'Linking…';
+    setStatus('mislaka-status', 'Linking…');
     try {
       const res = await api('/api/assessment-center/mislaka/link', {
         method: 'POST',
@@ -642,65 +721,14 @@
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
-      document.getElementById('mislaka-status').textContent =
-        `✓ ${json.policies_received || 0} policies stored as facts.`;
-      document.getElementById('mislaka-status').style.color = '#2e7d32';
-      loadAll();
+      setStatus('mislaka-status', `✓ ${json.policies_received || 0} policies stored as facts`, 'ok');
+      await onCustomerChange();
     } catch (e) {
-      document.getElementById('mislaka-status').textContent = '❌ ' + e.message;
-      document.getElementById('mislaka-status').style.color = '#c62828';
+      setStatus('mislaka-status', '❌ ' + e.message, 'error');
     }
   }
 
-  // ── Export pack ────────────────────────────────────────────────────────
-  async function exportPack() {
-    if (!CURRENT_CUSTOMER) { status('Pick a customer first.', 'error'); return; }
-    try {
-      const res = await api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/export`);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `assessment_pack_${CURRENT_CUSTOMER}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      status('Pack exported.', 'ok');
-    } catch (e) {
-      status('Export failed: ' + e.message, 'error');
-    }
-  }
-
-  // ── Registry (admin only) ──────────────────────────────────────────────
-  async function loadRegistry() {
-    if (!IS_ADMIN) return;
-    show('registry-card', true);
-    try {
-      const res = await api('/api/assessment-center/upload-endpoints');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      document.getElementById('registry-tbody').innerHTML = (json.endpoints || []).map(e => {
-        const ac = e.assessment_center;
-        const acText = ac === true ? '<span class="chip chip-green">native</span>'
-          : ac === 'delegated' ? '<span class="chip">delegated</span>'
-          : ac === 'supersede' ? '<span class="chip chip-amber">supersede</span>'
-          : '<span class="chip">—</span>';
-        return `<tr>
-          <td><span class="badge">${escHtml(e.method)}</span></td>
-          <td><code>${escHtml(e.path)}</code></td>
-          <td><small>${escHtml(e.module)}</small></td>
-          <td>${escHtml(e.purpose)}</td>
-          <td>${acText}</td>
-          <td>${e.persistent ? '✓' : '—'}</td>
-        </tr>`;
-      }).join('');
-      document.getElementById('registry-notes').innerHTML = (json.notes || []).map(n => `• ${escHtml(n)}`).join('<br>');
-    } catch (e) {
-      document.getElementById('registry-tbody').innerHTML = `<tr><td colspan="6">Failed to load registry: ${escHtml(e.message)}</td></tr>`;
-    }
-  }
-
-  // ── Backfill ───────────────────────────────────────────────────────────
+  // ── Backfill ────────────────────────────────────────────────────────────
   async function loadBackfillStatus() {
     if (!IS_ADMIN) return;
     show('backfill-card', true);
@@ -719,7 +747,6 @@
       meta.textContent = 'Status check failed: ' + e.message;
     }
   }
-
   async function runBackfill() {
     if (!IS_ADMIN) return;
     const btn = document.getElementById('backfill-run-btn');
@@ -729,62 +756,109 @@
     const limitRaw = document.getElementById('backfill-limit').value.trim();
     const limit = limitRaw ? Number(limitRaw) : null;
     const force = document.getElementById('backfill-force').checked;
-    btn.disabled = true;
-    btn.textContent = '⏳ Running…';
-    statusEl.textContent = 'Backfilling — this may take a moment…';
+    btn.disabled = true; btn.textContent = '⏳ Running…';
+    statusEl.textContent = 'Backfilling…';
     statusEl.style.color = '#546e7a';
     try {
       const body = { include_legacy: true, force };
       if (cid) body.customer_id = cid;
       if (limit && Number.isFinite(limit)) body.limit = limit;
-      const res = await api('/api/assessment-center/backfill', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      const res = await api('/api/assessment-center/backfill', { method: 'POST', body: JSON.stringify(body) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
-      const r = json.result || {};
-      const b = json.bridge || {};
-      const errs = (r.errors || []).map(e => `<li><code>${escHtml(e.document_id)}</code>: ${escHtml(e.error)}</li>`).join('');
-      const customers = (r.customers_updated || []).map(c => `<span class="chip chip-green">${escHtml(c)}</span>`).join('') || '<small style="color:#90a4ae;">none</small>';
+      const r = json.result || {}, b = json.bridge || {};
       resultEl.style.display = '';
       resultEl.innerHTML = `
         <div class="grid-3">
-          <div class="stat-tile good"><div class="label">Documents scanned</div><div class="value">${r.scanned || 0}</div><div class="sub">incl. ${b.bridged || 0} bridged from legacy</div></div>
-          <div class="stat-tile"><div class="label">Documents assessed</div><div class="value">${r.assessed || 0}</div><div class="sub">${r.skipped || 0} skipped (already had facts)</div></div>
-          <div class="stat-tile ${(r.error_count || 0) > 0 ? 'bad' : 'muted'}"><div class="label">Errors</div><div class="value">${r.error_count || 0}</div><div class="sub">${r.force ? 'force re-extract was on' : 'idempotent run'}</div></div>
-        </div>
-        <div style="margin-top:12px;"><strong>Customers updated</strong><div>${customers}</div></div>
-        ${errs ? `<div style="margin-top:12px;"><strong>Error sample</strong><ul>${errs}</ul></div>` : ''}
-      `;
-      statusEl.textContent = `✓ Done. Assessed ${r.assessed || 0} document(s).`;
+          <div class="stat-tile good"><div class="label">Scanned</div><div class="value">${r.scanned || 0}</div><div class="sub">incl. ${b.bridged || 0} bridged from legacy</div></div>
+          <div class="stat-tile"><div class="label">Assessed</div><div class="value">${r.assessed || 0}</div><div class="sub">${r.skipped || 0} skipped</div></div>
+          <div class="stat-tile ${(r.error_count || 0) > 0 ? 'bad' : 'muted'}"><div class="label">Errors</div><div class="value">${r.error_count || 0}</div><div class="sub">${r.force ? 'force was on' : 'idempotent'}</div></div>
+        </div>`;
+      statusEl.textContent = `✓ Done. Assessed ${r.assessed || 0}.`;
       statusEl.style.color = '#2e7d32';
-      // Refresh dependent panels
       await loadBackfillStatus();
       await loadCustomers();
-      const cidSel = document.getElementById('customer-select');
-      if (cidSel.value) loadAll();
+      const sel = document.getElementById('customer-select');
+      if (sel.value) await onCustomerChange();
     } catch (e) {
       statusEl.textContent = '❌ ' + e.message;
       statusEl.style.color = '#c62828';
     } finally {
-      btn.disabled = false;
-      btn.textContent = '🔁 Run backfill';
+      btn.disabled = false; btn.textContent = '🔁 Run backfill';
     }
+  }
+
+  // ── Registry ────────────────────────────────────────────────────────────
+  async function loadRegistry() {
+    if (!IS_ADMIN) return;
+    show('registry-card', true);
+    try {
+      const res = await api('/api/assessment-center/upload-endpoints');
+      if (!res.ok) return;
+      const json = await res.json();
+      document.getElementById('registry-tbody').innerHTML = (json.endpoints || []).map(e => {
+        const ac = e.assessment_center;
+        const acText = ac === true ? '<span class="chip chip-green">native</span>'
+          : ac === 'delegated' ? '<span class="chip">delegated</span>'
+          : ac === 'supersede' ? '<span class="chip chip-amber">supersede</span>'
+          : '<span class="chip">—</span>';
+        return `<tr><td><span class="badge">${escHtml(e.method)}</span></td>
+          <td><code>${escHtml(e.path)}</code></td>
+          <td><small>${escHtml(e.module)}</small></td>
+          <td>${escHtml(e.purpose)}</td>
+          <td>${acText}</td></tr>`;
+      }).join('');
+    } catch (_) { /* non-fatal */ }
+  }
+
+  // ── Customer change ─────────────────────────────────────────────────────
+  async function onCustomerChange() {
+    const sel = document.getElementById('customer-select');
+    CURRENT_CUSTOMER = sel.value;
+    setUrlCustomer(CURRENT_CUSTOMER);
+    SELECTED_DOC_IDS.clear();
+    if (!CURRENT_CUSTOMER) { document.getElementById('doc-list').innerHTML = '<div class="empty">Pick a customer first.</div>'; return; }
+    try {
+      const [profileRes, riskRes, chartsRes] = await Promise.all([
+        api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/profile`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/risk-indicators`),
+        api(`/api/assessment-center/customer/${encodeURIComponent(CURRENT_CUSTOMER)}/charts`),
+      ]);
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        document.getElementById('tile-facts-value').textContent = profile.fact_count || 0;
+        document.getElementById('tile-docs-value').textContent = (profile.data_integrity && profile.data_integrity.documents || []).length;
+      }
+      if (riskRes.ok) {
+        const risk = await riskRes.json();
+        const lvl = risk.risk_level || 'minimal';
+        document.getElementById('tile-risk-value').textContent = ((risk.risk_score || 0) * 100).toFixed(0) + '%';
+        document.getElementById('tile-risk-sub').textContent = 'level: ' + lvl;
+        const tile = document.getElementById('tile-risk');
+        tile.classList.remove('good', 'warn', 'bad');
+        tile.classList.add(lvl === 'very_high' ? 'bad' : (lvl === 'high' || lvl === 'medium') ? 'warn' : 'good');
+      }
+      if (chartsRes.ok) {
+        const charts = await chartsRes.json();
+        const totals = (charts.totals || {});
+        document.getElementById('tile-external-value').textContent = totals.external_records || 0;
+      }
+    } catch (_) { /* non-fatal */ }
+    await loadDocuments();
   }
 
   // ── Init ───────────────────────────────────────────────────────────────
   (async function init() {
     await loadCustomers();
     const sel = document.getElementById('customer-select');
-    sel.addEventListener('change', loadAll);
+    sel.addEventListener('change', onCustomerChange);
     const url = urlCustomer();
     if (url && [...sel.options].some(o => o.value === url)) {
       sel.value = url;
     } else if (!IS_ADMIN && SESSION.customer_id) {
       sel.value = SESSION.customer_id;
     }
-    if (sel.value) loadAll();
+    if (sel.value) onCustomerChange();
     loadRegistry();
     loadBackfillStatus();
   })();

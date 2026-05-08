@@ -243,32 +243,83 @@ places:
    shows the total number of customers with facts, the platform-wide fact
    count and the high-risk customer count.
 
-### `/assessment-center.html` (new dedicated page)
+### `/assessment-center.html` — the unified Assessment Workbench
 
-Available to every logged-in role from the nav bar of the customer
-dashboard, admin portal, underwriter dashboard and documents page. It
-provides:
+The previous PRs shipped this as an analytics dashboard; it is now the
+single screen that does upload + mine + analyse + download in one flow.
+The other dashboards (`documents.html`, `risk-dashboard.html`,
+`risk-reports-dashboard.html`) each carry a prominent green banner
+pointing at the workbench - "less is sometimes more, one dashboard
+instead of three".
+
+The workbench provides:
 
 - a customer picker (admin only; customers see only themselves);
+- inline drag-and-drop upload that posts straight to
+  `/api/assessment-center/upload` and updates Customer 360 instantly;
+- a per-customer document picker with multi-select and live
+  `🧠 N facts` indicators (powered by
+  `GET /api/assessment-center/customer/<id>/documents`);
+- an analysis selector covering every supported analysis in one place:
+  - **Describe data with data** - every fact sorted by relevance category
+    (Identity / Contact / Medical / Insurance / Financial / Risk
+    markers / External clearinghouse) with the source document name,
+    `document_type` and SHA-256 attached;
+  - **Customer 360 profile**;
+  - **Risk assessment** with weighted contributors;
+  - **BI summary** (charts + risk);
+  - **Cross-document review** scoped to whichever documents are ticked
+    in the picker;
 - four snapshot tiles (facts on file, risk score, documents linked,
   external rows);
-- four Customer 360 cards (identity, contact, medical, insurance &
-  savings);
-- a risk indicator panel with weighted contributors;
-- chart-ready data series (risk breakdown, condition distribution,
-  external sources, coverage / savings) rendered as in-page bar charts
-  with no external libraries;
-- an external sources card listing each Mislaka / Swiftness row verbatim
-  for full provenance;
-- a fact table filterable by `fact_type` with a column linking back to the
-  source document SHA-256;
-- a Mislaka quick-link form that calls `/api/assessment-center/mislaka/link`
-  for the picked customer;
-- a re-uploadable pack export button that downloads the SHA-256-sealed JSON;
-- the live upload endpoint registry (admin only);
+- one-click downloadable reports as **CSV / XLSX / PDF** powered by
+  `POST /api/assessment-center/export-file`;
+- the Mislaka quick-link form that calls
+  `/api/assessment-center/mislaka/link` for the picked customer;
+- a re-uploadable pack export and the live upload endpoint registry
+  (admin only);
 - a backfill banner (admin only) that surfaces how many previously
   uploaded documents still need to be mined for facts and runs the
   pipeline against them with optional customer/limit/force controls.
+
+### Analysis dispatcher
+
+`POST /api/assessment-center/analysis` is the single dispatcher for every
+analysis the workbench can run. Body:
+
+```json
+{
+  "customer_id": "CUST-1",
+  "analysis_type": "describe_data | customer_360 | risk_assessment | bi_summary | cross_document",
+  "document_ids": ["DOC-...", "DOC-..."],
+  "options": {}
+}
+```
+
+Each response includes a `download` block (`{headers, rows, summary?}`)
+that the export endpoint renders to CSV / XLSX / PDF. The
+`describe_data` and `cross_document` analyses always include the source
+`document_id`, `document_type` and SHA-256 with every fact so a downloaded
+report stays traceable to the original upload.
+
+### Downloadable reports
+
+`POST /api/assessment-center/export-file` is the binary download endpoint
+used by every "⬇ CSV / XLSX / PDF" button in the workbench:
+
+```json
+{
+  "customer_id": "CUST-1",
+  "analysis_type": "describe_data",
+  "document_ids": null,
+  "format": "csv | xlsx | pdf"
+}
+```
+
+The response streams the file with the correct
+`Content-Type` and `Content-Disposition: attachment; filename=...`. CSV
+uses only the standard library, XLSX uses `openpyxl`, and PDF uses
+`reportlab` - all already required by the platform.
 
 ---
 
