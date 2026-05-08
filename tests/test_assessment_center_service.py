@@ -428,6 +428,42 @@ class TestReuploadablePack:
         assert "CUST-B" not in result["customers_updated"]
         assert center.get_facts("CUST-B") == []
 
+    def test_backfill_caps_limit_and_reports_truncation(self, center, doc_service):
+        # Seed more documents than the BACKFILL_MAX_LIMIT to make sure the
+        # service caps the work it does in a single request even if a caller
+        # asks for more than the maximum.
+        for i in range(5):
+            doc_service.upload_document(
+                file_name=f"cap_{i}.txt",
+                file_data_b64=_b64(f"ID 12345{(i+10):03d}. Diagnosis: diabetes."),
+                mime_type="text/plain", customer_id="CUST-CAP",
+                skip_processing=True,
+            )
+        result = center.backfill_documents(limit=99999)
+        assert result["limit_applied"] <= center.BACKFILL_MAX_LIMIT
+        assert "time_budget_hit" in result
+        assert "truncated" in result
+
+    def test_export_truncates_oversize_csv(self, center, doc_service, monkeypatch):
+        # Force the cap down to 5 so the test data exceeds it.
+        from services import assessment_center_service as ac_mod
+        monkeypatch.setattr(ac_mod, "MAX_EXPORT_ROWS", 5)
+        doc_service.upload_document(
+            file_name="big.txt",
+            file_data_b64=_b64(
+                "Diagnosis: diabetes. Diagnosis: hypertension. Diagnosis: cancer. "
+                "Diagnosis: stroke. Diagnosis: copd. Medication: metformin. "
+                "Medication: insulin. Medication: warfarin. Medication: aspirin. "
+                "Medication: omeprazole. Medication: levothyroxine."
+            ),
+            mime_type="text/plain", customer_id="CUST-BIG",
+        )
+        center.backfill_documents(customer_id="CUST-BIG")
+        csv_bytes, mime, name = center.export_analysis(
+            "CUST-BIG", "describe_data", "csv",
+        )
+        assert b"truncated" in csv_bytes
+
     def test_tampered_pack_flags_integrity(self, center, doc_service):
         text = "ID 123456782. Diagnosis: cancer."
         upload = doc_service.upload_document(

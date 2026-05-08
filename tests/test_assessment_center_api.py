@@ -421,6 +421,39 @@ class TestDashboardSurfaces:
             assert "attachment" in disp
             assert res.content[:max(2, len(expect_prefix))].startswith(expect_prefix[:2]) or expect_prefix in res.content[:200]
 
+    def test_health_endpoint_is_public_and_fast(self):
+        # The health probe must work without an auth token and report the
+        # fact-store directory so operators can spot ephemeral configs in
+        # Railway logs.
+        resp = requests.get(f"{BASE_URL}/api/assessment-center/health")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body.get("ok") is True
+        assert "fact_store_dir" in body
+        assert "customers_in_memory" in body
+
+    def test_export_error_returns_valid_json(self):
+        # An unsupported format used to build the error JSON via string
+        # concatenation; this asserts the response is now real JSON.
+        headers = _admin_session()
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={"file_name": "exp.txt",
+                  "file_data_b64": _b64("ID 123456782."),
+                  "mime_type": "text/plain", "customer_id": "CUST-EXP-ERR"},
+            headers=headers,
+        )
+        resp = requests.post(
+            f"{BASE_URL}/api/assessment-center/export-file",
+            json={"customer_id": "CUST-EXP-ERR",
+                  "analysis_type": "describe_data", "format": "wat"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        # Must parse as JSON and carry an "error" field.
+        body = resp.json()
+        assert "error" in body
+
     def test_assessment_center_page_is_served(self):
         # The dashboards rely on /assessment-center.html being reachable as a
         # static file. A regression where the file is missing would make every

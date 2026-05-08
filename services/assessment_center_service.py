@@ -51,6 +51,7 @@ import math
 import os
 import re
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -61,14 +62,53 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-ASSESSMENT_FACT_STORE = os.environ.get(
-    "PHINS_ASSESSMENT_FACT_STORE",
-    os.path.join(
+def _resolve_fact_store_dir() -> str:
+    """Return the persistent fact-store directory.
+
+    Priority:
+      1. ``PHINS_ASSESSMENT_FACT_STORE`` (explicit override)
+      2. ``RAILWAY_VOLUME_MOUNT_PATH/assessment_center`` (Railway volume)
+      3. ``/data/assessment_center`` (standard Docker volume mount)
+      4. ``<repo>/data/assessment_center`` (developer fallback)
+
+    The first three options survive Railway container restarts; the last is
+    ephemeral and emits a warning so operators know to attach a volume.
+    """
+    explicit = os.environ.get("PHINS_ASSESSMENT_FACT_STORE")
+    if explicit:
+        return explicit
+
+    railway_mount = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if railway_mount and os.path.isdir(railway_mount):
+        return os.path.join(railway_mount, "assessment_center")
+    if os.path.isdir("/data"):
+        return "/data/assessment_center"
+
+    fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
         "assessment_center",
-    ),
-)
+    )
+    # Only emit the warning if we are not in a test environment to keep the
+    # CI output quiet.
+    if not os.environ.get("PHINS_TEST_MODE"):
+        print(
+            f"⚠️  [assessment-center] Using ephemeral fact store {fallback} - "
+            "set PHINS_ASSESSMENT_FACT_STORE or mount a volume at /data for "
+            "durable Customer 360 persistence on Railway.",
+            flush=True,
+        )
+    return fallback
+
+
+ASSESSMENT_FACT_STORE = _resolve_fact_store_dir()
+
+# Bounded list / batch sizes used to prevent runaway memory or HTTP timeouts
+# when admins kick off large backfill or BI runs on Railway's edge timeout
+# (~120s) and small (512MB-2GB) container memory budgets.
+MAX_FACTS_PER_CUSTOMER = int(os.environ.get("PHINS_MAX_FACTS_PER_CUSTOMER", 5000))
+MAX_FACTS_LOAD_FILES = int(os.environ.get("PHINS_MAX_FACTS_LOAD_FILES", 10000))
+MAX_EXPORT_ROWS = int(os.environ.get("PHINS_MAX_EXPORT_ROWS", 50000))
 
 
 # Universe of supported fact categories. Frozen so callers cannot inject
@@ -508,6 +548,8 @@ class AssessmentCenterService:
             facts = [f for f in facts if f.fact_type == fact_type]
         return [f.to_dict() for f in facts]
 
+    LIST_CUSTOMERS_TIME_BUDGET_S = float(os.environ.get("PHINS_LIST_CUSTOMERS_TIME_BUDGET_S", 10))
+
     def list_customers_with_facts(self) -> List[Dict[str, Any]]:
         """Return one summary row per customer that has any facts on file.
 
@@ -519,34 +561,54 @@ class AssessmentCenterService:
         with self._lock:
             snapshot = {cid: list(facts) for cid, facts in self._facts.items()}
 
+        deadline = time.monotonic() + self.LIST_CUSTOMERS_TIME_BUDGET_S
         rows: List[Dict[str, Any]] = []
+        truncated = False
         for cid, facts in snapshot.items():
             if not facts:
                 continue
-            doc_ids = sorted({f.source_document_id for f in facts if f.source_document_id})
-            latest = max((f.captured_at for f in facts), default="")
+            if time.monotonic() > deadline:
+                truncated = True
+                break
             try:
-                risk = self.compute_risk_indicators(cid)
-                risk_score = risk.get("risk_score", 0.0)
-                risk_level = risk.get("risk_level", "minimal")
-            except Exception:
-                risk_score = 0.0
-                risk_level = "unknown"
-            by_type: Dict[str, int] = {}
-            for f in facts:
-                by_type[f.fact_type] = by_type.get(f.fact_type, 0) + 1
-            rows.append({
-                "customer_id": cid,
-                "fact_count": len(facts),
-                "document_count": len(doc_ids),
-                "documents": doc_ids,
-                "by_type": by_type,
-                "latest_capture": latest,
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-            })
+                doc_ids = sorted({f.source_document_id for f in facts if f.source_document_id})
+                latest = max((f.captured_at for f in facts), default="")
+                try:
+                    risk = self.compute_risk_indicators(cid)
+                    risk_score = risk.get("risk_score", 0.0)
+                    risk_level = risk.get("risk_level", "minimal")
+                except Exception as exc:
+                    logger.warning("risk computation failed for %s: %s", cid, exc)
+                    risk_score = 0.0
+                    risk_level = "unknown"
+                by_type: Dict[str, int] = {}
+                for f in facts:
+                    by_type[f.fact_type] = by_type.get(f.fact_type, 0) + 1
+                rows.append({
+                    "customer_id": cid,
+                    "fact_count": len(facts),
+                    "document_count": len(doc_ids),
+                    "documents": doc_ids,
+                    "by_type": by_type,
+                    "latest_capture": latest,
+                    "risk_score": risk_score,
+                    "risk_level": risk_level,
+                })
+            except Exception as exc:
+                # Never let a single malformed customer entry kill the whole
+                # admin tile; just skip it and keep going.
+                logger.warning("Skipping customer %s in list: %s", cid, exc)
+                continue
         rows.sort(key=lambda r: r.get("latest_capture", ""), reverse=True)
+        if truncated:
+            rows.append({"customer_id": "__truncated__",
+                         "fact_count": 0,
+                         "note": "List truncated to keep the response inside Railway's HTTP budget."})
         return rows
+
+    BACKFILL_DEFAULT_LIMIT = int(os.environ.get("PHINS_BACKFILL_DEFAULT_LIMIT", 200))
+    BACKFILL_MAX_LIMIT = int(os.environ.get("PHINS_BACKFILL_MAX_LIMIT", 1000))
+    BACKFILL_TIME_BUDGET_S = float(os.environ.get("PHINS_BACKFILL_TIME_BUDGET_S", 90))
 
     def backfill_documents(
         self,
@@ -614,8 +676,16 @@ class AssessmentCenterService:
             except Exception as exc:
                 logger.warning("backfill_documents listing failed: %s", exc)
 
+        # Resolve the effective per-call cap. We always apply BACKFILL_MAX_LIMIT
+        # so a buggy or hostile caller cannot hang the worker.
+        effective_limit = self.BACKFILL_DEFAULT_LIMIT
         if limit is not None:
-            ids = ids[: max(0, int(limit))]
+            try:
+                effective_limit = max(1, min(int(limit), self.BACKFILL_MAX_LIMIT))
+            except (TypeError, ValueError):
+                effective_limit = self.BACKFILL_DEFAULT_LIMIT
+        truncated = len(ids) > effective_limit
+        ids = ids[:effective_limit]
 
         existing = self.get_document_assessments(ids) if ids else {}
         scanned = 0
@@ -625,7 +695,15 @@ class AssessmentCenterService:
         customers_updated: set = set()
         deltas: Dict[str, int] = {}
 
+        deadline = time.monotonic() + self.BACKFILL_TIME_BUDGET_S
+        time_budget_hit = False
+
         for doc_id in ids:
+            if time.monotonic() > deadline:
+                # Stop early so the HTTP request returns within Railway's edge
+                # timeout. The caller can issue another request to keep going.
+                time_budget_hit = True
+                break
             scanned += 1
             current = existing.get(doc_id, {})
             if not force and current.get("facts_extracted"):
@@ -660,6 +738,9 @@ class AssessmentCenterService:
             "customers_updated": sorted(customers_updated),
             "deltas": deltas,
             "force": bool(force),
+            "limit_applied": effective_limit,
+            "truncated": truncated,
+            "time_budget_hit": time_budget_hit,
         }
 
     def backfill_status(self, customer_id: Optional[str] = None) -> Dict[str, Any]:
@@ -1032,8 +1113,15 @@ class AssessmentCenterService:
             writer = _csv.writer(buf)
             if headers:
                 writer.writerow(headers)
-            for row in rows:
+            truncated_rows = rows
+            if len(rows) > MAX_EXPORT_ROWS:
+                truncated_rows = rows[:MAX_EXPORT_ROWS]
+            for row in truncated_rows:
                 writer.writerow(row)
+            if len(rows) > MAX_EXPORT_ROWS:
+                writer.writerow([
+                    f"# truncated to {MAX_EXPORT_ROWS} of {len(rows)} rows"
+                ])
             payload = buf.getvalue().encode("utf-8")
             return payload, "text/csv", f"{slug}.csv"
 
@@ -1044,15 +1132,27 @@ class AssessmentCenterService:
                 raise RuntimeError("openpyxl is required for XLSX export") from exc
             wb = Workbook()
             ws = wb.active
-            ws.title = analysis_type[:30] or "analysis"
+            ws.title = (analysis_type or "analysis")[:30] or "analysis"
             ws.append([title])
             ws.append([f"Customer: {customer_id}",
                        f"Generated: {datetime.utcnow().isoformat() + 'Z'}"])
             ws.append([])
             if headers:
                 ws.append(headers)
-            for row in rows:
+            truncated_rows = rows
+            row_truncated = False
+            if len(rows) > MAX_EXPORT_ROWS:
+                truncated_rows = rows[:MAX_EXPORT_ROWS]
+                row_truncated = True
+            for row in truncated_rows:
                 ws.append([self._xlsx_cell(v) for v in row])
+            if row_truncated:
+                ws.append([])
+                ws.append([
+                    f"Note: only the first {MAX_EXPORT_ROWS} of {len(rows)} "
+                    "rows are included in this export. Re-run with a tighter "
+                    "filter (selected documents) for full coverage."
+                ])
             import io as _io
             buf = _io.BytesIO()
             wb.save(buf)
@@ -1701,6 +1801,17 @@ class AssessmentCenterService:
                     continue
                 existing.append(f)
                 seen.add(key)
+            # Bound the per-customer fact list so a runaway document or a
+            # malicious upload can't blow the process memory budget. We keep
+            # the most recent facts and discard the oldest beyond the cap.
+            if len(existing) > MAX_FACTS_PER_CUSTOMER:
+                drop = len(existing) - MAX_FACTS_PER_CUSTOMER
+                logger.warning(
+                    "Trimming %d oldest facts for %s (capped at %d)",
+                    drop, customer_id, MAX_FACTS_PER_CUSTOMER,
+                )
+                self._facts[customer_id] = existing[-MAX_FACTS_PER_CUSTOMER:]
+                existing = self._facts[customer_id]
             self._persist_customer(customer_id, existing)
 
     def _persist_customer(self, customer_id: str, facts: List[Fact]) -> None:
@@ -1725,7 +1836,16 @@ class AssessmentCenterService:
         try:
             if not os.path.isdir(self._fact_store_dir):
                 return
-            for name in os.listdir(self._fact_store_dir):
+            entries = sorted(os.listdir(self._fact_store_dir))
+            if len(entries) > MAX_FACTS_LOAD_FILES:
+                logger.warning(
+                    "Assessment fact store has %d entries; only loading the "
+                    "first %d on cold start to keep boot time predictable. "
+                    "Older customers will hydrate on first read.",
+                    len(entries), MAX_FACTS_LOAD_FILES,
+                )
+                entries = entries[:MAX_FACTS_LOAD_FILES]
+            for name in entries:
                 if not name.endswith(".json"):
                     continue
                 path = os.path.join(self._fact_store_dir, name)

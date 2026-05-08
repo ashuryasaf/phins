@@ -127,22 +127,26 @@ def export_analysis_binary(
     ``server.py`` calls this directly because the regular dispatcher path
     is JSON-only.
     """
+    import json as _json
+
+    def _err(status: int, message: str) -> Tuple[int, Dict[str, str], bytes]:
+        payload = _json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+        return status, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
+
     if not session:
-        return 401, {"Content-Type": "application/json"}, b'{"error": "Authentication required"}'
+        return _err(401, "Authentication required")
     requested_customer = str(body.get("customer_id") or "").strip()
     cust, err = _resolve_customer(session, requested_customer)
     if err:
-        return 403, {"Content-Type": "application/json"}, (
-            ('{"error": "' + err.replace('"', "'") + '"}').encode("utf-8")
-        )
+        return _err(403, err)
     if not cust:
-        return 400, {"Content-Type": "application/json"}, b'{"error": "customer_id required"}'
+        return _err(400, "customer_id required")
 
     analysis_type = str(body.get("analysis_type") or "describe_data").strip()
     export_format = str(body.get("format") or "csv").strip().lower()
     doc_ids = body.get("document_ids") or None
     if doc_ids is not None and not isinstance(doc_ids, list):
-        return 400, {"Content-Type": "application/json"}, b'{"error": "document_ids must be a list"}'
+        return _err(400, "document_ids must be a list")
     options = body.get("options") if isinstance(body.get("options"), dict) else {}
 
     try:
@@ -151,14 +155,12 @@ def export_analysis_binary(
             document_ids=doc_ids, options=options,
         )
     except ValueError as exc:
-        msg = '{"error": "' + str(exc).replace('"', "'") + '"}'
-        return 400, {"Content-Type": "application/json"}, msg.encode("utf-8")
+        return _err(400, str(exc))
     except RuntimeError as exc:
-        msg = '{"error": "' + str(exc).replace('"', "'") + '"}'
-        return 500, {"Content-Type": "application/json"}, msg.encode("utf-8")
+        return _err(500, str(exc))
     except Exception as exc:
         logger.exception("assessment-center export failed: %s", exc)
-        return 500, {"Content-Type": "application/json"}, b'{"error": "Export failed"}'
+        return _err(500, "Export failed")
 
     safe_name = re.sub(r'[^A-Za-z0-9._-]+', '_', filename) or "analysis.bin"
     return 200, {
@@ -166,6 +168,10 @@ def export_analysis_binary(
         "Content-Disposition": f'attachment; filename="{safe_name}"',
         "Content-Length": str(len(payload)),
     }, payload
+
+
+_BRIDGE_DEFAULT_LIMIT = 50
+_BRIDGE_MAX_LIMIT = 200
 
 
 def _bridge_legacy_documents(
@@ -194,8 +200,19 @@ def _bridge_legacy_documents(
     except Exception as exc:
         return {"bridged": 0, "ids": [], "errors": [{"error": f"doc_service_unavailable: {exc}"}]}
 
+    # Always enforce a hard ceiling on how many legacy documents we'll
+    # re-upload in a single request - rebuilding a 25MB file in memory per
+    # entry adds up fast on Railway's small container budget.
+    if limit is None:
+        cap = _BRIDGE_DEFAULT_LIMIT
+    else:
+        try:
+            cap = max(1, min(int(limit), _BRIDGE_MAX_LIMIT))
+        except (TypeError, ValueError):
+            cap = _BRIDGE_DEFAULT_LIMIT
+
     for legacy_id, doc in list(docs.items()):
-        if limit is not None and len(bridged) >= int(limit):
+        if len(bridged) >= cap:
             break
         if not isinstance(doc, dict):
             continue
@@ -432,6 +449,26 @@ def _registry_payload() -> Dict[str, Any]:
 
 def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any],
                  client_ip: str) -> Optional[Tuple[int, Dict[str, Any]]]:
+    if path == "/api/assessment-center/health":
+        # Public, lightweight liveness probe that confirms the service can
+        # construct its singleton without touching disk-heavy code paths. The
+        # Railway healthcheck on /api/health stays the source of truth for
+        # the whole portal; this is for the platform/operations dashboards
+        # that want a per-feature ping.
+        try:
+            svc = _service()
+            with svc._lock:  # noqa: SLF001 - intentional internal check
+                customer_count = len(svc._facts)  # noqa: SLF001
+            return 200, {
+                "ok": True,
+                "fact_store_dir": svc._fact_store_dir,  # noqa: SLF001
+                "customers_in_memory": customer_count,
+                "ts": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            }
+        except Exception as exc:
+            logger.exception("assessment-center health check failed: %s", exc)
+            return 500, {"ok": False, "error": str(exc)}
+
     if path == "/api/assessment-center/upload-endpoints":
         if not session:
             return 401, {"error": "Authentication required"}
