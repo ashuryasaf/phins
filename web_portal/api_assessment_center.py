@@ -777,6 +777,26 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 logger.exception("assessment-center analysis failed for %s: %s", cust, exc)
                 return 500, {"error": "Analysis failed"}
 
+        if path == "/api/assessment-center/export-file":
+            import base64 as _b64
+            import json as _json
+            status, headers_map, payload = export_analysis_binary(session=session, body=body)
+            if status != 200:
+                try:
+                    return status, _json.loads(payload.decode("utf-8"))
+                except Exception:
+                    return status, {"error": "Export failed"}
+            content_disp = headers_map.get("Content-Disposition", "")
+            fname = ""
+            if "filename=" in content_disp:
+                fname = content_disp.split("filename=")[-1].strip('"')
+            return 200, {
+                "file_name": fname,
+                "content_type": headers_map.get("Content-Type", "application/octet-stream"),
+                "data_b64": _b64.b64encode(payload).decode("ascii"),
+                "size": len(payload),
+            }
+
         if path == "/api/assessment-center/import":
             pack = body.get("pack")
             if not isinstance(pack, dict):
