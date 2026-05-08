@@ -62,13 +62,50 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
+def _running_on_railway() -> bool:
+    """Detect Railway runtime via env signals.
+
+    Used to gate the ``/data`` fallback so a developer machine that
+    coincidentally has a writable ``/data`` directory doesn't get its
+    persistence path silently redirected there. Any of these signals is
+    enough - they are all set by Railway in production deploys.
+    """
+    for key in (
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_STATIC_URL",
+    ):
+        if os.environ.get(key):
+            return True
+    return False
+
+
+def _data_volume_eligible(probe_dir: str = "/data") -> bool:
+    """``/data`` is only used when we can prove Railway / Docker context.
+
+    Conditions (all required):
+      - the directory exists and is writable, AND
+      - we are running on Railway (env signals) or the operator has
+        explicitly opted in via ``PHINS_USE_DATA_VOLUME=1``.
+    """
+    if not (os.path.isdir(probe_dir) and os.access(probe_dir, os.W_OK)):
+        return False
+    if os.environ.get("PHINS_USE_DATA_VOLUME", "").strip() == "1":
+        return True
+    return _running_on_railway()
+
+
 def _resolve_fact_store_dir() -> str:
     """Return the persistent fact-store directory.
 
     Priority:
       1. ``PHINS_ASSESSMENT_FACT_STORE`` (explicit override)
       2. ``RAILWAY_VOLUME_MOUNT_PATH/assessment_center`` (Railway volume)
-      3. ``/data/assessment_center`` (standard Docker volume mount)
+      3. ``/data/assessment_center`` (Docker volume mount, gated by
+         :func:`_data_volume_eligible` so dev machines that happen to
+         have a writable ``/data`` directory aren't hijacked)
       4. ``<repo>/data/assessment_center`` (developer fallback)
 
     The first three options survive Railway container restarts; the last is
@@ -82,9 +119,8 @@ def _resolve_fact_store_dir() -> str:
     if railway_mount and os.path.isdir(railway_mount):
         return os.path.join(railway_mount, "assessment_center")
 
-    docker_volume = "/data/assessment_center"
-    if os.path.isdir("/data"):
-        return docker_volume
+    if _data_volume_eligible():
+        return "/data/assessment_center"
 
     fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

@@ -48,7 +48,9 @@ def _resolve_document_storage_root() -> str:
     Priority:
       1. ``PHINS_DOCUMENT_STORAGE`` (explicit override)
       2. ``RAILWAY_VOLUME_MOUNT_PATH/documents`` (Railway volume)
-      3. ``/data/documents`` (standard Docker volume mount)
+      3. ``/data/documents`` (Docker volume mount, gated by Railway-or-
+         opt-in detection so dev machines with a writable ``/data`` are
+         not hijacked - see ``_data_volume_eligible``)
       4. ``<repo>/data/documents`` (developer fallback - ephemeral)
     """
     explicit = os.environ.get('PHINS_DOCUMENT_STORAGE')
@@ -59,9 +61,15 @@ def _resolve_document_storage_root() -> str:
     if railway_mount and os.path.isdir(railway_mount):
         return os.path.join(railway_mount, 'documents')
 
-    docker_volume = '/data/documents'
-    if os.path.isdir('/data'):
-        return docker_volume
+    # Reuse the eligibility gate from assessment_center_service so a single
+    # signal (Railway env vars or PHINS_USE_DATA_VOLUME=1) governs both
+    # persistence paths consistently.
+    try:
+        from services.assessment_center_service import _data_volume_eligible
+        if _data_volume_eligible():
+            return '/data/documents'
+    except Exception:
+        pass
 
     fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

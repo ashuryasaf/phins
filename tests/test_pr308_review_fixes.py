@@ -113,6 +113,101 @@ class TestAnalysisCatchAll:
         assert "document_ids" in body.get("error", "")
 
 
+# ── RuntimeError handler in export_analysis_binary ───────────────────────
+
+class TestExportRuntimeErrorIsSanitised:
+    """The PR review explicitly asked for the RuntimeError handler in
+    ``export_analysis_binary`` to behave like the generic ``except
+    Exception`` branch - log the trace server-side and return ``"Export
+    failed"`` to the caller. This guards against a silent regression
+    that would re-introduce ``str(exc)`` leakage if the openpyxl /
+    reportlab stack ever raises a ``RuntimeError`` carrying a filesystem
+    path or library internal.
+    """
+
+    def test_runtime_error_returns_generic_message(self, monkeypatch):
+        from web_portal import api_assessment_center as mod
+
+        class _StubService:
+            def export_analysis(self, *_args, **_kwargs):
+                raise RuntimeError("/tmp/openpyxl/internal_path leaked")
+
+        monkeypatch.setattr(mod, "_service", lambda: _StubService())
+        monkeypatch.setattr(mod, "_resolve_customer", lambda *_a, **_k: ("CUST-T", None))
+
+        status, headers, body = mod.export_analysis_binary(
+            session={"role": "admin", "username": "tester"},
+            body={"customer_id": "CUST-T", "analysis_type": "describe_data", "format": "csv"},
+        )
+        assert status == 500
+        assert headers.get("Content-Type") == "application/json"
+        import json as _json
+        payload = _json.loads(body.decode("utf-8"))
+        # Generic message - no path, no library internals.
+        assert payload == {"error": "Export failed"}, payload
+        assert "openpyxl" not in body.decode("utf-8")
+        assert "/tmp" not in body.decode("utf-8")
+
+    def test_value_error_still_returns_caller_friendly_message(self, monkeypatch):
+        # ValueError remains intentionally surfaced as a 400 with the raw
+        # message because those texts are user-facing input validation
+        # ("Unknown analysis_type: 'xyz'", "Unsupported export_format: 'wat'").
+        from web_portal import api_assessment_center as mod
+
+        class _StubService:
+            def export_analysis(self, *_args, **_kwargs):
+                raise ValueError("Unsupported export_format: 'wat'")
+
+        monkeypatch.setattr(mod, "_service", lambda: _StubService())
+        monkeypatch.setattr(mod, "_resolve_customer", lambda *_a, **_k: ("CUST-T", None))
+
+        status, _headers, body = mod.export_analysis_binary(
+            session={"role": "admin", "username": "tester"},
+            body={"customer_id": "CUST-T", "analysis_type": "describe_data", "format": "wat"},
+        )
+        assert status == 400
+        import json as _json
+        assert "Unsupported export_format" in _json.loads(body.decode("utf-8"))["error"]
+
+
+# ── /data fallback is gated against dev-system hijack ─────────────────────
+
+class TestDataVolumeGate:
+    """The bot review flagged that ``os.path.isdir('/data')`` could
+    silently hijack persistence paths on dev machines that happened to
+    have a ``/data`` directory. The ``_data_volume_eligible`` gate now
+    requires either Railway env signals or an explicit opt-in.
+    """
+
+    def test_eligibility_requires_writable_dir_and_railway_or_opt_in(self, tmp_path, monkeypatch):
+        from services.assessment_center_service import _data_volume_eligible
+
+        # Clear every Railway / opt-in signal.
+        for key in (
+            "RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID",
+            "RAILWAY_DEPLOYMENT_ID", "RAILWAY_STATIC_URL", "PHINS_USE_DATA_VOLUME",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        # A writable directory alone is not enough.
+        assert _data_volume_eligible(str(tmp_path)) is False
+
+        # With an explicit opt-in, the directory becomes eligible.
+        monkeypatch.setenv("PHINS_USE_DATA_VOLUME", "1")
+        assert _data_volume_eligible(str(tmp_path)) is True
+        monkeypatch.delenv("PHINS_USE_DATA_VOLUME", raising=False)
+
+        # Or with a Railway env signal.
+        monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+        assert _data_volume_eligible(str(tmp_path)) is True
+
+    def test_missing_directory_is_never_eligible(self, monkeypatch):
+        from services.assessment_center_service import _data_volume_eligible
+
+        monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+        assert _data_volume_eligible("/this/path/does/not/exist") is False
+
+
 # ── Registry honesty (renamed _UPLOAD_REGISTRY -> _API_REGISTRY) ──────────
 
 class TestRegistryPayloadShape:
