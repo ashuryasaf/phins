@@ -89,6 +89,59 @@ def test_repeat_log_suppression_resumes_with_summary():
     assert summary_count >= 1
 
 
+def test_internal_network_detection():
+    """The CGNAT range 100.64.0.0/10 plus the standard private LAN ranges
+    must be treated as internal. Anything else - including IPs that look
+    similar - must be flagged as public so legitimate scraping attempts
+    remain visible in the access log.
+    """
+    import web_portal.server as portal
+
+    for internal in ("100.64.0.7", "100.64.0.3", "100.127.255.254",
+                     "10.0.0.1", "192.168.1.5", "172.16.5.5", "127.0.0.1"):
+        assert portal._is_internal_network_ip(internal), internal
+
+    for public in ("1.2.3.4", "100.128.1.1", "100.63.255.254",
+                   "8.8.8.8", "203.0.113.10"):
+        assert not portal._is_internal_network_ip(public), public
+
+    # Defensive: bad inputs should never explode.
+    assert portal._is_internal_network_ip("") is False
+    assert portal._is_internal_network_ip(None) is False  # type: ignore[arg-type]
+    assert portal._is_internal_network_ip("not-an-ip") is False
+
+
+def test_internal_probe_silence_targets_security_dashboard():
+    """The exact 403 storm we observed in production - /api/security/dashboard
+    polled every 30s by a Railway-internal CGNAT IP - must be silenced.
+    Anything else (different path, different IP, or 200 response) must NOT
+    be silenced.
+    """
+    import web_portal.server as portal
+
+    assert portal._should_silence_internal_probe(
+        "100.64.0.7", "/api/security/dashboard", "403"
+    ) is True
+    assert portal._should_silence_internal_probe(
+        "100.64.0.3", "/api/security/dashboard", "403"
+    ) is True
+
+    # Public IP -> still log (real attacker probing).
+    assert portal._should_silence_internal_probe(
+        "1.2.3.4", "/api/security/dashboard", "403"
+    ) is False
+
+    # Different (non-security) path from CGNAT -> still log.
+    assert portal._should_silence_internal_probe(
+        "100.64.0.7", "/api/policies", "403"
+    ) is False
+
+    # 2xx responses are never silenced even from internal IPs.
+    assert portal._should_silence_internal_probe(
+        "100.64.0.7", "/api/security/dashboard", "200"
+    ) is False
+
+
 def test_only_4xx_api_paths_are_suppressed():
     import web_portal.server as portal
 

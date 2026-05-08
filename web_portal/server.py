@@ -9655,6 +9655,60 @@ def _should_silence_bot_probe_http_log(path: str, code: object) -> bool:
     return _is_bot_probe_path(path) and str(code) in ('404', '403')
 
 
+def _is_internal_network_ip(ip: str) -> bool:
+    """Return True for CGNAT / private IPv4 ranges used by Railway.
+
+    Railway's edge / load-balancer / sibling-service traffic typically lands
+    on the container with a source IP in:
+      - 100.64.0.0/10 (CGNAT - what we observed in production logs)
+      - 10.0.0.0/8    (private)
+      - 172.16.0.0/12 (private)
+      - 192.168.0.0/16 (private)
+      - 127.0.0.0/8   (loopback)
+    """
+    if not ip:
+        return False
+    try:
+        parts = [int(p) for p in ip.split('.')]
+    except (ValueError, AttributeError):
+        return False
+    if len(parts) != 4:
+        return False
+    a, b = parts[0], parts[1]
+    if a == 10 or a == 127:
+        return True
+    if a == 192 and b == 168:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    # 100.64.0.0/10 -> first octet 100, second octet 64..127.
+    if a == 100 and 64 <= b <= 127:
+        return True
+    return False
+
+
+# Endpoints that should be completely silent when an internal-network IP
+# (e.g. an unauthenticated Railway monitoring service) hits them and gets a
+# 4xx. The endpoint is still answered correctly; only the access-log line is
+# dropped so deployment logs don't get dominated by the same line every 30
+# seconds. Anything originating from a public IP is still logged so real
+# scraping attempts remain visible.
+_INTERNAL_PROBE_SILENCE_PATHS = frozenset({
+    '/api/security/dashboard',
+    '/api/security/threats',
+    '/api/security/ids',
+    '/api/security/firewall',
+})
+
+
+def _should_silence_internal_probe(client_ip: str, path: str, code: object) -> bool:
+    if not path or not str(code).startswith('4'):
+        return False
+    if path not in _INTERNAL_PROBE_SILENCE_PATHS:
+        return False
+    return _is_internal_network_ip(client_ip)
+
+
 # ── Repetitive 4xx suppression ──────────────────────────────────────────────
 #
 # Misconfigured monitors (e.g. an external scraper hitting an admin-only path
@@ -9726,6 +9780,13 @@ class PortalHandler(BaseHTTPRequestHandler):
             if _should_silence_bot_probe_http_log(path_value, code):
                 return
             client_ip = self.client_address[0] if self.client_address else '-'
+            # Drop the access line entirely when an internal-network probe
+            # (Railway edge / monitor / sibling service) gets a 4xx on a
+            # known security/admin endpoint. The endpoint still answers
+            # 4xx; we simply stop the deploy log from being dominated by
+            # the same line every 30 seconds.
+            if _should_silence_internal_probe(client_ip, path_value, code):
+                return
             suppress, suppressed_count = _should_suppress_repeat_4xx(
                 client_ip, path_value, code,
             )
@@ -9733,11 +9794,19 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             if suppressed_count > 0:
                 # First call after a quiet window - tell operators what they
-                # missed without re-floods.
+                # missed without re-floods. Include User-Agent so the source
+                # of mystery polling traffic can be identified.
                 try:
+                    user_agent = ''
+                    try:
+                        user_agent = self.headers.get('User-Agent', '') or ''
+                    except Exception:
+                        user_agent = ''
+                    ua_suffix = f" UA={user_agent[:120]!r}" if user_agent else ''
                     print(
-                        f"[log] {client_ip} resumed hitting {path_value} (status {code}); "
-                        f"suppressed {suppressed_count} earlier identical entries.",
+                        f"[log] {client_ip} resumed hitting {path_value} "
+                        f"(status {code}); suppressed {suppressed_count} "
+                        f"earlier identical entries.{ua_suffix}",
                         flush=True,
                     )
                 except Exception:
