@@ -1,4 +1,95 @@
 (() => {
+  // ── Defensive auth-fetch shim ───────────────────────────────────────────
+  //
+  // Several pages (dashboard.html, etc.) issue raw `fetch('/api/...')` calls
+  // without explicitly attaching the `Authorization: Bearer <token>` header.
+  // Those requests appear in Railway logs as 401/403 storms during normal
+  // dashboard loads and break legitimate customer flows.
+  //
+  // Rather than chase every call site forever, we wrap window.fetch so that
+  // any same-origin request to `/api/*` automatically gets the Authorization
+  // header attached when the caller did not provide one. We touch nothing
+  // else: third-party URLs, pages without a stored token, and callers who
+  // already supply an Authorization header are passed through untouched.
+  try {
+    if (typeof window !== "undefined" && window.fetch && !window.__phinsAuthFetchInstalled) {
+      const originalFetch = window.fetch.bind(window);
+      const isApiPath = (url) => {
+        if (!url) return false;
+        if (typeof url !== "string") {
+          try {
+            url = url.url || String(url);
+          } catch {
+            return false;
+          }
+        }
+        if (url.startsWith("/api/")) return true;
+        try {
+          const parsed = new URL(url, window.location.origin);
+          return parsed.origin === window.location.origin && parsed.pathname.startsWith("/api/");
+        } catch {
+          return false;
+        }
+      };
+      const readToken = () => {
+        try {
+          const fromLocal = window.localStorage && window.localStorage.getItem("phins_token");
+          if (fromLocal) return fromLocal;
+          const fromSession = window.sessionStorage && window.sessionStorage.getItem("phins_token");
+          if (fromSession) return fromSession;
+        } catch {
+          // localStorage may be blocked (private mode); fall through.
+        }
+        return null;
+      };
+      const hasAuth = (headers) => {
+        if (!headers) return false;
+        if (headers instanceof Headers) return headers.has("Authorization");
+        if (Array.isArray(headers)) {
+          return headers.some(([k]) => String(k || "").toLowerCase() === "authorization");
+        }
+        if (typeof headers === "object") {
+          return Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
+        }
+        return false;
+      };
+      window.fetch = function patchedFetch(input, init) {
+        try {
+          const url = typeof input === "string" ? input : (input && input.url) || "";
+          if (!isApiPath(url)) {
+            return originalFetch(input, init);
+          }
+          const token = readToken();
+          if (!token) {
+            return originalFetch(input, init);
+          }
+          const opts = init ? { ...init } : {};
+          let headers = opts.headers;
+          if (hasAuth(headers) || (input && input.headers && hasAuth(input.headers))) {
+            return originalFetch(input, init);
+          }
+          if (headers instanceof Headers) {
+            const cloned = new Headers(headers);
+            cloned.set("Authorization", "Bearer " + token);
+            opts.headers = cloned;
+          } else if (Array.isArray(headers)) {
+            opts.headers = headers.concat([["Authorization", "Bearer " + token]]);
+          } else {
+            opts.headers = { ...(headers || {}), Authorization: "Bearer " + token };
+          }
+          return originalFetch(input, opts);
+        } catch (err) {
+          // Never let the shim break a real network call.
+          try { console && console.warn && console.warn("[auth-fetch] shim error:", err); } catch {}
+          return originalFetch(input, init);
+        }
+      };
+      window.__phinsAuthFetchInstalled = true;
+    }
+  } catch (_) {
+    // Hardening - shim setup must never throw.
+  }
+
   const LEADING_EMOJI_RE = /^\s*(?:[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{FE0F}\u{200D}])+\s*/u;
   const TARGET_SELECTOR = [
     "nav a",

@@ -9655,6 +9655,55 @@ def _should_silence_bot_probe_http_log(path: str, code: object) -> bool:
     return _is_bot_probe_path(path) and str(code) in ('404', '403')
 
 
+# ── Repetitive 4xx suppression ──────────────────────────────────────────────
+#
+# Misconfigured monitors (e.g. an external scraper hitting an admin-only path
+# without auth) can flood Railway logs with thousands of identical 4xx lines
+# per hour. We track each (client_ip, path, code) tuple and emit the first
+# occurrence, then suppress further log lines for ``_REPEAT_LOG_WINDOW_S``
+# seconds, finally emitting a single summary line with the suppressed count.
+
+_REPEAT_LOG_WINDOW_S = float(os.environ.get('PHINS_REPEAT_LOG_WINDOW_S', 300))
+_REPEAT_LOG_THRESHOLD = int(os.environ.get('PHINS_REPEAT_LOG_THRESHOLD', 3))
+_REPEAT_LOG_STATE: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+_REPEAT_LOG_LOCK = threading.Lock()
+
+
+def _should_suppress_repeat_4xx(client_ip: str, path: str, code: object) -> Tuple[bool, int]:
+    """Return ``(suppress, suppressed_count)`` for a repetitive 4xx hit.
+
+    The first ``_REPEAT_LOG_THRESHOLD`` hits in a window pass through
+    untouched. Subsequent identical hits are silently suppressed until the
+    window expires, at which point the next hit emits a one-line summary
+    that includes how many were suppressed.
+    """
+    code_str = str(code)
+    if not code_str.startswith('4'):
+        return False, 0
+    if not path.startswith('/api/'):
+        # Static assets and bot probes are handled elsewhere; we focus on
+        # API routes which are most prone to monitor mis-configuration.
+        return False, 0
+
+    key = (client_ip or '-', path, code_str)
+    now = time.time()
+    with _REPEAT_LOG_LOCK:
+        state = _REPEAT_LOG_STATE.get(key)
+        if state is None or now - state.get('first_at', now) > _REPEAT_LOG_WINDOW_S:
+            suppressed = state.get('suppressed', 0) if state else 0
+            _REPEAT_LOG_STATE[key] = {
+                'first_at': now,
+                'count': 1,
+                'suppressed': 0,
+            }
+            return False, suppressed
+        state['count'] += 1
+        if state['count'] <= _REPEAT_LOG_THRESHOLD:
+            return False, 0
+        state['suppressed'] += 1
+        return True, 0
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     # Hook points for BaseHTTPRequestHandler logging. We keep the default
     # behavior for real traffic but suppress noisy bot-scan 404/403s that would
@@ -9673,8 +9722,26 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def log_request(self, code='-', size='-'):  # type: ignore[override]
         try:
-            if _should_silence_bot_probe_http_log(getattr(self, 'path', '') or '', code):
+            path_value = getattr(self, 'path', '') or ''
+            if _should_silence_bot_probe_http_log(path_value, code):
                 return
+            client_ip = self.client_address[0] if self.client_address else '-'
+            suppress, suppressed_count = _should_suppress_repeat_4xx(
+                client_ip, path_value, code,
+            )
+            if suppress:
+                return
+            if suppressed_count > 0:
+                # First call after a quiet window - tell operators what they
+                # missed without re-floods.
+                try:
+                    print(
+                        f"[log] {client_ip} resumed hitting {path_value} (status {code}); "
+                        f"suppressed {suppressed_count} earlier identical entries.",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
         super().log_request(code, size)
