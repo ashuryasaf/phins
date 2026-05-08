@@ -62,23 +62,178 @@ _ADMIN_ROLES = {"admin", "underwriter", "actuary", "analyst", "claims",
                 "claims_agent", "claims_manager", "underwriting_admin"}
 
 
+_SYNTHETIC_CUSTOMER_PREFIX = "USER:"
+
+
+def _synthetic_customer_id(username: str) -> str:
+    """Return a stable synthetic customer_id derived from a username.
+
+    A non-admin user must always be able to use the Assessment
+    Workbench - to upload, mine, and review their own data - even
+    when no formal customer record has been linked to their account
+    yet. Without this fallback the workbench would refuse every
+    upload with "Pick a customer first" and the user would see 0%
+    success.
+
+    The synthetic id is:
+      - prefixed (``USER:``) so it can never collide with a real
+        customer id (which use prefixes like ``CUST-`` or ``COM``);
+      - lowercased + whitespace-stripped so the same user always
+        resolves to the same bucket regardless of capitalisation;
+      - safe to migrate later: an admin can move the facts from
+        ``USER:asaf@assurance.co.il`` to ``CUST-ASAF-001`` once the
+        formal record exists, since every fact carries the source
+        document SHA-256 for provenance.
+    """
+    cleaned = re.sub(r"\s+", "", str(username or "")).strip().lower()
+    if not cleaned:
+        return ""
+    return f"{_SYNTHETIC_CUSTOMER_PREFIX}{cleaned}"
+
+
+def _recover_customer_id(session: Dict[str, Any]) -> str:
+    """Best-effort recovery of the customer_id when the session token
+    lost it (older tokens, DB seed race, etc.).
+
+    Recovery chain (all are best-effort and fall through on failure):
+      1. Match ``username`` (case-insensitive email) against the
+         in-memory ``CUSTOMERS`` dict.
+      2. Same against ``REGISTERED_CUSTOMERS``.
+      3. Same against ``DatabaseManager.customers.get_by_email``.
+      4. Synthesize a stable ``USER:<username>`` id so the workbench
+         is *always* usable for an authenticated user, even when no
+         formal customer record exists yet.
+
+    The recovered value is written back to the in-memory session dict
+    so subsequent calls in the same request thread see it without
+    paying the lookup cost again.
+    """
+    if not session:
+        return ""
+    username = (session.get("username")
+                or (session.get("user") or {}).get("username")
+                or "").strip()
+    if not username:
+        return ""
+
+    recovered = ""
+    try:
+        from web_portal import server as portal
+    except Exception:
+        portal = None  # type: ignore[assignment]
+
+    if portal is not None:
+        for store_name in ("CUSTOMERS", "REGISTERED_CUSTOMERS"):
+            store = getattr(portal, store_name, None)
+            if not isinstance(store, dict):
+                continue
+            for cid, cust in store.items():
+                if not isinstance(cust, dict):
+                    continue
+                email = (cust.get("email") or "").strip().lower()
+                if email and email == username.lower():
+                    recovered = str(cid)
+                    break
+            if recovered:
+                break
+
+    if not recovered:
+        # Only consult the database when it is explicitly enabled; the
+        # test harness runs with USE_DATABASE=false and trying to open a
+        # real connection there can hang for the full request budget.
+        use_db = str(os.environ.get("USE_DATABASE", "")).lower() in ("true", "1", "yes")
+        if use_db:
+            try:
+                from database.manager import DatabaseManager  # type: ignore
+                with DatabaseManager() as db:
+                    row = db.customers.get_by_email(username.lower())
+                    if row is not None:
+                        recovered = str(getattr(row, "id", "") or "")
+            except Exception as exc:
+                logger.debug("DB recovery for customer_id failed: %s", exc)
+
+    if not recovered:
+        # Final fallback: synthesise a stable id so the workbench is
+        # never deadlocked on missing customer records. The admin tile
+        # surfaces these synthetic users separately so they can be
+        # migrated to formal customer records later.
+        recovered = _synthetic_customer_id(username)
+
+    if recovered:
+        try:
+            session["customer_id"] = recovered
+        except Exception:
+            pass
+    return recovered
+
+
+def _normalise_customer_id(value: Any) -> str:
+    """Return a comparable customer_id (trim + uppercase + collapse whitespace).
+
+    Production logs showed customers occasionally hitting "Access denied"
+    when uploading their own files because their stale localStorage
+    session, a URL param like ``?customer_id=cust-asaf-001`` (lower
+    case) or a copy/paste with leading whitespace produced an ID that
+    only differed cosmetically from the canonical value held by the
+    server (``CUST-ASAF-001``). The session token is the source of
+    truth for the customer's identity, so we just compare canonical
+    forms here instead of failing fast on cosmetic differences.
+    """
+    if value is None:
+        return ""
+    return re.sub(r"\s+", "", str(value)).strip().upper()
+
+
 def _resolve_customer(session: Dict[str, Any], requested_customer_id: str) -> Tuple[str, Optional[str]]:
-    """Return (customer_id, error). ``error`` is None on success."""
+    """Return (customer_id, error). ``error`` is None on success.
+
+    Comparison is case-insensitive and whitespace-tolerant so a customer
+    cannot lock themselves out of their own data via a stale URL or
+    localStorage value. Admin roles can target any customer.
+    """
     if not session:
         return "", "Authentication required"
     role = str(session.get("role") or "").lower()
-    session_customer = (
+    session_customer_raw = (
         session.get("customer_id")
         or (session.get("user") or {}).get("customer_id")
         or ""
     )
-    requested = (requested_customer_id or "").strip()
+    session_customer = str(session_customer_raw or "").strip()
+    requested_raw = str(requested_customer_id or "").strip()
+
     if role in _ADMIN_ROLES:
-        return requested or session_customer or "", None
+        # Admins can target any customer. We still trim cosmetic
+        # whitespace from the input for a friendlier experience.
+        return requested_raw or session_customer or "", None
+
     if not session_customer:
-        return "", "Customer session invalid - no customer_id"
-    if requested and requested != session_customer:
-        return "", "Access denied"
+        # The token may have been minted before the customer was linked
+        # (older tokens, race during seed). _recover_customer_id always
+        # returns a stable id (real one if found, synthetic USER:<email>
+        # otherwise) so the workbench is never deadlocked on missing
+        # customer records.
+        recovered = _recover_customer_id(session)
+        if recovered:
+            session_customer = recovered
+        else:
+            return "", "Customer session invalid - no username"
+
+    if requested_raw:
+        if _normalise_customer_id(requested_raw) != _normalise_customer_id(session_customer):
+            logger.warning(
+                "_resolve_customer: rejecting cross-tenant request from %s for %r",
+                session.get("username") or session.get("user", {}).get("username") or "?",
+                requested_raw,
+            )
+            return "", (
+                f"You can only upload to your own account ({session_customer}). "
+                "Refresh the page if you switched accounts."
+            )
+
+    # Always return the server's canonical customer_id, never the value
+    # the caller sent, so downstream code never has to second-guess
+    # which form to trust.
     return session_customer, None
 
 
@@ -467,6 +622,42 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
         except Exception as exc:
             logger.exception("assessment-center health check failed: %s", exc)
             return 500, {"ok": False, "error": "Health check failed"}
+
+    if path == "/api/assessment-center/me":
+        # Authoritative "who am I" for the workbench. Tells the front-end
+        # the role, the canonical customer_id (after recovery), and
+        # whether the caller has admin-level access. This is the only
+        # source of truth the workbench should trust - localStorage and
+        # URL params are discarded for non-admins.
+        if not session:
+            return 401, {"error": "Authentication required"}
+        role = str(session.get("role") or "").lower()
+        username = (session.get("username")
+                    or (session.get("user") or {}).get("username")
+                    or "")
+        is_admin = role in _ADMIN_ROLES
+        token_customer_id = str(session.get("customer_id") or "").strip()
+        customer_id = token_customer_id
+        if not customer_id and not is_admin:
+            customer_id = _recover_customer_id(session)
+        is_synthetic = bool(
+            customer_id
+            and customer_id.upper().startswith(_SYNTHETIC_CUSTOMER_PREFIX)
+        )
+        return 200, {
+            "ok": True,
+            "username": username,
+            "role": role,
+            "is_admin": is_admin,
+            "customer_id": customer_id,
+            "customer_id_recovered": bool(customer_id and not token_customer_id),
+            "customer_id_is_synthetic": is_synthetic,
+            # Friendly hint the workbench renders below the picker so the
+            # customer always knows what they are operating on.
+            "display_label": (
+                username if is_synthetic else (customer_id or username)
+            ),
+        }
 
     if path == "/api/assessment-center/upload-endpoints":
         if not session:

@@ -260,6 +260,207 @@ class TestBackfillLimitSemantics:
         assert result["limit_applied"] == center.BACKFILL_DEFAULT_LIMIT
 
 
+# ── customer_id recovery for tokens that lost the claim ─────────────────
+
+class TestCustomerIdRecovery:
+    """Some session tokens were minted before the customer record was
+    fully linked, or after a DB seed race. ``/api/session/validate``
+    already runs a recovery chain that re-derives the customer_id from
+    the username; the upload pipeline must do the same so the customer
+    can immediately use the workbench instead of being told their
+    'Customer session is invalid'.
+    """
+
+    def setup_method(self):
+        from web_portal import api_assessment_center as mod
+        from web_portal import server as portal
+        self.mod = mod
+        self.portal = portal
+        self._snapshot = dict(portal.CUSTOMERS)
+        portal.CUSTOMERS.clear()
+        portal.CUSTOMERS["CUST-RECOVER-001"] = {
+            "id": "CUST-RECOVER-001",
+            "email": "lostid@example.com",
+            "name": "Lost ID",
+        }
+
+    def teardown_method(self):
+        self.portal.CUSTOMERS.clear()
+        self.portal.CUSTOMERS.update(self._snapshot)
+
+    def test_recovers_customer_id_from_username(self):
+        session = {"role": "customer", "username": "lostid@example.com"}
+        recovered = self.mod._recover_customer_id(session)
+        assert recovered == "CUST-RECOVER-001"
+        # Cached on the session so subsequent calls don't repeat the lookup.
+        assert session.get("customer_id") == "CUST-RECOVER-001"
+
+    def test_resolve_customer_uses_recovery_when_token_missing_id(self):
+        session = {"role": "customer", "username": "lostid@example.com"}
+        cust, err = self.mod._resolve_customer(session, "")
+        assert err is None
+        assert cust == "CUST-RECOVER-001"
+
+    def test_me_endpoint_returns_recovered_customer_id(self):
+        session = {"role": "customer", "username": "lostid@example.com"}
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", session, {}, "127.0.0.1"
+        )
+        assert status == 200, body
+        assert body["customer_id"] == "CUST-RECOVER-001"
+        assert body["is_admin"] is False
+        assert body["customer_id_recovered"] is True
+
+    def test_me_endpoint_admin_role(self):
+        session = {"role": "admin", "username": "admin"}
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", session, {}, "127.0.0.1"
+        )
+        assert status == 200, body
+        assert body["is_admin"] is True
+
+    def test_me_endpoint_requires_authentication(self):
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", None, {}, "127.0.0.1"
+        )
+        assert status == 401
+        assert "error" in body
+
+
+# ── workbench is usable even without a formal customer record ────────────
+
+class TestSyntheticCustomerForUnlinkedUsers:
+    """Production reproducer: an authenticated user whose account has
+    not yet been linked to a formal CUST-* record was getting "Pick a
+    customer first" on every analysis / upload / download. The
+    workbench must remain usable for any authenticated user; their
+    facts attach to a synthesised ``USER:<email>`` bucket that an
+    admin can later migrate to the real customer record (each fact
+    carries the source-document SHA-256 for provenance).
+    """
+
+    def setup_method(self):
+        from web_portal import api_assessment_center as mod
+        from web_portal import server as portal
+        self.mod = mod
+        self.portal = portal
+        # Make sure the user is NOT in any customer store so we exercise
+        # the synthetic-id path explicitly.
+        self._snapshot = dict(portal.CUSTOMERS)
+        portal.CUSTOMERS.clear()
+
+    def teardown_method(self):
+        self.portal.CUSTOMERS.clear()
+        self.portal.CUSTOMERS.update(self._snapshot)
+
+    def test_synthetic_id_helper_normalises_username(self):
+        assert self.mod._synthetic_customer_id("Asaf@Example.COM") == "USER:asaf@example.com"
+        assert self.mod._synthetic_customer_id("  spaced user  ") == "USER:spaceduser"
+        assert self.mod._synthetic_customer_id("") == ""
+
+    def test_recovery_falls_back_to_synthetic_id(self):
+        session = {"role": "customer", "username": "newuser@example.com"}
+        cid = self.mod._recover_customer_id(session)
+        assert cid == "USER:newuser@example.com"
+        # Same id shape regardless of cosmetic differences.
+        session2 = {"role": "customer", "username": "  NEWUSER@example.com  "}
+        assert self.mod._recover_customer_id(session2) == "USER:newuser@example.com"
+
+    def test_resolve_customer_returns_synthetic_id_for_unlinked_user(self):
+        session = {"role": "customer", "username": "newuser@example.com"}
+        cust, err = self.mod._resolve_customer(session, "")
+        assert err is None
+        assert cust == "USER:newuser@example.com"
+
+    def test_me_endpoint_marks_synthetic_id(self):
+        session = {"role": "customer", "username": "newuser@example.com"}
+        status, body = self.mod.dispatch_get(
+            "/api/assessment-center/me", session, {}, "127.0.0.1"
+        )
+        assert status == 200, body
+        assert body["customer_id"] == "USER:newuser@example.com"
+        assert body["customer_id_is_synthetic"] is True
+        # Friendly label hides the USER: prefix from the front-end.
+        assert body["display_label"] == "newuser@example.com"
+
+    def test_upload_succeeds_for_unlinked_user(self):
+        import base64
+        session = {"role": "customer", "username": "newuser@example.com"}
+        body = {
+            "file_name": "me.txt",
+            "file_data_b64": base64.b64encode(
+                b"ID 123456782. Diagnosis: diabetes."
+            ).decode(),
+            "mime_type": "text/plain",
+        }
+        status, payload = self.mod.dispatch_post(
+            "/api/assessment-center/upload", session, body, "127.0.0.1", ""
+        )
+        assert status == 201, payload
+        assert payload["customer_id"] == "USER:newuser@example.com"
+        assert payload["summary"]["facts_extracted"] > 0
+
+
+# ── _resolve_customer is forgiving of cosmetic differences ───────────────
+
+class TestResolveCustomerIsForgiving:
+    """Production logs showed customers occasionally hitting "Access denied"
+    while uploading their own files because their stale URL or
+    localStorage held the same customer_id in a slightly different form
+    (lowercase, surrounding whitespace, etc.). The resolver must
+    canonicalise both sides before comparing so a customer is never
+    locked out of their own data; cross-tenant attempts must still be
+    rejected with an actionable message.
+    """
+
+    def setup_method(self):
+        from web_portal import api_assessment_center as mod
+        self.mod = mod
+        self.session = {"username": "asaf", "role": "customer", "customer_id": "CUST-ASAF-001"}
+
+    def test_matches_session_customer_with_exact_value(self):
+        cust, err = self.mod._resolve_customer(self.session, "CUST-ASAF-001")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_matches_session_customer_case_insensitively(self):
+        cust, err = self.mod._resolve_customer(self.session, "cust-asaf-001")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_matches_session_customer_with_whitespace(self):
+        cust, err = self.mod._resolve_customer(self.session, "  CUST-ASAF-001  ")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_empty_request_uses_session_value(self):
+        cust, err = self.mod._resolve_customer(self.session, "")
+        assert err is None
+        assert cust == "CUST-ASAF-001"
+
+    def test_cross_tenant_request_rejected_with_actionable_message(self):
+        cust, err = self.mod._resolve_customer(self.session, "CUST-OTHER-001")
+        assert cust == ""
+        assert err is not None
+        # The message tells the customer exactly which account they ARE
+        # signed in as so they can take action without trial and error.
+        assert "CUST-ASAF-001" in err
+
+    def test_admin_can_target_any_customer(self):
+        admin = {"username": "admin", "role": "admin"}
+        for target in ("CUST-X", "cust-y", " CUST-Z "):
+            cust, err = self.mod._resolve_customer(admin, target)
+            assert err is None
+            # Whitespace is trimmed for admins too.
+            assert cust.strip() == target.strip()
+
+    def test_customer_session_with_no_username_returns_invalid_session_error(self):
+        # No username means there's no way to recover or synthesise an id.
+        cust, err = self.mod._resolve_customer({"role": "customer"}, "CUST-ANY")
+        assert cust == ""
+        assert err == "Customer session invalid - no username"
+
+
 # ── /data fallback is gated against dev-system hijack ─────────────────────
 
 class TestDataVolumeGate:
