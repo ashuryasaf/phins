@@ -159,7 +159,8 @@ def export_analysis_binary(
     except ValueError as exc:
         return _err(400, str(exc))
     except RuntimeError as exc:
-        return _err(500, str(exc))
+        logger.exception("assessment-center export runtime error: %s", exc)
+        return _err(500, "Export failed")
     except Exception as exc:
         logger.exception("assessment-center export failed: %s", exc)
         return _err(500, "Export failed")

@@ -714,7 +714,7 @@ class AssessmentCenterService:
             try:
                 result = self.assess_document(
                     doc_id,
-                    customer_id=None,
+                    customer_id=customer_id,
                     source_context="backfill",
                 )
                 facts_added = result.summary.get("facts_extracted", 0) if result.summary else 0
