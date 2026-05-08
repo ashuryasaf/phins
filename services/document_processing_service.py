@@ -42,11 +42,50 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-DOCUMENT_STORAGE_ROOT = os.environ.get(
-    'PHINS_DOCUMENT_STORAGE',
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                 'data', 'documents'),
-)
+def _resolve_document_storage_root() -> str:
+    """Pick a Railway-volume-aware storage path for uploaded documents.
+
+    Priority:
+      1. ``PHINS_DOCUMENT_STORAGE`` (explicit override)
+      2. ``RAILWAY_VOLUME_MOUNT_PATH/documents`` (Railway volume)
+      3. ``/data/documents`` (Docker volume mount, gated by Railway-or-
+         opt-in detection so dev machines with a writable ``/data`` are
+         not hijacked - see ``_data_volume_eligible``)
+      4. ``<repo>/data/documents`` (developer fallback - ephemeral)
+    """
+    explicit = os.environ.get('PHINS_DOCUMENT_STORAGE')
+    if explicit:
+        return explicit
+
+    railway_mount = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '').strip()
+    if railway_mount and os.path.isdir(railway_mount):
+        return os.path.join(railway_mount, 'documents')
+
+    # Reuse the eligibility gate from assessment_center_service so a single
+    # signal (Railway env vars or PHINS_USE_DATA_VOLUME=1) governs both
+    # persistence paths consistently.
+    try:
+        from services.assessment_center_service import _data_volume_eligible
+        if _data_volume_eligible():
+            return '/data/documents'
+    except Exception:
+        pass
+
+    fallback = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'data', 'documents',
+    )
+    if not os.environ.get('PHINS_TEST_MODE'):
+        print(
+            f"⚠️  [doc-service] Using ephemeral document storage {fallback} - "
+            "set PHINS_DOCUMENT_STORAGE or mount a Railway volume at /data "
+            "for durable persistence.",
+            flush=True,
+        )
+    return fallback
+
+
+DOCUMENT_STORAGE_ROOT = _resolve_document_storage_root()
 
 MAX_DOCUMENT_SIZE_BYTES = int(os.environ.get('PHINS_MAX_DOCUMENT_SIZE', 50 * 1024 * 1024))
 MAX_BATCH_SIZE = int(os.environ.get('PHINS_MAX_BATCH_UPLOAD', 25))

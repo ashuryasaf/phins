@@ -227,3 +227,247 @@ class TestAccessControl:
             headers=headers,
         )
         assert resp.status_code == 400
+
+
+class TestDashboardSurfaces:
+    """The legacy upload path must surface the assessment summary so the user
+    sees post-upload progress without leaving documents.html."""
+
+    def test_documents_upload_returns_assessment_summary(self):
+        headers = _admin_session()
+        text = "Customer ID 123456782. Diagnosis: diabetes. Premium: 1,200 USD."
+        resp = requests.post(
+            f"{BASE_URL}/api/documents/upload",
+            json={
+                "files": [{"name": "intake.txt", "type": "text/plain", "data": _b64(text)}],
+                "entity_type": "customer",
+                "entity_id": "CUST-DASH-1",
+                "customer_id": "CUST-DASH-1",
+                "document_type": "id",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["uploaded"], body
+        first = body["uploaded"][0]
+        # The Assessment Center has run and the summary must be visible to UI.
+        assert isinstance(first.get("assessment_summary"), dict)
+        assert first["assessment_summary"].get("facts_extracted", 0) > 0
+
+    def test_documents_list_includes_assessment_summary(self):
+        headers = _admin_session()
+        text = "Customer ID 123456782. BP: 145/92. BMI: 32."
+        upload = requests.post(
+            f"{BASE_URL}/api/documents/upload",
+            json={
+                "files": [{"name": "list.txt", "type": "text/plain", "data": _b64(text)}],
+                "entity_type": "customer",
+                "entity_id": "CUST-DASH-2",
+                "customer_id": "CUST-DASH-2",
+                "document_type": "medical",
+            },
+            headers=headers,
+        )
+        assert upload.status_code == 201, upload.text
+        listing = requests.get(f"{BASE_URL}/api/documents/list", headers=headers)
+        assert listing.status_code == 200
+        docs = listing.json().get("documents", [])
+        assert docs, listing.text
+        with_summary = [d for d in docs if d.get("assessment_summary")
+                        and d["assessment_summary"].get("facts_extracted", 0) > 0]
+        assert with_summary, "expected at least one document with an assessment summary"
+
+    def test_admin_customers_endpoint_lists_assessed_customers(self):
+        headers = _admin_session()
+        text = "ID 123456782. Diagnosis: cancer."
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={
+                "file_name": "seed.txt",
+                "file_data_b64": _b64(text),
+                "mime_type": "text/plain",
+                "customer_id": "CUST-DASH-LIST",
+            },
+            headers=headers,
+        )
+        resp = requests.get(f"{BASE_URL}/api/assessment-center/customers", headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        ids = [it["customer_id"] for it in body.get("items", [])]
+        assert "CUST-DASH-LIST" in ids
+        row = next(it for it in body["items"] if it["customer_id"] == "CUST-DASH-LIST")
+        assert row["fact_count"] >= 1
+        assert "risk_level" in row
+
+    def test_backfill_status_and_run_via_api(self):
+        headers = _admin_session()
+        # Seed a legacy upload that stores in the doc service without running
+        # the Assessment Center (skip_processing=True via the doc-service API).
+        seed_text = "ID 123456782. Diagnosis: hypertension. Medication: lisinopril."
+        upload = requests.post(
+            f"{BASE_URL}/api/doc-service/upload",
+            json={
+                "files": [{"name": "legacy.txt", "type": "text/plain", "data": _b64(seed_text)}],
+                "entity_type": "customer",
+                "entity_id": "CUST-BACKFILL",
+                "customer_id": "CUST-BACKFILL",
+            },
+            headers=headers,
+        )
+        assert upload.status_code == 201, upload.text
+
+        status = requests.get(
+            f"{BASE_URL}/api/assessment-center/backfill-status",
+            headers=headers,
+        )
+        assert status.status_code == 200
+        before = status.json()
+        assert "total_documents" in before
+
+        run = requests.post(
+            f"{BASE_URL}/api/assessment-center/backfill",
+            json={"force": True, "include_legacy": True},
+            headers=headers,
+        )
+        assert run.status_code == 200, run.text
+        body = run.json()
+        result = body.get("result") or {}
+        assert result.get("scanned", 0) >= 1
+        assert "bridge" in body
+
+        status_after = requests.get(
+            f"{BASE_URL}/api/assessment-center/backfill-status",
+            headers=headers,
+        )
+        assert status_after.status_code == 200
+        after = status_after.json()
+        # After a forced run, the with_facts count must not decrease.
+        assert after.get("with_facts", 0) >= before.get("with_facts", 0)
+
+    def test_backfill_requires_admin(self):
+        # An unauthenticated POST is rejected with 401, not 200.
+        resp = requests.post(f"{BASE_URL}/api/assessment-center/backfill", json={})
+        assert resp.status_code == 401
+
+    def test_describe_data_endpoint_returns_categories(self):
+        headers = _admin_session()
+        # Three different document types in one customer profile
+        for name, doc_type, text in (
+            ("id.txt", "id", "Customer Jane Doe. Israeli ID 123456782. Address: 1 Allenby St."),
+            ("med.txt", "medical", "Diagnosis: diabetes. Medication: metformin. BMI: 32."),
+            ("fin.txt", "financial", "Account balance: 25000. IBAN: GB82WEST12345698765432."),
+        ):
+            up = requests.post(
+                f"{BASE_URL}/api/assessment-center/upload",
+                json={"file_name": name, "file_data_b64": _b64(text),
+                      "mime_type": "text/plain", "customer_id": "CUST-API-DESC",
+                      "category": doc_type},
+                headers=headers,
+            )
+            assert up.status_code == 201, up.text
+        desc = requests.get(
+            f"{BASE_URL}/api/assessment-center/customer/CUST-API-DESC/describe",
+            headers=headers,
+        )
+        assert desc.status_code == 200, desc.text
+        body = desc.json()
+        cats = {s["category"] for s in body.get("sections", [])}
+        assert "Identity" in cats
+        assert "Medical" in cats
+
+    def test_analysis_endpoint_runs_each_type(self):
+        headers = _admin_session()
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={"file_name": "all.txt",
+                  "file_data_b64": _b64("ID 123456782. Diagnosis: cancer. Premium: 1000. Balance: 5000."),
+                  "mime_type": "text/plain", "customer_id": "CUST-API-DISP"},
+            headers=headers,
+        )
+        for analysis_type in ("describe_data", "risk_assessment", "bi_summary", "customer_360"):
+            res = requests.post(
+                f"{BASE_URL}/api/assessment-center/analysis",
+                json={"customer_id": "CUST-API-DISP", "analysis_type": analysis_type},
+                headers=headers,
+            )
+            assert res.status_code == 200, f"{analysis_type}: {res.text}"
+            payload = res.json()
+            assert "download" in payload
+            assert "headers" in payload["download"]
+
+    def test_export_file_endpoint_returns_binary(self):
+        headers = _admin_session()
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={"file_name": "exp.txt",
+                  "file_data_b64": _b64("ID 123456782. Diagnosis: diabetes. Premium: 1500."),
+                  "mime_type": "text/plain", "customer_id": "CUST-API-EXP"},
+            headers=headers,
+        )
+        for fmt, expect_mime, expect_prefix in (
+            ("csv", "text/csv", b"category"),
+            ("xlsx", "spreadsheetml.sheet", b"PK"),
+            ("pdf", "application/pdf", b"%PDF"),
+        ):
+            res = requests.post(
+                f"{BASE_URL}/api/assessment-center/export-file",
+                json={"customer_id": "CUST-API-EXP", "analysis_type": "describe_data", "format": fmt},
+                headers=headers,
+            )
+            assert res.status_code == 200, f"{fmt}: {res.text}"
+            assert expect_mime in res.headers.get("Content-Type", "")
+            disp = res.headers.get("Content-Disposition", "")
+            assert "attachment" in disp
+            assert res.content[:max(2, len(expect_prefix))].startswith(expect_prefix[:2]) or expect_prefix in res.content[:200]
+
+    def test_health_endpoint_is_public_and_fast(self):
+        # The health probe must work without an auth token. After the PR
+        # review tightened the response, it returns a minimal envelope
+        # only - no absolute filesystem path, no live customer count -
+        # so it cannot fingerprint the deployment to anonymous callers.
+        resp = requests.get(f"{BASE_URL}/api/assessment-center/health")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body.get("ok") is True
+        # Boolean writeability flag is the only operational signal we keep.
+        assert isinstance(body.get("fact_store_writable"), bool)
+        # Information-disclosure fields must be gone.
+        assert "fact_store_dir" not in body
+        assert "customers_in_memory" not in body
+
+    def test_export_error_returns_valid_json(self):
+        # An unsupported format used to build the error JSON via string
+        # concatenation; this asserts the response is now real JSON.
+        headers = _admin_session()
+        requests.post(
+            f"{BASE_URL}/api/assessment-center/upload",
+            json={"file_name": "exp.txt",
+                  "file_data_b64": _b64("ID 123456782."),
+                  "mime_type": "text/plain", "customer_id": "CUST-EXP-ERR"},
+            headers=headers,
+        )
+        resp = requests.post(
+            f"{BASE_URL}/api/assessment-center/export-file",
+            json={"customer_id": "CUST-EXP-ERR",
+                  "analysis_type": "describe_data", "format": "wat"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        # Must parse as JSON and carry an "error" field.
+        body = resp.json()
+        assert "error" in body
+
+    def test_assessment_center_page_is_served(self):
+        # The dashboards rely on /assessment-center.html being reachable as a
+        # static file. A regression where the file is missing would make every
+        # nav link silently 404.
+        resp = requests.get(f"{BASE_URL}/assessment-center.html")
+        assert resp.status_code == 200
+        body = resp.text
+        # The unified workbench replaces the old "Assessment Center" page; the
+        # page must still expose the new analysis endpoints regardless of the
+        # title we pick.
+        assert "Assessment Workbench" in body or "Assessment Center" in body
+        assert "/api/assessment-center/analysis" in body
+        assert "/api/assessment-center/export-file" in body

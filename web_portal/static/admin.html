@@ -466,6 +466,7 @@
         <a href="/admin-foundations.html">🤝 Community</a>
         <a href="/admin-media.html">📁 Media</a>
         <a href="/video-agents.html">🎬 Video Agents</a>
+        <a href="/assessment-center.html">🧠 Assessment Center</a>
         <a href="/risk-dashboard.html">🎯 Assessment</a>
         <a href="/risk-reports-dashboard.html">📊 AI Reports</a>
         <a href="/cyber-security.html">🛡️ Cyber Security</a>
@@ -739,7 +740,34 @@
         <div class="stat-label" style="color: rgba(255,255,255,0.9);">Risk & Reports</div>
         <div class="stat-change" style="color: rgba(255,255,255,0.8);">Upload & Analyze →</div>
       </a>
+      <a href="/assessment-center.html" class="stat-box" style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; text-decoration: none; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)';" onmouseout="this.style.transform='scale(1)';">
+        <div class="stat-icon">🧠</div>
+        <div class="stat-value" id="stat-assessment-customers" style="color: white;">—</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Assessment Center</div>
+        <div class="stat-change" id="stat-assessment-facts" style="color: rgba(255,255,255,0.8);">Loading customer 360…</div>
+      </a>
     </div>
+
+    <script>
+      (async function loadAssessmentTile() {
+        try {
+          const token = localStorage.getItem('phins_token');
+          if (!token) return;
+          const res = await fetch('/api/assessment-center/customers', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          if (!res.ok) return;
+          const json = await res.json();
+          const items = json.items || [];
+          const totalFacts = items.reduce((s, it) => s + (it.fact_count || 0), 0);
+          const high = items.filter(it => (it.risk_level === 'high' || it.risk_level === 'very_high')).length;
+          const elCust = document.getElementById('stat-assessment-customers');
+          const elFacts = document.getElementById('stat-assessment-facts');
+          if (elCust) elCust.textContent = items.length;
+          if (elFacts) elFacts.textContent = totalFacts + ' facts · ' + high + ' high-risk';
+        } catch (_) { /* non-fatal */ }
+      })();
+    </script>
     
     <!-- Pipeline Overview -->
     <div class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); border-radius: 12px; padding: 20px;">

@@ -51,6 +51,7 @@ import math
 import os
 import re
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -61,14 +62,91 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-ASSESSMENT_FACT_STORE = os.environ.get(
-    "PHINS_ASSESSMENT_FACT_STORE",
-    os.path.join(
+def _running_on_railway() -> bool:
+    """Detect Railway runtime via env signals.
+
+    Used to gate the ``/data`` fallback so a developer machine that
+    coincidentally has a writable ``/data`` directory doesn't get its
+    persistence path silently redirected there. Any of these signals is
+    enough - they are all set by Railway in production deploys.
+    """
+    for key in (
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_STATIC_URL",
+    ):
+        if os.environ.get(key):
+            return True
+    return False
+
+
+def _data_volume_eligible(probe_dir: str = "/data") -> bool:
+    """``/data`` is only used when we can prove Railway / Docker context.
+
+    Conditions (all required):
+      - the directory exists and is writable, AND
+      - we are running on Railway (env signals) or the operator has
+        explicitly opted in via ``PHINS_USE_DATA_VOLUME=1``.
+    """
+    if not (os.path.isdir(probe_dir) and os.access(probe_dir, os.W_OK)):
+        return False
+    if os.environ.get("PHINS_USE_DATA_VOLUME", "").strip() == "1":
+        return True
+    return _running_on_railway()
+
+
+def _resolve_fact_store_dir() -> str:
+    """Return the persistent fact-store directory.
+
+    Priority:
+      1. ``PHINS_ASSESSMENT_FACT_STORE`` (explicit override)
+      2. ``RAILWAY_VOLUME_MOUNT_PATH/assessment_center`` (Railway volume)
+      3. ``/data/assessment_center`` (Docker volume mount, gated by
+         :func:`_data_volume_eligible` so dev machines that happen to
+         have a writable ``/data`` directory aren't hijacked)
+      4. ``<repo>/data/assessment_center`` (developer fallback)
+
+    The first three options survive Railway container restarts; the last is
+    ephemeral and emits a warning so operators know to attach a volume.
+    """
+    explicit = os.environ.get("PHINS_ASSESSMENT_FACT_STORE")
+    if explicit:
+        return explicit
+
+    railway_mount = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if railway_mount and os.path.isdir(railway_mount):
+        return os.path.join(railway_mount, "assessment_center")
+
+    if _data_volume_eligible():
+        return "/data/assessment_center"
+
+    fallback = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
         "assessment_center",
-    ),
-)
+    )
+    # Only emit the warning if we are not in a test environment to keep the
+    # CI output quiet.
+    if not os.environ.get("PHINS_TEST_MODE"):
+        print(
+            f"⚠️  [assessment-center] Using ephemeral fact store {fallback} - "
+            "set PHINS_ASSESSMENT_FACT_STORE or mount a volume at /data for "
+            "durable Customer 360 persistence on Railway.",
+            flush=True,
+        )
+    return fallback
+
+
+ASSESSMENT_FACT_STORE = _resolve_fact_store_dir()
+
+# Bounded list / batch sizes used to prevent runaway memory or HTTP timeouts
+# when admins kick off large backfill or BI runs on Railway's edge timeout
+# (~120s) and small (512MB-2GB) container memory budgets.
+MAX_FACTS_PER_CUSTOMER = int(os.environ.get("PHINS_MAX_FACTS_PER_CUSTOMER", 5000))
+MAX_FACTS_LOAD_FILES = int(os.environ.get("PHINS_MAX_FACTS_LOAD_FILES", 10000))
+MAX_EXPORT_ROWS = int(os.environ.get("PHINS_MAX_EXPORT_ROWS", 50000))
 
 
 # Universe of supported fact categories. Frozen so callers cannot inject
@@ -507,6 +585,747 @@ class AssessmentCenterService:
         if fact_type:
             facts = [f for f in facts if f.fact_type == fact_type]
         return [f.to_dict() for f in facts]
+
+    LIST_CUSTOMERS_TIME_BUDGET_S = float(os.environ.get("PHINS_LIST_CUSTOMERS_TIME_BUDGET_S", 10))
+
+    def list_customers_with_facts(self) -> List[Dict[str, Any]]:
+        """Return one summary row per customer that has any facts on file.
+
+        Each row contains the fact count, the most recent capture timestamp,
+        the document set that contributed to the profile, and the cached risk
+        level. Used by the Assessment Center dashboard to populate the admin
+        customer picker.
+        """
+        with self._lock:
+            snapshot = {cid: list(facts) for cid, facts in self._facts.items()}
+
+        deadline = time.monotonic() + self.LIST_CUSTOMERS_TIME_BUDGET_S
+        rows: List[Dict[str, Any]] = []
+        truncated = False
+        for cid, facts in snapshot.items():
+            if not facts:
+                continue
+            if time.monotonic() > deadline:
+                truncated = True
+                break
+            try:
+                doc_ids = sorted({f.source_document_id for f in facts if f.source_document_id})
+                latest = max((f.captured_at for f in facts), default="")
+                try:
+                    risk = self.compute_risk_indicators(cid)
+                    risk_score = risk.get("risk_score", 0.0)
+                    risk_level = risk.get("risk_level", "minimal")
+                except Exception as exc:
+                    logger.warning("risk computation failed for %s: %s", cid, exc)
+                    risk_score = 0.0
+                    risk_level = "unknown"
+                by_type: Dict[str, int] = {}
+                for f in facts:
+                    by_type[f.fact_type] = by_type.get(f.fact_type, 0) + 1
+                rows.append({
+                    "customer_id": cid,
+                    "fact_count": len(facts),
+                    "document_count": len(doc_ids),
+                    "documents": doc_ids,
+                    "by_type": by_type,
+                    "latest_capture": latest,
+                    "risk_score": risk_score,
+                    "risk_level": risk_level,
+                })
+            except Exception as exc:
+                # Never let a single malformed customer entry kill the whole
+                # admin tile; just skip it and keep going.
+                logger.warning("Skipping customer %s in list: %s", cid, exc)
+                continue
+        rows.sort(key=lambda r: r.get("latest_capture", ""), reverse=True)
+        if truncated:
+            rows.append({"customer_id": "__truncated__",
+                         "fact_count": 0,
+                         "note": "List truncated to keep the response inside Railway's HTTP budget."})
+        return rows
+
+    BACKFILL_DEFAULT_LIMIT = int(os.environ.get("PHINS_BACKFILL_DEFAULT_LIMIT", 200))
+    BACKFILL_MAX_LIMIT = int(os.environ.get("PHINS_BACKFILL_MAX_LIMIT", 1000))
+    BACKFILL_TIME_BUDGET_S = float(os.environ.get("PHINS_BACKFILL_TIME_BUDGET_S", 90))
+
+    def backfill_documents(
+        self,
+        *,
+        document_ids: Optional[Iterable[str]] = None,
+        customer_id: Optional[str] = None,
+        force: bool = False,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Run the assessment pipeline on documents that pre-date this service.
+
+        The backend can land before any UI for the Assessment Center is in
+        place, which means there is normally a population of older documents
+        sitting in :class:`DocumentProcessingService` (and the legacy
+        ``POLICY_DOCUMENTS`` mirror) that have never been mined for facts.
+        This method walks those documents and runs ``assess_document`` on
+        each one.
+
+        The operation is intentionally **idempotent**: a document that already
+        has at least one fact recorded against it is skipped unless the caller
+        passes ``force=True``. Errors per document are captured and reported
+        but never abort the run, so a single bad file cannot poison a large
+        batch.
+
+        Args:
+            document_ids: optional explicit list of persistent document IDs.
+                When ``None``, every document in the document service is
+                considered.
+            customer_id: optional filter; only documents owned by this
+                customer are processed.
+            force: re-extract even when facts already exist.
+            limit: hard cap on the number of documents processed in this run.
+
+        Returns:
+            A dict with ``scanned``, ``assessed``, ``skipped``, ``errors``
+            and ``customers_updated`` counters plus the per-customer fact
+            delta in ``deltas``.
+        """
+        ids: List[str] = []
+        if document_ids is not None:
+            ids = [str(d) for d in document_ids if d]
+        else:
+            try:
+                page = 1
+                page_size = 200
+                while True:
+                    response = self.document_service.list_documents(
+                        customer_id=customer_id,
+                        page=page,
+                        page_size=page_size,
+                    )
+                    items = response.get("items") if isinstance(response, dict) else response
+                    if not items:
+                        break
+                    for item in items:
+                        if isinstance(item, dict):
+                            doc_id = item.get("id") or item.get("document_id")
+                        else:
+                            doc_id = getattr(item, "id", None)
+                        if doc_id:
+                            ids.append(str(doc_id))
+                    if len(items) < page_size:
+                        break
+                    page += 1
+            except Exception as exc:
+                logger.warning("backfill_documents listing failed: %s", exc)
+
+        # Resolve the effective per-call cap.
+        #
+        # Semantics chosen to remove the asymmetry the bug review flagged:
+        #   - ``limit=None`` (caller did not specify) means "process as many
+        #     as we can" and is bounded by ``BACKFILL_MAX_LIMIT`` plus the
+        #     wall-clock ``BACKFILL_TIME_BUDGET_S``. Previously this silently
+        #     fell back to ``BACKFILL_DEFAULT_LIMIT`` (200) which meant a
+        #     "no limit" request processed *fewer* docs than an explicit
+        #     ``limit=500``.
+        #   - ``limit=N`` is clamped to ``[1, BACKFILL_MAX_LIMIT]``.
+        #   - ``limit`` parsing failures fall back to ``BACKFILL_DEFAULT_LIMIT``
+        #     to preserve the conservative behaviour for malformed input.
+        if limit is None:
+            effective_limit = self.BACKFILL_MAX_LIMIT
+        else:
+            try:
+                effective_limit = max(1, min(int(limit), self.BACKFILL_MAX_LIMIT))
+            except (TypeError, ValueError):
+                effective_limit = self.BACKFILL_DEFAULT_LIMIT
+        truncated = len(ids) > effective_limit
+        ids = ids[:effective_limit]
+
+        existing = self.get_document_assessments(ids) if ids else {}
+        scanned = 0
+        assessed = 0
+        skipped = 0
+        errors: List[Dict[str, Any]] = []
+        customers_updated: set = set()
+        deltas: Dict[str, int] = {}
+
+        deadline = time.monotonic() + self.BACKFILL_TIME_BUDGET_S
+        time_budget_hit = False
+
+        for doc_id in ids:
+            if time.monotonic() > deadline:
+                # Stop early so the HTTP request returns within Railway's edge
+                # timeout. The caller can issue another request to keep going.
+                time_budget_hit = True
+                break
+            scanned += 1
+            current = existing.get(doc_id, {})
+            if not force and current.get("facts_extracted"):
+                skipped += 1
+                continue
+            try:
+                result = self.assess_document(
+                    doc_id,
+                    customer_id=customer_id,
+                    source_context="backfill",
+                )
+                facts_added = result.summary.get("facts_extracted", 0) if result.summary else 0
+                if facts_added:
+                    assessed += 1
+                    customers_updated.add(result.customer_id)
+                    deltas[result.customer_id] = deltas.get(result.customer_id, 0) + facts_added
+                else:
+                    # No new facts could be mined from this file (unsupported
+                    # binary format, empty text, etc.). Treat it as scanned
+                    # but not assessed so the dashboard does not double-count.
+                    skipped += 1
+            except Exception as exc:
+                logger.warning("backfill_documents assess failed for %s: %s", doc_id, exc)
+                errors.append({"document_id": doc_id, "error": str(exc)})
+
+        return {
+            "scanned": scanned,
+            "assessed": assessed,
+            "skipped": skipped,
+            "error_count": len(errors),
+            "errors": errors[:50],
+            "customers_updated": sorted(customers_updated),
+            "deltas": deltas,
+            "force": bool(force),
+            "limit_applied": effective_limit,
+            "truncated": truncated,
+            "time_budget_hit": time_budget_hit,
+        }
+
+    def backfill_status(self, customer_id: Optional[str] = None) -> Dict[str, Any]:
+        """Summarise how many documents are still missing assessment facts.
+
+        Used by the admin tile to surface a "backfill needed" prompt without
+        having to actually run the heavy pipeline.
+        """
+        ids: List[str] = []
+        try:
+            page = 1
+            page_size = 200
+            while True:
+                response = self.document_service.list_documents(
+                    customer_id=customer_id,
+                    page=page,
+                    page_size=page_size,
+                )
+                items = response.get("items") if isinstance(response, dict) else response
+                if not items:
+                    break
+                for item in items:
+                    doc_id = (item.get("id") or item.get("document_id")
+                              if isinstance(item, dict)
+                              else getattr(item, "id", None))
+                    if doc_id:
+                        ids.append(str(doc_id))
+                if len(items) < page_size:
+                    break
+                page += 1
+        except Exception as exc:
+            # SECURITY: This endpoint is reachable by every authenticated
+            # user (admins see everything, customers see their own
+            # backfill status). The exception object can carry filesystem
+            # paths, SQLAlchemy connection strings, or library internals,
+            # so we never echo str(exc) back to the caller. Operators
+            # already get the full diagnostics from logger.warning above.
+            logger.warning("backfill_status listing failed: %s", exc)
+            return {
+                "total_documents": 0,
+                "with_facts": 0,
+                "without_facts": 0,
+                "error": "Document listing unavailable",
+            }
+
+        summaries = self.get_document_assessments(ids) if ids else {}
+        with_facts = sum(1 for d in ids if summaries.get(d, {}).get("facts_extracted"))
+        return {
+            "total_documents": len(ids),
+            "with_facts": with_facts,
+            "without_facts": max(0, len(ids) - with_facts),
+            "customer_id": customer_id or "",
+        }
+
+    # ── BI / "describe data with data" ──────────────────────────────────────
+
+    # Each fact_type is mapped to a human-friendly relevance category. The
+    # workbench surfaces the categories in this order so identity always
+    # appears above contact, medical above financial, etc.
+    _CATEGORY_FOR_FACT = {
+        "identity": "Identity",
+        "contact": "Contact",
+        "photo": "Photo / Portrait",
+        "medical_condition": "Medical",
+        "medication": "Medical",
+        "allergy": "Medical",
+        "vital_sign": "Medical",
+        "insurance": "Insurance",
+        "savings": "Financial",
+        "policy_reference": "Policy / Claim references",
+        "risk_indicator": "Risk markers",
+        "external_policy": "External clearinghouse",
+        "external_account": "External clearinghouse",
+        "external_contribution": "External clearinghouse",
+    }
+
+    _CATEGORY_ORDER = (
+        "Identity",
+        "Contact",
+        "Photo / Portrait",
+        "Medical",
+        "Insurance",
+        "Financial",
+        "Policy / Claim references",
+        "Risk markers",
+        "External clearinghouse",
+    )
+
+    def describe_data_with_data(
+        self,
+        customer_id: str,
+        document_ids: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
+        """Return a hierarchical 'describe data with data' view.
+
+        Every fact stored for the customer is grouped by relevance category
+        (Identity, Contact, Medical, Insurance, Financial, ...) and within
+        each category by ``label``. Each entry keeps the source document ID,
+        document type (id / medical / receipt / financial / general), and
+        SHA-256 hash so the workbench can prove provenance.
+
+        When ``document_ids`` is provided the description is restricted to
+        the union of facts that come from those documents - this is the
+        cross-document mode used by the workbench when an admin picks a
+        subset of files.
+        """
+        with self._lock:
+            facts = list(self._facts.get(customer_id, ()))
+        ids_set = {str(d) for d in document_ids} if document_ids else None
+        if ids_set is not None:
+            facts = [f for f in facts if (f.source_document_id or "") in ids_set]
+
+        # Build a lookup of document metadata so we can label each entry with
+        # the originating document_type (id / medical / receipt / financial).
+        doc_lookup: Dict[str, Dict[str, Any]] = {}
+        for f in facts:
+            if not f.source_document_id or f.source_document_id in doc_lookup:
+                continue
+            try:
+                rec = self.document_service.get_document(f.source_document_id) or {}
+            except Exception:
+                rec = {}
+            if isinstance(rec, dict):
+                doc_lookup[f.source_document_id] = {
+                    "name": rec.get("file_name") or rec.get("original_file_name") or f.source_document_id,
+                    "document_type": rec.get("document_type") or "general",
+                    "category": rec.get("category") or "general",
+                    "mime_type": rec.get("mime_type") or "",
+                    "uploaded_at": rec.get("uploaded_date")
+                                   or rec.get("uploaded_at")
+                                   or rec.get("created_at"),
+                }
+            else:
+                doc_lookup[f.source_document_id] = {"name": f.source_document_id}
+
+        sections: Dict[str, Dict[str, Any]] = {}
+        for f in facts:
+            cat = self._CATEGORY_FOR_FACT.get(f.fact_type, "Other")
+            sec = sections.setdefault(cat, {
+                "category": cat,
+                "fact_count": 0,
+                "by_label": {},
+                "documents": set(),
+                "top_confidence": 0.0,
+            })
+            label_bucket = sec["by_label"].setdefault(f.label or f.fact_type, [])
+            doc_meta = doc_lookup.get(f.source_document_id or "", {})
+            label_bucket.append({
+                "value": f.value,
+                "fact_type": f.fact_type,
+                "confidence": round(f.confidence, 3),
+                "source": f.source,
+                "document_id": f.source_document_id,
+                "document_name": doc_meta.get("name", ""),
+                "document_type": doc_meta.get("document_type", ""),
+                "document_category": doc_meta.get("category", ""),
+                "sha256": f.source_document_sha256,
+                "captured_at": f.captured_at,
+                "metadata": f.metadata,
+            })
+            sec["fact_count"] += 1
+            if f.source_document_id:
+                sec["documents"].add(f.source_document_id)
+            if f.confidence > sec["top_confidence"]:
+                sec["top_confidence"] = round(f.confidence, 3)
+
+        ordered_sections: List[Dict[str, Any]] = []
+        for cat in self._CATEGORY_ORDER:
+            if cat in sections:
+                sec = sections.pop(cat)
+                sec["documents"] = sorted(sec["documents"])
+                ordered_sections.append(sec)
+        for cat, sec in sorted(sections.items()):
+            sec["documents"] = sorted(sec["documents"])
+            ordered_sections.append(sec)
+
+        return {
+            "customer_id": customer_id,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "fact_count": len(facts),
+            "document_count": len(doc_lookup),
+            "documents": [
+                {"id": did, **meta} for did, meta in sorted(doc_lookup.items())
+            ],
+            "sections": ordered_sections,
+            "filtered_to_documents": sorted(ids_set) if ids_set else None,
+        }
+
+    def run_analysis(
+        self,
+        customer_id: str,
+        analysis_type: str,
+        *,
+        document_ids: Optional[Iterable[str]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Single dispatcher returning a normalised analysis payload.
+
+        The supported analyses are:
+
+        - ``customer_360``: full Customer 360 profile (alias for ``profile``).
+        - ``risk_assessment``: risk score + weighted contributors.
+        - ``bi_summary``: BI roll-up across categories with chart series.
+        - ``describe_data``: ``describe_data_with_data`` output.
+        - ``cross_document``: describe_data restricted to the provided docs
+           plus a "consolidated facts" table designed for cross-document
+           review.
+
+        Each return value includes ``analysis_type``, ``customer_id``,
+        ``sections`` (when applicable) and a ``download`` block enumerating
+        the table rows that the export endpoint will render to CSV/XLSX/PDF.
+        """
+        analysis = (analysis_type or "customer_360").lower()
+        options = dict(options or {})
+        ids = list(document_ids) if document_ids else None
+
+        if analysis in ("customer_360", "profile"):
+            profile = self.build_customer_360(customer_id)
+            return {
+                "analysis_type": "customer_360",
+                "customer_id": customer_id,
+                "title": "Customer 360 profile",
+                "profile": profile,
+                "download": self._profile_to_rows(profile),
+            }
+        if analysis in ("risk_assessment", "risk"):
+            risk = self.compute_risk_indicators(customer_id)
+            return {
+                "analysis_type": "risk_assessment",
+                "customer_id": customer_id,
+                "title": "Risk assessment",
+                "risk": risk,
+                "download": {
+                    "headers": ["factor", "value", "weight"],
+                    "rows": [
+                        [c.get("factor"), str(c.get("value")), c.get("weight")]
+                        for c in risk.get("contributors", [])
+                    ],
+                    "summary": {"risk_score": risk.get("risk_score"),
+                                "risk_level": risk.get("risk_level")},
+                },
+            }
+        if analysis in ("bi_summary", "bi"):
+            charts = self.build_chart_data(customer_id)
+            risk = self.compute_risk_indicators(customer_id)
+            return {
+                "analysis_type": "bi_summary",
+                "customer_id": customer_id,
+                "title": "BI summary",
+                "charts": charts,
+                "risk": risk,
+                "download": self._bi_to_rows(charts, risk),
+            }
+        if analysis in ("describe_data", "describe"):
+            description = self.describe_data_with_data(customer_id, ids)
+            return {
+                "analysis_type": "describe_data",
+                "customer_id": customer_id,
+                "title": "Describe data with data",
+                "description": description,
+                "download": self._description_to_rows(description),
+            }
+        if analysis in ("cross_document", "cross_doc", "compare"):
+            description = self.describe_data_with_data(customer_id, ids)
+            risk = self.compute_risk_indicators(customer_id)
+            return {
+                "analysis_type": "cross_document",
+                "customer_id": customer_id,
+                "title": "Cross-document review",
+                "description": description,
+                "risk": risk,
+                "download": self._description_to_rows(description),
+            }
+        raise ValueError(f"Unknown analysis_type: {analysis_type!r}")
+
+    # ── Download row builders ──────────────────────────────────────────────
+
+    @staticmethod
+    def _profile_to_rows(profile: Dict[str, Any]) -> Dict[str, Any]:
+        rows: List[List[Any]] = []
+        for section in ("identity",):
+            for label, items in (profile.get(section) or {}).items():
+                for item in items or []:
+                    if isinstance(item, dict):
+                        rows.append(["identity", label, json.dumps(item, ensure_ascii=False, default=str)])
+                    else:
+                        rows.append(["identity", label, str(item)])
+        for label, items in (profile.get("contact") or {}).items():
+            for item in items or []:
+                rows.append(["contact", label, str(item)])
+        for label, items in (profile.get("medical") or {}).items():
+            for item in items or []:
+                if isinstance(item, dict):
+                    rows.append(["medical", label, json.dumps(item, ensure_ascii=False, default=str)])
+                else:
+                    rows.append(["medical", label, str(item)])
+        for entry in profile.get("insurance_indicators") or []:
+            rows.append(["insurance", entry.get("label", ""), str(entry.get("value", ""))])
+        for entry in profile.get("savings_indicators") or []:
+            rows.append(["financial", entry.get("label", ""), str(entry.get("value", ""))])
+        for entry in profile.get("risk_indicators") or []:
+            rows.append(["risk", "marker", str(entry)])
+        for src, items in (profile.get("external_sources") or {}).items():
+            for entry in items or []:
+                rows.append([f"external:{src}", entry.get("label", ""), str(entry.get("value", ""))])
+        return {"headers": ["category", "label", "value"], "rows": rows}
+
+    @staticmethod
+    def _description_to_rows(description: Dict[str, Any]) -> Dict[str, Any]:
+        rows: List[List[Any]] = []
+        for section in description.get("sections", []):
+            cat = section.get("category", "Other")
+            for label, entries in (section.get("by_label") or {}).items():
+                for entry in entries:
+                    value = entry.get("value")
+                    if isinstance(value, (dict, list)):
+                        value = json.dumps(value, ensure_ascii=False, default=str)
+                    rows.append([
+                        cat,
+                        label,
+                        str(value),
+                        entry.get("document_id") or "",
+                        entry.get("document_type") or "",
+                        entry.get("sha256") or "",
+                        entry.get("confidence"),
+                    ])
+        return {
+            "headers": ["category", "label", "value", "document_id",
+                        "document_type", "sha256", "confidence"],
+            "rows": rows,
+        }
+
+    @staticmethod
+    def _bi_to_rows(charts: Dict[str, Any], risk: Dict[str, Any]) -> Dict[str, Any]:
+        rows: List[List[Any]] = []
+        for series_name, entries in (charts.get("charts") or {}).items():
+            for entry in entries or []:
+                rows.append([series_name, entry.get("label"), entry.get("value")])
+        for c in risk.get("contributors", []):
+            rows.append(["risk_contributors", f"{c.get('factor')}:{c.get('value')}", c.get("weight")])
+        return {"headers": ["series", "label", "value"], "rows": rows}
+
+    # ── Export to CSV / XLSX / PDF ─────────────────────────────────────────
+
+    def export_analysis(
+        self,
+        customer_id: str,
+        analysis_type: str,
+        export_format: str,
+        *,
+        document_ids: Optional[Iterable[str]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bytes, str, str]:
+        """Build a downloadable representation of an analysis.
+
+        Returns ``(bytes, mime_type, filename)``. Supported formats: ``csv``,
+        ``xlsx``, ``pdf``. The CSV path uses only the standard library, the
+        XLSX path uses ``openpyxl``, and the PDF path uses ``reportlab`` -
+        all already required by the platform.
+        """
+        result = self.run_analysis(
+            customer_id, analysis_type,
+            document_ids=document_ids, options=options,
+        )
+        download = result.get("download") or {"headers": [], "rows": []}
+        headers = download.get("headers") or []
+        rows = download.get("rows") or []
+        title = result.get("title") or analysis_type
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "_", f"{customer_id}_{analysis_type}").strip("_")
+        fmt = (export_format or "csv").lower()
+
+        if fmt == "csv":
+            import csv as _csv
+            import io as _io
+            buf = _io.StringIO()
+            writer = _csv.writer(buf)
+            if headers:
+                writer.writerow(headers)
+            truncated_rows = rows
+            if len(rows) > MAX_EXPORT_ROWS:
+                truncated_rows = rows[:MAX_EXPORT_ROWS]
+            for row in truncated_rows:
+                writer.writerow(row)
+            if len(rows) > MAX_EXPORT_ROWS:
+                writer.writerow([
+                    f"# truncated to {MAX_EXPORT_ROWS} of {len(rows)} rows"
+                ])
+            payload = buf.getvalue().encode("utf-8")
+            return payload, "text/csv", f"{slug}.csv"
+
+        if fmt == "xlsx":
+            try:
+                from openpyxl import Workbook  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError("openpyxl is required for XLSX export") from exc
+            wb = Workbook()
+            ws = wb.active
+            ws.title = (analysis_type or "analysis")[:30] or "analysis"
+            ws.append([title])
+            ws.append([f"Customer: {customer_id}",
+                       f"Generated: {datetime.utcnow().isoformat() + 'Z'}"])
+            ws.append([])
+            if headers:
+                ws.append(headers)
+            truncated_rows = rows
+            row_truncated = False
+            if len(rows) > MAX_EXPORT_ROWS:
+                truncated_rows = rows[:MAX_EXPORT_ROWS]
+                row_truncated = True
+            for row in truncated_rows:
+                ws.append([self._xlsx_cell(v) for v in row])
+            if row_truncated:
+                ws.append([])
+                ws.append([
+                    f"Note: only the first {MAX_EXPORT_ROWS} of {len(rows)} "
+                    "rows are included in this export. Re-run with a tighter "
+                    "filter (selected documents) for full coverage."
+                ])
+            import io as _io
+            buf = _io.BytesIO()
+            wb.save(buf)
+            return (buf.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    f"{slug}.xlsx")
+
+        if fmt == "pdf":
+            try:
+                from reportlab.lib.pagesizes import A4  # type: ignore
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore
+                from reportlab.platypus import (
+                    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+                )  # type: ignore
+                from reportlab.lib import colors  # type: ignore
+                from reportlab.lib.units import mm  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError("reportlab is required for PDF export") from exc
+            import io as _io
+            buf = _io.BytesIO()
+            doc = SimpleDocTemplate(
+                buf, pagesize=A4,
+                leftMargin=14 * mm, rightMargin=14 * mm,
+                topMargin=14 * mm, bottomMargin=14 * mm,
+            )
+            styles = getSampleStyleSheet()
+            heading = ParagraphStyle("Heading", parent=styles["Title"], fontSize=15, leading=18)
+            meta = ParagraphStyle("Meta", parent=styles["Normal"], fontSize=8, textColor=colors.grey)
+            story: List[Any] = [
+                Paragraph(self._pdf_safe(title), heading),
+                Paragraph(self._pdf_safe(
+                    f"Customer: {customer_id}  |  Generated: {datetime.utcnow().isoformat()}Z  |  Rows: {len(rows)}"
+                ), meta),
+                Spacer(1, 6),
+            ]
+            if headers and rows:
+                truncated = [headers] + [
+                    [self._pdf_safe(v, 80) for v in row] for row in rows[:300]
+                ]
+                table = Table(truncated, repeatRows=1)
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1565c0")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cfd8dc")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+                     [colors.white, colors.HexColor("#f5f7fa")]),
+                ]))
+                story.append(table)
+                if len(rows) > 300:
+                    story.append(Spacer(1, 4))
+                    story.append(Paragraph(
+                        f"Showing first 300 of {len(rows)} rows. Export to CSV/XLSX for full data.",
+                        meta,
+                    ))
+            else:
+                story.append(Paragraph("No tabular data available for this analysis.", meta))
+            doc.build(story)
+            return buf.getvalue(), "application/pdf", f"{slug}.pdf"
+
+        raise ValueError(f"Unsupported export_format: {export_format!r}")
+
+    @staticmethod
+    def _xlsx_cell(value: Any) -> Any:
+        if isinstance(value, (str, int, float)) or value is None:
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _pdf_safe(value: Any, max_length: Optional[int] = None) -> str:
+        if value is None:
+            text = ""
+        elif isinstance(value, str):
+            text = value
+        else:
+            try:
+                text = json.dumps(value, ensure_ascii=False, default=str)
+            except Exception:
+                text = str(value)
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if max_length and len(text) > max_length:
+            text = text[: max_length - 1] + "…"
+        return text
+
+    def get_document_assessments(self, document_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        """Return per-document summary derived from the unified fact store.
+
+        For each requested ``document_id`` we report how many facts were
+        extracted, the breakdown by ``fact_type`` and the highest fact
+        confidence. The result is keyed by ``document_id`` so callers can
+        attach it directly to existing document listing payloads.
+        """
+        wanted = {d for d in document_ids if d}
+        if not wanted:
+            return {}
+        with self._lock:
+            all_facts = [f for facts in self._facts.values() for f in facts]
+        out: Dict[str, Dict[str, Any]] = {d: {
+            "facts_extracted": 0,
+            "by_type": {},
+            "top_confidence": 0.0,
+            "customer_id": "",
+        } for d in wanted}
+        for f in all_facts:
+            if f.source_document_id not in wanted:
+                continue
+            entry = out[f.source_document_id]
+            entry["facts_extracted"] += 1
+            entry["by_type"][f.fact_type] = entry["by_type"].get(f.fact_type, 0) + 1
+            if f.confidence > entry["top_confidence"]:
+                entry["top_confidence"] = round(f.confidence, 3)
+            if not entry["customer_id"]:
+                entry["customer_id"] = f.customer_id
+        return out
 
     def build_customer_360(self, customer_id: str) -> Dict[str, Any]:
         """Aggregate every collected fact into a deterministic profile snapshot."""
@@ -1037,6 +1856,17 @@ class AssessmentCenterService:
                     continue
                 existing.append(f)
                 seen.add(key)
+            # Bound the per-customer fact list so a runaway document or a
+            # malicious upload can't blow the process memory budget. We keep
+            # the most recent facts and discard the oldest beyond the cap.
+            if len(existing) > MAX_FACTS_PER_CUSTOMER:
+                drop = len(existing) - MAX_FACTS_PER_CUSTOMER
+                logger.warning(
+                    "Trimming %d oldest facts for %s (capped at %d)",
+                    drop, customer_id, MAX_FACTS_PER_CUSTOMER,
+                )
+                self._facts[customer_id] = existing[-MAX_FACTS_PER_CUSTOMER:]
+                existing = self._facts[customer_id]
             self._persist_customer(customer_id, existing)
 
     def _persist_customer(self, customer_id: str, facts: List[Fact]) -> None:
@@ -1061,7 +1891,16 @@ class AssessmentCenterService:
         try:
             if not os.path.isdir(self._fact_store_dir):
                 return
-            for name in os.listdir(self._fact_store_dir):
+            entries = sorted(os.listdir(self._fact_store_dir))
+            if len(entries) > MAX_FACTS_LOAD_FILES:
+                logger.warning(
+                    "Assessment fact store has %d entries; only loading the "
+                    "first %d on cold start to keep boot time predictable. "
+                    "Older customers will hydrate on first read.",
+                    len(entries), MAX_FACTS_LOAD_FILES,
+                )
+                entries = entries[:MAX_FACTS_LOAD_FILES]
+            for name in entries:
                 if not name.endswith(".json"):
                     continue
                 path = os.path.join(self._fact_store_dir, name)

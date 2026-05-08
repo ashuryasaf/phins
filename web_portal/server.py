@@ -9655,6 +9655,125 @@ def _should_silence_bot_probe_http_log(path: str, code: object) -> bool:
     return _is_bot_probe_path(path) and str(code) in ('404', '403')
 
 
+def _is_internal_network_ip(ip: str) -> bool:
+    """Return True for CGNAT / private IPv4 ranges used by Railway.
+
+    Railway's edge / load-balancer / sibling-service traffic typically lands
+    on the container with a source IP in:
+      - 100.64.0.0/10 (CGNAT - what we observed in production logs)
+      - 10.0.0.0/8    (private)
+      - 172.16.0.0/12 (private)
+      - 192.168.0.0/16 (private)
+      - 127.0.0.0/8   (loopback)
+    """
+    if not ip:
+        return False
+    try:
+        parts = [int(p) for p in ip.split('.')]
+    except (ValueError, AttributeError):
+        return False
+    if len(parts) != 4:
+        return False
+    a, b = parts[0], parts[1]
+    if a == 10 or a == 127:
+        return True
+    if a == 192 and b == 168:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    # 100.64.0.0/10 -> first octet 100, second octet 64..127.
+    if a == 100 and 64 <= b <= 127:
+        return True
+    return False
+
+
+# Endpoints that should be completely silent when an internal-network IP
+# (e.g. an unauthenticated Railway monitoring service) hits them and gets a
+# 4xx. The endpoint is still answered correctly; only the access-log line is
+# dropped so deployment logs don't get dominated by the same line every 30
+# seconds. Anything originating from a public IP is still logged so real
+# scraping attempts remain visible.
+_INTERNAL_PROBE_SILENCE_PATHS = frozenset({
+    '/api/security/dashboard',
+    '/api/security/threats',
+    '/api/security/ids',
+    '/api/security/firewall',
+})
+
+
+def _should_silence_internal_probe(client_ip: str, path: str, code: object) -> bool:
+    if not path or not str(code).startswith('4'):
+        return False
+    if path not in _INTERNAL_PROBE_SILENCE_PATHS:
+        return False
+    return _is_internal_network_ip(client_ip)
+
+
+# ── Repetitive 4xx suppression ──────────────────────────────────────────────
+#
+# Misconfigured monitors (e.g. an external scraper hitting an admin-only path
+# without auth) can flood Railway logs with thousands of identical 4xx lines
+# per hour. We track each (client_ip, path, code) tuple and emit the first
+# occurrence, then suppress further log lines for ``_REPEAT_LOG_WINDOW_S``
+# seconds, finally emitting a single summary line with the suppressed count.
+
+_REPEAT_LOG_WINDOW_S = float(os.environ.get('PHINS_REPEAT_LOG_WINDOW_S', 300))
+_REPEAT_LOG_THRESHOLD = int(os.environ.get('PHINS_REPEAT_LOG_THRESHOLD', 3))
+# Hard cap on the number of distinct (client_ip, path, code) tuples we track.
+# Without this, rotating bot IPs / paths could grow the dict without bound on
+# a long-running Railway container (slow memory leak). When we hit the cap we
+# evict the oldest entries by ``first_at`` to make room.
+_REPEAT_LOG_MAX_ENTRIES = int(os.environ.get('PHINS_REPEAT_LOG_MAX_ENTRIES', 10000))
+_REPEAT_LOG_STATE: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+_REPEAT_LOG_LOCK = threading.Lock()
+
+
+def _should_suppress_repeat_4xx(client_ip: str, path: str, code: object) -> Tuple[bool, int]:
+    """Return ``(suppress, suppressed_count)`` for a repetitive 4xx hit.
+
+    The first ``_REPEAT_LOG_THRESHOLD`` hits in a window pass through
+    untouched. Subsequent identical hits are silently suppressed until the
+    window expires, at which point the next hit emits a one-line summary
+    that includes how many were suppressed.
+    """
+    code_str = str(code)
+    if not code_str.startswith('4'):
+        return False, 0
+    if not path.startswith('/api/'):
+        # Static assets and bot probes are handled elsewhere; we focus on
+        # API routes which are most prone to monitor mis-configuration.
+        return False, 0
+
+    key = (client_ip or '-', path, code_str)
+    now = time.time()
+    with _REPEAT_LOG_LOCK:
+        state = _REPEAT_LOG_STATE.get(key)
+        if state is None or now - state.get('first_at', now) > _REPEAT_LOG_WINDOW_S:
+            suppressed = state.get('suppressed', 0) if state else 0
+            # Bound the dict so a long-running Railway container exposed
+            # to rotating bot IPs / paths can't grow it without limit.
+            if state is None and len(_REPEAT_LOG_STATE) >= _REPEAT_LOG_MAX_ENTRIES:
+                # Evict ~10% of the oldest entries by first_at so the cap
+                # doesn't trigger eviction on every subsequent insert.
+                evict_target = max(1, _REPEAT_LOG_MAX_ENTRIES // 10)
+                for stale_key, _ in sorted(
+                    _REPEAT_LOG_STATE.items(),
+                    key=lambda kv: kv[1].get('first_at', 0),
+                )[:evict_target]:
+                    _REPEAT_LOG_STATE.pop(stale_key, None)
+            _REPEAT_LOG_STATE[key] = {
+                'first_at': now,
+                'count': 1,
+                'suppressed': 0,
+            }
+            return False, suppressed
+        state['count'] += 1
+        if state['count'] <= _REPEAT_LOG_THRESHOLD:
+            return False, 0
+        state['suppressed'] += 1
+        return True, 0
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     # Hook points for BaseHTTPRequestHandler logging. We keep the default
     # behavior for real traffic but suppress noisy bot-scan 404/403s that would
@@ -9673,8 +9792,41 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def log_request(self, code='-', size='-'):  # type: ignore[override]
         try:
-            if _should_silence_bot_probe_http_log(getattr(self, 'path', '') or '', code):
+            path_value = getattr(self, 'path', '') or ''
+            if _should_silence_bot_probe_http_log(path_value, code):
                 return
+            client_ip = self.client_address[0] if self.client_address else '-'
+            # Drop the access line entirely when an internal-network probe
+            # (Railway edge / monitor / sibling service) gets a 4xx on a
+            # known security/admin endpoint. The endpoint still answers
+            # 4xx; we simply stop the deploy log from being dominated by
+            # the same line every 30 seconds.
+            if _should_silence_internal_probe(client_ip, path_value, code):
+                return
+            suppress, suppressed_count = _should_suppress_repeat_4xx(
+                client_ip, path_value, code,
+            )
+            if suppress:
+                return
+            if suppressed_count > 0:
+                # First call after a quiet window - tell operators what they
+                # missed without re-floods. Include User-Agent so the source
+                # of mystery polling traffic can be identified.
+                try:
+                    user_agent = ''
+                    try:
+                        user_agent = self.headers.get('User-Agent', '') or ''
+                    except Exception:
+                        user_agent = ''
+                    ua_suffix = f" UA={user_agent[:120]!r}" if user_agent else ''
+                    print(
+                        f"[log] {client_ip} resumed hitting {path_value} "
+                        f"(status {code}); suppressed {suppressed_count} "
+                        f"earlier identical entries.{ua_suffix}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
         super().log_request(code, size)
@@ -15357,6 +15509,7 @@ For claims or questions, please contact:
                 document_type_filter = qs.get('document_type', [None])[0]
 
                 docs = []
+                persistent_ids: list[str] = []
                 for doc in POLICY_DOCUMENTS.values():
                     doc_customer_id = resolve_document_owner_customer_id(doc)
                     # Permission: customers can only see their own documents
@@ -15371,6 +15524,9 @@ For claims or questions, please contact:
                         continue
                     if document_type_filter and doc.get('document_type') != document_type_filter:
                         continue
+                    persistent_id = doc.get('persistent_doc_id') or doc.get('id')
+                    if persistent_id:
+                        persistent_ids.append(persistent_id)
                     docs.append({
                         'id': doc.get('id'),
                         'name': doc.get('name'),
@@ -15383,9 +15539,27 @@ For claims or questions, please contact:
                         'uploaded_at': doc.get('uploaded_at'),
                         'uploaded_by': doc.get('uploaded_by'),
                         'uploaded_by_customer': doc_customer_id,
-                        'has_data': bool(doc.get('data')),
+                        'has_data': bool(doc.get('data')) or bool(doc.get('persistent_doc_id')),
                         'ai_analysis': doc.get('ai_analysis'),
+                        'assessment_summary': doc.get('assessment_summary'),
+                        'persistent_doc_id': doc.get('persistent_doc_id'),
                     })
+
+                # Hydrate per-document assessment facts from the unified store.
+                # The mirror dict may not yet contain summaries written by
+                # legacy code paths so we always cross-reference the live
+                # service. Errors here are non-fatal because the documents
+                # themselves are fully usable without the enriched summary.
+                try:
+                    from services.assessment_center_service import get_assessment_center
+                    ac_summary = get_assessment_center().get_document_assessments(persistent_ids)
+                    for entry in docs:
+                        key = entry.get('persistent_doc_id') or entry.get('id')
+                        live = ac_summary.get(key) if key else None
+                        if live and live.get('facts_extracted'):
+                            entry['assessment_summary'] = live
+                except Exception as ac_err:
+                    print(f"[assessment-center] List enrichment skipped: {ac_err}")
 
                 docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
                 self._set_json_headers(200)
@@ -23963,13 +24137,18 @@ For claims or questions, please contact:
                     return
 
         # =====================================================================
-        # ASSESSMENT CENTER (POST) - upload, scan, mislaka link, fact import
+        # ASSESSMENT CENTER (POST) - upload, scan, mislaka link, fact import,
+        # binary export-file (downloadable PDF/XLSX/CSV)
         # =====================================================================
         if assessment_center_enabled and api_ac_post and path.startswith('/api/assessment-center/'):
             try:
                 auth_header = self.headers.get('Authorization', '')
                 token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
                 session = validate_session(token) if token else None
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
                 user_agent = self.headers.get('User-Agent', '')
 
                 length = int(self.headers.get('Content-Length', 0))
@@ -23978,6 +24157,22 @@ For claims or questions, please contact:
                     body_data = json.loads(body)
                 except json.JSONDecodeError:
                     body_data = {}
+
+                if path == '/api/assessment-center/export-file':
+                    try:
+                        from web_portal.api_assessment_center import export_analysis_binary
+                    except ImportError:
+                        from api_assessment_center import export_analysis_binary  # type: ignore
+                    status_code, headers_map, payload = export_analysis_binary(
+                        session=session, body=body_data,
+                    )
+                    self.send_response(status_code)
+                    for hk, hv in headers_map.items():
+                        self.send_header(hk, hv)
+                    self.end_headers()
+                    if payload:
+                        self.wfile.write(payload)
+                    return
 
                 ac_result = api_ac_post(path, session, body_data, client_ip, user_agent)
                 if ac_result is not None:
@@ -30555,6 +30750,8 @@ For claims or questions, please contact:
                         'document_type': document_type,
                         'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
                         'uploaded_at': doc['uploaded_at'],
+                        'assessment_summary': doc.get('assessment_summary'),
+                        'persistent_doc_id': doc.get('persistent_doc_id'),
                     })
                     print(
                         f"   📄 Stored document {doc['id']}: {fname} ({doc['size']} bytes) "
