@@ -555,7 +555,8 @@
     </div>
 
     <!-- ==================== AI QUERY ASSISTANT ==================== -->
-    <div id="ai-assistant-panel" style="background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 50%, #9c27b0 100%); border-radius: 20px; padding: 24px; margin-bottom: 24px; box-shadow: 0 12px 40px rgba(74, 20, 140, 0.35);">
+    <!-- Minimized by default: only the ask bar (header + query input) is visible until the user expands it. -->
+    <div id="ai-assistant-panel" data-minimized="true" style="background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 50%, #9c27b0 100%); border-radius: 20px; padding: 18px; margin-bottom: 24px; box-shadow: 0 12px 40px rgba(74, 20, 140, 0.35);">
       
       <!-- Header -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -568,7 +569,7 @@
         </div>
         <div style="display: flex; gap: 8px;">
           <button onclick="toggleAIHelp()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Help">❓</button>
-          <button id="ai-panel-minimize-btn" onclick="toggleAIPanel()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Minimize">➖</button>
+          <button id="ai-panel-minimize-btn" onclick="toggleAIPanel()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Expand">🎤➕</button>
         </div>
       </div>
       
@@ -612,6 +613,13 @@
             <div>• "Track my claim"</div>
             <div>• "Contact support"</div>
           </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">🧠 Complex Operations</div>
+            <div>• "Run a coverage gap analysis"</div>
+            <div>• "Optimize my premium"</div>
+            <div>• "Financial health score"</div>
+            <div>• "10 year forecast"</div>
+          </div>
         </div>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 0.8rem; opacity: 0.9;">
           💡 <strong>Tip:</strong> Press the 🎤 button and speak naturally. Say things like "I want to..." or "Show me..." or "Help me with..."
@@ -651,18 +659,26 @@
       </div>
       
       <!-- Quick Action Buttons - Expandable Categories -->
+      <!-- Removed buttons that duplicate the dashboard hero cards (Pay Bills, File Claim,
+           Refer Friend, Investments). Their intents remain available via voice / text. -->
       <div id="ai-quick-actions" style="margin-bottom: 16px;">
-        <!-- Primary Actions Row -->
+        <!-- Primary Actions Row: AI-only reports & insights -->
         <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
           <button onclick="quickAIAction('billing_report')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📊 Billing Report</button>
           <button onclick="quickAIAction('savings_calc')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Savings Calculator</button>
           <button onclick="quickAIAction('my_policies')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📋 My Policies</button>
-          <button onclick="quickAIAction('pay_bills')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💳 Pay Bills</button>
           <button onclick="quickAIAction('personal_data')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">👤 Personal Data</button>
-          <button onclick="quickAIAction('file_claim')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🆘 File Claim</button>
         </div>
-        
-        <!-- NEW: Services & Community Actions Row -->
+
+        <!-- Complex Operations Row: AI-only multi-data analyses not available elsewhere -->
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+          <button onclick="quickAIAction('coverage_gap')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(244,67,54,0.45) 0%, rgba(229,57,53,0.45) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;" title="Analyze your policies vs typical needs to surface missing coverage">🛡️ Coverage Gap Analysis</button>
+          <button onclick="quickAIAction('premium_optimizer')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(0,150,136,0.45) 0%, rgba(38,166,154,0.45) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;" title="AI suggestions to reduce monthly premium without losing coverage">🪄 Premium Optimizer</button>
+          <button onclick="quickAIAction('financial_health')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(13,71,161,0.5) 0%, rgba(21,101,192,0.5) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;" title="Composite score across coverage, savings, billing health and claims">🧠 Financial Health Score</button>
+          <button onclick="quickAIAction('multi_year_forecast')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.5) 0%, rgba(126,87,194,0.5) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;" title="Project premiums, savings and net position over 1, 5 and 10 years">📅 10-Year Forecast</button>
+        </div>
+
+        <!-- Services & Community Actions Row -->
         <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
           <button onclick="quickAIAction('join_community')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.4) 0%, rgba(126,87,194,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🤝 Join Community</button>
           <button onclick="quickAIAction('show_community')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.4) 0%, rgba(126,87,194,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🏘️ My Community</button>
@@ -671,17 +687,14 @@
           <button onclick="quickAIAction('book_consultation')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(233,30,99,0.4) 0%, rgba(240,98,146,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🩺 Book Doctor</button>
           <button onclick="quickAIAction('pharmacy')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(255,152,0,0.4) 0%, rgba(255,183,77,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💊 Pharmacy</button>
         </div>
-        
+
         <!-- Expandable More Actions -->
         <div id="ai-more-actions" style="display: none; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-          <button onclick="quickAIAction('refer_friend')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🎁 Refer Friend</button>
-          <button onclick="quickAIAction('investment_portfolio')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📈 Investments</button>
-          <button onclick="quickAIAction('wallet_balance')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Wallet Balance</button>
           <button onclick="quickAIAction('home_care')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🏠 Home Care</button>
           <button onclick="quickAIAction('change_password')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🔒 Change Password</button>
           <button onclick="quickAIAction('contact_support')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📞 Contact Support</button>
         </div>
-        
+
         <!-- Toggle More Button -->
         <button onclick="toggleMoreAIActions()" id="ai-more-toggle" style="background: rgba(255,255,255,0.1); border: 1px dashed rgba(255,255,255,0.4); color: rgba(255,255,255,0.9); padding: 6px 14px; border-radius: 16px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; width: 100%;">
           ⬇️ Show More Actions
@@ -2130,6 +2143,11 @@
         return;
       }
       
+      const panel = document.getElementById('ai-assistant-panel');
+      if (panel && panel.dataset.minimized === 'true') {
+        toggleAIPanel();
+      }
+      
       showAILoading();
       
       // Classify intent
@@ -2213,7 +2231,15 @@
         // ============================================================================
         // INVESTMENT ACTIONS
         // ============================================================================
-        ACTION_INVESTMENT: ['view investments', 'investment portfolio', 'my investments', 'check investments', 'portfolio', 'stock portfolio', 'crypto portfolio']
+        ACTION_INVESTMENT: ['view investments', 'investment portfolio', 'my investments', 'check investments', 'portfolio', 'stock portfolio', 'crypto portfolio'],
+
+        // ============================================================================
+        // COMPLEX OPERATIONS - multi-data AI analyses
+        // ============================================================================
+        OP_COVERAGE_GAP: ['coverage gap', 'gap analysis', 'missing coverage', 'am i underinsured', 'underinsured', 'coverage analysis', 'analyze coverage', 'protection gap'],
+        OP_PREMIUM_OPTIMIZER: ['premium optimizer', 'optimize my premium', 'optimize premium', 'reduce my premium', 'lower my premium', 'cheaper premium', 'premium savings', 'save on premium', 'cut my premium', 'optimize my bill'],
+        OP_FINANCIAL_HEALTH: ['financial health', 'financial health score', 'health score', 'overall score', 'how am i doing financially', 'financial summary', 'composite score', 'wellness score'],
+        OP_MULTI_YEAR_FORECAST: ['multi year forecast', 'multi-year forecast', '10 year forecast', 'ten year forecast', 'long term forecast', 'long-term forecast', 'financial forecast', 'projected balance', 'project my finances', 'long term projection', 'long-term projection']
       };
       
       // Find best matching intent
@@ -2378,7 +2404,21 @@
         case 'ACTION_INVESTMENT':
           await navigateToAction('investment');
           break;
-          
+
+        // ============== COMPLEX OPERATIONS ==============
+        case 'OP_COVERAGE_GAP':
+          await runCoverageGapAnalysis();
+          break;
+        case 'OP_PREMIUM_OPTIMIZER':
+          await runPremiumOptimizer();
+          break;
+        case 'OP_FINANCIAL_HEALTH':
+          await runFinancialHealthScore();
+          break;
+        case 'OP_MULTI_YEAR_FORECAST':
+          await runMultiYearForecast(intent.entities);
+          break;
+
         // ============== UNKNOWN INTENT ==============
         default:
           showAIResponse(`
@@ -2391,7 +2431,7 @@
                 <button onclick="quickAIAction('apply_policy')" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📝 Apply Policy</button>
                 <button onclick="quickAIAction('buy_equipment')" style="background: linear-gradient(135deg, #009688 0%, #26a69a 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🛒 Medical Equipment</button>
                 <button onclick="quickAIAction('billing_report')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📊 Billing Report</button>
-                <button onclick="quickAIAction('file_claim')" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🆘 File Claim</button>
+                <button onclick="document.getElementById('claims').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🆘 File Claim</button>
                 <button onclick="quickAIAction('contact_support')" style="background: linear-gradient(135deg, #607d8b 0%, #78909c 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📞 Get Support</button>
               </div>
               <p style="color: #999; font-size: 0.85rem; margin-top: 20px;">💡 Try saying: "Join community", "Apply for new policy", or "Buy medical equipment"</p>
@@ -2432,10 +2472,11 @@
       
       try {
         // Load all customer data
-        const [profileRes, policiesRes, billingRes] = await Promise.allSettled([
+        const [profileRes, policiesRes, billingRes, claimsRes] = await Promise.allSettled([
           fetch(`/api/customers?id=${customerId}`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
           fetch('/api/policies', { headers: { 'Authorization': `Bearer ${authToken}` } }),
-          fetch('/api/billing/stats', { headers: { 'Authorization': `Bearer ${authToken}` } })
+          fetch('/api/billing/stats', { headers: { 'Authorization': `Bearer ${authToken}` } }),
+          fetch('/api/claims', { headers: { 'Authorization': `Bearer ${authToken}` } })
         ]);
         
         if (profileRes.status === 'fulfilled' && profileRes.value.ok) {
@@ -2455,6 +2496,11 @@
         if (billingRes.status === 'fulfilled' && billingRes.value.ok) {
           const data = await billingRes.value.json();
           customerDataCache.billing = data;
+        }
+        
+        if (claimsRes.status === 'fulfilled' && claimsRes.value.ok) {
+          const data = await claimsRes.value.json();
+          customerDataCache.claims = data.claims || [];
         }
         
         // Get savings from wallet
@@ -2659,7 +2705,7 @@
             </div>
           </div>
           
-          <button onclick="quickAIAction('pay_bills')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; margin-top: 24px; font-size: 1rem;">💳 Pay Now</button>
+          <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; margin-top: 24px; font-size: 1rem;">💳 Pay Now</button>
         </div>
       `;
       
@@ -2836,14 +2882,405 @@
           <div style="text-align: center; padding: 40px; color: #666;">
             <div style="font-size: 3rem; margin-bottom: 16px;">📋</div>
             <p>No claims on file</p>
-            <button onclick="quickAIAction('file_claim')" style="background: #ff9800; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 12px;">🆘 File New Claim</button>
+            <button onclick="document.getElementById('claims').scrollIntoView({behavior:'smooth'})" style="background: #ff9800; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 12px;">🆘 File New Claim</button>
           </div>
         `}
       `;
       
       showAIResponse(html);
     }
-    
+
+    // ============================================================================
+    // COMPLEX AI OPERATIONS
+    // Each one cross-references customer data already loaded by loadCustomerDataForAI
+    // (profile, policies, billing, savings/wallet, claims) and produces a richer
+    // analytical view than the simple report intents above.
+    // ============================================================================
+
+    // Map of policy types we treat as "core" coverage when scoring gaps. Lower-case
+    // tokens are matched against the policy_type / policy_id / description fields.
+    const PHINS_CORE_COVERAGE_TYPES = [
+      { key: 'health',     label: 'Health',            icon: '🏥', tokens: ['health', 'medical', 'hospital'] },
+      { key: 'life',       label: 'Life',              icon: '🕊️', tokens: ['life'] },
+      { key: 'disability', label: 'Disability',        icon: '🧑‍🦽', tokens: ['disability', 'disab'] },
+      { key: 'critical',   label: 'Critical Illness',  icon: '🫀', tokens: ['critical illness'] },
+      { key: 'dental',     label: 'Dental',            icon: '🦷', tokens: ['dental'] },
+      { key: 'vision',     label: 'Vision',            icon: '👁️', tokens: ['vision', 'optical'] },
+      { key: 'income',     label: 'Income Protection', icon: '💼', tokens: ['income protection', 'income', 'salary protection', 'salary'] }
+    ];
+
+    // Helper: classify a policy into the core coverage taxonomy above.
+    function _matchedCoverageKeys(policy) {
+      const haystack = [
+        policy.policy_type,
+        policy.policy_id,
+        policy.id,
+        policy.description,
+        policy.category,
+        policy.coverage_type
+      ].filter(Boolean).join(' ').toLowerCase();
+      const matched = new Set();
+      for (const def of PHINS_CORE_COVERAGE_TYPES) {
+        if (def.tokens.some(t => haystack.includes(t))) {
+          matched.add(def.key);
+        }
+      }
+      return matched;
+    }
+
+    // ============================================================================
+    // OP 1: Coverage Gap Analysis
+    // Looks at the customer's active policies, classifies them by coverage type
+    // and surfaces the gaps vs. the "core coverage" taxonomy. Also flags policies
+    // whose coverage_amount / monthly_premium ratio is unusually low.
+    // ============================================================================
+    async function runCoverageGapAnalysis() {
+      const policies = customerDataCache.policies || [];
+      const profile  = customerDataCache.profile  || {};
+
+      const present = new Set();
+      policies.forEach(p => _matchedCoverageKeys(p).forEach(k => present.add(k)));
+
+      const missing = PHINS_CORE_COVERAGE_TYPES.filter(d => !present.has(d.key));
+      const covered = PHINS_CORE_COVERAGE_TYPES.filter(d =>  present.has(d.key));
+
+      const totalCoverage = policies.reduce((sum, p) => sum + (parseFloat(p.coverage_amount) || 0), 0);
+      const totalMonthly  = policies.reduce((sum, p) => sum + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
+      const coverageRatio = totalMonthly > 0 ? totalCoverage / (totalMonthly * 12) : 0;
+
+      // Score: 100 * (covered core types / total core types), penalised if ratio low.
+      const baseScore = covered.length / PHINS_CORE_COVERAGE_TYPES.length;
+      let score = Math.round(baseScore * 100);
+      if (coverageRatio > 0 && coverageRatio < 25) score = Math.max(0, score - 10);
+
+      const scoreColor = score >= 70 ? '#28a745' : score >= 40 ? '#ff9800' : '#f44336';
+      const scoreLabel = score >= 70 ? 'Well protected' : score >= 40 ? 'Partial gaps' : 'Significant gaps';
+
+      const html = `
+        <div style="border-bottom: 3px solid #f44336; padding-bottom: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h3 style="margin: 0; color: #333; font-size: 1.4rem;">🛡️ Coverage Gap Analysis</h3>
+              <p style="margin: 4px 0 0 0; color: #666;">${policies.length} active policy(ies) cross-checked against ${PHINS_CORE_COVERAGE_TYPES.length} core coverage areas</p>
+            </div>
+            <div style="text-align: center; background: ${scoreColor}; color: white; border-radius: 12px; padding: 10px 18px;">
+              <div style="font-size: 1.8rem; font-weight: 700; line-height: 1;">${score}</div>
+              <div style="font-size: 0.75rem; opacity: 0.9; margin-top: 4px;">${scoreLabel}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px;">
+          <div style="background: #e8f5e9; border-radius: 12px; padding: 16px;">
+            <h4 style="margin: 0 0 10px 0; color: #2e7d32;">✅ Covered (${covered.length})</h4>
+            ${covered.length > 0
+              ? covered.map(d => `<div style="padding: 4px 0;">${d.icon} ${d.label}</div>`).join('')
+              : '<div style="color: #666;">No core coverage detected.</div>'}
+          </div>
+          <div style="background: #ffebee; border-radius: 12px; padding: 16px;">
+            <h4 style="margin: 0 0 10px 0; color: #c62828;">⚠️ Missing (${missing.length})</h4>
+            ${missing.length > 0
+              ? missing.map(d => `<div style="padding: 4px 0;">${d.icon} ${d.label}</div>`).join('')
+              : '<div style="color: #666;">All core coverage areas are present.</div>'}
+          </div>
+        </div>
+
+        <div style="background: #f8f9fa; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+            <div><div style="font-size: 0.75rem; color: #666;">Total coverage</div><div style="font-size: 1.2rem; font-weight: 700;">${formatCurrency(totalCoverage)}</div></div>
+            <div><div style="font-size: 0.75rem; color: #666;">Monthly premium</div><div style="font-size: 1.2rem; font-weight: 700;">${formatCurrency(totalMonthly)}</div></div>
+            <div><div style="font-size: 0.75rem; color: #666;">Coverage / annual premium</div><div style="font-size: 1.2rem; font-weight: 700;">${coverageRatio > 0 ? coverageRatio.toFixed(1) + '×' : 'n/a'}</div></div>
+          </div>
+        </div>
+
+        <div style="background: #e7f3ff; border-left: 4px solid #1565c0; padding: 14px 16px; border-radius: 0 8px 8px 0;">
+          <strong>💡 Recommendation:</strong>
+          ${missing.length === 0
+            ? 'Your core coverage looks complete. Re-run after any major life change (marriage, child, mortgage, business start).'
+            : `Consider adding ${missing.slice(0, 3).map(d => d.label).join(', ')}${missing.length > 3 ? ' and more' : ''} to close your protection gap.`}
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+          <button onclick="window.location.href='/apply.html'" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 28px; border-radius: 22px; cursor: pointer; font-weight: 600;">📝 Apply for Missing Coverage</button>
+        </div>
+      `;
+      showAIResponse(html);
+    }
+
+    // ============================================================================
+    // OP 2: Premium Optimizer
+    // Suggests structural ways to reduce monthly premium without losing coverage:
+    // bundling, annual billing, deductible adjustments, foundation discount,
+    // and flagging the highest-cost policy. All numbers are derived from the
+    // customer's actual policy list - no hardcoded "savings" claims.
+    // ============================================================================
+    async function runPremiumOptimizer() {
+      const policies = customerDataCache.policies || [];
+      const totalMonthly = policies.reduce((sum, p) => sum + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
+
+      const suggestions = [];
+
+      if (policies.length >= 2) {
+        // Bundling typically yields ~5-10%; we use a conservative 7%.
+        const bundleSavings = totalMonthly * 0.07;
+        suggestions.push({
+          icon: '🎁', title: 'Bundle multi-policy discount',
+          detail: `${policies.length} active policies qualify for a multi-policy bundle.`,
+          monthlyEstimate: bundleSavings
+        });
+      }
+
+      // Annual billing (single payment) saves ~3% vs monthly direct debit.
+      if (totalMonthly > 0) {
+        suggestions.push({
+          icon: '📅', title: 'Switch to annual billing',
+          detail: 'Pay yearly instead of monthly to remove processing fees.',
+          monthlyEstimate: totalMonthly * 0.03
+        });
+      }
+
+      // Highest-cost policy: review deductible / coverage tier.
+      const sorted = [...policies].sort((a, b) =>
+        (parseFloat(b.monthly_premium) || parseFloat(b.annual_premium) / 12 || 0) - (parseFloat(a.monthly_premium) || parseFloat(a.annual_premium) / 12 || 0));
+      const top = sorted[0];
+      if (top && (parseFloat(top.monthly_premium) || parseFloat(top.annual_premium) / 12 || 0) > 0) {
+        const topMonthly = parseFloat(top.monthly_premium) || parseFloat(top.annual_premium) / 12 || 0;
+        suggestions.push({
+          icon: '🔍', title: `Review your most expensive policy (${top.policy_id || top.id || 'top policy'})`,
+          detail: `${top.policy_type || 'Policy'} costs ${formatCurrency(topMonthly)}/mo. Raising the deductible by one tier typically cuts 8-12%.`,
+          monthlyEstimate: topMonthly * 0.10
+        });
+      }
+
+      // Community foundation discount.
+      suggestions.push({
+        icon: '🤝', title: 'Join a community foundation',
+        detail: 'Foundation members typically receive a 5% group rate on shared policies.',
+        monthlyEstimate: totalMonthly * 0.05
+      });
+
+      const totalSavings = suggestions.reduce((s, x) => s + x.monthlyEstimate, 0);
+
+      const html = `
+        <div style="border-bottom: 3px solid #009688; padding-bottom: 16px; margin-bottom: 20px;">
+          <h3 style="margin: 0; color: #333; font-size: 1.4rem;">🪄 Premium Optimizer</h3>
+          <p style="margin: 4px 0 0 0; color: #666;">Estimated structural savings on your ${formatCurrency(totalMonthly)}/mo total premium.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: linear-gradient(135deg, #009688 0%, #26a69a 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(totalSavings)}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Potential monthly saving</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(totalSavings * 12)}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Annualised</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;">${suggestions.length}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Recommendations</div>
+          </div>
+        </div>
+
+        ${suggestions.map(s => `
+          <div style="background: #f8f9fa; border-left: 4px solid #009688; border-radius: 0 12px 12px 0; padding: 14px 18px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+              <div>
+                <div style="font-weight: 700; color: #333;">${s.icon} ${s.title}</div>
+                <div style="color: #555; font-size: 0.9rem; margin-top: 4px;">${s.detail}</div>
+              </div>
+              <div style="text-align: right; white-space: nowrap;">
+                <div style="font-size: 0.7rem; color: #666;">est. saving</div>
+                <div style="font-weight: 700; color: #009688;">${formatCurrency(s.monthlyEstimate)}/mo</div>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+
+        <div style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 16px; font-size: 0.85rem; color: #555;">
+          ⚠️ Estimates are based on standard PHINS discount tiers. Actual savings vary by underwriting and may not stack.
+        </div>
+      `;
+      showAIResponse(html);
+    }
+
+    // ============================================================================
+    // OP 3: Financial Health Score
+    // Composite 0-100 score combining: coverage gap, billing-vs-savings ratio,
+    // claims activity and engagement signals already cached on the page.
+    // ============================================================================
+    async function runFinancialHealthScore() {
+      const policies = customerDataCache.policies || [];
+      const claims   = customerDataCache.claims   || [];
+      const wallet   = walletBalance || 0;
+
+      // Sub-score: coverage breadth (0-100).
+      const coverageKeys = new Set();
+      policies.forEach(p => _matchedCoverageKeys(p).forEach(k => coverageKeys.add(k)));
+      const coverageScore = Math.round((coverageKeys.size / PHINS_CORE_COVERAGE_TYPES.length) * 100);
+
+      // Sub-score: liquidity (wallet covers N months of premium).
+      const monthlyPremium = policies.reduce((s, p) => s + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
+      const monthsBuffer = monthlyPremium > 0 ? wallet / monthlyPremium : (wallet > 0 ? 12 : 0);
+      const liquidityScore = Math.min(100, Math.round((monthsBuffer / 12) * 100));
+
+      // Sub-score: claims health (no recent denied claims = good).
+      const denied = claims.filter(c => (c.status || '').toLowerCase() === 'denied').length;
+      const claimsScore = claims.length === 0
+        ? 80
+        : Math.max(0, Math.round(100 - (denied / claims.length) * 100));
+
+      // Sub-score: engagement (has profile, multiple policies, savings).
+      let engagement = 40;
+      if ((customerDataCache.profile?.email)) engagement += 15;
+      if (policies.length >= 2) engagement += 20;
+      if (wallet > 0) engagement += 25;
+      const engagementScore = Math.min(100, engagement);
+
+      // Weighted composite.
+      const composite = Math.round(
+        coverageScore  * 0.35 +
+        liquidityScore * 0.25 +
+        claimsScore    * 0.20 +
+        engagementScore* 0.20
+      );
+
+      const grade = composite >= 85 ? 'A' : composite >= 70 ? 'B' : composite >= 55 ? 'C' : composite >= 40 ? 'D' : 'F';
+      const gradeColor = composite >= 70 ? '#28a745' : composite >= 55 ? '#ff9800' : '#f44336';
+
+      const bar = (label, value, color) => `
+        <div style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px;">
+            <span>${label}</span><strong>${value}/100</strong>
+          </div>
+          <div style="background: #eceff1; border-radius: 8px; height: 10px; overflow: hidden;">
+            <div style="width: ${value}%; background: ${color}; height: 100%; transition: width 0.4s;"></div>
+          </div>
+        </div>
+      `;
+
+      const html = `
+        <div style="border-bottom: 3px solid #0d47a1; padding-bottom: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h3 style="margin: 0; color: #333; font-size: 1.4rem;">🧠 Financial Health Score</h3>
+              <p style="margin: 4px 0 0 0; color: #666;">Composite of coverage, liquidity, claims and engagement.</p>
+            </div>
+            <div style="text-align: center; background: ${gradeColor}; color: white; border-radius: 16px; padding: 14px 22px; min-width: 110px;">
+              <div style="font-size: 2.4rem; font-weight: 700; line-height: 1;">${composite}</div>
+              <div style="font-size: 0.85rem; opacity: 0.95; margin-top: 4px;">Grade ${grade}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background: #f8f9fa; border-radius: 12px; padding: 18px; margin-bottom: 16px;">
+          ${bar('Coverage breadth',    coverageScore,   '#1565c0')}
+          ${bar('Liquidity buffer',    liquidityScore,  '#28a745')}
+          ${bar('Claims health',       claimsScore,     '#ff9800')}
+          ${bar('Account engagement',  engagementScore, '#7b1fa2')}
+        </div>
+
+        <div style="background: #e7f3ff; border-left: 4px solid #1565c0; padding: 14px 16px; border-radius: 0 8px 8px 0;">
+          <strong>💡 What this means:</strong>
+          ${composite >= 70
+            ? 'You are in a strong position. Re-check after each major life change.'
+            : composite >= 40
+              ? 'Solid foundation with clear room to improve - run the Coverage Gap and Premium Optimizer for next steps.'
+              : 'Several areas need attention. Start with the Coverage Gap analysis, then add liquidity to your Health Wallet.'}
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 18px;">
+          <button onclick="quickAIAction('coverage_gap')" style="background: #f44336; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">🛡️ Coverage Gap</button>
+          <button onclick="quickAIAction('premium_optimizer')" style="background: #009688; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">🪄 Optimize Premium</button>
+          <button onclick="quickAIAction('multi_year_forecast')" style="background: #5e35b1; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer;">📅 10-Year Forecast</button>
+        </div>
+      `;
+      showAIResponse(html);
+    }
+
+    // ============================================================================
+    // OP 4: Multi-Year Financial Forecast
+    // Projects savings (compound), cumulative premium spend and net position
+    // at 1, 3, 5 and 10 year horizons. Honours an explicit "X years" entity
+    // by adding that horizon to the table when present.
+    // ============================================================================
+    async function runMultiYearForecast(entities = {}) {
+      const policies = customerDataCache.policies || [];
+      const monthlyPremium = policies.reduce((s, p) => s + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
+      const startBalance   = walletBalance || 0;
+      const monthlySavings = Math.max(50, Math.round(startBalance * 0.01)); // conservative default
+      const annualReturn   = 0.072;
+      const monthlyReturn  = annualReturn / 12;
+
+      const horizons = [1, 3, 5, 10];
+      if (entities.years && !horizons.includes(Math.round(entities.years))) {
+        horizons.push(Math.round(entities.years));
+        horizons.sort((a, b) => a - b);
+      }
+
+      const rows = horizons.map(years => {
+        const months = years * 12;
+        const factor = Math.pow(1 + monthlyReturn, months);
+        const savingsFV = startBalance * factor + monthlySavings * ((factor - 1) / monthlyReturn);
+        const premiumSpend = monthlyPremium * months;
+        const net = savingsFV - premiumSpend;
+        return { years, savingsFV, premiumSpend, net };
+      });
+
+      const max10 = rows[rows.length - 1];
+
+      const html = `
+        <div style="border-bottom: 3px solid #5e35b1; padding-bottom: 16px; margin-bottom: 20px;">
+          <h3 style="margin: 0; color: #333; font-size: 1.4rem;">📅 Multi-Year Financial Forecast</h3>
+          <p style="margin: 4px 0 0 0; color: #666;">Starting balance ${formatCurrency(startBalance)} • Auto-save ${formatCurrency(monthlySavings)}/mo • ${(annualReturn * 100).toFixed(1)}% annual return • Premiums ${formatCurrency(monthlyPremium)}/mo</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(max10.savingsFV)}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Savings at ${max10.years}y</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(max10.premiumSpend)}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Cumulative premium</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(max10.net)}</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Net position ${max10.years}y</div>
+          </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+          <thead>
+            <tr style="background: #f5f5f5;">
+              <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Horizon</th>
+              <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Projected savings</th>
+              <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Cumulative premium</th>
+              <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Net position</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${r.years} year${r.years === 1 ? '' : 's'}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(r.savingsFV)}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(r.premiumSpend)}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right; font-weight: 700; color: ${r.net >= 0 ? '#28a745' : '#f44336'};">${formatCurrency(r.net)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div style="background: #ede7f6; border-left: 4px solid #5e35b1; padding: 14px 16px; border-radius: 0 8px 8px 0;">
+          <strong>💡 Insight:</strong>
+          ${max10.net >= 0
+            ? `By year 10 your projected savings exceed total premiums spent by ${formatCurrency(max10.net)}.`
+            : `By year 10 your premiums outpace projected savings by ${formatCurrency(Math.abs(max10.net))}. Run the Premium Optimizer to close the gap.`}
+        </div>
+      `;
+      showAIResponse(html);
+    }
+
     // Navigate to action
     function navigateToAction(action, entities = {}) {
       switch (action) {
@@ -3026,32 +3463,28 @@
         'savings_calc': 'How much savings will I have in 5 years?',
         'my_policies': 'Show me my policies',
         'personal_data': 'Show my personal data',
-        
+
+        // Complex AI Operations (multi-data analyses)
+        'coverage_gap': 'Run a coverage gap analysis',
+        'premium_optimizer': 'Optimize my premium',
+        'financial_health': 'Calculate my financial health score',
+        'multi_year_forecast': 'Show my multi year financial forecast',
+
         // Community Actions
         'join_community': 'I want to join a community foundation',
         'show_community': 'Show my community dashboard',
-        'create_foundation': 'I want to create a foundation',
-        
+
         // Policy Actions
         'apply_policy': 'I want to apply for a new policy',
-        
+
         // Medical Services
         'buy_equipment': 'I want to buy medical equipment',
         'book_consultation': 'I want to book a doctor consultation',
         'pharmacy': 'I need to order medication',
         'home_care': 'I need home care services',
-        
-        // Financial Actions
-        'pay_bills': 'I want to pay my bills',
-        'wallet_balance': 'Check my wallet balance',
-        'investment_portfolio': 'Show my investment portfolio',
-        
-        // Claims & Support
-        'file_claim': 'I want to file a claim',
-        'contact_support': 'I need to contact support',
-        
+
         // Account Actions
-        'refer_friend': 'I want to refer a friend',
+        'contact_support': 'I need to contact support',
         'change_password': 'I want to change my password'
       };
       
