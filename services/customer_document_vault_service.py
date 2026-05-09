@@ -167,6 +167,11 @@ class CustomerDocumentVault:
 
         records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
 
+        total = len(records)
+
+        if limit is not None and limit >= 0:
+            records = records[:limit]
+
         if verify_integrity:
             for record in records:
                 record["integrity_status"] = self._verify_record_integrity(record)
@@ -175,10 +180,6 @@ class CustomerDocumentVault:
                 record.setdefault("integrity_status", "unverified")
 
         summary = self._build_summary(customer_id, records)
-        total = len(records)
-
-        if limit is not None and limit >= 0:
-            records = records[:limit]
 
         return {
             "success": True,
@@ -468,7 +469,7 @@ class CustomerDocumentVault:
             # When checksum is missing (legacy or unreadable file), fall back
             # to (name, size, source) so we don't accidentally collapse different
             # files into one.
-            key = sha or f"{record.get('name')}|{record.get('size')}|{record.get('source')}"
+            key = sha or f"{record.get('id')}|{record.get('name')}|{record.get('size')}|{record.get('source')}"
             existing = by_key.get(key)
             if existing is None:
                 record_copy = dict(record)
