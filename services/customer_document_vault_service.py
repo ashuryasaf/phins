@@ -344,7 +344,7 @@ class CustomerDocumentVault:
             if persistent_id and persistent_id in seen_persistent_ids:
                 continue
             owner = _norm_str(item.get("customer_id"))
-            if owner and owner != customer_id:
+            if owner != customer_id:
                 continue
             out.append(self._normalize_persistent_doc(item, customer_id))
         return out
@@ -454,7 +454,7 @@ class CustomerDocumentVault:
             "persistent_doc_id": _norm_str(item.get("id")),
             "storage_path": _norm_str(item.get("storage_path")),
             "source": self.SOURCE_PERSISTENT,
-            "view_url": f"/api/doc-service/view?id={item.get('id')}",
+            "view_url": f"/api/doc-service/view?id={_norm_str(item.get('id'))}",
         }
 
     # ── Dedupe / integrity ────────────────────────────────────────────────
