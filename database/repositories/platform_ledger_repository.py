@@ -28,6 +28,18 @@ class PlatformLedgerRepository(BaseRepository[PlatformLedgerEntry]):
         except Exception:
             return None
 
+    def get_all_by_sequence(self, limit: int = 10000) -> List[PlatformLedgerEntry]:
+        """Return entries ordered by sequence_no ascending, suitable for full hydration."""
+        try:
+            return (
+                self.session.query(PlatformLedgerEntry)
+                .order_by(PlatformLedgerEntry.sequence_no.asc())
+                .limit(limit)
+                .all()
+            )
+        except Exception:
+            return []
+
     def get_recent_entries(self, limit: int = 100) -> List[PlatformLedgerEntry]:
         try:
             return (
