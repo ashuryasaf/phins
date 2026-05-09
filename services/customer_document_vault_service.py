@@ -375,7 +375,11 @@ class CustomerDocumentVault:
             "persistent_doc_id": _norm_str(doc.get("persistent_doc_id")),
             "storage_path": _norm_str(doc.get("storage_path")),
             "source": self.SOURCE_GENERAL,
-            "view_url": f"/api/documents/view?id={doc.get('id') or doc_id}",
+            "view_url": (
+                f"/api/doc-service/view?id={doc.get('persistent_doc_id')}"
+                if not doc.get("data") and doc.get("persistent_doc_id")
+                else f"/api/documents/view?id={doc.get('id') or doc_id}"
+            ),
         }
 
     def _normalize_claim_file(
