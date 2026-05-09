@@ -142,7 +142,7 @@ class CustomerDocumentVault:
         *,
         entity_type: Optional[str] = None,
         document_type: Optional[str] = None,
-        limit: int = DEFAULT_LIMIT,
+        limit: Optional[int] = None,
         verify_integrity: bool = True,
     ) -> Dict[str, Any]:
         """Return the customer's full durable document collection.
@@ -166,7 +166,7 @@ class CustomerDocumentVault:
             records = [r for r in records if _norm_lower(r.get("document_type")) == document_type_l]
 
         records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
-        if limit and limit > 0:
+        if limit is not None and limit >= 0:
             records = records[:limit]
 
         if verify_integrity:
@@ -191,7 +191,7 @@ class CustomerDocumentVault:
 
     def get_summary(self, customer_id: str) -> Dict[str, Any]:
         """Lightweight per-customer aggregate suitable for BI / AI reports."""
-        vault = self.get_vault(customer_id, verify_integrity=False, limit=0)
+        vault = self.get_vault(customer_id, verify_integrity=False)
         return {
             "success": True,
             "customer_id": _norm_str(customer_id),

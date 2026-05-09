@@ -15862,7 +15862,7 @@ For claims or questions, please contact:
                     entity_type = (qs.get('entity_type', [None])[0] or '').strip() or None
                     document_type = (qs.get('document_type', [None])[0] or '').strip() or None
                     try:
-                        limit = int(qs.get('limit', ['500'])[0])
+                        limit = max(0, int(qs.get('limit', ['500'])[0]))
                     except (TypeError, ValueError):
                         limit = 500
                     payload = vault.get_vault(
