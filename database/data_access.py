@@ -9,6 +9,7 @@ operations fail due to connection issues, it will attempt to retry with
 reconnection logic.
 """
 
+import os
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
@@ -22,6 +23,25 @@ logger = logging.getLogger(__name__)
 # Retry configuration for database operations
 MAX_RETRIES = 3
 RETRY_DELAY = 0.5  # seconds
+
+# Cache freshness window for DatabaseDict bulk reads (values()/items()/keys()).
+# This prevents stale reads when another process or replica writes to the DB.
+# Without a TTL, an admin GET /api/claims that ran early would never see new
+# customer-filed claims persisted by a different process — exactly the
+# "claim made but not pushed to admin/dashboard" symptom reported on prod.
+# Override with DATABASE_DICT_CACHE_TTL_SECONDS (set to 0 to disable caching).
+def _resolve_cache_ttl_seconds() -> float:
+    raw = os.environ.get('DATABASE_DICT_CACHE_TTL_SECONDS')
+    if raw is None or raw == '':
+        return 5.0
+    try:
+        value = float(raw)
+        return value if value >= 0 else 5.0
+    except (TypeError, ValueError):
+        return 5.0
+
+
+DATABASE_DICT_CACHE_TTL_SECONDS: float = _resolve_cache_ttl_seconds()
 
 
 def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -159,6 +179,28 @@ class DatabaseDict:
         self.repository_name = repository_name
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_valid = False
+        # Monotonic timestamp (seconds) of the most recent successful cache
+        # refresh. Used together with DATABASE_DICT_CACHE_TTL_SECONDS so that
+        # bulk reads (values()/items()/keys()/iter) never return data older
+        # than the configured freshness window. This is what makes a claim
+        # filed on Process A visible to an admin GET on Process B without
+        # having to wait for an unrelated write to invalidate the cache.
+        self._cache_loaded_at: float = 0.0
+
+    def _is_cache_fresh(self) -> bool:
+        """Return True if the cache is both marked valid and within the TTL."""
+        if not self._cache_valid:
+            return False
+        ttl = DATABASE_DICT_CACHE_TTL_SECONDS
+        if ttl <= 0:
+            # TTL disabled -> always treat valid cache as stale so reads hit DB.
+            return False
+        return (time.monotonic() - self._cache_loaded_at) < ttl
+
+    def invalidate_cache(self) -> None:
+        """Public hook to force the next bulk read to refresh from the DB."""
+        self._cache_valid = False
+        self._cache_loaded_at = 0.0
     
     def _get_repository(self, db: DatabaseManager):
         """Get the appropriate repository from database manager"""
@@ -220,6 +262,7 @@ class DatabaseDict:
 
                 self._cache = {_key_for_item(item): item.to_dict() for item in items}
                 self._cache_valid = True
+                self._cache_loaded_at = time.monotonic()
         
         try:
             self._execute_with_retry(_do_refresh)
@@ -278,6 +321,7 @@ class DatabaseDict:
         
         self._execute_with_retry(_do_set)
         self._cache_valid = False
+        self._cache_loaded_at = 0.0
     
     def __delitem__(self, key: str):
         """Delete item by key with automatic retry"""
@@ -289,6 +333,7 @@ class DatabaseDict:
         
         self._execute_with_retry(_do_delete)
         self._cache_valid = False
+        self._cache_loaded_at = 0.0
     
     def __contains__(self, key: str) -> bool:
         """Check if key exists with automatic retry"""
@@ -322,25 +367,25 @@ class DatabaseDict:
     
     def __iter__(self):
         """Iterate over keys"""
-        if not self._cache_valid:
+        if not self._is_cache_fresh():
             self._refresh_cache()
         return iter(self._cache)
     
     def keys(self):
         """Get all keys"""
-        if not self._cache_valid:
+        if not self._is_cache_fresh():
             self._refresh_cache()
         return self._cache.keys()
     
     def values(self):
         """Get all values"""
-        if not self._cache_valid:
+        if not self._is_cache_fresh():
             self._refresh_cache()
         return self._cache.values()
     
     def items(self):
         """Get all items"""
-        if not self._cache_valid:
+        if not self._is_cache_fresh():
             self._refresh_cache()
         return self._cache.items()
     
@@ -410,6 +455,7 @@ class DatabaseDict:
                 if item_id:
                     repo.delete(item_id)
         self._cache_valid = False
+        self._cache_loaded_at = 0.0
 
 
 # Global database-backed dictionaries (backward compatible with in-memory version)
