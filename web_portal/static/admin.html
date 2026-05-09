@@ -3577,13 +3577,62 @@
     }
     
     // Process all pipelines
+    //
+    // Uses the server-side batch endpoint /api/admin/pipeline-process-all so
+    // the entire fan-out only consumes ONE bulk-rate-limit slot. The previous
+    // implementation fired one HTTP request per customer; with 12 customers
+    // that hit MAX_BULK_OPERATIONS_PER_MINUTE=5 and produced the
+    // "5/12 customers processed, 7 errors" pattern reported by admins.
+    //
+    // Falls back to the legacy per-customer loop only if the batch endpoint
+    // is unavailable on an older deployment.
     async function processAllPipelines() {
       if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
       
       setButtonLoading('btn-process-pipelines', true);
-      showProgress(true, 'Loading customers...');
+      showProgress(true, 'Processing all customer pipelines...');
       
       try {
+        let batchHandled = false;
+        try {
+          const batchResp = await fetch('/api/admin/pipeline-process-all', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ auto_advance: true })
+          });
+          if (batchResp.status !== 404) {
+            batchHandled = true;
+            if (!batchResp.ok) {
+              const errData = await batchResp.json().catch(() => ({}));
+              throw new Error(errData.error || ('HTTP ' + batchResp.status));
+            }
+            const result = await batchResp.json();
+            const total = Number(result.total_customers || 0);
+            const processed = Number(result.processed || 0);
+            const actionsTotal = Number(result.actions_total || 0);
+            const errors = Array.isArray(result.errors) ? result.errors : [];
+            showProgress(false);
+            let message = `✅ Pipeline Processing Complete!\n\n${processed}/${total} customers processed\n${actionsTotal} total actions taken`;
+            if (errors.length > 0) {
+              message += `\n\n⚠ ${errors.length} errors occurred`;
+            }
+            alert(message);
+            await refreshAllData();
+            return;
+          }
+        } catch (batchErr) {
+          if (batchHandled) {
+            showProgress(false);
+            alert('Failed to process pipelines: ' + batchErr.message);
+            return;
+          }
+          console.warn('Batch pipeline endpoint not available, falling back to per-customer loop:', batchErr);
+        }
+
+        // Legacy fallback (only reachable if batch endpoint returned 404).
         const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
