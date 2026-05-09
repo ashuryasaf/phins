@@ -8167,6 +8167,42 @@ def store_policy_document(
     return doc
 
 
+def _build_customer_document_vault():
+    """Construct a CustomerDocumentVault wired to live in-memory stores.
+
+    Built lazily per-call so the vault always reflects the current state of
+    POLICY_DOCUMENTS / CLAIM_FILES / UNDERWRITING_FILES, including documents
+    added during a single request.
+    """
+    from services.customer_document_vault_service import build_default_vault
+
+    return build_default_vault(
+        policy_documents=POLICY_DOCUMENTS,
+        claim_files=CLAIM_FILES,
+        underwriting_files=UNDERWRITING_FILES,
+        claims=CLAIMS,
+        policies=POLICIES,
+        billing=BILLING,
+        underwriting_applications=UNDERWRITING_APPLICATIONS,
+        owner_resolver=resolve_document_owner_customer_id,
+    )
+
+
+def backfill_customer_document_attribution() -> Dict[str, int]:
+    """Run a one-shot backfill so every document is linked to a customer.
+
+    Safe to call multiple times: the vault only assigns ``uploaded_by_customer``
+    / ``customer_id`` on records that are missing it and where a deterministic
+    owner can be inferred from the linked entity.
+    """
+    try:
+        vault = _build_customer_document_vault()
+        return vault.backfill_customer_attribution()
+    except Exception as exc:
+        print(f"[durable-objects] Backfill skipped: {exc}")
+        return {}
+
+
 def _append_unique_document_link(target: Dict[str, Any], doc_id: str, field_name: str = 'document_ids') -> None:
     """Attach document IDs without duplicating references."""
     if not isinstance(target, dict) or not doc_id:
@@ -10626,6 +10662,16 @@ For claims or questions, please contact:
         if path == '/client-portal.html':
             self.send_response(301)
             self.send_header('Location', '/dashboard.html')
+            self.end_headers()
+            return
+
+        # Friendly route → durable-objects deep link on the Document Center.
+        # The Customer Document Vault is rendered as a tab inside
+        # /documents.html so a stable shortcut keeps external links and
+        # admin shortcuts working even if the tab implementation changes.
+        if path in ('/durable-objects', '/durable-objects/'):
+            self.send_response(302)
+            self.send_header('Location', '/documents.html#durable-objects')
             self.end_headers()
             return
         
@@ -15819,6 +15865,84 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
 
+        # ========== CLAIM / UNDERWRITING ATTACHMENT VIEW ENDPOINTS ==========
+        # Browser-friendly GET endpoints for the durable-objects view so the
+        # "Open" links on claim and underwriting attachments don't 404.
+        # The pre-existing POST handlers at /api/claims/files and
+        # /api/underwriting/files require a JSON body with claim_id /
+        # application_id and aren't usable as direct hyperlinks.
+        # Access: file owner (customer matched on stored customer_id) or
+        # admin/underwriter/actuary/claims roles.
+        if path in ('/api/claims/files/view', '/api/underwriting/files/view'):
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                file_id = (qs.get('id', [None])[0] or '').strip()
+                if not file_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'File ID required'}).encode('utf-8'))
+                    return
+
+                if path == '/api/claims/files/view':
+                    store = CLAIM_FILES
+                    parent_lookup = CLAIMS
+                    parent_field = 'claim_id'
+                else:
+                    store = UNDERWRITING_FILES
+                    parent_lookup = UNDERWRITING_APPLICATIONS
+                    parent_field = 'application_id'
+
+                file_data = store.get(file_id)
+                if not file_data:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'File not found'}).encode('utf-8'))
+                    return
+
+                eff_role = get_effective_role(session)
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+
+                # Resolve file owner: explicit field first, then fall back to
+                # the parent claim/application record (covers legacy files
+                # uploaded before customer_id was written through).
+                file_owner = str(file_data.get('customer_id') or '').strip()
+                if not file_owner:
+                    parent_id = str(file_data.get(parent_field) or '').strip()
+                    if parent_id:
+                        file_owner = str((parent_lookup.get(parent_id) or {}).get('customer_id') or '').strip()
+
+                if not is_admin:
+                    if not session_customer_id or file_owner != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                if not file_data.get('data'):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'File data not available'}).encode('utf-8'))
+                    return
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'id': file_data.get('id'),
+                    'name': file_data.get('name'),
+                    'type': file_data.get('type'),
+                    'size': file_data.get('size'),
+                    'data': file_data.get('data'),
+                    parent_field: file_data.get(parent_field),
+                    'customer_id': file_owner,
+                    'uploaded_at': file_data.get('uploaded_at'),
+                    'uploaded_by': file_data.get('uploaded_by'),
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # ========== DOCUMENT PROCESSING SERVICE (GET) ENDPOINTS ==========
 
         # GET /api/doc-service/list - Persistent document list with search/filter/pagination
@@ -15946,6 +16070,71 @@ For claims or questions, please contact:
                     'customers': customers,
                     'total': len(customers)
                 }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== CUSTOMER DOCUMENT VAULT (DURABLE OBJECTS) ==========
+        # GET /api/durable-objects/documents?customer_id=...
+        # GET /api/durable-objects/summary?customer_id=...
+        #
+        # Per-customer aggregated view over every document on the platform
+        # related to that customer regardless of upload source (general docs,
+        # claim attachments, underwriting attachments, persistent disk store).
+        # Customers see only their own vault; staff/admin can target any
+        # customer via the customer_id query string.
+        if path in ('/api/durable-objects/documents', '/api/durable-objects/summary'):
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                eff_role = get_effective_role(session)
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+                requested_customer_id = (qs.get('customer_id', [None])[0] or '').strip()
+
+                if is_admin:
+                    target_customer_id = requested_customer_id or session_customer_id
+                else:
+                    if not session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(
+                            json.dumps({'error': 'Customer session invalid - no customer_id'}).encode('utf-8')
+                        )
+                        return
+                    # Customers can never view another customer's vault, even
+                    # if a customer_id is supplied.
+                    target_customer_id = session_customer_id
+
+                if not target_customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(
+                        json.dumps({'error': 'customer_id is required'}).encode('utf-8')
+                    )
+                    return
+
+                vault = _build_customer_document_vault()
+                if path == '/api/durable-objects/summary':
+                    payload = vault.get_summary(target_customer_id)
+                else:
+                    entity_type = (qs.get('entity_type', [None])[0] or '').strip() or None
+                    document_type = (qs.get('document_type', [None])[0] or '').strip() or None
+                    try:
+                        limit = max(0, int(qs.get('limit', ['500'])[0]))
+                    except (TypeError, ValueError):
+                        limit = 500
+                    payload = vault.get_vault(
+                        target_customer_id,
+                        entity_type=entity_type,
+                        document_type=document_type,
+                        limit=limit,
+                    )
+                payload['is_admin'] = is_admin
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
                 return
             except Exception as e:
                 self._set_json_headers(500)
@@ -34281,10 +34470,14 @@ For claims or questions, please contact:
                         }
                         files_metadata.append(file_meta)
                         
-                        # Store full file data including base64 in CLAIM_FILES for persistence
+                        # Store full file data including base64 in CLAIM_FILES for persistence.
+                        # Recording customer_id directly on the file record keeps the
+                        # Customer Document Vault correct even if the parent claim
+                        # is later modified or migrated to another store.
                         CLAIM_FILES[file_id] = {
                             **file_meta,
                             'claim_id': claim_id,
+                            'customer_id': data.get('customer_id'),
                             'data': file_info.get('data'),  # Base64 encoded file content
                             'note': file_info.get('note', ''),
                             'error': file_info.get('error', '')
@@ -43340,6 +43533,19 @@ def run_server(port: int = PORT) -> None:
     # Seed demo documents into Document Center if none exist yet
     print("📄 Seeding demo documents...")
     seed_demo_documents()
+
+    # Backfill missing customer attribution on every existing document so the
+    # Customer Document Vault ("durable objects" view) returns a complete and
+    # consistent collection regardless of how each file was originally uploaded.
+    try:
+        _backfill_counts = backfill_customer_document_attribution()
+        if _backfill_counts and any(_backfill_counts.values()):
+            print(
+                "🗄️  Customer Document Vault backfill: "
+                + ", ".join(f"{k}={v}" for k, v in _backfill_counts.items() if v)
+            )
+    except Exception as _backfill_exc:
+        print(f"[durable-objects] Backfill warning: {_backfill_exc}")
 
     # Initialize PHINS Balance Sheet (General Reserves)
     print("💰 Initializing PHINS Balance Sheet...")

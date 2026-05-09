@@ -299,6 +299,7 @@
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">📤 Upload Documents</button>
     <button class="tab-btn" id="tab-docs-btn" onclick="switchTab('docs')">📋 My Uploaded Documents</button>
+    <button class="tab-btn" id="tab-durable-btn" onclick="switchTab('durable')">🗄️ Durable Object</button>
   </div>
 
   <!-- ── Tab: Upload ── -->
@@ -416,6 +417,58 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Tab: Durable Object (per-customer aggregated vault) ── -->
+  <div class="tab-panel" id="tab-durable">
+    <div class="card">
+      <div class="card-title">
+        🗄️ <span id="durable-list-title">Customer Document Vault</span>
+        <span id="durable-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
+      </div>
+      <div style="color:#546e7a;font-size:0.88rem;margin-bottom:0.85rem;line-height:1.45;">
+        Single durable view of <strong>every</strong> document linked to this customer — uploaded
+        anywhere on the platform: registration, policy applications, claims, underwriting, billing,
+        assessments, generated PDF reports, and the persistent disk store. Each entry is
+        deduplicated by SHA-256 and tagged with its source so BI processes and AI reports stay
+        flawlessly consistent.
+      </div>
+
+      <!-- Admin: select customer -->
+      <div class="admin-panel" id="durable-admin-panel" style="display:none;">
+        <div class="admin-panel-title">🔑 Admin View — Pick a customer</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="durable-customer">Customer</label>
+            <select id="durable-customer" onchange="loadDurableVault()">
+              <option value="">— Select a customer —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="durable-entity-filter">Filter by Affiliation</label>
+            <select id="durable-entity-filter" onchange="renderDurableDocs()">
+              <option value="">— All Affiliations —</option>
+              <option value="policy">Policy</option>
+              <option value="claim">Claim</option>
+              <option value="customer">Customer</option>
+              <option value="underwriting">Underwriting</option>
+              <option value="billing">Billing</option>
+              <option value="general">General</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary chips -->
+      <div id="durable-summary" style="display:none;margin-bottom:1rem;"></div>
+
+      <div id="durable-container">
+        <div class="empty-state">
+          <div class="empty-state-icon">🗄️</div>
+          <div>Loading customer vault…</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -435,6 +488,17 @@
     document.getElementById('tab-' + tab).classList.add('active');
     document.getElementById('tab-' + tab + '-btn').classList.add('active');
     if (tab === 'docs') loadDocuments();
+    if (tab === 'durable') loadDurableVault();
+    // Reflect the active tab in the URL hash so links like
+    // /documents.html#durable-objects deep-link directly into the vault view.
+    const hashMap = { upload: '', docs: 'documents', durable: 'durable-objects' };
+    const desired = hashMap[tab] || '';
+    const current = (window.location.hash || '').replace(/^#/, '');
+    if (current !== desired) {
+      try {
+        history.replaceState(null, '', desired ? '#' + desired : window.location.pathname);
+      } catch (_) { /* ignore */ }
+    }
   }
 
   /* ── Auth ── */
@@ -987,10 +1051,186 @@
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
   }
 
+  /* ── Customer Document Vault ("Durable Object") ── */
+  let DURABLE_VAULT = null;     // last-loaded vault payload
+  let DURABLE_CUSTOMER_ID = '';  // last-targeted customer id
+  let DURABLE_CUSTOMERS_LOADED = false;
+
+  async function loadDurableCustomersIfAdmin() {
+    if (!IS_ADMIN || DURABLE_CUSTOMERS_LOADED) return;
+    try {
+      const res = await API('/api/admin/customers-for-documents');
+      if (!res.ok) return;
+      const json = await res.json();
+      const sel = document.getElementById('durable-customer');
+      (json.customers || []).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.id})`;
+        sel.appendChild(opt);
+      });
+      DURABLE_CUSTOMERS_LOADED = true;
+    } catch { /* ignore */ }
+  }
+
+  async function loadDurableVault() {
+    // First call after IS_ADMIN is known — make sure the customer dropdown is populated.
+    if (IS_ADMIN) {
+      document.getElementById('durable-admin-panel').style.display = 'block';
+      await loadDurableCustomersIfAdmin();
+    }
+
+    let customerId = '';
+    if (IS_ADMIN) {
+      customerId = document.getElementById('durable-customer').value || '';
+      if (!customerId) {
+        document.getElementById('durable-container').innerHTML =
+          '<div class="empty-state"><div class="empty-state-icon">👥</div><div>Pick a customer to load their durable vault.</div></div>';
+        document.getElementById('durable-summary').style.display = 'none';
+        document.getElementById('durable-count').textContent = '';
+        return;
+      }
+    }
+    DURABLE_CUSTOMER_ID = customerId;
+
+    document.getElementById('durable-container').innerHTML =
+      '<div class="empty-state"><div class="empty-state-icon">⏳</div><div>Loading customer vault…</div></div>';
+
+    try {
+      const url = '/api/durable-objects/documents' + (customerId ? '?customer_id=' + encodeURIComponent(customerId) : '');
+      const res = await API(url);
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        document.getElementById('durable-container').innerHTML =
+          `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${escHtml(json.error || 'Could not load vault')}</div></div>`;
+        return;
+      }
+      DURABLE_VAULT = json;
+      document.getElementById('durable-list-title').textContent =
+        `Customer Document Vault — ${json.customer_id || 'self'}`;
+      renderDurableSummary(json.summary || {});
+      renderDurableDocs();
+    } catch (e) {
+      document.getElementById('durable-container').innerHTML =
+        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Network error: ${escHtml(e.message)}</div></div>`;
+    }
+  }
+
+  function renderDurableSummary(s) {
+    const el = document.getElementById('durable-summary');
+    if (!s || !s.document_count) { el.style.display = 'none'; return; }
+    const integrity = s.integrity || {};
+    const integrityChips = Object.entries(integrity).map(([k, v]) => {
+      const color = k === 'ok' ? '#2e7d32' : (k === 'mismatch' ? '#b71c1c' : '#f57f17');
+      const bg    = k === 'ok' ? '#e8f5e9' : (k === 'mismatch' ? '#ffebee' : '#fff3e0');
+      return `<span class="badge" style="background:${bg};color:${color};">${escHtml(k)}: ${v}</span>`;
+    }).join(' ');
+
+    const sourceChips = Object.entries(s.by_source || {})
+      .map(([k, v]) => `<span class="badge badge-doctype-general">${escHtml(k)}: ${v}</span>`).join(' ');
+    const entityChips = Object.entries(s.by_entity_type || {})
+      .map(([k, v]) => `<span class="badge badge-${escHtml(k)}">${escHtml(k)}: ${v}</span>`).join(' ');
+
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div class="card" style="margin:0;padding:1rem 1.25rem;background:#f8fbff;border:1px solid #e3f2fd;box-shadow:none;">
+        <div style="display:flex;flex-wrap:wrap;gap:0.4rem 0.75rem;align-items:center;">
+          <strong style="color:#1a237e;">${s.document_count} document(s)</strong>
+          <span style="color:#78909c;">· ${(s.total_bytes/1024).toFixed(1)} KB</span>
+          ${s.last_upload_at ? `<span style="color:#78909c;">· last upload ${escHtml(formatDate(s.last_upload_at))}</span>` : ''}
+          ${s.with_assessment_summary ? `<span class="badge" style="background:#e8f5e9;color:#1b5e20;">🧠 ${s.with_assessment_summary} with 360 facts</span>` : ''}
+          ${s.with_ai_analysis ? `<span class="badge" style="background:#f3e5f5;color:#6a1b9a;">🤖 ${s.with_ai_analysis} AI-analyzed</span>` : ''}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem;">${entityChips}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.35rem;">${sourceChips}</div>
+        ${integrityChips ? `<div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.35rem;">${integrityChips}</div>` : ''}
+      </div>`;
+  }
+
+  function renderDurableDocs() {
+    const container = document.getElementById('durable-container');
+    if (!DURABLE_VAULT) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🗄️</div><div>No vault loaded.</div></div>';
+      return;
+    }
+    let docs = DURABLE_VAULT.documents || [];
+    const ef = (document.getElementById('durable-entity-filter') || {}).value || '';
+    if (ef) docs = docs.filter(d => (d.entity_type || 'general') === ef);
+
+    document.getElementById('durable-count').textContent = docs.length ? `${docs.length} document(s)` : '';
+
+    if (docs.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents in this vault yet.</div></div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="overflow-x:auto;">
+      <table class="docs-table">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Doc Type</th>
+            <th>Affiliation</th>
+            <th>Record ID</th>
+            <th>Source</th>
+            <th>Integrity</th>
+            <th>Uploaded</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${docs.map(d => `
+            <tr>
+              <td>
+                <span>${fileIcon(d.name)}</span>
+                <span style="font-weight:500;color:#1a237e;">${escHtml(d.name)}</span><br>
+                <small style="color:#90a4ae;">${formatSize(d.size)} · sha256 ${escHtml((d.sha256 || '').slice(0, 10))}…</small>
+              </td>
+              <td><span class="badge ${docTypeBadgeClass(d.document_type)}">${docTypeLabel(d.document_type)}</span></td>
+              <td><span class="badge badge-${escHtml(d.entity_type || 'general')}">${escHtml(d.entity_type || 'general')}</span></td>
+              <td>${escHtml(d.entity_id || '—')}</td>
+              <td>${(d.sources || [d.source]).map(s => `<span class="badge badge-doctype-general">${escHtml(s || '')}</span>`).join(' ')}</td>
+              <td>${integrityBadge(d.integrity_status)}</td>
+              <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
+              <td style="white-space:nowrap;">
+                ${d.has_data
+                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">👁 Open</a>`
+                  : '<span style="color:#bbb;font-size:0.78rem;">—</span>'}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>`;
+  }
+
+  function integrityBadge(status) {
+    const map = {
+      ok:         { bg: '#e8f5e9', fg: '#2e7d32', label: '✅ OK' },
+      mismatch:   { bg: '#ffebee', fg: '#b71c1c', label: '⛔ MISMATCH' },
+      missing:    { bg: '#fff3e0', fg: '#e65100', label: '⚠️ MISSING' },
+      unverified: { bg: '#eceff1', fg: '#546e7a', label: '— unverified' }
+    };
+    const cfg = map[status || 'unverified'] || map.unverified;
+    return `<span class="badge" style="background:${cfg.bg};color:${cfg.fg};">${cfg.label}</span>`;
+  }
+
   /* ── Init ── */
-  checkAuth().then(() => {
-    // Load documents into "My Uploaded Documents" tab on startup
-    loadDocuments();
+  checkAuth().then(async () => {
+    // Load documents into "My Uploaded Documents" tab on startup. Awaiting
+    // is critical here: loadDocuments() sets IS_ADMIN from the API response,
+    // and the deep-link routing below depends on that flag to decide whether
+    // to render the admin customer picker. Without await, an admin landing
+    // on /documents.html#durable-objects would race past loadDocuments() with
+    // IS_ADMIN still false and the vault endpoint would 400 with
+    // "customer_id is required".
+    try { await loadDocuments(); } catch (_) { /* still continue with deep-link routing */ }
+    const hash = (window.location.hash || '').replace(/^#/, '');
+    if (hash === 'durable-objects' || hash === 'durable') {
+      switchTab('durable');
+    } else if (hash === 'documents') {
+      switchTab('docs');
+    }
   });
 </script>
 
