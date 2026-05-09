@@ -166,6 +166,10 @@ class CustomerDocumentVault:
             records = [r for r in records if _norm_lower(r.get("document_type")) == document_type_l]
 
         records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
+
+        summary = self._build_summary(customer_id, records)
+        total = len(records)
+
         if limit is not None and limit >= 0:
             records = records[:limit]
 
@@ -176,8 +180,6 @@ class CustomerDocumentVault:
             for record in records:
                 record.setdefault("integrity_status", "unverified")
 
-        summary = self._build_summary(customer_id, records)
-
         return {
             "success": True,
             "customer_id": customer_id,
@@ -186,7 +188,7 @@ class CustomerDocumentVault:
             "generated_at": datetime.now().isoformat(),
             "summary": summary,
             "documents": records,
-            "total": len(records),
+            "total": total,
         }
 
     def get_summary(self, customer_id: str) -> Dict[str, Any]:
@@ -487,6 +489,8 @@ class CustomerDocumentVault:
                     existing[field] = record[field]
             if not existing.get("has_data") and record.get("has_data"):
                 existing["has_data"] = True
+                if record.get("view_url"):
+                    existing["view_url"] = record["view_url"]
             # Prefer earliest known upload time so the timeline is meaningful.
             existing_at = existing.get("uploaded_at") or ""
             record_at = record.get("uploaded_at") or ""
