@@ -167,18 +167,18 @@ class CustomerDocumentVault:
 
         records.sort(key=lambda r: r.get("uploaded_at") or "", reverse=True)
 
-        summary = self._build_summary(customer_id, records)
-        total = len(records)
-
-        if limit is not None and limit >= 0:
-            records = records[:limit]
-
         if verify_integrity:
             for record in records:
                 record["integrity_status"] = self._verify_record_integrity(record)
         else:
             for record in records:
                 record.setdefault("integrity_status", "unverified")
+
+        summary = self._build_summary(customer_id, records)
+        total = len(records)
+
+        if limit is not None and limit >= 0:
+            records = records[:limit]
 
         return {
             "success": True,
