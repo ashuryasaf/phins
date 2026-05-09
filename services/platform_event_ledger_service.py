@@ -328,6 +328,86 @@ class PlatformEventLedgerService:
     def get_integrity_summary(self) -> Dict[str, Any]:
         return reconcile_ledger_entries(self.transaction_ledger.values())
 
+    def hydrate_from_db(self, limit: int = 10000) -> int:
+        """Load existing platform_ledger rows from SQL into the in-memory ledger.
+
+        Used after a fresh container start when the JSON persistence file is
+        missing but PostgreSQL already contains entries from prior runs. Without
+        this hydration, subsequent ``append_event()`` calls observe an empty
+        in-memory ledger and a non-empty DB, so they assign sequence numbers
+        starting at ``latest_db.sequence_no + 1`` while the DB still holds the
+        original (sequence_no=1..N) rows for the same IDs. The result on
+        startup integrity validation is "1 broken link, N sequence gaps" and
+        a permanent memory↔DB chain divergence.
+
+        Memory entries always take precedence; rows whose IDs are already in
+        the in-memory ledger are skipped. Returns the number of rows loaded.
+        """
+        if not self._database_enabled():
+            return 0
+
+        try:
+            db_factory = self._get_db_manager_factory()
+            with db_factory() as db:
+                rows = db.platform_ledger.get_all(limit=limit)
+        except Exception as exc:
+            logger.warning("Platform ledger DB hydration failed: %s", exc)
+            return 0
+
+        loaded = 0
+        for row in rows or []:
+            if row is None:
+                continue
+            try:
+                record = row.to_dict()
+            except Exception:
+                continue
+
+            entry_id = record.get("id")
+            if not entry_id or entry_id in self.transaction_ledger:
+                continue
+
+            payload = record.get("payload")
+            if isinstance(payload, dict) and payload.get("id") == entry_id:
+                # The persisted JSON payload is the canonical write-time entry
+                # (it includes sequence_no, previous_hash, entry_hash). Use it
+                # directly so the chain hashes the same way it did originally.
+                merged: Dict[str, Any] = dict(payload)
+            else:
+                merged = {}
+
+            for column in (
+                "id",
+                "sequence_no",
+                "ledger_type",
+                "event_type",
+                "entity_type",
+                "entity_id",
+                "customer_id",
+                "actor",
+                "amount",
+                "currency",
+                "status",
+                "source_system",
+                "previous_hash",
+                "entry_hash",
+                "timestamp",
+            ):
+                value = record.get(column)
+                if value is not None and merged.get(column) in (None, ""):
+                    merged[column] = value
+
+            merged.setdefault("tx_id", entry_id)
+            merged.setdefault("type", merged.get("event_type") or "event")
+            merged.setdefault("ledger_version", LEDGER_VERSION)
+
+            self.transaction_ledger[entry_id] = merged
+            loaded += 1
+
+        if loaded:
+            logger.info("Hydrated %d platform ledger entries from DB", loaded)
+        return loaded
+
     def _persist_entry(self, entry: Dict[str, Any]) -> None:
         if not self._database_enabled():
             return

@@ -43510,6 +43510,23 @@ def run_server(port: int = PORT) -> None:
     else:
         print("ℹ️  Starting with fresh ledger data")
 
+    # When the JSON persistence file is missing (fresh container, no Railway
+    # volume) but the SQL ledger already has rows from a prior run, hydrate
+    # the in-memory ledger from the DB BEFORE any sample/seed entries are
+    # appended. Without this, append_event() observes an empty memory ledger
+    # and a non-empty DB and assigns sequence numbers starting at
+    # latest_db.sequence_no + 1, while the DB still holds the original rows
+    # for the same IDs — producing the "1 broken link, N sequence gaps"
+    # startup integrity warning and a permanent memory↔DB chain divergence.
+    if not _ledger_loaded and USE_DATABASE and database_enabled:
+        try:
+            hydrated = platform_event_ledger.hydrate_from_db()
+            if hydrated:
+                print(f"📒 Hydrated {hydrated} ledger entries from database "
+                      f"(prevents sequence/hash divergence after restart)")
+        except Exception as _hyd_exc:
+            print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
+
     # Sync algo trading data that was staged by load_ledger_data().
     # This MUST happen after load_ledger_data() and after services are
     # initialized at import time — both conditions are met here.
@@ -44982,6 +44999,14 @@ def bootstrap_runtime_state_for_command() -> None:
         print("✓ Ledger data restored from persistent storage")
     else:
         print("ℹ️  Starting with fresh ledger data")
+
+    if not _cmd_loaded and USE_DATABASE and database_enabled:
+        try:
+            hydrated = platform_event_ledger.hydrate_from_db()
+            if hydrated:
+                print(f"📒 Hydrated {hydrated} ledger entries from database")
+        except Exception as _hyd_exc:
+            print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
 
     try:
         sync_loaded_algo_data()
