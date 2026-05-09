@@ -34335,7 +34335,7 @@ For claims or questions, please contact:
                         CLAIM_FILES[file_id] = {
                             **file_meta,
                             'claim_id': claim_id,
-                            'customer_id': data.get('customer_id') or '',
+                            'customer_id': data.get('customer_id'),
                             'data': file_info.get('data'),  # Base64 encoded file content
                             'note': file_info.get('note', ''),
                             'error': file_info.get('error', '')
