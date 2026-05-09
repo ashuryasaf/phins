@@ -499,14 +499,26 @@ class CustomerDocumentVault:
         """Cross-check the record's SHA-256 against the persistent store.
 
         Returns one of: ``ok``, ``mismatch``, ``unverified``, ``missing``.
-        Never raises - integrity verification must not block reads.
+
+        ``ok`` is only returned when the persistent ``DocumentProcessingService``
+        was actually able to re-hash the file and the recomputed digest matched
+        the recorded SHA-256. Records with no persistent counterpart - claim /
+        underwriting attachments held in memory, or general docs where the
+        persistent store is offline - return ``unverified`` so the UI doesn't
+        misleadingly render a green "✅ OK" badge for something we never
+        actually re-hashed. Never raises - integrity verification must not
+        block reads.
         """
         sha = _norm_str(record.get("sha256"))
         persistent_id = _norm_str(record.get("persistent_doc_id"))
         if not sha and not persistent_id:
             return "unverified"
         if self._document_service is None or not persistent_id:
-            return "ok" if sha else "unverified"
+            # No way to cross-check the file bytes against a stored digest, so
+            # we cannot honestly call this ``ok``. The presence of a SHA-256 on
+            # the in-memory record only proves we hashed the upload payload
+            # once; it doesn't re-verify the bytes are still intact.
+            return "unverified"
         try:
             verification = self._document_service.verify_integrity(persistent_id)
         except Exception:

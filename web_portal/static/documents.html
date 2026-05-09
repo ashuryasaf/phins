@@ -1216,11 +1216,15 @@
   }
 
   /* ── Init ── */
-  checkAuth().then(() => {
-    // Load documents into "My Uploaded Documents" tab on startup
-    loadDocuments();
-    // Honour deep-links such as /documents.html#durable-objects so admins and
-    // BI dashboards can link straight into the vault view for a customer.
+  checkAuth().then(async () => {
+    // Load documents into "My Uploaded Documents" tab on startup. Awaiting
+    // is critical here: loadDocuments() sets IS_ADMIN from the API response,
+    // and the deep-link routing below depends on that flag to decide whether
+    // to render the admin customer picker. Without await, an admin landing
+    // on /documents.html#durable-objects would race past loadDocuments() with
+    // IS_ADMIN still false and the vault endpoint would 400 with
+    // "customer_id is required".
+    try { await loadDocuments(); } catch (_) { /* still continue with deep-link routing */ }
     const hash = (window.location.hash || '').replace(/^#/, '');
     if (hash === 'durable-objects' || hash === 'durable') {
       switchTab('durable');

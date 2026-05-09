@@ -302,6 +302,114 @@ def test_other_customers_documents_are_excluded():
     assert [d["name"] for d in result["documents"]] == ["a.pdf"]
 
 
+def test_integrity_status_reporting_distinguishes_verified_from_unverified():
+    """``ok`` must only be reported when the persistent store actually re-hashed.
+
+    Without this guarantee the UI's green ✅ OK badge would mislead users into
+    thinking integrity was checked for in-memory-only records (claim /
+    underwriting attachments, or general docs uploaded while the persistent
+    service was offline).
+    """
+
+    class _StubPersistent:
+        """Minimal persistent-store stub modelling verify_integrity outcomes."""
+
+        def __init__(self, outcomes):
+            self._outcomes = outcomes
+
+        def list_documents(self, **_kwargs):
+            return {"items": []}
+
+        def verify_integrity(self, doc_id):
+            return self._outcomes[doc_id]
+
+    # ── Case 1: no persistent service at all -> unverified, never ok.
+    vault_no_svc = CustomerDocumentVault(
+        policy_documents={
+            "DOC-NO-PERSIST": {
+                "id": "DOC-NO-PERSIST",
+                "name": "x.pdf",
+                "size": 1,
+                "data": _b64("X"),
+                "uploaded_by_customer": "CUST-INT",
+                # explicitly no persistent_doc_id
+            }
+        }
+    )
+    result = vault_no_svc.get_vault("CUST-INT")
+    assert result["documents"][0]["integrity_status"] == "unverified"
+
+    # ── Case 2: persistent service present but record has no persistent_doc_id
+    # -> still unverified (we cannot honestly re-hash anything).
+    vault_no_id = CustomerDocumentVault(
+        policy_documents={
+            "DOC-NO-ID": {
+                "id": "DOC-NO-ID",
+                "name": "y.pdf",
+                "size": 1,
+                "data": _b64("Y"),
+                "uploaded_by_customer": "CUST-INT",
+            }
+        },
+        document_service=_StubPersistent({}),
+    )
+    assert vault_no_id.get_vault("CUST-INT")["documents"][0]["integrity_status"] == "unverified"
+
+    # ── Case 3: persistent service confirms valid SHA -> ok.
+    vault_ok = CustomerDocumentVault(
+        policy_documents={
+            "DOC-OK": {
+                "id": "DOC-OK",
+                "name": "z.pdf",
+                "size": 1,
+                "data": _b64("Z"),
+                "uploaded_by_customer": "CUST-INT",
+                "persistent_doc_id": "PERSIST-OK",
+            }
+        },
+        document_service=_StubPersistent({
+            "PERSIST-OK": {"valid": True, "expected_sha256": "abc", "actual_sha256": "abc"},
+        }),
+    )
+    assert vault_ok.get_vault("CUST-INT")["documents"][0]["integrity_status"] == "ok"
+
+    # ── Case 4: persistent service reports mismatch -> mismatch.
+    vault_bad = CustomerDocumentVault(
+        policy_documents={
+            "DOC-BAD": {
+                "id": "DOC-BAD",
+                "name": "w.pdf",
+                "size": 1,
+                "data": _b64("W"),
+                "uploaded_by_customer": "CUST-INT",
+                "persistent_doc_id": "PERSIST-BAD",
+            }
+        },
+        document_service=_StubPersistent({
+            "PERSIST-BAD": {"valid": False, "error": "checksum mismatch"},
+        }),
+    )
+    assert vault_bad.get_vault("CUST-INT")["documents"][0]["integrity_status"] == "mismatch"
+
+    # ── Case 5: persistent service reports file missing on disk -> missing.
+    vault_missing = CustomerDocumentVault(
+        policy_documents={
+            "DOC-MISSING": {
+                "id": "DOC-MISSING",
+                "name": "v.pdf",
+                "size": 1,
+                "data": _b64("V"),
+                "uploaded_by_customer": "CUST-INT",
+                "persistent_doc_id": "PERSIST-MISSING",
+            }
+        },
+        document_service=_StubPersistent({
+            "PERSIST-MISSING": {"valid": False, "error": "File not found on disk"},
+        }),
+    )
+    assert vault_missing.get_vault("CUST-INT")["documents"][0]["integrity_status"] == "missing"
+
+
 # ── HTTP integration tests ───────────────────────────────────────────────────
 
 
