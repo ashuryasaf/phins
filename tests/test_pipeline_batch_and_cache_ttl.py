@@ -88,7 +88,7 @@ def _isolate_state():
         'BILLING', 'CLAIMS', 'HEALTH_WALLETS', 'INVESTMENT_ACCOUNTS',
     ):
         store = getattr(portal, store_name, None)
-        if isinstance(store, dict):
+        if store is not None and hasattr(store, 'clear'):
             store.clear()
     yield
 
