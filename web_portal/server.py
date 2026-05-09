@@ -9412,12 +9412,17 @@ def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Di
             app['approved_by'] = 'admin_pipeline'
             app['approval_notes'] = 'Auto-approved via pipeline process'
 
+            app_id = app.get('id') or app.get('application_id')
+            if app_id:
+                UNDERWRITING_APPLICATIONS[app_id] = app
+
             policy_id = app.get('policy_id')
             if policy_id and policy_id in POLICIES:
                 policy = POLICIES[policy_id]
                 policy['status'] = 'active'
                 policy['approval_date'] = now.isoformat()
                 policy['effective_date'] = now.isoformat()
+                POLICIES[policy_id] = policy
 
                 bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                 monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
