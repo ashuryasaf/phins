@@ -2472,10 +2472,11 @@
       
       try {
         // Load all customer data
-        const [profileRes, policiesRes, billingRes] = await Promise.allSettled([
+        const [profileRes, policiesRes, billingRes, claimsRes] = await Promise.allSettled([
           fetch(`/api/customers?id=${customerId}`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
           fetch('/api/policies', { headers: { 'Authorization': `Bearer ${authToken}` } }),
-          fetch('/api/billing/stats', { headers: { 'Authorization': `Bearer ${authToken}` } })
+          fetch('/api/billing/stats', { headers: { 'Authorization': `Bearer ${authToken}` } }),
+          fetch('/api/claims', { headers: { 'Authorization': `Bearer ${authToken}` } })
         ]);
         
         if (profileRes.status === 'fulfilled' && profileRes.value.ok) {
@@ -2495,6 +2496,11 @@
         if (billingRes.status === 'fulfilled' && billingRes.value.ok) {
           const data = await billingRes.value.json();
           customerDataCache.billing = data;
+        }
+        
+        if (claimsRes.status === 'fulfilled' && claimsRes.value.ok) {
+          const data = await claimsRes.value.json();
+          customerDataCache.claims = data.claims || [];
         }
         
         // Get savings from wallet
