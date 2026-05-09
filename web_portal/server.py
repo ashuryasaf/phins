@@ -32984,7 +32984,21 @@ For claims or questions, please contact:
         # Pipeline Process - Process next step for a customer
         if path.startswith('/api/admin/pipeline-process/'):
             customer_id = path.split('/')[-1]
-            
+
+            # SECURITY: This endpoint auto-approves underwriting applications,
+            # activates policies, generates billing records, and seeds wallets.
+            # It MUST require an authenticated admin session — rate limiting is
+            # not a substitute for authentication. Resolve the session locally
+            # because the POST dispatcher does not maintain a top-level session
+            # variable across path branches.
+            _pipeline_auth_header = self.headers.get('Authorization', '')
+            _pipeline_token = _pipeline_auth_header.replace('Bearer ', '') if _pipeline_auth_header.startswith('Bearer ') else None
+            session = validate_session(_pipeline_token) if _pipeline_token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
             # SECURITY: Rate limit bulk pipeline processing
             bulk_allowed, bulk_msg = check_bulk_rate_limit(client_ip, 'pipeline_process', server_port)
             if not bulk_allowed:
@@ -33028,6 +33042,21 @@ For claims or questions, please contact:
         # customer), each one consuming a separate slot in the bulk rate limiter
         # (MAX_BULK_OPERATIONS_PER_MINUTE=5) and producing 7/12-style "errors".
         if path == '/api/admin/pipeline-process-all':
+            # SECURITY: This batch endpoint amplifies the privileged operations
+            # of the per-customer endpoint (auto-approve underwriting, activate
+            # policies, generate billing) across EVERY customer in a single
+            # request. It MUST require an authenticated admin session — rate
+            # limiting is not a substitute for authentication. Resolve the
+            # session locally because the POST dispatcher does not maintain a
+            # top-level session variable across path branches.
+            _pipeline_all_auth_header = self.headers.get('Authorization', '')
+            _pipeline_all_token = _pipeline_all_auth_header.replace('Bearer ', '') if _pipeline_all_auth_header.startswith('Bearer ') else None
+            session = validate_session(_pipeline_all_token) if _pipeline_all_token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
             # SECURITY: Bulk operation -> count once for the entire batch.
             bulk_allowed, bulk_msg = check_bulk_rate_limit(client_ip, 'pipeline_process_all', server_port)
             if not bulk_allowed:
