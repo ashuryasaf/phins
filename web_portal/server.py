@@ -15682,6 +15682,84 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
 
+        # ========== CLAIM / UNDERWRITING ATTACHMENT VIEW ENDPOINTS ==========
+        # Browser-friendly GET endpoints for the durable-objects view so the
+        # "Open" links on claim and underwriting attachments don't 404.
+        # The pre-existing POST handlers at /api/claims/files and
+        # /api/underwriting/files require a JSON body with claim_id /
+        # application_id and aren't usable as direct hyperlinks.
+        # Access: file owner (customer matched on stored customer_id) or
+        # admin/underwriter/actuary/claims roles.
+        if path in ('/api/claims/files/view', '/api/underwriting/files/view'):
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                file_id = (qs.get('id', [None])[0] or '').strip()
+                if not file_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'File ID required'}).encode('utf-8'))
+                    return
+
+                if path == '/api/claims/files/view':
+                    store = CLAIM_FILES
+                    parent_lookup = CLAIMS
+                    parent_field = 'claim_id'
+                else:
+                    store = UNDERWRITING_FILES
+                    parent_lookup = UNDERWRITING_APPLICATIONS
+                    parent_field = 'application_id'
+
+                file_data = store.get(file_id)
+                if not file_data:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'File not found'}).encode('utf-8'))
+                    return
+
+                eff_role = get_effective_role(session)
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+
+                # Resolve file owner: explicit field first, then fall back to
+                # the parent claim/application record (covers legacy files
+                # uploaded before customer_id was written through).
+                file_owner = str(file_data.get('customer_id') or '').strip()
+                if not file_owner:
+                    parent_id = str(file_data.get(parent_field) or '').strip()
+                    if parent_id:
+                        file_owner = str((parent_lookup.get(parent_id) or {}).get('customer_id') or '').strip()
+
+                if not is_admin:
+                    if not session_customer_id or file_owner != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                        return
+
+                if not file_data.get('data'):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'File data not available'}).encode('utf-8'))
+                    return
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'id': file_data.get('id'),
+                    'name': file_data.get('name'),
+                    'type': file_data.get('type'),
+                    'size': file_data.get('size'),
+                    'data': file_data.get('data'),
+                    parent_field: file_data.get(parent_field),
+                    'customer_id': file_owner,
+                    'uploaded_at': file_data.get('uploaded_at'),
+                    'uploaded_by': file_data.get('uploaded_by'),
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # ========== DOCUMENT PROCESSING SERVICE (GET) ENDPOINTS ==========
 
         # GET /api/doc-service/list - Persistent document list with search/filter/pagination

@@ -500,4 +500,112 @@ def test_durable_objects_aggregates_claim_and_underwriting_uploads():
     assert sources.get(CustomerDocumentVault.SOURCE_CLAIM, 0) >= 1
     assert sources.get(CustomerDocumentVault.SOURCE_UNDERWRITING, 0) >= 1
 
+    # Every "Open" link the vault hands back must point at a handler that
+    # actually exists so clicking it does not 404.
+    docs_by_name = {d["name"]: d for d in body["documents"]}
+    claim_view = docs_by_name["claim_attachment.png"]["view_url"]
+    uw_view = docs_by_name["underwriting_attachment.pdf"]["view_url"]
+    assert claim_view.startswith("/api/claims/files/view?id=")
+    assert uw_view.startswith("/api/underwriting/files/view?id=")
+
+    status, body, _ = _get(base + claim_view, tok)
+    assert status == 200, body
+    assert body["success"] is True
+    assert body["name"] == "claim_attachment.png"
+    assert body["data"]  # base64 payload returned
+    assert body["customer_id"] == customer_id
+
+    status, body, _ = _get(base + uw_view, tok)
+    assert status == 200, body
+    assert body["success"] is True
+    assert body["name"] == "underwriting_attachment.pdf"
+    assert body["data"]
+    assert body["customer_id"] == customer_id
+
+    srv.stop()
+
+
+def test_claim_and_underwriting_view_endpoints_enforce_ownership():
+    """Customers must not be able to read another customer's claim/UW attachments."""
+    port = 8415
+    srv = _ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    owner_token = "phins_test-attach-owner-token"
+    intruder_token = "phins_test-attach-intruder-token"
+    admin_token = "phins_test-attach-admin-token"
+    _inject_session(owner_token, "attach_owner", "customer", "CUST-ATT-OWNER")
+    _inject_session(intruder_token, "attach_intruder", "customer", "CUST-ATT-INTRUDER")
+    _inject_session(admin_token, "attach_admin", "admin", "")
+
+    portal.CLAIMS["CLM-ATT-OWNER-1"] = {
+        "id": "CLM-ATT-OWNER-1",
+        "customer_id": "CUST-ATT-OWNER",
+        "policy_id": "POL-X",
+    }
+    portal.CLAIM_FILES["FILE-CLM-ATT-OWNER-1-001"] = {
+        "id": "FILE-CLM-ATT-OWNER-1-001",
+        "name": "private.pdf",
+        "type": "application/pdf",
+        "size": 4,
+        "data": base64.b64encode(b"PRIV").decode(),
+        "claim_id": "CLM-ATT-OWNER-1",
+        "customer_id": "CUST-ATT-OWNER",
+        "uploaded_at": datetime.now().isoformat(),
+    }
+    portal.UNDERWRITING_APPLICATIONS["UW-ATT-OWNER-1"] = {
+        "id": "UW-ATT-OWNER-1",
+        "customer_id": "CUST-ATT-OWNER",
+    }
+    portal.UNDERWRITING_FILES["UW-FILE-UW-ATT-OWNER-1-001"] = {
+        "id": "UW-FILE-UW-ATT-OWNER-1-001",
+        "name": "uw_private.pdf",
+        "type": "application/pdf",
+        "size": 4,
+        "data": base64.b64encode(b"UWPR").decode(),
+        "application_id": "UW-ATT-OWNER-1",
+        "customer_id": "CUST-ATT-OWNER",
+        "uploaded_at": datetime.now().isoformat(),
+    }
+
+    claim_url = "/api/claims/files/view?id=FILE-CLM-ATT-OWNER-1-001"
+    uw_url = "/api/underwriting/files/view?id=UW-FILE-UW-ATT-OWNER-1-001"
+
+    # Owner: 200
+    status, body, _ = _get(base + claim_url, owner_token)
+    assert status == 200, body
+    assert body["data"]
+    status, body, _ = _get(base + uw_url, owner_token)
+    assert status == 200, body
+    assert body["data"]
+
+    # Intruder: 403
+    status, body, _ = _get(base + claim_url, intruder_token)
+    assert status == 403, body
+    status, body, _ = _get(base + uw_url, intruder_token)
+    assert status == 403, body
+
+    # Admin: 200
+    status, body, _ = _get(base + claim_url, admin_token)
+    assert status == 200, body
+    status, body, _ = _get(base + uw_url, admin_token)
+    assert status == 200, body
+
+    # Unknown id: 404
+    status, body, _ = _get(base + "/api/claims/files/view?id=NOPE", owner_token)
+    assert status == 404, body
+    status, body, _ = _get(base + "/api/underwriting/files/view?id=NOPE", owner_token)
+    assert status == 404, body
+
+    # Missing id: 400
+    status, body, _ = _get(base + "/api/claims/files/view", owner_token)
+    assert status == 400, body
+
+    # Unauthenticated: 401
+    status, body, _ = _get(base + claim_url)
+    assert status == 401, body
+
     srv.stop()

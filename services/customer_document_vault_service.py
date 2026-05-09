@@ -399,10 +399,10 @@ class CustomerDocumentVault:
             "persistent_doc_id": "",
             "storage_path": "",
             "source": self.SOURCE_CLAIM,
-            # CLAIM_FILES has its own viewer endpoint; we expose a generic
-            # download path so the durable-objects view links work without
-            # special-casing every entity store.
-            "view_url": f"/api/claims/files/{cf.get('id') or file_id}",
+            # Browser-friendly query-style endpoint mirrors the
+            # /api/documents/view?id=... convention so the "Open" link in the
+            # durable-objects UI works without special-casing every store.
+            "view_url": f"/api/claims/files/view?id={cf.get('id') or file_id}",
         }
 
     def _normalize_underwriting_file(
@@ -429,7 +429,7 @@ class CustomerDocumentVault:
             "persistent_doc_id": "",
             "storage_path": "",
             "source": self.SOURCE_UNDERWRITING,
-            "view_url": f"/api/underwriting/files/{uf.get('id') or file_id}",
+            "view_url": f"/api/underwriting/files/view?id={uf.get('id') or file_id}",
         }
 
     def _normalize_persistent_doc(self, item: Dict[str, Any], owner_customer_id: str) -> Dict[str, Any]:
