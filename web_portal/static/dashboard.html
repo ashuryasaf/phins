@@ -3041,10 +3041,10 @@
 
       // Highest-cost policy: review deductible / coverage tier.
       const sorted = [...policies].sort((a, b) =>
-        (parseFloat(b.monthly_premium) || 0) - (parseFloat(a.monthly_premium) || 0));
+        (parseFloat(b.monthly_premium) || parseFloat(b.annual_premium) / 12 || 0) - (parseFloat(a.monthly_premium) || parseFloat(a.annual_premium) / 12 || 0));
       const top = sorted[0];
-      if (top && (parseFloat(top.monthly_premium) || 0) > 0) {
-        const topMonthly = parseFloat(top.monthly_premium) || 0;
+      if (top && (parseFloat(top.monthly_premium) || parseFloat(top.annual_premium) / 12 || 0) > 0) {
+        const topMonthly = parseFloat(top.monthly_premium) || parseFloat(top.annual_premium) / 12 || 0;
         suggestions.push({
           icon: '🔍', title: `Review your most expensive policy (${top.policy_id || top.id || 'top policy'})`,
           detail: `${top.policy_type || 'Policy'} costs ${formatCurrency(topMonthly)}/mo. Raising the deductible by one tier typically cuts 8-12%.`,
