@@ -32882,9 +32882,12 @@ For claims or questions, please contact:
                             errors.append({'customer_id': cid, 'error': 'Customer not found'})
                             continue
                         per_result = run_pipeline_for_customer(cid, auto_advance=auto_advance)
-                        results.append(per_result)
-                        actions_total += len(per_result.get('actions_taken') or [])
-                        processed += 1
+                        if per_result.get('success'):
+                            results.append(per_result)
+                            actions_total += len(per_result.get('actions_taken') or [])
+                            processed += 1
+                        else:
+                            errors.append({'customer_id': cid, 'error': per_result.get('error', 'Pipeline failed')})
                     except Exception as per_err:
                         errors.append({'customer_id': cid, 'error': str(per_err)})
 
