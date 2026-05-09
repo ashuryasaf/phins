@@ -22,6 +22,14 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple, List
 
+# Video Agents Service
+try:
+    from services.video_agents_service import get_video_agents_service
+    VIDEO_AGENTS_AVAILABLE = True
+except ImportError:
+    VIDEO_AGENTS_AVAILABLE = False
+    print("Warning: Video agents service not available")
+
 # Import services
 try:
     from services.foundation_service import (
@@ -2572,6 +2580,271 @@ def handle_admin_all_activities(session: Dict, query_params: Dict) -> Tuple[int,
 
 
 # ============================================================================
+# VIDEO AGENTS ENDPOINTS
+# ============================================================================
+
+def _require_admin_or_media(session: Optional[Dict]) -> Optional[Tuple[int, Dict]]:
+    """Return a 401/403 error tuple if the session lacks admin or media role, else None."""
+    if not session:
+        return 401, {"error": "Authentication required"}
+    role = str(session.get("role") or "").strip().lower()
+    if role not in {"admin", "media"}:
+        return 403, {"error": "Admin or Media role required for video agent operations"}
+    return None
+
+
+def handle_video_providers(session: Optional[Dict]) -> Tuple[int, Dict]:
+    """POST /api/admin/media/video-providers — Return provider capabilities."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    try:
+        svc = get_video_agents_service()
+        capabilities = svc.get_provider_capabilities()
+        return 200, {"capabilities": capabilities}
+    except Exception as exc:
+        return 500, {"error": f"Failed to retrieve provider capabilities: {exc}"}
+
+
+def handle_video_jobs_list(session: Optional[Dict], query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/admin/media/video-jobs — List video generation jobs."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    try:
+        campaign_id = str(query_params.get("campaign_id", [""])[0] or "").strip()
+        status_filter = str(query_params.get("status", [""])[0] or "").strip()
+        limit = int(query_params.get("limit", ["100"])[0] or 100)
+        svc = get_video_agents_service()
+        result = svc.list_jobs(
+            campaign_id=campaign_id,
+            status_filter=status_filter,
+            limit=max(1, min(limit, 500)),
+        )
+        return 200, result
+    except Exception as exc:
+        return 500, {"error": f"Failed to list video jobs: {exc}"}
+
+
+def handle_video_agents_jobs_list(session: Optional[Dict], query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/admin/media/video-agents/jobs — List video generation jobs (canonical path)."""
+    return handle_video_jobs_list(session, query_params)
+
+
+def handle_video_job_get(session: Optional[Dict], job_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/media/video-agents/jobs/{job_id} — Poll job status."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    if not job_id:
+        return 400, {"error": "job_id is required"}
+
+    try:
+        svc = get_video_agents_service()
+        job = svc.poll_job(job_id)
+        if job is None:
+            return 404, {"error": f"Job {job_id!r} not found"}
+        return 200, {"job": job}
+    except Exception as exc:
+        return 500, {"error": f"Failed to retrieve job: {exc}"}
+
+
+def handle_video_job_download(session: Optional[Dict], job_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/media/video-agents/jobs/{job_id}/download — Download completed video."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    if not job_id:
+        return 400, {"error": "job_id is required"}
+
+    try:
+        svc = get_video_agents_service()
+        result = svc.download_job_video(job_id)
+        return 200, result
+    except ValueError as exc:
+        return 404, {"error": str(exc)}
+    except Exception as exc:
+        return 500, {"error": f"Download failed: {exc}"}
+
+
+def handle_video_jobs_submit(session: Optional[Dict], body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/media/video-agents/submit — Submit a single video generation job."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    campaign_id = str(body_data.get("campaign_id") or "").strip()
+    provider = str(body_data.get("provider") or "gemini").strip().lower()
+    pipeline_type = str(body_data.get("pipeline_type") or "introductions").strip().lower()
+    submitted_by = str(
+        (session or {}).get("username") or (session or {}).get("customer_id") or "admin"
+    ).strip()
+
+    try:
+        svc = get_video_agents_service()
+        job = svc.submit_video_job(
+            campaign_id=campaign_id,
+            provider=provider,
+            pipeline_type=pipeline_type,
+            title=str(body_data.get("title") or "").strip(),
+            prompt_override=str(body_data.get("prompt_override") or "").strip(),
+            provider_model=str(body_data.get("provider_model") or "").strip(),
+            aspect_ratio=str(body_data.get("aspect_ratio") or "16:9").strip(),
+            duration_seconds=int(body_data.get("duration_seconds") or 8),
+            resolution=str(body_data.get("resolution") or "720p").strip(),
+            image_data_url=str(body_data.get("image_data_url") or "").strip(),
+            reference_image_asset_id=str(body_data.get("reference_image_asset_id") or "").strip(),
+            poll_mode=str(body_data.get("poll_mode") or "poll").strip(),
+            auto_publish_to_hero=bool(body_data.get("auto_publish_to_hero")),
+            callback_url=str(body_data.get("callback_url") or "").strip(),
+            submitted_by=submitted_by,
+            metadata=body_data.get("metadata") if isinstance(body_data.get("metadata"), dict) else {},
+        )
+        return 201, {"job": job, "success": True}
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    except RuntimeError as exc:
+        return 429, {"error": str(exc)}
+    except Exception as exc:
+        return 500, {"error": f"Job submission failed: {exc}"}
+
+
+def handle_video_jobs_batch(session: Optional[Dict], body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/media/video-jobs/batch — Submit a batch of pipeline videos."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    campaign_id = str(body_data.get("campaign_id") or "").strip()
+    if not campaign_id:
+        return 400, {"error": "campaign_id is required"}
+
+    provider = str(body_data.get("provider") or "gemini").strip().lower()
+    submitted_by = str(
+        (session or {}).get("username") or (session or {}).get("customer_id") or "admin"
+    ).strip()
+
+    try:
+        svc = get_video_agents_service()
+        result = svc.submit_batch(
+            campaign_id=campaign_id,
+            provider=provider,
+            pipeline_type=str(body_data.get("pipeline_type") or "").strip().lower(),
+            prompt_override=str(body_data.get("prompt_override") or "").strip(),
+            provider_model=str(body_data.get("provider_model") or "").strip(),
+            image_data_url=str(body_data.get("image_data_url") or "").strip(),
+            reference_image_asset_id=str(body_data.get("reference_image_asset_id") or "").strip(),
+            poll_mode=str(body_data.get("poll_mode") or "poll").strip(),
+            auto_publish_to_hero=bool(body_data.get("auto_publish_to_hero")),
+            submitted_by=submitted_by,
+            metadata=body_data.get("metadata") if isinstance(body_data.get("metadata"), dict) else {},
+        )
+        return 200, result
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    except RuntimeError as exc:
+        return 429, {"error": str(exc)}
+    except Exception as exc:
+        return 500, {"error": f"Batch submission failed: {exc}"}
+
+
+def handle_video_jobs_retry(session: Optional[Dict], body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/media/video-jobs/retry — Retry a failed job."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    job_id = str(body_data.get("job_id") or "").strip()
+    if not job_id:
+        return 400, {"error": "job_id is required"}
+
+    retried_by = str(
+        (session or {}).get("username") or (session or {}).get("customer_id") or "admin"
+    ).strip()
+
+    try:
+        svc = get_video_agents_service()
+        job = svc.retry_job(job_id, retried_by=retried_by)
+        if job is None:
+            return 404, {"error": f"Job {job_id!r} not found"}
+        return 200, {"job": job, "success": True}
+    except Exception as exc:
+        return 500, {"error": f"Retry failed: {exc}"}
+
+
+def handle_video_jobs_cancel(session: Optional[Dict], body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/media/video-jobs/cancel — Cancel a queued or processing job."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    job_id = str(body_data.get("job_id") or "").strip()
+    if not job_id:
+        return 400, {"error": "job_id is required"}
+
+    cancelled_by = str(
+        (session or {}).get("username") or (session or {}).get("customer_id") or "admin"
+    ).strip()
+
+    try:
+        svc = get_video_agents_service()
+        job = svc.cancel_job(job_id, cancelled_by=cancelled_by)
+        if job is None:
+            return 404, {"error": f"Job {job_id!r} not found"}
+        return 200, {"job": job, "success": True}
+    except Exception as exc:
+        return 500, {"error": f"Cancel failed: {exc}"}
+
+
+def handle_video_webhook(session: Optional[Dict], job_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/media/video-agents/jobs/{job_id}/webhook — Receive provider webhook."""
+    # Webhooks may arrive without a session (provider-to-server callback)
+    # We accept them but log the source
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+
+    if not job_id:
+        return 400, {"error": "job_id is required"}
+
+    try:
+        svc = get_video_agents_service()
+        job = svc.handle_webhook(job_id, body_data)
+        if job is None:
+            return 404, {"error": f"Job {job_id!r} not found"}
+        return 200, {"job": job, "success": True}
+    except Exception as exc:
+        return 500, {"error": f"Webhook processing failed: {exc}"}
+
+
+# ============================================================================
 # ROUTE DISPATCHER
 # ============================================================================
 
@@ -2737,6 +3010,35 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
         foundation_id = path.split('/')[-1]
         return handle_admin_foundation_get(session, foundation_id)
     
+
+    # -------------------------------------------------------------------------
+    # Video Agents: GET endpoints
+    # -------------------------------------------------------------------------
+
+    # GET /api/admin/media/video-jobs — list jobs (frontend-used path)
+    if path == '/api/admin/media/video-jobs':
+        return handle_video_jobs_list(session, query_params)
+
+    # GET /api/admin/media/video-agents/jobs — list jobs (canonical path)
+    if path == '/api/admin/media/video-agents/jobs':
+        return handle_video_agents_jobs_list(session, query_params)
+
+    # GET /api/admin/media/video-agents/jobs/{job_id}/download
+    if path.startswith('/api/admin/media/video-agents/jobs/') and path.endswith('/download'):
+        parts = path.split('/')
+        # /api/admin/media/video-agents/jobs/{job_id}/download -> 8 parts
+        if len(parts) == 8 and parts[7] == 'download':
+            job_id = parts[6]
+            return handle_video_job_download(session, job_id)
+
+    # GET /api/admin/media/video-agents/jobs/{job_id}
+    if path.startswith('/api/admin/media/video-agents/jobs/'):
+        parts = path.split('/')
+        # /api/admin/media/video-agents/jobs/{job_id} -> 7 parts
+        if len(parts) == 7:
+            job_id = parts[6]
+            return handle_video_job_get(session, job_id)
+
     return None
 
 
@@ -2891,6 +3193,39 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
             member_id = parts[6]
             return handle_admin_foundation_member_photo(session, foundation_id, member_id, body_data)
     
+
+    # -------------------------------------------------------------------------
+    # Video Agents: POST endpoints
+    # -------------------------------------------------------------------------
+
+    # POST /api/admin/media/video-providers — provider capabilities
+    if path == '/api/admin/media/video-providers':
+        return handle_video_providers(session)
+
+    # POST /api/admin/media/video-agents/submit — submit single job
+    if path == '/api/admin/media/video-agents/submit':
+        return handle_video_jobs_submit(session, body_data)
+
+    # POST /api/admin/media/video-jobs/batch — submit batch (frontend-used path)
+    if path == '/api/admin/media/video-jobs/batch':
+        return handle_video_jobs_batch(session, body_data)
+
+    # POST /api/admin/media/video-jobs/retry — retry failed job
+    if path == '/api/admin/media/video-jobs/retry':
+        return handle_video_jobs_retry(session, body_data)
+
+    # POST /api/admin/media/video-jobs/cancel — cancel job
+    if path == '/api/admin/media/video-jobs/cancel':
+        return handle_video_jobs_cancel(session, body_data)
+
+    # POST /api/admin/media/video-agents/jobs/{job_id}/webhook — provider webhook callback
+    if path.startswith('/api/admin/media/video-agents/jobs/') and path.endswith('/webhook'):
+        parts = path.split('/')
+        # /api/admin/media/video-agents/jobs/{job_id}/webhook -> 8 parts
+        if len(parts) == 8 and parts[7] == 'webhook':
+            job_id = parts[6]
+            return handle_video_webhook(session, job_id, body_data)
+
     return None
 
 
@@ -2907,5 +3242,5 @@ def dispatch_put(path: str, session: Dict, body_data: Dict, client_ip: str, user
             foundation_id = parts[4]
             member_id = parts[6]
             return handle_admin_foundation_member_update(session, foundation_id, member_id, body_data)
-    
+
     return None
