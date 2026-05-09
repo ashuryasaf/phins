@@ -426,8 +426,14 @@ def seed_sample_data(session=None):
                     logger.warning(f"Could not create policy {pol_data['id']}: {e}")
                     continue
 
-            # Sync policy to memory (always, to keep demo/in-memory paths consistent)
-            if sync_primary_to_memory:
+            # Sync policy to memory ONLY for newly-seeded rows. When the policy
+            # already exists in the DB we must NOT rewrite it: doing so would
+            # reset live fields (status, dates, premiums, payment_setup) back
+            # to seed defaults on every container restart and silently destroy
+            # state advanced by real workflows. The in-memory dict is wired to
+            # DB-backed storage in production, so existing rows are already
+            # readable on demand without a re-seed write.
+            if sync_primary_to_memory and not existing_policy:
                 POLICIES[pol_data['id']] = {
                     'id': pol_data['id'],
                     'customer_id': 'CUST-ASAF-001',
@@ -475,7 +481,12 @@ def seed_sample_data(session=None):
                     except Exception as e:
                         logger.warning(f"Could not create bill {bill_id}: {e}")
 
-                if sync_primary_to_memory:
+                # Mirror billing to memory ONLY for newly-seeded bills. An
+                # existing bill may have been paid, partially paid, or had its
+                # due_date advanced; rewriting the seed dict would reset
+                # status='outstanding', amount_paid=0, and slide the due_date
+                # forward 30 days every restart, breaking the billing pipeline.
+                if sync_primary_to_memory and not existing_bill:
                     BILLING[bill_id] = {
                         'id': bill_id,
                         'policy_id': pol_data['id'],
@@ -569,7 +580,12 @@ def seed_sample_data(session=None):
                         if claim is not None:
                             logger.info(f"Created claim: {claim.id}")
 
-                if sync_primary_to_memory:
+                # Mirror claim to memory ONLY for newly-seeded claims. A claim
+                # whose status advanced (e.g. Pending → Approved → Paid) must
+                # not be reverted to its seed status on every container start;
+                # that would corrupt the claims pipeline and the wallet
+                # reconciliation that runs immediately afterwards.
+                if sync_primary_to_memory and not existing_claim:
                     CLAIMS[claim_data['id']] = {
                         'id': claim_data['id'],
                         'policy_id': claim_data['policy_id'],
@@ -652,7 +668,12 @@ def seed_sample_data(session=None):
             except Exception as e:
                 logger.warning(f"Could not create underwriting application for primary customer: {e}")
 
-        if sync_primary_to_memory:
+        # Mirror UW application to memory ONLY for newly-seeded rows. An
+        # existing application may have advanced through the underwriting
+        # pipeline (status, risk_assessment, premium_adjustment, documents);
+        # rewriting the seed dict on every restart would silently roll the
+        # decision back to 'pending'.
+        if sync_primary_to_memory and not existing_uw:
             # Premium calculation for age 47, moderate risk, $500K health:
             # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
             UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
@@ -903,8 +924,11 @@ def seed_sample_data(session=None):
                     )
                     logger.info(f"Created billing record: {bill_id} for {phins_cust['email']}")
                 
-                # Sync bill to memory
-                if sync_to_memory:
+                # Mirror bill to memory ONLY for newly-seeded bills. See the
+                # primary-customer billing block above for rationale: rewriting
+                # an existing bill resets payment status, amount_paid, and
+                # slides the due_date forward 30 days on every restart.
+                if sync_to_memory and not existing_bill:
                     BILLING[bill_id] = {
                         'id': bill_id,
                         'policy_id': pol_data['id'],
@@ -922,74 +946,83 @@ def seed_sample_data(session=None):
                     }
                     logger.info(f"Synced billing record {bill_id} to memory")
             
-            # Sync to memory
+            # Mirror PHINS customer / policy / UW to memory ONLY for newly-
+            # seeded rows. For existing rows we MUST NOT overwrite the live
+            # state (status transitions, premium adjustments, billing dates,
+            # underwriting decisions) with the seed defaults — that was the
+            # root cause of repeated `Updated Policy/Bill/UnderwritingApplication`
+            # log entries on every Railway restart and silent rollbacks of
+            # workflow progress.
             if sync_to_memory:
-                CUSTOMERS[phins_cust['id']] = {
-                    'id': phins_cust['id'],
-                    'name': phins_cust['name'],
-                    'email': phins_cust['email'],
-                    'phone': phins_cust['phone'],
-                    'date_of_birth': phins_cust['dob'],
-                    'age': phins_cust['age'],
-                    'gender': phins_cust['gender'],
-                    'occupation': phins_cust['occupation'],
-                    'created_date': now.isoformat(),
-                    'status': 'active'
-                }
-                
-                policy_mem = {
-                    'id': pol_data['id'],
-                    'customer_id': phins_cust['id'],
-                    'type': pol_data['type'],
-                    'coverage_amount': pol_data['coverage_amount'],
-                    'annual_premium': pol_data['annual_premium'],
-                    'monthly_premium': pol_data['monthly_premium'],
-                    'status': pol_data['status'],
-                    'risk_score': pol_data['risk_score'],
-                    'start_date': now.isoformat(),
-                    'end_date': (now + timedelta(days=365)).isoformat(),
-                    'created_date': now.isoformat()
-                }
-                if pol_data['status'] == 'active':
-                    policy_mem['payment_setup'] = {
-                        'auto_pay': True,
-                        'billing_frequency': 'monthly',
-                        'card_type': 'mastercard',
-                        'card_last4': '4242',
-                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                if not existing:
+                    CUSTOMERS[phins_cust['id']] = {
+                        'id': phins_cust['id'],
+                        'name': phins_cust['name'],
+                        'email': phins_cust['email'],
+                        'phone': phins_cust['phone'],
+                        'date_of_birth': phins_cust['dob'],
+                        'age': phins_cust['age'],
+                        'gender': phins_cust['gender'],
+                        'occupation': phins_cust['occupation'],
+                        'created_date': now.isoformat(),
+                        'status': 'active'
                     }
-                    policy_mem['billing'] = {
-                        'auto_pay': True,
-                        'frequency': 'monthly',
-                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+
+                if not existing_policy:
+                    policy_mem = {
+                        'id': pol_data['id'],
+                        'customer_id': phins_cust['id'],
+                        'type': pol_data['type'],
+                        'coverage_amount': pol_data['coverage_amount'],
+                        'annual_premium': pol_data['annual_premium'],
+                        'monthly_premium': pol_data['monthly_premium'],
+                        'status': pol_data['status'],
+                        'risk_score': pol_data['risk_score'],
+                        'start_date': now.isoformat(),
+                        'end_date': (now + timedelta(days=365)).isoformat(),
+                        'created_date': now.isoformat()
                     }
-                POLICIES[pol_data['id']] = policy_mem
-                
-                UNDERWRITING_APPLICATIONS[app_data['id']] = {
-                    'id': app_data['id'],
-                    'policy_id': pol_data['id'],
-                    'customer_id': phins_cust['id'],
-                    'customer_name': phins_cust['name'],
-                    'customer_email': phins_cust['email'],
-                    'policy_type': pol_data['type'],
-                    'coverage_amount': pol_data['coverage_amount'],
-                    'annual_premium': pol_data['annual_premium'],
-                    'monthly_premium': pol_data['monthly_premium'],
-                    'age': phins_cust['age'],
-                    'gender': phins_cust['gender'],
-                    'occupation': phins_cust['occupation'],
-                    'risk_score': app_data['risk_score'],
-                    'status': app_data['status'],
-                    'risk_assessment': app_data['risk_score'],
-                    'bmi': app_data.get('bmi'),
-                    'smoking_status': app_data.get('smoking_status'),
-                    'disability_percentage': app_data.get('disability_percentage', 0),
-                    'medical_conditions': app_data.get('medical_conditions', []),
-                    'medical_exam_required': False,
-                    'submitted_date': now.isoformat(),
-                    'created_date': now.isoformat(),
-                    'updated_date': now.isoformat()
-                }
+                    if pol_data['status'] == 'active':
+                        policy_mem['payment_setup'] = {
+                            'auto_pay': True,
+                            'billing_frequency': 'monthly',
+                            'card_type': 'mastercard',
+                            'card_last4': '4242',
+                            'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                        }
+                        policy_mem['billing'] = {
+                            'auto_pay': True,
+                            'frequency': 'monthly',
+                            'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                        }
+                    POLICIES[pol_data['id']] = policy_mem
+
+                if not existing_app:
+                    UNDERWRITING_APPLICATIONS[app_data['id']] = {
+                        'id': app_data['id'],
+                        'policy_id': pol_data['id'],
+                        'customer_id': phins_cust['id'],
+                        'customer_name': phins_cust['name'],
+                        'customer_email': phins_cust['email'],
+                        'policy_type': pol_data['type'],
+                        'coverage_amount': pol_data['coverage_amount'],
+                        'annual_premium': pol_data['annual_premium'],
+                        'monthly_premium': pol_data['monthly_premium'],
+                        'age': phins_cust['age'],
+                        'gender': phins_cust['gender'],
+                        'occupation': phins_cust['occupation'],
+                        'risk_score': app_data['risk_score'],
+                        'status': app_data['status'],
+                        'risk_assessment': app_data['risk_score'],
+                        'bmi': app_data.get('bmi'),
+                        'smoking_status': app_data.get('smoking_status'),
+                        'disability_percentage': app_data.get('disability_percentage', 0),
+                        'medical_conditions': app_data.get('medical_conditions', []),
+                        'medical_exam_required': False,
+                        'submitted_date': now.isoformat(),
+                        'created_date': now.isoformat(),
+                        'updated_date': now.isoformat()
+                    }
             
             # Initialize wallets
             if sync_wallets:
