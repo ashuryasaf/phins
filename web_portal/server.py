@@ -9366,6 +9366,152 @@ def filter_suspended_accounts(items: list, customer_id_field: str = 'customer_id
     return [item for item in items if not is_suspended_account(item.get(customer_id_field, ''))]
 
 
+def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Dict[str, Any]:
+    """Advance a single customer through their next pipeline stage.
+
+    Extracted from the inline /api/admin/pipeline-process/<id> handler so that
+    /api/admin/pipeline-process-all can run the same logic for every customer
+    without firing N HTTP requests (each consuming a separate bulk-rate-limit
+    token, which previously caused a 5/12-success / 7-error pattern).
+
+    Returns a dict with the same shape the legacy single-customer endpoint
+    returned. The caller is responsible for `save_ledger_data()` (we skip it
+    here so a batch run can save once after processing all customers).
+    """
+    result: Dict[str, Any] = {
+        'success': True,
+        'customer_id': customer_id,
+        'previous_stage': 'unknown',
+        'new_stage': 'unknown',
+        'actions_taken': [],
+        'allocation_result': None,
+    }
+
+    customer = CUSTOMERS.get(customer_id)
+    if not customer:
+        result.update({'success': False, 'error': 'Customer not found'})
+        return result
+
+    now = datetime.now()
+
+    pending_apps = [a for a in UNDERWRITING_APPLICATIONS.values()
+                    if a.get('customer_id') == customer_id and status_eq(a, 'pending')]
+
+    pending_policies = [p for p in POLICIES.values()
+                        if p.get('customer_id') == customer_id and status_eq(p, 'pending_underwriting')]
+
+    active_policies = [p for p in POLICIES.values()
+                       if p.get('customer_id') == customer_id and status_eq(p, 'active')]
+
+    if pending_apps and auto_advance:
+        result['previous_stage'] = 'underwriting'
+
+        for app in pending_apps:
+            app['status'] = 'approved'
+            app['decision_date'] = now.isoformat()
+            app['approved_by'] = 'admin_pipeline'
+            app['approval_notes'] = 'Auto-approved via pipeline process'
+
+            policy_id = app.get('policy_id')
+            if policy_id and policy_id in POLICIES:
+                policy = POLICIES[policy_id]
+                policy['status'] = 'active'
+                policy['approval_date'] = now.isoformat()
+                policy['effective_date'] = now.isoformat()
+
+                bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+
+                BILLING[bill_id] = {
+                    'id': bill_id,
+                    'policy_id': policy_id,
+                    'customer_id': customer_id,
+                    'customer_name': customer.get('name', ''),
+                    'amount': round(float(monthly_premium), 2),
+                    'amount_paid': 0.0,
+                    'status': 'outstanding',
+                    'due_date': (now + timedelta(days=30)).isoformat(),
+                    'created_date': now.isoformat(),
+                    'description': f"Premium for policy {policy_id}",
+                }
+
+                result['actions_taken'].append(f'Generated billing {bill_id}')
+
+                if customer_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'transactions': [],
+                        'created_at': now.isoformat(),
+                    }
+                    result['actions_taken'].append('Initialized health wallet')
+
+                if customer_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'balance': 0,
+                        'index_balance': 0,
+                        'bonds_balance': 0,
+                        'crypto_balance': 0,
+                        'deposits': [],
+                        'created_at': now.isoformat(),
+                    }
+                    result['actions_taken'].append('Initialized investment account')
+
+                if savings_pipeline_enabled and savings_pipeline_service:
+                    try:
+                        pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
+
+                        allocation = CUSTOMER_ALLOCATIONS.get(customer_id, {})
+                        if allocation:
+                            from services.savings_pipeline_service import RiskLevel
+                            protection_pct = allocation.get('protection_pct', 25)
+                            if protection_pct >= 40:
+                                pipeline_account.risk_level = RiskLevel.LOW
+                            elif protection_pct >= 30:
+                                pipeline_account.risk_level = RiskLevel.MODERATE
+                            else:
+                                pipeline_account.risk_level = RiskLevel.HIGH
+
+                        result['actions_taken'].append('Initialized savings pipeline with AI allocation')
+                    except Exception as e:
+                        print(f"Pipeline init note: {e}")
+
+            result['actions_taken'].append(f'Approved application {app.get("id")}')
+            result['actions_taken'].append(f'Activated policy {policy_id}')
+
+        result['new_stage'] = 'active'
+
+    elif pending_policies:
+        result['previous_stage'] = 'applied'
+        result['new_stage'] = 'underwriting'
+        result['actions_taken'].append('Policies are pending underwriting - review required')
+
+    elif active_policies:
+        result['previous_stage'] = 'active'
+        result['new_stage'] = 'fully_active'
+
+        if savings_pipeline_enabled and savings_pipeline_service:
+            try:
+                pipeline_account = savings_pipeline_service.accounts.get(customer_id)
+                if pipeline_account and pipeline_account.cash_balance > 0:
+                    allocation_result = savings_pipeline_service.allocate_cash_balance(customer_id)
+                    if allocation_result.get('success'):
+                        result['allocation_result'] = allocation_result.get('allocation', {})
+                        result['actions_taken'].append(
+                            f'Allocated ${pipeline_account.total_allocated:.2f} across accounts'
+                        )
+            except Exception as e:
+                print(f"Allocation note: {e}")
+
+        result['actions_taken'].append('Customer is fully active in pipeline')
+    else:
+        result['previous_stage'] = 'registered'
+        result['new_stage'] = 'registered'
+        result['actions_taken'].append('Customer needs to submit insurance application')
+
+    return result
+
+
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
     """Generate premium statement from actual policy data"""
     # Get customer's active policies (case-insensitive)
@@ -14727,6 +14873,18 @@ For claims or questions, please contact:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Claim not found'}).encode('utf-8'))
             else:
+                # For admin/staff list views, force a fresh DB read so claims
+                # filed by customers on another worker/replica show up
+                # immediately in the adjuster/admin dashboard. (This is the
+                # "claim filed but not pushed to admin review/dashboard"
+                # symptom that customer-side filings sometimes exhibited.)
+                if role != 'customer':
+                    try:
+                        if hasattr(CLAIMS, 'invalidate_cache'):
+                            CLAIMS.invalidate_cache()
+                    except Exception as cache_err:
+                        print(f"[CLAIMS API] cache invalidate note: {cache_err}")
+
                 claims_list = list(CLAIMS.values())
                 if status:
                     # Case-insensitive status filter
@@ -14752,8 +14910,28 @@ For claims or questions, please contact:
                         except Exception as e:
                             print(f"[CLAIMS API] DB fallback error for {session_customer_id}: {e}")
                 else:
-                    # Admin/staff view: Filter out suspended test accounts
+                    # Admin/staff view: Filter out suspended test accounts.
                     claims_list = [c for c in claims_list if not is_suspended_account(c.get('customer_id', ''))]
+                    
+                    # DATABASE FALLBACK for admin/staff: if the in-memory store
+                    # is still empty (e.g. running in a fresh worker process or
+                    # right after a deploy), pull straight from the DB so we
+                    # never silently hide a customer-filed claim.
+                    if not claims_list and USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                db_claims = db.claims.get_all()
+                                fallback_list = [c.to_dict() for c in db_claims
+                                                 if not is_suspended_account(getattr(c, 'customer_id', '') or '')]
+                                if status:
+                                    status_lower = status.lower().replace(' ', '_')
+                                    fallback_list = [c for c in fallback_list if get_status_lower(c) == status_lower]
+                                if fallback_list:
+                                    claims_list = fallback_list
+                                    print(f"[CLAIMS API] Found {len(claims_list)} claims via admin DB fallback")
+                        except Exception as e:
+                            print(f"[CLAIMS API] Admin DB fallback error: {e}")
                 
                 # Enrich claims with customer data for admin/staff view
                 def enrich_claim(claim: Dict[str, Any]) -> Dict[str, Any]:
@@ -32626,162 +32804,118 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body) if body else {}
-                auto_advance = data.get('auto_advance', True)
+                auto_advance = bool(data.get('auto_advance', True))
                 
-                result = {
-                    'success': True,
-                    'customer_id': customer_id,
-                    'previous_stage': 'unknown',
-                    'new_stage': 'unknown',
-                    'actions_taken': [],
-                    'allocation_result': None
-                }
-                
-                # Get customer
-                customer = CUSTOMERS.get(customer_id)
-                if not customer:
+                # Confirm customer exists before delegating to helper so we can
+                # return the legacy 404 contract callers depend on.
+                if not CUSTOMERS.get(customer_id):
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
                     return
-                
-                now = datetime.now()
-                
-                # Find pending underwriting applications (case-insensitive)
-                pending_apps = [a for a in UNDERWRITING_APPLICATIONS.values() 
-                               if a.get('customer_id') == customer_id and status_eq(a, 'pending')]
-                
-                # Find pending policies (pending underwriting)
-                pending_policies = [p for p in POLICIES.values() 
-                                   if p.get('customer_id') == customer_id and status_eq(p, 'pending_underwriting')]
-                
-                # Find active policies
-                active_policies = [p for p in POLICIES.values() 
-                                  if p.get('customer_id') == customer_id and status_eq(p, 'active')]
-                
-                # Determine current stage and process next step
-                if pending_apps and auto_advance:
-                    result['previous_stage'] = 'underwriting'
-                    
-                    # Auto-approve pending applications
-                    for app in pending_apps:
-                        app['status'] = 'approved'
-                        app['decision_date'] = now.isoformat()
-                        app['approved_by'] = 'admin_pipeline'
-                        app['approval_notes'] = 'Auto-approved via pipeline process'
-                        
-                        # Activate associated policy
-                        policy_id = app.get('policy_id')
-                        if policy_id and policy_id in POLICIES:
-                            policy = POLICIES[policy_id]
-                            policy['status'] = 'active'
-                            policy['approval_date'] = now.isoformat()
-                            policy['effective_date'] = now.isoformat()
-                            
-                            # Generate billing
-                            bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                            monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
-                            
-                            BILLING[bill_id] = {
-                                'id': bill_id,
-                                'policy_id': policy_id,
-                                'customer_id': customer_id,
-                                'customer_name': customer.get('name', ''),
-                                'amount': round(float(monthly_premium), 2),
-                                'amount_paid': 0.0,
-                                'status': 'outstanding',
-                                'due_date': (now + timedelta(days=30)).isoformat(),
-                                'created_date': now.isoformat(),
-                                'description': f"Premium for policy {policy_id}"
-                            }
-                            
-                            result['actions_taken'].append(f'Generated billing {bill_id}')
-                            
-                            # Initialize health wallet
-                            if customer_id not in HEALTH_WALLETS:
-                                HEALTH_WALLETS[customer_id] = {
-                                    'customer_id': customer_id,
-                                    'balance': 0,
-                                    'transactions': [],
-                                    'created_at': now.isoformat()
-                                }
-                                result['actions_taken'].append('Initialized health wallet')
-                            
-                            # Initialize investment account
-                            if customer_id not in INVESTMENT_ACCOUNTS:
-                                INVESTMENT_ACCOUNTS[customer_id] = {
-                                    'balance': 0,
-                                    'index_balance': 0,
-                                    'bonds_balance': 0,
-                                    'crypto_balance': 0,
-                                    'deposits': [],
-                                    'created_at': now.isoformat()
-                                }
-                                result['actions_taken'].append('Initialized investment account')
-                            
-                            # Initialize savings pipeline for AI allocation
-                            if savings_pipeline_enabled and savings_pipeline_service:
-                                try:
-                                    pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
-                                    
-                                    # Set allocation based on customer preferences or defaults
-                                    allocation = CUSTOMER_ALLOCATIONS.get(customer_id, {})
-                                    if allocation:
-                                        from services.savings_pipeline_service import RiskLevel
-                                        protection_pct = allocation.get('protection_pct', 25)
-                                        if protection_pct >= 40:
-                                            pipeline_account.risk_level = RiskLevel.LOW
-                                        elif protection_pct >= 30:
-                                            pipeline_account.risk_level = RiskLevel.MODERATE
-                                        else:
-                                            pipeline_account.risk_level = RiskLevel.HIGH
-                                    
-                                    result['actions_taken'].append('Initialized savings pipeline with AI allocation')
-                                except Exception as e:
-                                    print(f"Pipeline init note: {e}")
-                        
-                        result['actions_taken'].append(f'Approved application {app.get("id")}')
-                        result['actions_taken'].append(f'Activated policy {policy_id}')
-                    
-                    result['new_stage'] = 'active'
-                    
-                elif pending_policies:
-                    result['previous_stage'] = 'applied'
-                    result['new_stage'] = 'underwriting'
-                    result['actions_taken'].append('Policies are pending underwriting - review required')
-                    
-                elif active_policies:
-                    result['previous_stage'] = 'active'
-                    result['new_stage'] = 'fully_active'
-                    
-                    # Process any allocations
-                    if savings_pipeline_enabled and savings_pipeline_service:
-                        try:
-                            pipeline_account = savings_pipeline_service.accounts.get(customer_id)
-                            if pipeline_account and pipeline_account.cash_balance > 0:
-                                allocation_result = savings_pipeline_service.allocate_cash_balance(customer_id)
-                                if allocation_result.get('success'):
-                                    result['allocation_result'] = allocation_result.get('allocation', {})
-                                    result['actions_taken'].append(f'Allocated ${pipeline_account.total_allocated:.2f} across accounts')
-                        except Exception as e:
-                            print(f"Allocation note: {e}")
-                    
-                    result['actions_taken'].append('Customer is fully active in pipeline')
-                else:
-                    result['previous_stage'] = 'registered'
-                    result['new_stage'] = 'registered'
-                    result['actions_taken'].append('Customer needs to submit insurance application')
-                
-                # Save data
-                save_ledger_data()
-                
+
+                result = run_pipeline_for_customer(customer_id, auto_advance=auto_advance)
+
+                # Save data once for the per-customer call (batch handler saves once after all customers)
+                try:
+                    save_ledger_data()
+                except Exception as save_err:
+                    print(f"[PIPELINE] save_ledger_data note: {save_err}")
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps(result).encode('utf-8'))
-                
+
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Pipeline Process All - Process every (non-suspended) customer in ONE request.
+        # Replaces the legacy pattern where the admin UI fired N HTTP calls (one per
+        # customer), each one consuming a separate slot in the bulk rate limiter
+        # (MAX_BULK_OPERATIONS_PER_MINUTE=5) and producing 7/12-style "errors".
+        if path == '/api/admin/pipeline-process-all':
+            # SECURITY: Bulk operation -> count once for the entire batch.
+            bulk_allowed, bulk_msg = check_bulk_rate_limit(client_ip, 'pipeline_process_all', server_port)
+            if not bulk_allowed:
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': 'Rate limit exceeded for bulk operations',
+                    'message': bulk_msg,
+                    'retry_after': 60
+                }).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body) if body else {}
+                auto_advance = bool(data.get('auto_advance', True))
+                requested_ids = data.get('customer_ids')
+
+                if isinstance(requested_ids, list) and requested_ids:
+                    target_ids = [
+                        cid for cid in requested_ids
+                        if isinstance(cid, str) and cid and not is_suspended_account(cid)
+                    ]
+                else:
+                    # Default: process every non-suspended customer present in CUSTOMERS.
+                    try:
+                        target_ids = [
+                            cid for cid in list(CUSTOMERS.keys())
+                            if cid and not is_suspended_account(cid)
+                        ]
+                    except Exception as enum_err:
+                        print(f"[PIPELINE-ALL] Failed to enumerate CUSTOMERS: {enum_err}")
+                        target_ids = []
+
+                results = []
+                errors = []
+                actions_total = 0
+                processed = 0
+
+                for cid in target_ids:
+                    try:
+                        if not CUSTOMERS.get(cid):
+                            errors.append({'customer_id': cid, 'error': 'Customer not found'})
+                            continue
+                        per_result = run_pipeline_for_customer(cid, auto_advance=auto_advance)
+                        results.append(per_result)
+                        actions_total += len(per_result.get('actions_taken') or [])
+                        processed += 1
+                    except Exception as per_err:
+                        errors.append({'customer_id': cid, 'error': str(per_err)})
+
+                # One save at the end is enough; per-customer saves would be wasteful.
+                try:
+                    save_ledger_data()
+                except Exception as save_err:
+                    print(f"[PIPELINE-ALL] save_ledger_data note: {save_err}")
+
+                if audit:
+                    try:
+                        actor = (session.get('username') if session else None) or 'system'
+                        audit.log(actor, 'process_all', 'pipeline', 'all', {
+                            'total': len(target_ids),
+                            'processed': processed,
+                            'errors': len(errors),
+                            'actions_total': actions_total
+                        })
+                    except Exception:
+                        pass
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'total_customers': len(target_ids),
+                    'processed': processed,
+                    'errors_count': len(errors),
+                    'actions_total': actions_total,
+                    'results': results,
+                    'errors': errors
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # Create Policy Endpoint
         if path == '/api/policies/create':
             try:
