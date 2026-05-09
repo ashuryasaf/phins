@@ -2143,6 +2143,11 @@
         return;
       }
       
+      const panel = document.getElementById('ai-assistant-panel');
+      if (panel && panel.dataset.minimized === 'true') {
+        toggleAIPanel();
+      }
+      
       showAILoading();
       
       // Classify intent
@@ -3227,7 +3232,7 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px;">
           <div style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
             <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(max10.savingsFV)}</div>
-            <div style="font-size: 0.8rem; opacity: 0.9;">Savings at 10y</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Savings at ${max10.years}y</div>
           </div>
           <div style="background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
             <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(max10.premiumSpend)}</div>
@@ -3235,7 +3240,7 @@
           </div>
           <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
             <div style="font-size: 1.6rem; font-weight: 700;">${formatCurrency(max10.net)}</div>
-            <div style="font-size: 0.8rem; opacity: 0.9;">Net position 10y</div>
+            <div style="font-size: 0.8rem; opacity: 0.9;">Net position ${max10.years}y</div>
           </div>
         </div>
 
