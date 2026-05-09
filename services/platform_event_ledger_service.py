@@ -350,18 +350,20 @@ class PlatformEventLedgerService:
             db_factory = self._get_db_manager_factory()
             with db_factory() as db:
                 rows = db.platform_ledger.get_all_by_sequence(limit=limit)
+                records = []
+                for row in rows or []:
+                    if row is None:
+                        continue
+                    try:
+                        records.append(row.to_dict())
+                    except Exception:
+                        continue
         except Exception as exc:
             logger.warning("Platform ledger DB hydration failed: %s", exc)
             return 0
 
         loaded = 0
-        for row in rows or []:
-            if row is None:
-                continue
-            try:
-                record = row.to_dict()
-            except Exception:
-                continue
+        for record in records:
 
             entry_id = record.get("id")
             if not entry_id or entry_id in self.transaction_ledger:
