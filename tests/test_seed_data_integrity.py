@@ -150,12 +150,10 @@ def test_reseed_preserves_advanced_claim_status(db_backed_portal):
 
 def test_reseed_preserves_underwriting_decision(db_backed_portal):
     """An underwriting decision must not be rolled back to 'pending'."""
-    from datetime import datetime, timezone
-
     from database.manager import DatabaseManager
 
     portal, db_dicts = db_backed_portal
-    uw_id = f"UW-ASAF-{datetime.now(timezone.utc).strftime('%Y%m%d')}-001"
+    uw_id = "UW-ASAF-HEALTH-001"
 
     def mutate():
         with DatabaseManager() as db:
