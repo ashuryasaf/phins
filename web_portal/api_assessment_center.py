@@ -295,7 +295,7 @@ def _ensure_documents_owned_by(
         record, owner = _document_owner(svc, doc_id.strip())
         if record is None:
             return False, (404, {"error": f"Document {doc_id} not found"})
-        if owner != customer_id:
+        if _normalise_customer_id(owner) != _normalise_customer_id(customer_id):
             logger.warning(
                 "cross-tenant document access rejected: doc=%s owner=%r requester=%s",
                 doc_id, owner, customer_id,
