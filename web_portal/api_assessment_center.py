@@ -291,7 +291,7 @@ def _ensure_documents_owned_by(
         return True, None
     for doc_id in document_ids:
         if not isinstance(doc_id, str) or not doc_id.strip():
-            continue
+            return False, (400, {"error": "Invalid document_id: must be a non-blank string"})
         record, owner = _document_owner(svc, doc_id.strip())
         if record is None:
             return False, (404, {"error": f"Document {doc_id} not found"})
