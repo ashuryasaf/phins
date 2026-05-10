@@ -44153,8 +44153,8 @@ def run_server(port: int = PORT) -> None:
                 'annual_premium': 2294.25,   # Corrected: $500K, age 47, moderate
                 'monthly_premium': 191.19,
                 'status': base_data.get('status', 'pending'),
-                'risk_score': 'moderate',
-                'risk_assessment': 'moderate',
+                'risk_score': base_data.get('risk_score', 'moderate'),
+                'risk_assessment': base_data.get('risk_assessment', 'moderate'),
                 # Demographic data - from application form
                 'age': 47,  # Correct age as per applicant data
                 'gender': 'male',
@@ -44213,8 +44213,8 @@ def run_server(port: int = PORT) -> None:
                 'medical_exam_completed': False,
                 'premium_adjustment': 35,  # 35% loading due to medical conditions
                 # Timestamps
-                'created_date': now.isoformat(),
-                'submitted_date': now.isoformat(),
+                'created_date': base_data.get('created_date', now.isoformat()),
+                'submitted_date': base_data.get('submitted_date', now.isoformat()),
                 'updated_date': now.isoformat(),
                 # Data source tracking for audit
                 'data_sources': {
