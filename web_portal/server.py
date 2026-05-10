@@ -44152,7 +44152,7 @@ def run_server(port: int = PORT) -> None:
                 'coverage_amount': 500000.0,
                 'annual_premium': 2294.25,   # Corrected: $500K, age 47, moderate
                 'monthly_premium': 191.19,
-                'status': 'pending',
+                'status': base_data.get('status', 'pending'),
                 'risk_score': 'moderate',
                 'risk_assessment': 'moderate',
                 # Demographic data - from application form
