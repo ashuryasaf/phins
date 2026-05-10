@@ -322,7 +322,10 @@ def test_ai_copilot_analyze_uses_atr_for_trade_levels(monkeypatch):
     monkeypatch.setattr(
         service,
         "get_bars",
-        lambda symbol, timeframe="1Day", limit=100: [{"close": 100.0}],
+        lambda symbol, timeframe="1Day", limit=100: [
+            {"close": 99.0},
+            {"close": 100.0},
+        ],
     )
     monkeypatch.setattr(service, "get_positions", lambda: [])
     monkeypatch.setattr(
@@ -352,6 +355,121 @@ def test_ai_copilot_analyze_uses_atr_for_trade_levels(monkeypatch):
     assert result["technicals"]["atr"] == 2.5
     assert result["trade_suggestion"]["stop_loss"] == 95.0
     assert result["trade_suggestion"]["take_profit"] == 107.5
+    assert result["data_source"] == "alpaca_live"
+
+
+def test_ai_copilot_analyze_falls_back_to_alpha_vantage(monkeypatch):
+    """When Alpaca returns no bars, copilot must transparently fall back
+    to Alpha Vantage daily bars and still produce a real analysis."""
+    service = TradingPlatformService()
+
+    import services.ai_trading_engine as ai_trading_engine
+    import services.alpha_vantage_service as alpha_vantage_service
+
+    monkeypatch.setattr(
+        service,
+        "get_bars",
+        lambda symbol, timeframe="1Day", limit=100: [],
+    )
+    monkeypatch.setattr(service, "get_positions", lambda: [])
+    monkeypatch.setattr(
+        service,
+        "get_account",
+        lambda: {"buying_power": 10000, "portfolio_value": 10000},
+    )
+
+    class _FakeAV:
+        def get_daily(self, symbol, outputsize="compact"):
+            assert symbol == "NVDA"
+            return {
+                "symbol": symbol,
+                "series_type": "daily",
+                "bars": [
+                    {"date": "2026-05-09", "open": 122.0, "high": 126.0,
+                     "low": 121.0, "close": 125.0, "volume": 1000},
+                    {"date": "2026-05-08", "open": 119.0, "high": 121.0,
+                     "low": 118.0, "close": 120.0, "volume": 900},
+                    {"date": "2026-05-07", "open": 117.0, "high": 119.5,
+                     "low": 116.5, "close": 118.0, "volume": 800},
+                ],
+                "bar_count": 3,
+                "latest_price": 125.0,
+                "source": "alpha_vantage",
+            }
+
+    monkeypatch.setattr(
+        alpha_vantage_service,
+        "get_alpha_vantage_service",
+        lambda: _FakeAV(),
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "compute_technicals",
+        lambda bars: {"indicators": {"atr_14": 2.0}},
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "generate_signals",
+        lambda technicals, price: {
+            "recommendation": "BUY",
+            "composite_score": 2,
+            "confidence": 0.55,
+            "details": [],
+        },
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "compute_risk_metrics",
+        lambda bars, positions: {},
+    )
+
+    result = service.ai_copilot_analyze("NVDA")
+
+    assert "error" not in result
+    assert result["symbol"] == "NVDA"
+    assert result["data_source"] == "alpha_vantage_fallback"
+    assert result["bars_count"] == 3
+    # Bars must be reordered ascending by date so the latest close (125.0)
+    # is what feeds `price` and the trade suggestion math.
+    assert result["price"] == 125.0
+    assert result["trade_suggestion"]["stop_loss"] == 121.0
+    assert result["trade_suggestion"]["take_profit"] == 131.0
+
+
+def test_ai_copilot_analyze_returns_error_when_no_data_anywhere(monkeypatch):
+    """Both Alpaca and Alpha Vantage empty -> structured error, no mock data."""
+    service = TradingPlatformService()
+    import services.alpha_vantage_service as alpha_vantage_service
+
+    monkeypatch.setattr(
+        service,
+        "get_bars",
+        lambda symbol, timeframe="1Day", limit=100: [],
+    )
+
+    class _EmptyAV:
+        def get_daily(self, symbol, outputsize="compact"):
+            return None
+
+    monkeypatch.setattr(
+        alpha_vantage_service,
+        "get_alpha_vantage_service",
+        lambda: _EmptyAV(),
+    )
+
+    result = service.ai_copilot_analyze("ZZZZ")
+    assert "error" in result
+    assert result["symbol"] == "ZZZZ"
+    assert result["data_source"] == "none"
+    assert "ALPACA_API_KEY" in result["error"]
+    assert "ALPHA_VANTAGE_API_KEY" in result["error"]
+
+
+def test_ai_copilot_analyze_rejects_empty_symbol():
+    service = TradingPlatformService()
+    result = service.ai_copilot_analyze("   ")
+    assert "error" in result
+    assert "Symbol is required" in result["error"]
 
 
 # ==================================================================
