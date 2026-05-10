@@ -1295,13 +1295,13 @@ class TradingPlatformService:
         data_source = "alpaca_live"
         bars_raw = self.get_bars(sym, timeframe="1Day", limit=100)
 
-        if not bars_raw:
+        if not bars_raw or len(bars_raw) < 2:
             fallback_bars = self._bars_from_alpha_vantage(sym, limit=100)
-            if fallback_bars:
+            if fallback_bars and len(fallback_bars) > len(bars_raw or []):
                 bars_raw = fallback_bars
                 data_source = "alpha_vantage_fallback"
                 _log.info(
-                    "ai_copilot_analyze(%s): Alpaca returned no bars; "
+                    "ai_copilot_analyze(%s): Alpaca returned insufficient bars; "
                     "using Alpha Vantage fallback (%d bars)",
                     sym, len(fallback_bars),
                 )
