@@ -1223,28 +1223,125 @@ class TradingPlatformService:
     # AI COPILOT
     # ==================================================================
 
+    def _bars_from_alpha_vantage(self, sym: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Fallback bars loader: pull daily OHLCV from Alpha Vantage and shape
+        them like Alpaca bars (chronological ascending, with float OHLC and
+        integer volume) so they can be fed straight into compute_technicals.
+
+        Returns [] if Alpha Vantage is unavailable, rate-limited, or has no
+        data for this symbol — never returns mock data.
+        """
+        try:
+            from services.alpha_vantage_service import get_alpha_vantage_service
+            av = get_alpha_vantage_service()
+        except Exception as e:  # pragma: no cover - defensive import guard
+            _log.debug("Alpha Vantage service unavailable: %s", e)
+            return []
+
+        if av is None:
+            return []
+
+        try:
+            outputsize = "full" if limit > 100 else "compact"
+            payload = av.get_daily(sym, outputsize=outputsize)
+        except Exception as e:
+            _log.debug("Alpha Vantage get_daily(%s) failed: %s", sym, e)
+            return []
+
+        if not payload:
+            return []
+
+        av_bars = payload.get("bars") or []
+        if not av_bars:
+            return []
+
+        bars: List[Dict[str, Any]] = []
+        for b in reversed(av_bars):
+            close = _sf(b.get("close"))
+            if close is None or close <= 0:
+                continue
+            bars.append({
+                "date": b.get("date"),
+                "open": _sf(b.get("open")) or close,
+                "high": _sf(b.get("high")) or close,
+                "low": _sf(b.get("low")) or close,
+                "close": close,
+                "volume": b.get("volume") or 0,
+                "vwap": None,
+                "trade_count": None,
+            })
+
+        if limit and len(bars) > limit:
+            bars = bars[-limit:]
+        return bars
+
     def ai_copilot_analyze(self, symbol: str, context: str = "") -> Dict[str, Any]:
         """
-        AI Copilot: real-time analysis powered by live Alpaca data.
-        Uses ai_trading_engine for technicals and signals — zero mock data.
+        AI Copilot: real-time analysis powered by live market data.
+
+        Primary source is Alpaca (IEX feed). When Alpaca is unreachable,
+        unauthorized, or returns no bars (e.g. weekends, transient 4xx,
+        missing API keys on the deployment), we transparently fall back to
+        Alpha Vantage's daily series so the analysis still runs on real,
+        verifiable market data — never mock data.
         """
         from services.ai_trading_engine import compute_technicals, generate_signals, compute_risk_metrics
 
-        sym = symbol.upper()
+        sym = (symbol or "").strip().upper()
+        if not sym:
+            return {"error": "Symbol is required."}
 
-        # Fetch live bars from Alpaca
+        data_source = "alpaca_live"
         bars_raw = self.get_bars(sym, timeframe="1Day", limit=100)
-        if not bars_raw:
-            return {"error": f"No market data available for {sym}. Verify symbol and Alpaca connection."}
 
-        # Compute real technicals from live bars
+        if not bars_raw:
+            fallback_bars = self._bars_from_alpha_vantage(sym, limit=100)
+            if fallback_bars:
+                bars_raw = fallback_bars
+                data_source = "alpha_vantage_fallback"
+                _log.info(
+                    "ai_copilot_analyze(%s): Alpaca returned no bars; "
+                    "using Alpha Vantage fallback (%d bars)",
+                    sym, len(fallback_bars),
+                )
+
+        if not bars_raw:
+            return {
+                "error": (
+                    f"No market data available for {sym}. "
+                    "Verify the symbol is correct and that either Alpaca "
+                    "(ALPACA_API_KEY/ALPACA_SECRET_KEY) or Alpha Vantage "
+                    "(ALPHA_VANTAGE_API_KEY) is reachable."
+                ),
+                "symbol": sym,
+                "data_source": "none",
+            }
+
+        if len(bars_raw) < 2:
+            return {
+                "error": (
+                    f"Insufficient market history for {sym} "
+                    f"({len(bars_raw)} bar). At least 2 daily bars are "
+                    "required to compute technicals."
+                ),
+                "symbol": sym,
+                "data_source": data_source,
+                "bars_count": len(bars_raw),
+            }
+
         technicals = compute_technicals(bars_raw)
         indicators = technicals.get("indicators", {})
 
         latest_bar = bars_raw[-1] if bars_raw else {}
         price = _sf(latest_bar.get("close")) or 0
         if not price or price <= 0:
-            return {"error": f"No live price for {sym}"}
+            return {
+                "error": f"No live price for {sym}",
+                "symbol": sym,
+                "data_source": data_source,
+                "bars_count": len(bars_raw),
+            }
 
         # Generate AI signals from real technicals
         signals = generate_signals(technicals, price)
@@ -1358,7 +1455,7 @@ class TradingPlatformService:
             },
             "news_sentiment": news_data,
             "bars_count": len(bars_raw),
-            "data_source": "alpaca_live",
+            "data_source": data_source,
         }
 
     # ==================================================================
