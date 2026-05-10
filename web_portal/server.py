@@ -16158,10 +16158,18 @@ For claims or questions, please contact:
                 else:
                     entity_type = (qs.get('entity_type', [None])[0] or '').strip() or None
                     document_type = (qs.get('document_type', [None])[0] or '').strip() or None
+                    # SECURITY: cap the page size so a caller cannot ask for an
+                    # unbounded payload. The vault iterates the customer's own
+                    # documents, so this is a self-DoS at worst, but a hard cap
+                    # protects the worker from a stray "limit=10_000_000" client
+                    # bug or a deliberately abusive customer.
+                    DURABLE_OBJECTS_MAX_LIMIT = 1000
                     try:
                         limit = max(0, int(qs.get('limit', ['500'])[0]))
                     except (TypeError, ValueError):
                         limit = 500
+                    if limit > DURABLE_OBJECTS_MAX_LIMIT:
+                        limit = DURABLE_OBJECTS_MAX_LIMIT
                     payload = vault.get_vault(
                         target_customer_id,
                         entity_type=entity_type,
