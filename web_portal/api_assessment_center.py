@@ -259,8 +259,8 @@ def _document_owner(svc, document_id: str) -> Tuple[Optional[Dict[str, Any]], st
     if not record or not isinstance(record, dict):
         return None, ""
     owner = (
-        str(record.get("customer_id") or "").strip()
-        or str(record.get("uploaded_by_customer") or "").strip()
+        str(record.get("uploaded_by_customer") or "").strip()
+        or str(record.get("customer_id") or "").strip()
     )
     return record, owner
 
