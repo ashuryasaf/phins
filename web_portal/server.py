@@ -9887,9 +9887,36 @@ _INTERNAL_PROBE_SILENCE_PATHS = frozenset({
     '/api/security/firewall',
 })
 
+# SECURITY: Path prefixes that must NEVER have their access-log lines
+# suppressed, regardless of source IP or repetition. These are the standard
+# tripwires used to detect credential stuffing, brute force, lateral movement
+# from sibling services, and admin-endpoint probing. Suppressing them — even
+# under the guise of "log noise reduction" — meaningfully degrades incident
+# response. The path matching below uses ``startswith`` so e.g.
+# ``/api/admin/anything`` is covered.
+_NEVER_SUPPRESS_PATH_PREFIXES: Tuple[str, ...] = (
+    '/api/login',
+    '/api/auth/',
+    '/api/auth_',          # legacy variants like /api/auth_validate
+    '/api/session/',
+    '/api/admin/',
+    '/api/security/ids/acknowledge',  # IDS acknowledgements deserve a log
+)
+
+
+def _is_never_suppress_path(path: str) -> bool:
+    if not path:
+        return False
+    return any(path.startswith(prefix) for prefix in _NEVER_SUPPRESS_PATH_PREFIXES)
+
 
 def _should_silence_internal_probe(client_ip: str, path: str, code: object) -> bool:
     if not path or not str(code).startswith('4'):
+        return False
+    # SECURITY: never silence auth/admin/session paths, even from internal
+    # IPs. A compromised sibling service hitting these would otherwise be
+    # invisible in deploy logs.
+    if _is_never_suppress_path(path):
         return False
     if path not in _INTERNAL_PROBE_SILENCE_PATHS:
         return False
@@ -9929,6 +9956,15 @@ def _should_suppress_repeat_4xx(client_ip: str, path: str, code: object) -> Tupl
     if not path.startswith('/api/'):
         # Static assets and bot probes are handled elsewhere; we focus on
         # API routes which are most prone to monitor mis-configuration.
+        return False, 0
+
+    # SECURITY: never suppress auth-sensitive paths. Repeated 401/403 hits on
+    # /api/login, /api/admin/*, /api/auth/*, /api/session/* are the canonical
+    # signature of credential-stuffing / brute-force / lateral-movement
+    # attacks. The suppression mechanism would otherwise reduce them to one
+    # log line every ``_REPEAT_LOG_WINDOW_S`` seconds and severely degrade
+    # operator visibility.
+    if _is_never_suppress_path(path):
         return False, 0
 
     key = (client_ip or '-', path, code_str)
