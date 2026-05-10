@@ -18,8 +18,11 @@ that together fix the two issues reported by admins:
 
 from __future__ import annotations
 
+import json
+import threading
 import time
 import importlib
+from http.server import ThreadingHTTPServer
 
 import pytest
 
@@ -40,7 +43,9 @@ def _ensure_admin_user():
 
 def _make_admin_session():
     _ensure_admin_user()
-    token = 'pipeline-batch-test-token'
+    # Token must start with 'phins_' so validate_session() consults the
+    # in-memory SESSIONS dict for legacy/local sessions.
+    token = 'phins_pipeline-batch-test-token'
     portal.SESSIONS[token] = {
         'username': 'admin',
         'role': 'admin',
@@ -90,6 +95,12 @@ def _isolate_state():
         store = getattr(portal, store_name, None)
         if store is not None and hasattr(store, 'clear'):
             store.clear()
+    # Re-mark every port we use so the per-port test wipe inside the dispatcher
+    # does NOT clear our seeded data on the first request of each test.
+    # (root conftest's pytest_runtest_setup clears _TEST_PORTS_INITIALIZED.)
+    init_set = getattr(portal, '_TEST_PORTS_INITIALIZED', None)
+    if isinstance(init_set, set):
+        init_set.update({8000, 8769})
     yield
 
 
@@ -263,3 +274,151 @@ def test_database_dict_ttl_zero_disables_cache(monkeypatch):
     # Even a cache that was just populated should be considered stale when
     # caching is disabled.
     assert dd._is_cache_fresh() is False
+
+
+# ---------------------------------------------------------------------------
+# Authentication / authorization on the pipeline-process endpoints.
+#
+# These guard against the regression that the Cursor security automation
+# flagged as HIGH severity on PR #311: the new batch endpoint amplified the
+# privileged effects (auto-approve underwriting, activate policies, generate
+# billing) of the per-customer endpoint to every customer in one call. Both
+# endpoints must require an authenticated admin session.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope='module')
+def _pipeline_auth_server():
+    """Run a real ThreadingHTTPServer so we can exercise the dispatcher path
+    end-to-end (including session resolution from the Authorization header)."""
+    port = 8769
+    httpd = ThreadingHTTPServer(('127.0.0.1', port), portal.PortalHandler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    # Mark the port as already initialised so the per-port test wipe at the
+    # top of every dispatch does NOT clear our seeded state.
+    init_set = getattr(portal, '_TEST_PORTS_INITIALIZED', None)
+    if isinstance(init_set, set):
+        init_set.add(port)
+    yield port
+    try:
+        httpd.shutdown()
+    except Exception:
+        pass
+
+
+def _post(port: int, path: str, payload: dict, token: str | None = None):
+    import urllib.request
+    import urllib.error
+
+    headers = {'Content-Type': 'application/json'}
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    req = urllib.request.Request(
+        f'http://127.0.0.1:{port}{path}',
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode('utf-8'))
+        except Exception:
+            body = {}
+        return e.code, body
+
+
+def test_pipeline_process_all_rejects_unauthenticated(_pipeline_auth_server):
+    """No Authorization header => 403, no work performed."""
+    _seed_pending_customer(1)
+
+    status, body = _post(_pipeline_auth_server, '/api/admin/pipeline-process-all', {'auto_advance': True})
+    assert status == 403
+    assert 'admin' in (body.get('error') or '').lower()
+    # The application must NOT have been auto-approved.
+    assert portal.UNDERWRITING_APPLICATIONS['UW-BATCH-001']['status'] == 'pending'
+
+
+def test_pipeline_process_all_rejects_customer_session(_pipeline_auth_server):
+    """Customer-role session must be rejected — only admins may run this."""
+    _seed_pending_customer(1)
+
+    portal.USERS['shoshtest@example.com'] = {
+        **portal.hash_password('does-not-matter'),
+        'role': 'customer',
+        'name': 'Test Customer',
+        'customer_id': 'CUST-BATCH-001',
+    }
+    customer_token = 'phins_pipeline-test-customer-token'
+    portal.SESSIONS[customer_token] = {
+        'username': 'shoshtest@example.com',
+        'role': 'customer',
+        'customer_id': 'CUST-BATCH-001',
+        'expires': '2099-01-01T00:00:00',
+    }
+
+    status, body = _post(
+        _pipeline_auth_server,
+        '/api/admin/pipeline-process-all',
+        {'auto_advance': True},
+        token=customer_token,
+    )
+    assert status == 403
+    assert 'admin' in (body.get('error') or '').lower()
+    assert portal.UNDERWRITING_APPLICATIONS['UW-BATCH-001']['status'] == 'pending'
+
+
+def test_pipeline_process_all_accepts_admin_session(_pipeline_auth_server):
+    """Admin-role session must be accepted and the batch must run."""
+    _seed_pending_customer(1)
+    _seed_pending_customer(2)
+
+    admin_token = _make_admin_session()
+
+    status, body = _post(
+        _pipeline_auth_server,
+        '/api/admin/pipeline-process-all',
+        {'auto_advance': True},
+        token=admin_token,
+    )
+    assert status == 200, body
+    assert body.get('success') is True
+    assert body.get('total_customers') == 2
+    assert body.get('processed') == 2
+    assert body.get('errors_count') == 0
+    # Both applications now approved.
+    assert portal.UNDERWRITING_APPLICATIONS['UW-BATCH-001']['status'] == 'approved'
+    assert portal.UNDERWRITING_APPLICATIONS['UW-BATCH-002']['status'] == 'approved'
+
+
+def test_pipeline_process_single_rejects_unauthenticated(_pipeline_auth_server):
+    """Per-customer endpoint must require admin too — same blast radius per-call."""
+    _seed_pending_customer(1)
+
+    status, body = _post(
+        _pipeline_auth_server,
+        '/api/admin/pipeline-process/CUST-BATCH-001',
+        {'auto_advance': True},
+    )
+    assert status == 403
+    assert 'admin' in (body.get('error') or '').lower()
+    assert portal.UNDERWRITING_APPLICATIONS['UW-BATCH-001']['status'] == 'pending'
+
+
+def test_pipeline_process_single_accepts_admin_session(_pipeline_auth_server):
+    _seed_pending_customer(1)
+    admin_token = _make_admin_session()
+
+    status, body = _post(
+        _pipeline_auth_server,
+        '/api/admin/pipeline-process/CUST-BATCH-001',
+        {'auto_advance': True},
+        token=admin_token,
+    )
+    assert status == 200, body
+    assert body.get('success') is True
+    assert body.get('customer_id') == 'CUST-BATCH-001'
+    assert portal.UNDERWRITING_APPLICATIONS['UW-BATCH-001']['status'] == 'approved'
