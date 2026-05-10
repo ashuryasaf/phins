@@ -53,7 +53,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +242,68 @@ def _service():
     return get_assessment_center()
 
 
+def _document_owner(svc, document_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Return ``(record, owner_customer_id)`` for ``document_id``.
+
+    ``record`` is ``None`` when the document does not exist. ``owner`` is the
+    canonical customer_id stored on the document record (preferring the
+    explicit ``customer_id`` field, falling back to ``uploaded_by_customer``)
+    or the empty string when neither is set. Errors are swallowed and surface
+    as ``(None, "")`` so callers can decide between 404 and 500.
+    """
+    try:
+        record = svc.document_service.get_document(document_id, include_data=False)
+    except Exception as exc:
+        logger.exception("document lookup failed for %s: %s", document_id, exc)
+        return None, ""
+    if not record or not isinstance(record, dict):
+        return None, ""
+    owner = (
+        str(record.get("uploaded_by_customer") or "").strip()
+        or str(record.get("customer_id") or "").strip()
+    )
+    return record, owner
+
+
+def _ensure_documents_owned_by(
+    svc,
+    customer_id: str,
+    document_ids: Optional[Iterable[str]],
+    *,
+    role: str,
+) -> Tuple[bool, Optional[Tuple[int, Dict[str, str]]]]:
+    """Verify every supplied ``document_id`` belongs to ``customer_id``.
+
+    Returns ``(ok, error_tuple)``. ``error_tuple`` is ``None`` on success and
+    otherwise ``(status_code, {"error": "..."})`` ready to return from the
+    dispatcher. Admins bypass the check (they may legitimately operate on
+    any customer's documents).
+
+    SECURITY: Required to prevent IDOR on caller-supplied ``document_ids``.
+    Even when downstream services intrinsically scope to ``customer_id``'s
+    own facts (``describe_data_with_data`` and friends), failing fast here
+    keeps every code path uniformly safe and avoids enumeration via the
+    response shape.
+    """
+    if role in _ADMIN_ROLES:
+        return True, None
+    if not document_ids:
+        return True, None
+    for doc_id in document_ids:
+        if not isinstance(doc_id, str) or not doc_id.strip():
+            return False, (400, {"error": "Invalid document_id: must be a non-blank string"})
+        record, owner = _document_owner(svc, doc_id.strip())
+        if record is None:
+            return False, (404, {"error": f"Document {doc_id} not found"})
+        if _normalise_customer_id(owner) != _normalise_customer_id(customer_id):
+            logger.warning(
+                "cross-tenant document access rejected: doc=%s owner=%r requester=%s",
+                doc_id, owner, customer_id,
+            )
+            return False, (403, {"error": "Document not accessible"})
+    return True, None
+
+
 def _policy_documents() -> Dict[str, Any]:
     """Return the live legacy POLICY_DOCUMENTS dict, or an empty dict.
 
@@ -306,8 +368,18 @@ def export_analysis_binary(
         return _err(400, "document_ids must be a list")
     options = body.get("options") if isinstance(body.get("options"), dict) else {}
 
+    svc = _service()
+    role = str(session.get("role") or "").lower()
+
+    # SECURITY: identical guard to /analysis - reject foreign document_ids
+    # before they can flow into the export pipeline.
+    ok, err_resp = _ensure_documents_owned_by(svc, cust, doc_ids, role=role)
+    if not ok and err_resp is not None:
+        status, body_dict = err_resp
+        return _err(status, body_dict.get("error", "Document not accessible"))
+
     try:
-        payload, mime, filename = _service().export_analysis(
+        payload, mime, filename = svc.export_analysis(
             cust, analysis_type, export_format,
             document_ids=doc_ids, options=options,
         )
@@ -748,6 +820,11 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     qp = qp[0] if qp else None
                 if qp:
                     doc_ids = [d.strip() for d in str(qp).split(",") if d.strip()]
+            # SECURITY: reject foreign document_ids before any service work.
+            requester_role = str(session.get("role") or "").lower() if session else ""
+            ok, err_resp = _ensure_documents_owned_by(svc, cust, doc_ids, role=requester_role)
+            if not ok and err_resp is not None:
+                return err_resp
             return 200, svc.describe_data_with_data(cust, doc_ids)
         if resource == "documents":
             try:
@@ -840,6 +917,17 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 return 403, {"error": err}
 
             svc = _service()
+
+            # SECURITY: enforce document ownership before extraction. Without
+            # this check any authenticated customer could pass another
+            # customer's ``document_id`` and receive the extracted PII
+            # (identity numbers, medical conditions, etc.) in the response,
+            # plus have those facts persisted under the attacker's profile.
+            # Admins legitimately scan on behalf of any customer.
+            ok, err_resp = _ensure_documents_owned_by(svc, cust, [doc_id], role=role)
+            if not ok and err_resp is not None:
+                return err_resp
+
             assessment = svc.assess_document(
                 doc_id,
                 customer_id=cust or None,
@@ -952,6 +1040,17 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 return 400, {"error": "document_ids must be a list"}
             options = body.get("options") if isinstance(body.get("options"), dict) else {}
             svc = _service()
+
+            # SECURITY: defense-in-depth. ``describe_data_with_data`` only
+            # iterates the caller's own facts so a foreign ``document_id``
+            # would already produce zero results, but failing fast keeps
+            # every code path uniformly safe and forecloses future
+            # regressions if the analysis pipeline gains new fact-loading
+            # paths that aren't intrinsically customer-scoped.
+            ok, err_resp = _ensure_documents_owned_by(svc, cust, doc_ids, role=role)
+            if not ok and err_resp is not None:
+                return err_resp
+
             try:
                 return 200, svc.run_analysis(
                     cust, analysis_type,
@@ -989,6 +1088,19 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             }
 
         if path == "/api/assessment-center/import":
+            # SECURITY: imports inject arbitrary facts (identity, medical,
+            # insurance, savings) into the customer 360 / risk model, with
+            # no per-fact provenance check beyond the pack's own SHA-256.
+            # A non-admin caller importing a pack — even one scoped to
+            # their own customer_id — could inflate or fabricate the
+            # signals that downstream BI / actuarial / risk endpoints
+            # consume. Match the gating already applied to
+            # /api/assessment-center/backfill (also admin-only) so the
+            # whole class of bulk-fact-mutation endpoints is uniformly
+            # restricted.
+            if role not in _ADMIN_ROLES:
+                return 403, {"error": "Admin role required"}
+
             pack = body.get("pack")
             if not isinstance(pack, dict):
                 return 400, {"error": "pack object required"}
