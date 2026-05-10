@@ -1263,9 +1263,9 @@ class TradingPlatformService:
                 continue
             bars.append({
                 "date": b.get("date"),
-                "open": _sf(b.get("open")) or close,
-                "high": _sf(b.get("high")) or close,
-                "low": _sf(b.get("low")) or close,
+                "open": close if _sf(b.get("open")) is None else _sf(b.get("open")),
+                "high": close if _sf(b.get("high")) is None else _sf(b.get("high")),
+                "low": close if _sf(b.get("low")) is None else _sf(b.get("low")),
                 "close": close,
                 "volume": b.get("volume") or 0,
                 "vwap": None,
