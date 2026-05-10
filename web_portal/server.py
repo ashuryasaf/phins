@@ -9998,6 +9998,35 @@ def _should_suppress_repeat_4xx(client_ip: str, path: str, code: object) -> Tupl
 
 
 class PortalHandler(BaseHTTPRequestHandler):
+    def handle(self):  # type: ignore[override]
+        # Wrap the request lifecycle so that a client disconnecting mid-response
+        # (very common on Railway: the edge proxy and dashboard polling clients
+        # frequently close sockets before slow JSON bodies finish streaming)
+        # does not propagate as an unhandled exception. Without this the
+        # ``socketserver`` BaseServer prints a full traceback every time, which
+        # historically dominated the deploy logs — see /api/billing/transactions
+        # 500 + BrokenPipeError fallout. Any other exception still propagates so
+        # real bugs remain visible.
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as exc:
+            try:
+                client_ip = self.client_address[0] if self.client_address else '-'
+            except Exception:
+                client_ip = '-'
+            try:
+                path_value = getattr(self, 'path', '') or '-'
+            except Exception:
+                path_value = '-'
+            try:
+                print(
+                    f"[server] client {client_ip} disconnected during "
+                    f"{path_value} ({type(exc).__name__})",
+                    flush=True,
+                )
+            except Exception:
+                pass
+
     # Hook points for BaseHTTPRequestHandler logging. We keep the default
     # behavior for real traffic but suppress noisy bot-scan 404/403s that would
     # otherwise flood the deploy logs (both the `log_error` line from
@@ -17203,12 +17232,28 @@ For claims or questions, please contact:
                 # Sort by date desc and limit
                 transactions.sort(key=lambda x: x.get('date', ''), reverse=True)
                 transactions = transactions[:100]
-                
-                self._set_json_headers()
-                self.wfile.write(json.dumps({'transactions': transactions}).encode('utf-8'))
+                payload = json.dumps({'transactions': transactions}).encode('utf-8')
             except Exception as e:
-                self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': str(e), 'transactions': []}).encode('utf-8'))
+                # Build / serialization failure happened before any bytes hit
+                # the wire — we can still cleanly return a 500.
+                try:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e), 'transactions': []}).encode('utf-8'))
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    pass
+                return
+
+            # Network write phase. Once headers go out we can no longer change
+            # the status, so don't try a 500 fallback here (that was the cause
+            # of the secondary BrokenPipeError flooding Railway logs).
+            try:
+                self._set_json_headers()
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                # Client disconnected mid-response — common on Railway when the
+                # edge proxy or dashboard polling client closes the connection
+                # before the body is fully delivered. Nothing to recover.
+                pass
             return
         
         # ========== TRANSACTION LEDGER API ==========
