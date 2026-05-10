@@ -1088,6 +1088,19 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             }
 
         if path == "/api/assessment-center/import":
+            # SECURITY: imports inject arbitrary facts (identity, medical,
+            # insurance, savings) into the customer 360 / risk model, with
+            # no per-fact provenance check beyond the pack's own SHA-256.
+            # A non-admin caller importing a pack — even one scoped to
+            # their own customer_id — could inflate or fabricate the
+            # signals that downstream BI / actuarial / risk endpoints
+            # consume. Match the gating already applied to
+            # /api/assessment-center/backfill (also admin-only) so the
+            # whole class of bulk-fact-mutation endpoints is uniformly
+            # restricted.
+            if role not in _ADMIN_ROLES:
+                return 403, {"error": "Admin role required"}
+
             pack = body.get("pack")
             if not isinstance(pack, dict):
                 return 400, {"error": "pack object required"}
