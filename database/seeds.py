@@ -642,8 +642,20 @@ def seed_sample_data(session=None):
 
         # Create underwriting application for primary customer (idempotent).
         # This is the latest application that can be used for risk assessment reports.
-        uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
-        existing_uw = underwriting_repo.find_one_by(id=uw_asaf_id)
+        #
+        # IMPORTANT: previously this used `f"UW-ASAF-{now.strftime('%Y%m%d')}-001"`
+        # which generated a NEW id every calendar day, so each Railway restart
+        # crossing midnight inserted yet another orphaned UW row for asaf and
+        # left every prior day's row in PostgreSQL forever. Use a stable id
+        # and reuse any pre-existing seed UW (date-stamped or otherwise) for
+        # asaf's health policy so prod data accumulated under the old scheme
+        # is preserved without being duplicated.
+        STABLE_UW_ASAF_ID = 'UW-ASAF-HEALTH-001'
+        existing_uw = (
+            underwriting_repo.find_one_by(id=STABLE_UW_ASAF_ID)
+            or underwriting_repo.get_by_policy('POL-ASAF-HEALTH-001')
+        )
+        uw_asaf_id = existing_uw.id if existing_uw else STABLE_UW_ASAF_ID
         if not existing_uw:
             try:
                 # Only insert if parent policy exists to avoid FK violation

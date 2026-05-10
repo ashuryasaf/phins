@@ -44140,9 +44140,28 @@ def run_server(port: int = PORT) -> None:
     
     # Initialize underwriting application for asaf@assurance.co.il
     # DATA INTEGRITY: All fields represent actual applicant data from pipeline
+    #
+    # IMPORTANT: previously this also used `f"UW-ASAF-{now.strftime('%Y%m%d')}-001"`
+    # which produced a NEW id every calendar day. Combined with the parallel
+    # seed in database/seeds.py that wrote the same date-stamped id, every
+    # restart crossing midnight inserted yet another orphaned UW row for asaf
+    # in PostgreSQL while leaving every prior day's row in place. Use the
+    # stable id created by seeds.py (or any pre-existing seed UW for asaf's
+    # health policy) so we enrich the same row instead of growing a new one
+    # every day.
     print("📋 Initializing underwriting applications with verified pipeline data...")
     try:
-        uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
+        STABLE_UW_ASAF_ID = 'UW-ASAF-HEALTH-001'
+        uw_asaf_id = STABLE_UW_ASAF_ID
+        if STABLE_UW_ASAF_ID not in UNDERWRITING_APPLICATIONS:
+            for candidate_id, candidate in UNDERWRITING_APPLICATIONS.items():
+                payload = candidate if isinstance(candidate, dict) else {}
+                if (
+                    payload.get('customer_id') == 'CUST-ASAF-001'
+                    and payload.get('policy_id') == 'POL-ASAF-HEALTH-001'
+                ):
+                    uw_asaf_id = candidate_id
+                    break
         # Always ensure medical data is present (update if exists, create if not)
         existing_app = UNDERWRITING_APPLICATIONS.get(uw_asaf_id)
         needs_update = existing_app and not existing_app.get('disability_percentage')
@@ -44162,9 +44181,9 @@ def run_server(port: int = PORT) -> None:
                 'coverage_amount': 500000.0,
                 'annual_premium': 2294.25,   # Corrected: $500K, age 47, moderate
                 'monthly_premium': 191.19,
-                'status': 'pending',
-                'risk_score': 'moderate',
-                'risk_assessment': 'moderate',
+                'status': base_data.get('status', 'pending'),
+                'risk_score': base_data.get('risk_score', 'moderate'),
+                'risk_assessment': base_data.get('risk_assessment', 'moderate'),
                 # Demographic data - from application form
                 'age': 47,  # Correct age as per applicant data
                 'gender': 'male',
@@ -44223,8 +44242,8 @@ def run_server(port: int = PORT) -> None:
                 'medical_exam_completed': False,
                 'premium_adjustment': 35,  # 35% loading due to medical conditions
                 # Timestamps
-                'created_date': now.isoformat(),
-                'submitted_date': now.isoformat(),
+                'created_date': base_data.get('created_date', now.isoformat()),
+                'submitted_date': base_data.get('submitted_date', now.isoformat()),
                 'updated_date': now.isoformat(),
                 # Data source tracking for audit
                 'data_sources': {
