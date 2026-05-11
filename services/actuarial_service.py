@@ -1632,8 +1632,8 @@ def build_fefferman_reference(start_age: Optional[int] = None,
     loss ratio shown on the public one-pager.
     """
     m = PHINS_FEFFERMAN_MODEL
-    start_age = int(start_age or m['reference_start_age'])
-    projection_years = int(projection_years or m['reference_projection_years'])
+    start_age = int(start_age if start_age is not None else m['reference_start_age'])
+    projection_years = int(projection_years if projection_years is not None else m['reference_projection_years'])
     life = float(life_sum if life_sum is not None else m['reference_life_sum'])
     disability = life * m['disability_share_of_life']
 
@@ -1840,7 +1840,7 @@ class ReserveCalculator:
         annual_premium = float(portfolio.get('total_annual_premium', 0.0) or 0.0)
         annual_expected_claims = float(risk_metrics.get('annual_expected_claims', 0.0) or 0.0)
         avg_term = float(risk_metrics.get('avg_term_years', 0.0) or 0.0)
-        gross_profit = float(profitability.get('net_profit', 0.0) or 0.0)
+        sim_net_profit = float(profitability.get('net_profit', 0.0) or 0.0)
         total_pv_claims = float(risk_metrics.get('total_expected_claims', 0.0) or 0.0)
         total_risk_premium = float(profitability.get('risk_premium', 0.0) or 0.0)
         savings_premium = float(profitability.get('savings_premium', 0.0) or 0.0)
@@ -1877,7 +1877,7 @@ class ReserveCalculator:
             in_force_claims = annual_expected_claims * in_force_factor
 
             # Profit waterfall:
-            operating_profit = gross_profit * in_force_factor
+            operating_profit = sim_net_profit * in_force_factor
             tax_amount = operating_profit * config.tax_pct
             after_tax_profit = operating_profit - tax_amount
             dividends = after_tax_profit * config.dividends_pct

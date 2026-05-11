@@ -25596,9 +25596,8 @@ For claims or questions, please contact:
                 # Optional: route saving allocation through SimulationParams
                 if 'savings_allocation_pct' in data:
                     try:
-                        params.savings_allocation_pct = float(data.get('savings_allocation_pct') or 0.0) / 100.0 \
-                            if float(data.get('savings_allocation_pct') or 0.0) > 1.0 \
-                            else float(data.get('savings_allocation_pct') or 0.0)
+                        raw_pct = float(data.get('savings_allocation_pct') or 0.0)
+                        params.savings_allocation_pct = raw_pct / 100.0 if raw_pct > 1.0 else raw_pct
                     except (TypeError, ValueError):
                         params.savings_allocation_pct = 0.0
 
