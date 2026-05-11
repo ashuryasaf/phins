@@ -1868,6 +1868,7 @@ class ReserveCalculator:
             in_force_factors.append(in_force_factors[-1] * max(0.0, 1.0 - lr))
 
         cumulative_csm_release = 0.0
+        total_coverage_units = sum(in_force_factors[y - 1] for y in range(1, projection_years + 1)) or 1.0
 
         for year_index in range(1, projection_years + 1):
             lapse_rate = self.tables.get_lapse_rate(year_index)
@@ -1894,12 +1895,7 @@ class ReserveCalculator:
             # IFRS 17 release: CSM amortized over remaining coverage units;
             # BEL and RA wind down proportionally to in-force decay.
             if config.csm_release_pattern == 'coverage_units':
-                # weight by current in-force factor against the remaining horizon
-                remaining_units = sum(
-                    in_force_factors[y - 1]
-                    for y in range(year_index, projection_years + 1)
-                ) or 1.0
-                csm_release = (opening_csm * in_force_factor) / remaining_units
+                csm_release = (opening_csm * in_force_factor) / total_coverage_units
             else:
                 csm_release = opening_csm / projection_years if projection_years else 0.0
             csm_release = min(opening_csm, csm_release)
