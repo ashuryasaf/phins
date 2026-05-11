@@ -1861,9 +1861,17 @@ class ReserveCalculator:
         cumulative_reserve_contrib = 0.0
         cumulative_savings_contrib = 0.0
 
+        # Precompute cumulative in-force factors as product of survival rates
+        in_force_factors = [1.0]
+        for y in range(1, projection_years + 1):
+            lr = self.tables.get_lapse_rate(y)
+            in_force_factors.append(in_force_factors[-1] * max(0.0, 1.0 - lr))
+
+        cumulative_csm_release = 0.0
+
         for year_index in range(1, projection_years + 1):
             lapse_rate = self.tables.get_lapse_rate(year_index)
-            in_force_factor = max(0.0, 1.0 - lapse_rate) ** (year_index - 1)
+            in_force_factor = in_force_factors[year_index - 1]
             in_force_premium = annual_premium * in_force_factor
             in_force_claims = annual_expected_claims * in_force_factor
 
@@ -1888,8 +1896,8 @@ class ReserveCalculator:
             if config.csm_release_pattern == 'coverage_units':
                 # weight by current in-force factor against the remaining horizon
                 remaining_units = sum(
-                    (1.0 - self.tables.get_lapse_rate(y + 1)) ** y
-                    for y in range(year_index - 1, projection_years)
+                    in_force_factors[y - 1]
+                    for y in range(year_index, projection_years + 1)
                 ) or 1.0
                 csm_release = (opening_csm * in_force_factor) / remaining_units
             else:
@@ -1898,7 +1906,8 @@ class ReserveCalculator:
 
             bel_balance = opening_bel * max(0.0, 1.0 - (year_index / avg_term))
             ra_balance = bel_balance * config.risk_adjustment_pct
-            csm_balance = max(0.0, opening_csm - csm_release * year_index)
+            cumulative_csm_release += csm_release
+            csm_balance = max(0.0, opening_csm - cumulative_csm_release)
             ifrs17_total_liability = bel_balance + ra_balance + csm_balance + ibnr
 
             closing_reserve = opening_reserve + reserve_contribution
@@ -2033,9 +2042,15 @@ def _normalize_rate_bracket(row: Dict[str, Any]) -> Optional[Dict[str, float]]:
                 return candidates[name]
         return None
 
+    def pick_rate(*names: str):
+        for name in names:
+            if name in candidates and candidates[name] not in (None, ''):
+                return candidates[name], name
+        return None, None
+
     age_min = pick('age_min', 'age min', 'age_from', 'min_age', 'from')
     age_max = pick('age_max', 'age max', 'age_to', 'max_age', 'to')
-    rate = pick(
+    rate, rate_source = pick_rate(
         'rate_per_1000', 'rate per 1000', 'rate', 'qx_per_1000', 'qx', 'ix', 'ix_per_1000'
     )
     if age_min is None or age_max is None or rate is None:
@@ -2043,7 +2058,7 @@ def _normalize_rate_bracket(row: Dict[str, Any]) -> Optional[Dict[str, float]]:
     try:
         rate_value = float(rate)
         # If the values look like raw qx/ix probabilities (<= 0.5) convert to per-1000.
-        if rate_value <= 0.5:
+        if rate_source in ('qx', 'ix') and rate_value <= 0.5:
             rate_value = rate_value * 1000.0
         return {
             'age_min': int(float(age_min)),
