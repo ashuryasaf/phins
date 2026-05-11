@@ -692,6 +692,10 @@
             <span class="nav-icon">🎲</span>
             <span>Portfolio Simulator</span>
           </div>
+          <div class="nav-item" onclick="showSection('reserves')">
+            <span class="nav-icon">🏦</span>
+            <span>Reserves &amp; IFRS 17</span>
+          </div>
           <div class="nav-item" onclick="showSection('reinsurance')">
             <span class="nav-icon">🛡️</span>
             <span>Reinsurance Hedge</span>
@@ -701,7 +705,23 @@
             <span>Automation Metrics</span>
           </div>
         </div>
-        
+
+        <div class="nav-section">
+          <div class="nav-section-title">Research &amp; Audit</div>
+          <div class="nav-item" onclick="showSection('fefferman')">
+            <span class="nav-icon">📐</span>
+            <span>Fefferman Reference</span>
+          </div>
+          <div class="nav-item" onclick="showSection('uploaded')">
+            <span class="nav-icon">📥</span>
+            <span>Uploaded Tables</span>
+          </div>
+          <div class="nav-item" onclick="showSection('reports')">
+            <span class="nav-icon">📑</span>
+            <span>Reports &amp; Exports</span>
+          </div>
+        </div>
+
         <div class="nav-section">
           <div class="nav-section-title">Integrations</div>
           <div class="nav-item" onclick="showSection('integrations')">
@@ -1096,6 +1116,15 @@
               </div>
             </div>
             
+            <h4 style="margin:20px 0 12px;">Savings vs Insurance Allocation</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Savings Allocation %</label>
+                <input type="number" id="sim-savings-allocation" class="form-input" value="0" min="0" max="95" step="0.5">
+                <small style="color:var(--text-light);">Share of total annual premium routed to the long-term savings fund. Pure-risk products use 0%.</small>
+              </div>
+            </div>
+
             <h4 style="margin:20px 0 12px;">Demographics (Reporting Only)</h4>
             <div class="form-row">
               <div class="form-group">
@@ -1253,6 +1282,220 @@
           </div>
         </section>
         
+        <!-- Reserves & IFRS 17 Section -->
+        <section id="section-reserves" class="section">
+          <h2 class="section-title">🏦 Reserves &amp; IFRS 17 Projection</h2>
+
+          <div class="alert alert-warning">
+            Reserve, IBNR and IFRS 17 figures are derived from the saved actuarial simulation. The same inputs always produce the same yearly projection so internal and external auditors can reconcile every figure to source.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Inputs</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID</label>
+                <input type="text" id="reserve-sim-id" class="form-input" placeholder="Run the simulator to populate this field automatically">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Projection Years</label>
+                <input type="number" id="reserve-years" class="form-input" value="5" min="1" max="30">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Initial Reserve ($)</label>
+                <input type="number" id="reserve-initial" class="form-input" value="0" min="0" step="1000">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Dividends % (after tax)</label>
+                <input type="number" id="reserve-dividends" class="form-input" value="30" min="0" max="100" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tax %</label>
+                <input type="number" id="reserve-tax" class="form-input" value="23" min="0" max="60" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">IBNR % (of expected claims)</label>
+                <input type="number" id="reserve-ibnr" class="form-input" value="10" min="0" max="100" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Reserve Contribution % (of retained)</label>
+                <input type="number" id="reserve-contrib" class="form-input" value="40" min="0" max="100" step="0.5">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">IFRS 17 Risk Adjustment % of BEL</label>
+                <input type="number" id="reserve-ra" class="form-input" value="6" min="0" max="50" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">CSM Release Pattern</label>
+                <select id="reserve-csm" class="form-input">
+                  <option value="straight_line">Straight line</option>
+                  <option value="coverage_units">Coverage units</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Savings Allocation %</label>
+                <input type="number" id="reserve-savings-alloc" class="form-input" value="0" min="0" max="95" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Savings Yield %</label>
+                <input type="number" id="reserve-savings-yield" class="form-input" value="4.5" min="-50" max="50" step="0.1">
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="runReserveProjection()">📈 Project Reserves &amp; Liabilities</button>
+            <p id="reserve-status" class="research-note" style="margin-top:12px;">Run a portfolio simulation first, then project the reserve waterfall.</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Annual Reserve &amp; IFRS 17 Waterfall</div>
+            <div id="reserve-results">
+              <p style="color:var(--text-light);">Results will appear here.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Verifiable Data Integrity Checks</div>
+            <div id="reserve-integrity">
+              <p style="color:var(--text-light);">Each projection ships with deterministic identity checks (profit waterfall reconciles, CSM ≥ 0, savings balance ≥ 0). They are surfaced here for auditors.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Fefferman Reference Section -->
+        <section id="section-fefferman" class="section">
+          <h2 class="section-title">📐 Fefferman Risk Reference (Locked Source)</h2>
+          <div class="alert alert-warning">
+            This panel reproduces the locked actuarial source block published on
+            <a href="https://www.phins.ai/phins-risk-1pager-fefferman.html" target="_blank" rel="noopener noreferrer">phins.ai/phins-risk-1pager-fefferman.html</a>.
+            Every figure is computed server-side and must match the public one-pager exactly.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Reference Inputs</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Start Age</label>
+                <input type="number" id="fef-start-age" class="form-input" value="35" min="3" max="80">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Projection Years</label>
+                <input type="number" id="fef-years" class="form-input" value="5" min="1" max="20">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Life Sum ($)</label>
+                <input type="number" id="fef-life-sum" class="form-input" value="500000" min="10000" step="10000">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button class="btn btn-primary" onclick="loadFeffermanReference()">Recalculate</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Reference Forecast</div>
+            <div id="fefferman-results">
+              <p style="color:var(--text-light);">Loading…</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Uploaded Tables Section -->
+        <section id="section-uploaded" class="section">
+          <h2 class="section-title">📥 Uploaded Actuarial Tables</h2>
+
+          <div class="alert alert-warning">
+            Uploaded Excel/CSV/JSON tables (for example, the mortality table for Caucasian women or a permanent-disability cohort) are stored as new tables. Any uploaded table can be promoted into the live mortality or disability rate band so it is used by future simulations and reserve projections.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Upload New Table</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">Use the existing actuarial admin upload to send .xlsx / .csv / .json with columns like <code>age_min, age_max, rate_per_1000</code> or raw <code>qx</code> probabilities.</p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">File</label>
+                <input type="file" id="upload-actuary-file" class="form-input" accept=".xlsx,.csv,.json">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Name</label>
+                <input type="text" id="upload-actuary-name" class="form-input" placeholder="e.g. Mortality - Caucasian Women">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Table Type</label>
+                <select id="upload-actuary-type" class="form-input">
+                  <option value="mortality_rates">mortality_rates</option>
+                  <option value="disability_incidence_rates">disability_incidence_rates</option>
+                  <option value="pricing">pricing</option>
+                  <option value="lapse">lapse</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Version</label>
+                <input type="text" id="upload-actuary-version" class="form-input" placeholder="auto">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Effective Date</label>
+                <input type="date" id="upload-actuary-effective" class="form-input">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button class="btn btn-success" onclick="uploadActuaryTable()">📤 Upload</button>
+              </div>
+            </div>
+            <p id="upload-actuary-status" class="research-note" style="margin-top:12px;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Catalog</div>
+            <table class="data-table" id="uploaded-tables-list">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Version</th>
+                  <th>Effective</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="7" style="text-align:center;">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card" id="uploaded-table-preview" style="display:none;">
+            <div class="card-title">Preview</div>
+            <div id="uploaded-table-preview-body"></div>
+          </div>
+        </section>
+
+        <!-- Reports & Exports Section -->
+        <section id="section-reports" class="section">
+          <h2 class="section-title">📑 Reports &amp; Exports</h2>
+
+          <div class="alert alert-warning">
+            Reports bundle the saved simulation, reserve projection, Fefferman reference data, and data-integrity checks into a single Excel workbook or PDF that internal/external auditors can verify line-by-line.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Generate Audit-Ready Report</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID</label>
+                <input type="text" id="report-sim-id" class="form-input" placeholder="Use latest simulation by default">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
+                <button class="btn btn-success" onclick="downloadActuaryReport('xlsx')">📊 Download Excel</button>
+                <button class="btn btn-primary" onclick="downloadActuaryReport('pdf')">🧾 Download PDF</button>
+              </div>
+            </div>
+            <p id="report-status" class="research-note" style="margin-top:12px;">Reports embed the current reserve projection (using the values currently entered in the Reserves &amp; IFRS 17 form) so every download is reproducible.</p>
+          </div>
+        </section>
+
         <!-- Automation Metrics Section -->
         <section id="section-automation" class="section">
           <h2 class="section-title">🤖 Automation Quality Metrics</h2>
@@ -1413,6 +1656,8 @@
         loadVersions();
         loadAuditLog();
         loadIntegrations();
+        loadFeffermanReference();
+        loadUploadedTables();
         
       } catch (err) {
         console.error('Auth error:', err);
@@ -2283,7 +2528,8 @@
           hispanic: parseFloat(document.getElementById('eth-hispanic').value),
           asian: parseFloat(document.getElementById('eth-asian').value),
           other: parseFloat(document.getElementById('eth-other').value)
-        }
+        },
+        savings_allocation_pct: (parseFloat(document.getElementById('sim-savings-allocation').value) || 0) / 100
       };
       
       try {
@@ -2299,7 +2545,19 @@
         const data = await res.json();
         
         if (data.success) {
+          currentSimulation = data.simulation;
           renderSimulationResults(data.simulation);
+          // Auto-fill reserves and reports forms with this simulation id
+          const reserveIdField = document.getElementById('reserve-sim-id');
+          if (reserveIdField) reserveIdField.value = data.simulation.simulation_id;
+          const reportIdField = document.getElementById('report-sim-id');
+          if (reportIdField) reportIdField.value = data.simulation.simulation_id;
+          const reinsIdField = document.getElementById('reins-simulation-id');
+          if (reinsIdField) reinsIdField.value = data.simulation.simulation_id;
+          // Pre-fill the reserve savings allocation field from the simulator input
+          const simSavings = document.getElementById('sim-savings-allocation');
+          const reserveSavings = document.getElementById('reserve-savings-alloc');
+          if (simSavings && reserveSavings) reserveSavings.value = simSavings.value;
         } else {
           resultsDiv.innerHTML = `<div class="alert alert-danger">❌ Error: ${data.error}</div>`;
         }
@@ -2588,6 +2846,339 @@
       }
     }
     
+    // =====================================================================
+    // RESERVES & IFRS 17 PROJECTION
+    // =====================================================================
+    async function runReserveProjection() {
+      const statusEl = document.getElementById('reserve-status');
+      const resultsEl = document.getElementById('reserve-results');
+      const integrityEl = document.getElementById('reserve-integrity');
+      const simId = (document.getElementById('reserve-sim-id').value || currentSimulation?.simulation_id || '').trim();
+      if (!simId) {
+        statusEl.textContent = 'Run a portfolio simulation first so the reserve math is linked to an actuarial snapshot.';
+        return;
+      }
+      statusEl.textContent = 'Calculating reserves…';
+      const payload = {
+        simulation_id: simId,
+        projection_years: parseInt(document.getElementById('reserve-years').value) || 5,
+        initial_reserve: parseFloat(document.getElementById('reserve-initial').value) || 0,
+        dividends_pct: (parseFloat(document.getElementById('reserve-dividends').value) || 0) / 100,
+        tax_pct: (parseFloat(document.getElementById('reserve-tax').value) || 0) / 100,
+        ibnr_pct: (parseFloat(document.getElementById('reserve-ibnr').value) || 0) / 100,
+        reserve_contribution_pct: (parseFloat(document.getElementById('reserve-contrib').value) || 0) / 100,
+        risk_adjustment_pct: (parseFloat(document.getElementById('reserve-ra').value) || 0) / 100,
+        csm_release_pattern: document.getElementById('reserve-csm').value,
+        savings_allocation_pct: (parseFloat(document.getElementById('reserve-savings-alloc').value) || 0) / 100,
+        savings_yield_pct: (parseFloat(document.getElementById('reserve-savings-yield').value) || 0) / 100
+      };
+      try {
+        const res = await fetch('/api/actuarial/reserves/project', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        renderReserveProjection(data.projection);
+        statusEl.textContent = `Reserve projection for ${simId} (${data.projection.projection_years} years).`;
+      } catch (err) {
+        statusEl.textContent = `Reserve projection failed: ${err.message}`;
+        resultsEl.innerHTML = `<p class="text-danger">${err.message}</p>`;
+        integrityEl.innerHTML = '';
+      }
+    }
+
+    function renderReserveProjection(projection) {
+      const resultsEl = document.getElementById('reserve-results');
+      const integrityEl = document.getElementById('reserve-integrity');
+      if (!projection) {
+        resultsEl.innerHTML = '<p class="text-danger">No projection returned.</p>';
+        return;
+      }
+      const totals = projection.totals || {};
+      const rows = (projection.yearly_projection || []).map((row) => `
+        <tr>
+          <td>${row.year}</td>
+          <td>${(row.in_force_factor || 0).toFixed(4)}</td>
+          <td>${fmtCurrency(row.in_force_premium)}</td>
+          <td>${fmtCurrency(row.in_force_expected_claims)}</td>
+          <td>${fmtCurrency(row.operating_profit)}</td>
+          <td>${fmtCurrency(row.tax)}</td>
+          <td>${fmtCurrency(row.after_tax_profit)}</td>
+          <td>${fmtCurrency(row.dividends)}</td>
+          <td>${fmtCurrency(row.reserve_contribution)}</td>
+          <td>${fmtCurrency(row.closing_reserve)}</td>
+          <td>${fmtCurrency(row.ibnr_provision)}</td>
+          <td>${fmtCurrency(row.ifrs17?.bel_balance || 0)}</td>
+          <td>${fmtCurrency(row.ifrs17?.risk_adjustment || 0)}</td>
+          <td>${fmtCurrency(row.ifrs17?.csm_release || 0)}</td>
+          <td>${fmtCurrency(row.ifrs17?.csm_balance || 0)}</td>
+          <td>${fmtCurrency(row.savings_fund?.contribution || 0)}</td>
+          <td>${fmtCurrency(row.savings_fund?.closing_balance || 0)}</td>
+        </tr>
+      `).join('');
+
+      resultsEl.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Closing Reserve</div><div class="stat-value">${fmtCurrency(totals.closing_reserve)}</div></div>
+          <div class="stat-card success"><div class="stat-label">Cumulative Dividends</div><div class="stat-value">${fmtCurrency(totals.cumulative_dividends)}</div></div>
+          <div class="stat-card warning"><div class="stat-label">Cumulative Tax</div><div class="stat-value">${fmtCurrency(totals.cumulative_tax)}</div></div>
+          <div class="stat-card"><div class="stat-label">Closing Savings Fund</div><div class="stat-value">${fmtCurrency(totals.closing_savings_balance)}</div></div>
+        </div>
+        <table class="data-table" style="margin-top:16px;">
+          <thead>
+            <tr>
+              <th>Yr</th><th>InForce</th><th>Premium</th><th>Claims</th><th>Op Profit</th><th>Tax</th><th>After-Tax</th><th>Dividends</th><th>Reserve Δ</th><th>Closing Reserve</th><th>IBNR</th><th>IFRS17 BEL</th><th>IFRS17 RA</th><th>IFRS17 CSM Δ</th><th>IFRS17 CSM</th><th>Savings Δ</th><th>Savings Closing</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+
+      const integrity = projection.data_integrity || {};
+      const integrityRows = Object.entries(integrity).map(([k, v]) =>
+        `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+      integrityEl.innerHTML = `
+        <table class="data-table">
+          <thead><tr><th>Check</th><th>Result</th></tr></thead>
+          <tbody>${integrityRows}</tbody>
+        </table>
+        <p style="margin-top:8px;color:var(--text-light);">Methodology: ${projection.ifrs17_methodology?.measurement_model || 'general_measurement_model'} (CSM pattern: ${projection.ifrs17_methodology?.csm_release_pattern || 'straight_line'}); IBNR: ${projection.ibnr_methodology?.method || 'incurred_claims_pct'} @ ${(projection.config?.ibnr_pct * 100 || 0).toFixed(1)}%.</p>
+      `;
+    }
+
+    // =====================================================================
+    // FEFFERMAN REFERENCE
+    // =====================================================================
+    async function loadFeffermanReference() {
+      const resultsEl = document.getElementById('fefferman-results');
+      resultsEl.innerHTML = '<p style="color:var(--text-light);">Loading…</p>';
+      const startAge = document.getElementById('fef-start-age').value || '';
+      const years = document.getElementById('fef-years').value || '';
+      const life = document.getElementById('fef-life-sum').value || '';
+      const qs = new URLSearchParams();
+      if (startAge) qs.set('start_age', startAge);
+      if (years) qs.set('projection_years', years);
+      if (life) qs.set('life_sum', life);
+      try {
+        const res = await fetch(`/api/actuarial/fefferman-reference?${qs.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        renderFefferman(data.reference);
+      } catch (err) {
+        resultsEl.innerHTML = `<p class="text-danger">Failed: ${err.message}</p>`;
+      }
+    }
+
+    function renderFefferman(ref) {
+      const resultsEl = document.getElementById('fefferman-results');
+      if (!ref) { resultsEl.innerHTML = '<p>No data.</p>'; return; }
+      const totals = ref.totals || {};
+      const refRows = (ref.yearly_projection || []).map((row) => `
+        <tr>
+          <td>${row.year}</td><td>${row.age}</td><td>${row.age_factor.toFixed(4)}</td>
+          <td>${fmtCurrency(row.annual_premium)}</td>
+          <td>${(row.mortality_qx * 100).toFixed(3)}%</td>
+          <td>${(row.disability_ix * 100).toFixed(3)}%</td>
+          <td>${fmtCurrency(row.expected_loss)}</td>
+          <td>${(row.loss_ratio * 100).toFixed(2)}%</td>
+        </tr>
+      `).join('');
+      const integrityKeys = Object.keys(ref.data_integrity || {}).filter(k => typeof ref.data_integrity[k] === 'boolean');
+      const integrityHtml = integrityKeys.map(k =>
+        `<li>${k}: ${ref.data_integrity[k] ? '✅' : '❌'}</li>`).join('');
+      resultsEl.innerHTML = `
+        <p>
+          Source: <a href="${ref.source.url}" target="_blank" rel="noopener noreferrer">${ref.source.document}</a> (${ref.source.version}, ${ref.source.doc_date}).
+        </p>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Life Sum</div><div class="stat-value">${fmtCurrency(ref.reference.life_sum)}</div></div>
+          <div class="stat-card success"><div class="stat-label">Cumulative Premium</div><div class="stat-value">${fmtCurrency(totals.cumulative_premium)}</div></div>
+          <div class="stat-card warning"><div class="stat-label">Cumulative Expected Loss</div><div class="stat-value">${fmtCurrency(totals.cumulative_expected_loss)}</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Loss Ratio</div><div class="stat-value">${(totals.average_loss_ratio * 100).toFixed(2)}%</div></div>
+        </div>
+        <table class="data-table" style="margin-top:16px;">
+          <thead><tr><th>Year</th><th>Age</th><th>Age Factor</th><th>Annual Premium</th><th>q(x)</th><th>i(x)</th><th>Expected Loss</th><th>Loss Ratio</th></tr></thead>
+          <tbody>${refRows}</tbody>
+        </table>
+        <h4 style="margin-top:16px;">Data Integrity</h4>
+        <ul>${integrityHtml}</ul>
+      `;
+    }
+
+    // =====================================================================
+    // UPLOADED TABLES
+    // =====================================================================
+    async function loadUploadedTables() {
+      const tbody = document.querySelector('#uploaded-tables-list tbody');
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading…</td></tr>';
+      try {
+        const res = await fetch('/api/actuarial/uploaded-tables', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const items = data.items || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-light);">No uploaded tables yet. Upload an Excel/CSV table above.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = items.map((row) => `
+          <tr>
+            <td><code>${row.id}</code></td>
+            <td>${row.name || ''}</td>
+            <td>${row.table_type || ''}</td>
+            <td>${row.version || ''}</td>
+            <td>${row.effective_date || ''}</td>
+            <td>${row.created_date ? new Date(row.created_date).toLocaleString() : ''}</td>
+            <td>
+              <button class="btn-small btn-outline" onclick="previewUploadedTable('${row.id}')">Preview</button>
+              <button class="btn-small btn-success" onclick="useUploadedTable('${row.id}', 'mortality_rates')">Use as Mortality</button>
+              <button class="btn-small btn-success" onclick="useUploadedTable('${row.id}', 'disability_incidence_rates')">Use as Disability</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-danger">Failed: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function previewUploadedTable(id) {
+      const wrapper = document.getElementById('uploaded-table-preview');
+      const body = document.getElementById('uploaded-table-preview-body');
+      wrapper.style.display = 'block';
+      body.innerHTML = 'Loading…';
+      try {
+        const res = await fetch(`/api/actuarial/uploaded-tables/${encodeURIComponent(id)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const previewRows = Array.isArray(data.preview) ? data.preview : [];
+        const headers = previewRows.length ? Object.keys(previewRows[0]) : [];
+        const headerRow = headers.map(h => `<th>${h}</th>`).join('');
+        const dataRows = previewRows.map(r => `<tr>${headers.map(h => `<td>${(r[h] == null ? '' : String(r[h]))}</td>`).join('')}</tr>`).join('');
+        const norm = data.normalization || {};
+        body.innerHTML = `
+          <p><strong>${data.meta.name}</strong> — ${data.meta.table_type} — ${data.row_count} rows total.</p>
+          <p style="color:var(--text-light);">Normalization: ${norm.rows_normalized}/${norm.rows_in} rows usable as <code>${norm.table_type || 'n/a'}</code>${norm.reason ? ' — ' + norm.reason : ''}.</p>
+          <table class="data-table"><thead><tr>${headerRow}</tr></thead><tbody>${dataRows}</tbody></table>
+        `;
+      } catch (err) {
+        body.innerHTML = `<p class="text-danger">${err.message}</p>`;
+      }
+    }
+
+    async function useUploadedTable(id, targetType) {
+      if (!confirm(`Promote uploaded table ${id} into the live ${targetType} rate band? This will be used by future simulations and reserve projections.`)) return;
+      try {
+        const res = await fetch('/api/actuarial/uploaded-tables/use', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table_id: id, target_table_type: targetType })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          alert(`❌ ${data.error || ('HTTP ' + res.status)}\n${JSON.stringify(data.normalization || {}, null, 2)}`);
+          return;
+        }
+        alert(`✅ Applied ${data.rows_applied} rows to ${data.target_table_type} (${data.rows_skipped} skipped).`);
+        loadTables();
+      } catch (err) {
+        alert('❌ ' + err.message);
+      }
+    }
+
+    async function uploadActuaryTable() {
+      const statusEl = document.getElementById('upload-actuary-status');
+      const fileInput = document.getElementById('upload-actuary-file');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { statusEl.textContent = 'Choose a file first.'; return; }
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      const name = document.getElementById('upload-actuary-name').value.trim();
+      const type = document.getElementById('upload-actuary-type').value.trim();
+      const version = document.getElementById('upload-actuary-version').value.trim();
+      const eff = document.getElementById('upload-actuary-effective').value.trim();
+      if (name) fd.append('name', name);
+      if (type) fd.append('table_type', type);
+      if (version) fd.append('version', version);
+      if (eff) fd.append('effective_date', eff);
+
+      statusEl.textContent = 'Uploading…';
+      try {
+        const res = await fetch('/api/admin/actuarial-tables/upload-file', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: fd
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+        statusEl.textContent = `✅ Uploaded ${data.id}`;
+        fileInput.value = '';
+        loadUploadedTables();
+      } catch (err) {
+        statusEl.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    // =====================================================================
+    // REPORTS & EXPORTS
+    // =====================================================================
+    async function downloadActuaryReport(format) {
+      const statusEl = document.getElementById('report-status');
+      const simId = (document.getElementById('report-sim-id').value
+        || document.getElementById('reserve-sim-id').value
+        || currentSimulation?.simulation_id
+        || '').trim();
+      if (!simId) {
+        statusEl.textContent = 'Run a portfolio simulation first.';
+        return;
+      }
+      const payload = {
+        simulation_id: simId,
+        format,
+        projection_years: parseInt(document.getElementById('reserve-years')?.value) || 5,
+        initial_reserve: parseFloat(document.getElementById('reserve-initial')?.value) || 0,
+        dividends_pct: (parseFloat(document.getElementById('reserve-dividends')?.value) || 0) / 100,
+        tax_pct: (parseFloat(document.getElementById('reserve-tax')?.value) || 0) / 100,
+        ibnr_pct: (parseFloat(document.getElementById('reserve-ibnr')?.value) || 0) / 100,
+        reserve_contribution_pct: (parseFloat(document.getElementById('reserve-contrib')?.value) || 0) / 100,
+        risk_adjustment_pct: (parseFloat(document.getElementById('reserve-ra')?.value) || 0) / 100,
+        csm_release_pattern: document.getElementById('reserve-csm')?.value || 'straight_line',
+        savings_allocation_pct: (parseFloat(document.getElementById('reserve-savings-alloc')?.value) || 0) / 100,
+        savings_yield_pct: (parseFloat(document.getElementById('reserve-savings-yield')?.value) || 0) / 100
+      };
+      statusEl.textContent = `Generating ${format.toUpperCase()} report…`;
+      try {
+        const res = await fetch('/api/actuarial/reports/export', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          let detail = '';
+          try { detail = (await res.json()).error || ''; } catch (_) {}
+          throw new Error(detail || `HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `phins_actuary_report_${simId}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = `✅ ${format.toUpperCase()} downloaded.`;
+      } catch (err) {
+        statusEl.textContent = `❌ ${err.message}`;
+      }
+    }
+
     // Export
     function exportTables() {
       if (!currentTables) {
