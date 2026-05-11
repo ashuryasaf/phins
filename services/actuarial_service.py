@@ -1809,7 +1809,10 @@ def apply_savings_allocation(simulation: Dict[str, Any], savings_allocation_pct:
         'savings_balance_sheet': savings_balance_sheet,
         'data_integrity': {
             'gross_premium_input': round(gross_premium, 2),
-            'gross_premium_reconciles': abs(total_split - round(gross_premium, 2)) < 1.0,
+            'gross_premium_reconciles': (
+                abs(total_split - round(gross_premium, 2)) < 1.0
+                and insurance_balance_sheet['gross_premium_retained'] >= 0.0
+            ),
             'sum_of_shares': round(share + insurance_share, 4),
         },
     }
@@ -1885,7 +1888,7 @@ class ReserveCalculator:
 
             reserve_contribution = retained * config.reserve_contribution_pct
             savings_contribution = (
-                in_force_premium * config.savings_allocation_pct
+                (in_force_premium - savings_premium * in_force_factor) * config.savings_allocation_pct
                 + savings_premium * in_force_factor
             )
 
