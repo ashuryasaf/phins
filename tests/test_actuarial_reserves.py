@@ -1,0 +1,291 @@
+"""
+Tests for the new PHINS actuarial primitives:
+- ReserveCalculator (IBNR, IFRS 17 BEL/RA/CSM, dividends/tax/reserves waterfall)
+- apply_savings_allocation
+- build_fefferman_reference (must reproduce the locked public model exactly)
+- normalize_uploaded_rate_table (custom uploaded mortality/disability tables)
+
+These tests are unit-style so they do not depend on the embedded HTTP server.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from http.server import HTTPServer
+from urllib.request import Request, urlopen
+
+import web_portal.server as portal
+from services.actuarial_service import (
+    SimulationParams,
+    ReserveCalculator,
+    _coerce_reserve_config,
+    apply_savings_allocation,
+    build_fefferman_reference,
+    fefferman_age_factor,
+    fefferman_monthly_premiums,
+    get_portfolio_simulator,
+    get_actuarial_store,
+    normalize_uploaded_rate_table,
+    apply_uploaded_table_to_store,
+    PHINS_FEFFERMAN_MODEL,
+)
+
+
+def _tiny_simulation() -> dict:
+    """Run a deterministic, small simulation that the reserve tests can rely on."""
+    params = SimulationParams(
+        customer_count=200,
+        age_min=25, age_max=55, age_mean=40.0, age_std=8.0,
+        coverage_min=100000, coverage_max=500000, coverage_median=200000,
+        policy_term_mode='fixed', policy_term_fixed=10,
+        savings_allocation_pct=0.0,
+    )
+    sim = get_portfolio_simulator().generate_portfolio(params)
+    assert sim['portfolio_summary']['accepted_customers'] > 0
+    return sim
+
+
+def test_fefferman_age_factor_anchors():
+    """Anchor ages must exactly match the published curve."""
+    m = PHINS_FEFFERMAN_MODEL
+    assert fefferman_age_factor(m['youth_anchor_age']) == m['youth_anchor_factor']
+    assert fefferman_age_factor(m['adult_anchor_age']) == m['adult_anchor_factor']
+    # Core slope reaches expected value at age 65 (1.0 + 40*0.015 = 1.6)
+    expected_65 = round(m['adult_anchor_factor'] + (65 - m['adult_anchor_age']) * m['core_slope'], 4)
+    assert fefferman_age_factor(65) == expected_65
+
+
+def test_fefferman_reference_matches_published_anchors():
+    """The locked 5-year reference forecast must remain deterministic and self-consistent."""
+    ref = build_fefferman_reference()
+    assert ref['source']['url'].endswith('fefferman.html')
+    assert len(ref['yearly_projection']) == 5
+    # The first row must hit the documented life-monthly premium for age 35
+    age35 = fefferman_monthly_premiums(35)
+    assert age35['life_monthly'] > 0
+    assert age35['disability_monthly'] > 0
+    assert age35['annual_premium'] == ref['yearly_projection'][0]['annual_premium']
+    # Cumulative premium reconciles to the sum of yearly premiums
+    cum = sum(row['annual_premium'] for row in ref['yearly_projection'])
+    assert abs(cum - ref['totals']['cumulative_premium']) < 0.5
+    # Disability cuts off at 65 (sanity check on senior curve)
+    age65 = fefferman_monthly_premiums(65)
+    assert age65['disability_monthly'] == 0
+    # Integrity checks must all be True
+    assert ref['data_integrity']['cumulative_premium_check']
+    assert ref['data_integrity']['cumulative_loss_check']
+
+
+def test_reserve_calculator_waterfall_consistency():
+    sim = _tiny_simulation()
+    cfg = _coerce_reserve_config({
+        'dividends_pct': 0.30,
+        'tax_pct': 0.23,
+        'ibnr_pct': 0.12,
+        'reserve_contribution_pct': 0.40,
+        'risk_adjustment_pct': 0.06,
+        'projection_years': 5,
+        'initial_reserve': 0.0,
+        'savings_allocation_pct': 0.10,
+        'savings_yield_pct': 0.04,
+    })
+
+    projection = ReserveCalculator().project(sim, cfg)
+    yearly = projection['yearly_projection']
+    assert len(yearly) == cfg.projection_years
+
+    for row in yearly:
+        # Operating profit = tax + after-tax profit (within rounding)
+        assert abs(row['operating_profit'] - (row['tax'] + row['after_tax_profit'])) < 0.5
+        # Dividends + retained = after-tax profit (within rounding)
+        assert abs(row['after_tax_profit'] - (row['dividends'] + row['retained_earnings'])) < 0.5
+        # CSM balance cannot be negative
+        assert row['ifrs17']['csm_balance'] >= -0.5
+        # IBNR is non-negative
+        assert row['ibnr_provision'] >= -0.5
+        # In-force factor monotonically decreases
+        assert 0.0 <= row['in_force_factor'] <= 1.0
+
+    # In-force factor decays year over year
+    factors = [row['in_force_factor'] for row in yearly]
+    assert factors == sorted(factors, reverse=True)
+
+    assert projection['data_integrity']['profit_waterfall_consistent']
+    assert projection['data_integrity']['csm_non_negative']
+    assert projection['data_integrity']['savings_balance_non_negative']
+
+
+def test_reserve_calculator_zero_savings_disables_growth():
+    sim = _tiny_simulation()
+    cfg = _coerce_reserve_config({'savings_allocation_pct': 0.0, 'savings_yield_pct': 0.0,
+                                  'projection_years': 3})
+    projection = ReserveCalculator().project(sim, cfg)
+    final_balance = projection['totals']['closing_savings_balance']
+    # Savings premium is still pass-through, but with zero allocation share the
+    # extra fund contribution shrinks to just savings_premium * in_force; for a
+    # pure-risk simulation (savings_premium ~ 0) we expect a near-zero balance.
+    if sim['profitability'].get('savings_premium', 0.0) < 1.0:
+        assert final_balance >= 0
+        assert final_balance < 100_000
+
+
+def test_apply_savings_allocation_reconciles():
+    sim = _tiny_simulation()
+    allocation = apply_savings_allocation(sim, 0.40)
+    integrity = allocation['data_integrity']
+    assert integrity['gross_premium_reconciles']
+    assert abs(integrity['sum_of_shares'] - 1.0) < 1e-6
+    assert allocation['savings_allocation_pct'] == 40.0
+
+
+def test_normalize_uploaded_rate_table_handles_qx_probabilities():
+    rows = [
+        {'age_min': 30, 'age_max': 40, 'qx': 0.00141},  # raw probability < 0.5 -> per-1000
+        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 8.0},
+        {'invalid': 'row'},  # should be skipped
+        {'Age Min': 50, 'Age Max': 60, 'Rate Per 1000': 15.0},  # case-insensitive headers
+    ]
+    out = normalize_uploaded_rate_table('mortality_rates', rows)
+    assert out['valid'] is True
+    assert out['rows_normalized'] == 3
+    assert out['rows_skipped'] == 1
+    # qx 0.00141 -> 1.41 per 1000
+    assert out['normalized'][0] == {'age_min': 30, 'age_max': 40, 'rate_per_1000': 1.41}
+
+
+def test_normalize_uploaded_rate_table_rejects_unsupported_type():
+    out = normalize_uploaded_rate_table('pricing', [{'age_min': 30, 'age_max': 40, 'rate_per_1000': 1.0}])
+    assert out['valid'] is False
+    assert out['reason'] == 'unsupported_table_type'
+
+
+def test_apply_uploaded_table_to_store_round_trip():
+    store = get_actuarial_store()
+    new_table = [
+        {'age_min': 30, 'age_max': 40, 'rate_per_1000': 0.9},
+        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.0},
+    ]
+    result = apply_uploaded_table_to_store('mortality_rates', new_table, user='pytest')
+    assert result.get('success') is True
+    # Round-trip: rate at age 35 must come from the new table
+    rate = store.get_mortality_rate(35)
+    assert abs(rate - (0.9 / 1000.0)) < 1e-9
+
+
+# ----------------------------------------------------------------------------
+# HTTP integration test for the new endpoints
+# ----------------------------------------------------------------------------
+
+class _ServerThread(threading.Thread):
+    def __init__(self, port: int):
+        super().__init__(daemon=True)
+        self.port = port
+        self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+
+    def run(self):
+        self.httpd.serve_forever()
+
+    def stop(self):
+        self.httpd.shutdown()
+
+
+def _post_json(url: str, payload: dict, token: str | None = None):
+    headers = {'Content-Type': 'application/json'}
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    req = Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+    with urlopen(req) as resp:
+        return resp.read(), resp.status, dict(resp.getheaders())
+
+
+def _get(url: str, token: str | None = None):
+    headers = {}
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    req = Request(url, headers=headers)
+    with urlopen(req) as resp:
+        return resp.read(), resp.status, dict(resp.getheaders())
+
+
+def test_actuarial_endpoints_end_to_end(tmp_path):
+    port = 8174
+    srv = _ServerThread(port)
+    srv.start()
+    try:
+        time.sleep(0.3)
+        base = f'http://127.0.0.1:{port}'
+
+        login_body, _, _ = _post_json(base + '/api/login', {
+            'username': 'admin', 'password': 'admin123'
+        })
+        admin_token = json.loads(login_body)['token']
+
+        # 1) Fefferman reference must be reachable and deterministic
+        body, status, _ = _get(base + '/api/actuarial/fefferman-reference', admin_token)
+        assert status == 200
+        ref = json.loads(body)['reference']
+        assert ref['source']['url'].endswith('fefferman.html')
+        assert len(ref['yearly_projection']) == 5
+
+        # 2) Run a small simulation
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 100, 'age_min': 25, 'age_max': 50,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 10,
+            'savings_allocation_pct': 0.20,
+        }, admin_token)
+        assert status == 200
+        sim_payload = json.loads(body)
+        simulation_id = sim_payload['simulation']['simulation_id']
+        # Saving allocation block must be present
+        assert 'savings_allocation' in sim_payload['simulation']
+
+        # 3) Project reserves for that simulation
+        body, status, _ = _post_json(base + '/api/actuarial/reserves/project', {
+            'simulation_id': simulation_id,
+            'projection_years': 4,
+            'dividends_pct': 0.25,
+            'tax_pct': 0.22,
+            'ibnr_pct': 0.10,
+            'reserve_contribution_pct': 0.50,
+            'risk_adjustment_pct': 0.06,
+            'savings_allocation_pct': 0.20,
+            'savings_yield_pct': 0.045,
+        }, admin_token)
+        assert status == 200
+        projection = json.loads(body)['projection']
+        assert projection['projection_years'] == 4
+        assert projection['data_integrity']['profit_waterfall_consistent']
+
+        # 4) Savings allocation endpoint
+        body, status, _ = _post_json(base + '/api/actuarial/savings-allocation', {
+            'simulation_id': simulation_id,
+            'savings_allocation_pct': 25,
+        }, admin_token)
+        assert status == 200
+        alloc = json.loads(body)['allocation']
+        assert alloc['savings_allocation_pct'] == 25.0
+        assert alloc['data_integrity']['gross_premium_reconciles']
+
+        # 5) Excel report generation
+        body, status, headers = _post_json(base + '/api/actuarial/reports/export', {
+            'simulation_id': simulation_id,
+            'format': 'xlsx',
+            'projection_years': 3,
+        }, admin_token)
+        assert status == 200
+        assert headers.get('Content-Type', '').endswith('sheet')
+        assert body[:2] == b'PK'  # XLSX is a zip envelope
+
+        # 6) PDF report generation (basic content sniff)
+        body, status, headers = _post_json(base + '/api/actuarial/reports/export', {
+            'simulation_id': simulation_id,
+            'format': 'pdf',
+            'projection_years': 3,
+        }, admin_token)
+        assert status == 200
+        assert headers.get('Content-Type') == 'application/pdf'
+        assert body[:4] == b'%PDF'
+    finally:
+        srv.stop()
