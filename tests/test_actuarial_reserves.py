@@ -264,6 +264,31 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         assert alias_payload['reference']['profile_id'] == 'phins_published_v1'
         assert 'deprecated' in alias_payload
 
+        # 7) Cross-system reconciler must pass for a freshly run simulation
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 50, 'age_min': 25, 'age_max': 50,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 12,
+        }, admin_token)
+        assert status == 200
+        recon_sim_id = json.loads(body)['simulation']['simulation_id']
+        body, status, _ = _post_json(base + '/api/actuarial/reconcile', {
+            'simulation_id': recon_sim_id,
+        }, admin_token)
+        assert status == 200
+        rec = json.loads(body)['reconciliation']
+        assert rec['reconciled'] is True
+        assert abs(rec['portfolio_reconciliation']['delta']) < 1.0
+
+        # 8) Reserve projection without projection_years should default the
+        # horizon from the policy book (G7)
+        body, status, _ = _post_json(base + '/api/actuarial/reserves/project', {
+            'simulation_id': recon_sim_id,
+        }, admin_token)
+        assert status == 200
+        auto_horizon = json.loads(body)['projection']
+        # Fixed-term simulation -> projection_years equals the fixed policy term
+        assert auto_horizon['projection_years'] == 12
+
         # 2) Run a small simulation
         body, status, _ = _post_json(base + '/api/actuarial/simulate', {
             'customer_count': 100, 'age_min': 25, 'age_max': 50,

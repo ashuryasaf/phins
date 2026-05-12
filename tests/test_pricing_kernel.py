@@ -240,6 +240,22 @@ def test_independent_claim_model_for_legacy_callers():
     assert mutually_exclusive.pv_disability_claims <= independent.pv_disability_claims + 0.5
 
 
+def test_reconciler_proves_simulation_components_match_kernel():
+    """The reconciler must pass for a freshly-priced simulation."""
+    from services.actuarial_service import reconcile_simulation_with_kernel
+    params = SimulationParams(
+        customer_count=80, age_min=25, age_max=55,
+        coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+        policy_term_mode="fixed", policy_term_fixed=12,
+    )
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(params)
+    report = reconcile_simulation_with_kernel(sim)
+    assert report['reconciled'] is True
+    assert abs(report['portfolio_reconciliation']['delta']) < 1.0
+    assert 'representative_integrity_hash' in report
+    assert report['representative_components']['integrity_checks']['components_sum_to_total']
+
+
 def test_kernel_with_simulator_end_to_end():
     """The simulator's own pricer and the kernel must produce the same totals."""
     params = SimulationParams(

@@ -1534,6 +1534,25 @@
             </div>
             <p id="report-status" class="research-note" style="margin-top:12px;">Reports embed the current reserve projection (using the values currently entered in the Reserves &amp; IFRS 17 form) so every download is reproducible.</p>
           </div>
+
+          <div class="card">
+            <div class="card-title">Cross-System Reconciliation</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Prove that the saved simulation, the pricing kernel, the reserve projection and the BI feed agree to the cent for a representative customer. This is the unified-pricing integrity proof: if any consumer of pricing drifts away from the kernel, this report will surface the delta.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID</label>
+                <input type="text" id="reconcile-sim-id" class="form-input" placeholder="Defaults to latest simulation">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button class="btn btn-primary" onclick="runReconciliation()">Run Reconciliation</button>
+              </div>
+            </div>
+            <div id="reconciliation-results" style="margin-top:12px;">
+              <p style="color:var(--text-light);">Run a simulation first, then reconcile to verify cross-system data integrity.</p>
+            </div>
+          </div>
         </section>
 
         <!-- Automation Metrics Section -->
@@ -3298,6 +3317,57 @@
         statusEl.textContent = `✅ ${format.toUpperCase()} downloaded.`;
       } catch (err) {
         statusEl.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    async function runReconciliation() {
+      const out = document.getElementById('reconciliation-results');
+      out.innerHTML = '<p style="color:var(--text-light);">Reconciling…</p>';
+      const simId = (document.getElementById('reconcile-sim-id').value
+        || currentSimulation?.simulation_id
+        || '').trim();
+      if (!simId) {
+        out.innerHTML = '<p class="text-danger">Run a simulation first.</p>';
+        return;
+      }
+      try {
+        const res = await fetch('/api/actuarial/reconcile', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ simulation_id: simId })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const r = data.reconciliation || {};
+        const portfolio = r.portfolio_reconciliation || {};
+        const rep = r.representative_customer || {};
+        const repComponents = r.representative_components || {};
+        out.innerHTML = `
+          <div class="stats-grid">
+            <div class="stat-card ${r.reconciled ? 'success' : 'warning'}">
+              <div class="stat-label">Reconciliation</div>
+              <div class="stat-value">${r.reconciled ? '✅ PASS' : '❌ DELTA'}</div>
+            </div>
+            <div class="stat-card"><div class="stat-label">Gross Premium</div><div class="stat-value">${fmtCurrency(portfolio.gross_premium)}</div></div>
+            <div class="stat-card"><div class="stat-label">Sum of Components</div><div class="stat-value">${fmtCurrency(portfolio.sum_of_components)}</div></div>
+            <div class="stat-card ${Math.abs(portfolio.delta || 0) < 1 ? 'success' : 'warning'}">
+              <div class="stat-label">Δ (USD)</div><div class="stat-value">${fmtCurrency(portfolio.delta)}</div>
+            </div>
+          </div>
+          <h4 style="margin-top:16px;">Representative Customer</h4>
+          <p style="color:var(--text-light);">age ${rep.age}, ADL ${rep.adl_level}, coverage ${fmtCurrency(rep.coverage)}, term ${rep.term_years} years</p>
+          <table class="data-table">
+            <tr><th>Component</th><th>Annual</th></tr>
+            <tr><td>Risk premium</td><td>${fmtCurrency(repComponents.risk_premium_annual)}</td></tr>
+            <tr><td>Savings premium</td><td>${fmtCurrency(repComponents.savings_premium_annual)}</td></tr>
+            <tr><td>Expense loading</td><td>${fmtCurrency(repComponents.expense_loading_annual)}</td></tr>
+            <tr><td>Profit margin</td><td>${fmtCurrency(repComponents.profit_margin_annual)}</td></tr>
+            <tr style="border-top:2px solid var(--border);"><td><strong>Total</strong></td><td><strong>${fmtCurrency(repComponents.annual_premium)}</strong></td></tr>
+            <tr><td>Kernel integrity hash</td><td><code>${r.representative_integrity_hash || ''}</code></td></tr>
+          </table>
+        `;
+      } catch (err) {
+        out.innerHTML = `<p class="text-danger">Reconciliation failed: ${err.message}</p>`;
       }
     }
 

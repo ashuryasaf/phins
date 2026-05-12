@@ -25586,6 +25586,20 @@ For claims or questions, please contact:
                     _coerce_reserve_config,
                     get_reserve_calculator,
                 )
+                # Default the projection horizon to the simulation's actual
+                # policy book (G7) when the caller did not specify
+                # projection_years. Use the maximum policy term so the
+                # reserves run covers the full liability tail.
+                if 'projection_years' not in payload:
+                    sim_params = simulation.get('parameters') or {}
+                    risk_metrics = simulation.get('risk_metrics') or {}
+                    if str(sim_params.get('policy_term_mode', 'random')).lower() == 'fixed':
+                        derived_years = int(sim_params.get('policy_term_fixed', 20) or 20)
+                    elif sim_params.get('policy_term_max') is not None:
+                        derived_years = int(sim_params.get('policy_term_max') or 0)
+                    else:
+                        derived_years = int(round(float(risk_metrics.get('avg_term_years', 5.0) or 5.0)))
+                    payload['projection_years'] = max(1, min(50, derived_years))
                 config = _coerce_reserve_config(payload)
                 projection = get_reserve_calculator().project(simulation, config)
                 projection['source_simulation'] = {
@@ -25594,6 +25608,7 @@ For claims or questions, please contact:
                     'accepted_customers': simulation.get('portfolio_summary', {}).get('accepted_customers'),
                     'total_coverage': simulation.get('portfolio_summary', {}).get('total_coverage'),
                     'annual_premium': simulation.get('portfolio_summary', {}).get('total_annual_premium'),
+                    'horizon_source': 'policy_book' if 'projection_years' not in payload else 'caller',
                 }
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({'success': True, 'projection': projection}).encode('utf-8'))
@@ -25601,6 +25616,43 @@ For claims or questions, please contact:
                 import traceback
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e), 'traceback': traceback.format_exc()}).encode('utf-8'))
+            return
+
+        # =====================================================================
+        # ACTUARIAL: Cross-system reconciler (G8)
+        # POST body: { simulation_id }
+        # =====================================================================
+        if path == '/api/actuarial/reconcile':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            simulation_id = str(payload.get('simulation_id') or '').strip()
+            simulation = get_actuarial_simulation_snapshot(simulation_id) if simulation_id else None
+            if not simulation:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': f'Unknown simulation_id: {simulation_id}'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import reconcile_simulation_with_kernel
+                report = reconcile_simulation_with_kernel(simulation)
+                report['simulation_id'] = simulation_id
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'reconciliation': report}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # =====================================================================
