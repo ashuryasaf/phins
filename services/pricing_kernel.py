@@ -466,7 +466,7 @@ def _compute_savings_premium(
     config: PricingConfig,
 ) -> float:
     """Compute the savings premium component using the configured formula."""
-    savings_rate = max(0.0, min(float(product.savings_rate), float(config.savings_rate)))
+    savings_rate = max(0.0, float(config.savings_rate))
     target_value = coverage * savings_rate * product.life_share
     if target_value <= 0 or term_years <= 0:
         return 0.0

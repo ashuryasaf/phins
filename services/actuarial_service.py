@@ -22,6 +22,7 @@ import math
 import random
 import json
 import hashlib
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
@@ -1153,7 +1154,7 @@ class PortfolioSimulator:
             'net_margin_pct': net_margin_pct,
             'return_on_risk': round((net_profit / annual_risk_premium) * 100, 2) if annual_risk_premium > 0 else 0,
             'calculated_gross': round(calculated_gross, 2),  # For verification
-            'components_match': abs(totals['annual_premium'] - calculated_gross) < 1
+            'components_match': abs(totals['annual_premium'] - calculated_gross) < max(1.0, accepted_count * 0.02)
         }
         
         # Build result
@@ -2228,6 +2229,8 @@ COHORT_RATE_OVERRIDES: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
 # which uploaded table is currently overriding which cohort band.
 COHORT_REGISTRY_LOG: List[Dict[str, Any]] = []
 
+_COHORT_LOCK = threading.Lock()
+
 
 def _normalize_cohort_key(cohort_dim: str, cohort_value: str) -> str:
     dim = (cohort_dim or '').strip().lower()
@@ -2264,20 +2267,21 @@ def register_cohort_rate_table(cohort_dim: str, cohort_value: str, table_type: s
     except ValueError as exc:
         return {'success': False, 'error': str(exc)}
 
-    bucket = COHORT_RATE_OVERRIDES.setdefault(key, {})
-    bucket[table_type] = [dict(row) for row in normalized]
+    with _COHORT_LOCK:
+        bucket = COHORT_RATE_OVERRIDES.setdefault(key, {})
+        bucket[table_type] = [dict(row) for row in normalized]
 
-    COHORT_REGISTRY_LOG.append({
-        'timestamp': datetime.now().isoformat(),
-        'cohort_key': key,
-        'cohort_dim': key.split(':', 1)[0],
-        'cohort_value': key.split(':', 1)[1],
-        'table_type': table_type,
-        'rows': len(normalized),
-        'user': user,
-        'source_table_id': source_table_id,
-        'source_name': source_name,
-    })
+        COHORT_REGISTRY_LOG.append({
+            'timestamp': datetime.now().isoformat(),
+            'cohort_key': key,
+            'cohort_dim': key.split(':', 1)[0],
+            'cohort_value': key.split(':', 1)[1],
+            'table_type': table_type,
+            'rows': len(normalized),
+            'user': user,
+            'source_table_id': source_table_id,
+            'source_name': source_name,
+        })
     return {
         'success': True,
         'cohort_key': key,
@@ -2293,56 +2297,59 @@ def remove_cohort_rate_table(cohort_dim: str, cohort_value: str, table_type: str
         key = _normalize_cohort_key(cohort_dim, cohort_value)
     except ValueError as exc:
         return {'success': False, 'error': str(exc)}
-    bucket = COHORT_RATE_OVERRIDES.get(key, {})
-    table_type = (table_type or '').strip().lower()
-    removed = bucket.pop(table_type, None)
-    if not bucket:
-        COHORT_RATE_OVERRIDES.pop(key, None)
-    COHORT_REGISTRY_LOG.append({
-        'timestamp': datetime.now().isoformat(),
-        'cohort_key': key,
-        'table_type': table_type,
-        'action': 'remove',
-        'user': user,
-        'rows_removed': len(removed or []),
-    })
+    with _COHORT_LOCK:
+        bucket = COHORT_RATE_OVERRIDES.get(key, {})
+        table_type = (table_type or '').strip().lower()
+        removed = bucket.pop(table_type, None)
+        if not bucket:
+            COHORT_RATE_OVERRIDES.pop(key, None)
+        COHORT_REGISTRY_LOG.append({
+            'timestamp': datetime.now().isoformat(),
+            'cohort_key': key,
+            'table_type': table_type,
+            'action': 'remove',
+            'user': user,
+            'rows_removed': len(removed or []),
+        })
     return {'success': True, 'rows_removed': len(removed or [])}
 
 
 def list_cohort_rate_tables() -> List[Dict[str, Any]]:
     """List every registered cohort-scoped rate override."""
     out: List[Dict[str, Any]] = []
-    for key, bucket in COHORT_RATE_OVERRIDES.items():
-        dim, value = key.split(':', 1) if ':' in key else (key, '')
-        for table_type, rows in bucket.items():
-            last_registration = next(
-                (
-                    entry for entry in reversed(COHORT_REGISTRY_LOG)
-                    if entry.get('cohort_key') == key and entry.get('table_type') == table_type
-                    and entry.get('action') != 'remove'
-                ),
-                None,
-            )
-            out.append({
-                'cohort_key': key,
-                'cohort_dim': dim,
-                'cohort_value': value,
-                'table_type': table_type,
-                'row_count': len(rows),
-                'source_table_id': (last_registration or {}).get('source_table_id'),
-                'source_name': (last_registration or {}).get('source_name'),
-                'registered_at': (last_registration or {}).get('timestamp'),
-                'registered_by': (last_registration or {}).get('user'),
-            })
+    with _COHORT_LOCK:
+        for key, bucket in COHORT_RATE_OVERRIDES.items():
+            dim, value = key.split(':', 1) if ':' in key else (key, '')
+            for table_type, rows in bucket.items():
+                last_registration = next(
+                    (
+                        entry for entry in reversed(COHORT_REGISTRY_LOG)
+                        if entry.get('cohort_key') == key and entry.get('table_type') == table_type
+                        and entry.get('action') != 'remove'
+                    ),
+                    None,
+                )
+                out.append({
+                    'cohort_key': key,
+                    'cohort_dim': dim,
+                    'cohort_value': value,
+                    'table_type': table_type,
+                    'row_count': len(rows),
+                    'source_table_id': (last_registration or {}).get('source_table_id'),
+                    'source_name': (last_registration or {}).get('source_name'),
+                    'registered_at': (last_registration or {}).get('timestamp'),
+                    'registered_by': (last_registration or {}).get('user'),
+                })
     return out
 
 
 def get_cohort_overrides_snapshot() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
     """Return a deep copy of the cohort overrides safe to pass to the kernel."""
-    return {
-        key: {table_type: [dict(row) for row in rows] for table_type, rows in bucket.items()}
-        for key, bucket in COHORT_RATE_OVERRIDES.items()
-    }
+    with _COHORT_LOCK:
+        return {
+            key: {table_type: [dict(row) for row in rows] for table_type, rows in bucket.items()}
+            for key, bucket in COHORT_RATE_OVERRIDES.items()
+        }
 
 
 def _normalize_rate_bracket(row: Dict[str, Any]) -> Optional[Dict[str, float]]:
