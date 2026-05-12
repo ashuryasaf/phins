@@ -4874,6 +4874,22 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
         )
         monthly_premium = round(annual_premium / 12.0, 2)
 
+        # Recompute integrity hash over the actual returned values so
+        # downstream consumers can verify the breakdown they receive.
+        _r6 = lambda v: round(float(v), 6)
+        override_hash_payload = json.dumps({
+            "annual": _r6(annual_premium),
+            "risk": _r6(components.risk_premium_annual),
+            "savings": _r6(savings_premium),
+            "expense": _r6(expense_loading),
+            "profit": _r6(profit_margin),
+            "pv_mortality": _r6(components.pv_mortality_claims),
+            "pv_disability": _r6(components.pv_disability_claims),
+            "product": components.product_id,
+            "source": "inline_quote_legacy_override",
+        }, sort_keys=True, default=str)
+        integrity_hash = hashlib.sha256(override_hash_payload.encode("utf-8")).hexdigest()[:16]
+
         return {
             'base_premium': base_premium,
             'age': age,
@@ -4901,7 +4917,7 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             'pv_total_risk': components.pv_total_risk_claims,
             'eligible': True,
             'actuarial_source': 'PHINS_PRICING_KERNEL_V1',
-            'pricing_kernel_integrity_hash': components.integrity_hash,
+            'pricing_kernel_integrity_hash': integrity_hash,
         }
     else:
         # Simple calculation for auto/property

@@ -3180,6 +3180,10 @@
       }
     }
 
+    function escapeAttr(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
     async function loadCohortOverrides() {
       const tbody = document.querySelector('#cohort-overrides-list tbody');
       if (!tbody) return;
@@ -3203,7 +3207,7 @@
             <td>${row.registered_at ? new Date(row.registered_at).toLocaleString() : ''}</td>
             <td>
               <button class="btn-small btn-warning"
-                onclick="removeCohortOverride('${row.cohort_dim}', '${row.cohort_value}', '${row.table_type}')">
+                onclick="removeCohortOverride('${escapeAttr(row.cohort_dim)}', '${escapeAttr(row.cohort_value)}', '${escapeAttr(row.table_type)}')">
                 Remove
               </button>
             </td>
