@@ -77,10 +77,29 @@ class ClaimModel(str, Enum):
 
 
 class SavingsFormula(str, Enum):
-    """How the savings premium is derived."""
+    """How the savings premium is derived.
 
-    STRAIGHT_LINE = "straight_line"   # target/term, yield ignored (legacy default)
-    ANNUITY_IMMEDIATE = "annuity_immediate"  # annuity contribution at the assumed yield
+    Three formulas are supported. The first two model savings as a target
+    maturity value over the policy term. The third — the canonical PHINS
+    formula — models savings as a markup on the priced risk premium and is
+    the default for the actuary dashboard's portfolio simulator.
+
+    * ``RISK_PREMIUM_MARKUP`` — ``savings_premium = risk_premium ×
+      savings_rate`` (savings_rate can exceed 100%, e.g. 3.0 = 300%).
+      Matches the contract intent: the customer's pure-risk premium is
+      computed first from age/sex/smoker/underwriting, then the customer
+      can elect a savings add-on as a multiple of that premium.
+    * ``STRAIGHT_LINE`` — ``savings_premium = coverage × savings_rate /
+      term``. Legacy coverage-maturity formula retained for backwards
+      compatibility with existing reports.
+    * ``ANNUITY_IMMEDIATE`` — ``savings_premium = (coverage × savings_rate)
+      × yield_rate / ((1+yield_rate)^term - 1)``. Legacy formula that
+      discounts the savings target at the assumed yield.
+    """
+
+    RISK_PREMIUM_MARKUP = "risk_premium_markup"
+    STRAIGHT_LINE = "straight_line"
+    ANNUITY_IMMEDIATE = "annuity_immediate"
 
 
 # =============================================================================
@@ -113,12 +132,18 @@ class Product:
     life_share: float = 1.0
     disability_share: float = 0.25  # disability sum = coverage * disability_share
     disability_cutoff_age: Optional[int] = None
-    savings_rate: float = 0.0  # share of coverage targeted as savings maturity value
+    savings_rate: float = 0.0  # legacy share of coverage targeted as savings maturity value
     # When True the disability benefit is paid as a percentage of the disability
     # sum (life_share × disability_share × coverage) rather than the full
     # mortality coverage. False keeps the legacy behaviour of paying as a
     # percentage of full coverage.
     disability_benefit_on_disability_sum: bool = False
+    # When set (0.0–1.0), the kernel ignores the ADL benefit table and pays
+    # this fixed percentage of the disability sum on any qualifying claim.
+    # The PHINS pure-risk contract uses ``fixed_disability_benefit_pct=1.0``
+    # because once the 3+ ADL trigger fires the contract pays the full
+    # L/4 disability sum regardless of the customer's current ADL severity.
+    fixed_disability_benefit_pct: Optional[float] = None
     description: str = ""
 
 
@@ -350,32 +375,64 @@ def get_age_curve(curve_id: str) -> AgeCurve:
 # =============================================================================
 
 PRODUCT_REGISTRY: Dict[str, Product] = {
-    "phins_pure_risk": Product(
-        id="phins_pure_risk",
-        name="PHINS Pure-Risk Life + Permanent ADL Disability",
+    # Canonical PHINS contract — matches the published risk one-pager and the
+    # contract draft governing the actuary dashboard. Life cover from age 3
+    # through ∞, permanent ADL disability cover from age 3 through 65 paying
+    # L/4 on trigger, no savings/cash-value/surrender/investment component.
+    "phins_pure_risk_adjustable": Product(
+        id="phins_pure_risk_adjustable",
+        name="PHINS Adjustable Risk (Life 3-∞ + Permanent ADL Disability 3-65)",
         line="life_health",
         life_share=1.0,
         disability_share=0.25,
-        disability_cutoff_age=None,
+        disability_cutoff_age=65,
         savings_rate=0.0,
-        disability_benefit_on_disability_sum=False,
+        disability_benefit_on_disability_sum=True,
+        fixed_disability_benefit_pct=1.0,
         description=(
-            "Pure-risk life + permanent ADL disability cover. No savings component. "
-            "Reproduces the cover described in the public risk one-pager."
+            "PHINS Adjustable Risk contract. Life benefit L paid on death at any age "
+            "(3-∞). Permanent total disability (3+ ADL) or long-term loss of earning "
+            "capacity pays L/4 once triggered (age 3-65). Disability layer terminates "
+            "automatically at age 65. Pure risk product — no savings, cash value, "
+            "surrender, dividend or investment component."
         ),
     ),
+    # Back-compat alias: the previous 'phins_pure_risk' product id is now an
+    # alias for the contract-draft-aligned product.
+    "phins_pure_risk": Product(
+        id="phins_pure_risk",
+        name="PHINS Adjustable Risk (Life 3-∞ + Permanent ADL Disability 3-65)",
+        line="life_health",
+        life_share=1.0,
+        disability_share=0.25,
+        disability_cutoff_age=65,
+        savings_rate=0.0,
+        disability_benefit_on_disability_sum=True,
+        fixed_disability_benefit_pct=1.0,
+        description="Alias of phins_pure_risk_adjustable kept for backwards compatibility.",
+    ),
+    # Hybrid product = pure-risk cover + an optional savings ADD-ON priced as
+    # a markup on the risk premium (savings_rate semantics depend on the
+    # PricingConfig.savings_formula). With RISK_PREMIUM_MARKUP and
+    # savings_rate=1.0 the savings premium equals the risk premium; with
+    # savings_rate=3.0 (300%) the savings premium is three times the risk
+    # premium; with savings_rate=0.0 the product collapses back to pure risk.
     "phins_hybrid_savings": Product(
         id="phins_hybrid_savings",
-        name="PHINS Hybrid Life + Permanent ADL Disability + Savings",
+        name="PHINS Risk + Savings Add-on",
         line="life_health_savings",
         life_share=1.0,
         disability_share=0.25,
-        disability_cutoff_age=None,
+        disability_cutoff_age=65,
         savings_rate=0.5,
-        disability_benefit_on_disability_sum=False,
+        disability_benefit_on_disability_sum=True,
+        fixed_disability_benefit_pct=1.0,
         description=(
-            "Hybrid contract: pure-risk cover plus a savings target. The savings rate "
-            "and yield drive the savings premium component."
+            "PHINS Adjustable Risk cover with an optional savings add-on. The "
+            "default savings_rate=0.5 means the customer elects 50% of the risk "
+            "premium as a savings contribution (RISK_PREMIUM_MARKUP formula); the "
+            "rate can be any value, e.g. 3.0 = 300% of risk premium per the "
+            "user's example."
         ),
     ),
     "phins_life_only_post65": Product(
@@ -387,7 +444,11 @@ PRODUCT_REGISTRY: Dict[str, Product] = {
         disability_cutoff_age=65,
         savings_rate=0.0,
         disability_benefit_on_disability_sum=False,
-        description="Senior life-only cover; disability benefit terminates at age 65.",
+        fixed_disability_benefit_pct=None,
+        description=(
+            "Senior life-only cover; disability benefit terminates at age 65 and "
+            "the death benefit re-prices on the senior age curve."
+        ),
     ),
 }
 
@@ -464,11 +525,24 @@ def _compute_savings_premium(
     term_years: int,
     product: Product,
     config: PricingConfig,
+    risk_premium_annual: float,
 ) -> float:
-    """Compute the savings premium component using the configured formula."""
+    """Compute the savings premium component using the configured formula.
+
+    The canonical PHINS formula is ``RISK_PREMIUM_MARKUP``: a customer who
+    elects ``savings_rate`` pays ``savings_rate × risk_premium`` per year on
+    top of the priced risk premium. ``savings_rate`` is unbounded — 0.0 means
+    pure risk, 1.0 means matching the risk premium, 3.0 means three times
+    the risk premium (the example from the user's brief).
+    """
     savings_rate = max(0.0, float(config.savings_rate))
+    if savings_rate == 0.0 or term_years <= 0:
+        return 0.0
+    if config.savings_formula == SavingsFormula.RISK_PREMIUM_MARKUP:
+        return max(0.0, float(risk_premium_annual)) * savings_rate
+    # Legacy maturity-target formulas
     target_value = coverage * savings_rate * product.life_share
-    if target_value <= 0 or term_years <= 0:
+    if target_value <= 0:
         return 0.0
     if config.savings_formula == SavingsFormula.ANNUITY_IMMEDIATE and abs(config.savings_yield_pct) > 1e-12:
         factor = _annuity_contribution_factor(float(config.savings_yield_pct), int(term_years))
@@ -610,10 +684,19 @@ def _hash_components(payload: Dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
-def _benefit_pct_for(adl_level: int, tables: TableSet, exclude_disability: bool) -> float:
-    """Disability benefit percentage used by the legacy simulator math."""
+def _benefit_pct_for(adl_level: int, tables: TableSet, exclude_disability: bool,
+                     product: Optional[Product] = None) -> float:
+    """Disability benefit percentage used by the kernel.
+
+    When ``Product.fixed_disability_benefit_pct`` is set (e.g. 1.0 for the
+    PHINS pure-risk contract which always pays the full L/4 disability sum
+    on trigger), that fixed value wins. Otherwise the legacy graded benefit
+    table is consulted.
+    """
     if exclude_disability:
         return 0.0
+    if product is not None and product.fixed_disability_benefit_pct is not None:
+        return float(product.fixed_disability_benefit_pct)
     benefit_pct = tables.adl_benefit_pct(adl_level)
     if benefit_pct == 0:
         # The legacy simulator falls back to 0.35 when the ADL benefit table
@@ -672,7 +755,7 @@ def price_policy(
     adl = max(1, min(10, int(customer.adl_level)))
     adl_mort_mult = tables.adl_mortality_multiplier(adl)
     adl_dis_mult = tables.adl_disability_multiplier(adl)
-    benefit_pct = _benefit_pct_for(adl, tables, exclude_disability)
+    benefit_pct = _benefit_pct_for(adl, tables, exclude_disability, product)
 
     pv_payload = (
         _pv_claims_mutually_exclusive
@@ -719,7 +802,9 @@ def price_policy(
         mortality_premium *= 1.0 + float(underwriting_loading)
         disability_premium *= 1.0 + float(underwriting_loading)
 
-    savings_premium = _compute_savings_premium(coverage, term, product, config)
+    savings_premium = _compute_savings_premium(
+        coverage, term, product, config, risk_premium_annual=risk_premium,
+    )
 
     if config.expense_basis == "gross_premium":
         # When expense is on gross premium the loading formula becomes:
@@ -786,6 +871,19 @@ def price_policy(
             ),
             "monthly_x_12_equals_annual": abs(round(annual_premium / 12.0, 2) * 12.0 - round(annual_premium, 2))
             < 0.5,
+            # When the markup formula is in use, savings_premium MUST equal
+            # risk_premium × savings_rate to the cent. This makes the
+            # contract intent ("savings_rate is the % of risk premium")
+            # verifiable from a single integrity field.
+            "savings_markup_identity_holds": (
+                config.savings_formula != SavingsFormula.RISK_PREMIUM_MARKUP
+                or abs(savings_premium - risk_premium * config.savings_rate) < 1e-6
+            ),
+            # The mortality severity claim is L on death — verify the kernel
+            # never priced more than the coverage amount per-year as PV of
+            # mortality (a sanity bound for the contract's "L · 100% sum
+            # insured" clause).
+            "pv_mortality_within_coverage_bound": pv_mortality <= coverage * 1.01,
         },
     )
 

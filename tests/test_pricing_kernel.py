@@ -91,11 +91,30 @@ def _simulator_pricer_legacy(customer, uw_result, store):
 
 
 def test_kernel_matches_legacy_simulator_default_inputs():
-    """Kernel with defaults must reproduce the simulator pricer bit-for-bit."""
+    """Kernel with defaults must reproduce the simulator pricer bit-for-bit.
+
+    The legacy simulator used the graded ADL benefit table to pick the
+    disability claim percentage. The canonical PHINS contract product now
+    overrides that with ``fixed_disability_benefit_pct=1.0`` (the contract
+    pays the full L/4 disability sum once the 3+ ADL trigger fires), so
+    this test constructs a product matching the legacy graded behaviour
+    explicitly to verify the kernel still preserves it for that mode.
+    """
+    from services.pricing_kernel import Product
     store = get_actuarial_store()
     tables = table_set_from_store(store)
     config = pricing_config_from_underwriting(store.config)
-    product = get_product("phins_hybrid_savings")
+    product = Product(
+        id="phins_legacy_graded_for_test",
+        name="Legacy graded benefit (test-only)",
+        line="life_health",
+        life_share=1.0,
+        disability_share=0.25,
+        disability_cutoff_age=None,
+        savings_rate=0.5,
+        disability_benefit_on_disability_sum=False,
+        fixed_disability_benefit_pct=None,
+    )
 
     test_cases = [
         {"age": 30, "adl": 3, "coverage": 250_000, "term": 20},
@@ -271,6 +290,131 @@ def test_kernel_with_simulator_end_to_end():
     assert "pricing_kernel" in sim
     assert sim["pricing_kernel"]["product_id"]
     assert sim["pricing_kernel"]["claim_model"] == "mutually_exclusive"
+
+
+def test_risk_premium_markup_savings_matches_user_brief_example():
+    """User brief: risk premium 100 + savings 300% must produce savings 300, subtotal 400.
+
+    This pins the canonical contract intent that the dashboard's
+    ``Savings Allocation %`` means ``% of risk premium`` rather than
+    a coverage-maturity target.
+    """
+    from services.pricing_kernel import (
+        AGE_CURVE_REGISTRY, ClaimModel, PricingConfig, PricingCustomer,
+        Product, SavingsFormula, TableSet, price_policy,
+    )
+
+    # A synthetic table set + product where the kernel is forced to price a
+    # risk premium of exactly 100 (the user's example anchor).
+    flat_rate_per_1000 = 1.6  # 16 per term-year at coverage $100k mortality only
+    minimal_tables = TableSet(
+        mortality_rates=[{'age_min': 0, 'age_max': 120, 'rate_per_1000': flat_rate_per_1000}],
+        disability_incidence_rates=[{'age_min': 0, 'age_max': 120, 'rate_per_1000': 0.0}],
+        adl_mortality_multipliers=[{'adl': i, 'multiplier': 1.0} for i in range(1, 11)],
+        adl_disability_multipliers=[{'adl': i, 'multiplier': 0.0} for i in range(1, 11)],
+        adl_benefit_percentages=[{'adl': i, 'benefit_pct': 0.0} for i in range(1, 11)],
+        lapse_rates=[{'year_min': 1, 'year_max': 100, 'rate': 0.0}],
+        age_curve=AGE_CURVE_REGISTRY['identity'],
+        version='kernel_unit_test',
+    )
+    flat_product = Product(
+        id='flat_pure_risk', name='Flat pure risk for unit test',
+        life_share=1.0, disability_share=0.0,
+        disability_cutoff_age=None, savings_rate=0.0,
+        disability_benefit_on_disability_sum=False,
+        fixed_disability_benefit_pct=None,
+    )
+    config_pure = PricingConfig(
+        expense_loading_pct=0.0, profit_margin_pct=0.0,
+        discount_rate=0.0,  # remove discount so the math is exact
+        savings_rate=0.0, savings_yield_pct=0.0,
+        savings_formula=SavingsFormula.RISK_PREMIUM_MARKUP,
+        claim_model=ClaimModel.MUTUALLY_EXCLUSIVE,
+    )
+    pure = price_policy(
+        PricingCustomer(age=30, coverage=100_000, term_years=20, adl_level=5),
+        flat_product, minimal_tables, config_pure,
+    )
+    # Pure-risk anchor: with these inputs, risk premium is exactly $160/yr
+    # (coverage 100k × 1.6 per 1000 × term 20 / term 20).
+    assert pure.savings_premium_annual == 0.0
+    assert abs(pure.annual_premium - pure.risk_premium_annual) < 1e-6
+
+    risk_anchor = pure.risk_premium_annual
+
+    # 300% savings markup -> savings premium = 3 * risk, subtotal = 4 * risk
+    config_300 = PricingConfig(
+        **{**config_pure.__dict__, 'savings_rate': 3.0,
+           'savings_formula': SavingsFormula.RISK_PREMIUM_MARKUP},
+    )
+    plus_300 = price_policy(
+        PricingCustomer(age=30, coverage=100_000, term_years=20, adl_level=5),
+        flat_product, minimal_tables, config_300,
+    )
+    assert abs(plus_300.savings_premium_annual - 3.0 * risk_anchor) < 0.01
+    assert abs(plus_300.annual_premium - 4.0 * risk_anchor) < 0.01
+    assert plus_300.integrity_checks['savings_markup_identity_holds'] is True
+
+
+def test_pure_risk_default_produces_zero_savings():
+    """Default simulator settings must produce a pure-risk contract with no savings premium."""
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=80, age_min=25, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=12,
+        )
+    )
+    assert sim['profitability']['savings_premium'] == 0.0
+    assert sim['pricing_kernel']['savings_rate'] == 0.0
+    assert sim['pricing_kernel']['savings_formula'] == 'risk_premium_markup'
+    assert sim['pricing_kernel']['product_id'] == 'phins_pure_risk_adjustable'
+
+
+def test_simulator_300pct_savings_matches_risk_premium_markup_identity():
+    """Whole-portfolio identity: total_savings_premium == savings_rate × total_risk_premium."""
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=120, age_min=25, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=15,
+            savings_rate=3.0,  # 300% of risk premium per the user's brief
+            savings_formula='risk_premium_markup',
+            product_id='phins_pure_risk_adjustable',
+        )
+    )
+    expected = 3.0 * sim['profitability']['risk_premium']
+    actual = sim['profitability']['savings_premium']
+    assert abs(actual - expected) < 1.0, (actual, expected)
+    # And the simulator's own components-match flag must still hold
+    assert sim['profitability']['components_match']
+
+
+def test_kernel_integrity_hash_distinguishes_savings_formulas():
+    """Switching savings_formula must change the integrity hash."""
+    store = get_actuarial_store()
+    from services.pricing_kernel import (
+        ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
+        get_product, price_policy, table_set_from_store,
+    )
+    tables = table_set_from_store(store)
+    product = get_product('phins_pure_risk_adjustable')
+    customer = PricingCustomer(age=35, coverage=500_000, term_years=20, adl_level=5)
+
+    markup = price_policy(customer, product, tables,
+                          PricingConfig(savings_rate=0.5,
+                                        savings_formula=SavingsFormula.RISK_PREMIUM_MARKUP,
+                                        claim_model=ClaimModel.MUTUALLY_EXCLUSIVE))
+    straight = price_policy(customer, product, tables,
+                            PricingConfig(savings_rate=0.5,
+                                          savings_formula=SavingsFormula.STRAIGHT_LINE,
+                                          claim_model=ClaimModel.MUTUALLY_EXCLUSIVE))
+    assert markup.integrity_hash != straight.integrity_hash
+    # Both must individually satisfy the identity / components checks
+    assert markup.integrity_checks['savings_markup_identity_holds']
+    assert straight.integrity_checks['savings_markup_identity_holds']  # vacuously true
+    assert markup.integrity_checks['components_sum_to_total']
+    assert straight.integrity_checks['components_sum_to_total']
 
 
 def test_cohort_override_changes_priced_premium_for_matching_customer_only():

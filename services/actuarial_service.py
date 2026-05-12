@@ -113,25 +113,26 @@ class SimulationParams:
     # products use 0.0; hybrid risk+savings products set this to e.g. 0.30.
     savings_allocation_pct: float = 0.0
     # ------------------------------------------------------------------
-    # Pricing-kernel inputs (G1/G5: savings_rate and savings_yield now
-    # actually drive the savings premium component of each priced policy,
-    # not just the post-hoc profit allocation).
+    # Pricing-kernel inputs.
+    #
+    # The PHINS contract is a pure-risk adjustable contract; savings is an
+    # OPTIONAL add-on priced as a markup on the priced risk premium. With
+    # ``savings_formula='risk_premium_markup'`` (the default) the simulator
+    # interprets ``savings_rate`` directly as the customer's elected
+    # savings allocation as a fraction of risk premium — 0.0 means
+    # pure-risk, 1.0 means the savings premium matches the risk premium,
+    # 3.0 means 300% of risk premium (the example from the brief).
     # ------------------------------------------------------------------
-    # Product to price each simulated customer against. Defaults to the
-    # hybrid product (risk + savings) so existing simulations are
-    # bit-for-bit unchanged. Use 'phins_pure_risk' for pure-risk runs.
-    product_id: str = 'phins_hybrid_savings'
-    # Share of coverage targeted as the savings maturity value. The legacy
-    # simulator hardcoded this at 0.5; keeping that default preserves
-    # behaviour for existing callers, while parametric updates now flow
-    # through to the priced savings premium for every customer.
-    savings_rate: float = 0.5
-    # Assumed annual yield on the savings fund. Combined with
-    # ``savings_formula='annuity_immediate'`` this discounts the required
-    # savings contribution to reach the maturity target. The default
-    # straight-line formula ignores the yield, matching legacy behaviour.
+    product_id: str = 'phins_pure_risk_adjustable'
+    # Savings add-on as a fraction of risk premium (semantics depend on
+    # ``savings_formula``). Default is 0.0 = pure-risk contract.
+    savings_rate: float = 0.0
+    # Assumed annual yield on the savings fund. Used only when
+    # ``savings_formula='annuity_immediate'``; the new risk-premium-markup
+    # formula does not depend on yield.
     savings_yield_pct: float = 0.0
-    savings_formula: str = 'straight_line'  # 'straight_line' or 'annuity_immediate'
+    # 'risk_premium_markup' (new default), 'straight_line' or 'annuity_immediate'.
+    savings_formula: str = 'risk_premium_markup'
     # Age curve attached to the pricing-kernel TableSet. Defaults to
     # 'identity' (age dependence lives in the rate tables — the production
     # behaviour). Set to 'risk_reference_v1' to swap in the published age
@@ -1194,11 +1195,11 @@ class PortfolioSimulator:
             # simulation flowed through the same kernel call signature, so
             # the entire snapshot is reproducible from these identifiers.
             'pricing_kernel': {
-                'product_id': getattr(params, 'product_id', 'phins_hybrid_savings'),
+                'product_id': getattr(params, 'product_id', 'phins_pure_risk_adjustable'),
                 'age_curve_id': getattr(params, 'age_curve_id', 'identity'),
-                'savings_rate': float(getattr(params, 'savings_rate', 0.5)),
+                'savings_rate': float(getattr(params, 'savings_rate', 0.0)),
                 'savings_yield_pct': float(getattr(params, 'savings_yield_pct', 0.0)),
-                'savings_formula': str(getattr(params, 'savings_formula', 'straight_line')),
+                'savings_formula': str(getattr(params, 'savings_formula', 'risk_premium_markup')),
                 'claim_model': 'mutually_exclusive',
                 'tables_version': self.tables.current_version,
                 'expense_loading_pct': self.tables.config.expense_loading_pct,
@@ -1325,19 +1326,21 @@ class PortfolioSimulator:
         """
         pk = self._pk
         params = params if params is not None else SimulationParams()
-        savings_formula = (
-            pk.SavingsFormula.ANNUITY_IMMEDIATE
-            if str(getattr(params, 'savings_formula', 'straight_line')).lower() == 'annuity_immediate'
-            else pk.SavingsFormula.STRAIGHT_LINE
-        )
+        formula_label = str(getattr(params, 'savings_formula', 'risk_premium_markup')).lower()
+        if formula_label == 'annuity_immediate':
+            savings_formula = pk.SavingsFormula.ANNUITY_IMMEDIATE
+        elif formula_label == 'straight_line':
+            savings_formula = pk.SavingsFormula.STRAIGHT_LINE
+        else:
+            savings_formula = pk.SavingsFormula.RISK_PREMIUM_MARKUP
         config = pk.pricing_config_from_underwriting(
             self.tables.config,
-            savings_rate=float(getattr(params, 'savings_rate', 0.5)),
+            savings_rate=float(getattr(params, 'savings_rate', 0.0)),
             savings_yield_pct=float(getattr(params, 'savings_yield_pct', 0.0)),
             claim_model=pk.ClaimModel.MUTUALLY_EXCLUSIVE,
             savings_formula=savings_formula,
         )
-        product = pk.get_product(getattr(params, 'product_id', 'phins_hybrid_savings'))
+        product = pk.get_product(getattr(params, 'product_id', 'phins_pure_risk_adjustable'))
         tables = pk.table_set_from_store(
             self.tables,
             age_curve_id=getattr(params, 'age_curve_id', 'identity'),
@@ -1934,16 +1937,18 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
         get_product, price_policy, table_set_from_store,
     )
     store = get_actuarial_store()
-    savings_formula = (
-        SavingsFormula.ANNUITY_IMMEDIATE
-        if str(pricing_meta.get('savings_formula', 'straight_line')).lower() == 'annuity_immediate'
-        else SavingsFormula.STRAIGHT_LINE
-    )
+    formula_label = str(pricing_meta.get('savings_formula', 'risk_premium_markup')).lower()
+    if formula_label == 'annuity_immediate':
+        savings_formula = SavingsFormula.ANNUITY_IMMEDIATE
+    elif formula_label == 'straight_line':
+        savings_formula = SavingsFormula.STRAIGHT_LINE
+    else:
+        savings_formula = SavingsFormula.RISK_PREMIUM_MARKUP
     config = PricingConfig(
         expense_loading_pct=float(pricing_meta.get('expense_loading_pct', 0.15)),
         profit_margin_pct=float(pricing_meta.get('profit_margin_pct', 0.10)),
         discount_rate=float(pricing_meta.get('discount_rate', 0.035)),
-        savings_rate=float(pricing_meta.get('savings_rate', 0.5)),
+        savings_rate=float(pricing_meta.get('savings_rate', 0.0)),
         savings_yield_pct=float(pricing_meta.get('savings_yield_pct', 0.0)),
         savings_formula=savings_formula,
         claim_model=ClaimModel.MUTUALLY_EXCLUSIVE,
@@ -1953,7 +1958,7 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
         age_curve_id=str(pricing_meta.get('age_curve_id', 'identity')),
         cohort_overrides=get_cohort_overrides_snapshot(),
     )
-    product = get_product(str(pricing_meta.get('product_id', 'phins_hybrid_savings')))
+    product = get_product(str(pricing_meta.get('product_id', 'phins_pure_risk_adjustable')))
     representative = price_policy(
         PricingCustomer(
             age=rep_age, coverage=rep_coverage,
