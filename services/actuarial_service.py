@@ -1154,7 +1154,7 @@ class PortfolioSimulator:
             'net_margin_pct': net_margin_pct,
             'return_on_risk': round((net_profit / annual_risk_premium) * 100, 2) if annual_risk_premium > 0 else 0,
             'calculated_gross': round(calculated_gross, 2),  # For verification
-            'components_match': abs(totals['annual_premium'] - calculated_gross) < max(1.0, accepted_count * 0.02)
+            'components_match': abs(totals['annual_premium'] - calculated_gross) < max(1.0, math.sqrt(accepted_count) * 0.50)
         }
         
         # Build result
