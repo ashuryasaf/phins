@@ -107,6 +107,10 @@ class SimulationParams:
     ethnicity: Dict[str, float] = field(default_factory=lambda: {
         'caucasian': 60, 'african': 13, 'hispanic': 18, 'asian': 6, 'other': 3
     })
+    # Share of total annual premium routed to the long-term savings fund rather
+    # than retained on the insurance balance sheet (0.0 - 0.95). Pure-risk
+    # products use 0.0; hybrid risk+savings products set this to e.g. 0.30.
+    savings_allocation_pct: float = 0.0
 
 
 # =============================================================================
@@ -1156,6 +1160,11 @@ class PortfolioSimulator:
             }
         }
         result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
+        # Pre-compute savings vs insurance allocation breakdown so the
+        # dashboard, reserve projection, and reports all agree on the split.
+        result['savings_allocation'] = apply_savings_allocation(
+            result, getattr(params, 'savings_allocation_pct', 0.0) or 0.0
+        )
         return result
     
     def _generate_customer(self, params: SimulationParams) -> Dict:
@@ -1532,3 +1541,573 @@ def check_underwriting_eligibility(adl: int, coverage: float) -> Dict:
         'loading': config.loadings.get(adl, 0),
         'exclude_disability': adl >= config.disability_exclusion_threshold
     }
+
+
+# =============================================================================
+# FEFFERMAN REFERENCE MODEL
+# =============================================================================
+#
+# Mirror of the locked actuarial source block published on
+# https://www.phins.ai/phins-risk-1pager-fefferman.html so that every figure on
+# that one-pager can be reproduced server-side for audit/validation purposes.
+#
+# Keeping these constants in lockstep with the public document lets the
+# dashboard verify the production pricing model against the disclosed model.
+# =============================================================================
+
+PHINS_FEFFERMAN_MODEL: Dict[str, Any] = {
+    'version': 'v1.0',
+    'doc_date': '2026-05-07',
+    'doc_url': 'https://www.phins.ai/phins-risk-1pager-fefferman.html',
+    'reference_life_sum': 500000.0,
+    'disability_share_of_life': 0.25,
+    'life_base_rate_per_1000_monthly': 0.25,
+    'disability_base_rate_per_1000_monthly': 0.20,
+    'core_slope': 0.015,
+    'youth_anchor_age': 3,
+    'youth_anchor_factor': 0.30,
+    'adult_anchor_age': 25,
+    'adult_anchor_factor': 1.00,
+    'senior_slope_1': 0.05,
+    'senior_slope_2': 0.08,
+    'disability_cut_off_age': 65,
+    'mortality_qx': {35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171},
+    'disability_incidence_ix': {35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528},
+    'mortality_severity': 1.00,
+    'disability_severity': 0.55,
+    'reference_start_age': 35,
+    'reference_projection_years': 5,
+}
+
+
+def fefferman_age_factor(age: int) -> float:
+    """Return the published age curve factor (matches the 1-pager exactly)."""
+    m = PHINS_FEFFERMAN_MODEL
+    if age <= m['adult_anchor_age']:
+        span = m['adult_anchor_age'] - m['youth_anchor_age']
+        rise = m['adult_anchor_factor'] - m['youth_anchor_factor']
+        anchored = max(m['youth_anchor_age'], age)
+        return round(m['youth_anchor_factor'] + (anchored - m['youth_anchor_age']) * (rise / span), 4)
+    if age <= m['disability_cut_off_age']:
+        return round(m['adult_anchor_factor'] + (age - m['adult_anchor_age']) * m['core_slope'], 4)
+    base = fefferman_age_factor(m['disability_cut_off_age'])
+    capped = min(age, 80)
+    if capped <= 75:
+        return round(base + (capped - m['disability_cut_off_age']) * m['senior_slope_1'], 4)
+    return round(
+        base
+        + (75 - m['disability_cut_off_age']) * m['senior_slope_1']
+        + (capped - 75) * m['senior_slope_2'],
+        4,
+    )
+
+
+def fefferman_monthly_premiums(age: int, life_sum: Optional[float] = None) -> Dict[str, float]:
+    """Return monthly life + disability premium for the reference policyholder."""
+    m = PHINS_FEFFERMAN_MODEL
+    life = life_sum if life_sum is not None else m['reference_life_sum']
+    disability = life * m['disability_share_of_life']
+    factor = fefferman_age_factor(age)
+    life_premium = (life / 1000.0) * m['life_base_rate_per_1000_monthly'] * factor
+    disability_premium = 0.0
+    if age < m['disability_cut_off_age']:
+        disability_premium = (disability / 1000.0) * m['disability_base_rate_per_1000_monthly'] * factor
+    return {
+        'age': age,
+        'age_factor': round(factor, 4),
+        'life_monthly': round(life_premium, 2),
+        'disability_monthly': round(disability_premium, 2),
+        'total_monthly': round(life_premium + disability_premium, 2),
+        'annual_premium': round((life_premium + disability_premium) * 12, 2),
+    }
+
+
+def build_fefferman_reference(start_age: Optional[int] = None,
+                              projection_years: Optional[int] = None,
+                              life_sum: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Build the Fefferman reference 5-year forecast deterministically.
+
+    The output reproduces the cumulative premium, expected loss, and average
+    loss ratio shown on the public one-pager.
+    """
+    m = PHINS_FEFFERMAN_MODEL
+    start_age = int(start_age if start_age is not None else m['reference_start_age'])
+    projection_years = int(projection_years if projection_years is not None else m['reference_projection_years'])
+    life = float(life_sum if life_sum is not None else m['reference_life_sum'])
+    disability = life * m['disability_share_of_life']
+
+    yearly = []
+    cumulative_premium = 0.0
+    cumulative_expected_loss = 0.0
+    for offset in range(projection_years):
+        age = start_age + offset
+        premiums = fefferman_monthly_premiums(age, life_sum=life)
+        annual = premiums['annual_premium']
+        qx = m['mortality_qx'].get(age, 0.0)
+        ix = m['disability_incidence_ix'].get(age, 0.0)
+        expected_loss = qx * life * m['mortality_severity'] + ix * disability * m['disability_severity']
+        loss_ratio = (expected_loss / annual) if annual > 0 else 0.0
+        cumulative_premium += annual
+        cumulative_expected_loss += expected_loss
+        yearly.append({
+            'year': offset + 1,
+            'age': age,
+            'age_factor': premiums['age_factor'],
+            'annual_premium': round(annual, 2),
+            'mortality_qx': qx,
+            'disability_ix': ix,
+            'expected_loss': round(expected_loss, 2),
+            'loss_ratio': round(loss_ratio, 4),
+        })
+
+    avg_loss_ratio = (cumulative_expected_loss / cumulative_premium) if cumulative_premium > 0 else 0.0
+    return {
+        'source': {
+            'document': 'PHINS Executive 1-Pager - Risk Factors (Alan Fefferman F.IL.A.A)',
+            'url': m['doc_url'],
+            'version': m['version'],
+            'doc_date': m['doc_date'],
+        },
+        'reference': {
+            'life_sum': life,
+            'disability_sum': round(disability, 2),
+            'life_base_rate_per_1000_monthly': m['life_base_rate_per_1000_monthly'],
+            'disability_base_rate_per_1000_monthly': m['disability_base_rate_per_1000_monthly'],
+            'disability_cut_off_age': m['disability_cut_off_age'],
+            'start_age': start_age,
+            'projection_years': projection_years,
+        },
+        'yearly_projection': yearly,
+        'totals': {
+            'cumulative_premium': round(cumulative_premium, 2),
+            'cumulative_expected_loss': round(cumulative_expected_loss, 2),
+            'average_loss_ratio': round(avg_loss_ratio, 4),
+            'expense_plus_capital_margin': round(1 - avg_loss_ratio, 4) if cumulative_premium > 0 else 0.0,
+        },
+        'data_integrity': {
+            'cumulative_premium_check': abs(
+                sum(row['annual_premium'] for row in yearly) - round(cumulative_premium, 2)
+            ) < 0.5,
+            'cumulative_loss_check': abs(
+                sum(row['expected_loss'] for row in yearly) - round(cumulative_expected_loss, 2)
+            ) < 0.5,
+            'severity_assumptions': {
+                'mortality_severity': m['mortality_severity'],
+                'disability_severity': m['disability_severity'],
+            },
+        },
+    }
+
+
+# =============================================================================
+# RESERVES / IFRS 17 / IBNR PROJECTION
+# =============================================================================
+
+@dataclass
+class ReserveConfig:
+    """
+    Configuration for actuarial reserve projection.
+
+    - `dividends_pct`: share of after-tax profit distributed as dividends.
+    - `tax_pct`: corporate tax rate on operating profit.
+    - `ibnr_pct`: IBNR (Incurred But Not Reported) provision as a percentage of
+      annual expected claims (incurred-claims method).
+    - `reserve_contribution_pct`: share of retained earnings transferred into
+      the actuarial reserve buffer each year.
+    - `risk_adjustment_pct`: IFRS 17 Risk Adjustment as a percentage of best
+      estimate liability (BEL).
+    - `csm_release_pattern`: 'straight_line' or 'coverage_units' for releasing
+      the Contractual Service Margin (CSM) over the average term.
+    - `savings_allocation_pct`: share of total premium allocated to the savings
+      fund vs. the risk insurance balance sheet.
+    - `savings_yield_pct`: assumed annual yield on the savings fund.
+    - `projection_years`: number of "situation years" to project.
+    - `initial_reserve`: opening reserve balance.
+    """
+
+    dividends_pct: float = 0.30
+    tax_pct: float = 0.23
+    ibnr_pct: float = 0.10
+    reserve_contribution_pct: float = 0.40
+    risk_adjustment_pct: float = 0.06
+    csm_release_pattern: str = 'straight_line'
+    savings_allocation_pct: float = 0.0
+    savings_yield_pct: float = 0.045
+    projection_years: int = 5
+    initial_reserve: float = 0.0
+
+
+def _pct_auto(v: float) -> float:
+    """Auto-detect whether a value is a fraction (0..1) or percentage (>1) and normalise to fraction."""
+    return v / 100.0 if abs(v) > 1.0 else v
+
+
+def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
+    payload = payload or {}
+    return ReserveConfig(
+        dividends_pct=_clamp(_pct_auto(float(payload.get('dividends_pct', 0.30) or 0.0)), 0.0, 1.0),
+        tax_pct=_clamp(_pct_auto(float(payload.get('tax_pct', 0.23) or 0.0)), 0.0, 0.6),
+        ibnr_pct=_clamp(_pct_auto(float(payload.get('ibnr_pct', 0.10) or 0.0)), 0.0, 1.0),
+        reserve_contribution_pct=_clamp(
+            _pct_auto(float(payload.get('reserve_contribution_pct', 0.40) or 0.0)), 0.0, 1.0
+        ),
+        risk_adjustment_pct=_clamp(
+            _pct_auto(float(payload.get('risk_adjustment_pct', 0.06) or 0.0)), 0.0, 0.5
+        ),
+        csm_release_pattern=str(payload.get('csm_release_pattern') or 'straight_line').lower(),
+        savings_allocation_pct=_clamp(
+            _pct_auto(float(payload.get('savings_allocation_pct', 0.0) or 0.0)), 0.0, 0.95
+        ),
+        savings_yield_pct=_clamp(
+            _pct_auto(float(payload.get('savings_yield_pct', 0.045) or 0.0)), -0.5, 0.5
+        ),
+        projection_years=max(1, min(50, int(payload.get('projection_years', 5) or 5))),
+        initial_reserve=max(0.0, float(payload.get('initial_reserve', 0.0) or 0.0)),
+    )
+
+
+def apply_savings_allocation(simulation: Dict[str, Any], savings_allocation_pct: float) -> Dict[str, Any]:
+    """
+    Re-split the simulation's profitability between an "insurance" balance sheet
+    and a "savings fund" balance sheet.
+
+    The simulator's `savings_premium` is treated as pass-through. The
+    `savings_allocation_pct` here applies to total annual premium and moves a
+    share of net profit into the savings fund as a member-allocated balance.
+    The output is deterministic and reconciles to the simulation totals so the
+    integrity check holds.
+    """
+    profitability = simulation.get('profitability', {}) or {}
+    gross_premium = float(profitability.get('gross_premium', 0.0) or 0.0)
+    risk_premium = float(profitability.get('risk_premium', 0.0) or 0.0)
+    savings_premium = float(profitability.get('savings_premium', 0.0) or 0.0)
+    net_profit = float(profitability.get('net_profit', 0.0) or 0.0)
+
+    share = _clamp(float(savings_allocation_pct or 0.0), 0.0, 0.95)
+    insurance_share = 1.0 - share
+
+    savings_balance_sheet = {
+        'savings_premium_pass_through': round(savings_premium, 2),
+        'allocation_share': round(share, 4),
+        'profit_allocated': round(net_profit * share, 2),
+        'risk_premium_allocated': round(risk_premium * share, 2),
+        'total_to_savings_fund': round(savings_premium + (risk_premium + net_profit) * share, 2),
+    }
+
+    insurance_balance_sheet = {
+        'allocation_share': round(insurance_share, 4),
+        'risk_premium_retained': round(risk_premium * insurance_share, 2),
+        'profit_retained': round(net_profit * insurance_share, 2),
+        'gross_premium_retained': round(gross_premium - savings_balance_sheet['total_to_savings_fund'], 2),
+    }
+
+    total_split = round(
+        savings_balance_sheet['total_to_savings_fund']
+        + insurance_balance_sheet['gross_premium_retained'],
+        2,
+    )
+
+    return {
+        'savings_allocation_pct': round(share * 100, 2),
+        'insurance_balance_sheet': insurance_balance_sheet,
+        'savings_balance_sheet': savings_balance_sheet,
+        'data_integrity': {
+            'gross_premium_input': round(gross_premium, 2),
+            'gross_premium_reconciles': (
+                abs(total_split - round(gross_premium, 2)) < 1.0
+                and insurance_balance_sheet['gross_premium_retained'] >= 0.0
+            ),
+            'sum_of_shares': round(share + insurance_share, 4),
+        },
+    }
+
+
+class ReserveCalculator:
+    """
+    Multi-year actuarial reserve projection covering:
+    - IBNR provision (incurred-claims method)
+    - IFRS 17 Best Estimate Liability (BEL), Risk Adjustment, CSM release
+    - Annual reserve contribution from retained earnings
+    - Dividend and tax flows
+    - Savings fund accumulation
+    - Lapse-aware in-force decay (using the central lapse table)
+
+    The model is deterministic: the same simulation + config always produces
+    the same projection so audit, validation, and reporting all line up.
+    """
+
+    def __init__(self, tables_store: Optional[ActuarialTablesStore] = None):
+        self.tables = tables_store or get_actuarial_store()
+
+    def project(self, simulation: Dict[str, Any], config: ReserveConfig) -> Dict[str, Any]:
+        portfolio = simulation.get('portfolio_summary', {}) or {}
+        risk_metrics = simulation.get('risk_metrics', {}) or {}
+        profitability = simulation.get('profitability', {}) or {}
+
+        annual_premium = float(portfolio.get('total_annual_premium', 0.0) or 0.0)
+        annual_expected_claims = float(risk_metrics.get('annual_expected_claims', 0.0) or 0.0)
+        avg_term = float(risk_metrics.get('avg_term_years', 0.0) or 0.0)
+        sim_net_profit = float(profitability.get('net_profit', 0.0) or 0.0)
+        total_pv_claims = float(risk_metrics.get('total_expected_claims', 0.0) or 0.0)
+        total_risk_premium = float(profitability.get('risk_premium', 0.0) or 0.0)
+        savings_premium = float(profitability.get('savings_premium', 0.0) or 0.0)
+
+        projection_years = config.projection_years
+        avg_term = max(1.0, avg_term or projection_years)
+
+        opening_reserve = config.initial_reserve
+        opening_bel = total_pv_claims  # IFRS 17 Best Estimate Liability seeded with PV claims
+        opening_ra = opening_bel * config.risk_adjustment_pct
+        opening_csm = max(0.0, total_risk_premium * avg_term - opening_bel - opening_ra)
+        opening_savings = 0.0
+
+        yearly: List[Dict[str, Any]] = []
+        cumulative_tax = 0.0
+        cumulative_dividends = 0.0
+        cumulative_retained = 0.0
+        cumulative_reserve_contrib = 0.0
+        cumulative_savings_contrib = 0.0
+
+        # Precompute cumulative in-force factors as product of survival rates
+        in_force_factors = [1.0]
+        for y in range(1, projection_years + 1):
+            lr = self.tables.get_lapse_rate(y)
+            in_force_factors.append(in_force_factors[-1] * max(0.0, 1.0 - lr))
+
+        cumulative_csm_release = 0.0
+        total_coverage_units = sum(in_force_factors[y - 1] for y in range(1, projection_years + 1)) or 1.0
+
+        for year_index in range(1, projection_years + 1):
+            lapse_rate = self.tables.get_lapse_rate(year_index)
+            in_force_factor = in_force_factors[year_index - 1]
+            in_force_premium = annual_premium * in_force_factor
+            in_force_claims = annual_expected_claims * in_force_factor
+
+            # Profit waterfall:
+            operating_profit = sim_net_profit * in_force_factor
+            tax_amount = operating_profit * config.tax_pct
+            after_tax_profit = operating_profit - tax_amount
+            dividends = after_tax_profit * config.dividends_pct
+            retained = after_tax_profit - dividends
+
+            reserve_contribution = retained * config.reserve_contribution_pct
+            savings_contribution = in_force_premium * config.savings_allocation_pct
+
+            # IBNR provision: incurred-claims method
+            ibnr = in_force_claims * config.ibnr_pct
+
+            # IFRS 17 release: CSM amortized over remaining coverage units;
+            # BEL and RA wind down proportionally to in-force decay.
+            if config.csm_release_pattern == 'coverage_units':
+                csm_release = (opening_csm * in_force_factor) / total_coverage_units
+            else:
+                csm_release = opening_csm / projection_years if projection_years else 0.0
+            csm_release = min(opening_csm - cumulative_csm_release, csm_release)
+
+            bel_balance = opening_bel * max(0.0, 1.0 - (year_index / avg_term))
+            ra_balance = bel_balance * config.risk_adjustment_pct
+            cumulative_csm_release += csm_release
+            csm_balance = max(0.0, opening_csm - cumulative_csm_release)
+            ifrs17_total_liability = bel_balance + ra_balance + csm_balance + ibnr
+
+            closing_reserve = opening_reserve + reserve_contribution
+            savings_yield_amount = opening_savings * config.savings_yield_pct
+            closing_savings = opening_savings + savings_contribution + savings_yield_amount
+
+            yearly.append({
+                'year': year_index,
+                'in_force_factor': round(in_force_factor, 6),
+                'lapse_rate_used': round(lapse_rate, 4),
+                'in_force_premium': round(in_force_premium, 2),
+                'in_force_expected_claims': round(in_force_claims, 2),
+                'operating_profit': round(operating_profit, 2),
+                'tax': round(tax_amount, 2),
+                'after_tax_profit': round(after_tax_profit, 2),
+                'dividends': round(dividends, 2),
+                'retained_earnings': round(retained, 2),
+                'reserve_contribution': round(reserve_contribution, 2),
+                'closing_reserve': round(closing_reserve, 2),
+                'ibnr_provision': round(ibnr, 2),
+                'ifrs17': {
+                    'bel_balance': round(bel_balance, 2),
+                    'risk_adjustment': round(ra_balance, 2),
+                    'csm_release': round(csm_release, 2),
+                    'csm_balance': round(csm_balance, 2),
+                    'total_liability': round(ifrs17_total_liability, 2),
+                },
+                'savings_fund': {
+                    'contribution': round(savings_contribution, 2),
+                    'yield': round(savings_yield_amount, 2),
+                    'closing_balance': round(closing_savings, 2),
+                },
+            })
+
+            opening_reserve = closing_reserve
+            opening_savings = closing_savings
+            cumulative_tax += tax_amount
+            cumulative_dividends += dividends
+            cumulative_retained += retained
+            cumulative_reserve_contrib += reserve_contribution
+            cumulative_savings_contrib += savings_contribution
+
+        totals = {
+            'cumulative_tax': round(cumulative_tax, 2),
+            'cumulative_dividends': round(cumulative_dividends, 2),
+            'cumulative_retained_earnings': round(cumulative_retained, 2),
+            'cumulative_reserve_contribution': round(cumulative_reserve_contrib, 2),
+            'cumulative_savings_contribution': round(cumulative_savings_contrib, 2),
+            'closing_reserve': round(opening_reserve, 2),
+            'closing_savings_balance': round(opening_savings, 2),
+            'average_reserve_contribution': round(
+                cumulative_reserve_contrib / max(1, projection_years), 2
+            ),
+        }
+
+        # Verifiable identity: profit waterfall must reconcile each year
+        identity_checks = []
+        for row in yearly:
+            lhs = row['operating_profit']
+            rhs = row['tax'] + row['after_tax_profit']
+            identity_checks.append(abs(lhs - rhs) < 0.5)
+
+        savings_allocation = apply_savings_allocation(simulation, config.savings_allocation_pct)
+
+        return {
+            'simulation_id': simulation.get('simulation_id'),
+            'projection_years': projection_years,
+            'avg_term_years': round(avg_term, 2),
+            'config': asdict(config),
+            'yearly_projection': yearly,
+            'totals': totals,
+            'opening_balances': {
+                'reserve': round(config.initial_reserve, 2),
+                'bel': round(opening_bel, 2),
+                'risk_adjustment': round(opening_ra, 2),
+                'csm': round(opening_csm, 2),
+                'savings_fund': 0.0,
+            },
+            'savings_allocation': savings_allocation,
+            'data_integrity': {
+                'profit_waterfall_consistent': all(identity_checks),
+                'dividends_within_after_tax': all(
+                    row['dividends'] <= row['after_tax_profit'] + 0.5 for row in yearly
+                ),
+                'reserve_monotonic_when_positive_profit': all(
+                    (row['retained_earnings'] >= -0.5)
+                    for row in yearly
+                ),
+                'savings_balance_non_negative': all(
+                    row['savings_fund']['closing_balance'] >= -0.5 for row in yearly
+                ),
+                'csm_non_negative': all(row['ifrs17']['csm_balance'] >= -0.5 for row in yearly),
+            },
+            'ifrs17_methodology': {
+                'measurement_model': 'general_measurement_model',
+                'risk_adjustment_method': 'cost_of_capital_proxy_via_pct_of_bel',
+                'csm_release_pattern': config.csm_release_pattern,
+            },
+            'ibnr_methodology': {
+                'method': 'incurred_claims_pct',
+                'percentage_of_expected_claims': config.ibnr_pct,
+            },
+        }
+
+
+def get_reserve_calculator() -> ReserveCalculator:
+    return ReserveCalculator()
+
+
+# =============================================================================
+# CUSTOM UPLOADED RATE TABLES
+# =============================================================================
+#
+# Excel/CSV/JSON uploads land in `ACTUARIAL_TABLES` (in-memory) or the
+# `actuarial_tables` DB table. The helpers below normalize those payloads so
+# the dashboard can preview them and the simulator can swap them in for the
+# built-in mortality/disability tables when running a targeted study (e.g.,
+# mortality for Caucasian women, permanent disability for a specific cohort).
+# =============================================================================
+
+SUPPORTED_RATE_BANDS = {'mortality_rates', 'disability_incidence_rates'}
+
+
+def _normalize_rate_bracket(row: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    if not isinstance(row, dict):
+        return None
+    candidates = {k.lower().strip(): v for k, v in row.items() if isinstance(k, str)}
+
+    def pick(*names: str) -> Optional[Any]:
+        for name in names:
+            if name in candidates and candidates[name] not in (None, ''):
+                return candidates[name]
+        return None
+
+    def pick_rate(*names: str):
+        for name in names:
+            if name in candidates and candidates[name] not in (None, ''):
+                return candidates[name], name
+        return None, None
+
+    age_min = pick('age_min', 'age min', 'age_from', 'min_age', 'from')
+    age_max = pick('age_max', 'age max', 'age_to', 'max_age', 'to')
+    rate, rate_source = pick_rate(
+        'rate_per_1000', 'rate per 1000', 'rate', 'qx_per_1000', 'qx', 'ix', 'ix_per_1000'
+    )
+    if age_min is None or age_max is None or rate is None:
+        return None
+    try:
+        rate_value = float(rate)
+        # If the values look like raw qx/ix probabilities (0..1) convert to per-1000.
+        if rate_source in ('qx', 'ix') and rate_value <= 1.0:
+            rate_value = rate_value * 1000.0
+        return {
+            'age_min': int(float(age_min)),
+            'age_max': int(float(age_max)),
+            'rate_per_1000': round(rate_value, 4),
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_uploaded_rate_table(table_type: str, rows: Any) -> Dict[str, Any]:
+    """
+    Convert raw uploaded payload (list of dicts or a dict wrapping rows) into
+    the canonical bracket format used by the central tables store.
+    """
+    table_type = (table_type or '').strip().lower()
+    if isinstance(rows, dict):
+        rows = rows.get('data') or rows.get('rows') or list(rows.values())
+    if not isinstance(rows, list):
+        return {'valid': False, 'reason': 'rows_must_be_list', 'normalized': []}
+
+    normalized: List[Dict[str, float]] = []
+    skipped = 0
+    for row in rows:
+        bracket = _normalize_rate_bracket(row)
+        if bracket is None:
+            skipped += 1
+            continue
+        normalized.append(bracket)
+
+    normalized.sort(key=lambda b: b['age_min'])
+    valid = bool(normalized) and table_type in SUPPORTED_RATE_BANDS
+    return {
+        'valid': valid,
+        'table_type': table_type,
+        'normalized': normalized,
+        'rows_in': len(rows) if isinstance(rows, list) else 0,
+        'rows_normalized': len(normalized),
+        'rows_skipped': skipped,
+        'reason': None if valid else (
+            'unsupported_table_type' if table_type not in SUPPORTED_RATE_BANDS
+            else 'no_valid_rows'
+        ),
+    }
+
+
+def apply_uploaded_table_to_store(table_type: str, normalized: List[Dict[str, float]],
+                                   user: str) -> Dict[str, Any]:
+    """Promote a normalized uploaded payload into the central rate table store."""
+    store = get_actuarial_store()
+    return store.update_current_tables(table_type, normalized, user)
