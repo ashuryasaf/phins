@@ -1549,74 +1549,114 @@ def check_underwriting_eligibility(adl: int, coverage: float) -> Dict:
 
 
 # =============================================================================
-# FEFFERMAN REFERENCE MODEL
+# RISK REFERENCE MODEL (modular)
 # =============================================================================
 #
-# Mirror of the locked actuarial source block published on
-# https://www.phins.ai/phins-risk-1pager-fefferman.html so that every figure on
-# that one-pager can be reproduced server-side for audit/validation purposes.
+# Mirror of the locked actuarial source block published on the PHINS public
+# risk one-pager. Kept here as a *registry of risk-reference profiles* (not a
+# frozen 5-year exam) so the dashboard can reproduce any reference profile
+# against the public model with verifiable integrity, and new reference
+# profiles can be registered without touching the API surface.
 #
-# Keeping these constants in lockstep with the public document lets the
-# dashboard verify the production pricing model against the disclosed model.
+# A risk-reference profile is fully described by:
+#
+# * an :class:`AgeCurve` from ``services.pricing_kernel`` (the published curve
+#   is registered as ``risk_reference_v1``)
+# * mortality q(x) and permanent ADL disability i(x) tables for the selected
+#   age window
+# * mortality / disability severity factors
+# * the desired starting age, projection horizon, life sum, and product
 # =============================================================================
 
-PHINS_FEFFERMAN_MODEL: Dict[str, Any] = {
-    'version': 'v1.0',
-    'doc_date': '2026-05-07',
-    'doc_url': 'https://www.phins.ai/phins-risk-1pager-fefferman.html',
-    'reference_life_sum': 500000.0,
-    'disability_share_of_life': 0.25,
-    'life_base_rate_per_1000_monthly': 0.25,
-    'disability_base_rate_per_1000_monthly': 0.20,
-    'core_slope': 0.015,
-    'youth_anchor_age': 3,
-    'youth_anchor_factor': 0.30,
-    'adult_anchor_age': 25,
-    'adult_anchor_factor': 1.00,
-    'senior_slope_1': 0.05,
-    'senior_slope_2': 0.08,
-    'disability_cut_off_age': 65,
-    'mortality_qx': {35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171},
-    'disability_incidence_ix': {35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528},
-    'mortality_severity': 1.00,
-    'disability_severity': 0.55,
-    'reference_start_age': 35,
-    'reference_projection_years': 5,
+RISK_REFERENCE_PROFILES: Dict[str, Dict[str, Any]] = {
+    'phins_published_v1': {
+        'id': 'phins_published_v1',
+        'name': 'PHINS Published Risk Reference (Life + Permanent ADL Disability)',
+        'version': 'v1.0',
+        'doc_date': '2026-05-07',
+        'doc_url': 'https://www.phins.ai/phins-risk-1pager-fefferman.html',
+        'doc_title': 'PHINS Executive 1-Pager - Risk Factors',
+        'age_curve_id': 'risk_reference_v1',
+        'reference_life_sum': 500000.0,
+        'disability_share_of_life': 0.25,
+        'life_base_rate_per_1000_monthly': 0.25,
+        'disability_base_rate_per_1000_monthly': 0.20,
+        'disability_cut_off_age': 65,
+        'mortality_qx': {
+            35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171,
+        },
+        'disability_incidence_ix': {
+            35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528,
+        },
+        'mortality_severity': 1.00,
+        'disability_severity': 0.55,
+        'reference_start_age': 35,
+        'reference_projection_years': 5,
+        'covered_risks': ['mortality', 'permanent_adl_disability'],
+    },
 }
 
+# Backwards-compatibility alias — previous callers held a reference to this name.
+PHINS_FEFFERMAN_MODEL: Dict[str, Any] = RISK_REFERENCE_PROFILES['phins_published_v1']
 
-def fefferman_age_factor(age: int) -> float:
-    """Return the published age curve factor (matches the 1-pager exactly)."""
-    m = PHINS_FEFFERMAN_MODEL
-    if age <= m['adult_anchor_age']:
-        span = m['adult_anchor_age'] - m['youth_anchor_age']
-        rise = m['adult_anchor_factor'] - m['youth_anchor_factor']
-        anchored = max(m['youth_anchor_age'], age)
-        return round(m['youth_anchor_factor'] + (anchored - m['youth_anchor_age']) * (rise / span), 4)
-    if age <= m['disability_cut_off_age']:
-        return round(m['adult_anchor_factor'] + (age - m['adult_anchor_age']) * m['core_slope'], 4)
-    base = fefferman_age_factor(m['disability_cut_off_age'])
-    capped = min(age, 80)
-    if capped <= 75:
-        return round(base + (capped - m['disability_cut_off_age']) * m['senior_slope_1'], 4)
-    return round(
-        base
-        + (75 - m['disability_cut_off_age']) * m['senior_slope_1']
-        + (capped - 75) * m['senior_slope_2'],
-        4,
+
+def register_risk_reference_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Register a new risk-reference profile so the dashboard can render it."""
+    profile_id = str(profile.get('id') or '').strip()
+    if not profile_id:
+        raise ValueError('risk reference profile requires an id')
+    RISK_REFERENCE_PROFILES[profile_id] = profile
+    return profile
+
+
+def get_risk_reference_profile(profile_id: Optional[str] = None) -> Dict[str, Any]:
+    return RISK_REFERENCE_PROFILES.get(
+        profile_id or 'phins_published_v1',
+        RISK_REFERENCE_PROFILES['phins_published_v1'],
     )
 
 
-def fefferman_monthly_premiums(age: int, life_sum: Optional[float] = None) -> Dict[str, float]:
-    """Return monthly life + disability premium for the reference policyholder."""
-    m = PHINS_FEFFERMAN_MODEL
-    life = life_sum if life_sum is not None else m['reference_life_sum']
-    disability = life * m['disability_share_of_life']
-    factor = fefferman_age_factor(age)
-    life_premium = (life / 1000.0) * m['life_base_rate_per_1000_monthly'] * factor
+def list_risk_reference_profiles() -> List[Dict[str, Any]]:
+    """List metadata for every registered risk-reference profile."""
+    summaries: List[Dict[str, Any]] = []
+    for profile in RISK_REFERENCE_PROFILES.values():
+        summaries.append({
+            'id': profile.get('id'),
+            'name': profile.get('name'),
+            'version': profile.get('version'),
+            'doc_url': profile.get('doc_url'),
+            'doc_title': profile.get('doc_title'),
+            'age_curve_id': profile.get('age_curve_id'),
+            'covered_risks': list(profile.get('covered_risks', [])),
+        })
+    return summaries
+
+
+def risk_reference_age_factor(age: int, profile_id: Optional[str] = None) -> float:
+    """Age factor for a risk-reference profile (delegates to its age curve)."""
+    profile = get_risk_reference_profile(profile_id)
+    from services.pricing_kernel import get_age_curve
+    curve = get_age_curve(profile.get('age_curve_id', 'risk_reference_v1'))
+    return curve.factor(int(age))
+
+
+def risk_reference_monthly_premiums(age: int,
+                                    life_sum: Optional[float] = None,
+                                    profile_id: Optional[str] = None) -> Dict[str, float]:
+    """Monthly life + permanent ADL disability premium for the reference policyholder."""
+    profile = get_risk_reference_profile(profile_id)
+    life = float(life_sum if life_sum is not None else profile['reference_life_sum'])
+    disability = life * float(profile['disability_share_of_life'])
+    factor = risk_reference_age_factor(age, profile_id)
+    life_premium = (life / 1000.0) * float(profile['life_base_rate_per_1000_monthly']) * factor
     disability_premium = 0.0
-    if age < m['disability_cut_off_age']:
-        disability_premium = (disability / 1000.0) * m['disability_base_rate_per_1000_monthly'] * factor
+    cutoff = int(profile.get('disability_cut_off_age', 65))
+    if age < cutoff:
+        disability_premium = (
+            (disability / 1000.0)
+            * float(profile['disability_base_rate_per_1000_monthly'])
+            * factor
+        )
     return {
         'age': age,
         'age_factor': round(factor, 4),
@@ -1627,31 +1667,38 @@ def fefferman_monthly_premiums(age: int, life_sum: Optional[float] = None) -> Di
     }
 
 
-def build_fefferman_reference(start_age: Optional[int] = None,
-                              projection_years: Optional[int] = None,
-                              life_sum: Optional[float] = None) -> Dict[str, Any]:
-    """
-    Build the Fefferman reference 5-year forecast deterministically.
+def build_risk_reference(start_age: Optional[int] = None,
+                         projection_years: Optional[int] = None,
+                         life_sum: Optional[float] = None,
+                         profile_id: Optional[str] = None) -> Dict[str, Any]:
+    """Build a deterministic risk-reference forecast for any (modular) inputs.
 
-    The output reproduces the cumulative premium, expected loss, and average
-    loss ratio shown on the public one-pager.
+    Unlike the previous fixed 5-year exam, this function accepts any starting
+    age, projection horizon, life sum, and registered profile. With default
+    inputs it still reproduces the locked public one-pager exactly so the
+    audit invariant in the integrity-check tests holds.
     """
-    m = PHINS_FEFFERMAN_MODEL
-    start_age = int(start_age if start_age is not None else m['reference_start_age'])
-    projection_years = int(projection_years if projection_years is not None else m['reference_projection_years'])
-    life = float(life_sum if life_sum is not None else m['reference_life_sum'])
-    disability = life * m['disability_share_of_life']
+    profile = get_risk_reference_profile(profile_id)
+    start_age = int(start_age if start_age is not None else profile['reference_start_age'])
+    projection_years = int(projection_years if projection_years is not None else profile['reference_projection_years'])
+    life = float(life_sum if life_sum is not None else profile['reference_life_sum'])
+    disability = life * float(profile['disability_share_of_life'])
+    mortality_qx = profile.get('mortality_qx', {})
+    disability_ix = profile.get('disability_incidence_ix', {})
 
     yearly = []
     cumulative_premium = 0.0
     cumulative_expected_loss = 0.0
     for offset in range(projection_years):
         age = start_age + offset
-        premiums = fefferman_monthly_premiums(age, life_sum=life)
+        premiums = risk_reference_monthly_premiums(age, life_sum=life, profile_id=profile_id)
         annual = premiums['annual_premium']
-        qx = m['mortality_qx'].get(age, 0.0)
-        ix = m['disability_incidence_ix'].get(age, 0.0)
-        expected_loss = qx * life * m['mortality_severity'] + ix * disability * m['disability_severity']
+        qx = float(mortality_qx.get(age, mortality_qx.get(str(age), 0.0)))
+        ix = float(disability_ix.get(age, disability_ix.get(str(age), 0.0)))
+        expected_loss = (
+            qx * life * float(profile['mortality_severity'])
+            + ix * disability * float(profile['disability_severity'])
+        )
         loss_ratio = (expected_loss / annual) if annual > 0 else 0.0
         cumulative_premium += annual
         cumulative_expected_loss += expected_loss
@@ -1668,20 +1715,23 @@ def build_fefferman_reference(start_age: Optional[int] = None,
 
     avg_loss_ratio = (cumulative_expected_loss / cumulative_premium) if cumulative_premium > 0 else 0.0
     return {
+        'profile_id': profile['id'],
         'source': {
-            'document': 'PHINS Executive 1-Pager - Risk Factors (Alan Fefferman F.IL.A.A)',
-            'url': m['doc_url'],
-            'version': m['version'],
-            'doc_date': m['doc_date'],
+            'document': profile.get('doc_title', 'PHINS Risk Reference'),
+            'url': profile.get('doc_url', ''),
+            'version': profile.get('version', 'v1.0'),
+            'doc_date': profile.get('doc_date', ''),
         },
         'reference': {
             'life_sum': life,
             'disability_sum': round(disability, 2),
-            'life_base_rate_per_1000_monthly': m['life_base_rate_per_1000_monthly'],
-            'disability_base_rate_per_1000_monthly': m['disability_base_rate_per_1000_monthly'],
-            'disability_cut_off_age': m['disability_cut_off_age'],
+            'life_base_rate_per_1000_monthly': float(profile['life_base_rate_per_1000_monthly']),
+            'disability_base_rate_per_1000_monthly': float(profile['disability_base_rate_per_1000_monthly']),
+            'disability_cut_off_age': int(profile.get('disability_cut_off_age', 65)),
             'start_age': start_age,
             'projection_years': projection_years,
+            'covered_risks': list(profile.get('covered_risks', ['mortality', 'permanent_adl_disability'])),
+            'age_curve_id': profile.get('age_curve_id', 'risk_reference_v1'),
         },
         'yearly_projection': yearly,
         'totals': {
@@ -1698,11 +1748,19 @@ def build_fefferman_reference(start_age: Optional[int] = None,
                 sum(row['expected_loss'] for row in yearly) - round(cumulative_expected_loss, 2)
             ) < 0.5,
             'severity_assumptions': {
-                'mortality_severity': m['mortality_severity'],
-                'disability_severity': m['disability_severity'],
+                'mortality_severity': float(profile['mortality_severity']),
+                'disability_severity': float(profile['disability_severity']),
             },
         },
     }
+
+
+# Backwards-compatibility aliases for the previous function names. New callers
+# should use ``build_risk_reference``, ``risk_reference_age_factor`` and
+# ``risk_reference_monthly_premiums``.
+build_fefferman_reference = build_risk_reference
+fefferman_age_factor = risk_reference_age_factor
+fefferman_monthly_premiums = risk_reference_monthly_premiums
 
 
 # =============================================================================

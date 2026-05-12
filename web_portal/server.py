@@ -7043,8 +7043,8 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
             row.get('savings_fund', {}).get('closing_balance'),
         ])
 
-    # ---- Fefferman reference ----
-    ws_ref = wb.create_sheet('Fefferman Reference')
+    # ---- Risk Reference ----
+    ws_ref = wb.create_sheet('Risk Reference')
     ws_ref.append(['Year', 'Age', 'Age Factor', 'Annual Premium', 'Mortality q(x)', 'Disability i(x)', 'Expected Loss', 'Loss Ratio'])
     style_header(ws_ref)
     for row in reference.get('yearly_projection', []):
@@ -7201,9 +7201,9 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
     story.append(res_table)
     story.append(Spacer(1, 10))
 
-    # Fefferman reference
+    # Risk reference
     story.append(PageBreak())
-    story.append(Paragraph('Fefferman Reference 5-Year Forecast', h2))
+    story.append(Paragraph('Risk Reference Forecast', h2))
     story.append(Paragraph(
         f"Source: <a href=\"{reference.get('source', {}).get('url', '')}\">{reference.get('source', {}).get('document', '')}</a>",
         body,
@@ -13188,25 +13188,42 @@ For claims or questions, please contact:
             return
 
         # =====================================================================
-        # ACTUARIAL: Fefferman reference data (locked actuarial source block)
+        # ACTUARIAL: Risk Reference (modular, replaces the old Fefferman
+        # exam endpoint). Accepts any registered profile, starting age,
+        # projection horizon, and life sum. The legacy
+        # /api/actuarial/fefferman-reference path is kept as a deprecated
+        # alias that resolves to the same handler so old clients still work.
         # =====================================================================
-        if path == '/api/actuarial/fefferman-reference':
+        if path in ('/api/actuarial/risk-reference', '/api/actuarial/fefferman-reference'):
             if not require_role(session, ['admin', 'actuary']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
                 return
             try:
-                from services.actuarial_service import build_fefferman_reference
+                from services.actuarial_service import (
+                    build_risk_reference, list_risk_reference_profiles,
+                )
                 start_age_raw = qs.get('start_age', [None])[0]
                 years_raw = qs.get('projection_years', [None])[0]
                 life_raw = qs.get('life_sum', [None])[0]
-                reference = build_fefferman_reference(
+                profile_id = (qs.get('profile_id', [None])[0] or None)
+                reference = build_risk_reference(
                     start_age=int(start_age_raw) if start_age_raw else None,
                     projection_years=int(years_raw) if years_raw else None,
                     life_sum=float(life_raw) if life_raw else None,
+                    profile_id=profile_id,
                 )
+                payload: Dict[str, Any] = {
+                    'success': True,
+                    'reference': reference,
+                    'profiles': list_risk_reference_profiles(),
+                }
+                if path == '/api/actuarial/fefferman-reference':
+                    payload['deprecated'] = (
+                        '/api/actuarial/fefferman-reference is deprecated; use /api/actuarial/risk-reference.'
+                    )
                 self._set_json_headers()
-                self.wfile.write(json.dumps({'success': True, 'reference': reference}).encode('utf-8'))
+                self.wfile.write(json.dumps(payload).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -25745,11 +25762,11 @@ For claims or questions, please contact:
                 from services.actuarial_service import (
                     _coerce_reserve_config,
                     get_reserve_calculator,
-                    build_fefferman_reference,
+                    build_risk_reference,
                 )
                 reserve_cfg = _coerce_reserve_config(payload.get('reserve_config') or payload)
                 projection = get_reserve_calculator().project(simulation, reserve_cfg)
-                reference = build_fefferman_reference()
+                reference = build_risk_reference()
                 generated_by = (session or {}).get('username', 'admin')
                 generated_at = datetime.now().isoformat()
 

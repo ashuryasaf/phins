@@ -708,9 +708,9 @@
 
         <div class="nav-section">
           <div class="nav-section-title">Research &amp; Audit</div>
-          <div class="nav-item" onclick="showSection('fefferman')">
+          <div class="nav-item" onclick="showSection('risk-reference')">
             <span class="nav-icon">📐</span>
-            <span>Fefferman Reference</span>
+            <span>Risk Reference</span>
           </div>
           <div class="nav-item" onclick="showSection('uploaded')">
             <span class="nav-icon">📥</span>
@@ -1364,39 +1364,41 @@
           </div>
         </section>
 
-        <!-- Fefferman Reference Section -->
-        <section id="section-fefferman" class="section">
-          <h2 class="section-title">📐 Fefferman Risk Reference (Locked Source)</h2>
+        <!-- Risk Reference Section -->
+        <section id="section-risk-reference" class="section">
+          <h2 class="section-title">📐 Risk Reference (Locked Source)</h2>
           <div class="alert alert-warning">
-            This panel reproduces the locked actuarial source block published on
-            <a href="https://www.phins.ai/phins-risk-1pager-fefferman.html" target="_blank" rel="noopener noreferrer">phins.ai/phins-risk-1pager-fefferman.html</a>.
-            Every figure is computed server-side and must match the public one-pager exactly.
+            This panel reproduces the locked actuarial source block published on the PHINS public risk one-pager. Every figure is computed server-side from a registered risk-reference profile so the dashboard, audit reports, and the public document always agree.
           </div>
 
           <div class="card">
             <div class="card-title">Reference Inputs</div>
             <div class="form-row">
               <div class="form-group">
+                <label class="form-label">Profile</label>
+                <select id="risk-ref-profile" class="form-input"></select>
+              </div>
+              <div class="form-group">
                 <label class="form-label">Start Age</label>
-                <input type="number" id="fef-start-age" class="form-input" value="35" min="3" max="80">
+                <input type="number" id="risk-ref-start-age" class="form-input" value="35" min="3" max="80">
               </div>
               <div class="form-group">
                 <label class="form-label">Projection Years</label>
-                <input type="number" id="fef-years" class="form-input" value="5" min="1" max="20">
+                <input type="number" id="risk-ref-years" class="form-input" value="5" min="1" max="40">
               </div>
               <div class="form-group">
                 <label class="form-label">Life Sum ($)</label>
-                <input type="number" id="fef-life-sum" class="form-input" value="500000" min="10000" step="10000">
+                <input type="number" id="risk-ref-life-sum" class="form-input" value="500000" min="10000" step="10000">
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
-                <button class="btn btn-primary" onclick="loadFeffermanReference()">Recalculate</button>
+                <button class="btn btn-primary" onclick="loadRiskReference()">Recalculate</button>
               </div>
             </div>
           </div>
 
           <div class="card">
             <div class="card-title">Reference Forecast</div>
-            <div id="fefferman-results">
+            <div id="risk-reference-results">
               <p style="color:var(--text-light);">Loading…</p>
             </div>
           </div>
@@ -1477,7 +1479,7 @@
           <h2 class="section-title">📑 Reports &amp; Exports</h2>
 
           <div class="alert alert-warning">
-            Reports bundle the saved simulation, reserve projection, Fefferman reference data, and data-integrity checks into a single Excel workbook or PDF that internal/external auditors can verify line-by-line.
+            Reports bundle the saved simulation, reserve projection, risk reference data, and data-integrity checks into a single Excel workbook or PDF that internal/external auditors can verify line-by-line.
           </div>
 
           <div class="card">
@@ -1656,7 +1658,7 @@
         loadVersions();
         loadAuditLog();
         loadIntegrations();
-        loadFeffermanReference();
+        loadRiskReference();
         loadUploadedTables();
         
       } catch (err) {
@@ -2949,32 +2951,45 @@
     }
 
     // =====================================================================
-    // FEFFERMAN REFERENCE
+    // RISK REFERENCE
     // =====================================================================
-    async function loadFeffermanReference() {
-      const resultsEl = document.getElementById('fefferman-results');
+    async function loadRiskReference() {
+      const resultsEl = document.getElementById('risk-reference-results');
       resultsEl.innerHTML = '<p style="color:var(--text-light);">Loading…</p>';
-      const startAge = document.getElementById('fef-start-age').value || '';
-      const years = document.getElementById('fef-years').value || '';
-      const life = document.getElementById('fef-life-sum').value || '';
+      const profileSelect = document.getElementById('risk-ref-profile');
+      const startAge = document.getElementById('risk-ref-start-age').value || '';
+      const years = document.getElementById('risk-ref-years').value || '';
+      const life = document.getElementById('risk-ref-life-sum').value || '';
+      const profileId = profileSelect ? profileSelect.value : '';
       const qs = new URLSearchParams();
       if (startAge) qs.set('start_age', startAge);
       if (years) qs.set('projection_years', years);
       if (life) qs.set('life_sum', life);
+      if (profileId) qs.set('profile_id', profileId);
       try {
-        const res = await fetch(`/api/actuarial/fefferman-reference?${qs.toString()}`, {
+        const res = await fetch(`/api/actuarial/risk-reference?${qs.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-        renderFefferman(data.reference);
+        renderRiskReferenceProfiles(profileSelect, data.profiles || [], profileId);
+        renderRiskReference(data.reference);
       } catch (err) {
         resultsEl.innerHTML = `<p class="text-danger">Failed: ${err.message}</p>`;
       }
     }
 
-    function renderFefferman(ref) {
-      const resultsEl = document.getElementById('fefferman-results');
+    function renderRiskReferenceProfiles(selectEl, profiles, currentId) {
+      if (!selectEl) return;
+      const desired = currentId || (profiles[0] && profiles[0].id) || '';
+      const html = profiles.map(p =>
+        `<option value="${p.id}" ${p.id === desired ? 'selected' : ''}>${p.name || p.id}</option>`
+      ).join('');
+      if (selectEl.innerHTML !== html) selectEl.innerHTML = html;
+    }
+
+    function renderRiskReference(ref) {
+      const resultsEl = document.getElementById('risk-reference-results');
       if (!ref) { resultsEl.innerHTML = '<p>No data.</p>'; return; }
       const totals = ref.totals || {};
       const refRows = (ref.yearly_projection || []).map((row) => `
