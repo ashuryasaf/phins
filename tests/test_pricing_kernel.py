@@ -249,5 +249,58 @@ def test_kernel_with_simulator_end_to_end():
     )
     sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(params)
     assert sim["profitability"]["components_match"]
-    # And the saved snapshot must be JSON-safe
+    # The saved snapshot is now self-describing — it carries the kernel inputs
+    # used to price every customer in the simulation.
     assert "simulation_id" in sim
+    assert "pricing_kernel" in sim
+    assert sim["pricing_kernel"]["product_id"]
+    assert sim["pricing_kernel"]["claim_model"] == "mutually_exclusive"
+
+
+def test_simulator_savings_rate_actually_drives_savings_premium():
+    """Changing savings_rate on the simulator must move the priced savings premium.
+
+    This pins the G1 fix: previously savings_premium was hardcoded at
+    coverage * 0.5 / term inside the simulator and adjusting any 'savings %'
+    knob only re-split net profit. Now the simulator delegates to the kernel
+    so savings_rate flows through to every priced customer.
+    """
+    import random
+    sim_a = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=200, age_min=25, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode="fixed", policy_term_fixed=10,
+            savings_rate=0.50,
+        )
+    )
+    random.seed(0)
+    sim_b = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=200, age_min=25, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode="fixed", policy_term_fixed=10,
+            savings_rate=0.25,
+        )
+    )
+    sim_c = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=200, age_min=25, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode="fixed", policy_term_fixed=10,
+            savings_rate=0.0,
+        )
+    )
+
+    a_savings = sim_a["profitability"]["savings_premium"]
+    b_savings = sim_b["profitability"]["savings_premium"]
+    c_savings = sim_c["profitability"]["savings_premium"]
+
+    # The savings premium must shrink as the savings rate shrinks. Use a wide
+    # tolerance because each simulation generates a fresh random portfolio.
+    assert a_savings > b_savings > c_savings, (a_savings, b_savings, c_savings)
+    assert c_savings == 0.0
+    # The simulator snapshot must record the kernel inputs that produced it
+    assert sim_a["pricing_kernel"]["savings_rate"] == 0.5
+    assert sim_b["pricing_kernel"]["savings_rate"] == 0.25
+    assert sim_c["pricing_kernel"]["savings_rate"] == 0.0

@@ -25602,6 +25602,27 @@ For claims or questions, please contact:
                     except (TypeError, ValueError):
                         params.savings_allocation_pct = 0.0
 
+                # Pricing-kernel inputs (these actually drive the priced
+                # savings premium, the age curve, and the product selection
+                # used by the pricing kernel for every simulated customer):
+                from services.actuarial_service import _pct_auto as _pa
+                if 'product_id' in data and data.get('product_id'):
+                    params.product_id = str(data.get('product_id'))
+                if 'age_curve_id' in data and data.get('age_curve_id'):
+                    params.age_curve_id = str(data.get('age_curve_id'))
+                if 'savings_rate' in data:
+                    try:
+                        params.savings_rate = _pa(float(data.get('savings_rate') or 0.0))
+                    except (TypeError, ValueError):
+                        params.savings_rate = 0.5
+                if 'savings_yield_pct' in data:
+                    try:
+                        params.savings_yield_pct = _pa(float(data.get('savings_yield_pct') or 0.0))
+                    except (TypeError, ValueError):
+                        params.savings_yield_pct = 0.0
+                if 'savings_formula' in data and data.get('savings_formula'):
+                    params.savings_formula = str(data.get('savings_formula')).lower()
+
                 # Run simulation
                 simulator = get_portfolio_simulator()
                 result = simulator.generate_portfolio(params)

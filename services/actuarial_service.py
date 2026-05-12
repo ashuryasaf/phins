@@ -111,6 +111,31 @@ class SimulationParams:
     # than retained on the insurance balance sheet (0.0 - 0.95). Pure-risk
     # products use 0.0; hybrid risk+savings products set this to e.g. 0.30.
     savings_allocation_pct: float = 0.0
+    # ------------------------------------------------------------------
+    # Pricing-kernel inputs (G1/G5: savings_rate and savings_yield now
+    # actually drive the savings premium component of each priced policy,
+    # not just the post-hoc profit allocation).
+    # ------------------------------------------------------------------
+    # Product to price each simulated customer against. Defaults to the
+    # hybrid product (risk + savings) so existing simulations are
+    # bit-for-bit unchanged. Use 'phins_pure_risk' for pure-risk runs.
+    product_id: str = 'phins_hybrid_savings'
+    # Share of coverage targeted as the savings maturity value. The legacy
+    # simulator hardcoded this at 0.5; keeping that default preserves
+    # behaviour for existing callers, while parametric updates now flow
+    # through to the priced savings premium for every customer.
+    savings_rate: float = 0.5
+    # Assumed annual yield on the savings fund. Combined with
+    # ``savings_formula='annuity_immediate'`` this discounts the required
+    # savings contribution to reach the maturity target. The default
+    # straight-line formula ignores the yield, matching legacy behaviour.
+    savings_yield_pct: float = 0.0
+    savings_formula: str = 'straight_line'  # 'straight_line' or 'annuity_immediate'
+    # Age curve attached to the pricing-kernel TableSet. Defaults to
+    # 'identity' (age dependence lives in the rate tables — the production
+    # behaviour). Set to 'risk_reference_v1' to swap in the published age
+    # curve from the public risk one-pager.
+    age_curve_id: str = 'identity'
 
 
 # =============================================================================
@@ -935,11 +960,16 @@ class AutomationMetrics:
 class PortfolioSimulator:
     """
     Generates simulated portfolios with realistic demographics.
-    Uses current actuarial tables for pricing.
+    Premium components for every simulated customer come from the central
+    :func:`services.pricing_kernel.price_policy` — the single source of
+    truth for actuarial pricing across the platform.
     """
-    
+
     def __init__(self, tables_store: ActuarialTablesStore):
         self.tables = tables_store
+        # Lazy import to avoid a cycle at module load.
+        from services import pricing_kernel as _pk  # noqa: F401
+        self._pk = _pk
     
     def generate_portfolio(self, params: SimulationParams) -> Dict:
         """
@@ -992,12 +1022,13 @@ class PortfolioSimulator:
                 continue
             
             # Calculate premium using central tables
-            premium = self._calculate_premium(customer, uw_result)
+            premium = self._calculate_premium(customer, uw_result, params)
             customer['annual_premium'] = premium['annual_premium']
             customer['risk_premium'] = premium['risk_premium']
             customer['savings_premium'] = premium['savings_premium']
             customer['pv_mortality'] = premium['pv_mortality']
             customer['pv_disability'] = premium['pv_disability']
+            customer['integrity_hash'] = premium.get('integrity_hash')
             
             # Update totals
             totals['coverage'] += customer['coverage']
@@ -1157,7 +1188,22 @@ class PortfolioSimulator:
                 'investments': True,
                 'communities': True,
                 'reinsurance': True
-            }
+            },
+            # Pricing kernel provenance — every priced customer in this
+            # simulation flowed through the same kernel call signature, so
+            # the entire snapshot is reproducible from these identifiers.
+            'pricing_kernel': {
+                'product_id': getattr(params, 'product_id', 'phins_hybrid_savings'),
+                'age_curve_id': getattr(params, 'age_curve_id', 'identity'),
+                'savings_rate': float(getattr(params, 'savings_rate', 0.5)),
+                'savings_yield_pct': float(getattr(params, 'savings_yield_pct', 0.0)),
+                'savings_formula': str(getattr(params, 'savings_formula', 'straight_line')),
+                'claim_model': 'mutually_exclusive',
+                'tables_version': self.tables.current_version,
+                'expense_loading_pct': self.tables.config.expense_loading_pct,
+                'profit_margin_pct': self.tables.config.profit_margin_pct,
+                'discount_rate': self.tables.config.discount_rate,
+            },
         }
         result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
         # Pre-compute savings vs insurance allocation breakdown so the
@@ -1263,108 +1309,67 @@ class PortfolioSimulator:
             'exclude_disability': exclude_disability
         }
     
-    def _calculate_premium(self, customer: Dict, uw_result: Dict) -> Dict:
+    def _calculate_premium(self, customer: Dict, uw_result: Dict,
+                            params: Optional['SimulationParams'] = None) -> Dict:
+        """Price one simulated customer via the central pricing kernel.
+
+        The kernel is the single source of truth for actuarial pricing.
+        With default parameters (``savings_rate=0.5``,
+        ``savings_yield_pct=0.0``, ``savings_formula='straight_line'``,
+        ``product_id='phins_hybrid_savings'``, ``age_curve_id='identity'``,
+        ``claim_model=MUTUALLY_EXCLUSIVE``) the kernel reproduces the
+        legacy simulator math bit-for-bit. Changing the savings rate,
+        savings yield, product, or age curve actually feeds through into
+        every priced customer instead of being a post-hoc relabel.
         """
-        Calculate premium using central actuarial tables.
-        
-        IMPORTANT: Implements mutual exclusivity of claims per actuarial standards:
-        - A customer can have EITHER a mortality claim OR a disability claim, not both
-        - If customer dies, they cannot have a subsequent disability claim
-        - Disability claims are calculated only for survivors who haven't died
-        - This accurately models that policies pay only one major claim per life
-        """
-        age = customer['age']
-        adl = customer['adl']
-        coverage = customer['coverage']
-        term = customer['term']
-        loading = uw_result.get('loading', 0)
-        exclude_disability = uw_result.get('exclude_disability', False)
-        
-        config = self.tables.config
-        discount_rate = config.discount_rate
-        
-        # Get multipliers from central tables
-        adl_mort_mult = self.tables.get_adl_mortality_multiplier(adl)
-        adl_dis_mult = self.tables.get_adl_disability_multiplier(adl)
-        
-        # =====================================================================
-        # MUTUAL EXCLUSIVITY MODEL:
-        # For each year, track: alive, dead, disabled
-        # A person who dies cannot become disabled, a person who is disabled
-        # is no longer at risk for new disability (already claimed)
-        # =====================================================================
-        
-        pv_mortality = 0
-        pv_disability = 0
-        
-        # State probabilities: start with 100% alive, not disabled
-        prob_alive_not_disabled = 1.0
-        
-        for year in range(1, term + 1):
-            current_age = age + year - 1
-            
-            # Get rates for this year
-            qx = self.tables.get_mortality_rate(current_age) * adl_mort_mult  # Death rate
-            dx = 0.0  # Disability rate
-            
-            if not exclude_disability:
-                dx = self.tables.get_disability_rate(current_age) * adl_dis_mult
-                benefit_pct = self.tables.get_adl_benefit_pct(adl)
-                if benefit_pct == 0:
-                    benefit_pct = 0.35  # Average if would claim
-            else:
-                benefit_pct = 0
-            
-            # Discount factor for this year
-            discount = (1 + discount_rate) ** (-year)
-            
-            # From the alive-not-disabled population:
-            # - Some die (qx)
-            # - Some become disabled (dx) - only from those who didn't die
-            # - Rest remain alive-not-disabled
-            
-            # Probability of dying this year (from alive-not-disabled)
-            prob_die_this_year = prob_alive_not_disabled * qx
-            
-            # Probability of becoming disabled this year (survivors who weren't disabled)
-            # Apply to those who survived death this year
-            prob_survive_death = prob_alive_not_disabled * (1 - qx)
-            prob_disable_this_year = prob_survive_death * dx
-            
-            # Expected mortality claim: full coverage paid on death
-            pv_mortality += coverage * prob_die_this_year * discount
-            
-            # Expected disability claim: benefit percentage of coverage
-            if not exclude_disability and benefit_pct > 0:
-                pv_disability += coverage * benefit_pct * prob_disable_this_year * discount
-            
-            # Update state for next year
-            # Alive-not-disabled = survived both death and disability
-            prob_alive_not_disabled = prob_survive_death * (1 - dx)
-        
-        # Annual premiums - spread the present value of expected claims over term
-        total_risk_pv = pv_mortality + pv_disability
-        risk_premium = total_risk_pv / term
-        
-        # Apply loading
-        if loading > 0:
-            risk_premium *= (1 + loading)
-        
-        # Savings component (50% of coverage over term)
-        savings_premium = (coverage * 0.5) / term
-        
-        # Expense and profit
-        expense = risk_premium * config.expense_loading_pct
-        profit = (risk_premium + savings_premium + expense) * config.profit_margin_pct
-        
-        annual_premium = risk_premium + savings_premium + expense + profit
-        
+        pk = self._pk
+        params = params if params is not None else SimulationParams()
+        savings_formula = (
+            pk.SavingsFormula.ANNUITY_IMMEDIATE
+            if str(getattr(params, 'savings_formula', 'straight_line')).lower() == 'annuity_immediate'
+            else pk.SavingsFormula.STRAIGHT_LINE
+        )
+        config = pk.pricing_config_from_underwriting(
+            self.tables.config,
+            savings_rate=float(getattr(params, 'savings_rate', 0.5)),
+            savings_yield_pct=float(getattr(params, 'savings_yield_pct', 0.0)),
+            claim_model=pk.ClaimModel.MUTUALLY_EXCLUSIVE,
+            savings_formula=savings_formula,
+        )
+        product = pk.get_product(getattr(params, 'product_id', 'phins_hybrid_savings'))
+        tables = pk.table_set_from_store(
+            self.tables,
+            age_curve_id=getattr(params, 'age_curve_id', 'identity'),
+        )
+
+        components = pk.price_policy(
+            pk.PricingCustomer(
+                age=int(customer['age']),
+                coverage=float(customer['coverage']),
+                term_years=int(customer['term']),
+                adl_level=int(customer['adl']),
+                gender=customer.get('gender'),
+                cohort={
+                    'gender': str(customer.get('gender') or '').lower(),
+                    'ethnicity': str(customer.get('ethnicity') or '').lower(),
+                },
+            ),
+            product, tables, config,
+            underwriting_loading=float(uw_result.get('loading', 0.0)),
+            exclude_disability=bool(uw_result.get('exclude_disability', False)),
+        )
+
         return {
-            'annual_premium': annual_premium,
-            'risk_premium': risk_premium,  # Risk portion only (for loss ratio calc)
-            'savings_premium': savings_premium,
-            'pv_mortality': pv_mortality,
-            'pv_disability': pv_disability
+            'annual_premium': components.annual_premium,
+            'risk_premium': components.risk_premium_annual,
+            'savings_premium': components.savings_premium_annual,
+            'pv_mortality': components.pv_mortality_claims,
+            'pv_disability': components.pv_disability_claims,
+            'integrity_hash': components.integrity_hash,
+            'product_id': components.product_id,
+            'age_curve_id': components.age_curve_id,
+            'claim_model': components.claim_model,
+            'savings_formula': components.savings_formula,
         }
     
     def _get_age_bracket(self, age: int) -> str:
