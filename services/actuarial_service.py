@@ -1901,7 +1901,7 @@ class ReserveCalculator:
                 csm_release = (opening_csm * in_force_factor) / total_coverage_units
             else:
                 csm_release = opening_csm / projection_years if projection_years else 0.0
-            csm_release = min(opening_csm, csm_release)
+            csm_release = min(opening_csm - cumulative_csm_release, csm_release)
 
             bel_balance = opening_bel * max(0.0, 1.0 - (year_index / avg_term))
             ra_balance = bel_balance * config.risk_adjustment_pct
