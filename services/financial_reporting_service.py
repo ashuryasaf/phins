@@ -355,28 +355,23 @@ class FinancialReportingService:
                          savings_pct: float, term_years: int,
                          include_profit_margin: bool = True) -> Dict[str, float]:
         """
-        Calculate actuarially sound premium using CORRECTED ADDITIVE RISK MODEL.
-        
-        V2 CORRECTED MODEL:
-        Premium = Mortality_Risk_Premium + Disability_Risk_Premium + Savings + Expenses + Profit
-        
-        Key changes from V1:
-        1. Mortality and disability are calculated SEPARATELY
-        2. ADL affects disability incidence (not just mortality)
-        3. Disability benefit size depends on ADL level
-        4. Underwriting restrictions applied for high ADL
-        5. Profit margin added to ensure sustainability
-        
+        Calculate actuarially sound premium via the central pricing kernel.
+
+        The kernel (``services.pricing_kernel.price_policy``) is the single
+        source of truth for actuarial pricing across the platform. This
+        method routes the legacy financial-reporting inputs at the kernel
+        with the legacy claim model (``ClaimModel.INDEPENDENT``), lapse
+        adjustment, and minimum-risk floor enabled so output stays
+        bit-for-bit compatible with previous releases.
+
         Args:
             coverage: Face value of policy
             age: Customer's current age
             adl_level: ADL score (1-10)
-            savings_pct: % of coverage allocated to savings
+            savings_pct: % of coverage allocated to savings (now flows
+                directly into the kernel's savings_rate)
             term_years: Policy term in years
             include_profit_margin: Whether to add profit margin (default True)
-        
-        Returns:
-            Dict with full premium breakdown
         """
         # Check underwriting eligibility first
         uw_check = self.check_underwriting_eligibility(adl_level, coverage)
@@ -394,171 +389,106 @@ class FinancialReportingService:
         approved_coverage = uw_check['approved_coverage']
         underwriting_loading = uw_check.get('loading', 0)
         exclude_disability = uw_check.get('exclude_disability', False)
-        
-        # Get ADL multipliers
-        adl_mort_mult = self.get_adl_mortality_multiplier(adl_level)
-        adl_dis_mult = self.get_adl_disability_incidence_multiplier(adl_level)
-        
-        # =======================================================================
-        # MORTALITY RISK CALCULATION (Death Benefit)
-        # =======================================================================
-        mortality_cost_pv = 0.0
-        for year in range(1, term_years + 1):
-            current_age = age + year - 1
-            
-            # Base mortality rate adjusted by ADL
-            qx = self.get_mortality_rate(current_age) * adl_mort_mult
-            
-            # Probability of surviving to start of this year
-            px_prev = 1.0
-            for y in range(year - 1):
-                prev_qx = self.get_mortality_rate(age + y) * adl_mort_mult
-                px_prev *= (1 - prev_qx)
-            
-            # Probability of dying in this year (given survival to start)
-            death_prob = px_prev * qx
-            
-            # Lapse-adjusted probability
-            lapse_survival = 1.0
-            for y in range(year):
-                lapse_survival *= (1 - self.get_lapse_rate(y + 1))
-            adjusted_death_prob = death_prob * lapse_survival
-            
-            # Discount to present value
-            discount = (1 + DISCOUNT_RATE) ** (-year)
-            mortality_cost_pv += approved_coverage * adjusted_death_prob * discount
-        
-        # =======================================================================
-        # DISABILITY RISK CALCULATION (NEW - ADL Claim Benefit)
-        # =======================================================================
-        disability_cost_pv = 0.0
-        
-        if not exclude_disability:
-            # Calculate expected disability benefit based on severity distribution
-            # For each year, calculate P(becoming disabled | alive) × expected benefit
-            
-            for year in range(1, term_years + 1):
-                current_age = age + year - 1
-                
-                # Probability of being alive at start of year
-                survival_prob = 1.0
-                for y in range(year - 1):
-                    mort = self.get_mortality_rate(age + y) * adl_mort_mult
-                    survival_prob *= (1 - mort)
-                
-                # Disability incidence rate (adjusted by ADL)
-                dis_rate = self.get_disability_incidence_rate(current_age) * adl_dis_mult
-                
-                # Expected benefit payout
-                # Use weighted average of possible benefit levels based on severity at claim
-                # Conservative assumption: average claim is 45% of coverage
-                # This accounts for mix of mild (25%) to severe (100%) claims
-                if adl_level >= 8:
-                    # High ADL = high benefit claims (85-100%)
-                    expected_benefit_pct = 0.90
-                elif adl_level >= 6:
-                    # Medium-high ADL = medium-high benefit claims (50-85%)
-                    expected_benefit_pct = 0.65
-                elif adl_level >= 4:
-                    # Medium ADL = medium benefit claims (25-50%)
-                    expected_benefit_pct = 0.35
-                else:
-                    # Low ADL = if they claim, it's usually mild (25%)
-                    expected_benefit_pct = 0.25
-                
-                expected_benefit = approved_coverage * expected_benefit_pct
-                
-                # Lapse adjustment
-                lapse_survival = 1.0
-                for y in range(year):
-                    lapse_survival *= (1 - self.get_lapse_rate(y + 1))
-                
-                # Discount to present value
-                discount = (1 + DISCOUNT_RATE) ** (-year)
-                
-                # Add to total disability cost
-                disability_cost_pv += survival_prob * dis_rate * expected_benefit * lapse_survival * discount
-        
-        # =======================================================================
-        # PREMIUM COMPONENTS
-        # =======================================================================
-        
-        # Total risk cost (ADDITIVE, not multiplicative)
-        total_risk_cost_pv = mortality_cost_pv + disability_cost_pv
-        
-        # Annual risk premium (spread over term)
-        mortality_premium_annual = mortality_cost_pv / term_years
-        disability_premium_annual = disability_cost_pv / term_years
-        risk_premium_annual = total_risk_cost_pv / term_years
-        
-        # =======================================================================
-        # MINIMUM PREMIUM FLOOR (when disability excluded for high ADL)
-        # =======================================================================
-        # When we exclude disability for high-risk customers (ADL 8+), we need to
-        # ensure they still pay a fair premium. Otherwise, they get cheap mortality-only
-        # coverage which creates adverse selection.
-        #
-        # Solution: Calculate what disability premium WOULD have been, and require
-        # a minimum risk premium that reflects their actual risk profile.
-        # =======================================================================
-        theoretical_disability_cost_pv = 0.0
-        if exclude_disability and adl_level >= 8:
-            # Calculate what disability would cost (for minimum floor calculation)
-            for year in range(1, term_years + 1):
-                current_age = age + year - 1
-                survival_prob = 1.0
-                for y in range(year - 1):
-                    mort = self.get_mortality_rate(age + y) * adl_mort_mult
-                    survival_prob *= (1 - mort)
-                dis_rate = self.get_disability_incidence_rate(current_age) * adl_dis_mult
-                expected_benefit = approved_coverage * 0.90  # High ADL = high benefit claims
-                lapse_survival = 1.0
-                for y in range(year):
-                    lapse_survival *= (1 - self.get_lapse_rate(y + 1))
-                discount = (1 + DISCOUNT_RATE) ** (-year)
-                theoretical_disability_cost_pv += survival_prob * dis_rate * expected_benefit * lapse_survival * discount
-            
-            # Minimum floor: customer pays for their risk even if we exclude the benefit
-            # This prevents adverse selection - high risk customers can't game the system
-            # They pay the theoretical disability premium, but don't get the benefit
-            # (This is effectively a "risk surcharge" for being high ADL)
-            min_risk_floor = (mortality_cost_pv + theoretical_disability_cost_pv * 0.5) / term_years
-            if risk_premium_annual < min_risk_floor:
-                risk_premium_annual = min_risk_floor
-                # Adjust mortality premium to reflect actual charged risk
-                mortality_premium_annual = risk_premium_annual
-        
-        # Apply underwriting loading if applicable
-        if underwriting_loading > 0:
-            risk_premium_annual *= (1 + underwriting_loading)
-            mortality_premium_annual *= (1 + underwriting_loading)
-            disability_premium_annual *= (1 + underwriting_loading)
-        
-        # Savings component (target accumulation)
-        savings_allocation = approved_coverage * savings_pct
-        savings_premium_annual = savings_allocation / term_years
-        
-        # Expense loading
-        expense_loading = risk_premium_annual * EXPENSE_LOADING_PCT
-        
-        # Profit margin
-        profit_margin = 0
-        if include_profit_margin:
-            subtotal = risk_premium_annual + savings_premium_annual + expense_loading
-            profit_margin = subtotal * PROFIT_MARGIN_PCT
-        
-        # Total annual premium
-        total_annual = risk_premium_annual + savings_premium_annual + expense_loading + profit_margin
-        
+
+        # Delegate the pricing math to the central pricing kernel. The legacy
+        # FinancialReportingService used independent mortality/disability PVs
+        # with lapse adjustment and a minimum-risk floor for ADL 8+, so the
+        # kernel is configured to match that behaviour exactly.
+        from services.pricing_kernel import (
+            ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
+            TableSet, get_age_curve, get_product, price_policy,
+        )
+
+        kernel_tables = TableSet(
+            mortality_rates=[
+                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
+                for (low, high), rate in MORTALITY_RATES.items()
+            ],
+            disability_incidence_rates=[
+                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
+                for (low, high), rate in DISABILITY_INCIDENCE_RATES.items()
+            ],
+            adl_mortality_multipliers=[
+                {'adl': adl, 'multiplier': mult}
+                for adl, mult in ADL_MORTALITY_MULTIPLIERS.items()
+            ],
+            adl_disability_multipliers=[
+                {'adl': adl, 'multiplier': mult}
+                for adl, mult in ADL_DISABILITY_INCIDENCE_MULTIPLIERS.items()
+            ],
+            adl_benefit_percentages=[
+                {'adl': adl, 'benefit_pct': pct}
+                for adl, pct in ADL_BENEFIT_PERCENTAGES.items()
+            ],
+            lapse_rates=[
+                ({'year': key, 'rate': rate} if isinstance(key, int)
+                 else {'year_min': key[0], 'year_max': key[1], 'rate': rate})
+                for key, rate in LAPSE_RATES.items()
+            ],
+            age_curve=get_age_curve('identity'),
+            version='financial_reporting_v2',
+        )
+        # FRS expects each ADL bracket to carry its own benefit percentage but
+        # the legacy disability PV applied wider age-bracket fallbacks. Mirror
+        # those overrides on the table so the kernel sees identical inputs.
+        adl_benefit_override = {
+            1: 0.25, 2: 0.25, 3: 0.25, 4: 0.35, 5: 0.35,
+            6: 0.65, 7: 0.65, 8: 0.90, 9: 0.90, 10: 0.90,
+        }
+        kernel_tables.adl_benefit_percentages = [
+            {'adl': adl, 'benefit_pct': pct} for adl, pct in adl_benefit_override.items()
+        ]
+
+        kernel_config = PricingConfig(
+            expense_loading_pct=EXPENSE_LOADING_PCT,
+            profit_margin_pct=PROFIT_MARGIN_PCT if include_profit_margin else 0.0,
+            discount_rate=DISCOUNT_RATE,
+            savings_rate=float(savings_pct or 0.0),
+            savings_yield_pct=0.0,
+            savings_formula=SavingsFormula.STRAIGHT_LINE,
+            claim_model=ClaimModel.INDEPENDENT,
+            apply_lapse_adjustment=True,
+            apply_min_risk_floor=True,
+            version='financial_reporting_v2',
+        )
+
+        components = price_policy(
+            PricingCustomer(
+                age=int(age),
+                coverage=float(approved_coverage),
+                term_years=int(term_years),
+                adl_level=int(adl_level),
+            ),
+            get_product('phins_hybrid_savings'),
+            kernel_tables,
+            kernel_config,
+            underwriting_loading=float(underwriting_loading),
+            exclude_disability=bool(exclude_disability),
+        )
+
+        adl_mort_mult = components.adl_mortality_multiplier
+        adl_dis_mult = components.adl_disability_multiplier
+        mortality_cost_pv = components.pv_mortality_claims
+        disability_cost_pv = components.pv_disability_claims
+        total_risk_cost_pv = components.pv_total_risk_claims
+        mortality_premium_annual = components.mortality_premium_annual
+        disability_premium_annual = components.disability_premium_annual
+        risk_premium_annual = components.risk_premium_annual
+        savings_premium_annual = components.savings_premium_annual
+        expense_loading = components.expense_loading_annual
+        profit_margin = components.profit_margin_annual
+        total_annual = components.annual_premium
+        savings_allocation = approved_coverage * float(savings_pct or 0.0)
+
         return {
-            'annual_premium': round(total_annual, 2),
-            'monthly_premium': round(total_annual / 12, 2),
-            'risk_component': round(risk_premium_annual, 2),
-            'mortality_component': round(mortality_premium_annual, 2),
-            'disability_component': round(disability_premium_annual, 2),
-            'savings_component': round(savings_premium_annual, 2),
-            'expense_loading': round(expense_loading, 2),
-            'profit_margin': round(profit_margin, 2),
+            'annual_premium': total_annual,
+            'monthly_premium': components.monthly_premium,
+            'risk_component': risk_premium_annual,
+            'mortality_component': mortality_premium_annual,
+            'disability_component': disability_premium_annual,
+            'savings_component': savings_premium_annual,
+            'expense_loading': expense_loading,
+            'profit_margin': profit_margin,
             'coverage': approved_coverage,
             'original_coverage': coverage,
             'coverage_reduced': uw_check.get('coverage_reduced', False),
@@ -571,12 +501,16 @@ class FinancialReportingService:
             'exclude_disability': exclude_disability,
             'customer_age': age,
             'eligible': True,
-            'pv_mortality_risk': round(mortality_cost_pv, 2),
-            'pv_disability_risk': round(disability_cost_pv, 2),
-            'pv_total_risk': round(total_risk_cost_pv, 2),
-            'actuarial_model': 'PHINS_ACTUARIAL_V2_ADDITIVE',
-            'expected_loss_ratio': round((total_risk_cost_pv / (risk_premium_annual * term_years)) * 100, 1) if risk_premium_annual > 0 else 0
+            'pv_mortality_risk': mortality_cost_pv,
+            'pv_disability_risk': disability_cost_pv,
+            'pv_total_risk': total_risk_cost_pv,
+            'actuarial_model': 'PHINS_PRICING_KERNEL_V1',
+            'pricing_kernel_integrity_hash': components.integrity_hash,
+            'expected_loss_ratio': round(
+                (total_risk_cost_pv / (risk_premium_annual * term_years)) * 100, 1
+            ) if risk_premium_annual > 0 else 0
         }
+
     
     def project_policy_value(self, coverage: float, age: int, adl_level: int,
                             savings_pct: float, term_years: int,

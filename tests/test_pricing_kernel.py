@@ -257,6 +257,32 @@ def test_kernel_with_simulator_end_to_end():
     assert sim["pricing_kernel"]["claim_model"] == "mutually_exclusive"
 
 
+def test_inline_pricer_delegates_to_kernel():
+    """``calculate_age_adjusted_premium`` must now report a kernel integrity hash."""
+    from web_portal.server import calculate_age_adjusted_premium
+    result = calculate_age_adjusted_premium(
+        base_premium=1000, age=40, policy_type='life',
+        adl_level=5, coverage_amount=300_000, use_actuarial=True, term_years=20,
+    )
+    assert result['eligible']
+    assert result['actuarial_source'] == 'PHINS_PRICING_KERNEL_V1'
+    assert 'pricing_kernel_integrity_hash' in result
+    assert len(result['pricing_kernel_integrity_hash']) == 16
+
+
+def test_financial_reporting_service_delegates_to_kernel():
+    """``FinancialReportingService.calculate_premium`` must use the kernel."""
+    from services.financial_reporting_service import FinancialReportingService
+    svc = FinancialReportingService(policies={}, claims={}, billing={}, customers={}, underwriting={})
+    result = svc.calculate_premium(
+        coverage=500_000, age=45, adl_level=5,
+        savings_pct=0.50, term_years=15,
+    )
+    assert result['eligible']
+    assert result['actuarial_model'] == 'PHINS_PRICING_KERNEL_V1'
+    assert 'pricing_kernel_integrity_hash' in result
+
+
 def test_simulator_savings_rate_actually_drives_savings_premium():
     """Changing savings_rate on the simulator must move the priced savings premium.
 
