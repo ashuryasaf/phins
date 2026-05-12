@@ -1739,8 +1739,8 @@ class ReserveConfig:
 
 
 def _pct_auto(v: float) -> float:
-    """Auto-detect whether a value is a fraction (0-1) or percentage (>1) and normalise to fraction."""
-    return v / 100.0 if abs(v) > 1.0 else v
+    """Auto-detect whether a value is a fraction (0-1) or percentage (>=1) and normalise to fraction."""
+    return v / 100.0 if abs(v) >= 1.0 else v
 
 
 def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
@@ -1892,10 +1892,7 @@ class ReserveCalculator:
             retained = after_tax_profit - dividends
 
             reserve_contribution = retained * config.reserve_contribution_pct
-            savings_contribution = (
-                (in_force_premium - savings_premium * in_force_factor) * config.savings_allocation_pct
-                + savings_premium * in_force_factor
-            )
+            savings_contribution = in_force_premium * config.savings_allocation_pct
 
             # IBNR provision: incurred-claims method
             ibnr = in_force_claims * config.ibnr_pct

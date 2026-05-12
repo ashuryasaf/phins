@@ -123,12 +123,7 @@ def test_reserve_calculator_zero_savings_disables_growth():
                                   'projection_years': 3})
     projection = ReserveCalculator().project(sim, cfg)
     final_balance = projection['totals']['closing_savings_balance']
-    # Savings premium is still pass-through, but with zero allocation share the
-    # extra fund contribution shrinks to just savings_premium * in_force; for a
-    # pure-risk simulation (savings_premium ~ 0) we expect a near-zero balance.
-    if sim['profitability'].get('savings_premium', 0.0) < 1.0:
-        assert final_balance >= 0
-        assert final_balance < 100_000
+    assert final_balance == 0.0
 
 
 def test_apply_savings_allocation_reconciles():

@@ -25596,8 +25596,9 @@ For claims or questions, please contact:
                 # Optional: route saving allocation through SimulationParams
                 if 'savings_allocation_pct' in data:
                     try:
+                        from services.actuarial_service import _pct_auto
                         raw_pct = float(data.get('savings_allocation_pct') or 0.0)
-                        params.savings_allocation_pct = raw_pct / 100.0 if raw_pct > 1.0 else raw_pct
+                        params.savings_allocation_pct = _pct_auto(raw_pct)
                     except (TypeError, ValueError):
                         params.savings_allocation_pct = 0.0
 
@@ -25706,9 +25707,9 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': f'Unknown simulation_id: {simulation_id}'}).encode('utf-8'))
                 return
             try:
-                from services.actuarial_service import apply_savings_allocation
+                from services.actuarial_service import apply_savings_allocation, _pct_auto
                 raw_pct = float(payload.get('savings_allocation_pct') or 0.0)
-                share = raw_pct / 100.0 if raw_pct > 1.0 else raw_pct
+                share = _pct_auto(raw_pct)
                 allocation = apply_savings_allocation(simulation, share)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({'success': True, 'allocation': allocation}).encode('utf-8'))
