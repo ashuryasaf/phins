@@ -25765,6 +25765,12 @@ For claims or questions, please contact:
                         envelope = stored.get('payload')
                         if isinstance(envelope, str):
                             rows = decrypt_json(envelope, default=None)
+                        elif isinstance(envelope, list):
+                            rows = envelope
+                        elif isinstance(envelope, dict):
+                            rows = envelope
+                if isinstance(rows, dict):
+                    rows = rows.get('data') or rows.get('rows') or list(rows.values())
                 if not isinstance(rows, list):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Unable to read rows from uploaded table payload'}).encode('utf-8'))
