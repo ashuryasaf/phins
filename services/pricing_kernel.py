@@ -183,6 +183,13 @@ class PricingConfig:
     apply_min_risk_floor: bool = False
     expense_basis: str = "risk_premium"  # 'risk_premium' or 'gross_premium'
     profit_basis: str = "risk_savings_expense"  # 'risk_savings_expense' or 'gross_premium'
+    # Contract ratio between the disability benefit and the life sum. When
+    # not None, this value overrides Product.disability_share so every
+    # caller — simulator, quote/billing, FinancialReportingService, risk
+    # reference, reinsurance, reconciler — uses the single
+    # actuary-table-driven ratio. The PHINS adjustable risk contract
+    # default is 0.25 (L ÷ 4).
+    disability_share_of_life: Optional[float] = None
     version: str = "kernel_v1"
 
 
@@ -502,6 +509,14 @@ class PremiumComponents:
     savings_formula: str = SavingsFormula.STRAIGHT_LINE.value
     savings_rate_used: float = 0.0
     savings_yield_used: float = 0.0
+    # The contract ratio between the disability sum and the life sum (L)
+    # actually applied to this priced policy. Sourced from
+    # PricingConfig.disability_share_of_life when set, else from
+    # Product.disability_share. Surfaced here so the actuary dashboard,
+    # audit reports and the reconciler can prove every priced policy used
+    # the same actuary-table-driven ratio.
+    disability_share_used: float = 0.25
+    disability_sum_used: float = 0.0
     integrity_hash: str = ""
     integrity_checks: Dict[str, bool] = field(default_factory=dict)
 
@@ -550,6 +565,21 @@ def _compute_savings_premium(
     return target_value / float(term_years)
 
 
+def _resolve_disability_share(product: Product, config: PricingConfig) -> float:
+    """Resolve the contract ratio between the disability sum and the life sum.
+
+    Order of precedence (highest first):
+      1. ``PricingConfig.disability_share_of_life`` — the actuary-table
+         value. This is the single source of truth across simulator,
+         quote/billing, reports, reinsurance, and reconciler.
+      2. ``Product.disability_share`` — product-level fallback used when
+         a caller explicitly bypasses the actuary config (rare).
+    """
+    if config.disability_share_of_life is not None:
+        return float(config.disability_share_of_life)
+    return float(product.disability_share)
+
+
 def _pv_claims_mutually_exclusive(
     customer: PricingCustomer,
     product: Product,
@@ -565,8 +595,9 @@ def _pv_claims_mutually_exclusive(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
+    disability_share = _resolve_disability_share(product, config)
     disability_sum = (
-        coverage * product.life_share * product.disability_share
+        coverage * product.life_share * disability_share
         if product.disability_benefit_on_disability_sum
         else coverage
     )
@@ -625,8 +656,9 @@ def _pv_claims_independent(
     coverage = float(customer.coverage)
     term = int(customer.term_years)
     discount_rate = float(config.discount_rate)
+    disability_share = _resolve_disability_share(product, config)
     disability_sum = (
-        coverage * product.life_share * product.disability_share
+        coverage * product.life_share * disability_share
         if product.disability_benefit_on_disability_sum
         else coverage
     )
@@ -756,6 +788,12 @@ def price_policy(
     adl_mort_mult = tables.adl_mortality_multiplier(adl)
     adl_dis_mult = tables.adl_disability_multiplier(adl)
     benefit_pct = _benefit_pct_for(adl, tables, exclude_disability, product)
+    resolved_disability_share = _resolve_disability_share(product, config)
+    disability_sum_used = (
+        coverage * product.life_share * resolved_disability_share
+        if product.disability_benefit_on_disability_sum
+        else coverage
+    )
 
     pv_payload = (
         _pv_claims_mutually_exclusive
@@ -854,6 +892,8 @@ def price_policy(
         savings_formula=config.savings_formula.value,
         savings_rate_used=max(0.0, min(float(product.savings_rate), float(config.savings_rate))),
         savings_yield_used=config.savings_yield_pct,
+        disability_share_used=round(float(resolved_disability_share), 6),
+        disability_sum_used=round(float(disability_sum_used), 2),
         integrity_checks={
             "components_sum_to_total": abs(
                 annual_premium
@@ -884,6 +924,16 @@ def price_policy(
             # mortality (a sanity bound for the contract's "L · 100% sum
             # insured" clause).
             "pv_mortality_within_coverage_bound": pv_mortality <= coverage * 1.01,
+            # Verify the contract ratio between the disability sum and the
+            # life sum (L) is what the kernel actually applied. When the
+            # config-driven actuary-table value is set, the priced policy
+            # MUST use it (not the product fallback). This is the "L ÷ 4"
+            # invariant the user asked us to police end-to-end.
+            "disability_share_matches_config": (
+                config.disability_share_of_life is None
+                or abs(resolved_disability_share - float(config.disability_share_of_life)) < 1e-9
+            ),
+            "disability_share_within_bounds": 0.0 <= resolved_disability_share <= 1.0,
         },
     )
 
@@ -910,6 +960,7 @@ def price_policy(
             "age_curve_id": tables.age_curve.id,
             "underwriting_loading": _round6(underwriting_loading),
             "exclude_disability": bool(exclude_disability),
+            "disability_share": _round6(resolved_disability_share),
         }
     )
     return components
@@ -948,8 +999,20 @@ def pricing_config_from_underwriting(uw_config: Any,
                                      apply_lapse_adjustment: bool = False,
                                      apply_min_risk_floor: bool = False,
                                      savings_formula: SavingsFormula = SavingsFormula.STRAIGHT_LINE,
+                                     disability_share_of_life: Optional[float] = None,
                                      ) -> PricingConfig:
-    """Build a :class:`PricingConfig` from an existing :class:`UnderwritingConfig`."""
+    """Build a :class:`PricingConfig` from an existing :class:`UnderwritingConfig`.
+
+    The actuary-table value of ``disability_share_of_life`` (the L÷4
+    contract ratio) flows in via the UnderwritingConfig by default. Callers
+    can pass an override to evaluate hypothetical contracts.
+    """
+    resolved_share = disability_share_of_life
+    if resolved_share is None:
+        # Pull from the actuary-table-driven UnderwritingConfig so simulator,
+        # billing, financial-reporting, risk reference and reconciler all
+        # share one source of truth for the L:D ratio.
+        resolved_share = getattr(uw_config, "disability_share_of_life", 0.25)
     return PricingConfig(
         expense_loading_pct=float(getattr(uw_config, "expense_loading_pct", 0.15)),
         profit_margin_pct=float(getattr(uw_config, "profit_margin_pct", 0.10)),
@@ -960,6 +1023,9 @@ def pricing_config_from_underwriting(uw_config: Any,
         claim_model=claim_model,
         apply_lapse_adjustment=apply_lapse_adjustment,
         apply_min_risk_floor=apply_min_risk_floor,
+        disability_share_of_life=(
+            float(resolved_share) if resolved_share is not None else None
+        ),
     )
 
 

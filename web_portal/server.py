@@ -13059,7 +13059,8 @@ For claims or questions, please contact:
                         'disability_exclusion_threshold': store.config.disability_exclusion_threshold,
                         'expense_loading_pct': store.config.expense_loading_pct,
                         'profit_margin_pct': store.config.profit_margin_pct,
-                        'discount_rate': store.config.discount_rate
+                        'discount_rate': store.config.discount_rate,
+                        'disability_share_of_life': store.config.disability_share_of_life,
                     }
                 }).encode('utf-8'))
             except Exception as e:
@@ -13088,6 +13089,7 @@ For claims or questions, please contact:
                         'expense_loading_pct': config.expense_loading_pct,
                         'profit_margin_pct': config.profit_margin_pct,
                         'discount_rate': config.discount_rate,
+                        'disability_share_of_life': config.disability_share_of_life,
                         'last_modified': config.last_modified,
                         'modified_by': config.modified_by
                     }

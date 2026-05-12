@@ -321,6 +321,42 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         # Premium reconciliation block must report all identities passing
         assert markup_sim['premium_reconciliation']['all_identities_pass'] is True
 
+        # 11.5) Contract ratio adjustable from the actuary table: setting
+        # POST /api/actuarial/config { disability_share_of_life } must flow
+        # through to every priced simulation customer + the risk reference.
+        body, status, _ = _post_json(base + '/api/actuarial/config', {
+            'disability_share_of_life': 0.20,  # 1:5 contract
+        }, admin_token)
+        assert status == 200
+
+        body, status, _ = _get(base + '/api/actuarial/config', admin_token)
+        assert json.loads(body)['config']['disability_share_of_life'] == 0.20
+
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 40, 'age_min': 30, 'age_max': 50,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 10,
+        }, admin_token)
+        assert status == 200
+        cfg_sim = json.loads(body)['simulation']
+        assert cfg_sim['pricing_kernel']['disability_share_of_life'] == 0.20
+
+        body, status, _ = _get(base + '/api/actuarial/risk-reference', admin_token)
+        assert status == 200
+        cfg_ref = json.loads(body)['reference']['reference']
+        assert cfg_ref['disability_share_of_life'] == 0.20
+        assert cfg_ref['disability_to_life_ratio_display'] == '1:5'
+
+        body, status, _ = _get(base + '/api/actuarial/contract-spec', admin_token)
+        assert status == 200
+        ratios = json.loads(body)['contract']['contract_ratios']
+        assert ratios['disability_share_of_life'] == 0.20
+        assert ratios['adjustable_from_dashboard'] is True
+
+        # Restore the default 0.25 for downstream subtests
+        _post_json(base + '/api/actuarial/config', {
+            'disability_share_of_life': 0.25,
+        }, admin_token)
+
         # 11) Legacy UI fallback: callers that still send the old
         # 'savings_allocation_pct' field (e.g. cached/old dashboards) and
         # no explicit savings_rate must now ALSO get a priced savings

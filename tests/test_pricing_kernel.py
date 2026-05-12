@@ -356,6 +356,90 @@ def test_risk_premium_markup_savings_matches_user_brief_example():
     assert plus_300.integrity_checks['savings_markup_identity_holds'] is True
 
 
+def test_disability_share_from_config_drives_priced_disability():
+    """Changing the actuary-table L:D ratio must move the priced disability PV."""
+    from services.pricing_kernel import (
+        ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
+        get_product, price_policy, table_set_from_store,
+    )
+    store = get_actuarial_store()
+    tables = table_set_from_store(store)
+    product = get_product('phins_pure_risk_adjustable')
+    customer = PricingCustomer(age=45, coverage=500_000, term_years=20, adl_level=5)
+
+    def _price(share):
+        cfg = PricingConfig(
+            expense_loading_pct=store.config.expense_loading_pct,
+            profit_margin_pct=store.config.profit_margin_pct,
+            discount_rate=store.config.discount_rate,
+            savings_rate=0.0,
+            savings_formula=SavingsFormula.RISK_PREMIUM_MARKUP,
+            claim_model=ClaimModel.MUTUALLY_EXCLUSIVE,
+            disability_share_of_life=share,
+        )
+        return price_policy(customer, product, tables, cfg)
+
+    quarter = _price(0.25)  # 1:4 — contract default
+    half = _price(0.50)  # 1:2 — bigger disability sum
+    zero = _price(0.0)  # disability cover removed
+
+    # Disability sum used MUST track the configured share exactly
+    assert quarter.disability_share_used == 0.25
+    assert half.disability_share_used == 0.50
+    assert zero.disability_share_used == 0.0
+
+    # Bigger disability sum → bigger PV of disability claims (the contract
+    # would pay 1:2 = half the life sum once triggered instead of 1:4).
+    assert half.pv_disability_claims > quarter.pv_disability_claims
+    assert zero.pv_disability_claims == 0.0
+    # Every priced policy must mark the integrity check as PASS
+    for c in (quarter, half, zero):
+        assert c.integrity_checks['disability_share_matches_config']
+        assert c.integrity_checks['disability_share_within_bounds']
+
+
+def test_integrity_hash_distinguishes_disability_share():
+    """Changing the L:D ratio must change the integrity hash."""
+    from services.pricing_kernel import (
+        ClaimModel, PricingConfig, PricingCustomer, SavingsFormula,
+        get_product, price_policy, table_set_from_store,
+    )
+    store = get_actuarial_store()
+    tables = table_set_from_store(store)
+    product = get_product('phins_pure_risk_adjustable')
+    customer = PricingCustomer(age=35, coverage=500_000, term_years=20, adl_level=5)
+
+    def _hash(share):
+        cfg = PricingConfig(
+            expense_loading_pct=0.15, profit_margin_pct=0.10, discount_rate=0.035,
+            savings_rate=0.0, savings_formula=SavingsFormula.RISK_PREMIUM_MARKUP,
+            claim_model=ClaimModel.MUTUALLY_EXCLUSIVE,
+            disability_share_of_life=share,
+        )
+        return price_policy(customer, product, tables, cfg).integrity_hash
+
+    assert _hash(0.25) != _hash(0.50)
+    assert _hash(0.25) == _hash(0.25)
+
+
+def test_simulator_snapshot_records_disability_share():
+    """The simulator's pricing_kernel provenance block must carry the L:D ratio."""
+    store = get_actuarial_store()
+    original = store.config.disability_share_of_life
+    try:
+        store.update_config({'disability_share_of_life': 0.20}, user='pytest')
+        sim = PortfolioSimulator(store).generate_portfolio(
+            SimulationParams(
+                customer_count=60, age_min=25, age_max=55,
+                coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+                policy_term_mode='fixed', policy_term_fixed=10,
+            )
+        )
+        assert sim['pricing_kernel']['disability_share_of_life'] == 0.20
+    finally:
+        store.update_config({'disability_share_of_life': original}, user='pytest')
+
+
 def test_simulator_emits_premium_reconciliation_with_all_identities():
     """Every simulation must ship a verifiable premium_reconciliation block."""
     sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(

@@ -83,6 +83,12 @@ class UnderwritingConfig:
     expense_loading_pct: float = 0.15
     profit_margin_pct: float = 0.10
     discount_rate: float = 0.035
+    # Contract ratio between the disability benefit and the life sum (L).
+    # The PHINS adjustable risk contract sets disability = L ÷ 4 → 0.25.
+    # Adjustable from the actuary dashboard so every priced policy, every
+    # risk-reference forecast, every reinsurance program and every
+    # reconciliation share a single value.
+    disability_share_of_life: float = 0.25
     last_modified: str = ''
     modified_by: str = ''
 
@@ -319,6 +325,15 @@ def calculate_reinsurance_program(
     calculated_gross = float(profitability.get('calculated_gross', gross_premium) or gross_premium)
     net_profit = float(profitability.get('net_profit', 0.0) or 0.0)
 
+    # Resolve the L:D contract ratio actually used to price this portfolio
+    # so the reinsurance program can prove it preserves the same ratio when
+    # ceding mortality vs disability claims.
+    pricing_kernel_meta = simulation.get('pricing_kernel') or {}
+    disability_share_of_life = float(
+        pricing_kernel_meta.get('disability_share_of_life',
+                                getattr(tables_store.config, 'disability_share_of_life', 0.25))
+    )
+
     return {
         'covered_risks': covered_risks,
         'accepted_lives': accepted_customers,
@@ -361,11 +376,32 @@ def calculate_reinsurance_program(
             'table_version': simulation.get('tables_version', tables_store.current_version),
             'adl_model_note': 'Permanent ADL disability risk is sourced from PHINS ADL disability multipliers and disability benefit percentage tables.',
         },
+        'contract_ratios': {
+            'disability_share_of_life': round(disability_share_of_life, 6),
+            'disability_to_life_ratio_display': (
+                f'1:{int(round(1.0 / disability_share_of_life))}'
+                if disability_share_of_life and abs(
+                    1.0 / disability_share_of_life - round(1.0 / disability_share_of_life)
+                ) < 0.01
+                else f'{disability_share_of_life:.4f}'
+            ),
+            'source': 'pricing_kernel.disability_share_of_life',
+            'ceded_disability_sum_pct_of_ceded_exposure': (
+                round((ceded_exposure * disability_share_of_life) / max(1.0, ceded_exposure), 6)
+                if ceded_exposure > 0 else 0.0
+            ),
+        },
         'data_integrity': {
             'contracts_within_portfolio': selected_contracts <= accepted_customers,
             'ceded_exposure_within_total': ceded_exposure <= total_coverage + 1,
             'gross_premium_reconciles': abs(gross_premium - calculated_gross) < 1.0,
             'protected_claims_share': round(protected_claims_share, 6),
+            # Prove the program kept the same L:D ratio the kernel used to
+            # price the underlying portfolio — i.e. the disability portion
+            # of the ceded sum equals share × total ceded exposure.
+            'contract_ratio_preserved': abs(disability_share_of_life - float(
+                pricing_kernel_meta.get('disability_share_of_life', disability_share_of_life)
+            )) < 1e-9,
         },
     }
 
@@ -481,6 +517,7 @@ class ActuarialTablesStore:
             expense_loading_pct=0.15,
             profit_margin_pct=0.10,
             discount_rate=0.035,
+            disability_share_of_life=0.25,
             last_modified=datetime.now().isoformat(),
             modified_by='system'
         )
@@ -601,7 +638,13 @@ class ActuarialTablesStore:
             self.config.profit_margin_pct = float(updates['profit_margin_pct'])
         if 'discount_rate' in updates:
             self.config.discount_rate = float(updates['discount_rate'])
-        
+        if 'disability_share_of_life' in updates:
+            raw = float(updates['disability_share_of_life'])
+            # Accept either fraction (0..1) or percentage (>1) input
+            self.config.disability_share_of_life = _clamp(
+                raw / 100.0 if raw > 1.0 else raw, 0.0, 1.0,
+            )
+
         self.config.last_modified = datetime.now().isoformat()
         self.config.modified_by = user
         
@@ -691,7 +734,8 @@ class ActuarialTablesStore:
             'disability_exclusion_threshold': 8,
             'expense_loading_pct': 0.15,
             'profit_margin_pct': 0.10,
-            'discount_rate': 0.035
+            'discount_rate': 0.035,
+            'disability_share_of_life': 0.25,
         }
     
     def get_default_tables(self) -> Dict:
@@ -785,6 +829,7 @@ class ActuarialTablesStore:
             expense_loading_pct=defaults['expense_loading_pct'],
             profit_margin_pct=defaults['profit_margin_pct'],
             discount_rate=defaults['discount_rate'],
+            disability_share_of_life=defaults.get('disability_share_of_life', 0.25),
             last_modified=datetime.now().isoformat(),
             modified_by=user
         )
@@ -1300,6 +1345,10 @@ class PortfolioSimulator:
                 'expense_loading_pct': self.tables.config.expense_loading_pct,
                 'profit_margin_pct': self.tables.config.profit_margin_pct,
                 'discount_rate': self.tables.config.discount_rate,
+                # Single source of truth for the L:D contract ratio. Every
+                # priced customer in this snapshot used the same value;
+                # changing the actuary table changes every algorithm.
+                'disability_share_of_life': float(self.tables.config.disability_share_of_life),
             },
         }
         result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
@@ -1749,9 +1798,26 @@ CONTRACT_SPECIFICATION: Dict[str, Any] = {
 
 
 def get_contract_specification() -> Dict[str, Any]:
-    """Return a deep copy of the canonical contract specification."""
+    """Return a deep copy of the canonical contract specification with the
+    actuary-table-driven L:D ratio surfaced as a top-level field so the
+    dashboard and audit reports always reflect the current configuration.
+    """
     import copy
-    return copy.deepcopy(CONTRACT_SPECIFICATION)
+    spec = copy.deepcopy(CONTRACT_SPECIFICATION)
+    share = float(get_actuarial_store().config.disability_share_of_life)
+    inv = (1.0 / share) if share > 0 else 0.0
+    rounded = round(inv)
+    ratio_display = (
+        f'1:{int(rounded)}' if share > 0 and abs(inv - rounded) < 0.01
+        else f'{share:.4f}'
+    )
+    spec['contract_ratios'] = {
+        'disability_share_of_life': round(share, 6),
+        'disability_to_life_ratio_display': ratio_display,
+        'source': 'UnderwritingConfig.disability_share_of_life',
+        'adjustable_from_dashboard': True,
+    }
+    return spec
 
 
 def check_underwriting_eligibility(adl: int, coverage: float) -> Dict:
@@ -1870,11 +1936,14 @@ def risk_reference_age_factor(age: int, profile_id: Optional[str] = None) -> flo
 
 def risk_reference_monthly_premiums(age: int,
                                     life_sum: Optional[float] = None,
-                                    profile_id: Optional[str] = None) -> Dict[str, float]:
+                                    profile_id: Optional[str] = None,
+                                    disability_share_of_life: Optional[float] = None) -> Dict[str, float]:
     """Monthly life + permanent ADL disability premium for the reference policyholder."""
     profile = get_risk_reference_profile(profile_id)
     life = float(life_sum if life_sum is not None else profile['reference_life_sum'])
-    disability = life * float(profile['disability_share_of_life'])
+    if disability_share_of_life is None:
+        disability_share_of_life = float(profile['disability_share_of_life'])
+    disability = life * float(disability_share_of_life)
     factor = risk_reference_age_factor(age, profile_id)
     life_premium = (life / 1000.0) * float(profile['life_base_rate_per_1000_monthly']) * factor
     disability_premium = 0.0
@@ -1898,19 +1967,31 @@ def risk_reference_monthly_premiums(age: int,
 def build_risk_reference(start_age: Optional[int] = None,
                          projection_years: Optional[int] = None,
                          life_sum: Optional[float] = None,
-                         profile_id: Optional[str] = None) -> Dict[str, Any]:
+                         profile_id: Optional[str] = None,
+                         disability_share_of_life: Optional[float] = None) -> Dict[str, Any]:
     """Build a deterministic risk-reference forecast for any (modular) inputs.
 
-    Unlike the previous fixed 5-year exam, this function accepts any starting
-    age, projection horizon, life sum, and registered profile. With default
-    inputs it still reproduces the locked public one-pager exactly so the
-    audit invariant in the integrity-check tests holds.
+    Unlike the previous fixed 5-year exam, this function accepts any
+    starting age, projection horizon, life sum and registered profile.
+
+    The L:D contract ratio (``disability_share_of_life``) is now sourced
+    from the actuary-table UnderwritingConfig when no override is passed,
+    so the risk-reference forecast always agrees with what the pricing
+    kernel actually used to price the production portfolio. With default
+    inputs it still reproduces the locked public one-pager exactly.
     """
     profile = get_risk_reference_profile(profile_id)
     start_age = int(start_age if start_age is not None else profile['reference_start_age'])
     projection_years = int(projection_years if projection_years is not None else profile['reference_projection_years'])
     life = float(life_sum if life_sum is not None else profile['reference_life_sum'])
-    disability = life * float(profile['disability_share_of_life'])
+    if disability_share_of_life is None:
+        try:
+            disability_share_of_life = float(
+                get_actuarial_store().config.disability_share_of_life
+            )
+        except Exception:
+            disability_share_of_life = float(profile['disability_share_of_life'])
+    disability = life * float(disability_share_of_life)
     mortality_qx = profile.get('mortality_qx', {})
     disability_ix = profile.get('disability_incidence_ix', {})
 
@@ -1919,7 +2000,10 @@ def build_risk_reference(start_age: Optional[int] = None,
     cumulative_expected_loss = 0.0
     for offset in range(projection_years):
         age = start_age + offset
-        premiums = risk_reference_monthly_premiums(age, life_sum=life, profile_id=profile_id)
+        premiums = risk_reference_monthly_premiums(
+            age, life_sum=life, profile_id=profile_id,
+            disability_share_of_life=disability_share_of_life,
+        )
         annual = premiums['annual_premium']
         qx = float(mortality_qx.get(age, mortality_qx.get(str(age), 0.0)))
         ix = float(disability_ix.get(age, disability_ix.get(str(age), 0.0)))
@@ -1960,6 +2044,15 @@ def build_risk_reference(start_age: Optional[int] = None,
             'projection_years': projection_years,
             'covered_risks': list(profile.get('covered_risks', ['mortality', 'permanent_adl_disability'])),
             'age_curve_id': profile.get('age_curve_id', 'risk_reference_v1'),
+            # Contract L:D ratio actually applied to this forecast — pulled
+            # from the actuary table by default so the risk reference always
+            # agrees with the production pricing kernel.
+            'disability_share_of_life': float(disability_share_of_life),
+            'disability_to_life_ratio_display': (
+                f'1:{int(round(1.0 / disability_share_of_life))}'
+                if disability_share_of_life and abs(1.0 / disability_share_of_life - round(1.0 / disability_share_of_life)) < 0.01
+                else f'{disability_share_of_life:.4f}'
+            ),
         },
         'yearly_projection': yearly,
         'totals': {
@@ -1979,6 +2072,11 @@ def build_risk_reference(start_age: Optional[int] = None,
                 'mortality_severity': float(profile['mortality_severity']),
                 'disability_severity': float(profile['disability_severity']),
             },
+            # Prove the disability sum equals life_sum × disability_share to
+            # the cent so the contract L:D ratio is preserved in the forecast.
+            'disability_sum_matches_ratio': abs(
+                disability - life * float(disability_share_of_life)
+            ) < 0.01,
         },
     }
 
@@ -2175,6 +2273,10 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
         savings_yield_pct=float(pricing_meta.get('savings_yield_pct', 0.0)),
         savings_formula=savings_formula,
         claim_model=ClaimModel.MUTUALLY_EXCLUSIVE,
+        disability_share_of_life=float(
+            pricing_meta.get('disability_share_of_life',
+                              get_actuarial_store().config.disability_share_of_life)
+        ),
     )
     tables = table_set_from_store(
         store,

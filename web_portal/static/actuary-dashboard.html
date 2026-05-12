@@ -1036,6 +1036,21 @@
               </div>
             </div>
           </div>
+
+          <div class="card">
+            <div class="card-title">Contract Ratios (Life : Disability)</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              The PHINS adjustable risk contract pays a Disability benefit of <strong>L ÷ 4</strong> (1:4 with the life sum). Adjust the ratio below — every algorithm (pricing kernel, simulator, risk reference, reinsurance program, reconciler) picks up the new value automatically.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Disability Benefit (% of Life Sum)</label>
+                <input type="number" id="disability-share" class="form-input" value="25" min="0" max="100" step="0.1"
+                       oninput="updateDisabilityRatioDisplay()">
+                <small id="disability-ratio-display" style="color:var(--text-light);">Disability ÷ Life = 1 : 4</small>
+              </div>
+            </div>
+          </div>
           
           <button class="btn btn-success" onclick="savePricingParams()">💾 Save Pricing Parameters</button>
           <button class="btn btn-outline" onclick="resetPricingParams()">↻ Reset to Defaults</button>
@@ -1824,6 +1839,23 @@
       document.getElementById('expense-loading').value = (currentConfig.expense_loading_pct * 100).toFixed(1);
       document.getElementById('profit-margin').value = (currentConfig.profit_margin_pct * 100).toFixed(1);
       document.getElementById('discount-rate').value = (currentConfig.discount_rate * 100).toFixed(1);
+
+      const dShare = (typeof currentConfig.disability_share_of_life === 'number')
+        ? currentConfig.disability_share_of_life : 0.25;
+      const dShareInput = document.getElementById('disability-share');
+      if (dShareInput) {
+        dShareInput.value = (dShare * 100).toFixed(2);
+      }
+      const ratioDisplay = document.getElementById('disability-ratio-display');
+      if (ratioDisplay) {
+        const inv = dShare > 0 ? (1 / dShare) : 0;
+        const rounded = Math.round(inv);
+        if (dShare > 0 && Math.abs(inv - rounded) < 0.01) {
+          ratioDisplay.textContent = `Disability ÷ Life = 1 : ${rounded}`;
+        } else {
+          ratioDisplay.textContent = `Disability ÷ Life = ${dShare.toFixed(4)}`;
+        }
+      }
       
       if (currentConfig.loadings) {
         document.getElementById('loading-6').value = (currentConfig.loadings['6'] || 0.15) * 100;
@@ -2212,11 +2244,16 @@
     }
     
     async function savePricingParams() {
+      const dShareInput = parseFloat(document.getElementById('disability-share')?.value);
       const config = {
         expense_loading_pct: parseFloat(document.getElementById('expense-loading').value) / 100,
         profit_margin_pct: parseFloat(document.getElementById('profit-margin').value) / 100,
-        discount_rate: parseFloat(document.getElementById('discount-rate').value) / 100
+        discount_rate: parseFloat(document.getElementById('discount-rate').value) / 100,
       };
+      if (!Number.isNaN(dShareInput)) {
+        // Field is entered as a percentage of life sum (e.g. 25 for 1:4)
+        config.disability_share_of_life = dShareInput / 100;
+      }
       
       try {
         const res = await fetch('/api/actuarial/config', {
@@ -3419,6 +3456,23 @@
       }
     }
 
+    function updateDisabilityRatioDisplay() {
+      const display = document.getElementById('disability-ratio-display');
+      if (!display) return;
+      const raw = parseFloat(document.getElementById('disability-share')?.value || '0') / 100;
+      if (!raw || raw <= 0) {
+        display.textContent = 'Disability ÷ Life = 0 (no disability cover)';
+        return;
+      }
+      const inv = 1 / raw;
+      const rounded = Math.round(inv);
+      if (Math.abs(inv - rounded) < 0.01) {
+        display.textContent = `Disability ÷ Life = 1 : ${rounded}`;
+      } else {
+        display.textContent = `Disability ÷ Life = ${raw.toFixed(4)}`;
+      }
+    }
+
     async function loadContractSpec() {
       const body = document.getElementById('contract-spec-body');
       if (!body) return;
@@ -3437,8 +3491,14 @@
           </tr>
         `).join('');
         const sa = c.savings_addon || {};
+        const cr = c.contract_ratios || {};
         body.innerHTML = `
           <p><strong>${c.name || 'PHINS Contract'}</strong> · ${c.version || ''} · effective ${c.effective_date || ''} · product <code>${c.product_id || ''}</code></p>
+          <p style="color:var(--text-light);">
+            <strong>Contract ratio (actuary-table driven):</strong>
+            Disability ÷ Life = <strong>${cr.disability_to_life_ratio_display || '1:4'}</strong>
+            ${cr.adjustable_from_dashboard ? '· editable in <em>Pricing Parameters → Contract Ratios</em>' : ''}
+          </p>
           <h4 style="margin-top:8px;">1. Risk Factors — what is covered</h4>
           <table class="data-table">
             <thead><tr><th>Risk Factor</th><th>Benefit</th><th>Trigger Age</th></tr></thead>
