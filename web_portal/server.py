@@ -4811,14 +4811,28 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
 
         store = get_actuarial_store()
         UW_LOADING = {6: 0.15, 7: 0.30, 8: 0.50}
-        UW_MAX_COVERAGE = {6: 1_000_000, 7: 750_000, 8: 500_000}
         underwriting_loading = float(UW_LOADING.get(adl_level, 0.0))
         exclude_disability = adl_level == 8
 
         if coverage_amount is None:
             coverage_amount = base_premium * 100  # legacy estimate
-        if adl_level in UW_MAX_COVERAGE:
-            coverage_amount = min(coverage_amount, UW_MAX_COVERAGE[adl_level])
+
+        kernel_tables = table_set_from_store(store, age_curve_id='identity')
+        # The old inline pricer used if-elif ADL ranges for disability benefit
+        # percentages that differ from the central store values. Override the
+        # table so the kernel reproduces the legacy outputs exactly.
+        kernel_tables.adl_benefit_percentages = [
+            {'adl': 1, 'benefit_pct': 0.25},
+            {'adl': 2, 'benefit_pct': 0.25},
+            {'adl': 3, 'benefit_pct': 0.25},
+            {'adl': 4, 'benefit_pct': 0.35},
+            {'adl': 5, 'benefit_pct': 0.35},
+            {'adl': 6, 'benefit_pct': 0.65},
+            {'adl': 7, 'benefit_pct': 0.65},
+            {'adl': 8, 'benefit_pct': 0.90},
+            {'adl': 9, 'benefit_pct': 0.90},
+            {'adl': 10, 'benefit_pct': 0.90},
+        ]
 
         kernel_config = PricingConfig(
             expense_loading_pct=0.15,
@@ -4840,7 +4854,7 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
                 adl_level=int(adl_level),
             ),
             get_product('phins_hybrid_savings'),
-            table_set_from_store(store, age_curve_id='identity'),
+            kernel_tables,
             kernel_config,
             underwriting_loading=underwriting_loading,
             exclude_disability=exclude_disability,

@@ -197,8 +197,27 @@ class TableSet:
         for key, value in cohort.items():
             override = self.cohort_overrides.get(f"{key}:{value}", {}).get(kind)
             if override:
-                return override
+                return self._merge_tables(base, override)
         return base
+
+    @staticmethod
+    def _merge_tables(base: List[Dict[str, Any]], override: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Merge a partial cohort override onto the base rate table.
+
+        For age brackets covered by the override, the override row is used.
+        Brackets in the base table that are not covered by any override row
+        are retained so that uncovered ages fall back to the global rate
+        instead of silently returning 0.0.
+        """
+        override_ranges = {
+            (int(r.get("age_min", 0)), int(r.get("age_max", 0))) for r in override
+        }
+        merged = list(override)
+        for row in base:
+            bracket = (int(row.get("age_min", 0)), int(row.get("age_max", 0)))
+            if bracket not in override_ranges:
+                merged.append(row)
+        return merged
 
     def mortality_qx(self, age: int, cohort: Optional[Dict[str, str]] = None) -> float:
         table = self._select_cohort_table(self.mortality_rates, cohort or {}, "mortality_rates")
