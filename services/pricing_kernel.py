@@ -721,6 +721,12 @@ def price_policy(
     """
     coverage = float(customer.coverage)
     term = int(customer.term_years)
+
+    if config.savings_formula == SavingsFormula.RISK_PREMIUM_MARKUP:
+        effective_savings_rate = max(0.0, float(config.savings_rate))
+    else:
+        effective_savings_rate = max(0.0, min(float(product.savings_rate), float(config.savings_rate)))
+
     if coverage <= 0 or term <= 0:
         empty = PremiumComponents(
             annual_premium=0.0,
@@ -745,7 +751,7 @@ def price_policy(
             config_version=config.version,
             claim_model=config.claim_model.value,
             savings_formula=config.savings_formula.value,
-            savings_rate_used=max(0.0, min(float(product.savings_rate), float(config.savings_rate))),
+            savings_rate_used=effective_savings_rate,
             savings_yield_used=config.savings_yield_pct,
             age_curve_id=tables.age_curve.id,
         )
@@ -852,7 +858,7 @@ def price_policy(
         config_version=config.version,
         claim_model=config.claim_model.value,
         savings_formula=config.savings_formula.value,
-        savings_rate_used=max(0.0, min(float(product.savings_rate), float(config.savings_rate))),
+        savings_rate_used=effective_savings_rate,
         savings_yield_used=config.savings_yield_pct,
         integrity_checks={
             "components_sum_to_total": abs(
@@ -901,7 +907,7 @@ def price_policy(
             "config_version": config.version,
             "claim_model": config.claim_model.value,
             "savings_formula": config.savings_formula.value,
-            "savings_rate": _round6(max(0.0, min(float(product.savings_rate), float(config.savings_rate)))),
+            "savings_rate": _round6(effective_savings_rate),
             "savings_yield": _round6(config.savings_yield_pct),
             "age": int(customer.age),
             "adl": int(adl),
