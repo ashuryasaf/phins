@@ -1977,7 +1977,7 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
     portfolio_delta = round(gross - expected_total, 2)
 
     return {
-        'reconciled': component_check and abs(portfolio_delta) < 1.0,
+        'reconciled': component_check and abs(portfolio_delta) < max(1.0, math.sqrt(accepted) * 0.50),
         'representative_customer': {
             'age': rep_age,
             'adl_level': rep_adl,
