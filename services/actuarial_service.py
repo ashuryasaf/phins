@@ -1739,8 +1739,8 @@ class ReserveConfig:
 
 
 def _pct_auto(v: float) -> float:
-    """Auto-detect whether a value is a fraction (0-1) or percentage (>=1) and normalise to fraction."""
-    return v / 100.0 if abs(v) >= 1.0 else v
+    """Auto-detect whether a value is a fraction (0..1) or percentage (>1) and normalise to fraction."""
+    return v / 100.0 if abs(v) > 1.0 else v
 
 
 def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
