@@ -1752,7 +1752,9 @@ def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
         ),
         csm_release_pattern=str(payload.get('csm_release_pattern') or 'straight_line').lower(),
         savings_allocation_pct=_clamp(
-            float(payload.get('savings_allocation_pct', 0.0) or 0.0), 0.0, 0.95
+            (lambda v: v / 100.0 if v > 1.0 else v)(
+                float(payload.get('savings_allocation_pct', 0.0) or 0.0)
+            ), 0.0, 0.95
         ),
         savings_yield_pct=_clamp(
             float(payload.get('savings_yield_pct', 0.045) or 0.0), -0.5, 0.5
