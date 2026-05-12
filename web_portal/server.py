@@ -4846,6 +4846,20 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             exclude_disability=exclude_disability,
         )
 
+        # Legacy savings formula: base_premium * 0.5 (independent of coverage
+        # and term). The kernel uses coverage * rate / term which is a different
+        # formula; override savings and recompute the dependent totals so
+        # existing quote / billing flows stay bit-for-bit unchanged.
+        savings_premium = round(base_premium * 0.5, 2)
+        expense_loading = components.expense_loading_annual
+        profit_margin = round(
+            (components.risk_premium_annual + savings_premium + expense_loading) * 0.10, 2
+        )
+        annual_premium = round(
+            components.risk_premium_annual + savings_premium + expense_loading + profit_margin, 2
+        )
+        monthly_premium = round(annual_premium / 12.0, 2)
+
         return {
             'base_premium': base_premium,
             'age': age,
@@ -4859,13 +4873,13 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             'mortality_premium': components.mortality_premium_annual,
             'disability_premium': components.disability_premium_annual,
             'risk_premium': components.risk_premium_annual,
-            'savings_premium': components.savings_premium_annual,
-            'expense_loading': components.expense_loading_annual,
-            'profit_margin': components.profit_margin_annual,
+            'savings_premium': savings_premium,
+            'expense_loading': expense_loading,
+            'profit_margin': profit_margin,
             'underwriting_loading': underwriting_loading,
             'exclude_disability': exclude_disability,
-            'annual_premium': components.annual_premium,
-            'monthly_premium': components.monthly_premium,
+            'annual_premium': annual_premium,
+            'monthly_premium': monthly_premium,
             'coverage_amount': coverage_amount,
             'term_years': term_years,
             'pv_mortality_risk': components.pv_mortality_claims,
@@ -25590,7 +25604,8 @@ For claims or questions, please contact:
                 # policy book (G7) when the caller did not specify
                 # projection_years. Use the maximum policy term so the
                 # reserves run covers the full liability tail.
-                if 'projection_years' not in payload:
+                derived_from_book = 'projection_years' not in payload
+                if derived_from_book:
                     sim_params = simulation.get('parameters') or {}
                     risk_metrics = simulation.get('risk_metrics') or {}
                     if str(sim_params.get('policy_term_mode', 'random')).lower() == 'fixed':
@@ -25608,7 +25623,7 @@ For claims or questions, please contact:
                     'accepted_customers': simulation.get('portfolio_summary', {}).get('accepted_customers'),
                     'total_coverage': simulation.get('portfolio_summary', {}).get('total_coverage'),
                     'annual_premium': simulation.get('portfolio_summary', {}).get('total_annual_premium'),
-                    'horizon_source': 'policy_book' if 'projection_years' not in payload else 'caller',
+                    'horizon_source': 'policy_book' if derived_from_book else 'caller',
                 }
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({'success': True, 'projection': projection}).encode('utf-8'))
