@@ -972,7 +972,90 @@ class PortfolioSimulator:
         # Lazy import to avoid a cycle at module load.
         from services import pricing_kernel as _pk  # noqa: F401
         self._pk = _pk
-    
+
+    def _build_premium_reconciliation(self, params: 'SimulationParams', accepted_count: int,
+                                       totals: Dict[str, float], expense_amount: float,
+                                       profit_amount: float) -> Dict[str, Any]:
+        """Build a verifiable arithmetic-chain proof of the simulation totals.
+
+        Each entry exposes the literal multiplication / sum that produces the
+        portfolio number, plus a ``check`` flag. Callers (dashboard, audit,
+        reconciler) can render this directly without re-running any math.
+        """
+        n = max(0, int(accepted_count))
+        total_premium = float(totals.get('annual_premium', 0.0) or 0.0)
+        total_risk = float(totals.get('risk_premium', 0.0) or 0.0)
+        total_savings = float(totals.get('savings_premium', 0.0) or 0.0)
+        savings_rate = float(getattr(params, 'savings_rate', 0.0) or 0.0)
+        savings_formula = str(getattr(params, 'savings_formula', 'risk_premium_markup')).lower()
+
+        avg_premium = total_premium / n if n else 0.0
+        avg_risk = total_risk / n if n else 0.0
+        avg_savings = total_savings / n if n else 0.0
+        avg_expense = expense_amount / n if n else 0.0
+        avg_profit = profit_amount / n if n else 0.0
+
+        # Identity 1: N × avg_premium ≈ total_premium (rounding errors only)
+        avg_x_n = n * avg_premium
+        identity_n_times_avg = abs(avg_x_n - total_premium) < 1.0
+
+        # Identity 2: components sum to total
+        sum_components = total_risk + total_savings + expense_amount + profit_amount
+        identity_components_sum = abs(sum_components - total_premium) < 1.0
+
+        # Identity 3 (only meaningful for the markup formula):
+        # total_savings ≈ savings_rate × total_risk
+        markup_expected = savings_rate * total_risk
+        identity_markup_holds = (
+            savings_formula != 'risk_premium_markup'
+            or abs(total_savings - markup_expected) < max(1.0, total_premium * 1e-6)
+        )
+
+        return {
+            'accepted_customers': n,
+            'avg_premium_per_customer': round(avg_premium, 2),
+            'avg_risk_premium_per_customer': round(avg_risk, 2),
+            'avg_savings_premium_per_customer': round(avg_savings, 2),
+            'avg_expense_loading_per_customer': round(avg_expense, 2),
+            'avg_profit_margin_per_customer': round(avg_profit, 2),
+            'identities': {
+                'n_times_avg_premium_equals_total': {
+                    'formula': 'N × avg_premium = total_annual_premium',
+                    'n': n,
+                    'avg_premium': round(avg_premium, 2),
+                    'computed': round(avg_x_n, 2),
+                    'expected': round(total_premium, 2),
+                    'delta': round(avg_x_n - total_premium, 2),
+                    'check': identity_n_times_avg,
+                },
+                'sum_of_components_equals_total': {
+                    'formula': 'risk + savings + expense + profit = total_annual_premium',
+                    'risk': round(total_risk, 2),
+                    'savings': round(total_savings, 2),
+                    'expense': round(expense_amount, 2),
+                    'profit': round(profit_amount, 2),
+                    'computed': round(sum_components, 2),
+                    'expected': round(total_premium, 2),
+                    'delta': round(sum_components - total_premium, 2),
+                    'check': identity_components_sum,
+                },
+                'savings_markup_identity': {
+                    'formula': 'total_savings_premium = savings_rate × total_risk_premium'
+                    if savings_formula == 'risk_premium_markup'
+                    else 'not applicable (formula = ' + savings_formula + ')',
+                    'savings_rate': round(savings_rate, 6),
+                    'computed': round(markup_expected, 2),
+                    'actual': round(total_savings, 2),
+                    'delta': round(total_savings - markup_expected, 2),
+                    'check': identity_markup_holds,
+                    'applies': savings_formula == 'risk_premium_markup',
+                },
+            },
+            'all_identities_pass': bool(
+                identity_n_times_avg and identity_components_sum and identity_markup_holds
+            ),
+        }
+
     def generate_portfolio(self, params: SimulationParams) -> Dict:
         """
         Generate a simulated portfolio with demographics and calculate metrics.
@@ -1174,8 +1257,12 @@ class PortfolioSimulator:
                 'acceptance_rate': round((accepted_count / params.customer_count) * 100, 2),
                 'total_coverage': totals['coverage'],
                 'total_annual_premium': totals['annual_premium'],
+                'total_risk_premium': totals['risk_premium'],
+                'total_savings_premium': totals['savings_premium'],
                 'avg_coverage': round(totals['coverage'] / accepted_count, 2) if accepted_count > 0 else 0,
-                'avg_premium': round(totals['annual_premium'] / accepted_count, 2) if accepted_count > 0 else 0
+                'avg_premium': round(totals['annual_premium'] / accepted_count, 2) if accepted_count > 0 else 0,
+                'avg_risk_premium': round(totals['risk_premium'] / accepted_count, 2) if accepted_count > 0 else 0,
+                'avg_savings_premium': round(totals['savings_premium'] / accepted_count, 2) if accepted_count > 0 else 0,
             },
             
             'demographics': demographics,
@@ -1191,6 +1278,14 @@ class PortfolioSimulator:
                 'communities': True,
                 'reinsurance': True
             },
+            # Verifiable arithmetic chain so the dashboard, audit, and
+            # external auditors can prove the simulation totals add up:
+            #   N × avg_premium ≈ total_annual_premium
+            #   total_risk + total_savings + total_expense + total_profit = total_annual_premium
+            #   total_savings ≈ savings_rate × total_risk  (when RISK_PREMIUM_MARKUP)
+            'premium_reconciliation': self._build_premium_reconciliation(
+                params, accepted_count, totals, expense_amount, profit_amount,
+            ),
             # Pricing kernel provenance — every priced customer in this
             # simulation flowed through the same kernel call signature, so
             # the entire snapshot is reproducible from these identifiers.

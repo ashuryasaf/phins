@@ -356,6 +356,36 @@ def test_risk_premium_markup_savings_matches_user_brief_example():
     assert plus_300.integrity_checks['savings_markup_identity_holds'] is True
 
 
+def test_simulator_emits_premium_reconciliation_with_all_identities():
+    """Every simulation must ship a verifiable premium_reconciliation block."""
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=200, age_min=30, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=10,
+            savings_rate=1.0,  # 100% markup -> savings == risk
+            savings_formula='risk_premium_markup',
+            product_id='phins_pure_risk_adjustable',
+        )
+    )
+    recon = sim['premium_reconciliation']
+    assert recon['all_identities_pass'] is True
+    n_x_avg = recon['identities']['n_times_avg_premium_equals_total']
+    sum_components = recon['identities']['sum_of_components_equals_total']
+    markup = recon['identities']['savings_markup_identity']
+    assert n_x_avg['check']
+    assert sum_components['check']
+    assert markup['check']
+    # The portfolio summary must also expose per-component aggregates
+    portfolio = sim['portfolio_summary']
+    assert 'total_risk_premium' in portfolio
+    assert 'total_savings_premium' in portfolio
+    assert 'avg_risk_premium' in portfolio
+    assert 'avg_savings_premium' in portfolio
+    # And savings_rate=1.0 means total_savings == total_risk to the cent
+    assert abs(portfolio['total_savings_premium'] - portfolio['total_risk_premium']) < 1.0
+
+
 def test_pure_risk_default_produces_zero_savings():
     """Default simulator settings must produce a pure-risk contract with no savings premium."""
     sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(

@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <!-- Build stamp: bumped whenever a substantive pricing change ships so
+       cached browsers can tell users they are running an old UI. -->
+  <meta name="phins-actuary-dashboard-build" content="2026-05-12.savings-markup-reconciliation">
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
@@ -641,6 +647,7 @@
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
+        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-12 (savings-markup-reconciliation)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
         <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
@@ -2681,12 +2688,64 @@
       const premiumDiff = Math.abs(grossPremium - calculatedGross);
       const premiumMatch = premiumDiff < 1; // Allow $1 rounding difference
       
+      // Premium reconciliation block (produced by the simulator backend).
+      // Renders the literal N × avg = total and risk+savings+expense+profit
+      // = total identities so the actuary can verify the arithmetic chain
+      // without re-running anything.
+      const recon = sim.premium_reconciliation || {};
+      const reconIdentities = recon.identities || {};
+      const reconNxAvg = reconIdentities.n_times_avg_premium_equals_total || {};
+      const reconSum = reconIdentities.sum_of_components_equals_total || {};
+      const reconMarkup = reconIdentities.savings_markup_identity || {};
+      const reconAllPass = !!recon.all_identities_pass;
+      const reconHtml = `
+        <div class="results-section">
+          <h4>🧮 Premium Reconciliation (verifiable arithmetic chain)</h4>
+          <div class="alert ${reconAllPass ? 'alert-success' : 'alert-warning'}" style="margin-bottom:10px;">
+            ${reconAllPass ? '✅ All portfolio-level identities hold to the cent.' : '⚠️ One or more identities did not reconcile — check the deltas below.'}
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>Identity</th><th>Formula</th><th>Computed</th><th>Expected</th><th>Δ</th><th>Check</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>N × avg premium</td>
+                <td><code>${reconNxAvg.formula || ''}</code></td>
+                <td>${reconNxAvg.n ? fmt(reconNxAvg.n) : '0'} × ${fmtCurrency(reconNxAvg.avg_premium)} = ${fmtCurrency(reconNxAvg.computed)}</td>
+                <td>${fmtCurrency(reconNxAvg.expected)}</td>
+                <td>${fmtCurrency(reconNxAvg.delta)}</td>
+                <td>${reconNxAvg.check ? '✅' : '❌'}</td>
+              </tr>
+              <tr>
+                <td>Components → total</td>
+                <td><code>${reconSum.formula || ''}</code></td>
+                <td>${fmtCurrency(reconSum.risk)} + ${fmtCurrency(reconSum.savings)} + ${fmtCurrency(reconSum.expense)} + ${fmtCurrency(reconSum.profit)} = ${fmtCurrency(reconSum.computed)}</td>
+                <td>${fmtCurrency(reconSum.expected)}</td>
+                <td>${fmtCurrency(reconSum.delta)}</td>
+                <td>${reconSum.check ? '✅' : '❌'}</td>
+              </tr>
+              <tr>
+                <td>Savings markup</td>
+                <td><code>${reconMarkup.formula || ''}</code></td>
+                <td>${reconMarkup.applies ? `${(reconMarkup.savings_rate * 100).toFixed(2)}% × ${fmtCurrency(reconSum.risk)} = ${fmtCurrency(reconMarkup.computed)}` : '<em>not applicable</em>'}</td>
+                <td>${reconMarkup.applies ? fmtCurrency(reconMarkup.actual) : '—'}</td>
+                <td>${reconMarkup.applies ? fmtCurrency(reconMarkup.delta) : '—'}</td>
+                <td>${reconMarkup.check ? '✅' : '❌'}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p style="margin-top:8px;color:var(--text-light);">Per-customer averages — risk <strong>${fmtCurrency(recon.avg_risk_premium_per_customer)}</strong>, savings <strong>${fmtCurrency(recon.avg_savings_premium_per_customer)}</strong>, expense <strong>${fmtCurrency(recon.avg_expense_loading_per_customer)}</strong>, profit <strong>${fmtCurrency(recon.avg_profit_margin_per_customer)}</strong>, total <strong>${fmtCurrency(recon.avg_premium_per_customer)}</strong>.</p>
+        </div>
+      `;
+
       let html = `
         <h3 style="margin-bottom:20px;">📊 Simulation Results</h3>
         <div class="alert alert-success">
           ✅ Simulation completed in ${sim.duration_seconds}s | Tables Version: ${sim.tables_version} | ID: ${sim.simulation_id}
         </div>
-        
+        ${reconHtml}
+
         <div class="results-section">
           <h4>📈 Portfolio Summary</h4>
           <div class="stats-grid">

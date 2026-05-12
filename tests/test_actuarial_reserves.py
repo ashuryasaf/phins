@@ -318,6 +318,29 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         assert markup_sim['pricing_kernel']['savings_formula'] == 'risk_premium_markup'
         assert markup_sim['pricing_kernel']['savings_rate'] == 3.0
         assert markup_sim['pricing_kernel']['product_id'] == 'phins_pure_risk_adjustable'
+        # Premium reconciliation block must report all identities passing
+        assert markup_sim['premium_reconciliation']['all_identities_pass'] is True
+
+        # 11) Legacy UI fallback: callers that still send the old
+        # 'savings_allocation_pct' field (e.g. cached/old dashboards) and
+        # no explicit savings_rate must now ALSO get a priced savings
+        # premium under the canonical markup formula. This is the fix for
+        # the user's bug report ("putting any number on Savings Allocation
+        # makes no calculation for savings").
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 50, 'age_min': 30, 'age_max': 50,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 12,
+            'savings_allocation_pct': 100,  # 100% as a legacy percentage value
+        }, admin_token)
+        assert status == 200
+        legacy = json.loads(body)['simulation']
+        # 100% legacy input -> savings premium equals risk premium to the cent
+        assert abs(legacy['profitability']['savings_premium']
+                    - legacy['profitability']['risk_premium']) < 1.0
+        assert legacy['premium_reconciliation']['all_identities_pass'] is True
+        # And the saved snapshot must record that the markup formula was used
+        assert legacy['pricing_kernel']['savings_formula'] == 'risk_premium_markup'
+        assert legacy['pricing_kernel']['savings_rate'] == 1.0
 
         # 2) Run a small simulation
         body, status, _ = _post_json(base + '/api/actuarial/simulate', {

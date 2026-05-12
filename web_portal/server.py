@@ -10724,6 +10724,15 @@ For claims or questions, please contact:
         else:
             for name, value in static_asset_security_headers():
                 self.send_header(name, value)
+
+        # Actuary-dashboard assets change with every actuarial release and
+        # auditors must always be looking at the latest UI; force the
+        # browser to revalidate so cached HTML/JS can never mask a deploy.
+        lowered = path.lower()
+        if 'actuary-dashboard' in lowered:
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
         self.end_headers()
 
     def do_HEAD(self):
@@ -25561,7 +25570,12 @@ For claims or questions, please contact:
                     })
                 )
                 
-                # Optional: route saving allocation through SimulationParams
+                # Optional: route saving allocation through SimulationParams.
+                # This is the legacy "post-hoc profit allocation %" knob — it
+                # only re-splits NET PROFIT between insurance and savings
+                # balance sheets, it does NOT price savings into each
+                # customer's premium. Kept for backwards compatibility with
+                # existing reserves projection callers.
                 if 'savings_allocation_pct' in data:
                     try:
                         from services.actuarial_service import _pct_auto
@@ -25588,6 +25602,21 @@ For claims or questions, please contact:
                 if 'savings_rate' in data:
                     try:
                         params.savings_rate = max(0.0, float(data.get('savings_rate') or 0.0))
+                    except (TypeError, ValueError):
+                        params.savings_rate = 0.0
+                elif 'savings_allocation_pct' in data:
+                    # Legacy-UI fallback: if the caller sent the old
+                    # 'savings_allocation_pct' field but no explicit
+                    # savings_rate, interpret it as the savings markup rate
+                    # under the canonical RISK_PREMIUM_MARKUP formula. The
+                    # input can be either a fraction (0.30) or a percentage
+                    # (30, 100, 300) — we auto-detect by magnitude. This
+                    # makes the previously-no-op old dashboard input
+                    # actually price savings without changing the new
+                    # dashboard's behaviour.
+                    try:
+                        raw = float(data.get('savings_allocation_pct') or 0.0)
+                        params.savings_rate = max(0.0, raw / 100.0 if raw > 1.0 else raw)
                     except (TypeError, ValueError):
                         params.savings_rate = 0.0
                 if 'savings_yield_pct' in data:
