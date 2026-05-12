@@ -1037,6 +1037,13 @@
         <!-- Portfolio Simulator Section -->
         <section id="section-simulator" class="section">
           <h2 class="section-title">🎲 Portfolio Simulator</h2>
+
+          <div class="card" id="contract-spec-card">
+            <div class="card-title">📜 Contract Being Priced</div>
+            <div id="contract-spec-body">
+              <p style="color:var(--text-light);">Loading contract specification…</p>
+            </div>
+          </div>
           
           <div class="card">
             <div class="card-title">Simulation Parameters</div>
@@ -1116,12 +1123,28 @@
               </div>
             </div>
             
-            <h4 style="margin:20px 0 12px;">Savings vs Insurance Allocation</h4>
+            <h4 style="margin:20px 0 12px;">Savings Add-on (% of Risk Premium)</h4>
+            <div class="alert alert-warning" style="margin-bottom:12px;">
+              <strong>How the savings add-on is priced</strong> — the base PHINS contract is pure-risk. A savings add-on, if elected, is charged as a <strong>markup on the risk premium</strong>.
+              <ul style="margin:8px 0 0 18px;">
+                <li>If your risk premium is <strong>$100/mo</strong> and you set <strong>Savings 300%</strong>, your savings premium is <strong>$300/mo</strong> and the subtotal before expense + profit loading is <strong>$400/mo</strong>.</li>
+                <li>Set <strong>0%</strong> for the pure-risk contract (default).</li>
+                <li>Values can exceed 100% — the input accepts any number.</li>
+              </ul>
+            </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Savings Allocation %</label>
-                <input type="number" id="sim-savings-allocation" class="form-input" value="0" min="0" max="95" step="0.5">
-                <small style="color:var(--text-light);">Share of total annual premium routed to the long-term savings fund. Pure-risk products use 0%.</small>
+                <label class="form-label">Savings Add-on %</label>
+                <input type="number" id="sim-savings-allocation" class="form-input" value="0" min="0" max="1000" step="1">
+                <small style="color:var(--text-light);">Enter 0 for pure-risk, 100 to match the risk premium, 300 for the user's worked example.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Product</label>
+                <select id="sim-product-id" class="form-input">
+                  <option value="phins_pure_risk_adjustable" selected>Pure-Risk Adjustable (contract default)</option>
+                  <option value="phins_hybrid_savings">Risk + Savings Add-on (legacy alias)</option>
+                  <option value="phins_life_only_post65">Life-only (post age 65)</option>
+                </select>
               </div>
             </div>
 
@@ -1718,6 +1741,7 @@
         loadRiskReference();
         loadUploadedTables();
         loadCohortOverrides();
+        loadContractSpec();
         
       } catch (err) {
         console.error('Auth error:', err);
@@ -2589,7 +2613,15 @@
           asian: parseFloat(document.getElementById('eth-asian').value),
           other: parseFloat(document.getElementById('eth-other').value)
         },
-        savings_allocation_pct: (parseFloat(document.getElementById('sim-savings-allocation').value) || 0) / 100
+        // Legacy field — kept so the reserve projection's allocation block
+        // stays populated even when the new markup formula is the driver.
+        savings_allocation_pct: 0,
+        // New contract-aligned inputs: savings_rate is the % of risk
+        // premium the customer elects as a savings add-on. The new
+        // simulator default formula is 'risk_premium_markup'.
+        savings_rate: (parseFloat(document.getElementById('sim-savings-allocation').value) || 0) / 100,
+        savings_formula: 'risk_premium_markup',
+        product_id: document.getElementById('sim-product-id')?.value || 'phins_pure_risk_adjustable'
       };
       
       try {
@@ -2698,7 +2730,11 @@
           <table class="data-table">
             <tr style="background:var(--bg);"><td colspan="3"><strong>Premium Components</strong></td></tr>
             <tr><td>Risk Premium</td><td>${fmtCurrency(riskPremium)}</td><td style="color:var(--text-light);">Covers expected claims</td></tr>
-            <tr><td>Savings Premium</td><td>${fmtCurrency(savingsPremium)}</td><td style="color:var(--text-light);">Pass-through to customer</td></tr>
+            <tr><td>Savings Premium</td><td>${fmtCurrency(savingsPremium)}</td><td style="color:var(--text-light);">${
+              sim.pricing_kernel && sim.pricing_kernel.savings_formula === 'risk_premium_markup'
+                ? `${((sim.pricing_kernel.savings_rate || 0) * 100).toFixed(1)}% of risk premium · pure add-on accumulation`
+                : 'Pass-through to customer'
+            }</td></tr>
             <tr><td>Expense Loading</td><td>${fmtCurrency(expenseLoading)}</td><td style="color:var(--text-light);">Operating costs</td></tr>
             <tr><td>Profit Margin</td><td>${fmtCurrency(profitMargin)}</td><td style="color:var(--text-light);">Target profit</td></tr>
             <tr style="border-top:2px solid var(--border);"><td><strong>Total Annual Premium</strong></td><td><strong>${fmtCurrency(grossPremium)}</strong></td><td>${premiumMatch ? '✓ Verified' : '⚠️ Diff: ' + fmtCurrency(premiumDiff)}</td></tr>
@@ -3321,6 +3357,51 @@
         statusEl.textContent = `✅ ${format.toUpperCase()} downloaded.`;
       } catch (err) {
         statusEl.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    async function loadContractSpec() {
+      const body = document.getElementById('contract-spec-body');
+      if (!body) return;
+      try {
+        const res = await fetch('/api/actuarial/contract-spec', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const c = data.contract || {};
+        const risksHtml = (c.covered_risks || []).map(r => `
+          <tr>
+            <td>${r.risk_factor || ''}</td>
+            <td>${r.benefit_formula || ''}</td>
+            <td>${r.trigger_age || ''}</td>
+          </tr>
+        `).join('');
+        const sa = c.savings_addon || {};
+        body.innerHTML = `
+          <p><strong>${c.name || 'PHINS Contract'}</strong> · ${c.version || ''} · effective ${c.effective_date || ''} · product <code>${c.product_id || ''}</code></p>
+          <h4 style="margin-top:8px;">1. Risk Factors — what is covered</h4>
+          <table class="data-table">
+            <thead><tr><th>Risk Factor</th><th>Benefit</th><th>Trigger Age</th></tr></thead>
+            <tbody>${risksHtml}</tbody>
+          </table>
+          <p style="margin-top:8px;color:var(--text-light);">${c.pricing_principle || ''}</p>
+          <h4 style="margin-top:12px;">Savings Add-on</h4>
+          <p style="color:var(--text-light);">${sa.description || ''}</p>
+          <details style="margin-top:8px;">
+            <summary><strong>Customer Rights, Liabilities and Policy Disclaimer</strong></summary>
+            <h5 style="margin-top:8px;">2. Customer Rights</h5>
+            <ul>${(c.customer_rights || []).map(r => `<li>${r}</li>`).join('')}</ul>
+            <h5>3. Customer Liabilities</h5>
+            <ul>${(c.customer_liabilities || []).map(r => `<li>${r}</li>`).join('')}</ul>
+            <h5>4. Policy Disclaimer</h5>
+            <p>${c.policy_disclaimer || ''}</p>
+            <h5>Reference Policyholder Example</h5>
+            <p>${c.reference_policyholder_example || ''}</p>
+          </details>
+        `;
+      } catch (err) {
+        body.innerHTML = `<p class="text-danger">Failed to load contract spec: ${err.message}</p>`;
       }
     }
 

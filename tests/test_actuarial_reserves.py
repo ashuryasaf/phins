@@ -289,6 +289,36 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         # Fixed-term simulation -> projection_years equals the fixed policy term
         assert auto_horizon['projection_years'] == 12
 
+        # 9) Canonical contract specification must be reachable + locked
+        body, status, _ = _get(base + '/api/actuarial/contract-spec', admin_token)
+        assert status == 200
+        contract = json.loads(body)['contract']
+        assert contract['product_id'] == 'phins_pure_risk_adjustable'
+        # The contract draft mandates exactly these covered risks in order
+        risk_factors = [r['risk_factor'] for r in contract['covered_risks']]
+        assert 'Death — natural or accidental' in risk_factors[0]
+        assert 'Permanent total disability' in risk_factors[1]
+        assert 'Long-term loss of earning capacity' in risk_factors[2]
+        assert contract['savings_addon']['formula'] == 'risk_premium_markup'
+
+        # 10) End-to-end markup flow: 300% savings on top of risk premium
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 60, 'age_min': 30, 'age_max': 50,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 15,
+            'savings_rate': 3.0,  # 300% of risk premium per the user's brief
+            'savings_formula': 'risk_premium_markup',
+            'product_id': 'phins_pure_risk_adjustable',
+        }, admin_token)
+        assert status == 200
+        markup_sim = json.loads(body)['simulation']
+        rp = markup_sim['profitability']['risk_premium']
+        sp = markup_sim['profitability']['savings_premium']
+        assert abs(sp - 3.0 * rp) < 1.0, (sp, rp)
+        assert markup_sim['profitability']['components_match']
+        assert markup_sim['pricing_kernel']['savings_formula'] == 'risk_premium_markup'
+        assert markup_sim['pricing_kernel']['savings_rate'] == 3.0
+        assert markup_sim['pricing_kernel']['product_id'] == 'phins_pure_risk_adjustable'
+
         # 2) Run a small simulation
         body, status, _ = _post_json(base + '/api/actuarial/simulate', {
             'customer_count': 100, 'age_min': 25, 'age_max': 50,

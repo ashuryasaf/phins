@@ -13274,6 +13274,28 @@ For claims or questions, please contact:
             return
 
         # =====================================================================
+        # ACTUARIAL: Canonical contract specification
+        # Returns the contract draft the actuary dashboard prices against so
+        # the simulator, reports and audit all share one source of truth.
+        # =====================================================================
+        if path == '/api/actuarial/contract-spec':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_contract_specification
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'contract': get_contract_specification(),
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
         # ACTUARIAL: List cohort-scoped rate overrides currently active
         # =====================================================================
         if path == '/api/actuarial/cohort-tables':
@@ -25550,20 +25572,31 @@ For claims or questions, please contact:
 
                 # Pricing-kernel inputs (these actually drive the priced
                 # savings premium, the age curve, and the product selection
-                # used by the pricing kernel for every simulated customer):
-                from services.actuarial_service import _pct_auto as _pa
+                # used by the pricing kernel for every simulated customer).
+                #
+                # Note: savings_rate is UNBOUNDED under the canonical
+                # 'risk_premium_markup' formula (0.0 = pure risk, 1.0 = match
+                # risk premium, 3.0 = 300% of risk premium per the user's
+                # brief). We deliberately do NOT auto-scale via _pct_auto
+                # here because that would turn 3.0 into 0.03. The dashboard
+                # frontend is responsible for converting percentage display
+                # values (e.g. "300") into fractions (3.0) before sending.
                 if 'product_id' in data and data.get('product_id'):
                     params.product_id = str(data.get('product_id'))
                 if 'age_curve_id' in data and data.get('age_curve_id'):
                     params.age_curve_id = str(data.get('age_curve_id'))
                 if 'savings_rate' in data:
                     try:
-                        params.savings_rate = _pa(float(data.get('savings_rate') or 0.0))
+                        params.savings_rate = max(0.0, float(data.get('savings_rate') or 0.0))
                     except (TypeError, ValueError):
-                        params.savings_rate = 0.5
+                        params.savings_rate = 0.0
                 if 'savings_yield_pct' in data:
                     try:
-                        params.savings_yield_pct = _pa(float(data.get('savings_yield_pct') or 0.0))
+                        raw_yield = float(data.get('savings_yield_pct') or 0.0)
+                        # savings_yield_pct IS a percentage knob (0..1 or 0..100),
+                        # so the auto-scale is appropriate here.
+                        from services.actuarial_service import _pct_auto as _pa
+                        params.savings_yield_pct = _pa(raw_yield)
                     except (TypeError, ValueError):
                         params.savings_yield_pct = 0.0
                 if 'savings_formula' in data and data.get('savings_formula'):

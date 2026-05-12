@@ -1531,6 +1531,134 @@ def get_underwriting_config() -> UnderwritingConfig:
     """Get current underwriting configuration"""
     return get_actuarial_store().config
 
+# =============================================================================
+# CONTRACT SPECIFICATION (single source of truth for the contract draft)
+# =============================================================================
+#
+# This constant captures the contract structure that the actuary dashboard
+# prices against. The dashboard fetches it from /api/actuarial/contract-spec
+# so the same text appears on the simulator, in audit reports, and in any
+# downstream artefact — no copy-pasted prose drift across UI and PDF.
+# =============================================================================
+
+CONTRACT_SPECIFICATION: Dict[str, Any] = {
+    'product_id': 'phins_pure_risk_adjustable',
+    'name': 'PHINS Adjustable Risk Contract',
+    'version': 'v1.0',
+    'effective_date': '2026-05-12',
+    'covered_risks': [
+        {
+            'risk_factor': 'Death — natural or accidental',
+            'benefit_formula': 'L · 100% sum insured',
+            'trigger_age': '3 – ∞',
+        },
+        {
+            'risk_factor': 'Permanent total disability (3+ ADL)',
+            'benefit_formula': 'L ÷ 4 · 25% of life sum',
+            'trigger_age': '3 – 65',
+        },
+        {
+            'risk_factor': 'Long-term loss of earning capacity',
+            'benefit_formula': 'L ÷ 4 · capped at life sum ÷ 4',
+            'trigger_age': '3 – 65',
+        },
+        {
+            'risk_factor': 'Age 65+ — Disability cover ceases automatically',
+            'benefit_formula': '—',
+            'trigger_age': '—',
+        },
+        {
+            'risk_factor': 'Death — natural or accidental (Life-only mode)',
+            'benefit_formula': 'L × age-adj · age-adjusted sum',
+            'trigger_age': '65 – ∞',
+        },
+    ],
+    'pricing_principle': (
+        'Adjustable risk premium only — the monthly premium re-prices each '
+        'policy anniversary against the customer\'s attained age, locked '
+        'underwriting class and inflation-indexed sum insured. No savings, '
+        'cash-value, surrender or investment component exists in the base '
+        'contract; a savings add-on may be elected separately and is priced '
+        'as a markup on the risk premium (savings premium = savings_rate × '
+        'risk premium).'
+    ),
+    'customer_rights': [
+        'Right to underwriting transparency. Full disclosure of the underwriting '
+        'decision, age band, risk class and the formula driving the premium.',
+        'Right to coverage continuity. Once underwriting is approved and premiums '
+        'are paid, cover cannot be cancelled by PHINS for the underwritten causes '
+        '(subject to fraud, non-payment and material misrepresentation exceptions).',
+        'Right to age-adjusted re-pricing. Every premium step is published in '
+        'advance and tied solely to attained age — never to claims history of the '
+        'individual.',
+        'Right of withdrawal. 30-day cooling-off after issue; pro-rata refund of '
+        'unearned premium.',
+        'Right to fast-track claims. Disability claims adjudicated within statutory '
+        'timelines; death claims within 14 business days of complete documentation.',
+        'Right to audit trail. Tamper-evident ledger record of every premium '
+        'charge and every underwriting/claim decision.',
+    ],
+    'customer_liabilities': [
+        'Premium payment liability ages 3 – 65. Continuous payment of the '
+        'age-adjusted adjustable-risk premium is required to maintain both the '
+        'Life and Disability benefits.',
+        'Premium payment liability ages 65+. Life-only premium must continue to '
+        'maintain the age-adjusted death benefit; Disability cover terminates '
+        'automatically at age 65 and no premium is collected for it thereafter.',
+        'Disclosure liability. Customer must disclose all material health, '
+        'occupational and lifestyle facts at underwriting; non-disclosure voids '
+        'the claim.',
+        'Anniversary re-pricing acceptance. Customer accepts the published '
+        'age-curve adjustments as a condition of cover continuity.',
+        'No investment / savings claim on the base contract. Customer expressly '
+        'waives any expectation of cash value, surrender, dividend, savings or '
+        'investment yield for the risk cover; an optional savings add-on is a '
+        'separate accumulation product priced as a markup on the risk premium.',
+        'Notice obligations. Disability/death event must be notified within '
+        '60 / 30 days respectively, with supporting medical documentation.',
+    ],
+    'policy_disclaimer': (
+        'In the event of underwriting approval, and assuming the customer pays '
+        'the age-related adjustable risk premium from age 3 to age 65 (the '
+        'maximum payment age for the disability benefit), PHINS provides '
+        '(a) a Life benefit equal to the contracted sum insured L; and '
+        '(b) a Disability benefit equal to L ÷ 4 (one quarter of the life sum), '
+        'subject to the medical and ADL trigger definitions of the policy. '
+        'After age 65 the cover automatically converts to a life-only risk cover '
+        'with an age-adjusted benefit; the disability layer ceases and no '
+        'further disability premium is collected. The base product carries no '
+        'wallet, no savings, no investment and no other service — only '
+        'adjustable risk cover. A savings add-on may be elected separately and '
+        'is priced as a markup on the risk premium.'
+    ),
+    'reference_policyholder_example': (
+        'Reference policyholder: age 35 at issue · standard underwriting class · '
+        'sum insured L = US$500,000 · disability benefit D = L ÷ 4 = US$125,000. '
+        'Premium re-prices each anniversary on the published age curve. Expected '
+        'loss derived from PHINS Actuarial Simulation Tables (life mortality + '
+        'permanent disability incidence, OECD-aligned).'
+    ),
+    'savings_addon': {
+        'available': True,
+        'formula': 'risk_premium_markup',
+        'description': (
+            'Optional savings add-on. Customer elects savings_rate (any value, '
+            'unbounded). Savings premium = savings_rate × risk premium. '
+            'Example: risk premium $100/month, savings_rate 3.0 (300%) → '
+            'savings premium $300/month, total before expense/profit $400/month.'
+        ),
+        'min_savings_rate': 0.0,
+        'max_savings_rate_recommended': 10.0,  # 1000%
+    },
+}
+
+
+def get_contract_specification() -> Dict[str, Any]:
+    """Return a deep copy of the canonical contract specification."""
+    import copy
+    return copy.deepcopy(CONTRACT_SPECIFICATION)
+
+
 def check_underwriting_eligibility(adl: int, coverage: float) -> Dict:
     """Check underwriting eligibility using central config"""
     config = get_underwriting_config()
