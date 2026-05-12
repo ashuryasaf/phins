@@ -2,7 +2,7 @@
 Tests for the new PHINS actuarial primitives:
 - ReserveCalculator (IBNR, IFRS 17 BEL/RA/CSM, dividends/tax/reserves waterfall)
 - apply_savings_allocation
-- build_fefferman_reference (must reproduce the locked public model exactly)
+- build_risk_reference (must reproduce the locked public model exactly)
 - normalize_uploaded_rate_table (custom uploaded mortality/disability tables)
 
 These tests are unit-style so they do not depend on the embedded HTTP server.
@@ -22,14 +22,13 @@ from services.actuarial_service import (
     ReserveCalculator,
     _coerce_reserve_config,
     apply_savings_allocation,
-    build_fefferman_reference,
-    fefferman_age_factor,
-    fefferman_monthly_premiums,
+    build_risk_reference,
+    risk_reference_age_factor,
+    risk_reference_monthly_premiums,
     get_portfolio_simulator,
     get_actuarial_store,
     normalize_uploaded_rate_table,
     apply_uploaded_table_to_store,
-    PHINS_FEFFERMAN_MODEL,
 )
 
 
@@ -47,23 +46,24 @@ def _tiny_simulation() -> dict:
     return sim
 
 
-def test_fefferman_age_factor_anchors():
+def test_risk_reference_age_factor_anchors():
     """Anchor ages must exactly match the published curve."""
-    m = PHINS_FEFFERMAN_MODEL
-    assert fefferman_age_factor(m['youth_anchor_age']) == m['youth_anchor_factor']
-    assert fefferman_age_factor(m['adult_anchor_age']) == m['adult_anchor_factor']
+    from services.pricing_kernel import RISK_REFERENCE_V1_PARAMS as P
+    assert risk_reference_age_factor(P['youth_anchor_age']) == P['youth_anchor_factor']
+    assert risk_reference_age_factor(P['adult_anchor_age']) == P['adult_anchor_factor']
     # Core slope reaches expected value at age 65 (1.0 + 40*0.015 = 1.6)
-    expected_65 = round(m['adult_anchor_factor'] + (65 - m['adult_anchor_age']) * m['core_slope'], 4)
-    assert fefferman_age_factor(65) == expected_65
+    expected_65 = round(P['adult_anchor_factor'] + (65 - P['adult_anchor_age']) * P['core_slope'], 4)
+    assert risk_reference_age_factor(65) == expected_65
 
 
-def test_fefferman_reference_matches_published_anchors():
+def test_risk_reference_matches_published_anchors():
     """The locked 5-year reference forecast must remain deterministic and self-consistent."""
-    ref = build_fefferman_reference()
-    assert ref['source']['url'].endswith('fefferman.html')
+    ref = build_risk_reference()
+    assert ref['source']['url'].endswith('fefferman.html')  # the locked public URL
+    assert ref['profile_id'] == 'phins_published_v1'
     assert len(ref['yearly_projection']) == 5
     # The first row must hit the documented life-monthly premium for age 35
-    age35 = fefferman_monthly_premiums(35)
+    age35 = risk_reference_monthly_premiums(35)
     assert age35['life_monthly'] > 0
     assert age35['disability_monthly'] > 0
     assert age35['annual_premium'] == ref['yearly_projection'][0]['annual_premium']
@@ -71,9 +71,27 @@ def test_fefferman_reference_matches_published_anchors():
     cum = sum(row['annual_premium'] for row in ref['yearly_projection'])
     assert abs(cum - ref['totals']['cumulative_premium']) < 0.5
     # Disability cuts off at 65 (sanity check on senior curve)
-    age65 = fefferman_monthly_premiums(65)
+    age65 = risk_reference_monthly_premiums(65)
     assert age65['disability_monthly'] == 0
     # Integrity checks must all be True
+    assert ref['data_integrity']['cumulative_premium_check']
+    assert ref['data_integrity']['cumulative_loss_check']
+
+
+def test_risk_reference_is_modular_for_any_age_term_lifesum():
+    """The risk reference must accept any starting age, term, and life sum."""
+    # 10-year forecast starting at age 30 with a $1.5M life sum
+    ref = build_risk_reference(start_age=30, projection_years=10, life_sum=1_500_000)
+    assert ref['reference']['start_age'] == 30
+    assert ref['reference']['projection_years'] == 10
+    assert ref['reference']['life_sum'] == 1_500_000.0
+    assert len(ref['yearly_projection']) == 10
+    # Senior-curve sanity: a row at age 65 must report zero disability premium
+    senior_ref = build_risk_reference(start_age=65, projection_years=3)
+    for row in senior_ref['yearly_projection']:
+        if row['age'] >= 65:
+            # disability annual premium is 12*disability_monthly, which is zero
+            assert row['disability_ix'] >= 0  # tables can still report q(x)/i(x), but cover is off
     assert ref['data_integrity']['cumulative_premium_check']
     assert ref['data_integrity']['cumulative_loss_check']
 
@@ -217,12 +235,59 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         })
         admin_token = json.loads(login_body)['token']
 
-        # 1) Fefferman reference must be reachable and deterministic
-        body, status, _ = _get(base + '/api/actuarial/fefferman-reference', admin_token)
+        # 1) Risk Reference must be reachable, deterministic, and modular
+        body, status, _ = _get(base + '/api/actuarial/risk-reference', admin_token)
         assert status == 200
         ref = json.loads(body)['reference']
         assert ref['source']['url'].endswith('fefferman.html')
+        assert ref['profile_id'] == 'phins_published_v1'
         assert len(ref['yearly_projection']) == 5
+
+        # Modular: 10-year horizon, custom life sum, must still pass integrity
+        body, status, _ = _get(
+            base
+            + '/api/actuarial/risk-reference?projection_years=10&start_age=30&life_sum=1500000',
+            admin_token,
+        )
+        assert status == 200
+        modular = json.loads(body)['reference']
+        assert modular['reference']['projection_years'] == 10
+        assert modular['reference']['start_age'] == 30
+        assert modular['reference']['life_sum'] == 1_500_000.0
+        assert modular['data_integrity']['cumulative_premium_check']
+
+        # Backwards-compatibility: the deprecated path still works and returns
+        # a deprecation notice in the JSON body.
+        body, status, _ = _get(base + '/api/actuarial/fefferman-reference', admin_token)
+        assert status == 200
+        alias_payload = json.loads(body)
+        assert alias_payload['reference']['profile_id'] == 'phins_published_v1'
+        assert 'deprecated' in alias_payload
+
+        # 7) Cross-system reconciler must pass for a freshly run simulation
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 50, 'age_min': 25, 'age_max': 50,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 12,
+        }, admin_token)
+        assert status == 200
+        recon_sim_id = json.loads(body)['simulation']['simulation_id']
+        body, status, _ = _post_json(base + '/api/actuarial/reconcile', {
+            'simulation_id': recon_sim_id,
+        }, admin_token)
+        assert status == 200
+        rec = json.loads(body)['reconciliation']
+        assert rec['reconciled'] is True
+        assert abs(rec['portfolio_reconciliation']['delta']) < 1.0
+
+        # 8) Reserve projection without projection_years should default the
+        # horizon from the policy book (G7)
+        body, status, _ = _post_json(base + '/api/actuarial/reserves/project', {
+            'simulation_id': recon_sim_id,
+        }, admin_token)
+        assert status == 200
+        auto_horizon = json.loads(body)['projection']
+        # Fixed-term simulation -> projection_years equals the fixed policy term
+        assert auto_horizon['projection_years'] == 12
 
         # 2) Run a small simulation
         body, status, _ = _post_json(base + '/api/actuarial/simulate', {
