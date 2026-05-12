@@ -13230,6 +13230,24 @@ For claims or questions, please contact:
             return
 
         # =====================================================================
+        # ACTUARIAL: List cohort-scoped rate overrides currently active
+        # =====================================================================
+        if path == '/api/actuarial/cohort-tables':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import list_cohort_rate_tables
+                items = list_cohort_rate_tables()
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'items': items, 'total': len(items)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
         # ACTUARIAL: List custom uploaded actuarial tables (metadata)
         # =====================================================================
         if path == '/api/actuarial/uploaded-tables':
@@ -25685,6 +25703,7 @@ For claims or questions, please contact:
                 from services.actuarial_service import (
                     normalize_uploaded_rate_table,
                     apply_uploaded_table_to_store,
+                    register_cohort_rate_table,
                 )
                 normalization = normalize_uploaded_rate_table(target_type, rows)
                 if not normalization.get('valid'):
@@ -25696,6 +25715,64 @@ For claims or questions, please contact:
                     return
 
                 actor = (session or {}).get('username', 'admin')
+                cohort_dim = str(payload.get('cohort_dim') or '').strip().lower()
+                cohort_value = str(payload.get('cohort_value') or '').strip().lower()
+                source_name = None
+                try:
+                    if USE_DATABASE and database_enabled:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db_row = db.actuarial.get_by_id(table_id)
+                            if db_row:
+                                source_name = db_row.name
+                    if not source_name:
+                        with STATE_LOCK:
+                            stored = ACTUARIAL_TABLES.get(table_id) or {}
+                        source_name = stored.get('name')
+                except Exception:
+                    source_name = None
+
+                if cohort_dim and cohort_value:
+                    # Cohort-scoped override (G4): register without replacing
+                    # the global mortality / disability band. The pricing
+                    # kernel will check the customer cohort first and fall
+                    # back to the global table if no cohort override matches.
+                    result = register_cohort_rate_table(
+                        cohort_dim=cohort_dim,
+                        cohort_value=cohort_value,
+                        table_type=target_type,
+                        normalized=normalization['normalized'],
+                        user=actor,
+                        source_table_id=table_id,
+                        source_name=source_name,
+                    )
+                    if not result.get('success'):
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': result.get('error', 'Apply failed')}).encode('utf-8'))
+                        return
+                    if audit:
+                        try:
+                            audit.log(actor, 'apply_cohort', 'actuarial_table', table_id, {
+                                'target_table_type': target_type,
+                                'cohort_dim': cohort_dim,
+                                'cohort_value': cohort_value,
+                                'rows_applied': normalization['rows_normalized'],
+                            })
+                        except Exception:
+                            pass
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'mode': 'cohort_override',
+                        'cohort_key': result.get('cohort_key'),
+                        'target_table_type': target_type,
+                        'rows_applied': normalization['rows_normalized'],
+                        'rows_skipped': normalization['rows_skipped'],
+                        'applied_table_id': table_id,
+                    }).encode('utf-8'))
+                    return
+
+                # Legacy path: global replace of the rate band
                 result = apply_uploaded_table_to_store(target_type, normalization['normalized'], actor)
                 if not result.get('success'):
                     self._set_json_headers(400)
@@ -25714,11 +25791,50 @@ For claims or questions, please contact:
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
+                    'mode': 'global_replace',
                     'target_table_type': target_type,
                     'rows_applied': normalization['rows_normalized'],
                     'rows_skipped': normalization['rows_skipped'],
                     'applied_table_id': table_id,
                 }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
+        # ACTUARIAL: Remove a cohort-scoped rate override
+        # POST body: { cohort_dim, cohort_value, table_type }
+        # =====================================================================
+        if path == '/api/actuarial/uploaded-tables/cohort/remove':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            cohort_dim = str(payload.get('cohort_dim') or '').strip().lower()
+            cohort_value = str(payload.get('cohort_value') or '').strip().lower()
+            table_type = str(payload.get('table_type') or '').strip().lower()
+            actor = (session or {}).get('username', 'admin')
+            try:
+                from services.actuarial_service import remove_cohort_rate_table
+                result = remove_cohort_rate_table(cohort_dim, cohort_value, table_type, actor)
+                if not result.get('success'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': result.get('error', 'Removal failed')}).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

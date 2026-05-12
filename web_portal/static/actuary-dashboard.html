@@ -1449,6 +1449,24 @@
           </div>
 
           <div class="card">
+            <div class="card-title">Use Uploaded Table</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Optionally restrict the table to a cohort (e.g. <code>ethnicity = caucasian</code>, <code>gender = female</code>).
+              When a cohort is set, the pricing kernel checks the customer cohort first and falls back to the global rate band, so the global table is never silently replaced.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Cohort Dimension (optional)</label>
+                <input type="text" id="cohort-dim" class="form-input" placeholder="ethnicity / gender / smoker">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cohort Value (optional)</label>
+                <input type="text" id="cohort-value" class="form-input" placeholder="caucasian / female / no">
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">Catalog</div>
             <table class="data-table" id="uploaded-tables-list">
               <thead>
@@ -1464,6 +1482,26 @@
               </thead>
               <tbody>
                 <tr><td colspan="7" style="text-align:center;">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Active Cohort Overrides</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">Cohort-scoped rate tables currently active in the pricing kernel. Removing an override falls back to the global rate band for matching customers.</p>
+            <table class="data-table" id="cohort-overrides-list">
+              <thead>
+                <tr>
+                  <th>Cohort</th>
+                  <th>Table Type</th>
+                  <th>Rows</th>
+                  <th>Source</th>
+                  <th>Registered</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" style="text-align:center;color:var(--text-light);">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -1660,6 +1698,7 @@
         loadIntegrations();
         loadRiskReference();
         loadUploadedTables();
+        loadCohortOverrides();
         
       } catch (err) {
         console.error('Auth error:', err);
@@ -3088,20 +3127,88 @@
     }
 
     async function useUploadedTable(id, targetType) {
-      if (!confirm(`Promote uploaded table ${id} into the live ${targetType} rate band? This will be used by future simulations and reserve projections.`)) return;
+      const cohortDim = (document.getElementById('cohort-dim')?.value || '').trim();
+      const cohortValue = (document.getElementById('cohort-value')?.value || '').trim();
+      let confirmMsg;
+      if (cohortDim && cohortValue) {
+        confirmMsg = `Register uploaded table ${id} as a cohort-scoped ${targetType} override for ${cohortDim}=${cohortValue}? The global rate band is preserved.`;
+      } else {
+        confirmMsg = `Promote uploaded table ${id} into the GLOBAL ${targetType} rate band? This will replace the rate band for every customer.`;
+      }
+      if (!confirm(confirmMsg)) return;
       try {
         const res = await fetch('/api/actuarial/uploaded-tables/use', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table_id: id, target_table_type: targetType })
+          body: JSON.stringify({
+            table_id: id,
+            target_table_type: targetType,
+            cohort_dim: cohortDim || undefined,
+            cohort_value: cohortValue || undefined,
+          })
         });
         const data = await res.json();
         if (!res.ok || data.error) {
           alert(`❌ ${data.error || ('HTTP ' + res.status)}\n${JSON.stringify(data.normalization || {}, null, 2)}`);
           return;
         }
-        alert(`✅ Applied ${data.rows_applied} rows to ${data.target_table_type} (${data.rows_skipped} skipped).`);
+        const mode = data.mode === 'cohort_override' ? `cohort override (${data.cohort_key})` : 'global rate band';
+        alert(`✅ Applied ${data.rows_applied} rows to ${data.target_table_type} as ${mode} (${data.rows_skipped} skipped).`);
         loadTables();
+        loadCohortOverrides();
+      } catch (err) {
+        alert('❌ ' + err.message);
+      }
+    }
+
+    async function loadCohortOverrides() {
+      const tbody = document.querySelector('#cohort-overrides-list tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-light);">Loading…</td></tr>';
+      try {
+        const res = await fetch('/api/actuarial/cohort-tables', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        const items = data.items || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-light);">No cohort overrides registered. Customers fall back to the global rate bands.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = items.map((row) => `
+          <tr>
+            <td><code>${row.cohort_key}</code></td>
+            <td>${row.table_type}</td>
+            <td>${row.row_count}</td>
+            <td>${row.source_name || ''} ${row.source_table_id ? '<code>' + row.source_table_id + '</code>' : ''}</td>
+            <td>${row.registered_at ? new Date(row.registered_at).toLocaleString() : ''}</td>
+            <td>
+              <button class="btn-small btn-warning"
+                onclick="removeCohortOverride('${row.cohort_dim}', '${row.cohort_value}', '${row.table_type}')">
+                Remove
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Failed: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function removeCohortOverride(dim, value, tableType) {
+      if (!confirm(`Remove the ${dim}=${value} override for ${tableType}? Customers in this cohort will use the global rate band again.`)) return;
+      try {
+        const res = await fetch('/api/actuarial/uploaded-tables/cohort/remove', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cohort_dim: dim, cohort_value: value, table_type: tableType })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          alert(`❌ ${data.error || ('HTTP ' + res.status)}`);
+          return;
+        }
+        loadCohortOverrides();
       } catch (err) {
         alert('❌ ' + err.message);
       }

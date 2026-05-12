@@ -257,6 +257,67 @@ def test_kernel_with_simulator_end_to_end():
     assert sim["pricing_kernel"]["claim_model"] == "mutually_exclusive"
 
 
+def test_cohort_override_changes_priced_premium_for_matching_customer_only():
+    """Registering a cohort-scoped mortality override must affect only matching customers."""
+    from services.actuarial_service import (
+        register_cohort_rate_table, remove_cohort_rate_table,
+        get_cohort_overrides_snapshot, list_cohort_rate_tables,
+    )
+
+    # A noticeably harsher table for "caucasian women": double the mortality.
+    harsh = [
+        {'age_min': 30, 'age_max': 40, 'rate_per_1000': 4.0},
+        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 9.0},
+        {'age_min': 50, 'age_max': 60, 'rate_per_1000': 18.0},
+    ]
+    register_cohort_rate_table(
+        cohort_dim='ethnicity', cohort_value='caucasian',
+        table_type='mortality_rates', normalized=harsh, user='pytest',
+        source_table_id='AT-PYTEST', source_name='Caucasian Women Mortality (pytest)',
+    )
+
+    listed = list_cohort_rate_tables()
+    assert any(item['cohort_key'] == 'ethnicity:caucasian' for item in listed)
+
+    store = get_actuarial_store()
+    from services.pricing_kernel import (
+        PricingConfig, PricingCustomer, get_product, price_policy, table_set_from_store,
+    )
+    tables_with = table_set_from_store(
+        store, age_curve_id='identity',
+        cohort_overrides=get_cohort_overrides_snapshot(),
+    )
+    tables_without = table_set_from_store(store, age_curve_id='identity')
+    config = PricingConfig(savings_rate=0.0)  # pure-risk to isolate mortality effect
+
+    matching = PricingCustomer(age=45, coverage=500_000, term_years=15, adl_level=5,
+                                cohort={'ethnicity': 'caucasian'})
+    other = PricingCustomer(age=45, coverage=500_000, term_years=15, adl_level=5,
+                             cohort={'ethnicity': 'african'})
+
+    matching_premium = price_policy(matching, get_product('phins_pure_risk'),
+                                     tables_with, config).risk_premium_annual
+    matching_premium_no_override = price_policy(matching, get_product('phins_pure_risk'),
+                                                  tables_without, config).risk_premium_annual
+    other_premium = price_policy(other, get_product('phins_pure_risk'),
+                                  tables_with, config).risk_premium_annual
+
+    # The cohort override must increase the priced risk premium for matching customers
+    assert matching_premium > matching_premium_no_override + 1
+    # Non-matching customers must be unaffected
+    assert abs(other_premium - price_policy(other, get_product('phins_pure_risk'),
+                                              tables_without, config).risk_premium_annual) < 0.5
+
+    remove_cohort_rate_table('ethnicity', 'caucasian', 'mortality_rates', 'pytest')
+    # And after removal, the matching customer pays the same as the non-matching one again
+    tables_after_remove = table_set_from_store(
+        store, age_curve_id='identity', cohort_overrides=get_cohort_overrides_snapshot(),
+    )
+    after_remove = price_policy(matching, get_product('phins_pure_risk'),
+                                 tables_after_remove, config).risk_premium_annual
+    assert abs(after_remove - matching_premium_no_override) < 0.5
+
+
 def test_inline_pricer_delegates_to_kernel():
     """``calculate_age_adjusted_premium`` must now report a kernel integrity hash."""
     from web_portal.server import calculate_age_adjusted_premium
