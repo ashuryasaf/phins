@@ -1738,26 +1738,29 @@ class ReserveConfig:
     initial_reserve: float = 0.0
 
 
+def _pct_auto(v: float) -> float:
+    """Auto-detect whether a value is a fraction (0-1) or percentage (>1) and normalise to fraction."""
+    return v / 100.0 if abs(v) > 1.0 else v
+
+
 def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
     payload = payload or {}
     return ReserveConfig(
-        dividends_pct=_clamp(float(payload.get('dividends_pct', 0.30) or 0.0), 0.0, 1.0),
-        tax_pct=_clamp(float(payload.get('tax_pct', 0.23) or 0.0), 0.0, 0.6),
-        ibnr_pct=_clamp(float(payload.get('ibnr_pct', 0.10) or 0.0), 0.0, 1.0),
+        dividends_pct=_clamp(_pct_auto(float(payload.get('dividends_pct', 0.30) or 0.0)), 0.0, 1.0),
+        tax_pct=_clamp(_pct_auto(float(payload.get('tax_pct', 0.23) or 0.0)), 0.0, 0.6),
+        ibnr_pct=_clamp(_pct_auto(float(payload.get('ibnr_pct', 0.10) or 0.0)), 0.0, 1.0),
         reserve_contribution_pct=_clamp(
-            float(payload.get('reserve_contribution_pct', 0.40) or 0.0), 0.0, 1.0
+            _pct_auto(float(payload.get('reserve_contribution_pct', 0.40) or 0.0)), 0.0, 1.0
         ),
         risk_adjustment_pct=_clamp(
-            float(payload.get('risk_adjustment_pct', 0.06) or 0.0), 0.0, 0.5
+            _pct_auto(float(payload.get('risk_adjustment_pct', 0.06) or 0.0)), 0.0, 0.5
         ),
         csm_release_pattern=str(payload.get('csm_release_pattern') or 'straight_line').lower(),
         savings_allocation_pct=_clamp(
-            (lambda v: v / 100.0 if v > 1.0 else v)(
-                float(payload.get('savings_allocation_pct', 0.0) or 0.0)
-            ), 0.0, 0.95
+            _pct_auto(float(payload.get('savings_allocation_pct', 0.0) or 0.0)), 0.0, 0.95
         ),
         savings_yield_pct=_clamp(
-            float(payload.get('savings_yield_pct', 0.045) or 0.0), -0.5, 0.5
+            _pct_auto(float(payload.get('savings_yield_pct', 0.045) or 0.0)), -0.5, 0.5
         ),
         projection_years=max(1, min(50, int(payload.get('projection_years', 5) or 5))),
         initial_reserve=max(0.0, float(payload.get('initial_reserve', 0.0) or 0.0)),
@@ -2058,8 +2061,8 @@ def _normalize_rate_bracket(row: Dict[str, Any]) -> Optional[Dict[str, float]]:
         return None
     try:
         rate_value = float(rate)
-        # If the values look like raw qx/ix probabilities (<= 0.5) convert to per-1000.
-        if rate_source in ('qx', 'ix') and rate_value <= 0.5:
+        # If the values look like raw qx/ix probabilities (0..1) convert to per-1000.
+        if rate_source in ('qx', 'ix') and rate_value <= 1.0:
             rate_value = rate_value * 1000.0
         return {
             'age_min': int(float(age_min)),
