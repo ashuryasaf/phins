@@ -9,7 +9,7 @@
     "restartPolicyMaxRetries": 5,
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 60,
-    "startCommand": "python3 web_portal/server.py",
+    "startCommand": "./scripts/entrypoint.sh serve",
     "sleepApplication": false
   }
 }

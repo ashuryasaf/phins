@@ -1,16 +1,52 @@
-# Dockerfile for PHINS Web Portal
-FROM python:3.12-slim
+# PHINS Web Portal — multi-stage Docker build
+# -----------------------------------------------------------------------------
+# Stage 1 (builder): build wheels from requirements.txt with pip in a throwaway
+#                    image. This keeps the pip cache and any transient build
+#                    tooling out of the final image.
+# Stage 2 (runtime): minimal python:3.12-slim with only the OCR/PDF system
+#                    libraries and the pre-built wheels installed.
+#
+# All entry points (serve / cron / db-init) are dispatched through
+# scripts/entrypoint.sh so the start command lives in ONE place.
+# -----------------------------------------------------------------------------
 
-# Set working directory
-WORKDIR /app
+# =====================
+# Stage 1 — wheel builder
+# =====================
+FROM python:3.12-slim AS builder
 
-# System dependencies:
-#   curl              - lightweight health checks
-#   tesseract-ocr     - OCR engine for scanned ID cards / photographed receipts
+WORKDIR /build
+
+# We compile a few sdists (psycopg2-binary, cryptography, Pillow, etc.). Most
+# arrive as manylinux wheels, but having gcc available avoids slow surprises.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libffi-dev \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+# Resolve runtime deps into wheels in /wheels. Using --wheel-dir keeps the
+# final image free of pip's HTTP cache and the build-essential toolchain.
+RUN pip wheel \
+        --no-cache-dir \
+        --wheel-dir=/wheels \
+        -r requirements.txt
+
+
+# =====================
+# Stage 2 — runtime
+# =====================
+FROM python:3.12-slim AS runtime
+
+# System dependencies (kept identical to legacy single-stage Dockerfile):
+#   curl              - healthcheck
+#   tesseract-ocr     - OCR engine (Assessment Center)
 #   tesseract-ocr-eng - English language pack
-#   tesseract-ocr-heb - Hebrew language pack (Israeli IDs, medical reports)
+#   tesseract-ocr-heb - Hebrew language pack
 #   tesseract-ocr-ara - Arabic language pack
-#   poppler-utils     - PDF rasterisation backing pdf2image (scanned PDF OCR)
+#   poppler-utils     - PDF rasterisation backing pdf2image
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         tesseract-ocr \
@@ -20,33 +56,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
 
-# Copy application files
+# Install runtime deps from the pre-built wheels only (no network, no pip
+# cache, no compiler in the final layer).
+COPY --from=builder /wheels /wheels
+COPY requirements.txt .
+RUN pip install \
+        --no-cache-dir \
+        --no-index \
+        --find-links=/wheels \
+        -r requirements.txt \
+    && rm -rf /wheels
+
+# Copy the application source.
+# .dockerignore aggressively excludes tests, docs, demos, backups, *.pdf,
+# .venv, .env, etc. so this COPY ships only what runs in production.
 COPY . .
 
-# Create /data directory for Railway persistent volume mount.
-# When a Railway volume is attached at /data, ledger data survives restarts.
-# Without a volume, this dir still exists so the app uses /data/ (in container
-# layer) rather than /tmp, preventing accidental ephemeral-path warnings during
-# short-lived deploys.  Real persistence requires a Railway volume at /data.
+# Ensure the entrypoint dispatcher is executable even if the host bit was lost.
+RUN chmod +x scripts/entrypoint.sh
+
+# Persistent-volume mount point used by Railway for the ledger. Without a
+# volume the directory still exists so the app does not fall back to /tmp.
 RUN mkdir -p /data && chmod 777 /data
 
-# Railway uses dynamic PORT - don't hardcode
-# EXPOSE is informational only, actual port comes from $PORT env var
+# Railway / Render inject PORT at runtime. EXPOSE is informational only.
+ENV PYTHONUNBUFFERED=1 \
+    PORT=8000 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
-
-# Stale-PID prevention: ensure clean signal delivery to python process
 STOPSIGNAL SIGTERM
 
-# Health check - uses curl for lower memory overhead than python interpreter spawn
+# Curl-based healthcheck (cheaper than spawning a python interpreter).
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8000}/api/health || exit 1
+    CMD curl -f "http://localhost:${PORT:-8000}/api/health" || exit 1
 
-# Run the server (reads PORT from environment)
-CMD ["python3", "web_portal/server.py"]
+ENTRYPOINT ["./scripts/entrypoint.sh"]
+CMD ["serve"]

@@ -1,39 +1,66 @@
-reportlab>=4.0
-# Optional typing stubs for ReportLab (may or may not exist on PyPI)
-# install if available to silence mypy missing-stub errors
-types-reportlab>=0.0.1
-pytest>=7.0
-mypy>=1.0
+# PHINS — runtime dependencies (Production image)
+#
+# These are the ONLY packages required for the running web portal, scheduler,
+# and CI helper scripts (visual_upload.py). For test/lint/type-stub tools see
+# requirements-dev.txt.
+#
+# Keep this file lean: every package added here ships in every Docker image
+# and every Render build.
+
+# ---------------------------------------------------------------------------
+# Web / HTTP
+# ---------------------------------------------------------------------------
 requests>=2.28
-# Optional: convert PDF pages to images for visual diffing (requires poppler on the system)
+
+# ---------------------------------------------------------------------------
+# PDF + OCR (Assessment Center, client reports)
+#   pdf2image needs poppler-utils at the system level
+#   pytesseract needs tesseract-ocr at the system level
+#   (both installed in the Dockerfile)
+# ---------------------------------------------------------------------------
+reportlab>=4.0
 pdf2image>=1.16
-boto3>=1.28
-moto>=4.0
-# Database support
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0  # PostgreSQL adapter
-alembic>=1.12.0  # Database migrations
-cryptography>=45.0.0
-openpyxl>=3.1.5
-xlrd>=2.0.1  # For older .xls Excel files
-# Real PDF text extraction for the Assessment Center (so scanned + typed
-# PDFs actually surface facts instead of returning empty extraction).
 pypdf>=4.0
-# Image processing for the Assessment Center portrait crop / metadata.
 Pillow>=10.0
-# OCR pipeline (image / scanned PDF / multi-language). Requires the
-# system-level tesseract-ocr + tesseract-ocr-{eng,heb,ara} packages
-# (installed in Dockerfile) and poppler-utils for pdf2image.
 pytesseract>=0.3.13
-# Date manipulation for billing projections
-python-dateutil>=2.8.0
+
+# ---------------------------------------------------------------------------
+# Spreadsheet ingestion
+# ---------------------------------------------------------------------------
+openpyxl>=3.1.5
+xlrd>=2.0.1  # for older .xls files
+
+# ---------------------------------------------------------------------------
+# Database (SQLAlchemy + Postgres + migrations)
+# ---------------------------------------------------------------------------
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+alembic>=1.12.0
+
+# ---------------------------------------------------------------------------
+# Security / crypto / safe parsers
+# ---------------------------------------------------------------------------
+cryptography>=45.0.0
 defusedxml>=0.7.1
 
 # ---------------------------------------------------------------------------
+# Date math (billing projections)
+# ---------------------------------------------------------------------------
+python-dateutil>=2.8.0
+
+# ---------------------------------------------------------------------------
+# AWS SDK
+#   Used by visual_upload.py (CI visual test) via lazy import. Kept in
+#   runtime requirements so the visual_test.yml workflow continues to work
+#   with `pip install -r requirements.txt`.
+# ---------------------------------------------------------------------------
+boto3>=1.28
+
+# ---------------------------------------------------------------------------
 # Transitive-dependency security floors
-# These packages are pulled in by direct dependencies above but have known
-# CVEs at older versions.  Pinning a minimum here ensures any fresh install
-# picks up patched releases.
+#   These packages are pulled in by direct dependencies above but have known
+#   CVEs at older versions. Pinning a minimum here ensures any fresh install
+#   picks up patched releases.
 # ---------------------------------------------------------------------------
 Jinja2>=3.1.6          # CVE-2024-22195, CVE-2024-34064, CVE-2024-56326, CVE-2024-56201, CVE-2025-27516
 PyJWT>=2.12.0          # CVE-2026-32597 (crit header bypass)
