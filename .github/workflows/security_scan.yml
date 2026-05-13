@@ -9,6 +9,12 @@ on:
     # Run weekly on Sundays at midnight
     - cron: '0 0 * * 0'
 
+# Cancel in-flight runs of this workflow when the same ref is pushed again.
+# Default branch is NEVER cancelled mid-run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+
 permissions:
   contents: read
   pull-requests: write
@@ -143,7 +149,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
       - name: Install safety
         run: pip install safety
       
@@ -175,7 +185,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
       - name: Install bandit
         run: pip install bandit
       

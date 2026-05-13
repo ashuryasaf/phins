@@ -10,6 +10,7 @@ Why this exists:
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import threading
 import tempfile
@@ -24,8 +25,37 @@ if root_str not in sys.path:
     sys.path.insert(0, root_str)
 
 
-# Ensure tests that read BASE_URL at import time see a valid URL.
-os.environ.setdefault("TEST_BASE_URL", "http://localhost:8000")
+def _pick_test_port(preferred: int = 8000) -> int:
+    """
+    Return a usable TCP port for the embedded test server.
+
+    Strategy:
+      1. If TEST_PORT env var is set, honor it.
+      2. Else try to bind the preferred port (8000) so legacy tests that
+         hard-code http://localhost:8000 still work in single-runner mode.
+      3. If that port is taken (e.g. running pytest in parallel or another
+         dev server is already on 8000), let the kernel pick a free port.
+    """
+    forced = os.environ.get("TEST_PORT")
+    if forced:
+        try:
+            return int(forced)
+        except ValueError:
+            pass
+    for candidate in (preferred, 0):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind(("127.0.0.1", candidate))
+                return probe.getsockname()[1]
+        except OSError:
+            continue
+    return preferred  # last-resort fallback; later bind will raise
+
+
+_TEST_PORT = _pick_test_port()
+os.environ.setdefault("TEST_BASE_URL", f"http://localhost:{_TEST_PORT}")
+os.environ.setdefault("TEST_PORT", str(_TEST_PORT))
 
 # For the web portal (HTTP tests), use in-memory storage so each test server can be isolated.
 # Database-layer tests still use SQLite via USE_SQLITE/SQLITE_PATH.
@@ -40,16 +70,29 @@ _thread: Optional[threading.Thread] = None
 
 
 def pytest_sessionstart(session):  # type: ignore[no-redef]
-    """Start embedded web portal server for tests that expect localhost:8000."""
+    """
+    Start embedded web portal server for tests.
+
+    Port selection follows _pick_test_port():
+      - Honors TEST_PORT env override (CI / parallel pytest workers).
+      - Defaults to 8000 when available so legacy tests that hard-code
+        http://localhost:8000 keep working.
+      - Falls back to a free kernel-assigned port if 8000 is busy.
+    """
     global _httpd, _thread
 
     # Import lazily after env vars are set.
     from http.server import ThreadingHTTPServer
     import web_portal.server as portal
 
-    # Start server on the expected port.
-    host, port = "127.0.0.1", 8000
+    host = "127.0.0.1"
+    port = int(os.environ.get("TEST_PORT", _TEST_PORT))
     _httpd = ThreadingHTTPServer((host, port), portal.PortalHandler)
+    # If the kernel picked a port (port 0 case), publish the real bound
+    # port so tests reading TEST_PORT/TEST_BASE_URL see the right value.
+    bound_port = _httpd.server_address[1]
+    os.environ["TEST_PORT"] = str(bound_port)
+    os.environ["TEST_BASE_URL"] = f"http://localhost:{bound_port}"
     _thread = threading.Thread(target=_httpd.serve_forever, daemon=True)
     _thread.start()
 
