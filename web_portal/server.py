@@ -7143,6 +7143,47 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
         else:
             ws_int.append([category, str(checks)])
 
+    # ---- IFRS 17 CSM Reconciliation ----
+    csm_recon = projection.get('csm_reconciliation') or {}
+    if csm_recon:
+        ws_csm = wb.create_sheet('CSM Reconciliation')
+        ws_csm.append([
+            'Year', 'Opening', 'Release', 'Coverage-units Share',
+            'Cumulative Release', 'Closing',
+            'balance−Δ check', 'opening−ΣΔ check', 'share check',
+        ])
+        style_header(ws_csm)
+        for r in csm_recon.get('yearly', []):
+            checks = r.get('identity_checks', {}) or {}
+            ws_csm.append([
+                r.get('year'),
+                r.get('opening_balance'),
+                r.get('release'),
+                r.get('coverage_units_share'),
+                r.get('cumulative_release'),
+                r.get('closing_balance'),
+                str(checks.get('prev_minus_release_equals_balance')),
+                str(checks.get('opening_minus_cumulative_equals_balance')),
+                str(checks.get('coverage_units_share_holds')),
+            ])
+        ws_csm.append([])
+        ws_csm.append(['Opening CSM', csm_recon.get('opening_csm')])
+        ws_csm.append(['Release Pattern', csm_recon.get('pattern')])
+        ws_csm.append(['Projection Years', csm_recon.get('projection_years')])
+        for label, key in (
+            ('Sum of Releases', 'sum_of_releases'),
+            ('Closing CSM', 'closing_csm'),
+            ('Unreleased Portion', 'unreleased_portion'),
+            ('Average Annual Release', 'average_annual_release'),
+            ('Release % of Opening', 'release_pct_of_opening'),
+            ('Coverage Units Total', 'coverage_units_total'),
+        ):
+            ws_csm.append([label, csm_recon.get('totals', {}).get(key)])
+        ws_csm.append([])
+        ws_csm.append(['CSM Integrity Check', 'Result'])
+        for k, v in (csm_recon.get('data_integrity', {}) or {}).items():
+            ws_csm.append([k, str(v)])
+
     # ---- Savings AUM Accumulation (reserves projection drives this) ----
     yearly_proj = projection.get('yearly_projection', []) or []
     if yearly_proj:
@@ -7417,6 +7458,59 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             f"Integrity hash: <code>{valuation.get('integrity_hash', '')}</code>",
             body,
         ))
+
+    # ---- IFRS 17 CSM Reconciliation ----
+    csm_recon = projection.get('csm_reconciliation') or {}
+    if csm_recon:
+        story.append(PageBreak())
+        story.append(Paragraph('IFRS 17 CSM Reconciliation', h2))
+        totals = csm_recon.get('totals', {}) or {}
+        story.append(Paragraph(
+            f"Release pattern <b>{csm_recon.get('pattern', '')}</b> "
+            f"· Opening CSM <b>${csm_recon.get('opening_csm', 0):,.0f}</b> "
+            f"· Sum of releases <b>${totals.get('sum_of_releases', 0):,.0f}</b> "
+            f"+ closing <b>${totals.get('closing_csm', 0):,.0f}</b> "
+            f"= opening (Δ ${(totals.get('sum_of_releases', 0) + totals.get('closing_csm', 0)) - csm_recon.get('opening_csm', 0):,.2f}).",
+            body,
+        ))
+        csm_rows = [['Yr', 'Opening', 'Release', 'CU Share', 'Cumulative Δ', 'Closing', 'Checks']]
+        for r in csm_recon.get('yearly', []):
+            checks = r.get('identity_checks', {}) or {}
+            tick = '✓' if all(checks.values()) else '!'
+            csm_rows.append([
+                r.get('year'),
+                f"${r.get('opening_balance', 0):,.0f}",
+                f"${r.get('release', 0):,.0f}",
+                f"{(r.get('coverage_units_share', 0) * 100):.2f}%",
+                f"${r.get('cumulative_release', 0):,.0f}",
+                f"${r.get('closing_balance', 0):,.0f}",
+                tick,
+            ])
+        csm_table = Table(csm_rows, hAlign='LEFT', repeatRows=1)
+        csm_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(csm_table)
+        ident = csm_recon.get('identities', {}) or {}
+        story.append(Spacer(1, 6))
+        if ident.get('straight_line_pattern', {}).get('applies'):
+            sl = ident['straight_line_pattern']
+            story.append(Paragraph(
+                f"<b>Straight-line:</b> <code>{sl['formula']}</code> → expected release ${sl.get('expected_release', 0):,.0f}/yr.",
+                body,
+            ))
+        if ident.get('coverage_units_pattern', {}).get('applies'):
+            cu = ident['coverage_units_pattern']
+            story.append(Paragraph(
+                f"<b>Coverage-units:</b> <code>{cu['formula']}</code> "
+                f"(Σ in-force = {totals.get('coverage_units_total', 0):.4f}).",
+                body,
+            ))
 
     # ---- Savings AUM Accumulation ----
     yearly_proj = projection.get('yearly_projection', []) or []

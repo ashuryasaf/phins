@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-05-13.savings-aum-valuation">
+  <meta name="phins-actuary-dashboard-build" content="2026-05-13.csm-reconciliation">
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
@@ -647,7 +647,7 @@
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
-        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-13 (savings-aum-valuation)</span>
+        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-13 (csm-reconciliation)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
         <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
@@ -3265,6 +3265,74 @@
           </thead>
           <tbody>${rows}</tbody>
         </table>
+
+        ${(function () {
+          const rec = projection.csm_reconciliation;
+          if (!rec) return '';
+          const yearlyRows = (rec.yearly || []).map(r => {
+            const checks = r.identity_checks || {};
+            return `
+              <tr>
+                <td>${r.year}</td>
+                <td>${fmtCurrency(r.opening_balance)}</td>
+                <td>${fmtCurrency(r.release)}</td>
+                <td>${(r.coverage_units_share * 100).toFixed(2)}%</td>
+                <td>${fmtCurrency(r.cumulative_release)}</td>
+                <td><strong>${fmtCurrency(r.closing_balance)}</strong></td>
+                <td>${checks.prev_minus_release_equals_balance ? '✅' : '❌'}</td>
+                <td>${checks.opening_minus_cumulative_equals_balance ? '✅' : '❌'}</td>
+                <td>${checks.coverage_units_share_holds ? '✅' : '❌'}</td>
+              </tr>
+            `;
+          }).join('');
+          const totals = rec.totals || {};
+          const integrity = rec.data_integrity || {};
+          const integrityRows = Object.entries(integrity).map(([k, v]) =>
+            `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+          const ident = rec.identities || {};
+          const sumId = ident.sum_of_releases || {};
+          return `
+            <h4 style="margin-top:16px;">🧮 IFRS 17 CSM Reconciliation</h4>
+            <p style="color:var(--text-light);">
+              Release pattern: <strong>${rec.pattern}</strong> · Opening CSM: <strong>${fmtCurrency(rec.opening_csm)}</strong> · Projection: <strong>${rec.projection_years}</strong> yrs.
+              Each year the closing balance equals the prior balance minus the year's release, and equivalently the opening minus the cumulative release. The sum of releases plus the closing balance reconciles back to the opening CSM.
+            </p>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Yr</th>
+                  <th>Opening</th>
+                  <th>Release (Δ)</th>
+                  <th>Coverage-units share</th>
+                  <th>Cumulative Release</th>
+                  <th>Closing</th>
+                  <th>balance − Δ ✓</th>
+                  <th>opening − ΣΔ ✓</th>
+                  <th>share ✓</th>
+                </tr>
+              </thead>
+              <tbody>${yearlyRows}</tbody>
+            </table>
+            <p style="margin-top:8px;color:var(--text-light);">
+              <strong>Sum-of-releases identity:</strong> Σ release + closing = opening &nbsp;→&nbsp;
+              <strong>${fmtCurrency(sumId.computed)}</strong> vs expected
+              <strong>${fmtCurrency(sumId.expected)}</strong>
+              (Δ ${fmtCurrency(sumId.delta || 0)}).<br>
+              <strong>Sum of releases:</strong> ${fmtCurrency(totals.sum_of_releases)}
+              · <strong>Closing CSM:</strong> ${fmtCurrency(totals.closing_csm)}
+              · <strong>Unreleased portion:</strong> ${fmtCurrency(totals.unreleased_portion)}
+              · <strong>Release % of opening:</strong> ${(totals.release_pct_of_opening || 0).toFixed(2)}%
+              · <strong>Average release:</strong> ${fmtCurrency(totals.average_annual_release)}.
+            </p>
+            ${ident.straight_line_pattern?.applies ? `<p style="color:var(--text-light);"><strong>Straight-line formula:</strong> <code>${ident.straight_line_pattern.formula}</code> → expected release per year ${fmtCurrency(ident.straight_line_pattern.expected_release)}.</p>` : ''}
+            ${ident.coverage_units_pattern?.applies ? `<p style="color:var(--text-light);"><strong>Coverage-units formula:</strong> <code>${ident.coverage_units_pattern.formula}</code> (Σ in-force = ${(totals.coverage_units_total || 0).toFixed(4)}).</p>` : ''}
+            <h5 style="margin-top:8px;">CSM Integrity Checks</h5>
+            <table class="data-table">
+              <thead><tr><th>Check</th><th>Result</th></tr></thead>
+              <tbody>${integrityRows}</tbody>
+            </table>
+          `;
+        })()}
 
         <h4 style="margin-top:16px;">Savings Fund AUM — Accumulative Managed Portfolio</h4>
         <p style="color:var(--text-light);">Monthly contributions × 12 = annual contribution. Yield compounds on the (opening + contribution) base each year. The management fee is the company's earnings on the growing AUM.</p>
