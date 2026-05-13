@@ -357,6 +357,42 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
             'disability_share_of_life': 0.25,
         }, admin_token)
 
+        # 11.7) Portfolio Valuation endpoint: best estimate vs conservative
+        # for Insurance, Risk Portfolio and Company (PHINS Technologies)
+        body, status, _ = _post_json(base + '/api/actuarial/simulate', {
+            'customer_count': 80, 'age_min': 30, 'age_max': 55,
+            'policy_term_mode': 'fixed', 'policy_term_fixed': 15,
+            'savings_rate': 1.0,
+        }, admin_token)
+        assert status == 200
+        val_sim = json.loads(body)['simulation']
+        body, status, _ = _post_json(base + '/api/actuarial/valuation', {
+            'simulation_id': val_sim['simulation_id'],
+            'prudence_margin_pct': 0.15,
+            'tech_multiplier': 4.0,
+            'tech_revenue_share_pct': 0.10,
+            'savings_aum_value_pct': 0.10,
+            'projection_years': 10,
+            'new_business_value_per_year': 1_000_000,
+        }, admin_token)
+        assert status == 200
+        valuation = json.loads(body)['valuation']
+        bands = valuation['bands']
+        assert bands['insurance_portfolio']['best_estimate'] >= bands['insurance_portfolio']['conservative']
+        assert bands['risk_portfolio']['conservative'] >= bands['risk_portfolio']['best_estimate']
+        for k, v in valuation['data_integrity'].items():
+            assert v is True, (k, v)
+        assert len(valuation['integrity_hash']) == 16
+        # Excel + PDF reports must now include valuation + savings sheets
+        body, status, headers = _post_json(base + '/api/actuarial/reports/export', {
+            'simulation_id': val_sim['simulation_id'],
+            'format': 'xlsx',
+            'valuation_config': {'tech_multiplier': 4.0},
+        }, admin_token)
+        assert status == 200
+        assert body[:2] == b'PK'
+        assert len(body) > 5000  # the workbook should now be bigger with new sheets
+
         # 11) Legacy UI fallback: callers that still send the old
         # 'savings_allocation_pct' field (e.g. cached/old dashboards) and
         # no explicit savings_rate must now ALSO get a priced savings

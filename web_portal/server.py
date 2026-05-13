@@ -7010,7 +7010,8 @@ def get_actuarial_simulation_snapshot(simulation_id: Optional[str]) -> Optional[
 
 def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any],
                           reference: Dict[str, Any], generated_by: str,
-                          generated_at: str) -> Tuple[bytes, str, str]:
+                          generated_at: str,
+                          valuation: Optional[Dict[str, Any]] = None) -> Tuple[bytes, str, str]:
     """Build an Excel workbook with the actuarial dashboard data set."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -7142,6 +7143,79 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
         else:
             ws_int.append([category, str(checks)])
 
+    # ---- Savings AUM Accumulation (reserves projection drives this) ----
+    yearly_proj = projection.get('yearly_projection', []) or []
+    if yearly_proj:
+        ws_aum = wb.create_sheet('Savings Fund Accumulation')
+        ws_aum.append([
+            'Year', 'Opening Balance', 'Monthly Contribution', 'Annual Contribution',
+            'Priced Savings Contribution', 'Legacy Allocation Contribution',
+            'Yield', 'Gross Closing (pre-fee)', 'Management Fee Income',
+            'Closing Balance',
+        ])
+        style_header(ws_aum)
+        for row in yearly_proj:
+            sf = row.get('savings_fund', {}) or {}
+            ws_aum.append([
+                row.get('year'),
+                sf.get('opening_balance'),
+                sf.get('monthly_contribution'),
+                sf.get('contribution'),
+                sf.get('priced_savings_contribution'),
+                sf.get('post_hoc_allocation_contribution'),
+                sf.get('yield'),
+                sf.get('gross_closing_aum_before_fee'),
+                sf.get('management_fee_income'),
+                sf.get('closing_balance'),
+            ])
+        ws_aum.append([])
+        totals = projection.get('totals', {}) or {}
+        for label, key in (
+            ('Cumulative Savings Contribution', 'cumulative_savings_contribution'),
+            ('Cumulative Savings Yield', 'cumulative_savings_yield'),
+            ('Cumulative Management Fee Income', 'cumulative_management_fee_income'),
+            ('Closing AUM Balance', 'closing_savings_balance'),
+            ('Effective Savings Yield %', 'effective_savings_yield_pct'),
+            ('Average Monthly Savings Contribution', 'average_monthly_savings_contribution'),
+        ):
+            ws_aum.append([label, totals.get(key)])
+
+    # ---- Portfolio Valuation (Best Estimate vs Conservative) ----
+    if valuation:
+        ws_val = wb.create_sheet('Portfolio Valuation')
+        ws_val.append(['Band', 'Best Estimate', 'Conservative', 'Method'])
+        style_header(ws_val)
+        bands = valuation.get('bands', {}) or {}
+        for label, key in (
+            ('Insurance Portfolio', 'insurance_portfolio'),
+            ('Risk Portfolio', 'risk_portfolio'),
+            ('Company (PHINS Technologies)', 'company_phins_technologies'),
+        ):
+            band = bands.get(key, {}) or {}
+            ws_val.append([
+                label,
+                band.get('best_estimate'),
+                band.get('conservative'),
+                band.get('method'),
+            ])
+        ws_val.append([])
+        ws_val.append(['Summary'])
+        for label, value in (valuation.get('summary', {}) or {}).items():
+            ws_val.append([label, value])
+        ws_val.append([])
+        ws_val.append(['Inputs'])
+        for label, value in (valuation.get('inputs', {}) or {}).items():
+            ws_val.append([label, value])
+        ws_val.append([])
+        ws_val.append(['Config'])
+        for label, value in (valuation.get('config', {}) or {}).items():
+            ws_val.append([label, value])
+        ws_val.append([])
+        ws_val.append(['Integrity Check', 'Result'])
+        for k, v in (valuation.get('data_integrity', {}) or {}).items():
+            ws_val.append([k, str(v)])
+        ws_val.append(['integrity_hash', valuation.get('integrity_hash', '')])
+
     buf = _io.BytesIO()
     wb.save(buf)
     return (
@@ -7153,7 +7227,8 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
 
 def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
                          reference: Dict[str, Any], generated_by: str,
-                         generated_at: str) -> Tuple[bytes, str, str]:
+                         generated_at: str,
+                         valuation: Optional[Dict[str, Any]] = None) -> Tuple[bytes, str, str]:
     """Build a PDF report mirroring the Excel content."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -7303,6 +7378,85 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         ('FONTSIZE', (0, 0), (-1, -1), 8),
     ]))
     story.append(integrity_table)
+
+    # ---- Portfolio Valuation (Best Estimate vs Conservative) ----
+    if valuation:
+        story.append(PageBreak())
+        story.append(Paragraph('Portfolio Valuation — Best Estimate vs Conservative', h2))
+        summary = valuation.get('summary', {}) or {}
+        bands = valuation.get('bands', {}) or {}
+        story.append(Paragraph(
+            f"Company Best Estimate <b>${summary.get('best_estimate_total_company', 0):,.0f}</b> &nbsp;|&nbsp;"
+            f" Conservative <b>${summary.get('conservative_total_company', 0):,.0f}</b> &nbsp;|&nbsp;"
+            f" Prudence drag <b>${summary.get('prudence_drag', 0):,.0f}</b>", body,
+        ))
+        val_rows = [['Band', 'Best Estimate', 'Conservative']]
+        for label, key in (
+            ('Insurance Portfolio', 'insurance_portfolio'),
+            ('Risk Portfolio (liability view)', 'risk_portfolio'),
+            ('Company (PHINS Technologies)', 'company_phins_technologies'),
+        ):
+            band = bands.get(key, {}) or {}
+            val_rows.append([
+                label,
+                f"${band.get('best_estimate', 0):,.0f}",
+                f"${band.get('conservative', 0):,.0f}",
+            ])
+        val_table = Table(val_rows, hAlign='LEFT', repeatRows=1)
+        val_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ]))
+        story.append(val_table)
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            f"Integrity hash: <code>{valuation.get('integrity_hash', '')}</code>",
+            body,
+        ))
+
+    # ---- Savings AUM Accumulation ----
+    yearly_proj = projection.get('yearly_projection', []) or []
+    if yearly_proj:
+        story.append(PageBreak())
+        story.append(Paragraph('Savings Fund AUM Accumulation', h2))
+        aum_rows = [[
+            'Year', 'Opening', 'Monthly', 'Annual', 'Yield', 'Mgmt Fee', 'Closing',
+        ]]
+        for row in yearly_proj:
+            sf = row.get('savings_fund', {}) or {}
+            aum_rows.append([
+                row.get('year'),
+                f"${sf.get('opening_balance', 0):,.0f}",
+                f"${sf.get('monthly_contribution', 0):,.0f}",
+                f"${sf.get('contribution', 0):,.0f}",
+                f"${sf.get('yield', 0):,.0f}",
+                f"${sf.get('management_fee_income', 0):,.0f}",
+                f"${sf.get('closing_balance', 0):,.0f}",
+            ])
+        aum_table = Table(aum_rows, hAlign='LEFT', repeatRows=1)
+        aum_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1A365D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(aum_table)
+        totals = projection.get('totals', {}) or {}
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            f"Cumulative contribution <b>${totals.get('cumulative_savings_contribution', 0):,.0f}</b> "
+            f"+ yield <b>${totals.get('cumulative_savings_yield', 0):,.0f}</b> "
+            f"− management fee <b>${totals.get('cumulative_management_fee_income', 0):,.0f}</b> "
+            f"→ closing AUM <b>${totals.get('closing_savings_balance', 0):,.0f}</b> "
+            f"(effective yield {(totals.get('effective_savings_yield_pct', 0) * 100):.2f}% p.a.).",
+            body,
+        ))
 
     doc.build(story)
     return buf.getvalue(), 'application/pdf', 'pdf'
@@ -25765,6 +25919,46 @@ For claims or questions, please contact:
             return
 
         # =====================================================================
+        # ACTUARIAL: Portfolio Valuation (Best Estimate vs Conservative)
+        # POST body: { simulation_id, ...ValuationConfig knobs }
+        # =====================================================================
+        if path == '/api/actuarial/valuation':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            simulation_id = str(payload.get('simulation_id') or '').strip()
+            simulation = get_actuarial_simulation_snapshot(simulation_id) if simulation_id else None
+            if not simulation:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': f'Unknown simulation_id: {simulation_id}'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_valuation import (
+                    calculate_portfolio_valuation, _coerce_valuation_config,
+                )
+                cfg = _coerce_valuation_config(payload)
+                report = calculate_portfolio_valuation(simulation, cfg)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'valuation': report}).encode('utf-8'))
+            except Exception as e:
+                import traceback
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e), 'traceback': traceback.format_exc()}).encode('utf-8'))
+            return
+
+        # =====================================================================
         # ACTUARIAL: Saving vs Insurance allocation for a saved simulation
         # POST body: { simulation_id, savings_allocation_pct }
         # =====================================================================
@@ -26043,17 +26237,32 @@ For claims or questions, please contact:
                 )
                 reserve_cfg = _coerce_reserve_config(payload.get('reserve_config') or payload)
                 projection = get_reserve_calculator().project(simulation, reserve_cfg)
-                reference = build_risk_reference()
+                # Surface the AUM accumulation also on the risk reference
+                # forecast (matching savings inputs from reserve config).
+                reference = build_risk_reference(
+                    savings_rate=float(payload.get('reference_savings_rate', 0.0) or 0.0) or None,
+                    savings_yield_pct=reserve_cfg.savings_yield_pct,
+                    management_fee_pct_of_aum=reserve_cfg.management_fee_pct_of_aum,
+                )
+                # Run the portfolio valuation with any caller-supplied knobs.
+                from services.actuarial_valuation import (
+                    calculate_portfolio_valuation, _coerce_valuation_config,
+                )
+                valuation_cfg = _coerce_valuation_config(payload.get('valuation_config') or payload)
+                valuation = calculate_portfolio_valuation(simulation, valuation_cfg)
+
                 generated_by = (session or {}).get('username', 'admin')
                 generated_at = datetime.now().isoformat()
 
                 if fmt == 'xlsx':
                     binary, content_type, ext = _build_actuarial_xlsx(
-                        simulation, projection, reference, generated_by, generated_at
+                        simulation, projection, reference, generated_by, generated_at,
+                        valuation=valuation,
                     )
                 else:
                     binary, content_type, ext = _build_actuarial_pdf(
-                        simulation, projection, reference, generated_by, generated_at
+                        simulation, projection, reference, generated_by, generated_at,
+                        valuation=valuation,
                     )
 
                 filename = f"phins_actuary_report_{simulation_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
