@@ -2,7 +2,7 @@ services:
   - type: web
     name: phins-portal
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && chmod +x scripts/entrypoint.sh
     startCommand: ./scripts/entrypoint.sh serve
     envVars:
       - key: PYTHON_VERSION
@@ -19,7 +19,7 @@ services:
     name: phins-monthly-auto-pay
     env: python
     schedule: "0 0 1 * *"
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && chmod +x scripts/entrypoint.sh
     startCommand: ./scripts/entrypoint.sh cron
     envVars:
       - key: PYTHON_VERSION

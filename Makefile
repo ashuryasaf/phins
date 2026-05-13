@@ -91,8 +91,7 @@ smoke: test-smoke ## alias for test-smoke
 # Validate (delegates to the existing Python validators; phase 5 will
 # consolidate these into a single 'phins validate' CLI)
 # -----------------------------------------------------------------------------
-validate: validate-system validate-external validate-portal validate-railway \
-          ## run all validators
+validate: validate-system validate-external validate-portal validate-railway ## run all validators
 
 validate-system: ## system invariants validator
 	$(PYTHON) validate_system.py
