@@ -2471,7 +2471,19 @@ class ReserveCalculator:
         opening_reserve = config.initial_reserve
         opening_bel = total_pv_claims  # IFRS 17 Best Estimate Liability seeded with PV claims
         opening_ra = opening_bel * config.risk_adjustment_pct
-        opening_csm = max(0.0, total_risk_premium * avg_term - opening_bel - opening_ra)
+        # IFRS 17 CSM at initial recognition is the unearned profit baked
+        # into the contract: PV of future net profit, less the risk
+        # adjustment that has not yet been earned. The simulator's
+        # ``net_profit`` is the annual flow of profit after claims, so
+        # multiplying by the average term and netting off the opening
+        # risk adjustment gives a deterministic seed that grows with the
+        # profitability of the priced portfolio. The previous seed
+        # (``total_risk_premium × avg_term − BEL − RA``) collapsed to ≤ 0
+        # by construction because the simulator prices ``risk_premium =
+        # PV_claims / term`` and never recognised loading or profit
+        # margin in the CSM, leaving the dashboard's IFRS17 CSM column
+        # stuck at zero with nothing to reconcile.
+        opening_csm = max(0.0, sim_net_profit * avg_term - opening_ra)
         opening_savings = float(config.initial_savings_fund_balance or 0.0)
 
         yearly: List[Dict[str, Any]] = []
@@ -2534,8 +2546,14 @@ class ReserveCalculator:
 
             bel_balance = opening_bel * max(0.0, 1.0 - (year_index / avg_term))
             ra_balance = bel_balance * config.risk_adjustment_pct
+            csm_opening_year = max(0.0, opening_csm - cumulative_csm_release)
             cumulative_csm_release += csm_release
             csm_balance = max(0.0, opening_csm - cumulative_csm_release)
+            # Coverage-units share for this year — informational, also used in
+            # the per-year identity check ``coverage_units_share_check``.
+            csm_share_basis = (
+                (in_force_factor / total_coverage_units) if total_coverage_units > 0 else 0.0
+            )
             ifrs17_total_liability = bel_balance + ra_balance + csm_balance + ibnr
 
             closing_reserve = opening_reserve + reserve_contribution
@@ -2571,6 +2589,9 @@ class ReserveCalculator:
                     'risk_adjustment': round(ra_balance, 2),
                     'csm_release': round(csm_release, 2),
                     'csm_balance': round(csm_balance, 2),
+                    'csm_opening_year': round(csm_opening_year, 2),
+                    'csm_cumulative_release': round(cumulative_csm_release, 2),
+                    'csm_share_of_coverage_units': round(csm_share_basis, 6),
                     'total_liability': round(ifrs17_total_liability, 2),
                 },
                 'savings_fund': {
@@ -2636,6 +2657,142 @@ class ReserveCalculator:
 
         savings_allocation = apply_savings_allocation(simulation, config.savings_allocation_pct)
 
+        # ----- IFRS 17 CSM Reconciliation -----
+        # Build a deterministic arithmetic chain so the dashboard, audit,
+        # and external auditors can verify every IFRS17 CSM Δ + IFRS17 CSM
+        # figure reconciles back to the opening CSM.
+        sum_of_releases = sum(row['ifrs17']['csm_release'] for row in yearly)
+        closing_csm = yearly[-1]['ifrs17']['csm_balance'] if yearly else round(opening_csm, 2)
+        csm_yearly: List[Dict[str, Any]] = []
+        prev_balance = round(opening_csm, 2)
+        cumulative_release_running = 0.0
+        all_continuity_pass = True
+        all_cumulative_form_pass = True
+        all_release_non_negative = True
+        all_balance_non_negative = True
+        coverage_units_share_pass = True
+        for row in yearly:
+            ifrs = row['ifrs17']
+            release = float(ifrs['csm_release'])
+            balance = float(ifrs['csm_balance'])
+            cumulative_release_running += release
+            # Identity 1: balance_y = balance_{y-1} − release_y
+            expected_from_prev = max(0.0, prev_balance - release)
+            continuity_check = abs(expected_from_prev - balance) < 1.0
+            # Identity 2: balance_y = opening_csm − Σ release_{1..y}
+            expected_cumulative = max(0.0, opening_csm - cumulative_release_running)
+            cumulative_check = abs(expected_cumulative - balance) < 1.0
+            # Identity 3 (coverage_units pattern only): release_y / opening_csm
+            # equals the in-force factor share of total coverage units.
+            cu_check = True
+            cu_expected_release = release  # informational default
+            if (
+                config.csm_release_pattern == 'coverage_units'
+                and opening_csm > 1e-6
+                and balance > 1e-6  # not at the clamp boundary
+            ):
+                expected_share = float(ifrs.get('csm_share_of_coverage_units', 0.0))
+                cu_expected_release = opening_csm * expected_share
+                cu_check = abs(release - cu_expected_release) < 1.0
+            if not continuity_check:
+                all_continuity_pass = False
+            if not cumulative_check:
+                all_cumulative_form_pass = False
+            if release < -1e-6:
+                all_release_non_negative = False
+            if balance < -1e-6:
+                all_balance_non_negative = False
+            if not cu_check:
+                coverage_units_share_pass = False
+            csm_yearly.append({
+                'year': row['year'],
+                'in_force_factor': row['in_force_factor'],
+                'opening_balance': round(prev_balance, 2),
+                'release': round(release, 2),
+                'cumulative_release': round(cumulative_release_running, 2),
+                'closing_balance': round(balance, 2),
+                'coverage_units_share': round(
+                    float(ifrs.get('csm_share_of_coverage_units', 0.0)), 6
+                ),
+                'expected_release_from_share': round(cu_expected_release, 2),
+                'identity_checks': {
+                    'prev_minus_release_equals_balance': continuity_check,
+                    'opening_minus_cumulative_equals_balance': cumulative_check,
+                    'coverage_units_share_holds': cu_check,
+                },
+            })
+            prev_balance = balance
+
+        # Overall reconciliation: sum of releases equals opening_csm only
+        # if the projection horizon fully amortises the CSM. When it is
+        # shorter than the average term, releases sum to less than the
+        # opening — capture both views explicitly.
+        unreleased_portion = max(0.0, opening_csm - sum_of_releases)
+        sum_releases_check = abs(opening_csm - sum_of_releases - closing_csm) < 1.0
+
+        # Straight-line specific: each year release should equal opening / N
+        straight_line_uniform_check = True
+        if config.csm_release_pattern == 'straight_line' and projection_years > 0 and opening_csm > 0:
+            expected_release = opening_csm / projection_years
+            straight_line_uniform_check = all(
+                abs(r['release'] - expected_release) < 1.0
+                or r['closing_balance'] < 1.0  # clamp boundary
+                for r in csm_yearly
+            )
+
+        csm_reconciliation = {
+            'pattern': config.csm_release_pattern,
+            'opening_csm': round(opening_csm, 2),
+            'projection_years': projection_years,
+            'yearly': csm_yearly,
+            'totals': {
+                'sum_of_releases': round(sum_of_releases, 2),
+                'unreleased_portion': round(unreleased_portion, 2),
+                'closing_csm': round(closing_csm, 2),
+                'average_annual_release': round(
+                    sum_of_releases / max(1, projection_years), 2
+                ),
+                'release_pct_of_opening': round(
+                    (sum_of_releases / opening_csm * 100.0) if opening_csm > 0 else 0.0,
+                    4,
+                ),
+                'coverage_units_total': round(total_coverage_units, 6),
+            },
+            'data_integrity': {
+                'per_year_continuity_pass': all_continuity_pass,
+                'per_year_cumulative_form_pass': all_cumulative_form_pass,
+                'sum_of_releases_plus_closing_equals_opening': sum_releases_check,
+                'release_non_negative': all_release_non_negative,
+                'balance_non_negative': all_balance_non_negative,
+                'coverage_units_share_holds': coverage_units_share_pass,
+                'straight_line_release_uniform': straight_line_uniform_check,
+                'opening_csm_non_negative': opening_csm >= -1e-6,
+            },
+            'identities': {
+                'per_year': {
+                    'formula': 'csm_balance_y = csm_balance_{y-1} − csm_release_y',
+                    'alt_formula': 'csm_balance_y = opening_csm − Σ_{i=1..y} csm_release_i',
+                },
+                'sum_of_releases': {
+                    'formula': 'Σ csm_release_y + closing_csm = opening_csm',
+                    'computed': round(sum_of_releases + closing_csm, 2),
+                    'expected': round(opening_csm, 2),
+                    'delta': round((sum_of_releases + closing_csm) - opening_csm, 2),
+                },
+                'straight_line_pattern': {
+                    'formula': 'release_y = opening_csm / projection_years',
+                    'expected_release': round(
+                        opening_csm / projection_years if projection_years > 0 else 0.0, 2
+                    ),
+                    'applies': config.csm_release_pattern == 'straight_line',
+                },
+                'coverage_units_pattern': {
+                    'formula': 'release_y = opening_csm × in_force_factor_y / Σ in_force_factor',
+                    'applies': config.csm_release_pattern == 'coverage_units',
+                },
+            },
+        }
+
         return {
             'simulation_id': simulation.get('simulation_id'),
             'projection_years': projection_years,
@@ -2651,6 +2808,7 @@ class ReserveCalculator:
                 'savings_fund': round(config.initial_savings_fund_balance, 2),
             },
             'savings_allocation': savings_allocation,
+            'csm_reconciliation': csm_reconciliation,
             'data_integrity': {
                 'profit_waterfall_consistent': all(identity_checks),
                 'dividends_within_after_tax': all(
@@ -2692,6 +2850,13 @@ class ReserveCalculator:
                     row['savings_fund']['management_fee_income'] >= -1e-6
                     for row in yearly
                 ),
+                # CSM identity proofs (the arithmetic shown on the
+                # IFRS17 CSM Δ + IFRS17 CSM dashboard columns reconciles
+                # back to the opening CSM through both per-year and
+                # cumulative forms).
+                'csm_per_year_continuity_holds': csm_reconciliation['data_integrity']['per_year_continuity_pass'],
+                'csm_sum_reconciles_to_opening': csm_reconciliation['data_integrity']['sum_of_releases_plus_closing_equals_opening'],
+                'csm_release_non_negative': csm_reconciliation['data_integrity']['release_non_negative'],
             },
             'ifrs17_methodology': {
                 'measurement_model': 'general_measurement_model',

@@ -440,6 +440,72 @@ def test_simulator_snapshot_records_disability_share():
         store.update_config({'disability_share_of_life': original}, user='pytest')
 
 
+def test_ifrs17_csm_reconciliation_adds_up_under_both_release_patterns():
+    """Sum of CSM releases + closing balance must equal opening CSM to the cent."""
+    from services.actuarial_service import (
+        _coerce_reserve_config, get_reserve_calculator,
+    )
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=250, age_min=30, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=15,
+            savings_rate=0.5,
+        )
+    )
+
+    for pattern in ('straight_line', 'coverage_units'):
+        cfg = _coerce_reserve_config({
+            'projection_years': 5,
+            'csm_release_pattern': pattern,
+        })
+        proj = get_reserve_calculator().project(sim, cfg)
+        rec = proj['csm_reconciliation']
+        # Sanity: the seeded CSM must be > 0 for a profitable simulation
+        assert rec['opening_csm'] > 0
+        # Identity: Σ release + closing = opening (to within rounding)
+        recon_total = rec['totals']['sum_of_releases'] + rec['totals']['closing_csm']
+        assert abs(recon_total - rec['opening_csm']) < 1.0, (pattern, rec)
+        # Every per-year identity must pass
+        for r in rec['yearly']:
+            checks = r['identity_checks']
+            assert checks['prev_minus_release_equals_balance'], (pattern, r)
+            assert checks['opening_minus_cumulative_equals_balance'], (pattern, r)
+            if pattern == 'coverage_units' and r['closing_balance'] > 1.0:
+                assert checks['coverage_units_share_holds'], (pattern, r)
+        # Block-level integrity flags must all be True
+        for k, v in rec['data_integrity'].items():
+            assert v is True, (pattern, k, v)
+        # Top-level data_integrity exposes the same recon flags
+        assert proj['data_integrity']['csm_per_year_continuity_holds']
+        assert proj['data_integrity']['csm_sum_reconciles_to_opening']
+        assert proj['data_integrity']['csm_release_non_negative']
+
+
+def test_csm_straight_line_release_is_uniform():
+    """Under straight-line, each annual release equals opening / N."""
+    from services.actuarial_service import (
+        _coerce_reserve_config, get_reserve_calculator,
+    )
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=200, age_min=30, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=15,
+            savings_rate=0.5,
+        )
+    )
+    cfg = _coerce_reserve_config({
+        'projection_years': 6, 'csm_release_pattern': 'straight_line',
+    })
+    proj = get_reserve_calculator().project(sim, cfg)
+    rec = proj['csm_reconciliation']
+    expected = rec['opening_csm'] / 6
+    for row in rec['yearly']:
+        assert abs(row['release'] - expected) < 1.0, row
+    assert rec['data_integrity']['straight_line_release_uniform']
+
+
 def test_reserve_savings_fund_compounds_with_yield_and_management_fee():
     """Verify the AUM identity year-by-year + cumulative aggregates."""
     from services.actuarial_service import (
