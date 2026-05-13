@@ -1,0 +1,6 @@
+HEAD detached at d3ad721
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	backups/20260513T202745Z/
+
+nothing added to commit but untracked files present (use "git add" to track)

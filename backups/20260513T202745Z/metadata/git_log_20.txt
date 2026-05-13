@@ -1,0 +1,20 @@
+d3ad721 feat(reports): audit-style number formatting (thousands, two decimals)
+14c31f8 feat(actuary-ui): IFRS 17 CSM reconciliation panel + new sheet/page in reports
+91ddf96 feat(actuarial): IFRS 17 CSM reconciliation block with verifiable identities
+c6de949 feat(actuary-ui): Portfolio Valuation section + savings-AUM visualisations
+63a13f9 feat(actuarial): /api/actuarial/valuation endpoint + valuation/savings in reports
+42914da feat(actuarial): AUM-aware savings projection + portfolio actuary valuation
+827c2f8 feat(actuarial): L:D contract ratio is actuary-table-driven across every algorithm
+ccb0b3b fix(actuarial): legacy savings input drives priced savings + reconciliation panel + cache buster
+749ca8b feat(actuarial): dashboard now prices the contract draft + savings markup UI
+59d9560 feat(actuarial): savings premium becomes % of risk premium (RISK_PREMIUM_MARKUP)
+f0c2f19 Merge pull request #322 from ashuryasaf/cursor/unify-actuarial-pricing-kernel-77b0
+239fac0 Fix reconciler tolerance to match relaxed components_match threshold
+3aaf113 Fix components_match tolerance: use sqrt scaling instead of linear
+db93bc1 Fix savings rate capping, profitability tolerance scaling, and cohort lock safety
+8cfbd7c Fix pricing kernel product savings_rate, integrity hash mismatch, and XSS in cohort overrides
+f5828da fix: restore inline pricer backward compatibility and fix cohort override fallback
+486fe1d fix: reserve horizon_source flag and inline pricer savings formula
+ebbac87 feat(actuarial): cross-system reconciler + reserve horizon from policy book
+a439861 feat(actuarial): cohort-scoped uploaded rate tables (G4)
+2d14c3c feat(actuarial): rename Fefferman -> Risk Reference and make it modular
