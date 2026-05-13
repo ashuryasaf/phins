@@ -440,6 +440,113 @@ def test_simulator_snapshot_records_disability_share():
         store.update_config({'disability_share_of_life': original}, user='pytest')
 
 
+def test_reserve_savings_fund_compounds_with_yield_and_management_fee():
+    """Verify the AUM identity year-by-year + cumulative aggregates."""
+    from services.actuarial_service import (
+        _coerce_reserve_config, get_reserve_calculator,
+    )
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=200, age_min=30, age_max=50,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=10,
+            savings_rate=1.0,
+        )
+    )
+    cfg = _coerce_reserve_config({
+        'projection_years': 5,
+        'savings_yield_pct': 0.05,
+        'management_fee_pct_of_aum': 0.01,
+    })
+    proj = get_reserve_calculator().project(sim, cfg)
+    integrity = proj['data_integrity']
+    assert integrity['savings_accumulation_identity_holds']
+    assert integrity['monthly_x_12_equals_annual_contribution']
+    assert integrity['management_fee_non_negative']
+
+    # The cumulative aggregates must exist and be non-zero when savings is in play
+    totals = proj['totals']
+    assert totals['cumulative_savings_contribution'] > 0
+    assert totals['cumulative_management_fee_income'] > 0
+    assert totals['closing_savings_balance'] > 0
+
+    # AUM accumulates: closing > opening (yield > management fee for small fees)
+    last = proj['yearly_projection'][-1]['savings_fund']
+    first = proj['yearly_projection'][0]['savings_fund']
+    assert last['closing_balance'] > first['closing_balance']
+
+    # Setting management_fee to 0 must increase the closing balance vs 1%
+    cfg_no_fee = _coerce_reserve_config({
+        'projection_years': 5,
+        'savings_yield_pct': 0.05,
+        'management_fee_pct_of_aum': 0.0,
+    })
+    proj_no_fee = get_reserve_calculator().project(sim, cfg_no_fee)
+    assert (
+        proj_no_fee['totals']['closing_savings_balance']
+        > proj['totals']['closing_savings_balance']
+    )
+
+
+def test_risk_reference_savings_accumulation_block():
+    """build_risk_reference must surface an AUM accumulation block when savings_rate>0."""
+    from services.actuarial_service import build_risk_reference
+    ref = build_risk_reference(
+        savings_rate=1.0, savings_yield_pct=0.05, management_fee_pct_of_aum=0.01,
+    )
+    accum = ref.get('savings_accumulation')
+    assert accum is not None
+    assert accum['data_integrity']['monthly_x_12_equals_annual']
+    assert accum['data_integrity']['aum_identity_holds']
+    assert accum['data_integrity']['closing_aum_non_negative']
+    totals = accum['totals']
+    # 5-year reference policyholder, risk_premium ~$2.1k/year × 5y × 1.0 markup,
+    # roughly matches the cumulative contribution
+    assert totals['cumulative_contribution'] > 0
+    assert totals['closing_aum_balance'] > 0
+    # No savings input -> no savings_accumulation block returned
+    ref_no_savings = build_risk_reference()
+    assert ref_no_savings.get('savings_accumulation') is None
+
+
+def test_portfolio_valuation_best_estimate_ge_conservative_and_integrity():
+    from services.actuarial_valuation import (
+        calculate_portfolio_valuation, _coerce_valuation_config,
+    )
+    sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(
+        SimulationParams(
+            customer_count=300, age_min=25, age_max=55,
+            coverage_min=100_000, coverage_max=400_000, coverage_median=200_000,
+            policy_term_mode='fixed', policy_term_fixed=15,
+            savings_rate=1.0,
+        )
+    )
+    cfg = _coerce_valuation_config({
+        'prudence_margin_pct': 0.15,
+        'required_capital_pct_of_premium': 0.20,
+        'cost_of_capital_pct': 0.06,
+        'risk_margin_pct': 0.06,
+        'tech_multiplier': 4.0,
+        'tech_revenue_share_pct': 0.10,
+        'savings_aum_value_pct': 0.10,
+        'new_business_value_per_year': 0.0,
+    })
+    out = calculate_portfolio_valuation(sim, cfg)
+    integrity = out['data_integrity']
+    for k, v in integrity.items():
+        assert v is True, (k, v)
+    # Insurance BE >= Conservative; Risk Conservative >= Risk BE
+    assert out['bands']['insurance_portfolio']['best_estimate'] >= out['bands']['insurance_portfolio']['conservative']
+    assert out['bands']['risk_portfolio']['conservative'] >= out['bands']['risk_portfolio']['best_estimate']
+    # Changing tech_multiplier must raise company BE
+    cfg_low = _coerce_valuation_config({**cfg.__dict__, 'tech_multiplier': 0.0})
+    cfg_high = _coerce_valuation_config({**cfg.__dict__, 'tech_multiplier': 10.0})
+    low = calculate_portfolio_valuation(sim, cfg_low)
+    high = calculate_portfolio_valuation(sim, cfg_high)
+    assert high['bands']['company_phins_technologies']['best_estimate'] \
+        > low['bands']['company_phins_technologies']['best_estimate']
+
+
 def test_simulator_emits_premium_reconciliation_with_all_identities():
     """Every simulation must ship a verifiable premium_reconciliation block."""
     sim = PortfolioSimulator(get_actuarial_store()).generate_portfolio(

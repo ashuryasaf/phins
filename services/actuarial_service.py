@@ -1968,7 +1968,10 @@ def build_risk_reference(start_age: Optional[int] = None,
                          projection_years: Optional[int] = None,
                          life_sum: Optional[float] = None,
                          profile_id: Optional[str] = None,
-                         disability_share_of_life: Optional[float] = None) -> Dict[str, Any]:
+                         disability_share_of_life: Optional[float] = None,
+                         savings_rate: Optional[float] = None,
+                         savings_yield_pct: Optional[float] = None,
+                         management_fee_pct_of_aum: Optional[float] = None) -> Dict[str, Any]:
     """Build a deterministic risk-reference forecast for any (modular) inputs.
 
     Unlike the previous fixed 5-year exam, this function accepts any
@@ -2026,7 +2029,91 @@ def build_risk_reference(start_age: Optional[int] = None,
         })
 
     avg_loss_ratio = (cumulative_expected_loss / cumulative_premium) if cumulative_premium > 0 else 0.0
-    return {
+
+    # ----- Optional savings accumulation projection -----
+    # When the caller passes savings_rate > 0, project a savings AUM
+    # accumulation alongside the risk reference forecast so the
+    # dashboard's Risk Reference (Locked Source) section can also show
+    # the cumulative managed-portfolio balance that grows with yield and
+    # is debited by the management fee.
+    savings_accumulation = None
+    sr = float(savings_rate) if savings_rate is not None else 0.0
+    sy = float(savings_yield_pct) if savings_yield_pct is not None else 0.0
+    mf = float(management_fee_pct_of_aum) if management_fee_pct_of_aum is not None else 0.0
+    if sr > 0:
+        years_accum: List[Dict[str, Any]] = []
+        opening_aum = 0.0
+        cumulative_contribution = 0.0
+        cumulative_yield = 0.0
+        cumulative_fee = 0.0
+        for row in yearly:
+            annual_risk = row['annual_premium']  # reference policyholder risk premium
+            annual_contribution = annual_risk * sr  # markup formula
+            monthly_contribution = annual_contribution / 12.0
+            yield_amount = (opening_aum + annual_contribution) * sy
+            gross_closing = opening_aum + annual_contribution + yield_amount
+            mgmt_fee = gross_closing * mf
+            closing_aum = gross_closing - mgmt_fee
+            cumulative_contribution += annual_contribution
+            cumulative_yield += yield_amount
+            cumulative_fee += mgmt_fee
+            years_accum.append({
+                'year': row['year'],
+                'age': row['age'],
+                'annual_risk_premium': annual_risk,
+                'monthly_contribution': round(monthly_contribution, 2),
+                'annual_contribution': round(annual_contribution, 2),
+                'opening_balance': round(opening_aum, 2),
+                'yield': round(yield_amount, 2),
+                'management_fee_income': round(mgmt_fee, 2),
+                'gross_closing_aum_before_fee': round(gross_closing, 2),
+                'closing_balance': round(closing_aum, 2),
+                'cumulative_contribution': round(cumulative_contribution, 2),
+            })
+            opening_aum = closing_aum
+        # Compounded effective yield (CAGR) on the cumulative contribution
+        eff_yield = 0.0
+        if cumulative_contribution > 0 and opening_aum > 0 and projection_years > 0:
+            try:
+                eff_yield = (opening_aum / cumulative_contribution) ** (
+                    1.0 / projection_years
+                ) - 1.0
+            except (ValueError, ZeroDivisionError):
+                eff_yield = 0.0
+        savings_accumulation = {
+            'savings_rate': round(sr, 6),
+            'savings_yield_pct': round(sy, 6),
+            'management_fee_pct_of_aum': round(mf, 6),
+            'yearly': years_accum,
+            'totals': {
+                'cumulative_contribution': round(cumulative_contribution, 2),
+                'cumulative_yield': round(cumulative_yield, 2),
+                'cumulative_management_fee_income': round(cumulative_fee, 2),
+                'closing_aum_balance': round(opening_aum, 2),
+                'effective_yield_pct': round(eff_yield, 6),
+                'average_monthly_contribution': round(
+                    cumulative_contribution / max(1, projection_years * 12), 2
+                ),
+            },
+            'data_integrity': {
+                'monthly_x_12_equals_annual': all(
+                    abs(r['monthly_contribution'] * 12.0 - r['annual_contribution']) < 1.0
+                    for r in years_accum
+                ),
+                'aum_identity_holds': all(
+                    abs(
+                        r['closing_balance']
+                        - (r['gross_closing_aum_before_fee'] - r['management_fee_income'])
+                    ) < 0.5
+                    for r in years_accum
+                ),
+                'closing_aum_non_negative': all(
+                    r['closing_balance'] >= -0.5 for r in years_accum
+                ),
+            },
+        }
+
+    payload = {
         'profile_id': profile['id'],
         'source': {
             'document': profile.get('doc_title', 'PHINS Risk Reference'),
@@ -2079,6 +2166,9 @@ def build_risk_reference(start_age: Optional[int] = None,
             ) < 0.01,
         },
     }
+    if savings_accumulation is not None:
+        payload['savings_accumulation'] = savings_accumulation
+    return payload
 
 
 # Backwards-compatibility aliases for the previous function names. New callers
@@ -2108,11 +2198,20 @@ class ReserveConfig:
       estimate liability (BEL).
     - `csm_release_pattern`: 'straight_line' or 'coverage_units' for releasing
       the Contractual Service Margin (CSM) over the average term.
-    - `savings_allocation_pct`: share of total premium allocated to the savings
-      fund vs. the risk insurance balance sheet.
+    - `savings_allocation_pct`: legacy post-hoc allocation share of total
+      premium routed to the savings fund (kept for backwards compatibility;
+      modern simulations source the contribution directly from the priced
+      savings_premium component).
     - `savings_yield_pct`: assumed annual yield on the savings fund.
+    - `management_fee_pct_of_aum`: annual management fee charged against the
+      cumulative savings AUM (the fund's closing balance after contributions
+      and yield, before the fee). This is the company's earnings from
+      managing the savings portfolio — it accrues every year on the growing
+      AUM, separate from the underwriting profit margin.
     - `projection_years`: number of "situation years" to project.
     - `initial_reserve`: opening reserve balance.
+    - `initial_savings_fund_balance`: opening AUM (rolled-forward balance
+      from a previous reserve run, when continuing a projection).
     """
 
     dividends_pct: float = 0.30
@@ -2123,8 +2222,10 @@ class ReserveConfig:
     csm_release_pattern: str = 'straight_line'
     savings_allocation_pct: float = 0.0
     savings_yield_pct: float = 0.045
+    management_fee_pct_of_aum: float = 0.01  # 1% annual mgmt fee on cumulative AUM
     projection_years: int = 5
     initial_reserve: float = 0.0
+    initial_savings_fund_balance: float = 0.0
 
 
 def _pct_auto(v: float) -> float:
@@ -2151,8 +2252,14 @@ def _coerce_reserve_config(payload: Optional[Dict[str, Any]]) -> ReserveConfig:
         savings_yield_pct=_clamp(
             _pct_auto(float(payload.get('savings_yield_pct', 0.045) or 0.0)), -0.5, 0.5
         ),
+        management_fee_pct_of_aum=_clamp(
+            _pct_auto(float(payload.get('management_fee_pct_of_aum', 0.01) or 0.0)), 0.0, 0.10
+        ),
         projection_years=max(1, min(50, int(payload.get('projection_years', 5) or 5))),
         initial_reserve=max(0.0, float(payload.get('initial_reserve', 0.0) or 0.0)),
+        initial_savings_fund_balance=max(
+            0.0, float(payload.get('initial_savings_fund_balance', 0.0) or 0.0)
+        ),
     )
 
 
@@ -2365,7 +2472,7 @@ class ReserveCalculator:
         opening_bel = total_pv_claims  # IFRS 17 Best Estimate Liability seeded with PV claims
         opening_ra = opening_bel * config.risk_adjustment_pct
         opening_csm = max(0.0, total_risk_premium * avg_term - opening_bel - opening_ra)
-        opening_savings = 0.0
+        opening_savings = float(config.initial_savings_fund_balance or 0.0)
 
         yearly: List[Dict[str, Any]] = []
         cumulative_tax = 0.0
@@ -2373,6 +2480,8 @@ class ReserveCalculator:
         cumulative_retained = 0.0
         cumulative_reserve_contrib = 0.0
         cumulative_savings_contrib = 0.0
+        cumulative_savings_yield = 0.0
+        cumulative_management_fee_income = 0.0
 
         # Precompute cumulative in-force factors as product of survival rates
         in_force_factors = [1.0]
@@ -2397,7 +2506,20 @@ class ReserveCalculator:
             retained = after_tax_profit - dividends
 
             reserve_contribution = retained * config.reserve_contribution_pct
-            savings_contribution = in_force_premium * config.savings_allocation_pct
+
+            # Savings contribution sources (cumulative AUM model):
+            # 1. The priced savings_premium component charged to each policy
+            #    (this is the modern path; equals 0 for a pure-risk product).
+            # 2. The legacy post-hoc allocation knob, kept for backwards
+            #    compatibility with existing reserve runs that set
+            #    savings_allocation_pct > 0.
+            priced_savings_contribution = savings_premium * in_force_factor
+            post_hoc_savings_contribution = (
+                in_force_premium * config.savings_allocation_pct
+            )
+            savings_contribution = (
+                priced_savings_contribution + post_hoc_savings_contribution
+            )
 
             # IBNR provision: incurred-claims method
             ibnr = in_force_claims * config.ibnr_pct
@@ -2417,8 +2539,18 @@ class ReserveCalculator:
             ifrs17_total_liability = bel_balance + ra_balance + csm_balance + ibnr
 
             closing_reserve = opening_reserve + reserve_contribution
-            savings_yield_amount = opening_savings * config.savings_yield_pct
-            closing_savings = opening_savings + savings_contribution + savings_yield_amount
+
+            # ----- Savings fund AUM accumulation (compounded annually) -----
+            # Sequence per actuarial convention: contribute at start, yield
+            # on the (opening + contribution) base over the year, then the
+            # management fee accrues on the year-end balance (the
+            # company's AUM-based fee income).
+            opening_savings_before = opening_savings
+            savings_yield_amount = (opening_savings + savings_contribution) * config.savings_yield_pct
+            gross_closing_aum = opening_savings + savings_contribution + savings_yield_amount
+            management_fee_income = gross_closing_aum * config.management_fee_pct_of_aum
+            closing_savings = gross_closing_aum - management_fee_income
+            monthly_contribution = savings_contribution / 12.0
 
             yearly.append({
                 'year': year_index,
@@ -2442,8 +2574,14 @@ class ReserveCalculator:
                     'total_liability': round(ifrs17_total_liability, 2),
                 },
                 'savings_fund': {
+                    'opening_balance': round(opening_savings_before, 2),
+                    'monthly_contribution': round(monthly_contribution, 2),
                     'contribution': round(savings_contribution, 2),
+                    'priced_savings_contribution': round(priced_savings_contribution, 2),
+                    'post_hoc_allocation_contribution': round(post_hoc_savings_contribution, 2),
                     'yield': round(savings_yield_amount, 2),
+                    'gross_closing_aum_before_fee': round(gross_closing_aum, 2),
+                    'management_fee_income': round(management_fee_income, 2),
                     'closing_balance': round(closing_savings, 2),
                 },
             })
@@ -2455,6 +2593,20 @@ class ReserveCalculator:
             cumulative_retained += retained
             cumulative_reserve_contrib += reserve_contribution
             cumulative_savings_contrib += savings_contribution
+            cumulative_savings_yield += savings_yield_amount
+            cumulative_management_fee_income += management_fee_income
+
+        # Effective compounded savings yield over the projection horizon:
+        # CAGR(closing_balance, sum_of_contributions, years).
+        effective_yield_pct = 0.0
+        if cumulative_savings_contrib > 0 and opening_savings > 0 and projection_years > 0:
+            try:
+                ratio = opening_savings / cumulative_savings_contrib
+                effective_yield_pct = (
+                    ratio ** (1.0 / projection_years) - 1.0
+                ) if ratio > 0 else 0.0
+            except (ValueError, ZeroDivisionError):
+                effective_yield_pct = 0.0
 
         totals = {
             'cumulative_tax': round(cumulative_tax, 2),
@@ -2462,10 +2614,16 @@ class ReserveCalculator:
             'cumulative_retained_earnings': round(cumulative_retained, 2),
             'cumulative_reserve_contribution': round(cumulative_reserve_contrib, 2),
             'cumulative_savings_contribution': round(cumulative_savings_contrib, 2),
+            'cumulative_savings_yield': round(cumulative_savings_yield, 2),
+            'cumulative_management_fee_income': round(cumulative_management_fee_income, 2),
             'closing_reserve': round(opening_reserve, 2),
             'closing_savings_balance': round(opening_savings, 2),
+            'effective_savings_yield_pct': round(effective_yield_pct, 6),
             'average_reserve_contribution': round(
                 cumulative_reserve_contrib / max(1, projection_years), 2
+            ),
+            'average_monthly_savings_contribution': round(
+                cumulative_savings_contrib / max(1, projection_years * 12), 2
             ),
         }
 
@@ -2490,7 +2648,7 @@ class ReserveCalculator:
                 'bel': round(opening_bel, 2),
                 'risk_adjustment': round(opening_ra, 2),
                 'csm': round(opening_csm, 2),
-                'savings_fund': 0.0,
+                'savings_fund': round(config.initial_savings_fund_balance, 2),
             },
             'savings_allocation': savings_allocation,
             'data_integrity': {
@@ -2506,6 +2664,34 @@ class ReserveCalculator:
                     row['savings_fund']['closing_balance'] >= -0.5 for row in yearly
                 ),
                 'csm_non_negative': all(row['ifrs17']['csm_balance'] >= -0.5 for row in yearly),
+                # Prove the AUM accumulation identity each year:
+                # closing_balance = (opening + contribution) × (1+yield)
+                #                   − management_fee
+                'savings_accumulation_identity_holds': all(
+                    abs(
+                        row['savings_fund']['closing_balance']
+                        - (
+                            (row['savings_fund']['opening_balance']
+                             + row['savings_fund']['contribution'])
+                            * (1.0 + (
+                                row['savings_fund']['yield']
+                                / max(1.0, row['savings_fund']['opening_balance']
+                                      + row['savings_fund']['contribution'])
+                            ))
+                            - row['savings_fund']['management_fee_income']
+                        )
+                    ) < 1.0
+                    for row in yearly
+                ),
+                'monthly_x_12_equals_annual_contribution': all(
+                    abs(row['savings_fund']['monthly_contribution'] * 12.0
+                        - row['savings_fund']['contribution']) < 1.0
+                    for row in yearly
+                ),
+                'management_fee_non_negative': all(
+                    row['savings_fund']['management_fee_income'] >= -1e-6
+                    for row in yearly
+                ),
             },
             'ifrs17_methodology': {
                 'measurement_model': 'general_measurement_model',
