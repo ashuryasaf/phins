@@ -1,0 +1,22 @@
+# PHINS — development / test / type-checking dependencies
+#
+# Install with:
+#   pip install -r requirements-dev.txt
+#
+# This file inherits the runtime set (so a dev install gives you the
+# complete environment) and adds tools that should NEVER ship in the
+# production Docker image:
+#   - test runner (pytest)
+#   - static type checker (mypy) + type stubs
+#   - AWS mocking library (moto, used only by tests/test_visual_upload_s3.py)
+#
+# The production Dockerfile and Render web service install ONLY
+# requirements.txt, keeping the runtime image ~80 MB smaller.
+# CI workflows install this file when they need to run pytest.
+
+-r requirements.txt
+
+pytest>=7.0
+mypy>=1.0
+types-reportlab>=0.0.1
+moto>=4.0
