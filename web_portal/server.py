@@ -13416,11 +13416,24 @@ For claims or questions, please contact:
                 years_raw = qs.get('projection_years', [None])[0]
                 life_raw = qs.get('life_sum', [None])[0]
                 profile_id = (qs.get('profile_id', [None])[0] or None)
+
+                def _opt_float(name):
+                    raw = qs.get(name, [None])[0]
+                    if raw is None or raw == '':
+                        return None
+                    try:
+                        return float(raw)
+                    except (TypeError, ValueError):
+                        return None
+
                 reference = build_risk_reference(
                     start_age=int(start_age_raw) if start_age_raw else None,
                     projection_years=int(years_raw) if years_raw else None,
                     life_sum=float(life_raw) if life_raw else None,
                     profile_id=profile_id,
+                    savings_rate=_opt_float('savings_rate'),
+                    savings_yield_pct=_opt_float('savings_yield_pct'),
+                    management_fee_pct_of_aum=_opt_float('management_fee_pct_of_aum'),
                 )
                 payload: Dict[str, Any] = {
                     'success': True,

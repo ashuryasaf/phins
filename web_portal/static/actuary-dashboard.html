@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-05-12.savings-markup-reconciliation">
+  <meta name="phins-actuary-dashboard-build" content="2026-05-13.savings-aum-valuation">
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
@@ -647,7 +647,7 @@
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
-        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-12 (savings-markup-reconciliation)</span>
+        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-13 (savings-aum-valuation)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
         <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
@@ -715,6 +715,10 @@
 
         <div class="nav-section">
           <div class="nav-section-title">Research &amp; Audit</div>
+          <div class="nav-item" onclick="showSection('valuation')">
+            <span class="nav-icon">💎</span>
+            <span>Portfolio Valuation</span>
+          </div>
           <div class="nav-item" onclick="showSection('risk-reference')">
             <span class="nav-icon">📐</span>
             <span>Risk Reference</span>
@@ -1382,12 +1386,18 @@
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Savings Allocation %</label>
+                <label class="form-label">Savings Allocation % (legacy post-hoc)</label>
                 <input type="number" id="reserve-savings-alloc" class="form-input" value="0" min="0" max="95" step="0.5">
+                <small style="color:var(--text-light);">Optional post-hoc allocation. The priced savings premium is already used as the AUM contribution.</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Savings Yield %</label>
                 <input type="number" id="reserve-savings-yield" class="form-input" value="4.5" min="-50" max="50" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Management Fee % of AUM</label>
+                <input type="number" id="reserve-mgmt-fee" class="form-input" value="1.0" min="0" max="10" step="0.1">
+                <small style="color:var(--text-light);">Annual fee charged on the growing savings AUM (company's earnings).</small>
               </div>
             </div>
             <button class="btn btn-primary" onclick="runReserveProjection()">📈 Project Reserves &amp; Liabilities</button>
@@ -1437,6 +1447,22 @@
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
                 <button class="btn btn-primary" onclick="loadRiskReference()">Recalculate</button>
+              </div>
+            </div>
+            <h4 style="margin:12px 0 6px;">Optional Savings Accumulation</h4>
+            <p style="color:var(--text-light);">Project the reference policyholder's savings fund alongside the risk forecast: monthly contribution → cumulative AUM with yield and management fee.</p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Savings Rate (% of risk premium)</label>
+                <input type="number" id="risk-ref-savings-rate" class="form-input" value="0" min="0" max="1000" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Savings Yield %</label>
+                <input type="number" id="risk-ref-savings-yield" class="form-input" value="4.5" min="-50" max="50" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Management Fee % of AUM</label>
+                <input type="number" id="risk-ref-mgmt-fee" class="form-input" value="1.0" min="0" max="10" step="0.1">
               </div>
             </div>
           </div>
@@ -1554,6 +1580,94 @@
           <div class="card" id="uploaded-table-preview" style="display:none;">
             <div class="card-title">Preview</div>
             <div id="uploaded-table-preview-body"></div>
+          </div>
+        </section>
+
+        <!-- Portfolio Valuation Section -->
+        <section id="section-valuation" class="section">
+          <h2 class="section-title">💎 Portfolio Actuary Valuation</h2>
+          <div class="alert alert-warning">
+            Best Estimate vs Conservative valuation of (i) the Insurance Portfolio, (ii) the Risk Portfolio liability, and (iii) the Company (PHINS Technologies). Every knob below is adjustable; each priced policy and reserve projection feeds into the valuation deterministically. The integrity hash on the output ties the valuation back to the saved simulation snapshot for audit.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Valuation Inputs</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID</label>
+                <input type="text" id="valuation-sim-id" class="form-input" placeholder="Defaults to latest simulation">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Discount Rate %</label>
+                <input type="number" id="valuation-discount-rate" class="form-input" value="3.5" min="0" max="20" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Projection Years</label>
+                <input type="number" id="valuation-years" class="form-input" value="15" min="1" max="50">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Prudence Margin %</label>
+                <input type="number" id="valuation-prudence" class="form-input" value="15" min="0" max="50" step="1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Required Capital % of Premium</label>
+                <input type="number" id="valuation-req-capital" class="form-input" value="20" min="0" max="200" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cost of Capital %</label>
+                <input type="number" id="valuation-cost-capital" class="form-input" value="6" min="0" max="50" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Risk Margin % of BEL</label>
+                <input type="number" id="valuation-risk-margin" class="form-input" value="6" min="0" max="50" step="0.5">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Savings AUM Value % (of cumulative)</label>
+                <input type="number" id="valuation-aum-value" class="form-input" value="10" min="0" max="100" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">New Business Value / yr ($)</label>
+                <input type="number" id="valuation-nbv" class="form-input" value="0" min="0" step="100000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">New Business Growth %</label>
+                <input type="number" id="valuation-nbv-growth" class="form-input" value="0" min="-50" max="100" step="1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Tech Multiplier (× revenue)</label>
+                <input type="number" id="valuation-tech-mult" class="form-input" value="4" min="0" max="50" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tech Revenue Share %</label>
+                <input type="number" id="valuation-tech-rev" class="form-input" value="10" min="0" max="100" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Attributable Share %</label>
+                <input type="number" id="valuation-attribution" class="form-input" value="100" min="0" max="100" step="1">
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="runPortfolioValuation()">📐 Run Valuation</button>
+            <p id="valuation-status" class="research-note" style="margin-top:12px;">Run a portfolio simulation first, then valuate.</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Valuation Bands (Best Estimate vs Conservative)</div>
+            <div id="valuation-bands">
+              <p style="color:var(--text-light);">Results will appear here.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Methodology &amp; Integrity</div>
+            <div id="valuation-integrity">
+              <p style="color:var(--text-light);">Each band ships with its valuation method and a deterministic integrity hash that ties the output back to the saved simulation snapshot.</p>
+            </div>
           </div>
         </section>
 
@@ -3062,7 +3176,8 @@
         risk_adjustment_pct: (parseFloat(document.getElementById('reserve-ra').value) || 0) / 100,
         csm_release_pattern: document.getElementById('reserve-csm').value,
         savings_allocation_pct: (parseFloat(document.getElementById('reserve-savings-alloc').value) || 0) / 100,
-        savings_yield_pct: (parseFloat(document.getElementById('reserve-savings-yield').value) || 0) / 100
+        savings_yield_pct: (parseFloat(document.getElementById('reserve-savings-yield').value) || 0) / 100,
+        management_fee_pct_of_aum: (parseFloat(document.getElementById('reserve-mgmt-fee')?.value) || 0) / 100
       };
       try {
         const res = await fetch('/api/actuarial/reserves/project', {
@@ -3111,14 +3226,38 @@
         </tr>
       `).join('');
 
+      // Dedicated savings AUM table to surface monthly contribution + yield +
+      // management fee + cumulative balance year-by-year.
+      const aumRows = (projection.yearly_projection || []).map((row) => {
+        const sf = row.savings_fund || {};
+        return `
+          <tr>
+            <td>${row.year}</td>
+            <td>${fmtCurrency(sf.opening_balance || 0)}</td>
+            <td>${fmtCurrency(sf.monthly_contribution || 0)}</td>
+            <td>${fmtCurrency(sf.contribution || 0)}</td>
+            <td>${fmtCurrency(sf.yield || 0)}</td>
+            <td>${fmtCurrency(sf.gross_closing_aum_before_fee || 0)}</td>
+            <td>${fmtCurrency(sf.management_fee_income || 0)}</td>
+            <td><strong>${fmtCurrency(sf.closing_balance || 0)}</strong></td>
+          </tr>
+        `;
+      }).join('');
+
+      const eff = totals.effective_savings_yield_pct || 0;
+
       resultsEl.innerHTML = `
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Closing Reserve</div><div class="stat-value">${fmtCurrency(totals.closing_reserve)}</div></div>
           <div class="stat-card success"><div class="stat-label">Cumulative Dividends</div><div class="stat-value">${fmtCurrency(totals.cumulative_dividends)}</div></div>
           <div class="stat-card warning"><div class="stat-label">Cumulative Tax</div><div class="stat-value">${fmtCurrency(totals.cumulative_tax)}</div></div>
-          <div class="stat-card"><div class="stat-label">Closing Savings Fund</div><div class="stat-value">${fmtCurrency(totals.closing_savings_balance)}</div></div>
+          <div class="stat-card"><div class="stat-label">Closing Savings AUM</div><div class="stat-value">${fmtCurrency(totals.closing_savings_balance)}</div></div>
+          <div class="stat-card success"><div class="stat-label">Cumulative Management Fee</div><div class="stat-value">${fmtCurrency(totals.cumulative_management_fee_income || 0)}</div></div>
+          <div class="stat-card"><div class="stat-label">Effective Savings Yield p.a.</div><div class="stat-value">${(eff * 100).toFixed(2)}%</div></div>
         </div>
-        <table class="data-table" style="margin-top:16px;">
+
+        <h4 style="margin-top:16px;">Annual Reserve &amp; IFRS 17 Waterfall</h4>
+        <table class="data-table">
           <thead>
             <tr>
               <th>Yr</th><th>InForce</th><th>Premium</th><th>Claims</th><th>Op Profit</th><th>Tax</th><th>After-Tax</th><th>Dividends</th><th>Reserve Δ</th><th>Closing Reserve</th><th>IBNR</th><th>IFRS17 BEL</th><th>IFRS17 RA</th><th>IFRS17 CSM Δ</th><th>IFRS17 CSM</th><th>Savings Δ</th><th>Savings Closing</th>
@@ -3126,6 +3265,24 @@
           </thead>
           <tbody>${rows}</tbody>
         </table>
+
+        <h4 style="margin-top:16px;">Savings Fund AUM — Accumulative Managed Portfolio</h4>
+        <p style="color:var(--text-light);">Monthly contributions × 12 = annual contribution. Yield compounds on the (opening + contribution) base each year. The management fee is the company's earnings on the growing AUM.</p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Yr</th><th>Opening</th><th>Monthly Δ</th><th>Annual Δ</th><th>Yield</th><th>Gross AUM (pre-fee)</th><th>Mgmt Fee</th><th>Closing AUM</th>
+            </tr>
+          </thead>
+          <tbody>${aumRows}</tbody>
+        </table>
+        <p style="margin-top:8px;color:var(--text-light);">
+          Cumulative contribution <strong>${fmtCurrency(totals.cumulative_savings_contribution || 0)}</strong>
+          + cumulative yield <strong>${fmtCurrency(totals.cumulative_savings_yield || 0)}</strong>
+          − cumulative management fee <strong>${fmtCurrency(totals.cumulative_management_fee_income || 0)}</strong>
+          → closing AUM <strong>${fmtCurrency(totals.closing_savings_balance || 0)}</strong>
+          · avg monthly contribution <strong>${fmtCurrency(totals.average_monthly_savings_contribution || 0)}</strong>.
+        </p>
       `;
 
       const integrity = projection.data_integrity || {};
@@ -3151,11 +3308,19 @@
       const years = document.getElementById('risk-ref-years').value || '';
       const life = document.getElementById('risk-ref-life-sum').value || '';
       const profileId = profileSelect ? profileSelect.value : '';
+      const savingsRate = document.getElementById('risk-ref-savings-rate')?.value || '';
+      const savingsYield = document.getElementById('risk-ref-savings-yield')?.value || '';
+      const mgmtFee = document.getElementById('risk-ref-mgmt-fee')?.value || '';
       const qs = new URLSearchParams();
       if (startAge) qs.set('start_age', startAge);
       if (years) qs.set('projection_years', years);
       if (life) qs.set('life_sum', life);
       if (profileId) qs.set('profile_id', profileId);
+      if (savingsRate && parseFloat(savingsRate) > 0) {
+        qs.set('savings_rate', (parseFloat(savingsRate) / 100).toString());
+        if (savingsYield) qs.set('savings_yield_pct', (parseFloat(savingsYield) / 100).toString());
+        if (mgmtFee) qs.set('management_fee_pct_of_aum', (parseFloat(mgmtFee) / 100).toString());
+      }
       try {
         const res = await fetch(`/api/actuarial/risk-reference?${qs.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -3195,6 +3360,53 @@
       const integrityKeys = Object.keys(ref.data_integrity || {}).filter(k => typeof ref.data_integrity[k] === 'boolean');
       const integrityHtml = integrityKeys.map(k =>
         `<li>${k}: ${ref.data_integrity[k] ? '✅' : '❌'}</li>`).join('');
+      // Optional savings accumulation block for the reference policyholder.
+      let savingsHtml = '';
+      const accum = ref.savings_accumulation;
+      if (accum && accum.yearly && accum.yearly.length) {
+        const accRows = accum.yearly.map(r => `
+          <tr>
+            <td>${r.year}</td>
+            <td>${r.age}</td>
+            <td>${fmtCurrency(r.annual_risk_premium)}</td>
+            <td>${fmtCurrency(r.monthly_contribution)}</td>
+            <td>${fmtCurrency(r.annual_contribution)}</td>
+            <td>${fmtCurrency(r.opening_balance)}</td>
+            <td>${fmtCurrency(r.yield)}</td>
+            <td>${fmtCurrency(r.management_fee_income)}</td>
+            <td><strong>${fmtCurrency(r.closing_balance)}</strong></td>
+            <td>${fmtCurrency(r.cumulative_contribution)}</td>
+          </tr>
+        `).join('');
+        const aTot = accum.totals || {};
+        const aInt = accum.data_integrity || {};
+        const aIntHtml = Object.keys(aInt).map(k =>
+          `<li>${k}: ${aInt[k] ? '✅' : '❌'}</li>`
+        ).join('');
+        savingsHtml = `
+          <h4 style="margin-top:20px;">📈 Savings Accumulation (managed portfolio)</h4>
+          <p style="color:var(--text-light);">Markup ${(accum.savings_rate * 100).toFixed(1)}% of risk premium · yield ${(accum.savings_yield_pct * 100).toFixed(2)}% · management fee ${(accum.management_fee_pct_of_aum * 100).toFixed(2)}%/yr.</p>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Yr</th><th>Age</th><th>Risk Premium</th><th>Monthly Δ</th><th>Annual Δ</th><th>Opening</th><th>Yield</th><th>Mgmt Fee</th><th>Closing</th><th>Cumulative Δ</th>
+              </tr>
+            </thead>
+            <tbody>${accRows}</tbody>
+          </table>
+          <p style="margin-top:8px;color:var(--text-light);">
+            Cumulative contribution <strong>${fmtCurrency(aTot.cumulative_contribution)}</strong>
+            + yield <strong>${fmtCurrency(aTot.cumulative_yield)}</strong>
+            − management fee <strong>${fmtCurrency(aTot.cumulative_management_fee_income)}</strong>
+            → closing AUM <strong>${fmtCurrency(aTot.closing_aum_balance)}</strong>
+            (effective yield ${(aTot.effective_yield_pct * 100).toFixed(2)}% p.a.,
+            average monthly ${fmtCurrency(aTot.average_monthly_contribution)}).
+          </p>
+          <h5 style="margin-top:8px;">Accumulation Data Integrity</h5>
+          <ul>${aIntHtml}</ul>
+        `;
+      }
+
       resultsEl.innerHTML = `
         <p>
           Source: <a href="${ref.source.url}" target="_blank" rel="noopener noreferrer">${ref.source.document}</a> (${ref.source.version}, ${ref.source.doc_date}).
@@ -3209,6 +3421,7 @@
           <thead><tr><th>Year</th><th>Age</th><th>Age Factor</th><th>Annual Premium</th><th>q(x)</th><th>i(x)</th><th>Expected Loss</th><th>Loss Ratio</th></tr></thead>
           <tbody>${refRows}</tbody>
         </table>
+        ${savingsHtml}
         <h4 style="margin-top:16px;">Data Integrity</h4>
         <ul>${integrityHtml}</ul>
       `;
@@ -3427,7 +3640,8 @@
         risk_adjustment_pct: (parseFloat(document.getElementById('reserve-ra')?.value) || 0) / 100,
         csm_release_pattern: document.getElementById('reserve-csm')?.value || 'straight_line',
         savings_allocation_pct: (parseFloat(document.getElementById('reserve-savings-alloc')?.value) || 0) / 100,
-        savings_yield_pct: (parseFloat(document.getElementById('reserve-savings-yield')?.value) || 0) / 100
+        savings_yield_pct: (parseFloat(document.getElementById('reserve-savings-yield')?.value) || 0) / 100,
+        management_fee_pct_of_aum: (parseFloat(document.getElementById('reserve-mgmt-fee')?.value) || 0) / 100
       };
       statusEl.textContent = `Generating ${format.toUpperCase()} report…`;
       try {
@@ -3522,6 +3736,143 @@
       } catch (err) {
         body.innerHTML = `<p class="text-danger">Failed to load contract spec: ${err.message}</p>`;
       }
+    }
+
+    async function runPortfolioValuation() {
+      const status = document.getElementById('valuation-status');
+      const bandsEl = document.getElementById('valuation-bands');
+      const integrityEl = document.getElementById('valuation-integrity');
+      const simId = (document.getElementById('valuation-sim-id').value
+        || document.getElementById('reserve-sim-id')?.value
+        || document.getElementById('report-sim-id')?.value
+        || currentSimulation?.simulation_id
+        || '').trim();
+      if (!simId) {
+        status.textContent = 'Run a portfolio simulation first.';
+        return;
+      }
+      status.textContent = 'Computing portfolio valuation…';
+      const payload = {
+        simulation_id: simId,
+        discount_rate: (parseFloat(document.getElementById('valuation-discount-rate').value) || 0) / 100,
+        projection_years: parseInt(document.getElementById('valuation-years').value) || 10,
+        prudence_margin_pct: (parseFloat(document.getElementById('valuation-prudence').value) || 0) / 100,
+        required_capital_pct_of_premium: (parseFloat(document.getElementById('valuation-req-capital').value) || 0) / 100,
+        cost_of_capital_pct: (parseFloat(document.getElementById('valuation-cost-capital').value) || 0) / 100,
+        risk_margin_pct: (parseFloat(document.getElementById('valuation-risk-margin').value) || 0) / 100,
+        savings_aum_value_pct: (parseFloat(document.getElementById('valuation-aum-value').value) || 0) / 100,
+        new_business_value_per_year: parseFloat(document.getElementById('valuation-nbv').value) || 0,
+        new_business_growth_pct: (parseFloat(document.getElementById('valuation-nbv-growth').value) || 0) / 100,
+        tech_multiplier: parseFloat(document.getElementById('valuation-tech-mult').value) || 0,
+        tech_revenue_share_pct: (parseFloat(document.getElementById('valuation-tech-rev').value) || 0) / 100,
+        attributable_share_pct: (parseFloat(document.getElementById('valuation-attribution').value) || 100) / 100,
+      };
+      try {
+        const res = await fetch('/api/actuarial/valuation', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        renderPortfolioValuation(data.valuation);
+        status.textContent = `Valuation computed for ${simId} (integrity hash ${data.valuation.integrity_hash}).`;
+      } catch (err) {
+        status.textContent = `Valuation failed: ${err.message}`;
+        bandsEl.innerHTML = '';
+        integrityEl.innerHTML = '';
+      }
+    }
+
+    function renderPortfolioValuation(val) {
+      const bandsEl = document.getElementById('valuation-bands');
+      const integrityEl = document.getElementById('valuation-integrity');
+      if (!val) {
+        bandsEl.innerHTML = '<p class="text-danger">No valuation returned.</p>';
+        return;
+      }
+      const bands = val.bands || {};
+      const order = [
+        ['insurance_portfolio', '🛡️ Insurance Portfolio'],
+        ['risk_portfolio', '⚠️ Risk Portfolio (Liability View)'],
+        ['company_phins_technologies', '🏢 Company (PHINS Technologies)'],
+      ];
+      // Compute the max value across BE and Conservative bars for scaling.
+      let maxVal = 0;
+      order.forEach(([key]) => {
+        const b = bands[key] || {};
+        maxVal = Math.max(maxVal, b.best_estimate || 0, b.conservative || 0);
+      });
+      maxVal = Math.max(maxVal, 1);
+      const fmtAbs = (n) => '$' + Math.abs(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+      const barRows = order.map(([key, label]) => {
+        const b = bands[key] || {};
+        const be = b.best_estimate || 0;
+        const cons = b.conservative || 0;
+        const bePct = Math.max(2, Math.min(100, Math.abs(be) / maxVal * 100));
+        const conPct = Math.max(2, Math.min(100, Math.abs(cons) / maxVal * 100));
+        return `
+          <div style="margin-bottom:16px;">
+            <strong>${label}</strong>
+            <p style="margin:6px 0 4px;color:var(--text-light);font-size:0.85rem;">${b.method || ''}</p>
+            <div style="display:grid;grid-template-columns:160px 1fr 120px;gap:8px;align-items:center;margin-bottom:4px;">
+              <span style="color:var(--success);">Best Estimate</span>
+              <div style="background:rgba(56,161,105,0.15);height:18px;border-radius:4px;overflow:hidden;">
+                <div style="background:var(--success);height:100%;width:${bePct}%;"></div>
+              </div>
+              <span style="text-align:right;font-variant-numeric:tabular-nums;"><strong>${fmtAbs(be)}</strong></span>
+            </div>
+            <div style="display:grid;grid-template-columns:160px 1fr 120px;gap:8px;align-items:center;">
+              <span style="color:var(--warning);">Conservative</span>
+              <div style="background:rgba(214,158,46,0.15);height:18px;border-radius:4px;overflow:hidden;">
+                <div style="background:var(--warning);height:100%;width:${conPct}%;"></div>
+              </div>
+              <span style="text-align:right;font-variant-numeric:tabular-nums;"><strong>${fmtAbs(cons)}</strong></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+      const summary = val.summary || {};
+      bandsEl.innerHTML = `
+        <div class="stats-grid" style="margin-bottom:16px;">
+          <div class="stat-card success">
+            <div class="stat-label">Company Best Estimate</div>
+            <div class="stat-value">${fmtAbs(summary.best_estimate_total_company)}</div>
+          </div>
+          <div class="stat-card warning">
+            <div class="stat-label">Company Conservative</div>
+            <div class="stat-value">${fmtAbs(summary.conservative_total_company)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Prudence Drag</div>
+            <div class="stat-value">${fmtAbs(summary.prudence_drag)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Valuation per Customer</div>
+            <div class="stat-value">${fmtAbs(summary.valuation_per_customer)}</div>
+          </div>
+        </div>
+        ${barRows}
+      `;
+      const integrity = val.data_integrity || {};
+      const integrityRows = Object.entries(integrity).map(([k, v]) =>
+        `<tr><td>${k}</td><td>${v ? '✅' : '❌'}</td></tr>`).join('');
+      const companyComponents = (bands.company_phins_technologies?.components) || {};
+      const compRows = Object.entries(companyComponents).map(([k, v]) =>
+        `<tr><td>${k}</td><td style="text-align:right;">${fmtAbs(v)}</td></tr>`).join('');
+      integrityEl.innerHTML = `
+        <h4 style="margin-bottom:8px;">Company Valuation Components</h4>
+        <table class="data-table">
+          <thead><tr><th>Component</th><th style="text-align:right;">Value</th></tr></thead>
+          <tbody>${compRows}</tbody>
+        </table>
+        <h4 style="margin-top:12px;margin-bottom:8px;">Data Integrity</h4>
+        <table class="data-table">
+          <thead><tr><th>Check</th><th>Result</th></tr></thead>
+          <tbody>${integrityRows}</tbody>
+        </table>
+        <p style="margin-top:8px;color:var(--text-light);">Integrity hash: <code>${val.integrity_hash || ''}</code> · Discount rate ${(val.discount_rate_used * 100).toFixed(2)}% · Projection ${val.projection_years_used} yrs</p>
+      `;
     }
 
     async function runReconciliation() {
