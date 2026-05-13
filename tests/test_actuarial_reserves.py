@@ -453,7 +453,9 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         assert alloc['savings_allocation_pct'] == 25.0
         assert alloc['data_integrity']['gross_premium_reconciles']
 
-        # 5) Excel report generation
+        # 5) Excel report generation — money cells must carry a
+        # thousands-separator + 2-decimal number format so the workbook is
+        # audit-ready out of the box.
         body, status, headers = _post_json(base + '/api/actuarial/reports/export', {
             'simulation_id': simulation_id,
             'format': 'xlsx',
@@ -462,6 +464,27 @@ def test_actuarial_endpoints_end_to_end(tmp_path):
         assert status == 200
         assert headers.get('Content-Type', '').endswith('sheet')
         assert body[:2] == b'PK'  # XLSX is a zip envelope
+        # Inspect the workbook to verify number formatting on money columns.
+        import io as _io, openpyxl
+        wb = openpyxl.load_workbook(_io.BytesIO(body), data_only=False)
+        ws_res = wb['Reserves Projection']
+        headers_row = [c.value for c in ws_res[1]]
+        money_headers = (
+            'In-Force Premium', 'Closing Reserve', 'IBNR Provision',
+            'IFRS17 CSM Release', 'IFRS17 CSM Balance',
+        )
+        for header in money_headers:
+            col_idx = headers_row.index(header) + 1
+            sample = None
+            for row in ws_res.iter_rows(min_row=2, max_col=col_idx, max_row=ws_res.max_row):
+                cell = row[col_idx - 1]
+                if isinstance(cell.value, (int, float)):
+                    sample = cell
+                    break
+            assert sample is not None, header
+            assert '#,##0.00' in (sample.number_format or ''), (
+                header, sample.number_format,
+            )
 
         # 6) PDF report generation (basic content sniff)
         body, status, headers = _post_json(base + '/api/actuarial/reports/export', {

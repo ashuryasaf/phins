@@ -7022,11 +7022,69 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
     header_fill = PatternFill(start_color='1A365D', end_color='1A365D', fill_type='solid')
     title_font = Font(bold=True, size=14)
 
+    # Excel number formats — audit-ready output everywhere:
+    #   money_fmt → 1,234,567.89   (negatives in parentheses for clarity)
+    #   count_fmt → 1,234          (no decimals)
+    #   pct_fmt   → 12.34%
+    #   ratio_fmt → 0.000123       (fractional probabilities)
+    money_fmt = '#,##0.00;(#,##0.00)'
+    count_fmt = '#,##0'
+    pct_fmt = '0.00%'
+    ratio_fmt = '0.000000'
+
     def style_header(ws, row=1):
         for cell in ws[row]:
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal='left')
+
+    def apply_column_format(ws, header_to_fmt: Dict[str, str]) -> None:
+        """Apply a per-column ``number_format`` based on the header row.
+
+        ``header_to_fmt`` keys are exact header strings; values are Excel
+        number-format codes. The function walks every data row below the
+        header and stamps the format on numeric cells so the workbook
+        renders with thousands separators + the right decimals everywhere.
+        """
+        try:
+            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=False))
+        except StopIteration:
+            return
+        col_fmts: Dict[int, str] = {}
+        for cell in header_row:
+            fmt = header_to_fmt.get(str(cell.value or '').strip())
+            if fmt:
+                col_fmts[cell.column] = fmt
+        if not col_fmts:
+            return
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                fmt = col_fmts.get(cell.column)
+                if fmt and isinstance(cell.value, (int, float)):
+                    cell.number_format = fmt
+
+    def apply_key_value_money_format(ws, money_keys: set, pct_keys: set = None,
+                                     ratio_keys: set = None, count_keys: set = None,
+                                     value_column: int = 2) -> None:
+        """For 2-column key/value sheets, format the value column by key."""
+        pct_keys = pct_keys or set()
+        ratio_keys = ratio_keys or set()
+        count_keys = count_keys or set()
+        for row in ws.iter_rows(min_row=1):
+            if len(row) < value_column:
+                continue
+            label = str(row[0].value or '').strip()
+            value_cell = row[value_column - 1]
+            if not isinstance(value_cell.value, (int, float)):
+                continue
+            if label in money_keys:
+                value_cell.number_format = money_fmt
+            elif label in pct_keys:
+                value_cell.number_format = pct_fmt
+            elif label in ratio_keys:
+                value_cell.number_format = ratio_fmt
+            elif label in count_keys:
+                value_cell.number_format = count_fmt
 
     # ---- Cover ----
     cover = wb.active
@@ -7046,9 +7104,21 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
         ('Reserve Requirement', simulation.get('risk_metrics', {}).get('reserve_requirement', '')),
         ('Reference Document', reference.get('source', {}).get('url', '')),
     ]
+    cover_money_keys = {'Total Coverage', 'Total Annual Premium', 'Reserve Requirement'}
+    cover_count_keys = {'Projection Years', 'Customers Accepted'}
+    cover_pct_keys = {'Loss Ratio %'}
     for idx, (label, value) in enumerate(cover_rows, start=3):
         cover.cell(row=idx, column=1, value=label).font = Font(bold=True)
-        cover.cell(row=idx, column=2, value=value)
+        value_cell = cover.cell(row=idx, column=2, value=value)
+        if isinstance(value, (int, float)):
+            if label in cover_money_keys:
+                value_cell.number_format = money_fmt
+            elif label in cover_count_keys:
+                value_cell.number_format = count_fmt
+            elif label in cover_pct_keys:
+                # The 'Loss Ratio %' value is already a percentage in
+                # 0..100 form (not 0..1), so use a plain 2-decimal format.
+                value_cell.number_format = '0.00'
     cover.column_dimensions['A'].width = 30
     cover.column_dimensions['B'].width = 60
 
@@ -7087,6 +7157,29 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
             row.get('savings_fund', {}).get('yield'),
             row.get('savings_fund', {}).get('closing_balance'),
         ])
+    apply_column_format(ws_res, {
+        'Year': count_fmt,
+        'In-Force Factor': ratio_fmt,
+        'Lapse Used': ratio_fmt,
+        'In-Force Premium': money_fmt,
+        'In-Force Claims': money_fmt,
+        'Operating Profit': money_fmt,
+        'Tax': money_fmt,
+        'After-Tax Profit': money_fmt,
+        'Dividends': money_fmt,
+        'Retained Earnings': money_fmt,
+        'Reserve Contribution': money_fmt,
+        'Closing Reserve': money_fmt,
+        'IBNR Provision': money_fmt,
+        'IFRS17 BEL': money_fmt,
+        'IFRS17 Risk Adjustment': money_fmt,
+        'IFRS17 CSM Release': money_fmt,
+        'IFRS17 CSM Balance': money_fmt,
+        'IFRS17 Total Liability': money_fmt,
+        'Savings Contribution': money_fmt,
+        'Savings Yield': money_fmt,
+        'Savings Closing': money_fmt,
+    })
 
     # ---- Risk Reference ----
     ws_ref = wb.create_sheet('Risk Reference')
@@ -7104,6 +7197,21 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
     ws_ref.append(['Cumulative Expected Loss', totals.get('cumulative_expected_loss')])
     ws_ref.append(['Average Loss Ratio', totals.get('average_loss_ratio')])
     ws_ref.append(['Expense + Capital Margin', totals.get('expense_plus_capital_margin')])
+    apply_column_format(ws_ref, {
+        'Year': count_fmt,
+        'Age': count_fmt,
+        'Age Factor': ratio_fmt,
+        'Annual Premium': money_fmt,
+        'Mortality q(x)': ratio_fmt,
+        'Disability i(x)': ratio_fmt,
+        'Expected Loss': money_fmt,
+        'Loss Ratio': pct_fmt,
+    })
+    apply_key_value_money_format(
+        ws_ref,
+        money_keys={'Cumulative Premium', 'Cumulative Expected Loss'},
+        pct_keys={'Average Loss Ratio', 'Expense + Capital Margin'},
+    )
 
     # ---- Portfolio profitability ----
     ws_prof = wb.create_sheet('Profitability')
@@ -7114,6 +7222,15 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
                 'expense_loading', 'profit_margin', 'net_profit', 'net_margin_pct',
                 'return_on_risk', 'components_match'):
         ws_prof.append([key, prof.get(key)])
+    apply_key_value_money_format(
+        ws_prof,
+        money_keys={
+            'gross_premium', 'risk_premium', 'savings_premium',
+            'expected_claims_annual', 'expense_loading', 'profit_margin',
+            'net_profit',
+        },
+        pct_keys={'net_margin_pct', 'return_on_risk'},
+    )
 
     # ---- Demographics summary ----
     ws_demo = wb.create_sheet('Demographics')
@@ -7166,6 +7283,14 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
                 str(checks.get('opening_minus_cumulative_equals_balance')),
                 str(checks.get('coverage_units_share_holds')),
             ])
+        apply_column_format(ws_csm, {
+            'Year': count_fmt,
+            'Opening': money_fmt,
+            'Release': money_fmt,
+            'Coverage-units Share': pct_fmt,
+            'Cumulative Release': money_fmt,
+            'Closing': money_fmt,
+        })
         ws_csm.append([])
         ws_csm.append(['Opening CSM', csm_recon.get('opening_csm')])
         ws_csm.append(['Release Pattern', csm_recon.get('pattern')])
@@ -7179,6 +7304,16 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
             ('Coverage Units Total', 'coverage_units_total'),
         ):
             ws_csm.append([label, csm_recon.get('totals', {}).get(key)])
+        apply_key_value_money_format(
+            ws_csm,
+            money_keys={
+                'Opening CSM', 'Sum of Releases', 'Closing CSM',
+                'Unreleased Portion', 'Average Annual Release',
+            },
+            pct_keys={'Release % of Opening'},
+            count_keys={'Projection Years'},
+            ratio_keys={'Coverage Units Total'},
+        )
         ws_csm.append([])
         ws_csm.append(['CSM Integrity Check', 'Result'])
         for k, v in (csm_recon.get('data_integrity', {}) or {}).items():
@@ -7209,6 +7344,18 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
                 sf.get('management_fee_income'),
                 sf.get('closing_balance'),
             ])
+        apply_column_format(ws_aum, {
+            'Year': count_fmt,
+            'Opening Balance': money_fmt,
+            'Monthly Contribution': money_fmt,
+            'Annual Contribution': money_fmt,
+            'Priced Savings Contribution': money_fmt,
+            'Legacy Allocation Contribution': money_fmt,
+            'Yield': money_fmt,
+            'Gross Closing (pre-fee)': money_fmt,
+            'Management Fee Income': money_fmt,
+            'Closing Balance': money_fmt,
+        })
         ws_aum.append([])
         totals = projection.get('totals', {}) or {}
         for label, key in (
@@ -7220,6 +7367,15 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
             ('Average Monthly Savings Contribution', 'average_monthly_savings_contribution'),
         ):
             ws_aum.append([label, totals.get(key)])
+        apply_key_value_money_format(
+            ws_aum,
+            money_keys={
+                'Cumulative Savings Contribution', 'Cumulative Savings Yield',
+                'Cumulative Management Fee Income', 'Closing AUM Balance',
+                'Average Monthly Savings Contribution',
+            },
+            pct_keys={'Effective Savings Yield %'},
+        )
 
     # ---- Portfolio Valuation (Best Estimate vs Conservative) ----
     if valuation:
@@ -7239,18 +7395,54 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
                 band.get('conservative'),
                 band.get('method'),
             ])
+        apply_column_format(ws_val, {
+            'Best Estimate': money_fmt,
+            'Conservative': money_fmt,
+        })
         ws_val.append([])
         ws_val.append(['Summary'])
+        summary_money_keys = {
+            'best_estimate_total_company', 'conservative_total_company',
+            'prudence_drag', 'valuation_per_customer',
+        }
         for label, value in (valuation.get('summary', {}) or {}).items():
             ws_val.append([label, value])
+        apply_key_value_money_format(ws_val, money_keys=summary_money_keys)
         ws_val.append([])
         ws_val.append(['Inputs'])
+        input_money_keys = {
+            'total_annual_premium', 'total_risk_premium', 'total_savings_premium',
+            'annual_net_profit', 'annual_expected_claims', 'total_pv_claims',
+        }
+        input_count_keys = {'accepted_customers'}
         for label, value in (valuation.get('inputs', {}) or {}).items():
             ws_val.append([label, value])
+        apply_key_value_money_format(
+            ws_val,
+            money_keys=input_money_keys,
+            count_keys=input_count_keys,
+            ratio_keys={'avg_term_years'},
+        )
         ws_val.append([])
         ws_val.append(['Config'])
+        config_pct_keys = {
+            'discount_rate', 'prudence_margin_pct',
+            'required_capital_pct_of_premium', 'cost_of_capital_pct',
+            'risk_margin_pct', 'savings_aum_value_pct',
+            'new_business_growth_pct', 'tech_revenue_share_pct',
+            'attributable_share_pct',
+        }
+        config_money_keys = {'new_business_value_per_year'}
+        config_count_keys = {'projection_years'}
         for label, value in (valuation.get('config', {}) or {}).items():
             ws_val.append([label, value])
+        apply_key_value_money_format(
+            ws_val,
+            money_keys=config_money_keys,
+            pct_keys=config_pct_keys,
+            count_keys=config_count_keys,
+            ratio_keys={'tech_multiplier'},
+        )
         ws_val.append([])
         ws_val.append(['Integrity Check', 'Result'])
         for k, v in (valuation.get('data_integrity', {}) or {}).items():
@@ -7337,17 +7529,17 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         rows.append([
             row.get('year'),
             f"{row.get('in_force_factor', 0):.3f}",
-            f"{row.get('in_force_premium', 0):,.0f}",
-            f"{row.get('in_force_expected_claims', 0):,.0f}",
-            f"{row.get('operating_profit', 0):,.0f}",
-            f"{row.get('tax', 0):,.0f}",
-            f"{row.get('dividends', 0):,.0f}",
-            f"{row.get('reserve_contribution', 0):,.0f}",
-            f"{row.get('closing_reserve', 0):,.0f}",
-            f"{row.get('ibnr_provision', 0):,.0f}",
-            f"{row.get('ifrs17', {}).get('bel_balance', 0):,.0f}",
-            f"{row.get('ifrs17', {}).get('csm_balance', 0):,.0f}",
-            f"{row.get('savings_fund', {}).get('closing_balance', 0):,.0f}",
+            f"{row.get('in_force_premium', 0):,.2f}",
+            f"{row.get('in_force_expected_claims', 0):,.2f}",
+            f"{row.get('operating_profit', 0):,.2f}",
+            f"{row.get('tax', 0):,.2f}",
+            f"{row.get('dividends', 0):,.2f}",
+            f"{row.get('reserve_contribution', 0):,.2f}",
+            f"{row.get('closing_reserve', 0):,.2f}",
+            f"{row.get('ibnr_provision', 0):,.2f}",
+            f"{row.get('ifrs17', {}).get('bel_balance', 0):,.2f}",
+            f"{row.get('ifrs17', {}).get('csm_balance', 0):,.2f}",
+            f"{row.get('savings_fund', {}).get('closing_balance', 0):,.2f}",
         ])
     res_table = Table(rows, hAlign='LEFT', repeatRows=1)
     res_table.setStyle(TableStyle([
@@ -7393,8 +7585,8 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
     totals = reference.get('totals', {})
     story.append(Spacer(1, 6))
     story.append(Paragraph(
-        f"Cumulative premium <b>${totals.get('cumulative_premium', 0):,.0f}</b> &nbsp;|&nbsp; "
-        f"Cumulative expected loss <b>${totals.get('cumulative_expected_loss', 0):,.0f}</b> &nbsp;|&nbsp; "
+        f"Cumulative premium <b>${totals.get('cumulative_premium', 0):,.2f}</b> &nbsp;|&nbsp; "
+        f"Cumulative expected loss <b>${totals.get('cumulative_expected_loss', 0):,.2f}</b> &nbsp;|&nbsp; "
         f"Average loss ratio <b>{(totals.get('average_loss_ratio', 0) * 100):.2f}%</b> &nbsp;|&nbsp; "
         f"Expense+capital margin <b>{(totals.get('expense_plus_capital_margin', 0) * 100):.2f}%</b>",
         body,
@@ -7427,9 +7619,9 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         summary = valuation.get('summary', {}) or {}
         bands = valuation.get('bands', {}) or {}
         story.append(Paragraph(
-            f"Company Best Estimate <b>${summary.get('best_estimate_total_company', 0):,.0f}</b> &nbsp;|&nbsp;"
-            f" Conservative <b>${summary.get('conservative_total_company', 0):,.0f}</b> &nbsp;|&nbsp;"
-            f" Prudence drag <b>${summary.get('prudence_drag', 0):,.0f}</b>", body,
+            f"Company Best Estimate <b>${summary.get('best_estimate_total_company', 0):,.2f}</b> &nbsp;|&nbsp;"
+            f" Conservative <b>${summary.get('conservative_total_company', 0):,.2f}</b> &nbsp;|&nbsp;"
+            f" Prudence drag <b>${summary.get('prudence_drag', 0):,.2f}</b>", body,
         ))
         val_rows = [['Band', 'Best Estimate', 'Conservative']]
         for label, key in (
@@ -7440,8 +7632,8 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             band = bands.get(key, {}) or {}
             val_rows.append([
                 label,
-                f"${band.get('best_estimate', 0):,.0f}",
-                f"${band.get('conservative', 0):,.0f}",
+                f"${band.get('best_estimate', 0):,.2f}",
+                f"${band.get('conservative', 0):,.2f}",
             ])
         val_table = Table(val_rows, hAlign='LEFT', repeatRows=1)
         val_table.setStyle(TableStyle([
@@ -7467,9 +7659,9 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         totals = csm_recon.get('totals', {}) or {}
         story.append(Paragraph(
             f"Release pattern <b>{csm_recon.get('pattern', '')}</b> "
-            f"· Opening CSM <b>${csm_recon.get('opening_csm', 0):,.0f}</b> "
-            f"· Sum of releases <b>${totals.get('sum_of_releases', 0):,.0f}</b> "
-            f"+ closing <b>${totals.get('closing_csm', 0):,.0f}</b> "
+            f"· Opening CSM <b>${csm_recon.get('opening_csm', 0):,.2f}</b> "
+            f"· Sum of releases <b>${totals.get('sum_of_releases', 0):,.2f}</b> "
+            f"+ closing <b>${totals.get('closing_csm', 0):,.2f}</b> "
             f"= opening (Δ ${(totals.get('sum_of_releases', 0) + totals.get('closing_csm', 0)) - csm_recon.get('opening_csm', 0):,.2f}).",
             body,
         ))
@@ -7479,11 +7671,11 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             tick = '✓' if all(checks.values()) else '!'
             csm_rows.append([
                 r.get('year'),
-                f"${r.get('opening_balance', 0):,.0f}",
-                f"${r.get('release', 0):,.0f}",
+                f"${r.get('opening_balance', 0):,.2f}",
+                f"${r.get('release', 0):,.2f}",
                 f"{(r.get('coverage_units_share', 0) * 100):.2f}%",
-                f"${r.get('cumulative_release', 0):,.0f}",
-                f"${r.get('closing_balance', 0):,.0f}",
+                f"${r.get('cumulative_release', 0):,.2f}",
+                f"${r.get('closing_balance', 0):,.2f}",
                 tick,
             ])
         csm_table = Table(csm_rows, hAlign='LEFT', repeatRows=1)
@@ -7501,7 +7693,7 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         if ident.get('straight_line_pattern', {}).get('applies'):
             sl = ident['straight_line_pattern']
             story.append(Paragraph(
-                f"<b>Straight-line:</b> <code>{sl['formula']}</code> → expected release ${sl.get('expected_release', 0):,.0f}/yr.",
+                f"<b>Straight-line:</b> <code>{sl['formula']}</code> → expected release ${sl.get('expected_release', 0):,.2f}/yr.",
                 body,
             ))
         if ident.get('coverage_units_pattern', {}).get('applies'):
@@ -7524,12 +7716,12 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
             sf = row.get('savings_fund', {}) or {}
             aum_rows.append([
                 row.get('year'),
-                f"${sf.get('opening_balance', 0):,.0f}",
-                f"${sf.get('monthly_contribution', 0):,.0f}",
-                f"${sf.get('contribution', 0):,.0f}",
-                f"${sf.get('yield', 0):,.0f}",
-                f"${sf.get('management_fee_income', 0):,.0f}",
-                f"${sf.get('closing_balance', 0):,.0f}",
+                f"${sf.get('opening_balance', 0):,.2f}",
+                f"${sf.get('monthly_contribution', 0):,.2f}",
+                f"${sf.get('contribution', 0):,.2f}",
+                f"${sf.get('yield', 0):,.2f}",
+                f"${sf.get('management_fee_income', 0):,.2f}",
+                f"${sf.get('closing_balance', 0):,.2f}",
             ])
         aum_table = Table(aum_rows, hAlign='LEFT', repeatRows=1)
         aum_table.setStyle(TableStyle([
@@ -7544,10 +7736,10 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         totals = projection.get('totals', {}) or {}
         story.append(Spacer(1, 6))
         story.append(Paragraph(
-            f"Cumulative contribution <b>${totals.get('cumulative_savings_contribution', 0):,.0f}</b> "
-            f"+ yield <b>${totals.get('cumulative_savings_yield', 0):,.0f}</b> "
-            f"− management fee <b>${totals.get('cumulative_management_fee_income', 0):,.0f}</b> "
-            f"→ closing AUM <b>${totals.get('closing_savings_balance', 0):,.0f}</b> "
+            f"Cumulative contribution <b>${totals.get('cumulative_savings_contribution', 0):,.2f}</b> "
+            f"+ yield <b>${totals.get('cumulative_savings_yield', 0):,.2f}</b> "
+            f"− management fee <b>${totals.get('cumulative_management_fee_income', 0):,.2f}</b> "
+            f"→ closing AUM <b>${totals.get('closing_savings_balance', 0):,.2f}</b> "
             f"(effective yield {(totals.get('effective_savings_yield_pct', 0) * 100):.2f}% p.a.).",
             body,
         ))

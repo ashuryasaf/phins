@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-05-13.csm-reconciliation">
+  <meta name="phins-actuary-dashboard-build" content="2026-05-13.audit-number-formatting">
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
@@ -647,7 +647,7 @@
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
-        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-13 (csm-reconciliation)</span>
+        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-13 (audit-number-formatting)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
         <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
@@ -1988,12 +1988,26 @@
       return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits });
     }
 
+    // Audit-style currency: always thousands separators, always two decimals
+    // (e.g. $1,234,567.89). Negative values render as -$X,XXX.XX.
     function fmtCurrency(value) {
-      return '$' + fmtNumber(value, 0);
+      const n = Number(value || 0);
+      const abs = Math.abs(n).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return (n < 0 ? '-$' : '$') + abs;
+    }
+
+    // Integer-style count (e.g. customer count: 96,785).
+    function fmtCount(value) {
+      return Number(value || 0).toLocaleString('en-US', {
+        maximumFractionDigits: 0,
+      });
     }
 
     function fmtPctValue(value) {
-      return `${Number(value || 0).toFixed(1)}%`;
+      return `${Number(value || 0).toFixed(2)}%`;
     }
 
     function updateOverviewReinsurance(program) {
@@ -2821,9 +2835,14 @@
     
     function renderSimulationResults(sim) {
       const resultsDiv = document.getElementById('sim-results');
-      const fmt = (n) => n?.toLocaleString('en-US', {maximumFractionDigits: 0}) || '0';
-      const fmtCurrency = (n) => '$' + fmt(n);
-      const fmtPct = (n) => (n || 0).toFixed(1) + '%';
+      // Reuse the global formatters so the simulation results display
+      // consistent thousands-separator + two-decimal money values
+      // ('$1,234,567.89') and integer-style counts ('96,785') across
+      // every panel of the dashboard.
+      const fmt = (n) => fmtCount(n);
+      // fmtCurrency is provided by the outer scope; rebind for clarity.
+      const _fmtCurrency = fmtCurrency;
+      const fmtPct = (n) => (n || 0).toFixed(2) + '%';
       const fmtDec = (n) => (n || 0).toLocaleString('en-US', {maximumFractionDigits: 2});
       
       // Calculate verification totals for the summary
@@ -3872,7 +3891,9 @@
         maxVal = Math.max(maxVal, b.best_estimate || 0, b.conservative || 0);
       });
       maxVal = Math.max(maxVal, 1);
-      const fmtAbs = (n) => '$' + Math.abs(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+      // Use the global audit-style formatter so the valuation bars match
+      // every other currency value on the dashboard ('$1,234,567.89').
+      const fmtAbs = (n) => fmtCurrency(Math.abs(n || 0));
       const barRows = order.map(([key, label]) => {
         const b = bands[key] || {};
         const be = b.best_estimate || 0;
