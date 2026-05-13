@@ -1,3 +1,6 @@
+# ---------------------------------------------------------------------------
+# Build artifacts and bytecode
+# ---------------------------------------------------------------------------
 __pycache__/
 *.pyc
 *.pyo
@@ -8,14 +11,85 @@ __pycache__/
 *.egg-info
 dist/
 build/
+
+# ---------------------------------------------------------------------------
+# Source control / IDE / agent metadata (never needed in runtime image)
+# ---------------------------------------------------------------------------
 .git/
 .github/
 .gitignore
+.gitleaks.toml
 .vscode/
 .devcontainer/
+.cursor/
+terminals/
+
+# ---------------------------------------------------------------------------
+# Documentation / planning artifacts (image keeps web_portal/static/* assets;
+# top-level *.md and the docs/ tree are read by humans, not the server)
+# ---------------------------------------------------------------------------
 *.md
+docs/
+business_plan/
+
+# ---------------------------------------------------------------------------
+# Test code, fixtures, and logs (image runs production code only)
+# ---------------------------------------------------------------------------
 tests/
 .pytest_cache/
+.coverage
+coverage/
+htmlcov/
+test_logs/
+test_*.py
+create_test_*.py
+*.test.json
+*test_results*.json
+
+# ---------------------------------------------------------------------------
+# Demo / reporting scripts and their PDF/CSV outputs (no runtime path
+# under web_portal/ reads any *.pdf at the workspace root; verified before
+# adding this rule)
+# ---------------------------------------------------------------------------
+*_demo.py
+demo*.py
+generate_*.py
+*.pdf
+translation_violations.csv
+
+# ---------------------------------------------------------------------------
+# Local virtualenv and Python toolchain caches
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Backup snapshots and disaster-recovery artifacts (large binary, never
+# needed inside the image; restored from /workspace/backups/ off-host)
+# ---------------------------------------------------------------------------
+backups/
+*.bundle
+*.dump
+*.tar.gz
+
+# ---------------------------------------------------------------------------
+# Local databases and credentials
+# ---------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+phins.db
+.env
+.env.*
+!.env.example
+!.env.production.template
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
 *.log
 .DS_Store
 node_modules/
+Thumbs.db
