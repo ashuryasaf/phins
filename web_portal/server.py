@@ -5719,7 +5719,7 @@ def process_customer_premium_payment(
             continue
         if specific_bill_lookup and str(bill.get('id') or bill_id) not in specific_bill_lookup:
             continue
-        if not status_in(bill, ['outstanding', 'pending', 'partial']):
+        if not status_in(bill, ['outstanding', 'pending', 'partial', 'overdue']):
             continue
 
         bill_due = safe_float(bill.get('amount', bill.get('amount_due', 0)), 0.0)
@@ -6274,6 +6274,7 @@ def _customer_billing_snapshot(customer_id: str) -> Dict[str, Any]:
 
 def repair_billing_pending_pipeline(
     customer_id: Optional[str] = None,
+    customer_ids: Optional[List[str]] = None,
     dry_run: bool = False,
     notify_users: bool = True,
     actor: str = 'system_admin_repair',
@@ -6303,6 +6304,12 @@ def repair_billing_pending_pipeline(
     if customer_id:
         if customer_id in CUSTOMERS and not is_suspended_account(customer_id):
             target_customers = [customer_id]
+    elif customer_ids:
+        for cid in customer_ids:
+            if cid in CUSTOMERS and not is_suspended_account(cid):
+                cust_bills = [b for b in BILLING.values() if b.get('customer_id') == cid]
+                if any(_is_outstanding_bill(b) for b in cust_bills):
+                    target_customers.append(cid)
     else:
         for cid in list(CUSTOMERS.keys()):
             if is_suspended_account(cid):
@@ -43709,11 +43716,13 @@ For claims or questions, please contact:
             except Exception:
                 data = {}
             specific_customer = data.get('customer_id') or qs_post.get('customer_id', [None])[0]
+            specific_customer_ids = data.get('customer_ids') or None
             dry_run = bool(data.get('dry_run', False))
             notify_users = bool(data.get('notify_users', True))
             try:
                 report = repair_billing_pending_pipeline(
                     customer_id=specific_customer,
+                    customer_ids=specific_customer_ids,
                     dry_run=dry_run,
                     notify_users=notify_users,
                     actor=(session or {}).get('username', 'admin_billing_pending_repair'),

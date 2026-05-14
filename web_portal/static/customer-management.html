@@ -525,7 +525,8 @@
             }
             if (!confirm(`Activate auto-pay and settle outstanding bills for ${pending.length} customer(s)?`)) return;
             try {
-                const report = await callRepairEndpoint({ notify_users: true });
+                const customerIds = pending.map(c => c.id);
+                const report = await callRepairEndpoint({ customer_ids: customerIds, notify_users: true });
                 renderRepairResults(report, 'All Billing Pending');
                 loadStats();
                 loadCustomers();
