@@ -6614,7 +6614,7 @@ def repair_billing_pending_pipeline(
 
     repair_report['integrity'] = integrity_summary
     repair_report['data_integrity_ok'] = (
-        integrity_summary['total_outstanding_after'] <= 0.01
+        repair_report['amount_remaining'] <= 0.01
         and not repair_report['errors']
     ) if not dry_run else None
 

@@ -431,7 +431,7 @@
 
             const integrity = report.integrity || {};
             const integrityOk = report.data_integrity_ok === true
-                || (report.dry_run && (integrity.total_outstanding_after || 0) <= 0.01);
+                || (report.dry_run && (report.amount_remaining || 0) <= 0.01);
             const summaryBg = integrityOk
                 ? 'background: #d4edda; color: #155724;'
                 : (report.bills_remaining > 0
