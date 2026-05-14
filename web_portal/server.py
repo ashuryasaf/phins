@@ -6217,10 +6217,8 @@ def _is_outstanding_bill(bill: Dict[str, Any]) -> bool:
     if not bill or status_eq(bill, 'paid', 'voided', 'cancelled', 'refunded'):
         return False
     if status_in(bill, ['outstanding', 'pending', 'partial', 'overdue']):
-        return True
-    bill_due = safe_float(bill.get('amount', bill.get('amount_due', 0)), 0.0)
-    bill_paid = safe_float(bill.get('amount_paid', 0), 0.0)
-    return bill_due > bill_paid + 0.01
+        return _bill_outstanding_amount(bill) > 0
+    return False
 
 
 def _bill_outstanding_amount(bill: Dict[str, Any]) -> float:
