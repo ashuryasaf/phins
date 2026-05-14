@@ -6216,8 +6216,6 @@ def _is_outstanding_bill(bill: Dict[str, Any]) -> bool:
     """Return True for bills that still owe money (outstanding/pending/partial)."""
     if not bill or status_eq(bill, 'paid', 'voided', 'cancelled', 'refunded'):
         return False
-    if status_in(bill, ['outstanding', 'pending', 'partial', 'overdue']):
-        return _bill_outstanding_amount(bill) > 0
     return _bill_outstanding_amount(bill) > 0
 
 
@@ -6302,7 +6300,7 @@ def repair_billing_pending_pipeline(
     if customer_id:
         if customer_id in CUSTOMERS and not is_suspended_account(customer_id):
             target_customers = [customer_id]
-    elif customer_ids:
+    elif customer_ids is not None:
         for cid in customer_ids:
             if cid in CUSTOMERS and not is_suspended_account(cid):
                 cust_bills = [b for b in BILLING.values() if b.get('customer_id') == cid]
@@ -43716,7 +43714,7 @@ For claims or questions, please contact:
             except Exception:
                 data = {}
             specific_customer = data.get('customer_id') or qs_post.get('customer_id', [None])[0]
-            specific_customer_ids = data.get('customer_ids') or None
+            specific_customer_ids = data.get('customer_ids') if isinstance(data.get('customer_ids'), list) else None
             dry_run = bool(data.get('dry_run', False))
             notify_users = bool(data.get('notify_users', True))
             try:
