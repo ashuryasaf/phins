@@ -41,7 +41,10 @@
         .btn-primary:hover { background: #5a6fd6; }
         .btn-success { background: #28a745; color: white; }
         .btn-success:hover { background: #218838; }
+        .btn-warning { background: #ffc107; color: #333; }
+        .btn-warning:hover { background: #e0a800; }
         .btn-sm { padding: 4px 10px; font-size: 0.85rem; }
+        .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
         
         .validation-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
         .validation-modal.active { display: flex; align-items: center; justify-content: center; }
@@ -139,6 +142,7 @@
             <input type="text" id="search-input" placeholder="🔍 Search customers by name, email, or ID...">
             <button class="btn btn-primary" onclick="loadCustomers()">🔄 Refresh</button>
             <button class="btn btn-success" onclick="validateAll()">✅ Validate All</button>
+            <button class="btn btn-warning" id="repair-billing-btn" onclick="repairAllBillingPending()" title="Activate auto-pay and settle outstanding bills for all customers in Billing Pending stage">🔧 Repair Billing Pending</button>
         </div>
 
         <!-- Customer Table -->
@@ -253,6 +257,11 @@
             
             tbody.innerHTML = customers.map(customer => {
                 const stageBadge = getStageBadge(customer.pipeline_stage);
+                const needsRepair = customer.pipeline_stage === 'billing_pending'
+                    || (customer.outstanding_bills && customer.outstanding_bills > 0);
+                const repairBtn = needsRepair
+                    ? `<button class="btn btn-sm btn-warning" onclick="repairCustomerBilling('${customer.id}')" title="Activate auto-pay and settle outstanding bills">🔧 Settle &amp; Auto-Pay</button>`
+                    : '';
                 return `
                     <tr>
                         <td><code>${customer.id}</code></td>
@@ -263,11 +272,28 @@
                         <td>$${customer.total_premium_due.toFixed(2)}</td>
                         <td>$${customer.wallet_balance.toFixed(2)}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="validateCustomer('${customer.id}')">🔍 Validate</button>
+                            <div class="row-actions">
+                                <button class="btn btn-sm btn-primary" onclick="validateCustomer('${customer.id}')">🔍 Validate</button>
+                                ${repairBtn}
+                            </div>
                         </td>
                     </tr>
                 `;
             }).join('');
+
+            updateRepairButtonState(customers);
+        }
+
+        function updateRepairButtonState(customers) {
+            const btn = document.getElementById('repair-billing-btn');
+            if (!btn) return;
+            const pendingCount = customers.filter(c => c.pipeline_stage === 'billing_pending').length;
+            btn.disabled = pendingCount === 0;
+            btn.style.opacity = pendingCount === 0 ? '0.5' : '1';
+            btn.style.cursor = pendingCount === 0 ? 'not-allowed' : 'pointer';
+            btn.textContent = pendingCount === 0
+                ? '✅ No Billing Pending'
+                : `🔧 Repair Billing Pending (${pendingCount})`;
         }
 
         function getStageBadge(stage) {
@@ -381,6 +407,132 @@
 
         function closeModal() {
             document.getElementById('validation-modal').classList.remove('active');
+        }
+
+        async function callRepairEndpoint(payload) {
+            const response = await fetch('/api/admin/billing-pending/repair', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload || {})
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || `Repair failed (HTTP ${response.status})`);
+            }
+            return data;
+        }
+
+        function renderRepairResults(report, titleSuffix) {
+            document.getElementById('modal-title').textContent =
+                `🔧 Billing Pending Repair${titleSuffix ? ' — ' + titleSuffix : ''}`;
+
+            const integrity = report.integrity || {};
+            const integrityOk = report.data_integrity_ok === true
+                || (report.dry_run && (report.amount_remaining || 0) <= 0.01);
+            const summaryBg = integrityOk
+                ? 'background: #d4edda; color: #155724;'
+                : (report.bills_remaining > 0
+                    ? 'background: #fff3cd; color: #856404;'
+                    : 'background: #f8d7da; color: #721c24;');
+
+            let html = `
+                <div style="padding: 15px; border-radius: 8px; margin-bottom: 20px; ${summaryBg}">
+                    <strong>${report.message || 'Repair complete'}</strong>
+                    <div style="margin-top: 8px; font-size: 0.95rem;">
+                        Targeted: <strong>${report.targeted}</strong> ·
+                        Bills settled: <strong>${report.bills_settled}</strong>
+                        ($${(report.amount_settled || 0).toFixed(2)}) ·
+                        Bills remaining: <strong>${report.bills_remaining}</strong>
+                        ($${(report.amount_remaining || 0).toFixed(2)}) ·
+                        Auto-pay normalized: <strong>${report.normalized_policies}</strong> policy(ies)
+                        ${report.dry_run ? ' · <em>(dry-run)</em>' : ''}
+                    </div>
+                </div>
+            `;
+
+            html += `
+                <div style="background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                    <strong>Data integrity</strong>
+                    <ul style="margin: 8px 0 0 18px; padding: 0;">
+                        <li>Outstanding total after run: <strong>$${(integrity.total_outstanding_after || 0).toFixed(2)}</strong></li>
+                        <li>Customers still in Billing Pending: <strong>${integrity.pending_billing_customers_after || 0}</strong></li>
+                        <li>Auto-pay coverage on active policies: <strong>${((integrity.autopay_coverage_active_policies || 0) * 100).toFixed(1)}%</strong></li>
+                    </ul>
+                </div>
+            `;
+
+            if ((report.errors || []).length > 0) {
+                html += `<div style="margin-bottom: 15px;"><strong>Issues encountered:</strong><ul style="color: #dc3545;">`;
+                report.errors.slice(0, 10).forEach(err => {
+                    const cid = err.customer_id ? ` [${err.customer_id}]` : '';
+                    html += `<li>${err.error}${cid}</li>`;
+                });
+                html += `</ul></div>`;
+            }
+
+            html += `<h3>Customers Processed</h3>`;
+            if (!(report.customers || []).length) {
+                html += `<p style="color: #666;">No eligible customers found.</p>`;
+            } else {
+                html += report.customers.map(rec => {
+                    const before = rec.before || {};
+                    const after = rec.after || {};
+                    const passClass = rec.fully_settled ? 'pass' : (rec.errors && rec.errors.length ? 'fail' : 'warn');
+                    const icon = rec.fully_settled ? '✓' : (rec.errors && rec.errors.length ? '✗' : '⚠');
+                    return `
+                        <div class="check-item">
+                            <div class="check-icon ${passClass}">${icon}</div>
+                            <div>
+                                <strong>${rec.name}</strong> <code>(${rec.customer_id})</code>
+                                <div style="color: #666; font-size: 0.9rem;">
+                                    Stage: ${rec.stage_transition || (after.pipeline_stage || '—')} ·
+                                    Bills: ${before.outstanding_bills || 0} → ${after.outstanding_bills || 0}
+                                    (settled $${(rec.amount_settled || 0).toFixed(2)}) ·
+                                    Auto-pay policies: ${before.autopay_active_policies || 0} → ${after.autopay_active_policies || 0}
+                                    ${rec.autopay_run ? ` · Charged: ${rec.autopay_run.processed} ($${(rec.autopay_run.total_amount || 0).toFixed(2)})` : ''}
+                                </div>
+                                ${(rec.errors || []).length ? `<div style="color: #dc3545; font-size: 0.85rem;">${rec.errors.join('; ')}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            document.getElementById('validation-results').innerHTML = html;
+            document.getElementById('validation-modal').classList.add('active');
+        }
+
+        async function repairCustomerBilling(customerId) {
+            if (!confirm(`Activate auto-pay and settle outstanding bills for ${customerId}?`)) return;
+            try {
+                const report = await callRepairEndpoint({ customer_id: customerId, notify_users: true });
+                renderRepairResults(report, customerId);
+                loadStats();
+                loadCustomers();
+            } catch (err) {
+                alert(`Repair failed: ${err.message}`);
+            }
+        }
+
+        async function repairAllBillingPending() {
+            const pending = allCustomers.filter(c => c.pipeline_stage === 'billing_pending');
+            if (!pending.length) {
+                alert('No customers are currently in Billing Pending stage.');
+                return;
+            }
+            if (!confirm(`Activate auto-pay and settle outstanding bills for ${pending.length} customer(s)?`)) return;
+            try {
+                const customerIds = pending.map(c => c.id);
+                const report = await callRepairEndpoint({ customer_ids: customerIds, notify_users: true });
+                renderRepairResults(report, 'All Billing Pending');
+                loadStats();
+                loadCustomers();
+            } catch (err) {
+                alert(`Repair failed: ${err.message}`);
+            }
         }
 
         // Search functionality

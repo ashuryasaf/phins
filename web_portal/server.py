@@ -5719,7 +5719,7 @@ def process_customer_premium_payment(
             continue
         if specific_bill_lookup and str(bill.get('id') or bill_id) not in specific_bill_lookup:
             continue
-        if not status_in(bill, ['outstanding', 'pending', 'partial']):
+        if not status_in(bill, ['outstanding', 'pending', 'partial', 'overdue']):
             continue
 
         bill_due = safe_float(bill.get('amount', bill.get('amount_due', 0)), 0.0)
@@ -6210,6 +6210,426 @@ def run_monthly_auto_pay(
         f"totaling ${report['total_amount']:,.2f}"
     )
     return report
+
+
+def _is_outstanding_bill(bill: Dict[str, Any]) -> bool:
+    """Return True for bills that still owe money (outstanding/pending/partial)."""
+    if not bill or status_eq(bill, 'paid', 'voided', 'cancelled', 'refunded'):
+        return False
+    if status_in(bill, ['outstanding', 'pending', 'partial', 'overdue']):
+        return _bill_outstanding_amount(bill) > 0
+    return _bill_outstanding_amount(bill) > 0
+
+
+def _bill_outstanding_amount(bill: Dict[str, Any]) -> float:
+    """Compute remaining outstanding amount on a bill, never negative."""
+    bill_due = safe_float(bill.get('amount', bill.get('amount_due', 0)), 0.0)
+    bill_paid = safe_float(bill.get('amount_paid', 0), 0.0)
+    return max(0.0, round(bill_due - bill_paid, 2))
+
+
+def _customer_billing_snapshot(customer_id: str) -> Dict[str, Any]:
+    """Capture a billing/auto-pay snapshot for integrity-aware repair flows."""
+    cust_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+    cust_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+    active_policies = [p for p in cust_policies if status_eq(p, 'active', 'approved')]
+    outstanding_bills = [b for b in cust_bills if _is_outstanding_bill(b)]
+    paid_bills = [b for b in cust_bills if status_eq(b, 'paid')]
+    amount_outstanding = round(sum(_bill_outstanding_amount(b) for b in outstanding_bills), 2)
+    amount_paid = round(
+        sum(safe_float(b.get('amount_paid', b.get('amount', 0)), 0.0) for b in paid_bills),
+        2,
+    )
+    autopay_active = sum(
+        1 for p in active_policies
+        if (p.get('payment_setup', {}) or {}).get('auto_pay')
+        or (p.get('billing', {}) or {}).get('auto_pay')
+    )
+
+    if outstanding_bills:
+        pipeline_stage = 'billing_pending'
+    elif paid_bills:
+        pipeline_stage = 'fully_active'
+    elif active_policies:
+        pipeline_stage = 'active_policy'
+    else:
+        pipeline_stage = 'registered'
+
+    return {
+        'pipeline_stage': pipeline_stage,
+        'total_bills': len(cust_bills),
+        'outstanding_bills': len(outstanding_bills),
+        'amount_outstanding': amount_outstanding,
+        'paid_bills': len(paid_bills),
+        'amount_paid': amount_paid,
+        'active_policies': len(active_policies),
+        'autopay_active_policies': autopay_active,
+        'autopay_coverage': (
+            round(autopay_active / len(active_policies), 4) if active_policies else 0.0
+        ),
+    }
+
+
+def repair_billing_pending_pipeline(
+    customer_id: Optional[str] = None,
+    customer_ids: Optional[List[str]] = None,
+    dry_run: bool = False,
+    notify_users: bool = True,
+    actor: str = 'system_admin_repair',
+    reference_datetime: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Ensure billing-pending customers have active auto-pay and settle outstanding bills.
+
+    For each targeted customer the helper:
+      1. Normalizes auto-pay defaults on every active/approved policy via
+         ``ensure_policy_auto_pay_defaults`` (default Mastercard, 1st-of-month
+         schedule, tokenized payment method).
+      2. Charges every still-outstanding bill via ``process_customer_premium_payment``
+         using the customer's auto-pay card, marking each settled bill as auto-pay
+         and recording a matching ``auto_pay_execution`` ledger entry so the
+         ``autopay_bills_vs_ledger`` reconciliation stays balanced.
+      3. Captures before/after billing snapshots so the response shows that the
+         pipeline stage moved out of ``billing_pending`` whenever possible and
+         that no outstanding bills remain.
+
+    The helper is idempotent: re-running it on a fully-paid customer is a no-op
+    aside from the (harmless) auto-pay normalization, which preserves data
+    integrity. ``dry_run=True`` projects the work without mutating any state.
+    """
+    now = reference_datetime or datetime.now()
+
+    target_customers: List[str] = []
+    if customer_id:
+        if customer_id in CUSTOMERS and not is_suspended_account(customer_id):
+            target_customers = [customer_id]
+    elif customer_ids:
+        for cid in customer_ids:
+            if cid in CUSTOMERS and not is_suspended_account(cid):
+                cust_bills = [b for b in BILLING.values() if b.get('customer_id') == cid]
+                if any(_is_outstanding_bill(b) for b in cust_bills):
+                    target_customers.append(cid)
+    else:
+        for cid in list(CUSTOMERS.keys()):
+            if is_suspended_account(cid):
+                continue
+            cust_bills = [b for b in BILLING.values() if b.get('customer_id') == cid]
+            if any(_is_outstanding_bill(b) for b in cust_bills):
+                target_customers.append(cid)
+
+    repair_report: Dict[str, Any] = {
+        'success': True,
+        'dry_run': dry_run,
+        'executed_at': now.isoformat(),
+        'actor': actor,
+        'targeted': len(target_customers),
+        'normalized_policies': 0,
+        'auto_pay_policies_now_active': 0,
+        'bills_settled': 0,
+        'bills_remaining': 0,
+        'amount_settled': 0.0,
+        'amount_remaining': 0.0,
+        'customers': [],
+        'errors': [],
+        'integrity': {},
+        'data_integrity_ok': None,
+    }
+
+    if customer_id and not target_customers:
+        repair_report['success'] = False
+        repair_report['errors'].append({
+            'customer_id': customer_id,
+            'error': 'Customer not found, suspended, or inaccessible',
+        })
+        repair_report['message'] = 'No eligible customer matched the requested ID'
+        return repair_report
+
+    for cid in target_customers:
+        before = _customer_billing_snapshot(cid)
+
+        cust_policies = [p for p in POLICIES.values() if p.get('customer_id') == cid]
+        active_policies = [p for p in cust_policies if status_eq(p, 'active', 'approved')]
+
+        customer_record: Dict[str, Any] = {
+            'customer_id': cid,
+            'name': get_customer_display_name(cid) or CUSTOMERS.get(cid, {}).get('name', cid),
+            'before': before,
+            'auto_pay_changes': [],
+            'autopay_run': {
+                'processed': 0,
+                'failed_count': 0,
+                'total_amount': 0.0,
+                'failed': [],
+                'success': True,
+            },
+            'settled_bills': [],
+            'errors': [],
+        }
+
+        for policy in active_policies:
+            policy_id = policy.get('id') or ''
+            try:
+                if dry_run:
+                    payment_setup = policy.get('payment_setup', {}) or {}
+                    billing_cfg = policy.get('billing', {}) or {}
+                    customer_record['auto_pay_changes'].append({
+                        'policy_id': policy_id,
+                        'dry_run': True,
+                        'auto_pay_currently_enabled': bool(
+                            payment_setup.get('auto_pay') or billing_cfg.get('auto_pay')
+                        ),
+                        'has_card_on_file': bool(
+                            payment_setup.get('card_last4')
+                            or payment_setup.get('payment_token')
+                            or (billing_cfg.get('payment_method') or {}).get('card_last4')
+                        ),
+                    })
+                else:
+                    result = ensure_policy_auto_pay_defaults(
+                        policy=policy,
+                        reference_datetime=now,
+                        notify_changes=notify_users,
+                        actor=actor,
+                    )
+                    POLICIES[policy_id] = result['policy']
+                    if result.get('changed'):
+                        repair_report['normalized_policies'] += 1
+                    customer_record['auto_pay_changes'].append({
+                        'policy_id': policy_id,
+                        'changed': bool(result.get('changed')),
+                        'changes': result.get('changes', []),
+                        'default_card_assigned': bool(result.get('default_card_assigned')),
+                    })
+            except Exception as exc:
+                customer_record['errors'].append(
+                    f'auto-pay normalize failed for {policy_id}: {exc}'
+                )
+                repair_report['errors'].append({
+                    'customer_id': cid,
+                    'policy_id': policy_id,
+                    'error': f'auto_pay_normalize: {exc}',
+                })
+
+        outstanding_bills = [
+            b for b in BILLING.values()
+            if b.get('customer_id') == cid and _is_outstanding_bill(b)
+        ]
+
+        report_id = f"REPAIR-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+
+        for bill in outstanding_bills:
+            bill_id = str(bill.get('id') or '')
+            bill_policy_id = bill.get('policy_id') or ''
+            outstanding_amount = _bill_outstanding_amount(bill)
+            if outstanding_amount <= 0:
+                continue
+
+            policy_for_bill = POLICIES.get(bill_policy_id, {}) if bill_policy_id else {}
+            payment_setup = policy_for_bill.get('payment_setup', {}) or {}
+            card_last4 = payment_setup.get('card_last4') or DEFAULT_AUTO_PAY_CARD_NUMBER[-4:]
+            card_type = payment_setup.get('card_type') or 'mastercard'
+
+            if dry_run:
+                customer_record['settled_bills'].append({
+                    'bill_id': bill_id,
+                    'policy_id': bill_policy_id,
+                    'amount': outstanding_amount,
+                    'dry_run': True,
+                    'payment_method': _build_card_display(card_type, card_last4),
+                })
+                customer_record['autopay_run']['processed'] += 1
+                customer_record['autopay_run']['total_amount'] = round(
+                    customer_record['autopay_run']['total_amount'] + outstanding_amount, 2
+                )
+                continue
+
+            try:
+                payment_result = process_customer_premium_payment(
+                    customer_id=cid,
+                    amount=outstanding_amount,
+                    payment_method='credit_card',
+                    policy_id=bill_policy_id or None,
+                    allocate_to_investments=False,
+                    use_pipeline=False,
+                    specific_bill_ids=[bill_id],
+                    extra_metadata={
+                        'auto_pay': True,
+                        'auto_pay_trigger': 'admin_billing_pending_repair',
+                        'repair_report_id': report_id,
+                        'card_last4': card_last4,
+                        'card_type': card_type,
+                        'payment_token': payment_setup.get('payment_token')
+                        or _build_default_auto_pay_token(cid),
+                    },
+                    notify_customer=notify_users,
+                    reference_datetime=now,
+                )
+
+                bill_after = BILLING.get(bill_id, {})
+                bill_after['auto_pay'] = True
+                bill_after['auto_pay_trigger'] = 'admin_billing_pending_repair'
+                bill_after['payment_method'] = 'credit_card'
+                bill_after['updated_date'] = now.isoformat()
+                BILLING[bill_id] = bill_after
+
+                if bill_policy_id and bill_policy_id in POLICIES:
+                    POLICIES[bill_policy_id]['last_auto_pay_at'] = now.isoformat()
+
+                audit_tx = record_transaction(
+                    customer_id=cid,
+                    tx_type='auto_pay_execution',
+                    amount=outstanding_amount,
+                    description=(
+                        f"Admin repair auto-pay ${outstanding_amount:.2f} for bill "
+                        f"{bill_id} (policy {bill_policy_id or 'N/A'})"
+                    ),
+                    metadata={
+                        'policy_id': bill_policy_id,
+                        'bill_id': bill_id,
+                        'payment_method': 'credit_card',
+                        'card_last4': card_last4,
+                        'card_type': card_type,
+                        'trigger': 'admin_billing_pending_repair',
+                        'repair_report_id': report_id,
+                        'premium_payment_tx_id': (
+                            payment_result.get('payment', {}) or {}
+                        ).get('transaction_id'),
+                    },
+                )
+
+                customer_record['settled_bills'].append({
+                    'bill_id': bill_id,
+                    'policy_id': bill_policy_id,
+                    'amount': outstanding_amount,
+                    'payment_method': _build_card_display(card_type, card_last4),
+                    'premium_payment_tx_id': (
+                        payment_result.get('payment', {}) or {}
+                    ).get('transaction_id'),
+                    'auto_pay_tx_id': (audit_tx or {}).get('id'),
+                })
+                customer_record['autopay_run']['processed'] += 1
+                customer_record['autopay_run']['total_amount'] = round(
+                    customer_record['autopay_run']['total_amount'] + outstanding_amount, 2
+                )
+            except Exception as exc:
+                customer_record['autopay_run']['failed_count'] += 1
+                customer_record['autopay_run']['failed'].append({
+                    'bill_id': bill_id,
+                    'policy_id': bill_policy_id,
+                    'amount': outstanding_amount,
+                    'error': str(exc),
+                })
+                customer_record['autopay_run']['success'] = False
+                repair_report['errors'].append({
+                    'customer_id': cid,
+                    'policy_id': bill_policy_id,
+                    'bill_id': bill_id,
+                    'error': f'autopay_charge: {exc}',
+                })
+
+        after = _customer_billing_snapshot(cid)
+        customer_record['after'] = after
+
+        if dry_run:
+            projected_remaining = max(0, before['outstanding_bills']
+                                      - customer_record['autopay_run']['processed'])
+            projected_amount_remaining = max(
+                0.0,
+                round(before['amount_outstanding']
+                      - customer_record['autopay_run']['total_amount'], 2),
+            )
+            customer_record['projected_after'] = {
+                'outstanding_bills': projected_remaining,
+                'amount_outstanding': projected_amount_remaining,
+                'pipeline_stage': 'fully_active' if projected_remaining == 0
+                else 'billing_pending',
+            }
+            bills_settled = customer_record['autopay_run']['processed']
+            amount_settled = customer_record['autopay_run']['total_amount']
+            customer_record['fully_settled'] = projected_remaining == 0
+            customer_record['stage_transition'] = (
+                f"{before['pipeline_stage']} → "
+                f"{customer_record['projected_after']['pipeline_stage']}"
+            )
+            repair_report['bills_remaining'] += projected_remaining
+            repair_report['amount_remaining'] = round(
+                repair_report['amount_remaining'] + projected_amount_remaining, 2
+            )
+        else:
+            bills_settled = max(0, before['outstanding_bills'] - after['outstanding_bills'])
+            amount_settled = max(
+                0.0, round(before['amount_outstanding'] - after['amount_outstanding'], 2)
+            )
+            customer_record['fully_settled'] = after['outstanding_bills'] == 0
+            customer_record['stage_transition'] = (
+                f"{before['pipeline_stage']} → {after['pipeline_stage']}"
+                if before['pipeline_stage'] != after['pipeline_stage'] else after['pipeline_stage']
+            )
+            repair_report['bills_remaining'] += after['outstanding_bills']
+            repair_report['amount_remaining'] = round(
+                repair_report['amount_remaining'] + after['amount_outstanding'], 2
+            )
+
+        customer_record['bills_settled'] = bills_settled
+        customer_record['amount_settled'] = amount_settled
+
+        repair_report['auto_pay_policies_now_active'] += after['autopay_active_policies']
+        repair_report['bills_settled'] += bills_settled
+        repair_report['amount_settled'] = round(repair_report['amount_settled'] + amount_settled, 2)
+
+        repair_report['customers'].append(customer_record)
+
+    integrity_summary = {
+        'total_outstanding_after': 0.0,
+        'pending_billing_customers_after': 0,
+        'autopay_coverage_active_policies': 0.0,
+    }
+    try:
+        active_total = 0
+        autopay_total = 0
+        outstanding_total = 0.0
+        pending_customers = set()
+        for bill in BILLING.values():
+            cid = bill.get('customer_id', '')
+            if is_suspended_account(cid):
+                continue
+            if _is_outstanding_bill(bill):
+                outstanding_total += _bill_outstanding_amount(bill)
+                pending_customers.add(cid)
+        for policy in POLICIES.values():
+            if is_suspended_account(policy.get('customer_id', '')):
+                continue
+            if status_eq(policy, 'active', 'approved'):
+                active_total += 1
+                if (policy.get('payment_setup', {}) or {}).get('auto_pay') or (
+                    policy.get('billing', {}) or {}
+                ).get('auto_pay'):
+                    autopay_total += 1
+        integrity_summary['total_outstanding_after'] = round(outstanding_total, 2)
+        integrity_summary['pending_billing_customers_after'] = len(pending_customers)
+        integrity_summary['autopay_coverage_active_policies'] = (
+            round(autopay_total / active_total, 4) if active_total else 0.0
+        )
+    except Exception as exc:
+        repair_report['errors'].append({'error': f'integrity_summary: {exc}'})
+
+    repair_report['integrity'] = integrity_summary
+    repair_report['data_integrity_ok'] = (
+        repair_report['amount_remaining'] <= 0.01
+        and not repair_report['errors']
+    ) if not dry_run else None
+
+    if not dry_run:
+        try:
+            save_ledger_data()
+        except Exception:
+            pass
+
+    repair_report['message'] = (
+        f"{'Would settle' if dry_run else 'Settled'} {repair_report['bills_settled']} bills "
+        f"(${repair_report['amount_settled']:,.2f}) across {repair_report['targeted']} customer(s); "
+        f"{repair_report['bills_remaining']} bill(s) and ${repair_report['amount_remaining']:,.2f} remain."
+    )
+    return repair_report
 
 
 def bootstrap_job_runtime() -> None:
@@ -43276,7 +43696,48 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
-        
+
+        # Admin: Repair Pipeline Stage = Billing Pending
+        # Activates auto-pay defaults and settles outstanding bills so the
+        # customer's pipeline stage transitions out of "billing_pending" while
+        # preserving ledger and audit integrity.
+        if path == '/api/admin/billing-pending/repair':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin or Accountant access required.'
+                }).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+            except Exception:
+                data = {}
+            specific_customer = data.get('customer_id') or qs_post.get('customer_id', [None])[0]
+            specific_customer_ids = data.get('customer_ids') or None
+            dry_run = bool(data.get('dry_run', False))
+            notify_users = bool(data.get('notify_users', True))
+            try:
+                report = repair_billing_pending_pipeline(
+                    customer_id=specific_customer,
+                    customer_ids=specific_customer_ids,
+                    dry_run=dry_run,
+                    notify_users=notify_users,
+                    actor=(session or {}).get('username', 'admin_billing_pending_repair'),
+                    reference_datetime=datetime.now(),
+                )
+                status_code = 200 if report.get('success', True) else 400
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': f'Billing-pending repair failed: {e}'
+                }).encode('utf-8'))
+            return
+
         # ========== CUSTOMER BILLING PROJECTIONS API (POST) ==========
         
         if path == '/api/billing/projections':
