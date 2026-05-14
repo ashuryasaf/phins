@@ -6218,7 +6218,7 @@ def _is_outstanding_bill(bill: Dict[str, Any]) -> bool:
         return False
     if status_in(bill, ['outstanding', 'pending', 'partial', 'overdue']):
         return _bill_outstanding_amount(bill) > 0
-    return False
+    return _bill_outstanding_amount(bill) > 0
 
 
 def _bill_outstanding_amount(bill: Dict[str, Any]) -> float:
@@ -6330,6 +6330,8 @@ def repair_billing_pending_pipeline(
         'amount_remaining': 0.0,
         'customers': [],
         'errors': [],
+        'integrity': {},
+        'data_integrity_ok': None,
     }
 
     if customer_id and not target_customers:
