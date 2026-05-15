@@ -344,7 +344,7 @@ def compute_annuity_reserve_forecast(
         # Aggregate reserve at year X across the converting cohort.
         converted_share = conversion_curve[idx] if idx < len(conversion_curve) else 0.0
         converted_customers = customer_count * converted_share
-        p_aggregate = p_per_customer * converted_customers + config.initial_reserve
+        p_aggregate = p_per_customer * converted_customers + (config.initial_reserve if idx == 0 else 0.0)
 
         if p_aggregate > peak_reserve:
             peak_reserve = p_aggregate
