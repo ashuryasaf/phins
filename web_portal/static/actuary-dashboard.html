@@ -3797,7 +3797,18 @@
         entry.effective_date ? new Date(entry.effective_date).toLocaleDateString() : null,
       ].filter(Boolean).join(' • ');
       const hash = (entry.integrity_hash || '').slice(0, 12);
-      const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
+      // Build the JS arguments for the inline `prepareRegistryReplace(...)`
+      // call by JSON-stringifying each value FIRST (proper JS string escaping
+      // so a `'` or `"` in a cohort value cannot break out of the literal),
+      // and only then HTML-encoding the whole literal so it survives the
+      // double-quoted onclick attribute. This is the same defence-in-depth
+      // pattern used for the download/preview buttons further down.
+      const replaceArgs = [
+        entry.scope,
+        entry.table_type || '',
+        entry.cohort_dim || '',
+        entry.cohort_value || '',
+      ].map((v) => escapeAttr(JSON.stringify(v == null ? '' : String(v)))).join(',');
       return `
         <div class="tables-bar-card ${scopeClass}">
           <div class="tb-badges">${scopeBadge}${usedBadge}</div>
@@ -3834,7 +3845,15 @@
         const usedCell = entry.used_in_pricing
           ? '<span class="tb-badge active">In use</span>'
           : '<span class="tb-badge idle">Idle</span>';
-        const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
+        // Same JSON-stringify-then-HTML-escape pattern as renderTablesBarCard:
+        // protects the inline onclick handler from cohort metadata that might
+        // contain quotes, backslashes, or other JS-significant characters.
+        const replaceArgs = [
+          entry.scope,
+          entry.table_type || '',
+          entry.cohort_dim || '',
+          entry.cohort_value || '',
+        ].map((v) => escapeAttr(JSON.stringify(v == null ? '' : String(v)))).join(',');
         const previewBtn = `<button class="btn-small btn-outline" onclick='previewRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")})'>Preview</button>`;
         return `
           <tr>
@@ -4138,21 +4157,32 @@
           tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-light);">No cohort overrides registered. Customers fall back to the global rate bands.</td></tr>';
           return;
         }
-        tbody.innerHTML = items.map((row) => `
+        tbody.innerHTML = items.map((row) => {
+          // JSON-stringify values for the inline JS context first, then HTML-
+          // escape the whole literal for the onclick attribute. Mirrors the
+          // safe pattern used by the Tables Bar and Registry rows so cohort
+          // metadata can never break out of the JS string literal.
+          const removeArgs = [
+            row.cohort_dim || '',
+            row.cohort_value || '',
+            row.table_type || '',
+          ].map((v) => escapeAttr(JSON.stringify(v == null ? '' : String(v)))).join(', ');
+          return `
           <tr>
-            <td><code>${row.cohort_key}</code></td>
-            <td>${row.table_type}</td>
-            <td>${row.row_count}</td>
-            <td>${row.source_name || ''} ${row.source_table_id ? '<code>' + row.source_table_id + '</code>' : ''}</td>
+            <td><code>${escapeHtml(row.cohort_key || '')}</code></td>
+            <td>${escapeHtml(row.table_type || '')}</td>
+            <td>${row.row_count ?? 0}</td>
+            <td>${escapeHtml(row.source_name || '')} ${row.source_table_id ? '<code>' + escapeHtml(row.source_table_id) + '</code>' : ''}</td>
             <td>${row.registered_at ? new Date(row.registered_at).toLocaleString() : ''}</td>
             <td>
               <button class="btn-small btn-warning"
-                onclick="removeCohortOverride('${escapeAttr(row.cohort_dim)}', '${escapeAttr(row.cohort_value)}', '${escapeAttr(row.table_type)}')">
+                onclick="removeCohortOverride(${removeArgs})">
                 Remove
               </button>
             </td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Failed: ${err.message}</td></tr>`;
       }
