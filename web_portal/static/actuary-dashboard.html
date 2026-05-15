@@ -3790,7 +3790,7 @@
       const usedBadge = entry.used_in_pricing
         ? '<span class="tb-badge active" title="Used in premium and simulation">In use</span>'
         : '<span class="tb-badge idle" title="Uploaded — not yet active">Idle</span>';
-      const scopeBadge = `<span class="tb-badge scope">${entry.scope}</span>`;
+      const scopeBadge = `<span class="tb-badge scope">${escapeHtml(entry.scope)}</span>`;
       const meta = [
         entry.row_count ? `${entry.row_count} rows` : null,
         entry.tables_version ? `v${entry.tables_version}` : null,

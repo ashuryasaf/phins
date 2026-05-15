@@ -11354,7 +11354,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 try:
                     from database.manager import DatabaseManager
                     with DatabaseManager() as db:
-                        for row in db.actuarial.list(limit=200):
+                        for row in db.actuarial.list():
                             meta = row.to_dict()
                             ttype = str(meta.get('table_type') or '').lower()
                             if ttype not in SUPPORTED_RATE_BANDS:
@@ -14443,7 +14443,7 @@ For claims or questions, please contact:
                         'uploaded_id': uploaded_id,
                         'version': record.get('version'),
                     })
-                    safe = re.sub(r'[^A-Za-z0-9._-]+', '-', str(name)).strip('-') or uploaded_id
+                    safe = re.sub(r'[^A-Za-z0-9._-]+', '-', str(name)).strip('-') or re.sub(r'[^A-Za-z0-9._-]+', '-', str(uploaded_id)).strip('-') or 'table'
                     filename_stem = f'phins-uploaded-{safe}'
                 else:
                     self._set_json_headers(400)
