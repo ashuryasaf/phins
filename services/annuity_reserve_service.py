@@ -92,6 +92,14 @@ class AnnuityReserveConfig:
     # the conservative shape Israeli supervisors expect.
     actuarial_loss_lambda: float = 0.5
 
+    # --------------- ADJUSTABLE COMPONENT FACTORS ---------------
+    # Each weight scales the corresponding term in P(X). Setting a factor
+    # to 0 removes that component from the reserve; values > 1 stress it.
+    annuity_gap_factor: float = 1.0
+    madad_term_factor: float = 1.0
+    loss_correction_factor: float = 1.0
+    interest_credit_factor: float = 1.0
+
     # Optional initial annuity reserve carried forward from a prior run.
     initial_reserve: float = 0.0
 
@@ -334,10 +342,10 @@ def compute_annuity_reserve_forecast(
 
         # Per-customer reserve P(X) before conversion gating.
         p_per_customer_raw = (
-            annuity_gap
-            + cumulative_madad_term
-            + cumulative_loss_correction
-            - interest_credited_year
+            annuity_gap * config.annuity_gap_factor
+            + cumulative_madad_term * config.madad_term_factor
+            + cumulative_loss_correction * config.loss_correction_factor
+            - interest_credited_year * config.interest_credit_factor
         )
         p_per_customer = max(0.0, p_per_customer_raw)
 
@@ -411,6 +419,10 @@ def compute_annuity_reserve_forecast(
         'guarantee_credit_pct': float(config.guarantee_credit_pct),
         'conversion_rate_pct': float(config.conversion_rate_pct),
         'actuarial_loss_lambda': float(config.actuarial_loss_lambda),
+        'annuity_gap_factor': float(config.annuity_gap_factor),
+        'madad_term_factor': float(config.madad_term_factor),
+        'loss_correction_factor': float(config.loss_correction_factor),
+        'interest_credit_factor': float(config.interest_credit_factor),
         'initial_reserve': float(config.initial_reserve),
         'scenario_label': str(config.scenario_label),
         'version': config.version,
@@ -561,6 +573,10 @@ def coerce_annuity_reserve_config(payload: Optional[Dict[str, Any]]) -> AnnuityR
         conversion_rate_pct=_pct('conversion_rate_pct', 0.60),
         conversion_curve=_curve('conversion_curve'),
         actuarial_loss_lambda=max(0.0, _f('actuarial_loss_lambda', 0.5)),
+        annuity_gap_factor=max(0.0, _f('annuity_gap_factor', 1.0)),
+        madad_term_factor=max(0.0, _f('madad_term_factor', 1.0)),
+        loss_correction_factor=max(0.0, _f('loss_correction_factor', 1.0)),
+        interest_credit_factor=max(0.0, _f('interest_credit_factor', 1.0)),
         initial_reserve=max(0.0, _f('initial_reserve', 0.0)),
         scenario_label=str(payload.get('scenario_label') or 'base_case').strip() or 'base_case',
     )

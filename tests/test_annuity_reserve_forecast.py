@@ -121,6 +121,81 @@ def test_zero_loss_lambda_collapses_loss_correction_term():
         assert row['loss_correction_per_customer'] == 0.0
 
 
+def test_adjustable_factors_default_to_one():
+    """With default factors (all 1.0) the result matches the original formula."""
+    default_out = compute_annuity_reserve_forecast(AnnuityReserveConfig())
+    explicit_out = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        annuity_gap_factor=1.0,
+        madad_term_factor=1.0,
+        loss_correction_factor=1.0,
+        interest_credit_factor=1.0,
+    ))
+    assert default_out['integrity_hash'] == explicit_out['integrity_hash']
+    assert default_out['yearly'] == explicit_out['yearly']
+
+
+def test_zero_annuity_gap_factor_removes_gap_contribution():
+    """Setting annuity_gap_factor=0 should zero out the gap component."""
+    base = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        realised_return_curve=[0.01] * 30,
+    ))
+    zeroed = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        realised_return_curve=[0.01] * 30,
+        annuity_gap_factor=0.0,
+    ))
+    assert base['integrity_hash'] != zeroed['integrity_hash']
+    # The per-customer raw reserve must differ when the gap factor is removed.
+    for b, z in zip(base['yearly'], zeroed['yearly']):
+        if b['annuity_gap_per_customer'] != 0:
+            assert b['p_per_customer_raw'] != z['p_per_customer_raw']
+
+
+def test_doubled_factor_doubles_component_contribution():
+    """Doubling a factor should double that component's contribution to P(X)."""
+    base = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        projection_years=5,
+        realised_return_curve=[0.01] * 5,
+        madad_term_factor=1.0,
+    ))
+    doubled = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        projection_years=5,
+        realised_return_curve=[0.01] * 5,
+        madad_term_factor=2.0,
+    ))
+    for b, d in zip(base['yearly'], doubled['yearly']):
+        if b['madad_term_per_customer'] != 0:
+            assert d['p_per_customer_raw'] != b['p_per_customer_raw']
+
+
+def test_factors_surface_in_inputs_and_integrity_hash():
+    """Factor values must appear in the inputs view and affect the hash."""
+    out = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        annuity_gap_factor=0.8,
+        loss_correction_factor=1.5,
+    ))
+    assert out['inputs']['annuity_gap_factor'] == 0.8
+    assert out['inputs']['loss_correction_factor'] == 1.5
+    assert out['inputs']['madad_term_factor'] == 1.0
+    assert out['inputs']['interest_credit_factor'] == 1.0
+    # Hash must differ from the all-1.0-factors scenario.
+    default_hash = compute_annuity_reserve_forecast(AnnuityReserveConfig())['integrity_hash']
+    assert out['integrity_hash'] != default_hash
+
+
+def test_coerce_handles_adjustable_factors():
+    """coerce_annuity_reserve_config should parse factor fields from payloads."""
+    cfg = coerce_annuity_reserve_config({
+        'annuity_gap_factor': 0.5,
+        'madad_term_factor': '1.2',
+        'loss_correction_factor': 2,
+        'interest_credit_factor': '',
+    })
+    assert cfg.annuity_gap_factor == 0.5
+    assert cfg.madad_term_factor == 1.2
+    assert cfg.loss_correction_factor == 2.0
+    assert cfg.interest_credit_factor == 1.0
+
+
 def test_per_customer_guaranteed_savings_grow_monotonically():
     out = compute_annuity_reserve_forecast(AnnuityReserveConfig(
         madad_pct=0.0,
@@ -287,8 +362,8 @@ def test_forecast_endpoint_seeds_from_simulation(admin_token):
     forecast = json.loads(body)['forecast']
     assert forecast['inputs']['customer_count'] > 0
     assert forecast['inputs']['monthly_deposit_per_customer'] >= 0
-    assert 'source_simulation' in json.loads(body)['forecast']
-    assert 'simulation_id' in (json.loads(body).get('forecast', {}).get('source_simulation', {}) or {})
+    assert 'source_simulation' in forecast
+    assert 'simulation_id' in (forecast.get('source_simulation', {}) or {})
 
 
 def test_forecast_endpoint_rejects_unauthorized():
