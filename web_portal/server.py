@@ -11279,7 +11279,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 else:
                     try:
                         envelope = json.loads(raw_payload)
-                        if isinstance(envelope, dict) and envelope.get('scheme') == 'plain':
+                        if isinstance(envelope, list):
+                            rows = envelope
+                        elif isinstance(envelope, dict) and envelope.get('scheme') == 'plain':
                             ciphertext = envelope.get('ciphertext')
                             if isinstance(ciphertext, str):
                                 try:
@@ -14465,7 +14467,9 @@ For claims or questions, please contact:
                     import csv as _csv
                     import io as _io
                     if rows and isinstance(rows[0], dict):
-                        fieldnames = sorted({k for r in rows for k in r.keys() if isinstance(r, dict)})
+                        _PREFERRED_COL_ORDER = ['age_min', 'age_max', 'rate_per_1000']
+                        all_keys = sorted({k for r in rows for k in r.keys() if isinstance(r, dict)})
+                        fieldnames = [c for c in _PREFERRED_COL_ORDER if c in all_keys] + [c for c in all_keys if c not in _PREFERRED_COL_ORDER]
                     else:
                         fieldnames = ['age_min', 'age_max', 'rate_per_1000']
                     buf = _io.StringIO()
