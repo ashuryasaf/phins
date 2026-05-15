@@ -269,9 +269,8 @@ def compute_annuity_reserve_forecast(
     s_actual = 0.0  # cumulative savings under realised market returns
     s_min = 0.0     # cumulative savings under guaranteed (4% + madad)
     s_expected = 0.0  # cumulative savings under expected market returns
-    interest_credited = 0.0  # cumulative interest credited to the customer
-
     yearly: List[Dict[str, Any]] = []
+    cumulative_madad_term = 0.0
     cumulative_loss_correction = 0.0
     peak_reserve = 0.0
     peak_reserve_year = 0
@@ -313,6 +312,7 @@ def compute_annuity_reserve_forecast(
         # delta. This is the user's ``Σ G(g; y) × (1 + madad(y)) +
         # (expec_ret(y+1)(g) - expec_ret(y+1)(I))`` block.
         madad_term = g_at_guarantee * m_x + (g - e_x)
+        cumulative_madad_term += madad_term
 
         # Σ actuarial-loss correction. Quadratic on the negative gap, with
         # interest-credit and CPI compounding, exactly the user's
@@ -331,13 +331,12 @@ def compute_annuity_reserve_forecast(
 
         # Interest credit already paid to the customer this year.
         interest_credited_year = i_x * (1.0 + m_x) * (1.0 + i_x) * s_actual
-        interest_credited += interest_credited_year
 
         # Per-customer reserve P(X) before conversion gating.
         p_per_customer_raw = (
             annuity_gap
-            + madad_term * (year - 1)
-            + cumulative_loss_correction * (year - 1)
+            + cumulative_madad_term
+            + cumulative_loss_correction
             - interest_credited_year
         )
         p_per_customer = max(0.0, p_per_customer_raw)
@@ -371,8 +370,8 @@ def compute_annuity_reserve_forecast(
             'annuity_per_customer_guaranteed': _round2(ann_min),
             # Reserve components per customer
             'annuity_gap_per_customer': _round2(annuity_gap),
-            'madad_term_per_customer': _round2(madad_term * (year - 1)),
-            'loss_correction_per_customer': _round2(cumulative_loss_correction * (year - 1)),
+            'madad_term_per_customer': _round2(cumulative_madad_term),
+            'loss_correction_per_customer': _round2(cumulative_loss_correction),
             'interest_credited_per_customer': _round2(interest_credited_year),
             'p_per_customer_raw': _round2(p_per_customer_raw),
             'p_per_customer': _round2(p_per_customer),
