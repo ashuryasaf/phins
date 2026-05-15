@@ -11291,11 +11291,11 @@ class PortalHandler(BaseHTTPRequestHandler):
             elif isinstance(raw_payload, list):
                 rows = raw_payload
             elif isinstance(raw_payload, dict):
-                rows = raw_payload.get('data') or raw_payload.get('rows') or list(raw_payload.values())
+                rows = raw_payload.get('data') if raw_payload.get('data') is not None else (raw_payload.get('rows') if raw_payload.get('rows') is not None else list(raw_payload.values()))
         except Exception:
             rows = []
         if isinstance(rows, dict):
-            rows = rows.get('data') or rows.get('rows') or list(rows.values())
+            rows = rows.get('data') if rows.get('data') is not None else (rows.get('rows') if rows.get('rows') is not None else list(rows.values()))
         if not isinstance(rows, list):
             rows = []
         return rows
