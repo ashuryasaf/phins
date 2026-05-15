@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-05-13.audit-number-formatting">
+  <meta name="phins-actuary-dashboard-build" content="2026-05-15.life-disability-tables-bar">
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
@@ -505,7 +505,78 @@
       color: #c53030;
       border: 1px solid #fc8181;
     }
-    
+
+    .btn-small {
+      padding: 5px 10px;
+      font-size: 0.75rem;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-small.btn-outline {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+    .btn-small.btn-success { background: var(--success); color: #fff; border-color: var(--success); }
+    .btn-small.btn-warning { background: var(--warning); color: #fff; border-color: var(--warning); }
+    .btn-small.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-small.btn-danger  { background: var(--danger);  color: #fff; border-color: var(--danger);  }
+
+    /* Tables Bar — horizontal scroll of rate-table cards */
+    .tables-bar-card {
+      flex: 0 0 auto;
+      min-width: 240px;
+      max-width: 280px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .tables-bar-card.scope-cohort { border-left-color: var(--success); }
+    .tables-bar-card.scope-uploaded { border-left-color: var(--warning); }
+    .tables-bar-card .tb-label {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--primary);
+    }
+    .tables-bar-card .tb-meta {
+      font-size: 0.72rem;
+      color: var(--text-light);
+      line-height: 1.3;
+    }
+    .tables-bar-card .tb-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tables-bar-card .tb-badge {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .tb-badge.active { background: #c6f6d5; color: #22543d; }
+    .tb-badge.idle   { background: #feebc8; color: #7b341e; }
+    .tb-badge.scope  { background: #e2e8f0; color: #2d3748; }
+    .tables-bar-card .tb-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .tb-hash {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.7rem;
+      color: var(--text-light);
+    }
+
     /* Access Denied */
     .access-denied {
       text-align: center;
@@ -647,7 +718,7 @@
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
-        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-13 (audit-number-formatting)</span>
+        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-15 (life-disability-tables-bar)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
         <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
@@ -667,6 +738,10 @@
         
         <div class="nav-section">
           <div class="nav-section-title">Rate Tables</div>
+          <div class="nav-item" onclick="showSection('tables-registry')">
+            <span class="nav-icon">📚</span>
+            <span>Life &amp; Disability Tables</span>
+          </div>
           <div class="nav-item" onclick="showSection('mortality')">
             <span class="nav-icon">💀</span>
             <span>Mortality Rates</span>
@@ -794,7 +869,28 @@
               <div class="stat-value" id="stat-profit">10%</div>
             </div>
           </div>
-          
+
+          <!-- Life & Disability Tables Bar (compact, always visible on Overview) -->
+          <div class="card" id="overview-tables-bar-card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>📚 Life &amp; Disability Tables Bar</span>
+              <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);" id="overview-tables-bar-summary">Loading…</span>
+            </div>
+            <p style="color:var(--text-light);margin-bottom:12px;font-size:0.9rem;">
+              Every life-and-disability rate table the platform uses for premium and simulation —
+              global defaults plus cohort overrides (e.g. death table for female Caucasian, disability table for Asian men).
+              Use the bar to download any table for audit or replace it with an uploaded version.
+            </p>
+            <div id="overview-tables-bar"
+                 style="display:flex;gap:10px;overflow-x:auto;padding:4px 2px 12px 2px;">
+              <div style="color:var(--text-light);">Loading life & disability tables…</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <button class="btn btn-outline btn-small" onclick="showSection('tables-registry')">📚 Open full registry</button>
+              <button class="btn btn-outline btn-small" onclick="loadTablesRegistry()">🔄 Refresh</button>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-title">🏛️ Central Source of Truth</div>
             <p style="margin-bottom:16px;">This dashboard controls ALL pricing and risk calculations for the PHINS platform. Changes made here affect:</p>
@@ -839,7 +935,128 @@
             </div>
           </div>
         </section>
-        
+
+        <!-- Life & Disability Tables Registry Section -->
+        <section id="section-tables-registry" class="section">
+          <h2 class="section-title">📚 Life &amp; Disability Tables</h2>
+
+          <div class="alert alert-warning">
+            This is the unified registry of every life-and-disability rate table the platform uses for premium and simulation —
+            global defaults, cohort overrides (e.g. <em>death table for female Caucasian</em>, <em>disability table for Asian men</em>),
+            and the uploaded catalog. Every entry below is downloadable for audit and replaceable from an uploaded table.
+            Each row carries a deterministic SHA-256 integrity hash so two viewers can confirm they are looking at the exact
+            same rate band; the manifest hash on the right-hand summary covers the full registry.
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>Tables Bar</span>
+              <span style="font-size:0.85rem;font-weight:400;color:var(--text-light);" id="tables-registry-summary">Loading…</span>
+            </div>
+            <div id="tables-registry-bar" style="display:flex;gap:10px;overflow-x:auto;padding:4px 2px 12px 2px;">
+              <div style="color:var(--text-light);">Loading life & disability tables…</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Filter</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Scope</label>
+                <select id="tables-registry-filter-scope" class="form-input" onchange="renderTablesRegistry()">
+                  <option value="">All scopes</option>
+                  <option value="global">Global defaults</option>
+                  <option value="cohort">Cohort overrides</option>
+                  <option value="uploaded">Uploaded catalog</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Table type</label>
+                <select id="tables-registry-filter-type" class="form-input" onchange="renderTablesRegistry()">
+                  <option value="">All</option>
+                  <option value="mortality_rates">Death (mortality)</option>
+                  <option value="disability_incidence_rates">Disability (permanent ADL)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Used in pricing</label>
+                <select id="tables-registry-filter-used" class="form-input" onchange="renderTablesRegistry()">
+                  <option value="">All</option>
+                  <option value="yes">Active in pricing &amp; simulation</option>
+                  <option value="no">Idle (not yet active)</option>
+                </select>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button class="btn btn-outline" onclick="loadTablesRegistry()">🔄 Refresh</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Registry</div>
+            <table class="data-table" id="tables-registry-list">
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>Scope</th>
+                  <th>Type</th>
+                  <th>Rows</th>
+                  <th>Source</th>
+                  <th>Used in pricing</th>
+                  <th>Integrity</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Replace a registry entry</div>
+            <p style="color:var(--text-light);margin-bottom:10px;font-size:0.9rem;">
+              Replacing a registry entry uploads a new table and promotes it. For a global entry the rate band is replaced for every customer.
+              For a cohort entry the override is re-registered without touching the global rate band, so customers outside the cohort keep their existing pricing.
+              Use the <strong>Replace</strong> button on any row to pre-fill the cohort dimension/value.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">File</label>
+                <input type="file" id="replace-registry-file" class="form-input" accept=".xlsx,.csv,.json">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Name</label>
+                <input type="text" id="replace-registry-name" class="form-input" placeholder="e.g. Mortality - Caucasian Women">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Target table type</label>
+                <select id="replace-registry-type" class="form-input">
+                  <option value="mortality_rates">mortality_rates</option>
+                  <option value="disability_incidence_rates">disability_incidence_rates</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cohort dimension (optional)</label>
+                <input type="text" id="replace-registry-cohort-dim" class="form-input" placeholder="ethnicity / gender / smoker">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cohort value (optional)</label>
+                <input type="text" id="replace-registry-cohort-value" class="form-input" placeholder="caucasian / female / no">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button class="btn btn-success" onclick="replaceRegistryTable()">📤 Upload &amp; promote</button>
+              </div>
+            </div>
+            <p id="replace-registry-status" class="research-note" style="margin-top:8px;"></p>
+          </div>
+
+          <div class="card" id="tables-registry-preview" style="display:none;">
+            <div class="card-title">Preview</div>
+            <div id="tables-registry-preview-body"></div>
+          </div>
+        </section>
+
         <!-- Mortality Rates Section -->
         <section id="section-mortality" class="section">
           <h2 class="section-title">💀 Mortality Rates (per 1,000 lives)</h2>
@@ -1877,6 +2094,7 @@
         loadRiskReference();
         loadUploadedTables();
         loadCohortOverrides();
+        loadTablesRegistry();
         loadContractSpec();
         
       } catch (err) {
@@ -3515,6 +3733,295 @@
     }
 
     // =====================================================================
+    // LIFE & DISABILITY TABLES REGISTRY ("Tables Bar")
+    // =====================================================================
+    let tablesRegistryCache = [];
+    let tablesRegistrySummary = null;
+
+    async function loadTablesRegistry() {
+      const overviewBar = document.getElementById('overview-tables-bar');
+      const overviewSummary = document.getElementById('overview-tables-bar-summary');
+      const fullBar = document.getElementById('tables-registry-bar');
+      const tbody = document.querySelector('#tables-registry-list tbody');
+      const summaryEl = document.getElementById('tables-registry-summary');
+      if (overviewBar) overviewBar.innerHTML = '<div style="color:var(--text-light);">Loading life & disability tables…</div>';
+      if (fullBar) fullBar.innerHTML = '<div style="color:var(--text-light);">Loading life & disability tables…</div>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr>';
+      try {
+        const res = await fetch('/api/actuarial/tables/registry', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        tablesRegistryCache = Array.isArray(data.items) ? data.items : [];
+        tablesRegistrySummary = data.summary || null;
+        const manifest = (data.integrity && data.integrity.manifest_hash) ? String(data.integrity.manifest_hash).slice(0, 12) : '';
+        const summaryText = data.summary
+          ? `Total ${data.summary.total} • Active in pricing ${data.summary.used_in_pricing} • Global ${data.summary.global} • Cohort ${data.summary.cohort} • Uploaded ${data.summary.uploaded}${manifest ? ' • Manifest ' + manifest : ''}`
+          : '';
+        if (overviewSummary) overviewSummary.textContent = summaryText;
+        if (summaryEl) summaryEl.textContent = summaryText;
+        renderTablesBar();
+        renderTablesRegistry();
+      } catch (err) {
+        const msg = `<div class="text-danger">Failed to load registry: ${err.message}</div>`;
+        if (overviewBar) overviewBar.innerHTML = msg;
+        if (fullBar) fullBar.innerHTML = msg;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-danger">${err.message}</td></tr>`;
+      }
+    }
+
+    function renderTablesBar() {
+      const overviewBar = document.getElementById('overview-tables-bar');
+      const fullBar = document.getElementById('tables-registry-bar');
+      const items = (tablesRegistryCache || []).slice().sort((a, b) => {
+        const order = { global: 0, cohort: 1, uploaded: 2 };
+        return (order[a.scope] - order[b.scope]) || (a.label || '').localeCompare(b.label || '');
+      });
+      const html = items.length
+        ? items.map(renderTablesBarCard).join('')
+        : '<div style="color:var(--text-light);">No life or disability tables registered. Upload one below to start using cohort-specific tables.</div>';
+      if (overviewBar) overviewBar.innerHTML = html;
+      if (fullBar) fullBar.innerHTML = html;
+    }
+
+    function renderTablesBarCard(entry) {
+      const scopeClass = entry.scope === 'cohort' ? 'scope-cohort' : (entry.scope === 'uploaded' ? 'scope-uploaded' : 'scope-global');
+      const usedBadge = entry.used_in_pricing
+        ? '<span class="tb-badge active" title="Used in premium and simulation">In use</span>'
+        : '<span class="tb-badge idle" title="Uploaded — not yet active">Idle</span>';
+      const scopeBadge = `<span class="tb-badge scope">${escapeHtml(entry.scope)}</span>`;
+      const meta = [
+        entry.row_count ? `${entry.row_count} rows` : null,
+        entry.tables_version ? `v${entry.tables_version}` : null,
+        entry.effective_date ? new Date(entry.effective_date).toLocaleDateString() : null,
+      ].filter(Boolean).join(' • ');
+      const hash = (entry.integrity_hash || '').slice(0, 12);
+      const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
+      return `
+        <div class="tables-bar-card ${scopeClass}">
+          <div class="tb-badges">${scopeBadge}${usedBadge}</div>
+          <div class="tb-label">${escapeHtml(entry.label || entry.id)}</div>
+          <div class="tb-meta">${escapeHtml(meta)}</div>
+          <div class="tb-hash" title="Integrity SHA-256 prefix">#${hash || '—'}</div>
+          <div class="tb-actions">
+            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'>⬇ CSV</button>
+            <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'>⬇ JSON</button>
+            <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTablesRegistry() {
+      const tbody = document.querySelector('#tables-registry-list tbody');
+      if (!tbody) return;
+      const scopeFilter = (document.getElementById('tables-registry-filter-scope')?.value || '').trim();
+      const typeFilter = (document.getElementById('tables-registry-filter-type')?.value || '').trim();
+      const usedFilter = (document.getElementById('tables-registry-filter-used')?.value || '').trim();
+      const items = (tablesRegistryCache || []).filter((e) => {
+        if (scopeFilter && e.scope !== scopeFilter) return false;
+        if (typeFilter && e.table_type !== typeFilter) return false;
+        if (usedFilter === 'yes' && !e.used_in_pricing) return false;
+        if (usedFilter === 'no' && e.used_in_pricing) return false;
+        return true;
+      });
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);">No tables match the current filter.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.map((entry) => {
+        const usedCell = entry.used_in_pricing
+          ? '<span class="tb-badge active">In use</span>'
+          : '<span class="tb-badge idle">Idle</span>';
+        const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
+        const previewBtn = `<button class="btn-small btn-outline" onclick='previewRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")})'>Preview</button>`;
+        return `
+          <tr>
+            <td>${escapeHtml(entry.label || '')}</td>
+            <td>${escapeHtml(entry.scope)}</td>
+            <td>${escapeHtml(entry.table_type || '')}</td>
+            <td>${entry.row_count ?? 0}</td>
+            <td>${escapeHtml(entry.source_name || (entry.scope === 'global' ? 'Central tables store' : '—'))}<br><small class="tb-hash">${escapeHtml(entry.source_table_id || '')}</small></td>
+            <td>${usedCell}<br><small style="color:var(--text-light);">${escapeHtml(entry.usage_label || '')}</small></td>
+            <td><span class="tb-hash" title="${escapeAttr(entry.integrity_hash || '')}">#${(entry.integrity_hash || '').slice(0, 12) || '—'}</span></td>
+            <td>
+              ${previewBtn}
+              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'>⬇ CSV</button>
+              <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'>⬇ JSON</button>
+              <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function downloadRegistryEntry(entry, format) {
+      try {
+        const params = new URLSearchParams();
+        params.set('scope', entry.scope);
+        if (entry.table_type) params.set('table_type', entry.table_type);
+        if (entry.cohort_dim) params.set('cohort_dim', entry.cohort_dim);
+        if (entry.cohort_value) params.set('cohort_value', entry.cohort_value);
+        if (entry.scope === 'uploaded') {
+          const id = entry.source_table_id || (entry.id || '').replace(/^uploaded:/, '');
+          if (id) params.set('uploaded_id', id);
+        }
+        params.set('format', format);
+        // Include the bearer token via a one-shot fetch so we can stream as a Blob.
+        fetch(`/api/actuarial/tables/registry/download?${params.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(async (res) => {
+          if (!res.ok) {
+            const msg = await res.text().catch(() => `HTTP ${res.status}`);
+            throw new Error(msg);
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          const dispo = res.headers.get('Content-Disposition') || '';
+          const m = /filename="([^"]+)"/.exec(dispo);
+          a.download = m ? m[1] : `phins-rate-table.${format}`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }).catch((err) => alert('❌ Download failed: ' + err.message));
+      } catch (err) {
+        alert('❌ Download failed: ' + err.message);
+      }
+    }
+
+    async function previewRegistryEntry(entry) {
+      const wrapper = document.getElementById('tables-registry-preview');
+      const body = document.getElementById('tables-registry-preview-body');
+      if (!wrapper || !body) return;
+      wrapper.style.display = 'block';
+      body.innerHTML = 'Loading…';
+      try {
+        const params = new URLSearchParams();
+        params.set('scope', entry.scope);
+        if (entry.table_type) params.set('table_type', entry.table_type);
+        if (entry.cohort_dim) params.set('cohort_dim', entry.cohort_dim);
+        if (entry.cohort_value) params.set('cohort_value', entry.cohort_value);
+        if (entry.scope === 'uploaded') {
+          const id = entry.source_table_id || (entry.id || '').replace(/^uploaded:/, '');
+          if (id) params.set('uploaded_id', id);
+        }
+        params.set('format', 'json');
+        const res = await fetch(`/api/actuarial/tables/registry/download?${params.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => `HTTP ${res.status}`);
+          throw new Error(txt);
+        }
+        const data = await res.json();
+        const rows = Array.isArray(data.rows) ? data.rows : [];
+        const headers = rows.length ? Object.keys(rows[0]) : [];
+        const headerRow = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
+        const dataRows = rows.map((r) => `<tr>${headers.map((h) => `<td>${escapeHtml(r[h])}</td>`).join('')}</tr>`).join('');
+        body.innerHTML = `
+          <p><strong>${escapeHtml(entry.label)}</strong> — ${escapeHtml(entry.scope)} — ${rows.length} rows.</p>
+          <p class="tb-hash">Integrity SHA-256: ${escapeHtml(data.integrity_hash || '')}</p>
+          <table class="data-table"><thead><tr>${headerRow}</tr></thead><tbody>${dataRows}</tbody></table>
+        `;
+      } catch (err) {
+        body.innerHTML = `<p class="text-danger">${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    function prepareRegistryReplace(scope, tableType, cohortDim, cohortValue) {
+      showSection('tables-registry');
+      const typeEl = document.getElementById('replace-registry-type');
+      const dimEl = document.getElementById('replace-registry-cohort-dim');
+      const valEl = document.getElementById('replace-registry-cohort-value');
+      const statusEl = document.getElementById('replace-registry-status');
+      if (typeEl && tableType) typeEl.value = tableType;
+      if (dimEl) dimEl.value = scope === 'cohort' ? (cohortDim || '') : '';
+      if (valEl) valEl.value = scope === 'cohort' ? (cohortValue || '') : '';
+      if (statusEl) {
+        statusEl.textContent = scope === 'cohort'
+          ? `Replacement scoped to cohort ${cohortDim}=${cohortValue} (${tableType}). Pick a file and click Upload & promote.`
+          : (scope === 'global'
+              ? `Replacement scoped to GLOBAL ${tableType}. This will replace the rate band for every customer not matched by a cohort override.`
+              : `Replacement target inferred from upload type. Pick a file and click Upload & promote.`);
+      }
+      const fileEl = document.getElementById('replace-registry-file');
+      if (fileEl) fileEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function replaceRegistryTable() {
+      const statusEl = document.getElementById('replace-registry-status');
+      const fileInput = document.getElementById('replace-registry-file');
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      if (!file) { if (statusEl) statusEl.textContent = 'Choose a file first.'; return; }
+      const name = (document.getElementById('replace-registry-name')?.value || '').trim() || file.name;
+      const targetType = (document.getElementById('replace-registry-type')?.value || 'mortality_rates').trim();
+      const cohortDim = (document.getElementById('replace-registry-cohort-dim')?.value || '').trim();
+      const cohortValue = (document.getElementById('replace-registry-cohort-value')?.value || '').trim();
+      const cohortMode = !!(cohortDim && cohortValue);
+      const confirmMsg = cohortMode
+        ? `Upload "${name}" and register it as a cohort-scoped ${targetType} override for ${cohortDim}=${cohortValue}? The global rate band is preserved.`
+        : `Upload "${name}" and promote it into the GLOBAL ${targetType} rate band? This will replace the band for every customer not matched by a cohort override.`;
+      if (!confirm(confirmMsg)) return;
+
+      try {
+        if (statusEl) statusEl.textContent = 'Uploading…';
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        fd.append('name', name);
+        fd.append('table_type', targetType);
+        const upRes = await fetch('/api/admin/actuarial-tables/upload-file', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: fd,
+        });
+        const upData = await upRes.json();
+        if (!upRes.ok || !upData.success) throw new Error(upData.error || `HTTP ${upRes.status}`);
+        const newTableId = upData.id;
+        if (statusEl) statusEl.textContent = `Uploaded ${newTableId} — promoting…`;
+
+        const promoteBody = {
+          table_id: newTableId,
+          target_table_type: targetType,
+        };
+        if (cohortMode) {
+          promoteBody.cohort_dim = cohortDim;
+          promoteBody.cohort_value = cohortValue;
+        }
+        const useRes = await fetch('/api/actuarial/uploaded-tables/use', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(promoteBody),
+        });
+        const useData = await useRes.json();
+        if (!useRes.ok || useData.error) throw new Error(useData.error || `HTTP ${useRes.status}`);
+        if (statusEl) {
+          statusEl.textContent = useData.mode === 'cohort_override'
+            ? `✅ Registered cohort override ${useData.cohort_key} for ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`
+            : `✅ Replaced GLOBAL ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`;
+        }
+        if (fileInput) fileInput.value = '';
+        loadTablesRegistry();
+        if (typeof loadTables === 'function') loadTables();
+        if (typeof loadUploadedTables === 'function') loadUploadedTables();
+        if (typeof loadCohortOverrides === 'function') loadCohortOverrides();
+      } catch (err) {
+        if (statusEl) statusEl.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    // =====================================================================
     // UPLOADED TABLES
     // =====================================================================
     async function loadUploadedTables() {
@@ -3607,6 +4114,7 @@
         alert(`✅ Applied ${data.rows_applied} rows to ${data.target_table_type} as ${mode} (${data.rows_skipped} skipped).`);
         loadTables();
         loadCohortOverrides();
+        loadTablesRegistry();
       } catch (err) {
         alert('❌ ' + err.message);
       }
@@ -3664,6 +4172,7 @@
           return;
         }
         loadCohortOverrides();
+        loadTablesRegistry();
       } catch (err) {
         alert('❌ ' + err.message);
       }
@@ -3697,6 +4206,7 @@
         statusEl.textContent = `✅ Uploaded ${data.id}`;
         fileInput.value = '';
         loadUploadedTables();
+        loadTablesRegistry();
       } catch (err) {
         statusEl.textContent = `❌ ${err.message}`;
       }

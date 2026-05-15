@@ -20,6 +20,7 @@ Version: 2.0
 
 import math
 import random
+import re
 import json
 import hashlib
 import threading
@@ -3112,3 +3113,358 @@ def apply_uploaded_table_to_store(table_type: str, normalized: List[Dict[str, fl
     """Promote a normalized uploaded payload into the central rate table store."""
     store = get_actuarial_store()
     return store.update_current_tables(table_type, normalized, user)
+
+
+# =============================================================================
+# LIFE & DISABILITY TABLES REGISTRY (Tables Bar)
+# =============================================================================
+#
+# The actuary dashboard exposes a "Tables Bar" — a unified view over every
+# rate table the platform uses for life-and-disability pricing. The
+# registry returned here covers three scopes:
+#
+# * ``global``    — the active mortality / disability rate band stored in
+#                   :class:`ActuarialTablesStore`. Always used for premium
+#                   computation and portfolio simulation when a customer
+#                   does not match any cohort override.
+# * ``cohort``    — a cohort-scoped override (e.g. mortality table for
+#                   Caucasian women) registered through
+#                   :func:`register_cohort_rate_table`. Used for premium /
+#                   simulation when the customer's ``cohort`` payload
+#                   matches.
+# * ``uploaded``  — an uploaded ``mortality_rates`` / ``disability_incidence_rates``
+#                   table held in the catalog. NOT used for pricing until
+#                   it is promoted (globally or as a cohort override).
+#
+# The registry is the single source the dashboard renders so users can
+# *see* every table that influences a quote/simulation, *download* it for
+# audit, and *replace* it (upload + promote). Each entry exposes a
+# deterministic ``integrity_hash`` so two viewers can confirm they are
+# looking at the exact same rate table.
+# =============================================================================
+
+# Friendly cohort labels used by the dashboard. Keeping the dictionaries here
+# (instead of hard-coding strings into both the service and the UI) means new
+# cohort types only need to be added in one place to flow through downloads,
+# audit trails, and the UI bar.
+COHORT_DIMENSION_LABELS: Dict[str, str] = {
+    'gender': 'Gender',
+    'sex': 'Sex',
+    'ethnicity': 'Ethnicity',
+    'race': 'Race',
+    'smoker': 'Smoker status',
+    'country': 'Country',
+    'region': 'Region',
+    'occupation': 'Occupation',
+}
+
+COHORT_VALUE_LABELS: Dict[str, str] = {
+    'female': 'Female',
+    'male': 'Male',
+    'caucasian': 'Caucasian',
+    'asian': 'Asian',
+    'african': 'African',
+    'hispanic': 'Hispanic',
+    'mixed': 'Mixed',
+    'other': 'Other',
+    'yes': 'Smoker',
+    'no': 'Non-smoker',
+    'former': 'Former smoker',
+}
+
+TABLE_TYPE_LABELS: Dict[str, str] = {
+    'mortality_rates': 'Death (mortality)',
+    'disability_incidence_rates': 'Disability (permanent ADL)',
+}
+
+
+def _humanize_cohort_dim(dim: str) -> str:
+    if not dim:
+        return ''
+    return COHORT_DIMENSION_LABELS.get(dim.lower(), dim.replace('_', ' ').title())
+
+
+def _humanize_cohort_value(value: str) -> str:
+    if not value:
+        return ''
+    return COHORT_VALUE_LABELS.get(value.lower(), value.replace('_', ' ').title())
+
+
+def _humanize_table_type(table_type: str) -> str:
+    return TABLE_TYPE_LABELS.get((table_type or '').lower(), table_type or '')
+
+
+def build_cohort_label(cohort_dim: str, cohort_value: str, table_type: str) -> str:
+    """Build a human-readable label like ``"Death (mortality) — Female · Caucasian"``.
+
+    The label is what the actuary dashboard's Tables Bar shows next to
+    each entry so an actuary can instantly tell which cohort an uploaded
+    table is currently driving (the user's brief gave examples like
+    "death table for female Caucasian", "disability table for Asian men").
+    """
+    parts = [_humanize_table_type(table_type)]
+    if cohort_dim and cohort_value:
+        parts.append(
+            f"{_humanize_cohort_value(cohort_value)} ({_humanize_cohort_dim(cohort_dim).lower()})"
+        )
+    return ' — '.join(p for p in parts if p)
+
+
+def _hash_table_rows(rows: List[Dict[str, Any]], extra: Dict[str, Any]) -> str:
+    """Deterministic SHA-256 fingerprint of a rate band.
+
+    Rounds rates to 6 decimals so byte-identical tables on different hosts
+    (with potentially different float string repr) still hash the same. The
+    ``extra`` dict folds scope/cohort/version metadata into the hash so a
+    cohort override and the global rate band hash differently even when
+    they share the same numeric rows.
+    """
+    canonical_rows = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        norm = {}
+        for key in sorted(row.keys()):
+            value = row[key]
+            if isinstance(value, float):
+                value = round(value, 6)
+            norm[key] = value
+        canonical_rows.append(norm)
+    payload = {
+        'rows': canonical_rows,
+        'meta': {k: extra[k] for k in sorted(extra.keys())},
+    }
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+def _global_table_entry(table_type: str, store: ActuarialTablesStore) -> Dict[str, Any]:
+    rows = list(store.get_current_tables().get(table_type, []) or [])
+    extra = {
+        'scope': 'global',
+        'table_type': table_type,
+        'tables_version': store.current_version,
+    }
+    return {
+        'id': f'global:{table_type}',
+        'scope': 'global',
+        'table_type': table_type,
+        'cohort_dim': None,
+        'cohort_value': None,
+        'cohort_key': None,
+        'label': _humanize_table_type(table_type) + ' — Global (default cohort)',
+        'description': (
+            'Active rate band used by the pricing kernel for every customer '
+            'whose cohort does not match an active override. This table feeds '
+            'every quote, billing run, portfolio simulation, reserve projection, '
+            'and reinsurance calculation.'
+        ),
+        'row_count': len(rows),
+        'tables_version': store.current_version,
+        'effective_date': (store.versions.get(store.current_version, {}) or {}).get('effective_date'),
+        'created_by': (store.versions.get(store.current_version, {}) or {}).get('created_by'),
+        'source_table_id': None,
+        'source_name': None,
+        'used_in_pricing': True,
+        'usage_label': 'Active in pricing & simulation (default cohort)',
+        'integrity_hash': _hash_table_rows(rows, extra),
+        'rows': rows,
+    }
+
+
+def _cohort_entry(cohort_dim: str, cohort_value: str, table_type: str,
+                  rows: List[Dict[str, Any]],
+                  log_entry: Optional[Dict[str, Any]],
+                  store: ActuarialTablesStore) -> Dict[str, Any]:
+    cohort_key = f'{cohort_dim}:{cohort_value}'
+    extra = {
+        'scope': 'cohort',
+        'table_type': table_type,
+        'cohort_key': cohort_key,
+        'tables_version': store.current_version,
+    }
+    label = build_cohort_label(cohort_dim, cohort_value, table_type)
+    return {
+        'id': f'cohort:{cohort_key}:{table_type}',
+        'scope': 'cohort',
+        'table_type': table_type,
+        'cohort_dim': cohort_dim,
+        'cohort_value': cohort_value,
+        'cohort_key': cohort_key,
+        'label': label,
+        'description': (
+            f'Cohort override applied when a customer matches '
+            f'{_humanize_cohort_dim(cohort_dim)} = {_humanize_cohort_value(cohort_value)}. '
+            f'For matching customers the kernel uses this rate band instead of the '
+            f'{_humanize_table_type(table_type).lower()} default.'
+        ),
+        'row_count': len(rows),
+        'tables_version': store.current_version,
+        'effective_date': (log_entry or {}).get('timestamp'),
+        'created_by': (log_entry or {}).get('user'),
+        'source_table_id': (log_entry or {}).get('source_table_id'),
+        'source_name': (log_entry or {}).get('source_name'),
+        'used_in_pricing': True,
+        'usage_label': 'Active in pricing & simulation (cohort match)',
+        'integrity_hash': _hash_table_rows(rows, extra),
+        'rows': rows,
+    }
+
+
+def _uploaded_entry(uploaded: Dict[str, Any]) -> Dict[str, Any]:
+    table_id = str(uploaded.get('id') or '')
+    table_type = str(uploaded.get('table_type') or '').lower()
+    rows = uploaded.get('rows') if isinstance(uploaded.get('rows'), list) else []
+    extra = {
+        'scope': 'uploaded',
+        'table_type': table_type,
+        'uploaded_id': table_id,
+        'version': uploaded.get('version'),
+    }
+    label_base = _humanize_table_type(table_type) or (table_type or 'Custom table')
+    name = uploaded.get('name') or table_id
+    return {
+        'id': f'uploaded:{table_id}',
+        'scope': 'uploaded',
+        'table_type': table_type,
+        'cohort_dim': None,
+        'cohort_value': None,
+        'cohort_key': None,
+        'label': f'{label_base} — {name}',
+        'description': (
+            'Uploaded rate table held in the catalog. NOT yet used for premium / '
+            'simulation. Promote it as a global replacement or as a cohort override '
+            'to start pricing customers against this table.'
+        ),
+        'row_count': len(rows) if isinstance(rows, list) else int(uploaded.get('row_count') or 0),
+        'tables_version': uploaded.get('version'),
+        'effective_date': uploaded.get('effective_date'),
+        'created_by': uploaded.get('created_by'),
+        'source_table_id': table_id,
+        'source_name': name,
+        'used_in_pricing': False,
+        'usage_label': 'Uploaded — not yet active',
+        'integrity_hash': _hash_table_rows(rows or [], extra),
+        'rows': rows or [],
+    }
+
+
+def build_rate_tables_registry(uploaded_tables: Optional[List[Dict[str, Any]]] = None,
+                               include_rows: bool = False) -> List[Dict[str, Any]]:
+    """Return the unified life/disability rate tables registry.
+
+    Args:
+        uploaded_tables: optional list of uploaded table records (already
+            decoded by the caller because uploaded payloads live in the
+            ``ACTUARIAL_TABLES`` in-memory dict or in the
+            ``actuarial_tables`` DB table). Each record should contain at
+            least ``id``, ``name``, ``table_type``, ``version``,
+            ``effective_date``, ``created_by``, and either a ``rows`` list
+            or ``row_count``.
+        include_rows: when False (the default for the dashboard listing)
+            the ``rows`` field is stripped from every entry to keep the
+            payload small. The download endpoint passes True.
+    """
+    store = get_actuarial_store()
+    entries: List[Dict[str, Any]] = []
+
+    for table_type in ('mortality_rates', 'disability_incidence_rates'):
+        entries.append(_global_table_entry(table_type, store))
+
+    with _COHORT_LOCK:
+        cohort_overrides_snapshot = {
+            key: {tt: list(rows) for tt, rows in bucket.items()}
+            for key, bucket in COHORT_RATE_OVERRIDES.items()
+        }
+        cohort_log = list(COHORT_REGISTRY_LOG)
+
+    for cohort_key, bucket in cohort_overrides_snapshot.items():
+        if ':' not in cohort_key:
+            continue
+        cohort_dim, cohort_value = cohort_key.split(':', 1)
+        for table_type, rows in bucket.items():
+            last_log = next(
+                (
+                    entry for entry in reversed(cohort_log)
+                    if entry.get('cohort_key') == cohort_key
+                    and entry.get('table_type') == table_type
+                    and entry.get('action') != 'remove'
+                ),
+                None,
+            )
+            entries.append(_cohort_entry(
+                cohort_dim, cohort_value, table_type, rows, last_log, store,
+            ))
+
+    for uploaded in uploaded_tables or []:
+        if not isinstance(uploaded, dict):
+            continue
+        ttype = str(uploaded.get('table_type') or '').lower()
+        if ttype not in SUPPORTED_RATE_BANDS:
+            continue
+        entries.append(_uploaded_entry(uploaded))
+
+    if not include_rows:
+        for entry in entries:
+            entry.pop('rows', None)
+
+    return entries
+
+
+def get_active_rate_table_rows(scope: str, table_type: str,
+                               cohort_dim: Optional[str] = None,
+                               cohort_value: Optional[str] = None,
+                               ) -> Dict[str, Any]:
+    """Look up the rows backing one entry in the rate tables registry.
+
+    Returns a dict with ``rows``, ``label``, ``integrity_hash`` and
+    ``filename_stem`` so the download endpoint can stream the table as CSV
+    or JSON without re-deriving the metadata. ``scope='uploaded'`` is not
+    handled here because uploaded payloads live in the server's storage
+    layer; the caller already has the rows in that case.
+    """
+    table_type = (table_type or '').lower()
+    if table_type not in SUPPORTED_RATE_BANDS:
+        return {'success': False, 'error': f'Unsupported table_type: {table_type}'}
+    store = get_actuarial_store()
+    if scope == 'global':
+        entry = _global_table_entry(table_type, store)
+        return {
+            'success': True,
+            'rows': entry['rows'],
+            'label': entry['label'],
+            'integrity_hash': entry['integrity_hash'],
+            'filename_stem': f'phins-global-{table_type.replace("_", "-")}-{store.current_version}',
+        }
+    if scope == 'cohort':
+        if not cohort_dim or not cohort_value:
+            return {'success': False, 'error': 'cohort_dim and cohort_value required'}
+        cohort_key = f'{cohort_dim.lower()}:{cohort_value.lower()}'
+        with _COHORT_LOCK:
+            rows = list((COHORT_RATE_OVERRIDES.get(cohort_key, {}) or {}).get(table_type, []))
+            log_entry = next(
+                (
+                    entry for entry in reversed(COHORT_REGISTRY_LOG)
+                    if entry.get('cohort_key') == cohort_key
+                    and entry.get('table_type') == table_type
+                    and entry.get('action') != 'remove'
+                ),
+                None,
+            )
+        if not rows:
+            return {'success': False, 'error': 'Cohort override not found'}
+        entry = _cohort_entry(
+            cohort_dim.lower(), cohort_value.lower(), table_type, rows, log_entry, store,
+        )
+        safe_dim = re.sub(r'[^A-Za-z0-9._-]+', '-', cohort_dim.lower()).strip('-')
+        safe_val = re.sub(r'[^A-Za-z0-9._-]+', '-', cohort_value.lower()).strip('-')
+        stem_cohort = f'{safe_dim}-{safe_val}'
+        return {
+            'success': True,
+            'rows': entry['rows'],
+            'label': entry['label'],
+            'integrity_hash': entry['integrity_hash'],
+            'filename_stem': f'phins-cohort-{stem_cohort}-{table_type.replace("_", "-")}',
+        }
+    return {'success': False, 'error': f'Unsupported scope: {scope}'}
+

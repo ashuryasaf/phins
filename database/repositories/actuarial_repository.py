@@ -18,13 +18,11 @@ class ActuarialRepository:
     def get_by_id(self, table_id: str) -> Optional[ActuarialTable]:
         return self.session.query(ActuarialTable).filter(ActuarialTable.id == table_id).first()
 
-    def list(self, limit: int = 200) -> List[ActuarialTable]:
-        return (
-            self.session.query(ActuarialTable)
-            .order_by(ActuarialTable.created_date.desc())
-            .limit(limit)
-            .all()
-        )
+    def list(self, limit: Optional[int] = None) -> List[ActuarialTable]:
+        query = self.session.query(ActuarialTable).order_by(ActuarialTable.created_date.desc())
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def latest_by_type(self, table_type: str) -> Optional[ActuarialTable]:
         return (
