@@ -3947,8 +3947,8 @@
       const valEl = document.getElementById('replace-registry-cohort-value');
       const statusEl = document.getElementById('replace-registry-status');
       if (typeEl && tableType) typeEl.value = tableType;
-      if (dimEl) dimEl.value = scope === 'cohort' ? (cohortDim || '') : (dimEl.value || '');
-      if (valEl) valEl.value = scope === 'cohort' ? (cohortValue || '') : (valEl.value || '');
+      if (dimEl) dimEl.value = scope === 'cohort' ? (cohortDim || '') : '';
+      if (valEl) valEl.value = scope === 'cohort' ? (cohortValue || '') : '';
       if (statusEl) {
         statusEl.textContent = scope === 'cohort'
           ? `Replacement scoped to cohort ${cohortDim}=${cohortValue} (${tableType}). Pick a file and click Upload & promote.`
