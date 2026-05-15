@@ -1,0 +1,20 @@
+f6b81dc Merge pull request #325 from ashuryasaf/cursor/fix-billing-pending-autopay-a05e
+315b605 Fix outstanding bill fallback and consistent API response shape
+d145660 Fix _is_outstanding_bill to check actual amounts and align with payment processing
+865d7a5 Fix integrity display logic for dry-run and single-customer repairs
+4d39e50 Fix billing repair: settle overdue bills and scope bulk repair to confirmed customers
+28c5412 Add Pipeline Stage Billing Pending repair flow
+b7547b6 Merge pull request #324 from ashuryasaf/cursor/optimize-build-code-8ec7
+7fe5518 Fix validate target visibility in make help and ensure entrypoint.sh execute permission on Render
+0cecfc8 build(ci): concurrency-cancel, pip cache, and free-port-fallback for tests
+0295535 build: add phins/ unified CLI dispatcher (strangler pattern)
+afd18f3 build: add Makefile as the unified developer/operator entry point
+f49cf64 build(docker): multi-stage Dockerfile + scripts/entrypoint.sh unified entrypoint
+78507f5 build(requirements): split runtime vs dev dependencies
+e0c01b6 build: remove unused .deployment-trigger redeploy-nudge file
+237513c build(.dockerignore): expand exclusions to drop ~30 MB of dead weight from image
+d3ad721 feat(reports): audit-style number formatting (thousands, two decimals)
+14c31f8 feat(actuary-ui): IFRS 17 CSM reconciliation panel + new sheet/page in reports
+91ddf96 feat(actuarial): IFRS 17 CSM reconciliation block with verifiable identities
+c6de949 feat(actuary-ui): Portfolio Valuation section + savings-AUM visualisations
+63a13f9 feat(actuarial): /api/actuarial/valuation endpoint + valuation/savings in reports
