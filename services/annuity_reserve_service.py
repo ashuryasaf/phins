@@ -46,7 +46,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from typing import Any, Dict, List, Optional
 
 
@@ -227,6 +227,7 @@ def compute_annuity_reserve_forecast(
     audited.
     """
 
+    config = replace(config)
     if simulation:
         portfolio = (simulation or {}).get('portfolio_summary', {}) or {}
         profitability = (simulation or {}).get('profitability', {}) or {}
@@ -239,9 +240,6 @@ def compute_annuity_reserve_forecast(
             and (not config.monthly_deposit_per_customer or config.monthly_deposit_per_customer <= 0)
             and sim_customer_count
         ):
-            # Fallback: derive a per-customer monthly deposit from the
-            # priced annual savings premium so the forecast still works
-            # when the caller did not pass an explicit deposit.
             config.monthly_deposit_per_customer = (
                 sim_savings_premium / sim_customer_count / 12.0
             )
@@ -555,7 +553,7 @@ def coerce_annuity_reserve_config(payload: Optional[Dict[str, Any]]) -> AnnuityR
     def _pct(name: str, default: float) -> float:
         """Accept both percentage (4 → 0.04) and fraction (0.04) inputs."""
         raw = _f(name, default)
-        return raw / 100.0 if abs(raw) > 1.0 else raw
+        return raw / 100.0 if abs(raw) >= 1.0 else raw
 
     return AnnuityReserveConfig(
         customer_count=max(0, _i('customer_count', 1000)),
