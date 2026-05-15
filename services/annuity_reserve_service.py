@@ -311,7 +311,7 @@ def compute_annuity_reserve_forecast(
         # CPI top-up reserve, scaled by the running expected-vs-realised
         # delta. This is the user's ``Σ G(g; y) × (1 + madad(y)) +
         # (expec_ret(y+1)(g) - expec_ret(y+1)(I))`` block.
-        madad_term = g_at_guarantee * m_x + (g - e_x)
+        madad_term = g_at_guarantee * (1 + m_x) + (g - e_x)
         cumulative_madad_term += madad_term
 
         # Σ actuarial-loss correction. Quadratic on the negative gap, with

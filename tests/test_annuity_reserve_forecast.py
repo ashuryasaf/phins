@@ -287,7 +287,7 @@ def test_forecast_endpoint_seeds_from_simulation(admin_token):
     forecast = json.loads(body)['forecast']
     assert forecast['inputs']['customer_count'] > 0
     assert forecast['inputs']['monthly_deposit_per_customer'] >= 0
-    assert 'source_simulation' in json.loads(body)['forecast'] or True
+    assert 'source_simulation' in json.loads(body)['forecast']
     assert 'simulation_id' in (json.loads(body).get('forecast', {}).get('source_simulation', {}) or {})
 
 
