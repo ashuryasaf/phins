@@ -3835,9 +3835,7 @@
           ? '<span class="tb-badge active">In use</span>'
           : '<span class="tb-badge idle">Idle</span>';
         const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
-        const previewBtn = entry.scope === 'uploaded' && entry.source_table_id
-          ? `<button class="btn-small btn-outline" onclick="previewUploadedTable('${escapeAttr(entry.source_table_id)}')">Preview</button>`
-          : `<button class="btn-small btn-outline" onclick='previewRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")})'>Preview</button>`;
+        const previewBtn = `<button class="btn-small btn-outline" onclick='previewRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")})'>Preview</button>`;
         return `
           <tr>
             <td>${escapeHtml(entry.label || '')}</td>

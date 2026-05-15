@@ -14439,7 +14439,7 @@ For claims or questions, please contact:
                     from services.actuarial_service import _hash_table_rows  # type: ignore
                     integrity_hash = _hash_table_rows(rows, {
                         'scope': 'uploaded',
-                        'table_type': record.get('table_type'),
+                        'table_type': str(record.get('table_type') or '').lower(),
                         'uploaded_id': uploaded_id,
                         'version': record.get('version'),
                     })
