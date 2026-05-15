@@ -344,7 +344,7 @@ def compute_annuity_reserve_forecast(
         # Aggregate reserve at year X across the converting cohort.
         converted_share = conversion_curve[idx] if idx < len(conversion_curve) else 0.0
         converted_customers = customer_count * converted_share
-        p_aggregate = p_per_customer * converted_customers
+        p_aggregate = p_per_customer * converted_customers + config.initial_reserve
 
         if p_aggregate > peak_reserve:
             peak_reserve = p_aggregate
@@ -411,6 +411,7 @@ def compute_annuity_reserve_forecast(
         'guarantee_credit_pct': float(config.guarantee_credit_pct),
         'conversion_rate_pct': float(config.conversion_rate_pct),
         'actuarial_loss_lambda': float(config.actuarial_loss_lambda),
+        'initial_reserve': float(config.initial_reserve),
         'scenario_label': str(config.scenario_label),
         'version': config.version,
         'curves': {
