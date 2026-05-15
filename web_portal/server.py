@@ -11260,6 +11260,133 @@ class PortalHandler(BaseHTTPRequestHandler):
             collapse_repeated_underscores=False,
         )
 
+    def _decode_actuarial_payload(self, raw_payload: Any) -> List[Dict[str, Any]]:
+        """Decode the encrypted/plain payload of an uploaded actuarial table.
+
+        Mirrors the decoding done in the ``/api/actuarial/uploaded-tables/<id>``
+        preview path so the rate-tables registry can compute integrity hashes
+        and the download endpoint can stream consistent rows. Returns ``[]``
+        when the payload cannot be decoded — the caller treats that as
+        ``row_count = 0`` rather than failing the entire registry.
+        """
+        rows: Any = []
+        try:
+            if isinstance(raw_payload, str):
+                from security.vault import decrypt_json
+                decrypted = decrypt_json(raw_payload, default=None)
+                if decrypted is not None:
+                    rows = decrypted
+                else:
+                    try:
+                        envelope = json.loads(raw_payload)
+                        if isinstance(envelope, dict) and envelope.get('scheme') == 'plain':
+                            ciphertext = envelope.get('ciphertext')
+                            if isinstance(ciphertext, str):
+                                try:
+                                    rows = json.loads(ciphertext)
+                                except Exception:
+                                    rows = []
+                    except Exception:
+                        rows = []
+            elif isinstance(raw_payload, list):
+                rows = raw_payload
+            elif isinstance(raw_payload, dict):
+                rows = raw_payload.get('data') or raw_payload.get('rows') or list(raw_payload.values())
+        except Exception:
+            rows = []
+        if isinstance(rows, dict):
+            rows = rows.get('data') or rows.get('rows') or list(rows.values())
+        if not isinstance(rows, list):
+            rows = []
+        return rows
+
+    def _read_uploaded_actuarial_table(self, table_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single uploaded actuarial table (DB first, in-memory fallback).
+
+        Returns a dict with ``id``, ``name``, ``table_type``, ``version``,
+        ``effective_date``, ``created_by``, ``created_date`` and ``rows``,
+        or ``None`` when not found. The returned ``rows`` are the decoded
+        payload (already passed through normalisation by the caller for
+        rate-band download).
+        """
+        if not table_id:
+            return None
+        meta: Optional[Dict[str, Any]] = None
+        raw_payload: Any = None
+        try:
+            if USE_DATABASE and database_enabled:
+                from database.manager import DatabaseManager
+                with DatabaseManager() as db:
+                    row = db.actuarial.get_by_id(table_id)
+                    if row:
+                        meta = row.to_dict()
+                        raw_payload = row.payload
+        except Exception as db_exc:
+            print(f"[WARN] uploaded-tables registry DB read failed: {db_exc}")
+            meta = None
+        if not meta:
+            with STATE_LOCK:
+                stored = ACTUARIAL_TABLES.get(table_id)
+            if stored:
+                meta = {k: v for k, v in stored.items() if k != 'payload'}
+                raw_payload = stored.get('payload')
+        if not meta:
+            return None
+        rows = self._decode_actuarial_payload(raw_payload)
+        meta['rows'] = rows
+        return meta
+
+    def _collect_uploaded_rate_tables_for_registry(self) -> List[Dict[str, Any]]:
+        """Collect every uploaded mortality / disability table for the registry.
+
+        Walks the database catalog (when available) and the in-memory
+        ``ACTUARIAL_TABLES`` store, decodes each payload, and returns a
+        list of dicts ready for :func:`build_rate_tables_registry`. Tables
+        with unsupported types (e.g. pricing/lapse uploads) are skipped so
+        the registry only surfaces tables that *could* drive a life or
+        disability rate band.
+        """
+        from services.actuarial_service import SUPPORTED_RATE_BANDS
+        records: List[Dict[str, Any]] = []
+        seen_ids: set = set()
+        try:
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        for row in db.actuarial.list(limit=200):
+                            meta = row.to_dict()
+                            ttype = str(meta.get('table_type') or '').lower()
+                            if ttype not in SUPPORTED_RATE_BANDS:
+                                continue
+                            meta['table_type'] = ttype
+                            meta['rows'] = self._decode_actuarial_payload(row.payload)
+                            records.append(meta)
+                            seen_ids.add(meta.get('id'))
+                except Exception as db_exc:
+                    print(f"[WARN] uploaded-tables registry DB scan failed: {db_exc}")
+        except Exception as outer_exc:
+            print(f"[WARN] uploaded-tables registry collection failed: {outer_exc}")
+        try:
+            with STATE_LOCK:
+                local_items = list(ACTUARIAL_TABLES.values())
+            for stored in local_items:
+                table_id = stored.get('id')
+                if not table_id or table_id in seen_ids:
+                    continue
+                ttype = str(stored.get('table_type') or '').lower()
+                if ttype not in SUPPORTED_RATE_BANDS:
+                    continue
+                meta = {k: v for k, v in stored.items() if k != 'payload'}
+                meta['table_type'] = ttype
+                meta['rows'] = self._decode_actuarial_payload(stored.get('payload'))
+                records.append(meta)
+                seen_ids.add(table_id)
+        except Exception as mem_exc:
+            print(f"[WARN] uploaded-tables registry memory scan failed: {mem_exc}")
+        records.sort(key=lambda r: r.get('created_date') or '', reverse=True)
+        return records
+
     def _build_report_summary_csv_bytes(self, summary: Dict[str, Any]) -> bytes:
         """Build CSV bytes for downloadable report summary."""
         out = io.StringIO()
@@ -14195,6 +14322,177 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
+        # ACTUARIAL: Unified Life & Disability Tables Registry ("Tables Bar")
+        # Returns every life-and-disability rate table the platform knows
+        # about — global default, cohort overrides, uploaded catalog —
+        # tagged with whether each is used for premium / simulation. The
+        # actuary dashboard renders this list as a "Tables Bar" so an
+        # actuary can see, download, or replace every rate band that
+        # influences a quote (e.g. death table for Caucasian women,
+        # disability table for Asian men).
+        # =====================================================================
+        if path == '/api/actuarial/tables/registry':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import build_rate_tables_registry
+                uploaded_records = self._collect_uploaded_rate_tables_for_registry()
+                registry = build_rate_tables_registry(uploaded_records, include_rows=False)
+                summary = {
+                    'global': sum(1 for e in registry if e['scope'] == 'global'),
+                    'cohort': sum(1 for e in registry if e['scope'] == 'cohort'),
+                    'uploaded': sum(1 for e in registry if e['scope'] == 'uploaded'),
+                    'used_in_pricing': sum(1 for e in registry if e.get('used_in_pricing')),
+                    'total': len(registry),
+                }
+                # ``do_GET`` already imports hashlib locally further down the
+                # method (NFT verification block), which makes ``hashlib`` a
+                # function-local name across the whole function body. Re-import
+                # here so the manifest hash works regardless of whether the
+                # other branch ran first.
+                import hashlib as _hashlib_registry
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'items': registry,
+                    'summary': summary,
+                    'integrity': {
+                        'manifest_hash': _hashlib_registry.sha256(
+                            json.dumps(
+                                [
+                                    {'id': e['id'], 'hash': e['integrity_hash']}
+                                    for e in registry
+                                ],
+                                sort_keys=True,
+                            ).encode('utf-8')
+                        ).hexdigest(),
+                    },
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
+        # ACTUARIAL: Download a registry entry as CSV or JSON
+        # Query params:
+        #   scope=global|cohort|uploaded
+        #   table_type=mortality_rates|disability_incidence_rates
+        #   cohort_dim, cohort_value (required for scope=cohort)
+        #   uploaded_id (required for scope=uploaded)
+        #   format=csv|json (default csv)
+        # =====================================================================
+        if path == '/api/actuarial/tables/registry/download':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                scope = (qs.get('scope', [''])[0] or '').strip().lower()
+                table_type = (qs.get('table_type', [''])[0] or '').strip().lower()
+                cohort_dim = (qs.get('cohort_dim', [''])[0] or '').strip().lower()
+                cohort_value = (qs.get('cohort_value', [''])[0] or '').strip().lower()
+                uploaded_id = (qs.get('uploaded_id', [''])[0] or '').strip()
+                fmt = (qs.get('format', ['csv'])[0] or 'csv').strip().lower()
+                if fmt not in ('csv', 'json'):
+                    fmt = 'csv'
+
+                rows: List[Dict[str, Any]] = []
+                label = ''
+                integrity_hash = ''
+                filename_stem = 'phins-rate-table'
+
+                if scope in ('global', 'cohort'):
+                    from services.actuarial_service import get_active_rate_table_rows
+                    result = get_active_rate_table_rows(
+                        scope=scope,
+                        table_type=table_type,
+                        cohort_dim=cohort_dim or None,
+                        cohort_value=cohort_value or None,
+                    )
+                    if not result.get('success'):
+                        self._set_json_headers(404 if 'not found' in str(result.get('error', '')).lower() else 400)
+                        self.wfile.write(json.dumps({'error': result.get('error', 'Lookup failed')}).encode('utf-8'))
+                        return
+                    rows = result.get('rows') or []
+                    label = result.get('label') or ''
+                    integrity_hash = result.get('integrity_hash') or ''
+                    filename_stem = result.get('filename_stem') or filename_stem
+                elif scope == 'uploaded':
+                    if not uploaded_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'uploaded_id required for scope=uploaded'}).encode('utf-8'))
+                        return
+                    record = self._read_uploaded_actuarial_table(uploaded_id)
+                    if not record:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Uploaded table not found'}).encode('utf-8'))
+                        return
+                    rows = record.get('rows') or []
+                    name = record.get('name') or uploaded_id
+                    label = f'Uploaded — {name}'
+                    from services.actuarial_service import _hash_table_rows  # type: ignore
+                    integrity_hash = _hash_table_rows(rows, {
+                        'scope': 'uploaded',
+                        'table_type': record.get('table_type'),
+                        'uploaded_id': uploaded_id,
+                        'version': record.get('version'),
+                    })
+                    safe = re.sub(r'[^A-Za-z0-9._-]+', '-', str(name)).strip('-') or uploaded_id
+                    filename_stem = f'phins-uploaded-{safe}'
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'scope must be global, cohort, or uploaded'}).encode('utf-8'))
+                    return
+
+                if fmt == 'json':
+                    body_bytes = json.dumps({
+                        'label': label,
+                        'scope': scope,
+                        'table_type': table_type or (rows[0].get('table_type') if rows and isinstance(rows[0], dict) else None),
+                        'integrity_hash': integrity_hash,
+                        'row_count': len(rows),
+                        'rows': rows,
+                    }, indent=2, default=str).encode('utf-8')
+                    content_type = 'application/json; charset=utf-8'
+                    filename = f'{filename_stem}.json'
+                else:
+                    import csv as _csv
+                    import io as _io
+                    if rows and isinstance(rows[0], dict):
+                        fieldnames = sorted({k for r in rows for k in r.keys() if isinstance(r, dict)})
+                    else:
+                        fieldnames = ['age_min', 'age_max', 'rate_per_1000']
+                    buf = _io.StringIO()
+                    writer = _csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
+                    writer.writeheader()
+                    for row in rows:
+                        if isinstance(row, dict):
+                            writer.writerow(row)
+                    body_bytes = buf.getvalue().encode('utf-8')
+                    content_type = 'text/csv; charset=utf-8'
+                    filename = f'{filename_stem}.csv'
+
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('X-Phins-Table-Integrity', integrity_hash or '')
+                self.send_header('X-Phins-Table-Label', (label or '').encode('ascii', 'replace').decode('ascii'))
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(body_bytes)
+            except Exception as e:
+                try:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                except Exception:
+                    pass
             return
 
         # =====================================================================
