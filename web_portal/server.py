@@ -14482,7 +14482,7 @@ For claims or questions, please contact:
                 self.send_header('Content-Type', content_type)
                 self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
                 self.send_header('X-Phins-Table-Integrity', integrity_hash or '')
-                self.send_header('X-Phins-Table-Label', (label or '').encode('ascii', 'replace').decode('ascii'))
+                self.send_header('X-Phins-Table-Label', (label or '').encode('ascii', 'replace').decode('ascii').replace('\r', '').replace('\n', ''))
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Cache-Control', 'no-store')
                 self.end_headers()

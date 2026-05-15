@@ -20,6 +20,7 @@ Version: 2.0
 
 import math
 import random
+import re
 import json
 import hashlib
 import threading
@@ -3455,7 +3456,9 @@ def get_active_rate_table_rows(scope: str, table_type: str,
         entry = _cohort_entry(
             cohort_dim.lower(), cohort_value.lower(), table_type, rows, log_entry, store,
         )
-        stem_cohort = f'{cohort_dim.lower()}-{cohort_value.lower()}'
+        safe_dim = re.sub(r'[^A-Za-z0-9._-]+', '-', cohort_dim.lower()).strip('-')
+        safe_val = re.sub(r'[^A-Za-z0-9._-]+', '-', cohort_value.lower()).strip('-')
+        stem_cohort = f'{safe_dim}-{safe_val}'
         return {
             'success': True,
             'rows': entry['rows'],
