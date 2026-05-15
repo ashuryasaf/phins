@@ -4012,10 +4012,10 @@
         guarantee_credit_pct: (parseFloat(document.getElementById('annuity-guarantee-credit')?.value) || 0) / 100,
         conversion_rate_pct: (parseFloat(document.getElementById('annuity-conversion-rate')?.value) || 0) / 100,
         actuarial_loss_lambda: parseFloat(document.getElementById('annuity-loss-lambda')?.value) || 0,
-        annuity_gap_factor: parseFloat(document.getElementById('annuity-gap-factor')?.value) ?? 1,
-        madad_term_factor: parseFloat(document.getElementById('annuity-madad-factor')?.value) ?? 1,
-        loss_correction_factor: parseFloat(document.getElementById('annuity-loss-factor')?.value) ?? 1,
-        interest_credit_factor: parseFloat(document.getElementById('annuity-interest-factor')?.value) ?? 1,
+        annuity_gap_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-gap-factor')?.value)),
+        madad_term_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-madad-factor')?.value)),
+        loss_correction_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-loss-factor')?.value)),
+        interest_credit_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-interest-factor')?.value)),
       };
       if (realisedPct != null && !Number.isNaN(realisedPct)) {
         // The backend expects a curve (list); one scalar repeated by the
