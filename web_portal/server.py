@@ -12593,10 +12593,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
             try:
+                diagnostics = diagnose_media_video_providers()
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'diagnostics': diagnose_media_video_providers(),
+                    'diagnostics': diagnostics,
                 }).encode('utf-8'))
                 return
             except Exception as exc:
