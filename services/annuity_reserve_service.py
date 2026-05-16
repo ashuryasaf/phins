@@ -100,6 +100,12 @@ class AnnuityReserveConfig:
     loss_correction_factor: float = 1.0
     interest_credit_factor: float = 1.0
 
+    # Number of future monthly annuity payments the reserve must cover.
+    # Default 240 = payout_horizon_years × 12.  Setting a shorter window
+    # (e.g. 60 months) scales the aggregate reserve proportionally so the
+    # actuary can model partial-obligation or regulatory-minimum coverage.
+    future_annuity_months: int = 240
+
     # Optional initial annuity reserve carried forward from a prior run.
     initial_reserve: float = 0.0
 
@@ -271,6 +277,8 @@ def compute_annuity_reserve_forecast(
     g = float(config.guarantee_rate_pct)
     payout_n = max(1, int(config.payout_horizon_years))
     a_guarantee = annuity_factor(g, payout_n)
+    future_months = max(1, int(config.future_annuity_months))
+    months_scaling = future_months / max(1, payout_n * 12)
 
     s_actual = 0.0  # cumulative savings under realised market returns
     s_min = 0.0     # cumulative savings under guaranteed (4% + madad)
@@ -347,10 +355,14 @@ def compute_annuity_reserve_forecast(
         )
         p_per_customer = max(0.0, p_per_customer_raw)
 
-        # Aggregate reserve at year X across the converting cohort.
+        # Aggregate reserve at year X across the converting cohort,
+        # scaled by the future-annuity-months ratio.
         converted_share = conversion_curve[idx] if idx < len(conversion_curve) else 0.0
         converted_customers = customer_count * converted_share
-        p_aggregate = p_per_customer * converted_customers + (config.initial_reserve if idx == 0 else 0.0)
+        p_aggregate = (
+            p_per_customer * converted_customers * months_scaling
+            + (config.initial_reserve if idx == 0 else 0.0)
+        )
 
         if p_aggregate > peak_reserve:
             peak_reserve = p_aggregate
@@ -381,6 +393,9 @@ def compute_annuity_reserve_forecast(
             'interest_credited_per_customer': _round2(interest_credited_year),
             'p_per_customer_raw': _round2(p_per_customer_raw),
             'p_per_customer': _round2(p_per_customer),
+            # Monthly annuity per customer (annual ÷ 12)
+            'monthly_annuity_per_customer_guaranteed': _round2(ann_min / 12.0),
+            'monthly_annuity_per_customer_actual': _round2(ann_realised / 12.0),
             # Aggregate reserve P(X)
             'reserve_aggregate': _round2(p_aggregate),
             'reserve_aggregate_cumulative_floor': _round2(p_aggregate),
@@ -421,6 +436,8 @@ def compute_annuity_reserve_forecast(
         'madad_term_factor': float(config.madad_term_factor),
         'loss_correction_factor': float(config.loss_correction_factor),
         'interest_credit_factor': float(config.interest_credit_factor),
+        'future_annuity_months': future_months,
+        'future_annuity_months_scaling': _round6(months_scaling),
         'initial_reserve': float(config.initial_reserve),
         'scenario_label': str(config.scenario_label),
         'version': config.version,
@@ -551,9 +568,8 @@ def coerce_annuity_reserve_config(payload: Optional[Dict[str, Any]]) -> AnnuityR
         return None
 
     def _pct(name: str, default: float) -> float:
-        """Accept both percentage (4 → 0.04) and fraction (0.04) inputs."""
-        raw = _f(name, default)
-        return raw / 100.0 if abs(raw) >= 1.0 else raw
+        """Read a fractional percentage value (e.g. 0.04 for 4%)."""
+        return _f(name, default)
 
     return AnnuityReserveConfig(
         customer_count=max(0, _i('customer_count', 1000)),
@@ -575,6 +591,7 @@ def coerce_annuity_reserve_config(payload: Optional[Dict[str, Any]]) -> AnnuityR
         madad_term_factor=max(0.0, _f('madad_term_factor', 1.0)),
         loss_correction_factor=max(0.0, _f('loss_correction_factor', 1.0)),
         interest_credit_factor=max(0.0, _f('interest_credit_factor', 1.0)),
+        future_annuity_months=max(1, _i('future_annuity_months', 240)),
         initial_reserve=max(0.0, _f('initial_reserve', 0.0)),
         scenario_label=str(payload.get('scenario_label') or 'base_case').strip() or 'base_case',
     )
