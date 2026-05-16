@@ -2981,13 +2981,13 @@ def verify_media_video_job_integrity(job: Dict[str, Any]) -> Dict[str, Any]:
     if file_path and os.path.isfile(file_path):
         try:
             actual_checksum = _compute_file_checksum(file_path)
+            actual_size = os.path.getsize(file_path)
         except OSError as exc:
             return {
                 'verified': False,
                 'reason': f'Failed to read media file: {exc}',
                 'asset_id': asset_id,
             }
-        actual_size = os.path.getsize(file_path)
     else:
         data_url = str(asset.get('data') or '').strip()
         if not data_url:
