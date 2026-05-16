@@ -14327,6 +14327,36 @@ For claims or questions, please contact:
             return
 
         # =====================================================================
+        # ACTUARIAL: Annuity Reserve default scenario inputs
+        # Returns the canonical default scenario used by the dashboard's
+        # Annuity Reserves Forecast Bar so the UI renders without an API
+        # round-trip to compute a baseline.
+        # =====================================================================
+        if path == '/api/actuarial/annuity-reserve/defaults':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.annuity_reserve_service import (
+                    AnnuityReserveConfig,
+                    compute_annuity_reserve_forecast,
+                    get_default_annuity_reserve_inputs,
+                )
+                defaults = get_default_annuity_reserve_inputs()
+                preview = compute_annuity_reserve_forecast(AnnuityReserveConfig())
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'defaults': defaults,
+                    'preview': preview,
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
         # ACTUARIAL: Unified Life & Disability Tables Registry ("Tables Bar")
         # Returns every life-and-disability rate table the platform knows
         # about — global default, cohort overrides, uploaded catalog —
@@ -26900,6 +26930,67 @@ For claims or questions, please contact:
                 import traceback
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e), 'traceback': traceback.format_exc()}).encode('utf-8'))
+            return
+
+        # =====================================================================
+        # ACTUARIAL: Annuity Reserve Forecast
+        # POST body: see services.annuity_reserve_service.AnnuityReserveConfig
+        # Optional ``simulation_id`` seeds customer count + monthly deposit
+        # from a saved portfolio simulation so the reserve forecast is tied
+        # to the same priced book the simulator audited.
+        # =====================================================================
+        if path == '/api/actuarial/annuity-reserve/forecast':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                payload = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            try:
+                from services.annuity_reserve_service import (
+                    coerce_annuity_reserve_config,
+                    compute_annuity_reserve_forecast,
+                )
+                config = coerce_annuity_reserve_config(payload)
+                simulation = None
+                simulation_id = str(payload.get('simulation_id') or '').strip()
+                if simulation_id:
+                    simulation = get_actuarial_simulation_snapshot(simulation_id)
+                    if not simulation:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({
+                            'error': f'Unknown simulation_id: {simulation_id}'
+                        }).encode('utf-8'))
+                        return
+                forecast = compute_annuity_reserve_forecast(config, simulation=simulation)
+                if simulation_id:
+                    forecast['source_simulation'] = {
+                        'simulation_id': simulation_id,
+                        'tables_version': simulation.get('tables_version'),
+                        'accepted_customers': (simulation.get('portfolio_summary', {}) or {}).get('accepted_customers'),
+                        'savings_premium_annual': (simulation.get('profitability', {}) or {}).get('savings_premium'),
+                    }
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'forecast': forecast,
+                }).encode('utf-8'))
+            except Exception as e:
+                import traceback
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': str(e),
+                    'traceback': traceback.format_exc(),
+                }).encode('utf-8'))
             return
 
         # =====================================================================

@@ -8,7 +8,10 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-05-15.life-disability-tables-bar">
+  <meta name="phins-actuary-dashboard-build" content="2026-05-15.annuity-reserves-forecast">
+  <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
+       from the same CDN as risk-reports-dashboard.html for consistency. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
@@ -718,7 +721,7 @@
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
-        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-15 (life-disability-tables-bar)</span>
+        <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-15 (annuity-reserves-forecast)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
         <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
@@ -777,6 +780,10 @@
           <div class="nav-item" onclick="showSection('reserves')">
             <span class="nav-icon">🏦</span>
             <span>Reserves &amp; IFRS 17</span>
+          </div>
+          <div class="nav-item" onclick="showSection('annuity-reserves')">
+            <span class="nav-icon">📊</span>
+            <span>Annuity Reserves</span>
           </div>
           <div class="nav-item" onclick="showSection('reinsurance')">
             <span class="nav-icon">🛡️</span>
@@ -1636,6 +1643,192 @@
           </div>
         </section>
 
+        <!-- Annuity Reserves Forecast Section -->
+        <section id="section-annuity-reserves" class="section">
+          <h2 class="section-title">📊 Annuity Reserves Forecast</h2>
+
+          <div class="alert alert-warning">
+            This tool sizes the reserve required to back the platform's
+            <strong>4% + CPI guaranteed annuity</strong> on customer savings, year by year, and ties the
+            forecast back to a portfolio simulation. Use it to compare future annuity payments
+            (per converting customer) against present monthly deposits, and to surface the
+            top-up reserve when realised market returns underperform the guarantee.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Formula — P(X) (annuity guarantee top-up reserve)</div>
+            <p class="research-note" style="font-family:ui-monospace,Menlo,monospace;background:#f7fafc;padding:10px;border-radius:6px;line-height:1.6;white-space:pre-wrap;">P(X) = max(0,
+   G(F(X);X) − G(g;X)
+  + Σ_{y=0..N−1} G(g;y) × (1 + madad(y)) + ( expec_ret(y+1)(g) − expec_ret(y+1)(I) )
+  + Σ_{y=0..N−1} ( arad_loss(expec_ret(y+1)(g) − I(y+1))
+                 − arad_loss(expec_ret(y+1)(I) − I(y+1)) )
+                × I(y+1) × (1 + I(y+1)) × (1 + madad(y+1))
+  − I(y+1) × (1 + madad(y+1)) × (1 + I(y+1))
+)</p>
+            <div style="font-size:0.85rem;color:var(--text-light);">
+              <strong>g</strong> = guarantee rate (default 4%) ·
+              <strong>F(X)</strong> = realised market return ·
+              <strong>expec_ret</strong> = expected market return curve ·
+              <strong>I</strong> = guarantee credit ·
+              <strong>madad</strong> = CPI ·
+              <strong>arad_loss(x)</strong> = λ · max(0, −x)² (one-sided quadratic loss)
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Inputs</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Simulation ID (optional)</label>
+                <input type="text" id="annuity-sim-id" class="form-input" placeholder="Seed customer count + monthly deposit from a saved sim">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Scenario label</label>
+                <input type="text" id="annuity-scenario-label" class="form-input" value="base_case">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Customer count</label>
+                <input type="number" id="annuity-customer-count" class="form-input" value="1000" min="0">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Monthly deposit per customer</label>
+                <input type="number" id="annuity-monthly-deposit" class="form-input" value="1000" min="0" step="50">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Projection years</label>
+                <input type="number" id="annuity-projection-years" class="form-input" value="30" min="1" max="80">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Annuity payout horizon (years)</label>
+                <input type="number" id="annuity-payout-horizon" class="form-input" value="20" min="1" max="60">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Guarantee rate g (%)</label>
+                <input type="number" id="annuity-guarantee-rate" class="form-input" value="4" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Expected market return (%)</label>
+                <input type="number" id="annuity-expected-return" class="form-input" value="6" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Realised market return (%)</label>
+                <input type="number" id="annuity-realised-return" class="form-input" value="6" step="0.1">
+                <small style="color:var(--text-light);font-size:0.75rem;">Set lower than expected to stress-test the reserve.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">CPI (madad) (%)</label>
+                <input type="number" id="annuity-madad" class="form-input" value="2" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Guarantee credit I (%)</label>
+                <input type="number" id="annuity-guarantee-credit" class="form-input" value="4" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Conversion rate (% choose annuity)</label>
+                <input type="number" id="annuity-conversion-rate" class="form-input" value="60" min="0" max="100" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Actuarial loss λ</label>
+                <input type="number" id="annuity-loss-lambda" class="form-input" value="0.5" min="0" step="0.1">
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:4px;">
+              <div class="form-group">
+                <label class="form-label">Annuity-gap factor</label>
+                <input type="number" id="annuity-gap-factor" class="form-input" value="1" min="0" step="0.1">
+                <small style="color:var(--text-light);font-size:0.75rem;">Weight on G(F;X)−G(g;X)</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">CPI top-up factor</label>
+                <input type="number" id="annuity-madad-factor" class="form-input" value="1" min="0" step="0.1">
+                <small style="color:var(--text-light);font-size:0.75rem;">Weight on madad/inflation term</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Loss-correction factor</label>
+                <input type="number" id="annuity-loss-factor" class="form-input" value="1" min="0" step="0.1">
+                <small style="color:var(--text-light);font-size:0.75rem;">Weight on arad_loss term</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Interest-credit factor</label>
+                <input type="number" id="annuity-interest-factor" class="form-input" value="1" min="0" step="0.1">
+                <small style="color:var(--text-light);font-size:0.75rem;">Weight on credited interest deduction</small>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
+                <button class="btn btn-primary" onclick="runAnnuityReserveForecast()">▶ Run forecast</button>
+                <button class="btn btn-outline" onclick="loadAnnuityReserveDefaults()">🔄 Reset to defaults</button>
+              </div>
+            </div>
+            <p id="annuity-reserve-status" class="research-note" style="margin-top:10px;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>Forecast Bar</span>
+              <span id="annuity-reserve-summary" style="font-size:0.85rem;font-weight:400;color:var(--text-light);">Run a forecast to populate the bar.</span>
+            </div>
+            <div class="stats-grid" id="annuity-reserve-stats">
+              <div class="stat-card"><div class="stat-label">Peak reserve P(X)</div><div class="stat-value" id="annuity-stat-peak">$0</div></div>
+              <div class="stat-card"><div class="stat-label">Peak year</div><div class="stat-value" id="annuity-stat-peak-year">—</div></div>
+              <div class="stat-card success"><div class="stat-label">Funding ratio (actual ÷ guarantee)</div><div class="stat-value" id="annuity-stat-funding">0%</div></div>
+              <div class="stat-card warning"><div class="stat-label">Final-year reserve</div><div class="stat-value" id="annuity-stat-final">$0</div></div>
+              <div class="stat-card"><div class="stat-label">Total deposits collected</div><div class="stat-value" id="annuity-stat-deposits">$0</div></div>
+              <div class="stat-card"><div class="stat-label">Annuity per customer (guarantee)</div><div class="stat-value" id="annuity-stat-payout">$0</div></div>
+            </div>
+            <div style="position:relative;height:320px;margin-top:12px;">
+              <canvas id="annuity-reserve-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Future annuity vs. present monthly deposits (per customer)</div>
+            <p class="research-note" style="margin-bottom:10px;">
+              Compares the annuity payment a single converting customer can fund each year (under the guaranteed track,
+              the realised market track, and the expected market track) against the cumulative deposits they have made.
+              When the realised line falls below the guaranteed line, the gap is what P(X) reserves.
+            </p>
+            <div style="position:relative;height:320px;">
+              <canvas id="annuity-vs-deposits-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Year-by-year forecast (audit table)</div>
+            <div style="overflow-x:auto;">
+              <table class="data-table" id="annuity-reserve-table">
+                <thead>
+                  <tr>
+                    <th>Year</th>
+                    <th>Realised %</th>
+                    <th>Expected %</th>
+                    <th>CPI %</th>
+                    <th>Conv %</th>
+                    <th>Savings (actual)</th>
+                    <th>Savings (guarantee)</th>
+                    <th>Annuity (actual)</th>
+                    <th>Annuity (guarantee)</th>
+                    <th>Reserve P(X)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="10" style="text-align:center;color:var(--text-light);">Run a forecast to populate the audit table.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Data integrity</div>
+            <p style="color:var(--text-light);font-size:0.85rem;margin-bottom:8px;">
+              Every forecast carries a deterministic SHA-256 integrity hash signing the canonical inputs + yearly numeric block.
+              Two viewers running the same scenario will see the same hash — this is what makes the forecast auditable.
+            </p>
+            <div id="annuity-reserve-integrity" class="tb-hash" style="font-family:ui-monospace,Menlo,monospace;font-size:0.85rem;color:var(--text-light);">Hash: —</div>
+            <ul id="annuity-reserve-integrity-checks" style="margin-top:8px;font-size:0.85rem;list-style:none;padding-left:0;"></ul>
+          </div>
+        </section>
+
         <!-- Risk Reference Section -->
         <section id="section-risk-reference" class="section">
           <h2 class="section-title">📐 Risk Reference (Locked Source)</h2>
@@ -2095,6 +2288,7 @@
         loadUploadedTables();
         loadCohortOverrides();
         loadTablesRegistry();
+        loadAnnuityReserveDefaults();
         loadContractSpec();
         
       } catch (err) {
@@ -2114,6 +2308,18 @@
       
       document.getElementById(`section-${sectionId}`).classList.add('active');
       event.currentTarget.classList.add('active');
+
+      // The Annuity Reserves charts depend on Chart.js loaded with
+      // ``defer`` from a CDN. If the user navigates here before the
+      // bundle finished loading, the cached forecast was rendered with
+      // ``Chart === undefined`` and the canvases are empty — re-render
+      // now that the bundle is almost certainly available.
+      if (sectionId === 'annuity-reserves'
+          && annuityReserveLastResponse
+          && typeof Chart !== 'undefined'
+          && (!annuityReserveChart || !annuityVsDepositsChart)) {
+        renderAnnuityReserveForecast(annuityReserveLastResponse);
+      }
     }
     
     // Load actuarial tables
@@ -3733,6 +3939,297 @@
     }
 
     // =====================================================================
+    // ANNUITY RESERVES FORECAST
+    // =====================================================================
+    // Implements the dashboard side of the
+    //   POST /api/actuarial/annuity-reserve/forecast
+    // endpoint. Supports two charts (the reserve bar and the
+    // annuity-vs-deposits line), the audit table, and the integrity hash
+    // panel. Charts are rebuilt on every run rather than mutated so the
+    // canvas state cannot drift from the displayed numbers.
+    let annuityReserveChart = null;
+    let annuityVsDepositsChart = null;
+    let annuityReserveLastResponse = null;
+
+    function _annuityCurrency(value) {
+      if (typeof fmtCurrency === 'function') return fmtCurrency(value);
+      const n = Number(value || 0);
+      return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+
+    async function loadAnnuityReserveDefaults() {
+      const statusEl = document.getElementById('annuity-reserve-status');
+      try {
+        const res = await fetch('/api/actuarial/annuity-reserve/defaults', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+        const d = data.defaults || {};
+        const setVal = (id, v) => {
+          const el = document.getElementById(id);
+          if (el != null && v != null) el.value = v;
+        };
+        setVal('annuity-customer-count', d.customer_count);
+        setVal('annuity-monthly-deposit', d.monthly_deposit_per_customer);
+        setVal('annuity-projection-years', d.projection_years);
+        setVal('annuity-payout-horizon', d.payout_horizon_years);
+        setVal('annuity-guarantee-rate', (d.guarantee_rate_pct || 0) * 100);
+        setVal('annuity-expected-return', (d.expected_market_return_pct || 0) * 100);
+        setVal('annuity-realised-return', (d.expected_market_return_pct || 0) * 100);
+        setVal('annuity-madad', (d.madad_pct || 0) * 100);
+        setVal('annuity-guarantee-credit', (d.guarantee_credit_pct || 0) * 100);
+        setVal('annuity-conversion-rate', (d.conversion_rate_pct || 0) * 100);
+        setVal('annuity-loss-lambda', d.actuarial_loss_lambda);
+        setVal('annuity-gap-factor', d.annuity_gap_factor != null ? d.annuity_gap_factor : 1);
+        setVal('annuity-madad-factor', d.madad_term_factor != null ? d.madad_term_factor : 1);
+        setVal('annuity-loss-factor', d.loss_correction_factor != null ? d.loss_correction_factor : 1);
+        setVal('annuity-interest-factor', d.interest_credit_factor != null ? d.interest_credit_factor : 1);
+        setVal('annuity-scenario-label', d.scenario_label || 'base_case');
+        if (data.preview) {
+          renderAnnuityReserveForecast(data.preview);
+          if (statusEl) statusEl.textContent = 'Loaded default scenario preview.';
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = `❌ Failed to load defaults: ${err.message}`;
+      }
+    }
+
+    async function runAnnuityReserveForecast() {
+      const statusEl = document.getElementById('annuity-reserve-status');
+      const realisedRaw = (document.getElementById('annuity-realised-return')?.value || '').trim();
+      const realisedPct = realisedRaw === '' ? null : parseFloat(realisedRaw);
+      const payload = {
+        simulation_id: (document.getElementById('annuity-sim-id')?.value || '').trim() || undefined,
+        scenario_label: (document.getElementById('annuity-scenario-label')?.value || 'base_case').trim(),
+        customer_count: parseInt(document.getElementById('annuity-customer-count')?.value, 10) || 0,
+        monthly_deposit_per_customer: parseFloat(document.getElementById('annuity-monthly-deposit')?.value) || 0,
+        projection_years: parseInt(document.getElementById('annuity-projection-years')?.value, 10) || 30,
+        payout_horizon_years: parseInt(document.getElementById('annuity-payout-horizon')?.value, 10) || 20,
+        guarantee_rate_pct: (parseFloat(document.getElementById('annuity-guarantee-rate')?.value) || 0) / 100,
+        expected_market_return_pct: (parseFloat(document.getElementById('annuity-expected-return')?.value) || 0) / 100,
+        madad_pct: (parseFloat(document.getElementById('annuity-madad')?.value) || 0) / 100,
+        guarantee_credit_pct: (parseFloat(document.getElementById('annuity-guarantee-credit')?.value) || 0) / 100,
+        conversion_rate_pct: (parseFloat(document.getElementById('annuity-conversion-rate')?.value) || 0) / 100,
+        actuarial_loss_lambda: parseFloat(document.getElementById('annuity-loss-lambda')?.value) || 0,
+        annuity_gap_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-gap-factor')?.value)),
+        madad_term_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-madad-factor')?.value)),
+        loss_correction_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-loss-factor')?.value)),
+        interest_credit_factor: ((v) => Number.isNaN(v) ? 1 : v)(parseFloat(document.getElementById('annuity-interest-factor')?.value)),
+      };
+      if (realisedPct != null && !Number.isNaN(realisedPct)) {
+        // The backend expects a curve (list); one scalar repeated by the
+        // server's _resolve_curve helper. Send a single-element list.
+        payload.realised_return_curve = [realisedPct / 100];
+      }
+      if (statusEl) statusEl.textContent = 'Running forecast…';
+      try {
+        const res = await fetch('/api/actuarial/annuity-reserve/forecast', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+        renderAnnuityReserveForecast(data.forecast);
+        if (statusEl) statusEl.textContent = `✅ Forecast ready (integrity ${String(data.forecast.integrity_hash || '').slice(0, 12)}).`;
+      } catch (err) {
+        if (statusEl) statusEl.textContent = `❌ ${err.message}`;
+      }
+    }
+
+    function renderAnnuityReserveForecast(forecast) {
+      if (!forecast || !Array.isArray(forecast.yearly)) return;
+      annuityReserveLastResponse = forecast;
+      const yearly = forecast.yearly;
+      const totals = forecast.totals || {};
+      const checks = forecast.integrity_checks || {};
+
+      // Stat cards
+      const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setText('annuity-stat-peak', _annuityCurrency(totals.peak_reserve));
+      setText('annuity-stat-peak-year', totals.peak_reserve_year ? String(totals.peak_reserve_year) : '—');
+      const fr = (totals.funding_ratio == null) ? 0 : totals.funding_ratio;
+      setText('annuity-stat-funding', `${(fr * 100).toFixed(2)}%`);
+      setText('annuity-stat-final', _annuityCurrency(totals.final_year_reserve));
+      setText('annuity-stat-deposits', _annuityCurrency(totals.total_deposits_collected));
+      setText('annuity-stat-payout', _annuityCurrency(totals.final_annuity_per_customer_guarantee));
+
+      const summaryEl = document.getElementById('annuity-reserve-summary');
+      if (summaryEl) {
+        const inputs = forecast.inputs || {};
+        summaryEl.textContent =
+          `${inputs.projection_years || yearly.length}y • g=${((inputs.guarantee_rate_pct || 0) * 100).toFixed(1)}%`
+          + ` • CPI=${((inputs.madad_pct || 0) * 100).toFixed(1)}%`
+          + ` • conv=${((inputs.conversion_rate_pct || 0) * 100).toFixed(0)}%`
+          + ` • peak ${_annuityCurrency(totals.peak_reserve)} @ y${totals.peak_reserve_year || '—'}`;
+      }
+
+      // Reserve bar chart
+      _drawAnnuityReserveBar(yearly);
+      // Future annuity vs deposits line chart
+      _drawAnnuityVsDepositsChart(yearly, forecast.inputs || {});
+
+      // Audit table
+      const tbody = document.querySelector('#annuity-reserve-table tbody');
+      if (tbody) {
+        if (!yearly.length) {
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-light);">No projection rows produced.</td></tr>';
+        } else {
+          tbody.innerHTML = yearly.map((row) => `
+            <tr>
+              <td>${row.year}</td>
+              <td>${(row.realised_return_pct * 100).toFixed(2)}%</td>
+              <td>${(row.expected_return_pct * 100).toFixed(2)}%</td>
+              <td>${(row.madad_pct * 100).toFixed(2)}%</td>
+              <td>${(row.cumulative_conversion_pct * 100).toFixed(1)}%</td>
+              <td>${_annuityCurrency(row.savings_per_customer_actual)}</td>
+              <td>${_annuityCurrency(row.savings_per_customer_guaranteed)}</td>
+              <td>${_annuityCurrency(row.annuity_per_customer_actual)}</td>
+              <td>${_annuityCurrency(row.annuity_per_customer_guaranteed)}</td>
+              <td><strong>${_annuityCurrency(row.reserve_aggregate)}</strong></td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Integrity panel
+      const integrityEl = document.getElementById('annuity-reserve-integrity');
+      if (integrityEl) {
+        integrityEl.textContent = `Hash: ${forecast.integrity_hash || '—'}`;
+      }
+      const checksEl = document.getElementById('annuity-reserve-integrity-checks');
+      if (checksEl) {
+        checksEl.innerHTML = Object.entries(checks).map(([key, ok]) => {
+          const sym = ok ? '✅' : '❌';
+          const color = ok ? 'var(--success)' : 'var(--danger)';
+          return `<li style="color:${color};">${sym} ${escapeHtml(key)}</li>`;
+        }).join('');
+      }
+    }
+
+    function _drawAnnuityReserveBar(yearly) {
+      const ctx = document.getElementById('annuity-reserve-chart');
+      if (!ctx || typeof Chart === 'undefined') return;
+      const labels = yearly.map((r) => `Y${r.year}`);
+      const data = yearly.map((r) => r.reserve_aggregate);
+      if (annuityReserveChart) annuityReserveChart.destroy();
+      annuityReserveChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Required reserve P(X)',
+              data,
+              backgroundColor: 'rgba(229, 62, 62, 0.55)',
+              borderColor: 'rgba(229, 62, 62, 1)',
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${_annuityCurrency(ctx.parsed.y)}`,
+              },
+            },
+          },
+          scales: {
+            x: { title: { display: true, text: 'Forecast year' } },
+            y: {
+              title: { display: true, text: 'Reserve required (currency)' },
+              ticks: { callback: (v) => _annuityCurrency(v) },
+            },
+          },
+        },
+      });
+    }
+
+    function _drawAnnuityVsDepositsChart(yearly, inputs) {
+      const ctx = document.getElementById('annuity-vs-deposits-chart');
+      if (!ctx || typeof Chart === 'undefined') return;
+      const labels = yearly.map((r) => `Y${r.year}`);
+      const annualDeposit = (inputs && inputs.annual_deposit_per_customer)
+        || ((inputs && inputs.monthly_deposit_per_customer) || 0) * 12;
+      // Per-customer cumulative deposits: every customer pays the same
+      // monthly amount, so cumulative deposits at year N is just N years of
+      // annual deposits regardless of conversion (conversion only gates the
+      // reserve, not the deposit stream).
+      const cumulativeDeposits = yearly.map((r) => annualDeposit * r.year);
+      if (annuityVsDepositsChart) annuityVsDepositsChart.destroy();
+      annuityVsDepositsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Annuity / yr (guaranteed)',
+              data: yearly.map((r) => r.annuity_per_customer_guaranteed),
+              borderColor: 'rgba(56, 161, 105, 1)',
+              backgroundColor: 'rgba(56, 161, 105, 0.15)',
+              tension: 0.25,
+              pointRadius: 2,
+              fill: false,
+            },
+            {
+              label: 'Annuity / yr (realised market)',
+              data: yearly.map((r) => r.annuity_per_customer_actual),
+              borderColor: 'rgba(66, 153, 225, 1)',
+              backgroundColor: 'rgba(66, 153, 225, 0.15)',
+              tension: 0.25,
+              pointRadius: 2,
+              fill: false,
+            },
+            {
+              label: 'Annuity / yr (expected market)',
+              data: yearly.map((r) => r.annuity_per_customer_expected),
+              borderColor: 'rgba(214, 158, 46, 1)',
+              backgroundColor: 'rgba(214, 158, 46, 0.15)',
+              borderDash: [4, 4],
+              tension: 0.25,
+              pointRadius: 1,
+              fill: false,
+            },
+            {
+              label: 'Cumulative deposits / customer',
+              data: cumulativeDeposits,
+              borderColor: 'rgba(113, 128, 150, 1)',
+              backgroundColor: 'rgba(113, 128, 150, 0.10)',
+              tension: 0,
+              pointRadius: 0,
+              borderDash: [2, 4],
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${_annuityCurrency(ctx.parsed.y)}`,
+              },
+            },
+          },
+          scales: {
+            x: { title: { display: true, text: 'Forecast year' } },
+            y: {
+              title: { display: true, text: 'Currency per customer' },
+              ticks: { callback: (v) => _annuityCurrency(v) },
+            },
+          },
+        },
+      });
+    }
+
+    // =====================================================================
     // LIFE & DISABILITY TABLES REGISTRY ("Tables Bar")
     // =====================================================================
     let tablesRegistryCache = [];
@@ -3797,7 +4294,18 @@
         entry.effective_date ? new Date(entry.effective_date).toLocaleDateString() : null,
       ].filter(Boolean).join(' • ');
       const hash = (entry.integrity_hash || '').slice(0, 12);
-      const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
+      // Build the JS arguments for the inline `prepareRegistryReplace(...)`
+      // call by JSON-stringifying each value FIRST (proper JS string escaping
+      // so a `'` or `"` in a cohort value cannot break out of the literal),
+      // and only then HTML-encoding the whole literal so it survives the
+      // double-quoted onclick attribute. This is the same defence-in-depth
+      // pattern used for the download/preview buttons further down.
+      const replaceArgs = [
+        entry.scope,
+        entry.table_type || '',
+        entry.cohort_dim || '',
+        entry.cohort_value || '',
+      ].map((v) => escapeAttr(JSON.stringify(v == null ? '' : String(v)))).join(',');
       return `
         <div class="tables-bar-card ${scopeClass}">
           <div class="tb-badges">${scopeBadge}${usedBadge}</div>
@@ -3834,7 +4342,15 @@
         const usedCell = entry.used_in_pricing
           ? '<span class="tb-badge active">In use</span>'
           : '<span class="tb-badge idle">Idle</span>';
-        const replaceArgs = `'${escapeAttr(entry.scope)}','${escapeAttr(entry.table_type || '')}','${escapeAttr(entry.cohort_dim || '')}','${escapeAttr(entry.cohort_value || '')}'`;
+        // Same JSON-stringify-then-HTML-escape pattern as renderTablesBarCard:
+        // protects the inline onclick handler from cohort metadata that might
+        // contain quotes, backslashes, or other JS-significant characters.
+        const replaceArgs = [
+          entry.scope,
+          entry.table_type || '',
+          entry.cohort_dim || '',
+          entry.cohort_value || '',
+        ].map((v) => escapeAttr(JSON.stringify(v == null ? '' : String(v)))).join(',');
         const previewBtn = `<button class="btn-small btn-outline" onclick='previewRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")})'>Preview</button>`;
         return `
           <tr>
@@ -4138,21 +4654,32 @@
           tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-light);">No cohort overrides registered. Customers fall back to the global rate bands.</td></tr>';
           return;
         }
-        tbody.innerHTML = items.map((row) => `
+        tbody.innerHTML = items.map((row) => {
+          // JSON-stringify values for the inline JS context first, then HTML-
+          // escape the whole literal for the onclick attribute. Mirrors the
+          // safe pattern used by the Tables Bar and Registry rows so cohort
+          // metadata can never break out of the JS string literal.
+          const removeArgs = [
+            row.cohort_dim || '',
+            row.cohort_value || '',
+            row.table_type || '',
+          ].map((v) => escapeAttr(JSON.stringify(v == null ? '' : String(v)))).join(', ');
+          return `
           <tr>
-            <td><code>${row.cohort_key}</code></td>
-            <td>${row.table_type}</td>
-            <td>${row.row_count}</td>
-            <td>${row.source_name || ''} ${row.source_table_id ? '<code>' + row.source_table_id + '</code>' : ''}</td>
+            <td><code>${escapeHtml(row.cohort_key || '')}</code></td>
+            <td>${escapeHtml(row.table_type || '')}</td>
+            <td>${row.row_count ?? 0}</td>
+            <td>${escapeHtml(row.source_name || '')} ${row.source_table_id ? '<code>' + escapeHtml(row.source_table_id) + '</code>' : ''}</td>
             <td>${row.registered_at ? new Date(row.registered_at).toLocaleString() : ''}</td>
             <td>
               <button class="btn-small btn-warning"
-                onclick="removeCohortOverride('${escapeAttr(row.cohort_dim)}', '${escapeAttr(row.cohort_value)}', '${escapeAttr(row.table_type)}')">
+                onclick="removeCohortOverride(${removeArgs})">
                 Remove
               </button>
             </td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Failed: ${err.message}</td></tr>`;
       }
