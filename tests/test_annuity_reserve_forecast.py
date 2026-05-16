@@ -189,11 +189,49 @@ def test_coerce_handles_adjustable_factors():
         'madad_term_factor': '1.2',
         'loss_correction_factor': 2,
         'interest_credit_factor': '',
+        'future_annuity_months': 60,
     })
     assert cfg.annuity_gap_factor == 0.5
     assert cfg.madad_term_factor == 1.2
     assert cfg.loss_correction_factor == 2.0
     assert cfg.interest_credit_factor == 1.0
+    assert cfg.future_annuity_months == 60
+
+
+def test_future_annuity_months_default_is_240():
+    """Default future_annuity_months = 240 (payout_horizon_years * 12)."""
+    cfg = AnnuityReserveConfig()
+    assert cfg.future_annuity_months == 240
+    out = compute_annuity_reserve_forecast(cfg)
+    assert out['inputs']['future_annuity_months'] == 240
+    assert abs(out['inputs']['future_annuity_months_scaling'] - 1.0) < 1e-6
+
+
+def test_future_annuity_months_scales_aggregate_reserve():
+    """Setting future_annuity_months to 60 (vs 240 default) should reduce
+    the aggregate reserve to ~25%."""
+    full = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        realised_return_curve=[0.01] * 10,
+        projection_years=10,
+    ))
+    quarter = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        realised_return_curve=[0.01] * 10,
+        projection_years=10,
+        future_annuity_months=60,
+    ))
+    assert quarter['inputs']['future_annuity_months'] == 60
+    assert abs(quarter['inputs']['future_annuity_months_scaling'] - 0.25) < 1e-6
+    assert quarter['totals']['peak_reserve'] < full['totals']['peak_reserve']
+    assert quarter['integrity_hash'] != full['integrity_hash']
+
+
+def test_future_annuity_months_surfaces_monthly_annuity():
+    """Yearly output should include monthly annuity per customer."""
+    out = compute_annuity_reserve_forecast(AnnuityReserveConfig(projection_years=5))
+    for row in out['yearly']:
+        assert 'monthly_annuity_per_customer_guaranteed' in row
+        assert 'monthly_annuity_per_customer_actual' in row
+        assert row['monthly_annuity_per_customer_guaranteed'] >= 0
 
 
 def test_per_customer_guaranteed_savings_grow_monotonically():
@@ -224,11 +262,11 @@ def test_inputs_view_exposes_resolved_curves_for_audit():
     assert curves['expected_return'][4] == 0.05
 
 
-def test_coerce_accepts_percent_or_fraction():
-    cfg_pct = coerce_annuity_reserve_config({'guarantee_rate_pct': 4})
-    cfg_frac = coerce_annuity_reserve_config({'guarantee_rate_pct': 0.04})
-    assert cfg_pct.guarantee_rate_pct == 0.04
-    assert cfg_frac.guarantee_rate_pct == 0.04
+def test_coerce_accepts_fraction():
+    cfg = coerce_annuity_reserve_config({'guarantee_rate_pct': 0.04})
+    assert cfg.guarantee_rate_pct == 0.04
+    cfg_full = coerce_annuity_reserve_config({'conversion_rate_pct': 1.0})
+    assert cfg_full.conversion_rate_pct == 1.0
 
 
 def test_coerce_curve_accepts_list_or_csv_string():
@@ -301,11 +339,11 @@ def test_forecast_endpoint_runs_with_overrides(admin_token):
         'projection_years': 10,
         'customer_count': 500,
         'monthly_deposit_per_customer': 800,
-        'guarantee_rate_pct': 4.0,        # accept percentage form
-        'expected_market_return_pct': 5.5,
+        'guarantee_rate_pct': 0.04,
+        'expected_market_return_pct': 0.055,
         'realised_return_curve': [0.02] * 10,
-        'madad_pct': 2.5,
-        'conversion_rate_pct': 50,
+        'madad_pct': 0.025,
+        'conversion_rate_pct': 0.50,
         'scenario_label': 'pytest_stress',
     }
     body, status, _ = _post_json(
