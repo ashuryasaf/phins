@@ -167,17 +167,17 @@ def _resolve_conversion_curve(curve: Optional[List[float]], rate_pct: float,
 # ANNUITY MATH
 # =============================================================================
 
-def annuity_factor(rate: float, n_years: int) -> float:
-    """Annuity-certain present-value factor: ä_n = Σ_{k=0..n-1} v^k."""
-    n = max(1, int(n_years))
+def annuity_factor(rate: float, n_years: float) -> float:
+    """Annuity-certain present-value factor: ä_n = Σ_{k=0..n-1} v^k.
+
+    Accepts fractional years (e.g. 5.5) so ``future_annuity_months``
+    can express sub-year payout horizons.
+    """
+    n = max(1.0, float(n_years))
     rate = float(rate)
     if abs(rate) < 1e-9:
-        return float(n)
+        return n
     v = 1.0 / (1.0 + rate)
-    # ä_n (annuity-due, payments at the start of each year). The Israeli
-    # pension annuity standard pays monthly in advance, but for the
-    # annual-grain reserve forecast the annuity-due is the cleanest
-    # closed-form match.
     return (1.0 - v ** n) / (1.0 - v)
 
 
@@ -276,9 +276,14 @@ def compute_annuity_reserve_forecast(
 
     g = float(config.guarantee_rate_pct)
     payout_n = max(1, int(config.payout_horizon_years))
-    a_guarantee = annuity_factor(g, payout_n)
     future_months = max(1, int(config.future_annuity_months))
-    months_scaling = future_months / max(1, payout_n * 12)
+    # When future_annuity_months differs from payout_horizon_years × 12,
+    # use the monthly count to derive the effective payout horizon so the
+    # annuity factor — and therefore the per-customer annuity payment —
+    # adjusts proportionally: more months → lower monthly payment, fewer
+    # months → higher monthly payment.
+    effective_payout_years = future_months / 12.0
+    a_guarantee = annuity_factor(g, effective_payout_years)
 
     s_actual = 0.0  # cumulative savings under realised market returns
     s_min = 0.0     # cumulative savings under guaranteed (4% + madad)
@@ -305,8 +310,8 @@ def compute_annuity_reserve_forecast(
         s_min = s_min * (1.0 + g) * (1.0 + m_x) + annual_deposit
 
         # Annuity factors at the year's realised / expected returns.
-        a_realised = annuity_factor(f_x, payout_n)
-        a_expected = annuity_factor(e_x, payout_n)
+        a_realised = annuity_factor(f_x, effective_payout_years)
+        a_expected = annuity_factor(e_x, effective_payout_years)
 
         # Per-customer annuity payment fundable from each savings track.
         ann_min = s_min / a_guarantee if a_guarantee > 0 else 0.0
@@ -355,12 +360,11 @@ def compute_annuity_reserve_forecast(
         )
         p_per_customer = max(0.0, p_per_customer_raw)
 
-        # Aggregate reserve at year X across the converting cohort,
-        # scaled by the future-annuity-months ratio.
+        # Aggregate reserve at year X across the converting cohort.
         converted_share = conversion_curve[idx] if idx < len(conversion_curve) else 0.0
         converted_customers = customer_count * converted_share
         p_aggregate = (
-            p_per_customer * converted_customers * months_scaling
+            p_per_customer * converted_customers
             + (config.initial_reserve if idx == 0 else 0.0)
         )
 
@@ -437,7 +441,7 @@ def compute_annuity_reserve_forecast(
         'loss_correction_factor': float(config.loss_correction_factor),
         'interest_credit_factor': float(config.interest_credit_factor),
         'future_annuity_months': future_months,
-        'future_annuity_months_scaling': _round6(months_scaling),
+        'effective_payout_years': _round6(effective_payout_years),
         'initial_reserve': float(config.initial_reserve),
         'scenario_label': str(config.scenario_label),
         'version': config.version,

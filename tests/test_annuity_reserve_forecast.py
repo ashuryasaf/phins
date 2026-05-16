@@ -204,25 +204,36 @@ def test_future_annuity_months_default_is_240():
     assert cfg.future_annuity_months == 240
     out = compute_annuity_reserve_forecast(cfg)
     assert out['inputs']['future_annuity_months'] == 240
-    assert abs(out['inputs']['future_annuity_months_scaling'] - 1.0) < 1e-6
+    assert abs(out['inputs']['effective_payout_years'] - 20.0) < 1e-6
 
 
-def test_future_annuity_months_scales_aggregate_reserve():
-    """Setting future_annuity_months to 60 (vs 240 default) should reduce
-    the aggregate reserve to ~25%."""
-    full = compute_annuity_reserve_forecast(AnnuityReserveConfig(
-        realised_return_curve=[0.01] * 10,
+def test_future_annuity_months_affects_monthly_annuity_inversely():
+    """More settlement months → lower monthly annuity per customer,
+    fewer months → higher monthly annuity per customer."""
+    base = compute_annuity_reserve_forecast(AnnuityReserveConfig(
         projection_years=10,
+        future_annuity_months=240,
     ))
-    quarter = compute_annuity_reserve_forecast(AnnuityReserveConfig(
-        realised_return_curve=[0.01] * 10,
+    short = compute_annuity_reserve_forecast(AnnuityReserveConfig(
         projection_years=10,
         future_annuity_months=60,
     ))
-    assert quarter['inputs']['future_annuity_months'] == 60
-    assert abs(quarter['inputs']['future_annuity_months_scaling'] - 0.25) < 1e-6
-    assert quarter['totals']['peak_reserve'] < full['totals']['peak_reserve']
-    assert quarter['integrity_hash'] != full['integrity_hash']
+    long = compute_annuity_reserve_forecast(AnnuityReserveConfig(
+        projection_years=10,
+        future_annuity_months=480,
+    ))
+
+    y_base = base['yearly'][-1]
+    y_short = short['yearly'][-1]
+    y_long = long['yearly'][-1]
+
+    # Fewer months → higher monthly annuity (same savings, fewer payments)
+    assert y_short['monthly_annuity_per_customer_guaranteed'] > y_base['monthly_annuity_per_customer_guaranteed']
+    # More months → lower monthly annuity (same savings, more payments)
+    assert y_long['monthly_annuity_per_customer_guaranteed'] < y_base['monthly_annuity_per_customer_guaranteed']
+    # All three hashes must differ
+    assert base['integrity_hash'] != short['integrity_hash']
+    assert base['integrity_hash'] != long['integrity_hash']
 
 
 def test_future_annuity_months_surfaces_monthly_annuity():
