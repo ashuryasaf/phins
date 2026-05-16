@@ -393,8 +393,10 @@
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
                     <button class="btn btn-success" onclick="queueVideoAgentBatch()">🎬 Generate All Pipeline Videos</button>
                     <button class="btn btn-secondary" onclick="refreshVideoAgentJobs(false)">📡 Refresh Jobs</button>
+                    <button class="btn btn-secondary" onclick="diagnoseVideoProviders()">🔌 Diagnose Provider Connection</button>
                 </div>
                 <div id="va-status" class="status-box">Load the latest marketing campaign or enter a campaign ID to start.</div>
+                <div id="va-provider-diagnostics" class="status-box" style="display:none;"></div>
             </section>
 
             <section class="panel">
@@ -603,6 +605,22 @@
             }
         }
 
+        function formatBytes(value) {
+            const bytes = Number(value || 0);
+            if (!bytes) return '';
+            if (bytes < 1024) return `${bytes} B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+            if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+            return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        }
+
+        function shortChecksum(value) {
+            const checksum = String(value || '').trim();
+            if (!checksum) return '';
+            if (checksum.length <= 16) return checksum;
+            return `${checksum.slice(0, 8)}…${checksum.slice(-8)}`;
+        }
+
         function renderJobCard(job) {
             const status = String(job.status || '').toLowerCase();
             const badgeColor = status === 'completed'
@@ -612,6 +630,11 @@
                     : 'rgba(66,165,245,0.24)';
             const progress = Math.max(0, Math.min(100, Number(job.progress_pct || 0)));
             const downloadUrl = String(job.download_url || '').trim();
+            const checksum = shortChecksum(job.asset_checksum || '');
+            const sizeLabel = formatBytes(job.asset_size || 0);
+            const integrityLine = (status === 'completed' && (checksum || sizeLabel))
+                ? `<br>Integrity ${escapeHtml([sizeLabel, checksum && `SHA-256 ${checksum}`].filter(Boolean).join(' · '))}`
+                : '';
             return `
                 <div class="job-card">
                     <div class="job-head">
@@ -620,6 +643,7 @@
                             <div class="job-meta">
                                 Campaign ${escapeHtml(job.campaign_id || '')} · Blueprint ${Number(job.blueprint_index || 0) + 1}
                                 <br>Provider ${escapeHtml(String(job.provider || '').toUpperCase())}${job.provider_model ? ` · ${escapeHtml(job.provider_model)}` : ''}
+                                ${integrityLine}
                             </div>
                         </div>
                         <span class="job-badge" style="background:${badgeColor};">${escapeHtml(status || 'queued')}</span>
@@ -633,6 +657,7 @@
                     <div class="job-actions">
                         ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
                         ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download>Download Video</a>` : ''}
+                        ${status === 'completed' && job.generated_asset_id ? `<button class="small-btn open" onclick="verifyVideoAgentJob('${job.id}')">Verify Integrity</button>` : ''}
                         ${status === 'failed' ? `<button class="small-btn retry" onclick="retryVideoAgentJob('${job.id}')">Retry</button>` : ''}
                         ${['queued', 'processing'].includes(status) ? `<button class="small-btn cancel" onclick="cancelVideoAgentJob('${job.id}')">Cancel</button>` : ''}
                     </div>
@@ -706,6 +731,55 @@
 
         async function cancelVideoAgentJob(jobId) {
             await runJobAction('cancel', { job_id: jobId, campaign_id: selectedCampaignId() }, 'Video-agent job cancelled.');
+        }
+
+        async function verifyVideoAgentJob(jobId) {
+            try {
+                const result = await fetchJson('/api/admin/media/video-jobs/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ job_id: jobId, campaign_id: selectedCampaignId() }),
+                });
+                const integrity = result?.integrity || {};
+                const verified = Boolean(integrity.verified);
+                const expected = shortChecksum(integrity.expected_checksum || '');
+                const actual = shortChecksum(integrity.actual_checksum || '');
+                const sizeLabel = formatBytes(integrity.actual_size || integrity.expected_size || 0);
+                const lines = [
+                    verified ? 'Integrity verified.' : 'Integrity check FAILED.',
+                    integrity.reason || '',
+                    `Size ${sizeLabel || 'unknown'}`,
+                ];
+                if (expected || actual) {
+                    lines.push(`SHA-256 expected ${expected || 'n/a'} · actual ${actual || 'n/a'}`);
+                }
+                setStatus(lines.filter(Boolean).join(' · '), verified ? 'success' : 'error');
+            } catch (err) {
+                setStatus(`Verify failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function diagnoseVideoProviders() {
+            const panel = document.getElementById('va-provider-diagnostics');
+            if (!panel) return;
+            try {
+                const data = await fetchJson('/api/admin/media/video-providers/diagnose');
+                const diag = data?.diagnostics || {};
+                const providers = diag?.providers || {};
+                const rows = Object.entries(providers).map(([name, cfg]) => {
+                    const enabled = Boolean(cfg?.enabled);
+                    const dot = enabled ? '🟢' : '🔴';
+                    const label = String(cfg?.label || name).trim() || name;
+                    const reason = String(cfg?.reason || '').trim();
+                    return `<div style="margin-top:6px;"><strong>${dot} ${escapeHtml(label)}</strong><br><span style="opacity:0.85;">${escapeHtml(reason)}</span></div>`;
+                }).join('');
+                panel.style.display = 'block';
+                panel.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">Provider connectivity</div>${rows || 'No providers reported.'}<div style="margin-top:8px;opacity:0.7;font-size:0.78rem;">Webhook base URL configured: ${diag.media_callback_base_url_configured ? 'yes' : 'no'} · Default provider: ${escapeHtml(diag.default_provider || 'gemini')}</div>`;
+                applyProviderCapabilities({ providers, default_provider: diag.default_provider });
+            } catch (err) {
+                panel.style.display = 'block';
+                panel.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">Provider connectivity</div><div>Failed to retrieve diagnostics: ${escapeHtml(err.message)}</div>`;
+            }
         }
 
         function buildPipelinePrompt(pipelineType) {

@@ -642,6 +642,12 @@ class TestVideoAgentsDispatch:
         return {"username": "admin", "role": "admin"}
 
     def test_dispatch_get_video_jobs(self):
+        """The frontend path /api/admin/media/video-jobs is owned by server.py.
+
+        The api_extensions GET dispatcher must NOT intercept it, otherwise the
+        in-memory _JobStore (empty) would be served instead of the real
+        MEDIA_PROCESSING_JOBS where finalize + checksum happen.
+        """
         from web_portal.api_extensions import dispatch_get
         import services.video_agents_service as mod
         mod._job_store = mod._JobStore()
@@ -651,10 +657,7 @@ class TestVideoAgentsDispatch:
             {"campaign_id": ["MKT-X"]},
             "127.0.0.1",
         )
-        assert result is not None
-        status, body = result
-        assert status == 200
-        assert "jobs" in body
+        assert result is None
 
     def test_dispatch_get_video_agents_jobs(self):
         from web_portal.api_extensions import dispatch_get
