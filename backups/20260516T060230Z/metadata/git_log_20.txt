@@ -1,0 +1,20 @@
+2983cf0 Merge pull request #326 from ashuryasaf/cursor/actuary-tables-bar-9764
+1dbc824 Fix actuarial payload decoder dropping JSON array strings and CSV column ordering
+4391c51 Fix security and data issues: sanitize filename fallback, remove hard limit on registry query, escape scope in HTML
+abda96f Sanitize cohort values in Content-Disposition filename and X-Phins-Table-Label headers
+f03da35 Fix: clear cohort fields when preparing global registry replace
+5984ff5 Fix empty-list falsy or-chain in _decode_actuarial_payload
+a7ad33e Fix uploaded table preview rendering in wrong section and hash normalization
+7c79295 actuary: add Life & Disability Tables Bar with download/replace flow
+f6b81dc Merge pull request #325 from ashuryasaf/cursor/fix-billing-pending-autopay-a05e
+315b605 Fix outstanding bill fallback and consistent API response shape
+d145660 Fix _is_outstanding_bill to check actual amounts and align with payment processing
+865d7a5 Fix integrity display logic for dry-run and single-customer repairs
+4d39e50 Fix billing repair: settle overdue bills and scope bulk repair to confirmed customers
+28c5412 Add Pipeline Stage Billing Pending repair flow
+b7547b6 Merge pull request #324 from ashuryasaf/cursor/optimize-build-code-8ec7
+7fe5518 Fix validate target visibility in make help and ensure entrypoint.sh execute permission on Render
+0cecfc8 build(ci): concurrency-cancel, pip cache, and free-port-fallback for tests
+0295535 build: add phins/ unified CLI dispatcher (strangler pattern)
+afd18f3 build: add Makefile as the unified developer/operator entry point
+f49cf64 build(docker): multi-stage Dockerfile + scripts/entrypoint.sh unified entrypoint
