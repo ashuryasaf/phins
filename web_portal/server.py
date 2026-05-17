@@ -26552,6 +26552,27 @@ For claims or questions, please contact:
                     if key in data:
                         DESIGN_SETTINGS[key] = data[key]
 
+                # Data integrity: when admin assigns a media asset to the
+                # landing page (hero video / video poster) via /admin-media.html
+                # "Save All", derive the stored URL authoritatively from the
+                # asset ID instead of trusting whatever URL the client cached.
+                # This keeps DESIGN_SETTINGS in sync with MEDIA_ASSETS, so the
+                # landing page (https://www.phins.ai/) never plays a stale URL
+                # if the asset was re-stored (e.g. moved from inline to file
+                # storage) since the dashboard was last loaded.
+                if 'hero_video_id' in data:
+                    hero_id = DESIGN_SETTINGS.get('hero_video_id') or ''
+                    if hero_id:
+                        DESIGN_SETTINGS['video_url'] = get_media_asset_playback_url(hero_id)
+                    else:
+                        DESIGN_SETTINGS['video_url'] = ''
+                if 'video_poster_id' in data:
+                    poster_id = DESIGN_SETTINGS.get('video_poster_id') or ''
+                    if poster_id:
+                        DESIGN_SETTINGS['video_poster'] = get_media_asset_playback_url(poster_id)
+                    else:
+                        DESIGN_SETTINGS['video_poster'] = ''
+
                 for nested_key in ['designSettings', 'layoutSettings', 'brandSettings']:
                     if nested_key in data and isinstance(data[nested_key], dict):
                         DESIGN_SETTINGS[nested_key] = data[nested_key]
