@@ -1795,6 +1795,15 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'download_url': job.get('download_url', ''),
         'progress_pct': safe_int(job.get('progress_pct'), 0),
     }
+    generated_asset_id = str(job.get('generated_asset_id') or '').strip()
+    if generated_asset_id:
+        asset = MEDIA_ASSETS.get(generated_asset_id)
+        if isinstance(asset, dict):
+            payload['asset_checksum'] = str(asset.get('checksum') or '')
+            payload['asset_size'] = safe_int(asset.get('size'), 0)
+            payload['asset_format'] = str(asset.get('format') or '')
+            payload['asset_url'] = media_asset_url(asset)
+            payload['asset_stored_externally'] = bool(asset.get('stored_externally'))
     if include_callback:
         payload['callback_path'] = job.get('callback_path', '')
         payload['callback_url'] = job.get('callback_url', '')
@@ -2617,6 +2626,7 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
             'source': 'ai_video_generation',
             'uploaded_at': uploaded_at,
             'uploaded_by': str(job.get('requested_by') or 'admin'),
+            'checksum': '',
             'metadata': {
                 'campaign_id': campaign_id,
                 'job_id': job.get('id'),
@@ -2625,7 +2635,19 @@ def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -
                 'generated_from': 'marketing_video_blueprint',
             }
         }
+        try:
+            payload_bytes, _mime = decode_media_data_url(str(asset.get('data') or ''))
+            asset['checksum'] = compute_media_checksum(payload_bytes)
+            if not asset.get('size'):
+                asset['size'] = len(payload_bytes)
+        except Exception:
+            pass
         asset = persist_media_asset_payload(asset)
+        if not asset.get('checksum') and asset.get('file_path') and os.path.isfile(asset['file_path']):
+            try:
+                asset['checksum'] = _compute_file_checksum(asset['file_path'])
+            except OSError:
+                pass
     MEDIA_ASSETS[asset_id] = asset
     job['generated_asset_id'] = asset_id
     job['status'] = 'completed'
@@ -2847,6 +2869,180 @@ def validate_media_video_provider_selection(provider: str, provider_model: str =
     if selected_model and available_models and selected_model not in available_models:
         return selected_provider, f'Invalid model "{selected_model}" for provider "{selected_provider}"'
     return selected_provider, ''
+
+
+def diagnose_media_video_providers() -> Dict[str, Any]:
+    """Return detailed connectivity diagnostics per video provider for the UI.
+
+    For each provider, surface a concrete reason describing why it is or isn't
+    connected (which env vars are set / missing), so operators using
+    /video-agents.html can self-service the configuration.  No secrets are
+    leaked — only boolean presence indicators.
+    """
+    gemini_key_present = bool(os.environ.get('GEMINI_API_KEY', '').strip())
+    kling_api_key_present = bool(os.environ.get('KLING_API_KEY', '').strip())
+    kling_access_present = bool(os.environ.get('KLING_ACCESS_KEY', '').strip())
+    kling_secret_present = bool(os.environ.get('KLING_SECRET_KEY', '').strip())
+    kling_signed_pair = kling_access_present and kling_secret_present
+
+    capabilities = media_video_provider_capabilities()
+    providers_caps = capabilities.get('providers') if isinstance(capabilities, dict) else {}
+    if not isinstance(providers_caps, dict):
+        providers_caps = {}
+
+    gemini_enabled = bool(providers_caps.get('gemini', {}).get('enabled'))
+    kling_enabled = bool(providers_caps.get('kling', {}).get('enabled'))
+
+    gemini_reason = (
+        'Connected via GEMINI_API_KEY. Ready for prompt-to-video generation.'
+        if gemini_enabled else
+        'GEMINI_API_KEY environment variable is not set on the server.'
+    )
+    if kling_enabled:
+        kling_reason = (
+            'Connected via KLING_API_KEY (bearer token).'
+            if kling_api_key_present else
+            'Connected via KLING_ACCESS_KEY + KLING_SECRET_KEY (HS256 JWT).'
+        )
+    else:
+        missing_parts = []
+        if not kling_api_key_present:
+            missing_parts.append('KLING_API_KEY')
+        if not kling_signed_pair:
+            missing_parts.append('KLING_ACCESS_KEY + KLING_SECRET_KEY')
+        kling_reason = (
+            'Kling is not connected. Set ' + ' or '.join(missing_parts) + '.'
+            if missing_parts else 'Kling configuration is incomplete.'
+        )
+
+    return {
+        'providers': {
+            'gemini': {
+                'enabled': gemini_enabled,
+                'label': str(providers_caps.get('gemini', {}).get('label', 'Gemini / Veo')),
+                'models': list(providers_caps.get('gemini', {}).get('models') or []),
+                'default_model': str(providers_caps.get('gemini', {}).get('default_model', '')),
+                'reason': gemini_reason,
+                'env_vars': {
+                    'GEMINI_API_KEY': gemini_key_present,
+                },
+            },
+            'kling': {
+                'enabled': kling_enabled,
+                'label': str(providers_caps.get('kling', {}).get('label', 'Kling')),
+                'models': list(providers_caps.get('kling', {}).get('models') or []),
+                'default_model': str(providers_caps.get('kling', {}).get('default_model', '')),
+                'reason': kling_reason,
+                'env_vars': {
+                    'KLING_API_KEY': kling_api_key_present,
+                    'KLING_ACCESS_KEY': kling_access_present,
+                    'KLING_SECRET_KEY': kling_secret_present,
+                },
+            },
+        },
+        'default_provider': str(capabilities.get('default_provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
+        'any_connected': gemini_enabled or kling_enabled,
+        'media_callback_base_url_configured': bool(configured_media_callback_base_url()),
+        'checked_at': datetime.now().isoformat(),
+    }
+
+
+def verify_media_video_job_integrity(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Re-verify the on-disk SHA-256 checksum for a completed video-generation job.
+
+    Returns a structured result dict the UI can render directly.  No file is
+    modified; this is purely a non-destructive integrity check intended to give
+    operators using /video-agents.html confidence that pulled provider videos
+    have not been tampered with after upload/storage.
+    """
+    if not isinstance(job, dict):
+        return {'verified': False, 'reason': 'Job payload is not a dict'}
+    if str(job.get('job_kind') or '') != 'video_generation':
+        return {'verified': False, 'reason': 'Not a video generation job'}
+    if str(job.get('status') or '').strip().lower() != 'completed':
+        return {
+            'verified': False,
+            'reason': f'Job is not completed (status={job.get("status") or "unknown"})',
+        }
+
+    asset_id = str(job.get('generated_asset_id') or '').strip()
+    if not asset_id:
+        return {'verified': False, 'reason': 'Job has no generated media asset'}
+    asset = MEDIA_ASSETS.get(asset_id)
+    if not isinstance(asset, dict):
+        return {
+            'verified': False,
+            'reason': f'Generated media asset {asset_id} is missing from the media library',
+        }
+
+    stored_checksum = str(asset.get('checksum') or '').strip().lower()
+    file_path = str(asset.get('file_path') or '').strip()
+
+    if file_path and os.path.isfile(file_path):
+        try:
+            actual_checksum = _compute_file_checksum(file_path)
+            actual_size = os.path.getsize(file_path)
+        except OSError as exc:
+            return {
+                'verified': False,
+                'reason': f'Failed to read media file: {exc}',
+                'asset_id': asset_id,
+            }
+    elif file_path:
+        return {
+            'verified': False,
+            'asset_id': asset_id,
+            'asset_name': str(asset.get('name') or ''),
+            'expected_checksum': stored_checksum,
+            'actual_checksum': '',
+            'expected_size': safe_int(asset.get('size'), 0),
+            'actual_size': 0,
+            'has_file': False,
+            'download_url': build_media_asset_download_url(asset_id),
+            'reason': f'File referenced by asset no longer exists on disk: {file_path}',
+            'verified_at': datetime.now().isoformat(),
+        }
+    else:
+        data_url = str(asset.get('data') or '').strip()
+        if not data_url:
+            return {
+                'verified': False,
+                'reason': 'Media asset has neither file_path nor inline data',
+                'asset_id': asset_id,
+            }
+        try:
+            payload_bytes, _mime = decode_media_data_url(data_url)
+        except Exception as exc:
+            return {
+                'verified': False,
+                'reason': f'Inline data URL is invalid: {exc}',
+                'asset_id': asset_id,
+            }
+        actual_checksum = compute_media_checksum(payload_bytes)
+        actual_size = len(payload_bytes)
+
+    matches = bool(stored_checksum) and stored_checksum == actual_checksum.lower()
+    return {
+        'verified': matches,
+        'asset_id': asset_id,
+        'asset_name': str(asset.get('name') or ''),
+        'expected_checksum': stored_checksum,
+        'actual_checksum': actual_checksum.lower(),
+        'expected_size': safe_int(asset.get('size'), 0),
+        'actual_size': int(actual_size),
+        'has_file': bool(file_path and os.path.isfile(file_path)),
+        'download_url': build_media_asset_download_url(asset_id),
+        'reason': (
+            'SHA-256 matches stored checksum.'
+            if matches and stored_checksum
+            else (
+                'No checksum was recorded for this asset.'
+                if not stored_checksum
+                else 'SHA-256 does not match the stored checksum — file may be corrupted or tampered.'
+            )
+        ),
+        'verified_at': datetime.now().isoformat(),
+    }
 
 # ========== INVITATION CODES (Registration by Invitation Only) ==========
 # Invitation codes for new user registration
@@ -12398,6 +12594,24 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'capabilities': capabilities,
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+
+        if path == '/api/admin/media/video-providers/diagnose':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                diagnostics = diagnose_media_video_providers()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'diagnostics': diagnostics,
                 }).encode('utf-8'))
                 return
             except Exception as exc:
@@ -27546,7 +27760,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
 
-        if path in {'/api/admin/media/video-jobs/retry', '/api/admin/media/video-jobs/cancel'}:
+        if path in {'/api/admin/media/video-jobs/retry', '/api/admin/media/video-jobs/cancel', '/api/admin/media/video-jobs/verify'}:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
@@ -27594,6 +27808,21 @@ For claims or questions, please contact:
                     'message': 'Video generation job cancelled',
                     'job': serialize_media_job(job, include_callback=True),
                     'jobs': video_generation_jobs_for_campaign_response(job_campaign_id),
+                }).encode('utf-8'))
+                return
+
+            if action == 'verify':
+                try:
+                    integrity = verify_media_video_job_integrity(job)
+                except Exception as exc:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': f'Integrity check failed: {exc}'}).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'job': serialize_media_job(job, include_callback=True),
+                    'integrity': integrity,
                 }).encode('utf-8'))
                 return
 

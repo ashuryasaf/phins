@@ -3014,12 +3014,15 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     # -------------------------------------------------------------------------
     # Video Agents: GET endpoints
     # -------------------------------------------------------------------------
+    #
+    # NOTE: The frontend path `/api/admin/media/video-jobs` is intentionally
+    # NOT registered here.  It is owned by server.py, which is where the
+    # actual job store (MEDIA_PROCESSING_JOBS) lives and where finalize +
+    # checksum + media-asset persistence happens.  Hijacking it here would
+    # return an empty in-memory _JobStore and the /video-agents.html
+    # dashboard would lose visibility into completed videos.
 
-    # GET /api/admin/media/video-jobs — list jobs (frontend-used path)
-    if path == '/api/admin/media/video-jobs':
-        return handle_video_jobs_list(session, query_params)
-
-    # GET /api/admin/media/video-agents/jobs — list jobs (canonical path)
+    # GET /api/admin/media/video-agents/jobs — canonical, in-memory _JobStore
     if path == '/api/admin/media/video-agents/jobs':
         return handle_video_agents_jobs_list(session, query_params)
 
