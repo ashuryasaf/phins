@@ -1673,6 +1673,178 @@ def test_public_settings_gracefully_handles_missing_asset():
         srv.stop()
 
 
+def test_design_settings_post_derives_video_url_from_asset_id():
+    """Saving from /admin-media.html must store the video URL derived from the
+    assigned MEDIA_ASSETS entry, not the URL the dashboard happened to cache.
+
+    This guarantees that the landing page (/) only links to the asset that the
+    admin actually selected; if the client-cached URL drifted from what the
+    server knows for that asset, the server-side value wins.
+    """
+    port = 8316
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_derive_url"
+    _inject_session(token, "derive_admin", "admin")
+
+    asset_id = "media-test-derive-001"
+    poster_id = "media-test-derive-poster-001"
+
+    canonical_video_url = "/media-files/media-test-derive-001/hero_video"
+    canonical_poster_url = "/media-files/media-test-derive-poster-001/hero_poster"
+
+    try:
+        portal.MEDIA_ASSETS[asset_id] = {
+            "id": asset_id,
+            "name": "hero.mp4",
+            "type": "video",
+            "url": canonical_video_url,
+            "data": "",
+            "source": "upload",
+        }
+        portal.MEDIA_ASSETS[poster_id] = {
+            "id": poster_id,
+            "name": "poster.jpg",
+            "type": "image",
+            "url": canonical_poster_url,
+            "data": "",
+            "source": "upload",
+        }
+
+        stale_video_url = "https://cdn.example.com/STALE-hero.mp4"
+        stale_poster_url = "https://cdn.example.com/STALE-poster.jpg"
+
+        status, resp = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_video_id": asset_id,
+                "video_poster_id": poster_id,
+                "video_url": stale_video_url,
+                "video_poster": stale_poster_url,
+            },
+        )
+        assert status == 200
+        assert resp["success"] is True
+
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == asset_id
+        assert portal.DESIGN_SETTINGS["video_poster_id"] == poster_id
+        assert portal.DESIGN_SETTINGS["video_url"] == canonical_video_url
+        assert portal.DESIGN_SETTINGS["video_poster"] == canonical_poster_url
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert public["video_url"] == canonical_video_url
+        assert public["video_poster"] == canonical_poster_url
+    finally:
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+        portal.MEDIA_ASSETS.pop(poster_id, None)
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+        portal.DESIGN_SETTINGS["video_poster_id"] = ""
+        portal.DESIGN_SETTINGS["video_url"] = ""
+        portal.DESIGN_SETTINGS["video_poster"] = ""
+        srv.stop()
+
+
+def test_design_settings_post_clears_video_url_when_id_cleared():
+    """Sending an empty hero_video_id must wipe the stored video_url, even if
+    the client also sent a non-empty URL. This prevents the landing page from
+    keeping a "ghost" video after an admin un-assigns it."""
+    port = 8317
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_clear_url"
+    _inject_session(token, "clear_admin", "admin")
+
+    try:
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+        portal.DESIGN_SETTINGS["video_url"] = "https://cdn.example.com/leftover.mp4"
+        portal.DESIGN_SETTINGS["video_poster_id"] = ""
+        portal.DESIGN_SETTINGS["video_poster"] = "https://cdn.example.com/leftover.jpg"
+
+        status, resp = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_video_id": "",
+                "video_poster_id": "",
+                "video_url": "https://cdn.example.com/STILL-here.mp4",
+                "video_poster": "https://cdn.example.com/STILL-here.jpg",
+            },
+        )
+        assert status == 200
+        assert resp["success"] is True
+
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == ""
+        assert portal.DESIGN_SETTINGS["video_poster_id"] == ""
+        assert portal.DESIGN_SETTINGS["video_url"] == ""
+        assert portal.DESIGN_SETTINGS["video_poster"] == ""
+    finally:
+        portal.DESIGN_SETTINGS["video_url"] = ""
+        portal.DESIGN_SETTINGS["video_poster"] = ""
+        srv.stop()
+
+
+def test_design_settings_post_reflects_asset_url_change_without_resave():
+    """If a media asset's underlying URL changes server-side after the admin
+    saved the assignment, the next /api/design/settings GET must reflect the
+    new URL — i.e. the public payload resolves through the asset ID rather
+    than serving a cached snapshot."""
+    port = 8318
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_design_url_changes"
+    _inject_session(token, "url_change_admin", "admin")
+
+    asset_id = "media-test-urlchange-001"
+
+    try:
+        portal.MEDIA_ASSETS[asset_id] = {
+            "id": asset_id,
+            "name": "hero.mp4",
+            "type": "video",
+            "url": "https://cdn.example.com/original.mp4",
+            "data": "",
+            "source": "url",
+        }
+
+        status, _ = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"hero_video_id": asset_id},
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["video_url"] == "https://cdn.example.com/original.mp4"
+
+        # Simulate the asset URL being rewritten (e.g. moved from inline data
+        # to disk-backed storage, or migrated to a new CDN path).
+        portal.MEDIA_ASSETS[asset_id]["url"] = "/media-files/media-test-urlchange-001/hero"
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert public["video_url"] == "/media-files/media-test-urlchange-001/hero"
+    finally:
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+        portal.DESIGN_SETTINGS["video_url"] = ""
+        srv.stop()
+
+
 def test_video_section_hidden_when_show_video_false():
     """When show_video is False, the public API returns empty video URL."""
     port = 8315
