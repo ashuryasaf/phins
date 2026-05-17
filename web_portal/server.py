@@ -27648,16 +27648,20 @@ For claims or questions, please contact:
                 # Returning structured diagnostics so /video-agents.html can render
                 # an actionable hint ("set GEMINI_API_KEY", etc.) instead of just
                 # showing "HTTP Error 400: Bad Request".
-                response_status = 503 if 'not connected' in provider_error else 400
+                is_not_configured = 'not connected' in provider_error
+                response_status = 503 if is_not_configured else 400
                 self._set_json_headers(response_status)
+                hint = (
+                    'No video provider is configured on the server. Set GEMINI_API_KEY '
+                    'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
+                ) if is_not_configured else (
+                    'The specified provider or model is not valid. Check supported providers and models.'
+                )
                 self.wfile.write(json.dumps({
                     'error': provider_error,
-                    'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
+                    'reason': 'provider_not_configured' if is_not_configured else 'provider_invalid',
                     'diagnostics': diagnose_media_video_providers(),
-                    'hint': (
-                        'No video provider is configured on the server. Set GEMINI_API_KEY '
-                        'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
-                    ),
+                    'hint': hint,
                 }).encode('utf-8'))
                 return
 
@@ -27750,16 +27754,20 @@ For claims or questions, please contact:
                 return
             provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
             if provider_error:
-                response_status = 503 if 'not connected' in provider_error else 400
+                is_not_configured = 'not connected' in provider_error
+                response_status = 503 if is_not_configured else 400
                 self._set_json_headers(response_status)
+                hint = (
+                    'No video provider is configured on the server. Set GEMINI_API_KEY '
+                    'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
+                ) if is_not_configured else (
+                    'The specified provider or model is not valid. Check supported providers and models.'
+                )
                 self.wfile.write(json.dumps({
                     'error': provider_error,
-                    'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
+                    'reason': 'provider_not_configured' if is_not_configured else 'provider_invalid',
                     'diagnostics': diagnose_media_video_providers(),
-                    'hint': (
-                        'No video provider is configured on the server. Set GEMINI_API_KEY '
-                        'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
-                    ),
+                    'hint': hint,
                 }).encode('utf-8'))
                 return
             if blueprint_index < 0:

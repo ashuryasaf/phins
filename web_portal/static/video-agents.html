@@ -728,21 +728,23 @@
                 renderJobs();
                 // Notify when a job transitions into 'completed' so the user
                 // notices the video is ready and downloadable, even silently.
-                let notification = null;
+                let notifications = [];
                 videoAgentJobs.forEach(job => {
                     const status = String(job.status || '').toLowerCase();
                     const downloadUrl = String(job.download_url || '').trim();
                     if (status === 'completed' && downloadUrl && !videoAgentNotifiedCompletions.has(job.id)) {
                         videoAgentNotifiedCompletions.add(job.id);
-                        notification = job;
+                        notifications.push(job);
                     }
                 });
-                if (notification) {
-                    const checksum = shortChecksum(notification.asset_checksum || '');
-                    const sizeLabel = formatBytes(notification.asset_size || 0);
-                    const integrityBits = [sizeLabel, checksum && `SHA-256 ${checksum}`].filter(Boolean).join(' · ');
-                    const heroBit = notification.implemented_on_landing_page ? ' · published as landing-page hero' : '';
-                    setStatus(`✅ "${notification.asset_name || 'Generated video'}" is ready. Download or verify it below${integrityBits ? ` (${integrityBits})` : ''}${heroBit}.`, 'success');
+                if (notifications.length > 0) {
+                    notifications.forEach(notification => {
+                        const checksum = shortChecksum(notification.asset_checksum || '');
+                        const sizeLabel = formatBytes(notification.asset_size || 0);
+                        const integrityBits = [sizeLabel, checksum && `SHA-256 ${checksum}`].filter(Boolean).join(' · ');
+                        const heroBit = notification.implemented_on_landing_page ? ' · published as landing-page hero' : '';
+                        setStatus(`✅ "${notification.asset_name || 'Generated video'}" is ready. Download or verify it below${integrityBits ? ` (${integrityBits})` : ''}${heroBit}.`, 'success');
+                    });
                 } else if (!silent) {
                     const summary = data.summary || {};
                     const parts = [`${videoAgentJobs.length} job(s)`];
