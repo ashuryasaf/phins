@@ -371,8 +371,8 @@
                     <div class="field">
                         <label for="va-completion-mode">Completion Mode</label>
                         <select id="va-completion-mode">
-                            <option value="webhook">Webhook first</option>
-                            <option value="poll">Background polling</option>
+                            <option value="poll" selected>Background polling (recommended)</option>
+                            <option value="webhook">Webhook first (with polling fallback)</option>
                         </select>
                     </div>
                 </div>
@@ -391,9 +391,9 @@
                     </label>
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
-                    <button class="btn btn-success" onclick="queueVideoAgentBatch()">🎬 Generate All Pipeline Videos</button>
+                    <button id="va-generate-btn" class="btn btn-success" onclick="queueVideoAgentBatch()">🎬 Generate All Pipeline Videos</button>
                     <button class="btn btn-secondary" onclick="refreshVideoAgentJobs(false)">📡 Refresh Jobs</button>
-                    <button class="btn btn-secondary" onclick="diagnoseVideoProviders()">🔌 Diagnose Provider Connection</button>
+                    <button class="btn btn-secondary" onclick="diagnoseVideoProviders(true)">🔌 Diagnose Provider Connection</button>
                 </div>
                 <div id="va-status" class="status-box">Load the latest marketing campaign or enter a campaign ID to start.</div>
                 <div id="va-provider-diagnostics" class="status-box" style="display:none;"></div>
@@ -443,6 +443,7 @@
         let videoAgentMediaAssets = [];
         let videoAgentRefreshTimer = null;
         let videoAgentProviderCapabilities = {};
+        const videoAgentNotifiedCompletions = new Set();
 
         function escapeHtml(value) {
             return String(value || '')
@@ -478,7 +479,26 @@
 
         function isProviderEnabled(providerName) {
             const config = providerConfig(providerName);
-            return config ? Boolean(config.enabled) : true;
+            // Default to false when capabilities haven't loaded so we never let
+            // the UI submit a batch that the server will reject with HTTP 400.
+            return config ? Boolean(config.enabled) : false;
+        }
+
+        function anyProviderEnabled() {
+            const providers = videoAgentProviderCapabilities?.providers || {};
+            return Object.values(providers).some(cfg => cfg && cfg.enabled);
+        }
+
+        function updateGenerateButtonState() {
+            const btn = document.getElementById('va-generate-btn');
+            if (!btn) return;
+            const enabled = anyProviderEnabled();
+            btn.disabled = !enabled;
+            btn.style.opacity = enabled ? '1' : '0.55';
+            btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+            btn.title = enabled
+                ? 'Generate all pipeline videos with the selected provider.'
+                : 'No video provider is connected. Click "Diagnose Provider Connection" to see what to configure.';
         }
 
         function applyProviderCapabilities(capabilities) {
@@ -512,6 +532,7 @@
             if (currentModel && models.includes(currentModel)) {
                 modelSelect.value = currentModel;
             }
+            updateGenerateButtonState();
         }
 
         async function loadProviderCapabilities() {
@@ -520,6 +541,7 @@
                 applyProviderCapabilities(data?.capabilities || {});
             } catch (err) {
                 videoAgentProviderCapabilities = {};
+                updateGenerateButtonState();
             }
         }
 
@@ -562,6 +584,7 @@
             if (!response.ok) {
                 const error = new Error(data.error || `Request failed (${response.status})`);
                 error.status = response.status;
+                error.body = data;
                 throw error;
             }
             return data;
@@ -635,6 +658,10 @@
             const integrityLine = (status === 'completed' && (checksum || sizeLabel))
                 ? `<br>Integrity ${escapeHtml([sizeLabel, checksum && `SHA-256 ${checksum}`].filter(Boolean).join(' · '))}`
                 : '';
+            const implementedLive = Boolean(job.implemented_on_landing_page);
+            const heroBadge = implementedLive
+                ? `<div style="margin-top:6px;display:inline-block;background:rgba(76,175,80,0.28);border-radius:999px;padding:3px 9px;font-size:0.72rem;font-weight:700;">🌐 Implemented on phins.ai landing page</div>`
+                : '';
             return `
                 <div class="job-card">
                     <div class="job-head">
@@ -645,6 +672,7 @@
                                 <br>Provider ${escapeHtml(String(job.provider || '').toUpperCase())}${job.provider_model ? ` · ${escapeHtml(job.provider_model)}` : ''}
                                 ${integrityLine}
                             </div>
+                            ${heroBadge}
                         </div>
                         <span class="job-badge" style="background:${badgeColor};">${escapeHtml(status || 'queued')}</span>
                     </div>
@@ -656,8 +684,10 @@
                     </div>
                     <div class="job-actions">
                         ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
-                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download>Download Video</a>` : ''}
+                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download>⬇ Download Video</a>` : ''}
                         ${status === 'completed' && job.generated_asset_id ? `<button class="small-btn open" onclick="verifyVideoAgentJob('${job.id}')">Verify Integrity</button>` : ''}
+                        ${status === 'completed' && job.generated_asset_id && !implementedLive ? `<button class="small-btn open" onclick="publishVideoAgentJob('${job.id}')">🌐 Implement on phins.ai</button>` : ''}
+                        ${implementedLive ? `<a class="small-btn open" href="/" target="_blank" rel="noopener">Open Landing Page</a>` : ''}
                         ${status === 'failed' ? `<button class="small-btn retry" onclick="retryVideoAgentJob('${job.id}')">Retry</button>` : ''}
                         ${['queued', 'processing'].includes(status) ? `<button class="small-btn cancel" onclick="cancelVideoAgentJob('${job.id}')">Cancel</button>` : ''}
                     </div>
@@ -696,7 +726,24 @@
                 const data = await fetchJson(`/api/admin/media/video-jobs?campaign_id=${encodeURIComponent(campaignId)}`);
                 videoAgentJobs = Array.isArray(data.jobs) ? data.jobs : [];
                 renderJobs();
-                if (!silent) {
+                // Notify when a job transitions into 'completed' so the user
+                // notices the video is ready and downloadable, even silently.
+                let notification = null;
+                videoAgentJobs.forEach(job => {
+                    const status = String(job.status || '').toLowerCase();
+                    const downloadUrl = String(job.download_url || '').trim();
+                    if (status === 'completed' && downloadUrl && !videoAgentNotifiedCompletions.has(job.id)) {
+                        videoAgentNotifiedCompletions.add(job.id);
+                        notification = job;
+                    }
+                });
+                if (notification) {
+                    const checksum = shortChecksum(notification.asset_checksum || '');
+                    const sizeLabel = formatBytes(notification.asset_size || 0);
+                    const integrityBits = [sizeLabel, checksum && `SHA-256 ${checksum}`].filter(Boolean).join(' · ');
+                    const heroBit = notification.implemented_on_landing_page ? ' · published as landing-page hero' : '';
+                    setStatus(`✅ "${notification.asset_name || 'Generated video'}" is ready. Download or verify it below${integrityBits ? ` (${integrityBits})` : ''}${heroBit}.`, 'success');
+                } else if (!silent) {
                     const summary = data.summary || {};
                     const parts = [`${videoAgentJobs.length} job(s)`];
                     if (summary.completed) parts.push(`${summary.completed} completed`);
@@ -733,6 +780,31 @@
             await runJobAction('cancel', { job_id: jobId, campaign_id: selectedCampaignId() }, 'Video-agent job cancelled.');
         }
 
+        async function publishVideoAgentJob(jobId) {
+            try {
+                const result = await fetchJson('/api/admin/media/video-jobs/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ job_id: jobId, campaign_id: selectedCampaignId() }),
+                });
+                await refreshVideoAgentJobs(true);
+                const integrity = result?.integrity || {};
+                const checksum = shortChecksum(integrity.actual_checksum || integrity.expected_checksum || '');
+                const summary = checksum
+                    ? `Implemented on phins.ai landing page (SHA-256 ${checksum}).`
+                    : 'Implemented on phins.ai landing page.';
+                setStatus(summary, 'success');
+            } catch (err) {
+                const detail = err?.body || {};
+                const integrity = detail.integrity;
+                if (integrity && integrity.verified === false) {
+                    setStatus(`Refused to publish: ${integrity.reason || 'integrity check failed'}.`, 'error');
+                } else {
+                    setStatus(`Implement-on-landing failed: ${err.message}`, 'error');
+                }
+            }
+        }
+
         async function verifyVideoAgentJob(jobId) {
             try {
                 const result = await fetchJson('/api/admin/media/video-jobs/verify', {
@@ -759,23 +831,38 @@
             }
         }
 
-        async function diagnoseVideoProviders() {
+        function renderProviderDiagnostics(diag, opts = {}) {
+            const panel = document.getElementById('va-provider-diagnostics');
+            if (!panel) return;
+            const providers = diag?.providers || {};
+            const rows = Object.entries(providers).map(([name, cfg]) => {
+                const enabled = Boolean(cfg?.enabled);
+                const dot = enabled ? '🟢' : '🔴';
+                const label = String(cfg?.label || name).trim() || name;
+                const reason = String(cfg?.reason || '').trim();
+                return `<div style="margin-top:6px;"><strong>${dot} ${escapeHtml(label)}</strong><br><span style="opacity:0.85;">${escapeHtml(reason)}</span></div>`;
+            }).join('');
+            const heading = opts.errorPrefix
+                ? `<div style="font-weight:700;margin-bottom:6px;">${escapeHtml(opts.errorPrefix)}</div>`
+                : '<div style="font-weight:700;margin-bottom:6px;">Provider connectivity</div>';
+            panel.style.display = 'block';
+            panel.innerHTML = heading + (rows || 'No providers reported.') +
+                `<div style="margin-top:8px;opacity:0.7;font-size:0.78rem;">Webhook base URL configured: ${diag?.media_callback_base_url_configured ? 'yes' : 'no'} · Default provider: ${escapeHtml(diag?.default_provider || 'gemini')}</div>`;
+            applyProviderCapabilities({ providers, default_provider: diag?.default_provider });
+        }
+
+        async function diagnoseVideoProviders(forceShow = false) {
             const panel = document.getElementById('va-provider-diagnostics');
             if (!panel) return;
             try {
                 const data = await fetchJson('/api/admin/media/video-providers/diagnose');
                 const diag = data?.diagnostics || {};
-                const providers = diag?.providers || {};
-                const rows = Object.entries(providers).map(([name, cfg]) => {
-                    const enabled = Boolean(cfg?.enabled);
-                    const dot = enabled ? '🟢' : '🔴';
-                    const label = String(cfg?.label || name).trim() || name;
-                    const reason = String(cfg?.reason || '').trim();
-                    return `<div style="margin-top:6px;"><strong>${dot} ${escapeHtml(label)}</strong><br><span style="opacity:0.85;">${escapeHtml(reason)}</span></div>`;
-                }).join('');
-                panel.style.display = 'block';
-                panel.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">Provider connectivity</div>${rows || 'No providers reported.'}<div style="margin-top:8px;opacity:0.7;font-size:0.78rem;">Webhook base URL configured: ${diag.media_callback_base_url_configured ? 'yes' : 'no'} · Default provider: ${escapeHtml(diag.default_provider || 'gemini')}</div>`;
-                applyProviderCapabilities({ providers, default_provider: diag.default_provider });
+                renderProviderDiagnostics(diag);
+                if (!forceShow && diag?.any_connected) {
+                    // Auto-collapse the panel when everything is healthy and the
+                    // call wasn't user-initiated.
+                    panel.style.display = 'none';
+                }
             } catch (err) {
                 panel.style.display = 'block';
                 panel.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">Provider connectivity</div><div>Failed to retrieve diagnostics: ${escapeHtml(err.message)}</div>`;
@@ -809,9 +896,15 @@
                 setStatus('No campaign ID found. Go to Admin \u2192 Growth/Media \u2192 "Generate Agent Plan" first.', 'warning');
                 return;
             }
+            // Ensure capabilities are fresh so we never submit a request the server
+            // will reject with a confusing 400.
+            if (!anyProviderEnabled()) {
+                await loadProviderCapabilities();
+            }
             const provider = (document.getElementById('va-provider')?.value || 'gemini').trim();
             if (!isProviderEnabled(provider)) {
-                setStatus(`${String(provider).toUpperCase()} is not configured on the server. Connect the provider and try again.`, 'warning');
+                setStatus(`${String(provider).toUpperCase()} is not configured on the server. See "Diagnose Provider Connection" for the exact env var to set.`, 'warning');
+                await diagnoseVideoProviders(true);
                 return;
             }
             const providerModel = (document.getElementById('va-model')?.value || '').trim();
@@ -840,9 +933,27 @@
                 });
                 const jobCount = result?.queued_jobs?.length || result?.jobs?.length || 0;
                 await refreshVideoAgentJobs(true);
-                setStatus(`${jobCount} video job(s) queued with ${providerLabel}. Progress will auto-refresh.`, 'success');
+                setStatus(`${jobCount} video job(s) queued with ${providerLabel}. Live job refresh will track progress and download the video automatically when ready.`, 'success');
             } catch (err) {
-                setStatus(`Batch generation failed: ${err.message}`, 'error');
+                // Surface the structured server diagnostics inline so the operator
+                // knows which env var to set, instead of just "HTTP 400".
+                const detail = err?.body || {};
+                const hint = String(detail.hint || '').trim();
+                const reason = String(detail.reason || '').trim();
+                const message = err?.message || 'Unknown error';
+                const parts = [`Batch generation failed: ${message}`];
+                if (hint) parts.push(hint);
+                setStatus(parts.join(' · '), 'error');
+                if (detail.diagnostics) {
+                    renderProviderDiagnostics(detail.diagnostics, {
+                        errorPrefix: reason === 'provider_not_configured'
+                            ? 'Provider not configured — fix this and retry'
+                            : 'Provider connectivity',
+                    });
+                } else {
+                    await diagnoseVideoProviders(true);
+                }
+                updateGenerateButtonState();
             }
         }
 
@@ -855,7 +966,13 @@
                     loadMediaImages(),
                 ]);
                 await refreshVideoAgentJobs(true);
-                if (campaign?.campaign?.campaign_id) {
+                if (!anyProviderEnabled()) {
+                    // Surface diagnostics up front so operators don't hit the
+                    // "Batch generation failed: HTTP 400" cliff when they press
+                    // Generate.
+                    await diagnoseVideoProviders(true);
+                    setStatus('No video provider is connected. Configure a provider (Gemini/Veo or Kling) to start generating videos.', 'warning');
+                } else if (campaign?.campaign?.campaign_id) {
                     const campaignId = campaign.campaign.campaign_id;
                     const blueprintCount = Array.isArray(campaign.campaign?.ai_video_blueprints) ? campaign.campaign.ai_video_blueprints.length : 0;
                     setStatus(`Campaign ${campaignId} loaded with ${blueprintCount} video blueprints. Ready for generation.`, 'success');

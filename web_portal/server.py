@@ -1795,6 +1795,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'download_url': job.get('download_url', ''),
         'progress_pct': safe_int(job.get('progress_pct'), 0),
     }
+    payload['auto_publish_to_hero'] = bool(job.get('auto_publish_to_hero'))
     generated_asset_id = str(job.get('generated_asset_id') or '').strip()
     if generated_asset_id:
         asset = MEDIA_ASSETS.get(generated_asset_id)
@@ -1804,6 +1805,11 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
             payload['asset_format'] = str(asset.get('format') or '')
             payload['asset_url'] = media_asset_url(asset)
             payload['asset_stored_externally'] = bool(asset.get('stored_externally'))
+        # Expose whether this generated video is the currently published landing-page hero
+        published_hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '').strip()
+        payload['implemented_on_landing_page'] = bool(published_hero_id and published_hero_id == generated_asset_id)
+    else:
+        payload['implemented_on_landing_page'] = False
     if include_callback:
         payload['callback_path'] = job.get('callback_path', '')
         payload['callback_url'] = job.get('callback_url', '')
@@ -27639,14 +27645,30 @@ For claims or questions, please contact:
                 return
             provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
             if provider_error:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
+                # Returning structured diagnostics so /video-agents.html can render
+                # an actionable hint ("set GEMINI_API_KEY", etc.) instead of just
+                # showing "HTTP Error 400: Bad Request".
+                response_status = 503 if 'not connected' in provider_error else 400
+                self._set_json_headers(response_status)
+                self.wfile.write(json.dumps({
+                    'error': provider_error,
+                    'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
+                    'diagnostics': diagnose_media_video_providers(),
+                    'hint': (
+                        'No video provider is configured on the server. Set GEMINI_API_KEY '
+                        'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
+                    ),
+                }).encode('utf-8'))
                 return
 
             _, blueprints, error = latest_campaign_video_blueprints(campaign_id)
             if error:
                 self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'error': error,
+                    'campaign_id': campaign_id,
+                    'hint': 'Generate a marketing campaign with video blueprints first via Admin → Growth/Media → Generate Agent Plan.',
+                }).encode('utf-8'))
                 return
 
             try:
@@ -27666,7 +27688,14 @@ For claims or questions, please contact:
                         prompt_override=prompt_override,
                     )
                     queued_jobs.append(job)
-                    if poll_mode != 'webhook' or not callback_base_url:
+                    # Always schedule a polling fallback so a missed/late webhook
+                    # never strands a job in 'processing'.  When poll_mode=webhook
+                    # we delay the first poll long enough for the webhook to land
+                    # first; otherwise we poll immediately.
+                    if poll_mode == 'webhook' and callback_base_url:
+                        fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
+                        start_media_job_polling(job['id'], delay_seconds=max(fallback_delay, 5))
+                    else:
                         start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
                 save_ledger_data()
                 self._set_json_headers(202)
@@ -27674,6 +27703,10 @@ For claims or questions, please contact:
                     'success': True,
                     'message': f'Queued {len(queued_jobs)} video generation jobs',
                     'campaign_id': campaign_id,
+                    'provider': provider,
+                    'provider_model': provider_model,
+                    'poll_mode': poll_mode or 'poll',
+                    'webhook_callback_configured': bool(callback_base_url),
                     'queued_jobs': [serialize_media_job(job, include_callback=True) for job in queued_jobs],
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
                 }).encode('utf-8'))
@@ -27717,8 +27750,17 @@ For claims or questions, please contact:
                 return
             provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
             if provider_error:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': provider_error}).encode('utf-8'))
+                response_status = 503 if 'not connected' in provider_error else 400
+                self._set_json_headers(response_status)
+                self.wfile.write(json.dumps({
+                    'error': provider_error,
+                    'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
+                    'diagnostics': diagnose_media_video_providers(),
+                    'hint': (
+                        'No video provider is configured on the server. Set GEMINI_API_KEY '
+                        'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
+                    ),
+                }).encode('utf-8'))
                 return
             if blueprint_index < 0:
                 self._set_json_headers(400)
@@ -27745,12 +27787,19 @@ For claims or questions, please contact:
                     prompt_override=prompt_override,
                 )
                 save_ledger_data()
-                if poll_mode != 'webhook' or not callback_base_url:
+                if poll_mode == 'webhook' and callback_base_url:
+                    fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
+                    start_media_job_polling(job['id'], delay_seconds=max(fallback_delay, 5))
+                else:
                     start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
                 self._set_json_headers(202)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'message': 'Video generation job queued',
+                    'provider': provider,
+                    'provider_model': provider_model,
+                    'poll_mode': poll_mode or 'poll',
+                    'webhook_callback_configured': bool(callback_base_url),
                     'job': serialize_media_job(job, include_callback=True),
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
                 }).encode('utf-8'))
@@ -27760,7 +27809,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
 
-        if path in {'/api/admin/media/video-jobs/retry', '/api/admin/media/video-jobs/cancel', '/api/admin/media/video-jobs/verify'}:
+        if path in {'/api/admin/media/video-jobs/retry', '/api/admin/media/video-jobs/cancel', '/api/admin/media/video-jobs/verify', '/api/admin/media/video-jobs/publish'}:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
@@ -27826,6 +27875,58 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
 
+            if action == 'publish':
+                if str(job.get('status') or '').strip().lower() != 'completed':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Only completed video jobs can be published to the landing page.',
+                        'job_status': job.get('status'),
+                    }).encode('utf-8'))
+                    return
+                generated_asset_id = str(job.get('generated_asset_id') or '').strip()
+                asset = MEDIA_ASSETS.get(generated_asset_id) if generated_asset_id else None
+                if not isinstance(asset, dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'Generated media asset not found for this job.',
+                        'generated_asset_id': generated_asset_id,
+                    }).encode('utf-8'))
+                    return
+                # Re-verify integrity before publishing so a tampered or missing
+                # file is never silently promoted to the live landing page.
+                integrity = verify_media_video_job_integrity(job)
+                if not integrity.get('verified'):
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({
+                        'error': 'Refusing to publish: integrity check failed.',
+                        'integrity': integrity,
+                    }).encode('utf-8'))
+                    return
+                now_iso = datetime.now().isoformat()
+                DESIGN_SETTINGS['hero_video_id'] = generated_asset_id
+                DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
+                DESIGN_SETTINGS['video_poster'] = asset.get('thumbnail', '')
+                DESIGN_SETTINGS['video_poster_id'] = ''
+                DESIGN_SETTINGS['updated_at'] = now_iso
+                DESIGN_SETTINGS['updated_by'] = requested_by
+                job['auto_publish_to_hero'] = True
+                save_ledger_data()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Video published to landing-page hero.',
+                    'job': serialize_media_job(job, include_callback=True),
+                    'integrity': integrity,
+                    'design_settings': {
+                        'hero_video_id': DESIGN_SETTINGS['hero_video_id'],
+                        'video_url': DESIGN_SETTINGS['video_url'],
+                        'video_poster': DESIGN_SETTINGS['video_poster'],
+                        'updated_at': DESIGN_SETTINGS['updated_at'],
+                        'updated_by': DESIGN_SETTINGS['updated_by'],
+                    },
+                }).encode('utf-8'))
+                return
+
             callback_base_url = str(data.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
             poll_mode = str(data.get('poll_mode') or '').strip().lower()
             try:
@@ -27839,7 +27940,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
 
-            if poll_mode != 'webhook' or not callback_base_url:
+            if poll_mode == 'webhook' and callback_base_url:
+                fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
+                start_media_job_polling(retried_job['id'], delay_seconds=max(fallback_delay, 5))
+            else:
                 start_media_job_polling(retried_job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
             save_ledger_data()
             self._set_json_headers(202)
