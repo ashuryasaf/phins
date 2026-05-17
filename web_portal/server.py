@@ -2988,6 +2988,20 @@ def verify_media_video_job_integrity(job: Dict[str, Any]) -> Dict[str, Any]:
                 'reason': f'Failed to read media file: {exc}',
                 'asset_id': asset_id,
             }
+    elif file_path:
+        return {
+            'verified': False,
+            'asset_id': asset_id,
+            'asset_name': str(asset.get('name') or ''),
+            'expected_checksum': stored_checksum,
+            'actual_checksum': '',
+            'expected_size': safe_int(asset.get('size'), 0),
+            'actual_size': 0,
+            'has_file': False,
+            'download_url': build_media_asset_download_url(asset_id),
+            'reason': f'File referenced by asset no longer exists on disk: {file_path}',
+            'verified_at': datetime.now().isoformat(),
+        }
     else:
         data_url = str(asset.get('data') or '').strip()
         if not data_url:
