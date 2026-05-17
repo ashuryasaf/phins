@@ -577,3 +577,302 @@ def test_finalize_records_checksum_for_inline_data_url_assets():
         portal.MEDIA_PROCESSING_JOBS.pop("mjob-inline-1", None)
         if asset_id_seen.get("id"):
             portal.MEDIA_ASSETS.pop(asset_id_seen["id"], None)
+
+
+# ---------------------------------------------------------------------------
+# Batch route: structured "no provider connected" error + diagnostics body
+# ---------------------------------------------------------------------------
+
+def test_batch_route_returns_structured_error_when_no_provider_connected(monkeypatch):
+    """When no provider is configured, /video-jobs/batch must return a 503 with
+    machine-readable diagnostics so /video-agents.html can render an actionable
+    hint instead of a vague "HTTP 400".
+    """
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_KEY", raising=False)
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    import services.media_generation_service as mgs
+    mgs._media_generation_service = None
+
+    port = 8399
+    srv = _ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _warm_test_port(base)
+    token = "phins_video_e2e_no_provider"
+    _inject_admin_session(token, username="video_e2e_no_provider")
+
+    try:
+        _seed_campaign("MKT-NO-PROVIDER")
+        status, body = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": "MKT-NO-PROVIDER",
+                "provider": "gemini",
+            },
+        )
+        assert status == 503, body
+        assert body.get("error")
+        assert body.get("reason") == "provider_not_configured"
+        assert "diagnostics" in body
+        assert body["diagnostics"]["any_connected"] is False
+        # Hint must reference at least one of the env vars operators need to set
+        hint = (body.get("hint") or "").upper()
+        assert "GEMINI_API_KEY" in hint or "KLING_API_KEY" in hint
+    finally:
+        mgs._media_generation_service = None
+        srv.stop()
+
+
+def test_batch_route_announces_poll_mode_and_webhook_state():
+    """Successful batch submission must echo back the resolved poll_mode and
+    webhook_callback_configured so the UI can show the user what will happen.
+    """
+    port = 8400
+    srv = _ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _warm_test_port(base)
+    token = "phins_video_e2e_poll"
+    _inject_admin_session(token, username="video_e2e_poll")
+
+    stub = _StreamingStubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub
+
+    try:
+        _seed_campaign("MKT-POLL-1")
+        status, body = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": "MKT-POLL-1",
+                "provider": "gemini",
+                "poll_mode": "poll",
+            },
+        )
+        assert status == 202, body
+        assert body["poll_mode"] == "poll"
+        assert body["provider"] == "gemini"
+        assert "webhook_callback_configured" in body
+        assert isinstance(body["webhook_callback_configured"], bool)
+        assert body["queued_jobs"], body
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
+def test_publish_endpoint_promotes_completed_video_to_landing_page_hero():
+    """After a video is generated, the operator can implement it on phins.ai
+    via POST /api/admin/media/video-jobs/publish; integrity must pass first.
+    """
+    port = 8401
+    srv = _ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _warm_test_port(base)
+    token = "phins_video_e2e_publish"
+    _inject_admin_session(token, username="video_e2e_publish")
+
+    stub = _StreamingStubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub
+
+    try:
+        campaign_id = "MKT-PUBLISH-1"
+        _seed_campaign(campaign_id)
+        # Submit batch
+        status, batch_body = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": campaign_id,
+                "provider": "gemini",
+                "auto_publish_to_hero": False,  # We'll publish manually below
+                "poll_mode": "poll",
+            },
+        )
+        assert status == 202, batch_body
+
+        # Wait for completion
+        final_job = None
+        for _ in range(40):
+            time.sleep(0.1)
+            status, jobs_resp = _json_request(
+                base + f"/api/admin/media/video-jobs?campaign_id={campaign_id}",
+                token=token,
+            )
+            assert status == 200
+            jobs = jobs_resp.get("jobs") or []
+            if jobs and jobs[0].get("status") == "completed" and jobs[0].get("generated_asset_id"):
+                final_job = jobs[0]
+                break
+        assert final_job is not None
+        # Initially NOT implemented on landing page
+        assert final_job.get("implemented_on_landing_page") is False
+
+        # Reset DESIGN_SETTINGS hero to ensure clean state
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+
+        # Publish
+        status, publish_body = _json_request(
+            base + "/api/admin/media/video-jobs/publish",
+            method="POST",
+            token=token,
+            payload={"job_id": final_job["id"], "campaign_id": campaign_id},
+        )
+        assert status == 200, publish_body
+        assert publish_body["success"] is True
+        assert publish_body["integrity"]["verified"] is True
+        assert publish_body["design_settings"]["hero_video_id"] == final_job["generated_asset_id"]
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == final_job["generated_asset_id"]
+
+        # Subsequent listing must reflect implemented_on_landing_page=true
+        status, jobs_resp = _json_request(
+            base + f"/api/admin/media/video-jobs?campaign_id={campaign_id}",
+            token=token,
+        )
+        assert status == 200
+        published_job = jobs_resp["jobs"][0]
+        assert published_job.get("implemented_on_landing_page") is True
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
+def test_publish_endpoint_refuses_tampered_asset():
+    """Integrity must pass before publish; tampered files must NOT go live."""
+    port = 8402
+    srv = _ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _warm_test_port(base)
+    token = "phins_video_e2e_publish_tamper"
+    _inject_admin_session(token, username="video_e2e_publish_tamper")
+
+    stub = _StreamingStubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub
+
+    try:
+        campaign_id = "MKT-PUBLISH-TAMPER"
+        _seed_campaign(campaign_id)
+        status, batch_body = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={"campaign_id": campaign_id, "provider": "gemini", "poll_mode": "poll"},
+        )
+        assert status == 202
+
+        final_job = None
+        for _ in range(40):
+            time.sleep(0.1)
+            status, jobs_resp = _json_request(
+                base + f"/api/admin/media/video-jobs?campaign_id={campaign_id}",
+                token=token,
+            )
+            assert status == 200
+            jobs = jobs_resp.get("jobs") or []
+            if jobs and jobs[0].get("status") == "completed":
+                final_job = jobs[0]
+                break
+        assert final_job is not None
+
+        asset_id = final_job["generated_asset_id"]
+        asset = portal.MEDIA_ASSETS.get(asset_id) or {}
+        file_path = asset.get("file_path")
+        if file_path and os.path.isfile(file_path):
+            with open(file_path, "ab") as handle:
+                handle.write(b"-tampered-by-test")
+        else:
+            # Force checksum mismatch by flipping it
+            asset["checksum"] = "0" * 64
+
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+
+        status, publish_body = _json_request(
+            base + "/api/admin/media/video-jobs/publish",
+            method="POST",
+            token=token,
+            payload={"job_id": final_job["id"], "campaign_id": campaign_id},
+        )
+        assert status == 409, publish_body
+        assert publish_body.get("error")
+        assert publish_body["integrity"]["verified"] is False
+        # Hero must NOT have been promoted
+        assert portal.DESIGN_SETTINGS.get("hero_video_id") != asset_id
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
+def test_batch_with_webhook_mode_still_starts_polling_fallback():
+    """Even when poll_mode='webhook' is selected and a callback URL is set, the
+    server must schedule a polling fallback so a missed webhook never strands a
+    job in 'processing'.
+    """
+    port = 8403
+    srv = _ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _warm_test_port(base)
+    token = "phins_video_e2e_webhook_fallback"
+    _inject_admin_session(token, username="video_e2e_webhook_fallback")
+
+    stub = _StreamingStubMediaGenerationService()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub
+
+    try:
+        campaign_id = "MKT-WEBHOOK-FALLBACK"
+        _seed_campaign(campaign_id)
+        status, batch_body = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": campaign_id,
+                "provider": "gemini",
+                "poll_mode": "webhook",
+                "callback_base_url": "https://example.invalid",
+                # Aggressive fallback delay so the test completes quickly
+                "webhook_fallback_seconds": 1,
+            },
+        )
+        assert status == 202, batch_body
+        assert batch_body["webhook_callback_configured"] is True
+        assert batch_body["poll_mode"] == "webhook"
+
+        # The webhook will never arrive (callback URL is invalid + we're not
+        # delivering one).  The polling fallback must still drive the job to
+        # completed thanks to the stub provider returning completed on poll.
+        final_job = None
+        for _ in range(60):
+            time.sleep(0.1)
+            status, jobs_resp = _json_request(
+                base + f"/api/admin/media/video-jobs?campaign_id={campaign_id}",
+                token=token,
+            )
+            assert status == 200
+            jobs = jobs_resp.get("jobs") or []
+            if jobs and jobs[0].get("status") == "completed":
+                final_job = jobs[0]
+                break
+        assert final_job is not None, (
+            "Job did not reach completed via polling fallback after webhook mode"
+        )
+        assert final_job.get("download_url", "").startswith("/api/media/")
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
