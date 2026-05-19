@@ -1415,7 +1415,7 @@ class AssessmentCenterService:
             "risk_indicators": [],
             "external_sources": {},
             "data_integrity": {
-                "documents": sorted({f.source_document_id for f in facts if f.source_document_id}),
+                "documents": _build_integrity_doc_list(facts),
                 "sha256_set": sorted({f.source_document_sha256 for f in facts if f.source_document_sha256}),
             },
         }
@@ -2048,6 +2048,22 @@ def _hashable(value: Any) -> Any:
         return json.dumps(value, sort_keys=True, default=str)
     except Exception:
         return repr(value)
+
+
+def _build_integrity_doc_list(facts) -> list:
+    """Return a sorted list of document-object dicts for data_integrity.documents."""
+    doc_map: Dict[str, Dict[str, str]] = {}
+    for f in facts:
+        if not f.source_document_id:
+            continue
+        if f.source_document_id not in doc_map:
+            doc_map[f.source_document_id] = {
+                "id": f.source_document_id,
+                "sha256": f.source_document_sha256 or "",
+            }
+        elif f.source_document_sha256 and not doc_map[f.source_document_id].get("sha256"):
+            doc_map[f.source_document_id]["sha256"] = f.source_document_sha256
+    return sorted(doc_map.values(), key=lambda d: d["id"])
 
 
 def _id_number_view(fact: Fact) -> Dict[str, Any]:

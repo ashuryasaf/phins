@@ -377,7 +377,6 @@
   const ADMIN_ROLES = new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims',
                                'claims_agent', 'claims_manager', 'underwriting_admin']);
   const ROLE = String(SESSION.role || '').toLowerCase();
-  const IS_ADMIN = ADMIN_ROLES.has(ROLE);
   if (!TOKEN) { window.location.href = '/login.html'; }
 
   function logout() {
@@ -729,11 +728,12 @@
     const declaredFacts = Number(prof.fact_count || 0);
     const summedFacts = docs.reduce((a, d) => a + Number(d.facts_extracted || 0), 0);
     const missingSha = docs.filter(d => !d.sha256).length;
-    const docCountDelta = Math.abs(docs.length - profDocs.length);
+    const docIdSet = new Set(docs.map(d => d.id));
+    const orphanProf = profDocs.filter(pd => !docIdSet.has(typeof pd === 'string' ? pd : pd.id));
     const factDelta = Math.abs(declaredFacts - summedFacts);
     const issues = [];
     if (missingSha > 0)        issues.push(`${missingSha} document(s) missing SHA-256 fingerprint`);
-    if (docCountDelta > 0)     issues.push(`profile lists ${profDocs.length} doc(s) but docs bar shows ${docs.length}`);
+    if (orphanProf.length > 0) issues.push(`profile references ${orphanProf.length} doc(s) not found in document list`);
     // Facts can legitimately differ because external clearinghouse facts
     // (Mislaka) are not attached to a single document - we only flag big drift.
     if (factDelta > 25)        issues.push(`fact count drift: profile=${declaredFacts}, sum-of-docs=${summedFacts}`);
@@ -782,12 +782,15 @@
           <h4>Provenance (latest 8)</h4>
           ${provDocs.length === 0
             ? '<div class="empty">No provenance yet.</div>'
-            : '<div class="provenance-list">' + provDocs.slice(0, 8).map(d => `
+            : '<div class="provenance-list">' + provDocs.slice(0, 8).map(d => {
+                const obj = typeof d === 'string' ? { id: d } : d;
+                return `
                 <div class="pv-item">
-                  <span style="flex:1;color:#1a237e;font-weight:600;">${escHtml(d.name || d.id || '?')}</span>
-                  <span class="stat-chip muted">${escHtml(d.document_type || d.category || 'general')}</span>
-                  <span class="pv-sha" title="SHA-256">${escHtml(String(d.sha256 || '').slice(0, 12))}…</span>
-                </div>`).join('') + '</div>'}
+                  <span style="flex:1;color:#1a237e;font-weight:600;">${escHtml(obj.name || obj.id || '?')}</span>
+                  <span class="stat-chip muted">${escHtml(obj.document_type || obj.category || 'general')}</span>
+                  <span class="pv-sha" title="SHA-256">${escHtml(String(obj.sha256 || '').slice(0, 12))}…</span>
+                </div>`;
+              }).join('') + '</div>'}
         </div>
       </div>`;
   }
