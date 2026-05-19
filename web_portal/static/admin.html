@@ -456,7 +456,9 @@
     body.embed-mode > .footer,
     body.embed-mode > main > .welcome-section,
     body.embed-mode > main > #admin-ai-assistant-panel,
-    body.embed-mode > main > section.section-content:not(.embed-visible) {
+    body.embed-mode > main > section.section-content:not(.embed-visible),
+    body.embed-mode > main > div.section-content:not(.embed-visible),
+    body.embed-mode > main > div.dashboard-stats {
       display: none !important;
     }
     body.embed-mode { background: transparent; }
@@ -464,7 +466,8 @@
       padding: 12px !important;
       max-width: none !important;
     }
-    body.embed-mode > main > section.section-content.embed-visible {
+    body.embed-mode > main > section.section-content.embed-visible,
+    body.embed-mode > main > div.section-content.embed-visible {
       margin-top: 0 !important;
     }
   </style>

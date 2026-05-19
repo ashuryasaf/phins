@@ -1573,7 +1573,7 @@
                 const desiredHash = tabName === 'media' ? '' : `#${tabName}`;
                 if ((window.location.hash || '') !== desiredHash) {
                     try {
-                        history.replaceState(null, '', window.location.pathname + window.location.search + desiredHash);
+                        history.pushState(null, '', window.location.pathname + window.location.search + desiredHash);
                     } catch (e) { /* ignore history failures (e.g. sandboxed) */ }
                 }
             }
@@ -1612,6 +1612,13 @@
         }
 
         window.addEventListener('hashchange', () => {
+            const next = resolveInitialTab();
+            if (next !== currentMainTab) {
+                switchMainTab(next, { updateHash: false });
+            }
+        });
+
+        window.addEventListener('popstate', () => {
             const next = resolveInitialTab();
             if (next !== currentMainTab) {
                 switchMainTab(next, { updateHash: false });
