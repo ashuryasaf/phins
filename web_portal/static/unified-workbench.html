@@ -664,18 +664,17 @@
         if (r.ok) snapshot.analysis = await r.json();
       } catch (_) { /* non-fatal */ }
     } else {
-      // Full pipeline: run all analysis types sequentially
-      const fullSteps = ['customer_360', 'risk_assessment', 'bi_summary', 'describe_data'];
+      // Full pipeline: profile, risk, and charts are already fetched by the
+      // parallel GETs above.  Only describe_data adds new information
+      // (category breakdown consumed by paintAssessment).
       snapshot.analysis = {};
-      for (const step of fullSteps) {
-        try {
-          const r = await api('/api/assessment-center/analysis', {
-            method: 'POST',
-            body: JSON.stringify({ customer_id: cid, analysis_type: step }),
-          });
-          if (r.ok) snapshot.analysis[step] = await r.json();
-        } catch (_) { /* non-fatal */ }
-      }
+      try {
+        const r = await api('/api/assessment-center/analysis', {
+          method: 'POST',
+          body: JSON.stringify({ customer_id: cid, analysis_type: 'describe_data' }),
+        });
+        if (r.ok) snapshot.analysis.describe_data = await r.json();
+      } catch (_) { /* non-fatal */ }
     }
 
     // ── Step 6b: list (and optionally generate) reports
