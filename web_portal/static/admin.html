@@ -445,7 +445,50 @@
       .admin-ai-action-btn { width: 100%; justify-content: center; display: inline-flex; }
       .admin-ai-quick-btn { padding: 6px 10px; font-size: 0.74rem; }
     }
+
+    /* Embed mode: when admin.html is iframed from the Media Dashboard
+       (e.g. /admin.html?embed=growth-agent-section) we only show the
+       requested section and hide global chrome so the surrounding
+       Media Dashboard tabs remain the sole navigation surface. */
+    body.embed-mode > .phins-header,
+    body.embed-mode > #admin-console-panel,
+    body.embed-mode > footer,
+    body.embed-mode > .footer,
+    body.embed-mode > main > .welcome-section,
+    body.embed-mode > main > #admin-ai-assistant-panel,
+    body.embed-mode > main > section.section-content:not(.embed-visible) {
+      display: none !important;
+    }
+    body.embed-mode { background: transparent; }
+    body.embed-mode > main.container {
+      padding: 12px !important;
+      max-width: none !important;
+    }
+    body.embed-mode > main > section.section-content.embed-visible {
+      margin-top: 0 !important;
+    }
   </style>
+  <script>
+    // Activate embed mode synchronously to avoid a flash of full chrome
+    // when admin.html is iframed from the Media Dashboard (e.g.
+    // /admin.html?embed=growth-agent-section).
+    (function () {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var embedTarget = (params.get('embed') || '').trim();
+        if (!embedTarget) return;
+        document.documentElement.setAttribute('data-embed', embedTarget);
+        document.addEventListener('DOMContentLoaded', function () {
+          document.body.classList.add('embed-mode');
+          var section = document.getElementById(embedTarget);
+          if (section) {
+            section.classList.add('embed-visible');
+            section.scrollIntoView({ block: 'start' });
+          }
+        });
+      } catch (e) { /* embed mode is best-effort */ }
+    })();
+  </script>
 </head>
 <body>
   <header class="phins-header">
@@ -465,7 +508,6 @@
         <a href="/admin-supplier-dashboard.html">🏪 Suppliers</a>
         <a href="/admin-foundations.html">🤝 Community</a>
         <a href="/admin-media.html">📁 Media</a>
-        <a href="/video-agents.html">🎬 Video Agents</a>
         <a href="/assessment-center.html">🧠 Assessment Center</a>
         <a href="/risk-dashboard.html">🎯 Assessment</a>
         <a href="/risk-reports-dashboard.html">📊 AI Reports</a>
@@ -1633,8 +1675,8 @@
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="generateMarketingSalesCampaign()" style="background: #42a5f5; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">🤖 Generate Agent Plan</button>
           <button onclick="publishMarketingSalesCampaign()" style="background: #4caf50; color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 700;">📁 Publish to Media</button>
-          <a href="/admin-media.html" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🔗 Open Media Dashboard</a>
-          <a href="/video-agents.html" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🎬 Open Video Agents</a>
+          <a href="/admin-media.html#growth-agent" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🔗 Open in Media Dashboard</a>
+          <a href="/admin-media.html#video-agents" style="background: rgba(255,255,255,0.2); color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.3); padding: 9px 14px; border-radius: 8px; font-weight: 700;">🎬 Video Agents (Media)</a>
         </div>
       </div>
 
@@ -2137,6 +2179,17 @@
     }
     
     document.addEventListener('DOMContentLoaded', () => {
+      // When admin.html is iframed in embed-mode (e.g. from the Media
+      // Dashboard "Growth Agent" tab) we only load the data that the visible
+      // section actually needs.  Skipping the rest keeps embedded loads
+      // light and avoids duplicate work the parent dashboard already did.
+      const embedTarget = (document.documentElement.getAttribute('data-embed') || '').trim();
+      if (embedTarget) {
+        if (embedTarget === 'growth-agent-section') {
+          if (typeof loadLatestMarketingCampaign === 'function') loadLatestMarketingCampaign();
+        }
+        return;
+      }
       initAdminAssistant();
       loadDashboardStats();
       loadBalanceSheet();

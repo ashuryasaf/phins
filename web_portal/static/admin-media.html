@@ -892,6 +892,45 @@
             padding-top: 8px;
         }
 
+        /* Embedded sub-dashboards (Growth Agent + Video Agents) */
+        .embed-tab { padding: 0; }
+        .embed-frame-wrap {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: calc(100vh - 220px);
+        }
+        .embed-frame-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: rgba(0,0,0,0.18);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            flex-wrap: wrap;
+        }
+        .embed-frame-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+        .embed-frame-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .embed-frame {
+            flex: 1;
+            width: 100%;
+            min-height: calc(100vh - 280px);
+            border: 0;
+            background: transparent;
+            display: block;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .admin-header { flex-direction: column; gap: 12px; }
@@ -902,6 +941,8 @@
             .media-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
             .growth-bridge-card { grid-template-columns: 1fr; }
             .growth-bridge-side { min-width: 0; }
+            .embed-frame-wrap { min-height: calc(100vh - 260px); }
+            .embed-frame { min-height: calc(100vh - 320px); }
         }
     </style>
 </head>
@@ -916,7 +957,6 @@
             <span class="page-title">Media & Design</span>
         </div>
         <div class="header-right">
-            <a href="/video-agents.html" class="btn btn-secondary">🎬 Video Agents</a>
             <a href="/admin.html" class="btn btn-secondary">← Admin</a>
             <button onclick="saveAllSettings()" class="btn btn-primary">💾 Save All</button>
         </div>
@@ -925,11 +965,13 @@
     <!-- Main Container -->
     <div class="main-container">
         <!-- Main Navigation Tabs -->
-        <div class="main-tabs">
-            <button class="main-tab active" onclick="switchMainTab('media')">📁 Media</button>
-            <button class="main-tab" onclick="switchMainTab('design')">🎨 Design</button>
-            <button class="main-tab" onclick="switchMainTab('layout')">📐 Layout</button>
-            <button class="main-tab" onclick="switchMainTab('branding')">✨ Branding</button>
+        <div class="main-tabs" role="tablist" aria-label="Media Dashboard Sections">
+            <button class="main-tab active" data-tab="media" onclick="switchMainTab('media')" role="tab">📁 Media</button>
+            <button class="main-tab" data-tab="growth-agent" onclick="switchMainTab('growth-agent')" role="tab">🚀 Growth Agent</button>
+            <button class="main-tab" data-tab="video-agents" onclick="switchMainTab('video-agents')" role="tab">🎬 Video Agents</button>
+            <button class="main-tab" data-tab="design" onclick="switchMainTab('design')" role="tab">🎨 Design</button>
+            <button class="main-tab" data-tab="layout" onclick="switchMainTab('layout')" role="tab">📐 Layout</button>
+            <button class="main-tab" data-tab="branding" onclick="switchMainTab('branding')" role="tab">✨ Branding</button>
         </div>
         
         <!-- Media Tab Content -->
@@ -1076,8 +1118,8 @@
                 <h2>🚀 Growth Agent Bridge</h2>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-secondary" onclick="loadGrowthBridgeCampaign()">🔄 Refresh</button>
-                    <a href="/video-agents.html" class="btn btn-secondary">🎬 Open Video Agents</a>
-                    <a id="growth-bridge-link" href="/admin.html#growth-agent-section" class="btn btn-primary">⚙️ Open Admin Builder</a>
+                    <a href="#video-agents" onclick="switchMainTab('video-agents');return false;" class="btn btn-secondary">🎬 Video Agents Tab</a>
+                    <a href="#growth-agent" onclick="switchMainTab('growth-agent');return false;" class="btn btn-primary">⚙️ Growth Agent Tab</a>
                 </div>
             </div>
 
@@ -1110,7 +1152,43 @@
             <div id="growth-status" class="growth-status">Ready. Pull latest published campaign from admin dashboard.</div>
         </section>
         </div><!-- End Media Tab -->
-        
+
+        <!-- Growth Agent Tab Content (AI + BI Marketing & Sales Agent, embedded from admin.html) -->
+        <div id="tab-growth-agent" class="tab-content embed-tab" style="display: none;">
+            <div class="embed-frame-wrap">
+                <div class="embed-frame-bar">
+                    <div class="embed-frame-title">🚀 AI + BI Marketing &amp; Sales Agent</div>
+                    <div class="embed-frame-actions">
+                        <button class="btn btn-secondary" type="button" onclick="reloadEmbeddedTab('growth-agent')">🔄 Reload</button>
+                        <a class="btn btn-secondary" href="/admin.html#growth-agent-section" target="_blank" rel="noopener">↗ Open Full Page</a>
+                    </div>
+                </div>
+                <iframe id="growth-agent-frame"
+                        class="embed-frame"
+                        data-src="/admin.html?embed=growth-agent-section"
+                        title="Growth Agent (AI + BI Marketing & Sales)"
+                        loading="lazy"></iframe>
+            </div>
+        </div><!-- End Growth Agent Tab -->
+
+        <!-- Video Agents Tab Content (embedded from video-agents.html) -->
+        <div id="tab-video-agents" class="tab-content embed-tab" style="display: none;">
+            <div class="embed-frame-wrap">
+                <div class="embed-frame-bar">
+                    <div class="embed-frame-title">🎬 Video Agents Pipeline</div>
+                    <div class="embed-frame-actions">
+                        <button class="btn btn-secondary" type="button" onclick="reloadEmbeddedTab('video-agents')">🔄 Reload</button>
+                        <a class="btn btn-secondary" href="/video-agents.html" target="_blank" rel="noopener">↗ Open Full Page</a>
+                    </div>
+                </div>
+                <iframe id="video-agents-frame"
+                        class="embed-frame"
+                        data-src="/video-agents.html?embed=1"
+                        title="Video Agents"
+                        loading="lazy"></iframe>
+            </div>
+        </div><!-- End Video Agents Tab -->
+
         <!-- Design Tab Content -->
         <div id="tab-design" class="tab-content" style="display: none;">
             <section class="design-section">
@@ -1463,21 +1541,82 @@
         }
         
         // ==================== MAIN TAB SWITCHING ====================
-        function switchMainTab(tabName) {
+        // Tabs may have multi-word IDs (e.g. "growth-agent", "video-agents")
+        // so we look them up by an explicit data-tab attribute rather than by
+        // textContent.  Iframe-backed tabs lazy-load on first activation to
+        // keep the dashboard fast and to avoid spawning embedded sub-pages
+        // that the operator never opens.
+        const VALID_MAIN_TABS = ['media', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
+
+        function switchMainTab(tabName, options = {}) {
+            const updateHash = options.updateHash !== false;
+            if (!VALID_MAIN_TABS.includes(tabName)) tabName = 'media';
             currentMainTab = tabName;
-            // Update tab buttons
+
             document.querySelectorAll('.main-tab').forEach(tab => {
-                tab.classList.remove('active');
-                if (tab.textContent.toLowerCase().includes(tabName)) {
-                    tab.classList.add('active');
-                }
+                const isActive = (tab.dataset && tab.dataset.tab === tabName);
+                tab.classList.toggle('active', isActive);
+                if (isActive) tab.setAttribute('aria-selected', 'true');
+                else tab.removeAttribute('aria-selected');
             });
-            // Update tab content
+
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.style.display = 'none';
             });
-            document.getElementById(`tab-${tabName}`).style.display = 'block';
+            const panel = document.getElementById(`tab-${tabName}`);
+            if (panel) {
+                panel.style.display = 'block';
+                hydrateEmbeddedFrame(panel);
+            }
+
+            if (updateHash) {
+                const desiredHash = tabName === 'media' ? '' : `#${tabName}`;
+                if ((window.location.hash || '') !== desiredHash) {
+                    try {
+                        history.replaceState(null, '', window.location.pathname + window.location.search + desiredHash);
+                    } catch (e) { /* ignore history failures (e.g. sandboxed) */ }
+                }
+            }
         }
+
+        // Set iframe src lazily so embedded sub-dashboards (Growth Agent,
+        // Video Agents) are only fetched when the operator actually opens
+        // those tabs.  Preserves data integrity because each sub-page keeps
+        // its own state machine and API session.
+        function hydrateEmbeddedFrame(panel) {
+            const frame = panel && panel.querySelector('iframe.embed-frame');
+            if (!frame) return;
+            const desired = frame.getAttribute('data-src');
+            if (!desired) return;
+            const current = frame.getAttribute('src') || '';
+            if (!current) frame.setAttribute('src', desired);
+        }
+
+        function reloadEmbeddedTab(tabName) {
+            const panel = document.getElementById(`tab-${tabName}`);
+            const frame = panel && panel.querySelector('iframe.embed-frame');
+            if (!frame) return;
+            const desired = frame.getAttribute('data-src') || frame.getAttribute('src');
+            if (!desired) return;
+            frame.setAttribute('src', desired);
+        }
+
+        function resolveInitialTab() {
+            const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+            const candidate = raw === 'growth' ? 'growth-agent'
+                            : raw === 'video' ? 'video-agents'
+                            : raw === 'tab-growth-agent' ? 'growth-agent'
+                            : raw === 'tab-video-agents' ? 'video-agents'
+                            : raw;
+            return VALID_MAIN_TABS.includes(candidate) ? candidate : 'media';
+        }
+
+        window.addEventListener('hashchange', () => {
+            const next = resolveInitialTab();
+            if (next !== currentMainTab) {
+                switchMainTab(next, { updateHash: false });
+            }
+        });
         
         // ==================== INITIALIZATION ====================
         document.addEventListener('DOMContentLoaded', async () => {
@@ -1486,9 +1625,15 @@
                 window.location.href = '/login.html';
                 return;
             }
-            
+
             setupDragAndDrop();
             setupRangeListeners();
+            // Respect deep-links like /admin-media.html#video-agents so the
+            // unified dashboard can replace the old standalone pages.
+            const initialTab = resolveInitialTab();
+            if (initialTab !== 'media') {
+                switchMainTab(initialTab, { updateHash: false });
+            }
             Promise.all([
                 loadMediaAssets(),
                 loadAssignments(),
