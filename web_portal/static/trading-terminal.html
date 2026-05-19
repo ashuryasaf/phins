@@ -1482,7 +1482,21 @@ async function runCopilot() {
 
     try {
         const d = await apiFetch('/api/terminal/copilot?symbol=' + sym);
-        if (d.error) { $('copilotResult').innerHTML = `<div class="copilot-card" style="color:var(--red);">${d.error}</div>`; return; }
+        if (d.error) {
+            const escapeHtml = (s) => String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            let errHtml = `<div class="copilot-card" style="color:var(--red);">${escapeHtml(d.error)}`;
+            if (Array.isArray(d.details) && d.details.length) {
+                errHtml += `<ul style="margin:8px 0 0 18px;padding:0;color:var(--muted);font-size:13px;">`;
+                d.details.forEach(line => { errHtml += `<li>${escapeHtml(line)}</li>`; });
+                errHtml += `</ul>`;
+            }
+            errHtml += `</div>`;
+            $('copilotResult').innerHTML = errHtml;
+            return;
+        }
         let html = '';
         const rec = d.ai_recommendation || 'HOLD';
         const recCls = rec.includes('BUY') ? 'buy' : (rec.includes('SELL') ? 'sell' : 'hold');
