@@ -291,7 +291,27 @@
             .grid-two { grid-template-columns: 1fr; }
             .form-grid { grid-template-columns: 1fr; }
         }
+
+        /* Embed mode: when video-agents.html is iframed from the Media
+           Dashboard (e.g. /video-agents.html?embed=1) we hide the page
+           topbar/brand so the host dashboard tabs remain the only nav. */
+        html[data-embed] body { background: transparent !important; }
+        html[data-embed] body .page-shell { padding: 12px !important; max-width: none !important; }
+        html[data-embed] body .topbar { display: none !important; }
     </style>
+    <script>
+        (function () {
+            try {
+                var params = new URLSearchParams(window.location.search);
+                if ((params.get('embed') || '').trim()) {
+                    document.documentElement.setAttribute('data-embed', '1');
+                    document.addEventListener('DOMContentLoaded', function () {
+                        document.body.classList.add('embed-mode');
+                    });
+                }
+            } catch (e) { /* embed mode is best-effort */ }
+        })();
+    </script>
 </head>
 <body>
     <div class="page-shell">

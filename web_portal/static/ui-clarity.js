@@ -302,7 +302,7 @@
         { id: "admin_ai_bi", label: "AI + BI", query: "run ai bi insights", requiresAdmin: true, url: "/admin.html" },
         { id: "admin_media", label: "Media", query: "open admin media dashboard", requiresAdmin: true, url: "/admin-media.html" },
         { id: "admin_foundations", label: "Foundations", query: "open admin foundations dashboard", requiresAdmin: true, url: "/admin-foundations.html" },
-        { id: "admin_video_agents", label: "Video Agents", query: "open video agents dashboard", requiresAdmin: true, url: "/video-agents.html" },
+        { id: "admin_video_agents", label: "Video Agents", query: "open video agents dashboard", requiresAdmin: true, url: "/admin-media.html#video-agents" },
         { id: "admin_pitch", label: "Pitch", query: "open pitch dashboard", requiresAdmin: true, url: "/pitch-dashboard.html" },
         { id: "admin_risk", label: "Risk", query: "open risk dashboard", requiresAdmin: true, url: "/risk-dashboard.html" },
         { id: "admin_reports", label: "Reports", query: "open risk reports dashboard", requiresAdmin: true, url: "/risk-reports-dashboard.html" },
@@ -765,7 +765,7 @@
       return true;
     }
     if (q.includes("video agents")) {
-      window.location.href = "/video-agents.html";
+      window.location.href = "/admin-media.html#video-agents";
       return true;
     }
     if (q.includes("pitch dashboard")) {
