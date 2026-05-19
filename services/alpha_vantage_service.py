@@ -236,14 +236,16 @@ class AlphaVantageService:
         return self._parse_time_series(symbol, ts, "daily")
 
     def get_weekly(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Weekly adjusted time series."""
+        """Weekly time series."""
         raw = self._fetch({
-            "function": "TIME_SERIES_WEEKLY_ADJUSTED",
+            "function": "TIME_SERIES_WEEKLY",
             "symbol": symbol,
         }, self._indicator_ttl)
         if not raw:
             return None
-        ts = raw.get("Weekly Adjusted Time Series", {})
+        ts = raw.get("Weekly Time Series", {})
+        if not ts:
+            ts = raw.get("Weekly Adjusted Time Series", {})
         return self._parse_time_series(symbol, ts, "weekly")
 
     def get_intraday(self, symbol: str, interval: str = "5min", outputsize: str = "compact") -> Optional[Dict[str, Any]]:
