@@ -146,6 +146,10 @@ class TradingPlatformService:
         self._timeout = 10
         self._cache: Dict[str, Any] = {}
         self._cache_ts: Dict[str, float] = {}
+        # Most recent Alpaca data-API error (set by _data_request) — surfaced
+        # in diagnostic responses so the trading terminal can explain why a
+        # symbol returned no bars.
+        self._last_data_error: Optional[str] = None
 
     def _reload_keys(self) -> None:
         """Re-read API keys from environment (supports hot-reload after Railway redeploy)."""
@@ -268,19 +272,38 @@ class TradingPlatformService:
                         time.sleep(_RETRY_BACKOFF * (attempt + 1))
                     continue
                 if resp.status_code >= 400:
+                    # Surface Alpaca-side failure cause (401 unauth, 403 plan,
+                    # 422 invalid symbol, etc.) so operators can diagnose
+                    # "No market data" without server-side log spelunking.
+                    self._last_data_error = (
+                        f"Alpaca data API {resp.status_code} for {path}: "
+                        f"{(resp.text or resp.reason or '')[:200]}"
+                    )
+                    _log.debug("%s", self._last_data_error)
                     return None
                 data = resp.json()
                 # Guard against non-dict responses (e.g. null, list) that
                 # would cause AttributeError / TypeError on callers using .get()
                 if not isinstance(data, dict):
+                    self._last_data_error = (
+                        f"Alpaca data API returned non-dict for {path}: "
+                        f"{type(data).__name__}"
+                    )
                     return None
+                self._last_data_error = None
                 return data
             except requests.exceptions.ConnectionError as e:
                 last_err = str(e)
                 if attempt < _MAX_RETRIES:
                     time.sleep(_RETRY_BACKOFF * (attempt + 1))
-            except Exception:
+            except Exception as e:
+                self._last_data_error = (
+                    f"Alpaca data API exception for {path}: {e}"
+                )
                 return None
+        self._last_data_error = (
+            f"Alpaca data API unreachable for {path}: {last_err}"
+        )
         return None
 
     def _cached(self, key: str, ttl: float = 30.0) -> Optional[Any]:
@@ -1225,12 +1248,17 @@ class TradingPlatformService:
 
     def _bars_from_alpha_vantage(self, sym: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Fallback bars loader: pull daily OHLCV from Alpha Vantage and shape
-        them like Alpaca bars (chronological ascending, with float OHLC and
-        integer volume) so they can be fed straight into compute_technicals.
+        Fallback bars loader: pull OHLCV from Alpha Vantage and shape them
+        like Alpaca bars (chronological ascending, with float OHLC and integer
+        volume) so they can be fed straight into compute_technicals.
 
-        Returns [] if Alpha Vantage is unavailable, rate-limited, or has no
-        data for this symbol — never returns mock data.
+        Tries daily first; if Alpha Vantage's daily endpoint is unavailable
+        for this symbol (rate-limited, premium-only, or unknown symbol), it
+        transparently retries weekly so the AI Copilot keeps producing real
+        analysis from real market data — never mock data.
+
+        Returns [] only when no Alpha Vantage endpoint produced any usable
+        bars for the symbol.
         """
         try:
             from services.alpha_vantage_service import get_alpha_vantage_service
@@ -1242,17 +1270,28 @@ class TradingPlatformService:
         if av is None:
             return []
 
+        payload = None
         try:
             outputsize = "full" if limit > 100 else "compact"
             payload = av.get_daily(sym, outputsize=outputsize)
         except Exception as e:
             _log.debug("Alpha Vantage get_daily(%s) failed: %s", sym, e)
-            return []
 
-        if not payload:
-            return []
+        av_bars = (payload or {}).get("bars") or []
 
-        av_bars = payload.get("bars") or []
+        if not av_bars:
+            try:
+                weekly = av.get_weekly(sym)
+                av_bars = (weekly or {}).get("bars") or []
+                if av_bars:
+                    _log.info(
+                        "_bars_from_alpha_vantage(%s): daily unavailable, "
+                        "using weekly series (%d bars)",
+                        sym, len(av_bars),
+                    )
+            except Exception as e:
+                _log.debug("Alpha Vantage get_weekly(%s) failed: %s", sym, e)
+
         if not av_bars:
             return []
 
@@ -1307,6 +1346,40 @@ class TradingPlatformService:
                 )
 
         if not bars_raw:
+            # Surface the *actual* upstream cause so users/operators can tell
+            # whether it's an unknown symbol, a misconfigured Alpaca key, or
+            # an Alpha Vantage rate-limit / premium-endpoint issue.
+            try:
+                from services.alpha_vantage_service import (
+                    get_alpha_vantage_service,
+                    ALPHA_VANTAGE_API_KEY,
+                )
+                _av = get_alpha_vantage_service()
+                av_configured = bool(getattr(_av, "_api_key", "") or ALPHA_VANTAGE_API_KEY)
+            except Exception:
+                av_configured = False
+
+            details: List[str] = []
+            if not self.is_connected:
+                details.append(
+                    "Alpaca not configured (set ALPACA_API_KEY and "
+                    "ALPACA_SECRET_KEY)"
+                )
+            elif self._last_data_error:
+                details.append(self._last_data_error)
+            else:
+                details.append("Alpaca returned no bars for this symbol")
+
+            if not av_configured:
+                details.append(
+                    "Alpha Vantage not configured (set ALPHA_VANTAGE_API_KEY)"
+                )
+            else:
+                details.append(
+                    "Alpha Vantage daily/weekly fallback returned no data "
+                    "(possible rate limit or unknown symbol)"
+                )
+
             return {
                 "error": (
                     f"No market data available for {sym}. "
@@ -1314,8 +1387,11 @@ class TradingPlatformService:
                     "(ALPACA_API_KEY/ALPACA_SECRET_KEY) or Alpha Vantage "
                     "(ALPHA_VANTAGE_API_KEY) is reachable."
                 ),
+                "details": details,
                 "symbol": sym,
                 "data_source": "none",
+                "alpaca_connected": self.is_connected,
+                "alpha_vantage_configured": av_configured,
             }
 
         if len(bars_raw) < 2:

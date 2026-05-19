@@ -135,13 +135,31 @@ class AlphaVantageService:
             print(f"[AlphaVantage] Request failed: {e}")
             return cached.data if cached else None
 
-        if "Error Message" in data or "Information" in data:
-            msg = data.get("Error Message") or data.get("Information", "")
-            print(f"[AlphaVantage] API note: {msg}")
+        if "Error Message" in data or "Information" in data or "Note" in data:
+            msg = (
+                data.get("Error Message")
+                or data.get("Information")
+                or data.get("Note", "")
+            )
+            # Differentiate premium-only endpoints, rate limits, and bad symbols
+            # so operators see exactly why a request failed in logs.
+            lowered = (msg or "").lower()
+            if "premium endpoint" in lowered:
+                print(
+                    f"[AlphaVantage] premium-only endpoint for "
+                    f"{params.get('function')}: {msg}"
+                )
+            elif (
+                "thank you" in lowered
+                or "call frequency" in lowered
+                or "requests per" in lowered
+                or "rate limit" in lowered
+            ):
+                print(f"[AlphaVantage] rate limited: {msg}")
+            else:
+                print(f"[AlphaVantage] API note: {msg}")
             if cached:
                 return cached.data
-            if "Error Message" in data:
-                return None
             return None
 
         with self._lock:
@@ -196,9 +214,17 @@ class AlphaVantageService:
     # ==================================================================
 
     def get_daily(self, symbol: str, outputsize: str = "compact") -> Optional[Dict[str, Any]]:
-        """Daily adjusted time series (up to 20 years with outputsize=full)."""
+        """Daily OHLCV time series (up to 20 years with outputsize=full).
+
+        Uses the free ``TIME_SERIES_DAILY`` endpoint. Alpha Vantage moved the
+        adjusted variant (``TIME_SERIES_DAILY_ADJUSTED``) behind their premium
+        tier in 2023, so calling it with a free-tier API key returns an
+        "Information: premium endpoint" message and no data — which silently
+        broke the AI Copilot Alpha Vantage fallback for every equity symbol
+        (e.g. AAPL on the trading terminal).
+        """
         raw = self._fetch({
-            "function": "TIME_SERIES_DAILY_ADJUSTED",
+            "function": "TIME_SERIES_DAILY",
             "symbol": symbol,
             "outputsize": outputsize,
         }, self._indicator_ttl)
