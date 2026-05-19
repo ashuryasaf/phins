@@ -4,6 +4,24 @@ Provider-backed media generation service for PHINS.
 Supports prompt-based video generation using external providers and a small,
 provider-neutral contract for submitting jobs, polling status, and downloading
 completed files.
+
+Supports two Kling API routing profiles:
+
+- ``direct`` (default): talks to the official Kling API at
+  ``https://api.klingapi.com`` using the ``/v1/videos/text2video`` and
+  ``/v1/videos/image2video`` endpoints with the ``image`` field for image
+  inputs.  This is what the existing PHINS deployments use.
+- ``evolink-v3``: talks to the EvoLink unified Kling routes documented at
+  https://evolink.ai/blog/how-to-access-kling-ai-api-complete-tutorial
+  (``POST /v1/videos/generations`` + ``GET /v1/tasks/{task_id}``).  This
+  profile uses the ``image_start`` field for image-to-video and is picked
+  automatically when the requested model starts with ``kling-v3``,
+  ``kling-o1``, or ``kling-o3``.  It can also be forced with the env var
+  ``KLING_API_PROFILE=evolink-v3``.
+
+Both profiles share the same async pattern: submit a task, store the
+``task_id``, poll until terminal, save the resulting video promptly because
+generated links are time-limited (24h on EvoLink).
 """
 
 from __future__ import annotations
@@ -14,6 +32,7 @@ import hmac
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
@@ -25,13 +44,70 @@ class MediaGenerationError(RuntimeError):
     """Raised when a media generation provider call fails."""
 
 
+def _extract_provider_error_detail(body_bytes: bytes) -> str:
+    """Pull a human-readable error message out of a provider HTTP error body."""
+    if not body_bytes:
+        return ""
+    try:
+        text = body_bytes.decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - defensive
+        return ""
+    text = text.strip()
+    if not text:
+        return ""
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return text[:500]
+    if isinstance(parsed, dict):
+        candidates = []
+        for key in ("message", "error_message", "detail", "msg", "reason"):
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                candidates.append(value.strip())
+        nested_error = parsed.get("error")
+        if isinstance(nested_error, dict):
+            for key in ("message", "detail", "msg", "reason"):
+                value = nested_error.get(key)
+                if isinstance(value, str) and value.strip():
+                    candidates.append(value.strip())
+        elif isinstance(nested_error, str) and nested_error.strip():
+            candidates.append(nested_error.strip())
+        if candidates:
+            # Preserve order, dedupe.
+            seen = []
+            for candidate in candidates:
+                if candidate not in seen:
+                    seen.append(candidate)
+            return " | ".join(seen)[:500]
+        return text[:500]
+    if isinstance(parsed, list) and parsed:
+        return str(parsed[0])[:500]
+    return text[:500]
+
+
+# Kling 3 / EvoLink documents a 2500-character prompt limit; truncating just
+# below it avoids brittle off-by-one 400s when callers paste long blueprints.
+_KLING_PROMPT_MAX_CHARS = 2500
+
+# EvoLink's unified Kling routes use a single endpoint for text/image input.
+_KLING_EVOLINK_BASE_URL = "https://api.evolink.ai"
+_KLING_EVOLINK_GENERATIONS_PATH = "/v1/videos/generations"
+_KLING_EVOLINK_TASK_PATH_PREFIX = "/v1/tasks/"
+
+
 class MediaGenerationService:
     """Thin provider abstraction over real video generation APIs."""
 
     SUPPORTED_PROVIDERS = {"gemini", "kling"}
     DEFAULT_PROVIDER_MODELS = {
         "gemini": ["veo-3.1-generate-preview", "veo-3-fast-preview"],
-        "kling": ["kling-v2.6-pro", "kling-v2.6-std"],
+        "kling": [
+            "kling-v2.6-pro",
+            "kling-v2.6-std",
+            "kling-v3-text-to-video",
+            "kling-v3-image-to-video",
+        ],
     }
 
     def __init__(self) -> None:
@@ -40,9 +116,18 @@ class MediaGenerationService:
         self._kling_api_key = os.environ.get("KLING_API_KEY", "").strip()
         self._kling_access_key = os.environ.get("KLING_ACCESS_KEY", "").strip()
         self._kling_secret_key = os.environ.get("KLING_SECRET_KEY", "").strip()
-        self._kling_base_url = os.environ.get("KLING_API_BASE_URL", "https://api.klingapi.com").strip().rstrip("/")
-        self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", "/v1/videos/text2video").strip()
-        self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", "/v1/videos/image2video").strip()
+        self._kling_profile = os.environ.get("KLING_API_PROFILE", "").strip().lower()
+        if self._kling_profile == "evolink-v3":
+            default_base = _KLING_EVOLINK_BASE_URL
+            default_t2v = _KLING_EVOLINK_GENERATIONS_PATH
+            default_i2v = _KLING_EVOLINK_GENERATIONS_PATH
+        else:
+            default_base = "https://api.klingapi.com"
+            default_t2v = "/v1/videos/text2video"
+            default_i2v = "/v1/videos/image2video"
+        self._kling_base_url = os.environ.get("KLING_API_BASE_URL", default_base).strip().rstrip("/")
+        self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", default_t2v).strip()
+        self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", default_i2v).strip()
 
     def supported_provider_config(self) -> Dict[str, Dict[str, Any]]:
         """Return provider availability and public configuration hints."""
@@ -229,8 +314,12 @@ class MediaGenerationService:
             },
             method="POST",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        body = self._read_json_with_diagnostics(
+            request,
+            timeout=60,
+            provider_label="Gemini/Veo",
+            operation="submit",
+        )
 
         operation_name = str(body.get("name") or "").strip()
         if not operation_name:
@@ -259,8 +348,12 @@ class MediaGenerationService:
             headers={"x-goog-api-key": self._gemini_api_key},
             method="GET",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        body = self._read_json_with_diagnostics(
+            request,
+            timeout=60,
+            provider_label="Gemini/Veo",
+            operation="poll",
+        )
 
         if body.get("done") is not True:
             return {
@@ -315,29 +408,57 @@ class MediaGenerationService:
             raise MediaGenerationError("Kling credentials are not configured (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
 
         selected_model = str(model or self.DEFAULT_PROVIDER_MODELS["kling"][0]).strip() or self.DEFAULT_PROVIDER_MODELS["kling"][0]
+        # Enforce Kling's documented 2500-character prompt limit so we reject
+        # oversized prompts before the provider responds with HTTP 400.  We
+        # truncate rather than raise to keep batch jobs flowing — the original
+        # untruncated prompt is preserved in metadata for traceability.
+        safe_prompt = self._clamp_kling_prompt(prompt)
+        evolink_profile = self._kling_use_evolink_profile(selected_model)
         body: Dict[str, Any] = {
             "model": selected_model,
-            "prompt": prompt,
+            "prompt": safe_prompt,
             "aspect_ratio": aspect_ratio or "16:9",
             "duration": self._normalize_kling_duration(duration_seconds),
         }
         mode = self._kling_generation_mode(selected_model)
-        if mode:
+        if mode and not evolink_profile:
+            # EvoLink's unified route doesn't accept the legacy "mode" field;
+            # only the direct Kling API needs it.
             body["mode"] = mode
+        # Resolve the routing once: when the model name auto-selects the
+        # EvoLink profile but the env vars still point at the direct Kling API,
+        # we transparently switch the base URL and unified path so callers
+        # don't have to set KLING_API_BASE_URL manually for every kling-v3 job.
+        if evolink_profile:
+            base_url = (
+                self._kling_base_url
+                if self._kling_base_url.rstrip("/") == _KLING_EVOLINK_BASE_URL
+                else _KLING_EVOLINK_BASE_URL
+            )
+            text_path = _KLING_EVOLINK_GENERATIONS_PATH
+            image_path = _KLING_EVOLINK_GENERATIONS_PATH
+        else:
+            base_url = self._kling_base_url
+            text_path = self._kling_text_to_video_path
+            image_path = self._kling_image_to_video_path
         image_payload = self._parse_data_url(image_data_url)
-        endpoint_path = self._kling_text_to_video_path
+        endpoint_path = text_path
+        image_field = "image_start" if evolink_profile else "image"
         if image_payload:
-            endpoint_path = self._kling_image_to_video_path
-            body["image"] = image_payload["bytes_b64"]
+            endpoint_path = image_path
+            body[image_field] = image_payload["bytes_b64"]
         elif str(image_data_url or "").strip():
             parsed_image_url = urllib.parse.urlparse(str(image_data_url).strip())
             if parsed_image_url.scheme in {"http", "https"} and parsed_image_url.netloc:
-                endpoint_path = self._kling_image_to_video_path
-                body["image"] = str(image_data_url).strip()
+                endpoint_path = image_path
+                body[image_field] = str(image_data_url).strip()
         if callback_url:
+            # Direct Kling uses callBackUrl; EvoLink-style routes accept
+            # callback_url.  Send both so the provider can pick the right one.
             body["callBackUrl"] = callback_url
+            body["callback_url"] = callback_url
 
-        url = f"{self._kling_base_url}{endpoint_path}"
+        url = f"{base_url}{endpoint_path}"
         payload = json.dumps(body).encode("utf-8")
         request = urllib.request.Request(
             url,
@@ -348,8 +469,12 @@ class MediaGenerationService:
             },
             method="POST",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            response_body = json.loads(response.read().decode("utf-8"))
+        response_body = self._read_json_with_diagnostics(
+            request,
+            timeout=60,
+            provider_label="Kling",
+            operation="submit",
+        )
 
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
         provider_job_id = str(
@@ -364,6 +489,11 @@ class MediaGenerationService:
         if not provider_job_id:
             raise MediaGenerationError("Kling generation did not return a task id")
 
+        if evolink_profile:
+            status_url = f"{base_url}{_KLING_EVOLINK_TASK_PATH_PREFIX}{urllib.parse.quote(provider_job_id, safe='')}"
+        else:
+            status_url = self._build_kling_status_url(provider_job_id)
+
         return {
             "provider": "kling",
             "provider_job_id": provider_job_id,
@@ -371,8 +501,9 @@ class MediaGenerationService:
             "message": f"Submitted to Kling for \"{title}\"",
             "provider_state": {
                 "submit_response": response_body,
-                "status_url": self._build_kling_status_url(provider_job_id),
+                "status_url": status_url,
                 "model": selected_model,
+                "evolink_profile": evolink_profile,
             },
         }
 
@@ -393,8 +524,12 @@ class MediaGenerationService:
             headers={"Authorization": self._kling_authorization_header()},
             method="GET",
         )
-        with validated_urlopen(request, timeout=60, allowed_schemes=("https",)) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        body = self._read_json_with_diagnostics(
+            request,
+            timeout=60,
+            provider_label="Kling",
+            operation="poll",
+        )
 
         data = body.get("data") if isinstance(body.get("data"), dict) else body
         status_value = str(
@@ -462,7 +597,17 @@ class MediaGenerationService:
         }
 
     def _build_kling_status_url(self, provider_job_id: str) -> str:
-        return f"{self._kling_base_url}/v1/videos/{urllib.parse.quote(provider_job_id, safe='')}"
+        encoded_id = urllib.parse.quote(provider_job_id, safe="")
+        # EvoLink polls at /v1/tasks/{task_id}; the direct Kling API exposes
+        # /v1/videos/{task_id}.  We mirror whichever profile this service is
+        # configured for so a single provider_state can survive across restarts.
+        if (
+            self._kling_profile == "evolink-v3"
+            or self._kling_base_url.rstrip("/") == _KLING_EVOLINK_BASE_URL
+            or _KLING_EVOLINK_GENERATIONS_PATH in self._kling_text_to_video_path
+        ):
+            return f"{self._kling_base_url}{_KLING_EVOLINK_TASK_PATH_PREFIX}{encoded_id}"
+        return f"{self._kling_base_url}/v1/videos/{encoded_id}"
 
     @staticmethod
     def _normalize_kling_duration(duration_seconds: int) -> int:
@@ -477,6 +622,78 @@ class MediaGenerationService:
         if normalized.endswith("-std") or normalized.endswith("-standard"):
             return "standard"
         return ""
+
+    def _kling_use_evolink_profile(self, model_name: str) -> bool:
+        """Return True when the Kling request should target EvoLink's unified routes."""
+        if self._kling_profile == "evolink-v3":
+            return True
+        if self._kling_base_url.rstrip("/") == _KLING_EVOLINK_BASE_URL:
+            return True
+        if _KLING_EVOLINK_GENERATIONS_PATH in self._kling_text_to_video_path:
+            return True
+        normalized = str(model_name or "").strip().lower()
+        return (
+            normalized.startswith("kling-v3")
+            or normalized.startswith("kling-o1")
+            or normalized.startswith("kling-o3")
+        )
+
+    @staticmethod
+    def _clamp_kling_prompt(prompt: str) -> str:
+        """Truncate prompts so they fit Kling's documented 2500-char limit."""
+        text = str(prompt or "")
+        if len(text) <= _KLING_PROMPT_MAX_CHARS:
+            return text
+        return text[: _KLING_PROMPT_MAX_CHARS - 3].rstrip() + "..."
+
+    @staticmethod
+    def _read_json_with_diagnostics(
+        request: urllib.request.Request,
+        *,
+        timeout: float,
+        provider_label: str,
+        operation: str,
+    ) -> Dict[str, Any]:
+        """Open *request* and decode JSON, surfacing provider error bodies.
+
+        ``urllib.error.HTTPError`` only exposes a generic ``HTTP Error 400: Bad
+        Request`` style message by default.  Providers like Kling and Gemini
+        embed actionable details in the response body (missing field, invalid
+        model, rate limit hint, etc.), so we read and surface them in the
+        ``MediaGenerationError`` instead of letting the cryptic default reach
+        the UI.
+        """
+        try:
+            with validated_urlopen(request, timeout=timeout, allowed_schemes=("https",)) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            try:
+                body_bytes = exc.read() or b""
+            except Exception:  # noqa: BLE001 - defensive
+                body_bytes = b""
+            detail = _extract_provider_error_detail(body_bytes)
+            status_code = getattr(exc, "code", 0) or 0
+            message = (
+                f"{provider_label} {operation} failed with HTTP {status_code}"
+                if status_code
+                else f"{provider_label} {operation} failed"
+            )
+            if detail:
+                message = f"{message}: {detail}"
+            raise MediaGenerationError(message) from exc
+        except urllib.error.URLError as exc:
+            reason = getattr(exc, "reason", exc)
+            raise MediaGenerationError(
+                f"{provider_label} {operation} failed: network error ({reason})"
+            ) from exc
+
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            snippet = raw[:200].decode("utf-8", errors="replace")
+            raise MediaGenerationError(
+                f"{provider_label} {operation} returned a non-JSON response: {snippet}"
+            ) from exc
 
     @staticmethod
     def _extract_kling_download_url(data: Dict[str, Any]) -> str:
