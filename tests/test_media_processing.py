@@ -530,13 +530,20 @@ def test_marketing_video_generation_batch_route_accepts_dashboard_payload():
         assert batch_resp["campaign_id"] == "MKT-TEST-BATCH"
         assert len(batch_resp["queued_jobs"]) == 2
         assert len(batch_resp["jobs"]) == 2
-        assert stub_service.submissions
 
         queued_jobs = batch_resp["queued_jobs"]
         assert queued_jobs[0]["provider"] == "gemini"
         assert queued_jobs[0]["provider_model"] == "veo-3-fast-preview"
         assert queued_jobs[0]["callback_path"].startswith("/api/provider/media-processing/callback?")
 
+        # Batch submissions are now drained by a serial worker (so a burst of
+        # blueprints can no longer trip "HTTP Error 400" cascades).  Wait for
+        # the worker to dispatch both jobs to the stub provider before checking
+        # the submission payloads.
+        for _ in range(80):
+            if len(stub_service.submissions) >= 2:
+                break
+            time.sleep(0.1)
         assert len(stub_service.submissions) == 2
         for submission in stub_service.submissions:
             assert submission["provider"] == "gemini"
@@ -955,6 +962,232 @@ def test_kling_submit_parses_root_level_task_id(monkeypatch):
         title="Nested task_id test",
     )
     assert result2["provider_job_id"] == "nested-task-002"
+
+
+# ============ EvoLink Kling v3 routing & error surfacing ============
+
+
+def test_kling_submit_routes_kling_v3_through_evolink_unified_endpoint(monkeypatch):
+    """kling-v3-* models should auto-route to EvoLink's POST /v1/videos/generations.
+
+    Per https://evolink.ai/blog/how-to-access-kling-ai-api-complete-tutorial
+    the unified endpoint accepts ``image_start`` (not ``image``) for the
+    image-to-video flow and the legacy ``mode`` field is dropped.
+    """
+    monkeypatch.setenv("KLING_API_KEY", "evolink-bearer-1")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("KLING_TEXT_TO_VIDEO_PATH", raising=False)
+    monkeypatch.delenv("KLING_IMAGE_TO_VIDEO_PATH", raising=False)
+    monkeypatch.delenv("KLING_API_PROFILE", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({"task_id": "evolink-task-7"}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="A golden retriever running through a sunlit meadow",
+        title="Kling 3 EvoLink T2V",
+        model="kling-v3-text-to-video",
+        aspect_ratio="16:9",
+        duration_seconds=5,
+        image_data_url="https://example.com/portrait.jpg",
+    )
+
+    assert result["provider_job_id"] == "evolink-task-7"
+    assert captured["url"] == "https://api.evolink.ai/v1/videos/generations"
+    assert captured["body"]["model"] == "kling-v3-text-to-video"
+    # EvoLink uses image_start, not the legacy "image" key.
+    assert captured["body"]["image_start"] == "https://example.com/portrait.jpg"
+    assert "image" not in captured["body"]
+    # The legacy "mode" field is not part of EvoLink's unified spec.
+    assert "mode" not in captured["body"]
+    # The status_url returned for later polling should target /v1/tasks/{id}.
+    status_url = result["provider_state"]["status_url"]
+    assert status_url == "https://api.evolink.ai/v1/tasks/evolink-task-7"
+
+
+def test_kling_submit_clamps_prompt_to_documented_2500_char_limit(monkeypatch):
+    """Oversized prompts should be truncated locally, not produce HTTP 400."""
+    monkeypatch.setenv("KLING_API_KEY", "clamp-prompt-key")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_PROFILE", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({"task_id": "clamp-task"}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    over_limit_prompt = "x" * 3000
+    service = media_generation_service.MediaGenerationService()
+    service.submit_video_generation(
+        provider="kling",
+        prompt=over_limit_prompt,
+        title="Clamp test",
+        model="kling-v2.6-pro",
+    )
+
+    assert len(captured["body"]["prompt"]) <= 2500
+    assert captured["body"]["prompt"].endswith("...")
+
+
+def test_batch_video_endpoint_isolates_per_job_submit_failures(monkeypatch):
+    """A provider HTTP 400 for one blueprint must not fail the whole batch.
+
+    Previously the batch endpoint submitted blueprints synchronously inside
+    the HTTP request thread, so a single provider rejection surfaced in the
+    UI as ``Batch generation failed: HTTP Error 400: Bad Request``.  After
+    the serial-submission refactor, queued jobs are dispatched by a background
+    worker and per-job errors land on the job record.
+    """
+    from services.media_generation_service import MediaGenerationError
+
+    port = 8324
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = "phins_test_media_admin_token_batch_isolation"
+    _inject_session(token, "media_admin_batch_isolation", "admin")
+
+    class _PartialFailureStub(_StubMediaGenerationService):
+        def __init__(self):
+            super().__init__()
+            self._submit_count = 0
+
+        def submit_video_generation(self, **kwargs):
+            self._submit_count += 1
+            if self._submit_count == 1:
+                # First blueprint hits a "bad request" — exactly the kind of
+                # provider rejection that used to break the whole batch.
+                raise MediaGenerationError(
+                    "Kling submit failed with HTTP 400: prompt missing required subject"
+                )
+            return super().submit_video_generation(**kwargs)
+
+    stub_service = _PartialFailureStub()
+    original_factory = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub_service
+
+    try:
+        portal.DESIGN_SETTINGS["marketing_sales_agent"] = {
+            "latest_campaign": {
+                "campaign": {
+                    "campaign_id": "MKT-BATCH-ISOLATION",
+                    "generated_at": datetime.now().isoformat(),
+                    "ai_video_blueprints": [
+                        {
+                            "title": "First blueprint",
+                            "format": "Short vertical explainer",
+                            "voiceover_style": "Warm",
+                            "storyboard": ["Open scene.", "Closing scene."],
+                        },
+                        {
+                            "title": "Second blueprint",
+                            "format": "Interview + motion graphics",
+                            "voiceover_style": "Authoritative",
+                            "storyboard": ["Intro.", "Outro."],
+                        },
+                    ],
+                },
+                "integrity": {"verified": True, "algorithm": "hmac-sha256", "signature": "stub"},
+                "assets_created": [],
+            },
+            "published_campaigns": [],
+            "social_connections": {},
+        }
+
+        status, batch_resp = _json_request(
+            base + "/api/admin/media/video-jobs/batch",
+            method="POST",
+            token=token,
+            payload={
+                "campaign_id": "MKT-BATCH-ISOLATION",
+                "provider": "kling",
+                "provider_model": "kling-v2.6-pro",
+                "poll_mode": "poll",
+            },
+        )
+
+        # The HTTP response remains 202 even though one blueprint will fail
+        # at the provider — this is the key contract change.
+        assert status == 202
+        assert len(batch_resp["queued_jobs"]) == 2
+        assert batch_resp["submission_queue"]["sequential"] is True
+
+        for _ in range(80):
+            if stub_service._submit_count >= 2:
+                break
+            time.sleep(0.1)
+        assert stub_service._submit_count == 2
+
+        job_ids = [job["id"] for job in batch_resp["queued_jobs"]]
+        first_job = portal.MEDIA_PROCESSING_JOBS[job_ids[0]]
+        second_job = portal.MEDIA_PROCESSING_JOBS[job_ids[1]]
+
+        assert first_job["status"] == "failed"
+        assert "HTTP 400" in str(first_job.get("error") or "")
+        # Second job was still dispatched to the provider successfully.
+        assert second_job["status"] in {"queued", "processing", "completed"}
+        assert second_job.get("provider_job_id")
+    finally:
+        portal.get_media_generation_service = original_factory
+        srv.stop()
+
+
+def test_kling_submit_surfaces_provider_error_body_on_http_400(monkeypatch):
+    """HTTPError bodies should be parsed so the UI sees an actionable message."""
+    monkeypatch.setenv("KLING_API_KEY", "surface-error-key")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+
+    from urllib.error import HTTPError as _HTTPError
+    from io import BytesIO as _BytesIO
+
+    error_body = json.dumps({
+        "error": {"message": "Prompt must include at least one subject."},
+    }).encode("utf-8")
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        raise _HTTPError(
+            request.full_url,
+            400,
+            "Bad Request",
+            {"Content-Type": "application/json"},
+            _BytesIO(error_body),
+        )
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    try:
+        service.submit_video_generation(
+            provider="kling",
+            prompt="Test surfacing",
+            title="Surface error",
+            model="kling-v2.6-pro",
+        )
+    except media_generation_service.MediaGenerationError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected MediaGenerationError for HTTP 400 response")
+
+    assert "HTTP 400" in message
+    assert "Prompt must include at least one subject." in message
 
 
 # ============ NEW TESTS: media controller optimizations ============

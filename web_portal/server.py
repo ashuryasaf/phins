@@ -2441,9 +2441,22 @@ def create_media_video_job(
     image_data_url: str = '',
     auto_publish_to_hero: bool = False,
     prompt_override: str = '',
+    submit_inline: bool = True,
 ) -> Dict[str, Any]:
-    """Create and submit a provider-backed video generation job."""
-    service = get_media_generation_service()
+    """Create a provider-backed video generation job.
+
+    When ``submit_inline`` is True (default), the provider submission happens
+    in the calling thread and any provider error propagates as
+    :class:`MediaGenerationError`.  This preserves the historical behaviour of
+    the retry path and single-job admin actions.
+
+    When ``submit_inline`` is False, the job is stored in ``queued`` state
+    without contacting the provider; callers should use
+    :func:`enqueue_media_video_submission` to perform the actual provider
+    submission in a background worker.  This lets the batch endpoint queue
+    many videos without bursting requests (avoiding HTTP 400/429 cascades)
+    and without coupling the HTTP response to per-job submission failures.
+    """
     requested_at = datetime.now().isoformat()
     job_id = f"mjob-{uuid.uuid4().hex[:12]}"
     callback_token = secrets.token_urlsafe(18)
@@ -2468,46 +2481,33 @@ def create_media_video_job(
     if 'vertical' in format_hint or 'short' in format_hint or 'reel' in format_hint:
         aspect_ratio = '9:16'
 
-    submission = service.submit_video_generation(
-        provider=provider,
-        prompt=prompt,
-        title=str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
-        model=provider_model,
-        aspect_ratio=aspect_ratio,
-        duration_seconds=8,
-        resolution='720p',
-        image_data_url=image_data_url,
-        callback_url=callback_url if callback_base_url else '',
-        metadata={
-            'campaign_id': campaign_id,
-            'blueprint_index': blueprint_index,
-            'requested_by': requested_by,
-        },
-    )
+    asset_name = str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}')
 
-    job = {
+    job: Dict[str, Any] = {
         'id': job_id,
         'job_kind': 'video_generation',
         'campaign_id': campaign_id,
         'blueprint_index': blueprint_index,
         'asset_id': '',
-        'asset_name': str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}'),
+        'asset_name': asset_name,
         'provider': provider,
-        'provider_job_id': str(submission.get('provider_job_id') or ''),
-        'provider_operation_name': str((submission.get('provider_state') or {}).get('operation_name') or ''),
-        'provider_status': str(submission.get('status') or 'queued'),
-        'provider_state': submission.get('provider_state') or {},
+        'provider_job_id': '',
+        'provider_operation_name': '',
+        'provider_status': 'queued',
+        'provider_state': {},
         'provider_model': provider_model or '',
         'image_data_url': image_data_url or '',
         'prompt_override': prompt_override,
+        'prompt': prompt,
+        'aspect_ratio': aspect_ratio,
         'language': 'en',
         'status': 'queued',
-        'progress_pct': 5,
+        'progress_pct': 0,
         'requested_at': requested_at,
         'requested_by': requested_by or 'admin',
         'completed_at': None,
         'error': None,
-        'message': str(submission.get('message') or 'Video generation submitted to provider.'),
+        'message': 'Video generation queued, awaiting provider dispatch.',
         'subtitle_track_id': None,
         'generated_asset_id': '',
         'download_url': '',
@@ -2517,7 +2517,191 @@ def create_media_video_job(
         'callback_url': callback_url,
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
+
+    if submit_inline:
+        try:
+            _submit_media_video_job_to_provider(job)
+        except Exception:
+            # Surface the provider error to callers that opted into inline
+            # submission (e.g. retry).  The job has already been removed from
+            # MEDIA_PROCESSING_JOBS only if the submitter chose to do so; we
+            # leave it in place with the failed status set by the submitter.
+            raise
+
     return job
+
+
+def _submit_media_video_job_to_provider(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Send a queued video job to its provider and update the job in place.
+
+    Raises ``MediaGenerationError`` on provider failure.  Always updates the
+    job's ``status``/``message``/``error`` so callers that prefer a fire-and-
+    forget pattern can ignore the return value and still see the outcome on
+    the job record.
+    """
+    from services.media_generation_service import MediaGenerationError
+
+    service = get_media_generation_service()
+    provider = str(job.get('provider') or '')
+    prompt = str(job.get('prompt') or '')
+    asset_name = str(job.get('asset_name') or '')
+    callback_url = str(job.get('callback_url') or '')
+    callback_path = str(job.get('callback_path') or '')
+    has_external_callback = bool(callback_url and callback_url != callback_path)
+    job['message'] = f'Submitting to {provider or "provider"}...'
+    job['provider_status'] = 'submitting'
+    try:
+        submission = service.submit_video_generation(
+            provider=provider,
+            prompt=prompt,
+            title=asset_name,
+            model=str(job.get('provider_model') or ''),
+            aspect_ratio=str(job.get('aspect_ratio') or '16:9'),
+            duration_seconds=8,
+            resolution='720p',
+            image_data_url=str(job.get('image_data_url') or ''),
+            callback_url=callback_url if has_external_callback else '',
+            metadata={
+                'campaign_id': job.get('campaign_id'),
+                'blueprint_index': job.get('blueprint_index'),
+                'requested_by': job.get('requested_by'),
+            },
+        )
+    except MediaGenerationError as exc:
+        job['status'] = 'failed'
+        job['provider_status'] = 'failed'
+        job['progress_pct'] = 0
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(exc)
+        job['message'] = str(exc)
+        raise
+    except Exception as exc:
+        job['status'] = 'failed'
+        job['provider_status'] = 'failed'
+        job['progress_pct'] = 0
+        job['completed_at'] = datetime.now().isoformat()
+        job['error'] = str(exc)
+        job['message'] = f'Unexpected provider error: {exc}'
+        raise
+
+    job['provider_job_id'] = str(submission.get('provider_job_id') or '')
+    job['provider_operation_name'] = str((submission.get('provider_state') or {}).get('operation_name') or '')
+    job['provider_status'] = str(submission.get('status') or 'queued')
+    job['provider_state'] = submission.get('provider_state') or {}
+    job['status'] = 'queued'
+    job['progress_pct'] = max(safe_int(job.get('progress_pct'), 0), 5)
+    job['message'] = str(submission.get('message') or 'Video generation submitted to provider.')
+    job['error'] = None
+    return submission
+
+
+# ---------------------------------------------------------------------------
+# Serial provider submission queue
+# ---------------------------------------------------------------------------
+#
+# Submitting every blueprint in a batch concurrently to the same provider used
+# to surface as ``Batch generation failed: HTTP Error 400: Bad Request`` when
+# (a) a single blueprint was malformed and the whole batch HTTP request was
+# tied to it, or (b) the provider's rate limit kicked in and started returning
+# 400/429 mid-batch.  The queue below drains submissions one at a time with
+# configurable spacing so the provider sees a smooth stream of requests, and
+# per-job failures are recorded on the individual job record (visible via
+# ``/api/admin/media/video-jobs``) instead of failing the batch HTTP call.
+#
+import queue as _stdlib_queue  # noqa: E402 (local import is intentional)
+
+
+_MEDIA_VIDEO_SUBMIT_QUEUE: "_stdlib_queue.Queue[Dict[str, Any]]" = _stdlib_queue.Queue()
+_MEDIA_VIDEO_SUBMIT_WORKER_LOCK = threading.Lock()
+_MEDIA_VIDEO_SUBMIT_WORKER_STARTED = False
+
+
+def _media_video_submit_spacing_seconds() -> float:
+    """Return the configured per-submission spacing (re-read each iteration)."""
+    raw = os.environ.get('PHINS_MEDIA_VIDEO_SUBMIT_SPACING_SECONDS')
+    if raw is None or str(raw).strip() == '':
+        # In test mode we drain the queue as quickly as possible so unit tests
+        # do not need to wait the production-grade 1.5s spacing between jobs.
+        if str(os.environ.get('PHINS_TEST_MODE', '')).strip().lower() in {'1', 'true', 'yes'}:
+            return 0.05
+        return 1.5
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return 1.5
+
+
+def _media_video_submit_worker_loop() -> None:
+    """Drain queued submissions one at a time with inter-job spacing."""
+    while True:
+        try:
+            task = _MEDIA_VIDEO_SUBMIT_QUEUE.get()
+        except Exception:
+            time.sleep(1.0)
+            continue
+        try:
+            job_id = str(task.get('job_id') or '')
+            poll_delay = safe_int(task.get('poll_delay_seconds'), 1)
+            if not job_id:
+                continue
+            job = MEDIA_PROCESSING_JOBS.get(job_id)
+            if not isinstance(job, dict):
+                continue
+            if str(job.get('status') or '').lower() in {'completed', 'failed', 'cancelled'}:
+                continue
+            try:
+                _submit_media_video_job_to_provider(job)
+            except Exception:
+                # Error already recorded on the job; the next batch item still
+                # gets a shot at the provider.
+                pass
+            else:
+                start_media_job_polling(job_id, delay_seconds=max(poll_delay, 1))
+            try:
+                save_ledger_data()
+            except Exception:
+                pass
+        finally:
+            try:
+                _MEDIA_VIDEO_SUBMIT_QUEUE.task_done()
+            except Exception:
+                pass
+            spacing = _media_video_submit_spacing_seconds()
+            if spacing > 0:
+                time.sleep(spacing)
+
+
+def _ensure_media_video_submit_worker() -> None:
+    """Start the single submission worker thread on first use."""
+    global _MEDIA_VIDEO_SUBMIT_WORKER_STARTED
+    if _MEDIA_VIDEO_SUBMIT_WORKER_STARTED:
+        return
+    with _MEDIA_VIDEO_SUBMIT_WORKER_LOCK:
+        if _MEDIA_VIDEO_SUBMIT_WORKER_STARTED:
+            return
+        threading.Thread(
+            target=_media_video_submit_worker_loop,
+            name='media-video-submit-worker',
+            daemon=True,
+        ).start()
+        _MEDIA_VIDEO_SUBMIT_WORKER_STARTED = True
+
+
+def enqueue_media_video_submission(job_id: str, *, poll_delay_seconds: int = 1) -> None:
+    """Queue a previously-created job for provider submission via the worker.
+
+    Submissions are processed sequentially with a small spacing delay so a
+    burst of blueprint videos cannot exhaust provider rate limits or return
+    ``HTTP Error 400`` because of contention.  After a successful submission
+    the worker also starts the usual polling loop with the provided delay.
+    """
+    if not job_id:
+        return
+    _ensure_media_video_submit_worker()
+    _MEDIA_VIDEO_SUBMIT_QUEUE.put({
+        'job_id': str(job_id),
+        'poll_delay_seconds': max(int(poll_delay_seconds or 1), 1),
+    })
 
 
 def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
@@ -2835,7 +3019,12 @@ def media_video_provider_capabilities() -> Dict[str, Any]:
             'kling': {
                 'enabled': _fallback_kling_enabled,
                 'label': 'Kling',
-                'models': ['kling-v2.6-pro', 'kling-v2.6-std'],
+                'models': [
+                    'kling-v2.6-pro',
+                    'kling-v2.6-std',
+                    'kling-v3-text-to-video',
+                    'kling-v3-image-to-video',
+                ],
             },
         }
     providers: Dict[str, Dict[str, Any]] = {}
@@ -27694,8 +27883,20 @@ For claims or questions, please contact:
 
             try:
                 queued_jobs = []
+                if poll_mode == 'webhook' and callback_base_url:
+                    submission_poll_delay = max(safe_int(data.get('webhook_fallback_seconds'), 30), 5)
+                else:
+                    submission_poll_delay = max(safe_int(data.get('poll_delay_seconds'), 1), 1)
+
                 for blueprint_index, blueprint in enumerate(blueprints):
-                    # Keep batch auto-publish deterministic by reserving it for the first queued hero candidate.
+                    # Queue the job locally without contacting the provider so
+                    # a single bad blueprint or transient provider 400 cannot
+                    # fail the whole batch HTTP request.  The serial submission
+                    # worker will dispatch each one to the provider in order
+                    # with a small spacing delay; per-job errors land on the
+                    # individual job record (visible at /api/admin/media/video-jobs)
+                    # instead of becoming a confusing "Batch generation failed:
+                    # HTTP Error 400" in the UI.
                     job = create_media_video_job(
                         campaign_id=campaign_id,
                         blueprint_index=blueprint_index,
@@ -27707,17 +27908,13 @@ For claims or questions, please contact:
                         image_data_url=image_data_url,
                         auto_publish_to_hero=auto_publish_to_hero and blueprint_index == 0,
                         prompt_override=prompt_override,
+                        submit_inline=False,
                     )
                     queued_jobs.append(job)
-                    # Always schedule a polling fallback so a missed/late webhook
-                    # never strands a job in 'processing'.  When poll_mode=webhook
-                    # we delay the first poll long enough for the webhook to land
-                    # first; otherwise we poll immediately.
-                    if poll_mode == 'webhook' and callback_base_url:
-                        fallback_delay = safe_int(data.get('webhook_fallback_seconds'), 30)
-                        start_media_job_polling(job['id'], delay_seconds=max(fallback_delay, 5))
-                    else:
-                        start_media_job_polling(job['id'], delay_seconds=safe_int(data.get('poll_delay_seconds'), 1))
+                    enqueue_media_video_submission(
+                        job['id'],
+                        poll_delay_seconds=submission_poll_delay,
+                    )
                 save_ledger_data()
                 self._set_json_headers(202)
                 self.wfile.write(json.dumps({
@@ -27730,6 +27927,10 @@ For claims or questions, please contact:
                     'webhook_callback_configured': bool(callback_base_url),
                     'queued_jobs': [serialize_media_job(job, include_callback=True) for job in queued_jobs],
                     'jobs': video_generation_jobs_for_campaign_response(campaign_id),
+                    'submission_queue': {
+                        'sequential': True,
+                        'spacing_seconds': _media_video_submit_spacing_seconds(),
+                    },
                 }).encode('utf-8'))
                 return
             except Exception as exc:
