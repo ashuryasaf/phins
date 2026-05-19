@@ -450,24 +450,24 @@
        (e.g. /admin.html?embed=growth-agent-section) we only show the
        requested section and hide global chrome so the surrounding
        Media Dashboard tabs remain the sole navigation surface. */
-    body.embed-mode > .phins-header,
-    body.embed-mode > #admin-console-panel,
-    body.embed-mode > footer,
-    body.embed-mode > .footer,
-    body.embed-mode > main > .welcome-section,
-    body.embed-mode > main > #admin-ai-assistant-panel,
-    body.embed-mode > main > section.section-content:not(.embed-visible),
-    body.embed-mode > main > div.section-content:not(.embed-visible),
-    body.embed-mode > main > div.dashboard-stats {
+    html[data-embed] body > .phins-header,
+    html[data-embed] body > #admin-console-panel,
+    html[data-embed] body > footer,
+    html[data-embed] body > .footer,
+    html[data-embed] body > main > .welcome-section,
+    html[data-embed] body > main > #admin-ai-assistant-panel,
+    html[data-embed] body > main > section.section-content:not(.embed-visible),
+    html[data-embed] body > main > div.section-content:not(.embed-visible),
+    html[data-embed] body > main > div.dashboard-stats {
       display: none !important;
     }
-    body.embed-mode { background: transparent; }
-    body.embed-mode > main.container {
+    html[data-embed] body { background: transparent; }
+    html[data-embed] body > main.container {
       padding: 12px !important;
       max-width: none !important;
     }
-    body.embed-mode > main > section.section-content.embed-visible,
-    body.embed-mode > main > div.section-content.embed-visible {
+    html[data-embed] body > main > section.section-content.embed-visible,
+    html[data-embed] body > main > div.section-content.embed-visible {
       margin-top: 0 !important;
     }
   </style>

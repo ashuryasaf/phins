@@ -295,9 +295,9 @@
         /* Embed mode: when video-agents.html is iframed from the Media
            Dashboard (e.g. /video-agents.html?embed=1) we hide the page
            topbar/brand so the host dashboard tabs remain the only nav. */
-        body.embed-mode { background: transparent !important; }
-        body.embed-mode .page-shell { padding: 12px !important; max-width: none !important; }
-        body.embed-mode .topbar { display: none !important; }
+        html[data-embed] body { background: transparent !important; }
+        html[data-embed] body .page-shell { padding: 12px !important; max-width: none !important; }
+        html[data-embed] body .topbar { display: none !important; }
     </style>
     <script>
         (function () {
