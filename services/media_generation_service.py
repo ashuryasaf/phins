@@ -612,11 +612,19 @@ class MediaGenerationService:
 
     @staticmethod
     def _kling_generation_mode(model_name: str) -> str:
+        """Map a Kling model suffix to the API's documented ``mode`` value.
+
+        Per the official Kling AI API reference, the ``mode`` field only
+        accepts the short forms ``"std"`` (720P standard) and ``"pro"``
+        (1080P professional).  Earlier PHINS revisions sent the long forms
+        ``"standard"``/``"professional"`` which triggered HTTP 400 responses
+        like ``mode value 'professional' is invalid``.
+        """
         normalized = str(model_name or "").strip().lower()
-        if normalized.endswith("-pro"):
-            return "professional"
+        if normalized.endswith("-pro") or normalized.endswith("-professional"):
+            return "pro"
         if normalized.endswith("-std") or normalized.endswith("-standard"):
-            return "standard"
+            return "std"
         return ""
 
     def _kling_use_evolink_profile(self, model_name: str) -> bool:

@@ -840,7 +840,9 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
     assert captured["url"] == "https://api.klingapi.com/v1/videos/text2video"
     assert captured["headers"]["Authorization"] == "Bearer api-key-1"
     assert captured["body"]["model"] == "kling-v2.6-pro"
-    assert captured["body"]["mode"] == "professional"
+    # Kling's official API rejects the long-form value "professional" with
+    # HTTP 400 — the documented values are "std" / "pro".
+    assert captured["body"]["mode"] == "pro"
     assert captured["body"]["duration"] == 10
     assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")
 
@@ -1013,6 +1015,54 @@ def test_kling_submit_routes_kling_v3_through_evolink_unified_endpoint(monkeypat
     # The status_url returned for later polling should target /v1/tasks/{id}.
     status_url = result["provider_state"]["status_url"]
     assert status_url == "https://api.evolink.ai/v1/tasks/evolink-task-7"
+
+
+def test_kling_submit_mode_field_uses_short_form_per_official_api(monkeypatch):
+    """Regression: ``mode`` must be 'std' / 'pro' (not 'standard' / 'professional').
+
+    The Kling API rejects the long-form values with
+    ``HTTP 400: mode value 'professional' is invalid``.  This test pins the
+    short-form values for the two legacy Kling 2.6 variants and confirms the
+    EvoLink/v3 routing omits ``mode`` entirely.
+    """
+    monkeypatch.setenv("KLING_API_KEY", "mode-mapping-key")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_PROFILE", raising=False)
+
+    bodies = []
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        bodies.append(json.loads(request.data.decode("utf-8")))
+        return _FakeUrlopenResponse(json.dumps({"task_id": "mode-task"}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+
+    service.submit_video_generation(
+        provider="kling",
+        prompt="pro variant",
+        title="Kling 2.6 pro variant",
+        model="kling-v2.6-pro",
+    )
+    service.submit_video_generation(
+        provider="kling",
+        prompt="std variant",
+        title="Kling 2.6 std variant",
+        model="kling-v2.6-std",
+    )
+    service.submit_video_generation(
+        provider="kling",
+        prompt="v3 unified variant",
+        title="Kling v3 (EvoLink) variant",
+        model="kling-v3-text-to-video",
+    )
+
+    assert bodies[0]["mode"] == "pro"
+    assert bodies[1]["mode"] == "std"
+    # EvoLink's unified endpoint does not accept "mode"; it must not be sent.
+    assert "mode" not in bodies[2]
 
 
 def test_kling_submit_clamps_prompt_to_documented_2500_char_limit(monkeypatch):
