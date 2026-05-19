@@ -518,7 +518,7 @@ class MediaGenerationService:
         if not provider_job_id:
             raise MediaGenerationError("Kling provider job id is required")
 
-        status_url = str(provider_state.get("status_url") or self._build_kling_status_url(provider_job_id)).strip()
+        status_url = str(provider_state.get("status_url") or self._build_kling_status_url(provider_job_id, model_name=str(provider_state.get("model") or ""))).strip()
         request = urllib.request.Request(
             status_url,
             headers={"Authorization": self._kling_authorization_header()},
@@ -596,16 +596,12 @@ class MediaGenerationService:
             },
         }
 
-    def _build_kling_status_url(self, provider_job_id: str) -> str:
+    def _build_kling_status_url(self, provider_job_id: str, model_name: str = "") -> str:
         encoded_id = urllib.parse.quote(provider_job_id, safe="")
         # EvoLink polls at /v1/tasks/{task_id}; the direct Kling API exposes
         # /v1/videos/{task_id}.  We mirror whichever profile this service is
         # configured for so a single provider_state can survive across restarts.
-        if (
-            self._kling_profile == "evolink-v3"
-            or self._kling_base_url.rstrip("/") == _KLING_EVOLINK_BASE_URL
-            or _KLING_EVOLINK_GENERATIONS_PATH in self._kling_text_to_video_path
-        ):
+        if self._kling_use_evolink_profile(model_name):
             return f"{self._kling_base_url}{_KLING_EVOLINK_TASK_PATH_PREFIX}{encoded_id}"
         return f"{self._kling_base_url}/v1/videos/{encoded_id}"
 

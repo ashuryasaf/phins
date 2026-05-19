@@ -2631,9 +2631,6 @@ def _media_video_submit_spacing_seconds() -> float:
         return 1.5
 
 
-_MEDIA_VIDEO_SUBMIT_SPACING_SECONDS = _media_video_submit_spacing_seconds()
-
-
 def _media_video_submit_worker_loop() -> None:
     """Drain queued submissions one at a time with inter-job spacing."""
     while True:
