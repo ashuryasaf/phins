@@ -465,7 +465,7 @@
     }
     if (CURRENT_CUSTOMER) return CURRENT_CUSTOMER;
     if (SESSION_CUSTOMER_ID) return SESSION_CUSTOMER_ID;
-    if (!actingAsAdmin() && SESSION_USERNAME) return 'USER:' + SESSION_USERNAME.toLowerCase();
+    if (!actingAsAdmin() && SESSION_USERNAME) return 'USER:' + SESSION_USERNAME.replace(/\s+/g, '').toLowerCase();
     return '';
   }
 
@@ -735,7 +735,7 @@
     if (orphanProf.length > 0) issues.push(`profile references ${orphanProf.length} doc(s) not found in document list`);
     // Facts can legitimately differ because external clearinghouse facts
     // (Mislaka) are not attached to a single document - we only flag big drift.
-    if (factDelta > 25)        issues.push(`fact count drift: profile=${declaredFacts}, sum-of-docs=${summedFacts}`);
+    if (s.profile && factDelta > 25)        issues.push(`fact count drift: profile=${declaredFacts}, sum-of-docs=${summedFacts}`);
     return { ok: issues.length === 0, issues, docs_total: docs.length, facts_total: declaredFacts, sum_doc_facts: summedFacts, missing_sha: missingSha };
   }
 
