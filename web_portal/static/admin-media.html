@@ -1598,6 +1598,11 @@
             if (!frame) return;
             const desired = frame.getAttribute('data-src') || frame.getAttribute('src');
             if (!desired) return;
+            frame.removeAttribute('src');
+            // Force a reflow so the browser registers the removal before
+            // we assign the URL again; without this some engines coalesce
+            // the remove+set into a no-op.
+            void frame.offsetHeight;
             frame.setAttribute('src', desired);
         }
 
