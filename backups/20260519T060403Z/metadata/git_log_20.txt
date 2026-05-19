@@ -1,0 +1,20 @@
+73da01f Merge pull request #330 from ashuryasaf/cursor/admin-media-landing-link-integrity-e044
+aadf91c admin-media: derive landing-page video URL from asset ID on Save All
+272a0ac Merge pull request #329 from ashuryasaf/cursor/video-agents-batch-flow-03cc
+e84e9d5 video-agents: fix batch HTTP 400 + auto-deliver and implement video on landing
+58ebb5b Merge pull request #328 from ashuryasaf/cursor/validate-video-agents-integrity-03cc
+a890f50 Fix incomplete response for deleted file-backed assets in verify_media_video_job_integrity
+b1bc998 Fix uncaught OSError from os.path.getsize in verify_media_video_job_integrity
+ee36308 Fix diagnose endpoint: compute result before sending 200 headers
+cf107c4 video-agents: end-to-end provider validation + integrity verify
+005eb15 Merge branch 'cursor/annuity-reserves-forecast-9764'
+252ae52 actuary: future_annuity_months now drives annuity factor, not linear scaling
+05ff969 Merge branch 'cursor/annuity-reserves-forecast-9764'
+9fa6afc actuary: add future_annuity_months factor + fix _pct double-conversion
+23af0ef Merge pull request #327 from ashuryasaf/cursor/annuity-reserves-forecast-9764
+3f0963a Fix annuity reserve: percent auto-detection boundary and config mutation
+adb2113 Fix NaN fallback: replace nullish coalescing with Number.isNaN check for factor fields
+529c9ec actuary: add adjustable component factors to annuity reserve formula
+09dc235 Fix: apply initial_reserve only to year 0 instead of every projection year
+1fd0be1 Fix dimensional inconsistency in madad_term: scale rate delta by g_at_guarantee
+44364e6 Fix always-passing test assertion and incorrect madad term formula
