@@ -664,13 +664,18 @@
         if (r.ok) snapshot.analysis = await r.json();
       } catch (_) { /* non-fatal */ }
     } else {
-      try {
-        const r = await api('/api/assessment-center/analysis', {
-          method: 'POST',
-          body: JSON.stringify({ customer_id: cid, analysis_type: 'bi_summary' }),
-        });
-        if (r.ok) snapshot.analysis = await r.json();
-      } catch (_) { /* non-fatal */ }
+      // Full pipeline: run all analysis types sequentially
+      const fullSteps = ['customer_360', 'risk_assessment', 'bi_summary'];
+      snapshot.analysis = {};
+      for (const step of fullSteps) {
+        try {
+          const r = await api('/api/assessment-center/analysis', {
+            method: 'POST',
+            body: JSON.stringify({ customer_id: cid, analysis_type: step }),
+          });
+          if (r.ok) snapshot.analysis[step] = await r.json();
+        } catch (_) { /* non-fatal */ }
+      }
     }
 
     // ── Step 6b: list (and optionally generate) reports
@@ -710,9 +715,13 @@
     //   • risk bar           → s.risk.risk_score
     //   • charts bar         → s.charts.totals.external_records / categories
     // Integrity is "ok" iff:
-    //   1. every doc carries a sha256
-    //   2. the profile's data_integrity.documents matches the docs list size
-    //   3. fact counts agree (per profile.fact_count vs sum of doc facts_extracted)
+    //   1. both profile and documents data are available
+    //   2. every doc carries a sha256
+    //   3. the profile's data_integrity.documents matches the docs list size
+    //   4. fact counts agree (per profile.fact_count vs sum of doc facts_extracted)
+    if (!s.profile && !s.documents) {
+      return { ok: false, issues: ['Cannot verify integrity: both profile and documents data are unavailable'], docs_total: 0, facts_total: 0, sum_doc_facts: 0, missing_sha: 0 };
+    }
     const docs = (s.documents && s.documents.items) || [];
     const prof = s.profile || {};
     const profDocs = (prof.data_integrity && prof.data_integrity.documents) || [];
