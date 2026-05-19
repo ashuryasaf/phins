@@ -1246,7 +1246,7 @@ class TradingPlatformService:
     # AI COPILOT
     # ==================================================================
 
-    def _bars_from_alpha_vantage(self, sym: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def _bars_from_alpha_vantage(self, sym: str, limit: int = 100) -> "tuple[List[Dict[str, Any]], bool]":
         """
         Fallback bars loader: pull OHLCV from Alpha Vantage and shape them
         like Alpaca bars (chronological ascending, with float OHLC and integer
@@ -1257,18 +1257,19 @@ class TradingPlatformService:
         transparently retries weekly so the AI Copilot keeps producing real
         analysis from real market data — never mock data.
 
-        Returns [] only when no Alpha Vantage endpoint produced any usable
-        bars for the symbol.
+        Returns (bars, is_weekly) where is_weekly is True when the weekly
+        endpoint was used.  Returns ([], False) only when no Alpha Vantage
+        endpoint produced any usable bars for the symbol.
         """
         try:
             from services.alpha_vantage_service import get_alpha_vantage_service
             av = get_alpha_vantage_service()
         except Exception as e:  # pragma: no cover - defensive import guard
             _log.debug("Alpha Vantage service unavailable: %s", e)
-            return []
+            return [], False
 
         if av is None:
-            return []
+            return [], False
 
         payload = None
         try:
@@ -1278,12 +1279,14 @@ class TradingPlatformService:
             _log.debug("Alpha Vantage get_daily(%s) failed: %s", sym, e)
 
         av_bars = (payload or {}).get("bars") or []
+        is_weekly = False
 
         if not av_bars:
             try:
                 weekly = av.get_weekly(sym)
                 av_bars = (weekly or {}).get("bars") or []
                 if av_bars:
+                    is_weekly = True
                     _log.info(
                         "_bars_from_alpha_vantage(%s): daily unavailable, "
                         "using weekly series (%d bars)",
@@ -1293,7 +1296,7 @@ class TradingPlatformService:
                 _log.debug("Alpha Vantage get_weekly(%s) failed: %s", sym, e)
 
         if not av_bars:
-            return []
+            return [], False
 
         bars: List[Dict[str, Any]] = []
         for b in reversed(av_bars):
@@ -1313,7 +1316,7 @@ class TradingPlatformService:
 
         if limit and len(bars) > limit:
             bars = bars[-limit:]
-        return bars
+        return bars, is_weekly
 
     def ai_copilot_analyze(self, symbol: str, context: str = "") -> Dict[str, Any]:
         """
@@ -1332,17 +1335,18 @@ class TradingPlatformService:
             return {"error": "Symbol is required."}
 
         data_source = "alpaca_live"
+        is_weekly_fallback = False
         bars_raw = self.get_bars(sym, timeframe="1Day", limit=100)
 
         if not bars_raw or len(bars_raw) < 2:
-            fallback_bars = self._bars_from_alpha_vantage(sym, limit=100)
+            fallback_bars, is_weekly_fallback = self._bars_from_alpha_vantage(sym, limit=100)
             if fallback_bars and len(fallback_bars) > len(bars_raw or []):
                 bars_raw = fallback_bars
-                data_source = "alpha_vantage_fallback"
+                data_source = "alpha_vantage_weekly_fallback" if is_weekly_fallback else "alpha_vantage_fallback"
                 _log.info(
                     "ai_copilot_analyze(%s): Alpaca returned insufficient bars; "
-                    "using Alpha Vantage fallback (%d bars)",
-                    sym, len(fallback_bars),
+                    "using Alpha Vantage %s fallback (%d bars)",
+                    sym, "weekly" if is_weekly_fallback else "daily", len(fallback_bars),
                 )
 
         if not bars_raw:
@@ -1464,8 +1468,12 @@ class TradingPlatformService:
                 copilot_action = "take_profit"
 
         atr = _sf(indicators.get("atr_14"))
-        stop_loss = round(price - (atr * 2), 2) if atr and atr > 0 else round(price * 0.97, 2)
-        take_profit = round(price + (atr * 3), 2) if atr and atr > 0 else round(price * 1.06, 2)
+        if is_weekly_fallback or not atr or atr <= 0:
+            stop_loss = round(price * 0.97, 2)
+            take_profit = round(price * 1.06, 2)
+        else:
+            stop_loss = round(price - (atr * 2), 2)
+            take_profit = round(price + (atr * 3), 2)
 
         # Try to get news from investment AI if available
         news_data = {}
