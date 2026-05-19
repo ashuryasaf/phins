@@ -692,16 +692,34 @@ class TradingPlatformService:
         """
         Historical bars from Alpaca Data API.
         timeframe: 1Min, 5Min, 15Min, 1Hour, 1Day, 1Week, 1Month
+
+        An explicit ``start`` is *always* sent. Alpaca's v2 bars endpoint
+        only respects ``limit`` when paired with a ``start`` window — without
+        it, the IEX free feed returns just the most recent bar, which is why
+        the AI Copilot was producing "Insufficient market history (1 bar)"
+        for symbols like NVDA whenever Alpaca was healthy.
         """
         cache_key = f"bars:{symbol}:{timeframe}:{limit}"
         cached = self._cached(cache_key, 60.0)
         if cached:
             return cached
-        raw = self._data_request(f"/v2/stocks/{symbol.upper()}/bars", {
-            "timeframe": timeframe,
+
+        # Compute a window that comfortably covers `limit` bars at the
+        # requested timeframe, plus a buffer for weekends, holidays, and the
+        # IEX 15-minute delay. Using a generous lookback is safe — Alpaca
+        # will still cap the response at `limit` bars.
+        start_iso = _bars_start_iso(timeframe, limit)
+
+        params = {
+            "timeframe": _alpaca_timeframe(timeframe),
             "limit": str(limit),
             "feed": "iex",
-        })
+            "adjustment": "raw",
+            "sort": "asc",
+            "start": start_iso,
+        }
+
+        raw = self._data_request(f"/v2/stocks/{symbol.upper()}/bars", params)
         if raw is None:
             _log.debug("get_bars(%s): Alpaca API returned None — skipping", symbol)
             return []
@@ -1339,14 +1357,26 @@ class TradingPlatformService:
         bars_raw = self.get_bars(sym, timeframe="1Day", limit=100)
 
         if not bars_raw or len(bars_raw) < 2:
+            alpaca_bar_count = len(bars_raw or [])
             fallback_bars, is_weekly_fallback = self._bars_from_alpha_vantage(sym, limit=100)
-            if fallback_bars and len(fallback_bars) > len(bars_raw or []):
+            # Prefer the fallback whenever it has ≥2 bars (the minimum needed
+            # to compute technicals) or strictly more bars than Alpaca. The
+            # earlier "strictly greater than" guard left the analysis stuck
+            # on Alpaca's single bar when Alpha Vantage also returned 1 bar,
+            # producing the "Insufficient market history (1 bar)" error
+            # surfaced for NVDA on ANALYZE.
+            if fallback_bars and (
+                len(fallback_bars) >= 2
+                or len(fallback_bars) > alpaca_bar_count
+            ):
                 bars_raw = fallback_bars
                 data_source = "alpha_vantage_weekly_fallback" if is_weekly_fallback else "alpha_vantage_fallback"
                 _log.info(
-                    "ai_copilot_analyze(%s): Alpaca returned insufficient bars; "
+                    "ai_copilot_analyze(%s): Alpaca returned %d bar(s); "
                     "using Alpha Vantage %s fallback (%d bars)",
-                    sym, "weekly" if is_weekly_fallback else "daily", len(fallback_bars),
+                    sym, alpaca_bar_count,
+                    "weekly" if is_weekly_fallback else "daily",
+                    len(fallback_bars),
                 )
 
         if not bars_raw:
@@ -1399,15 +1429,37 @@ class TradingPlatformService:
             }
 
         if len(bars_raw) < 2:
+            details: List[str] = []
+            if data_source == "alpaca_live":
+                if self._last_data_error:
+                    details.append(self._last_data_error)
+                details.append(
+                    "Alpaca returned only the latest bar — usually means the "
+                    "request hit the IEX feed delay window or the symbol is "
+                    "freshly listed."
+                )
+                details.append(
+                    "Alpha Vantage fallback also returned <2 bars (rate-limit, "
+                    "unknown symbol, or both daily/weekly endpoints empty)."
+                )
+            else:
+                details.append(
+                    "Alpha Vantage returned <2 bars even on the daily/weekly "
+                    "fallback — usually a rate limit on the free tier (25 "
+                    "requests/day). Retry shortly or set a paid "
+                    "ALPHA_VANTAGE_API_KEY."
+                )
             return {
                 "error": (
                     f"Insufficient market history for {sym} "
                     f"({len(bars_raw)} bar). At least 2 daily bars are "
                     "required to compute technicals."
                 ),
+                "details": details,
                 "symbol": sym,
                 "data_source": data_source,
                 "bars_count": len(bars_raw),
+                "alpaca_connected": self.is_connected,
             }
 
         technicals = compute_technicals(bars_raw)
@@ -2087,6 +2139,44 @@ def _sf(val: Any) -> Optional[float]:
         return f if math.isfinite(f) else None
     except (TypeError, ValueError):
         return None
+
+
+# Calendar days per bar at each Alpaca timeframe. Calendar days (not trading
+# days) so the resulting `start` window safely covers weekends/holidays.
+# 1Min/5Min/etc. compute roughly assuming ~6.5h trading day; for intraday
+# windows we always allow at least a few calendar days to clear weekends.
+_TIMEFRAME_DAYS_PER_BAR: Dict[str, float] = {
+    "1Min": 1.0 / 390.0,
+    "5Min": 5.0 / 390.0,
+    "15Min": 15.0 / 390.0,
+    "30Min": 30.0 / 390.0,
+    "1Hour": 1.0 / 6.5,
+    "1Day": 1.0,
+    "1Week": 5.0,
+    "1Month": 21.0,
+}
+
+
+def _alpaca_timeframe(timeframe: str) -> str:
+    """Normalize timeframe strings to Alpaca's accepted values."""
+    if not timeframe:
+        return "1Day"
+    return timeframe.strip()
+
+
+def _bars_start_iso(timeframe: str, limit: int) -> str:
+    """
+    Compute an RFC3339 ``start`` timestamp that comfortably covers ``limit``
+    bars at the requested timeframe (with weekend/holiday buffer).
+    """
+    per_bar = _TIMEFRAME_DAYS_PER_BAR.get(_alpaca_timeframe(timeframe), 1.0)
+    # 50% buffer for weekends/holidays + a small absolute minimum so even
+    # short requests get a non-trivial window.
+    days_back = max(7, int(per_bar * max(limit, 1) * 1.5) + 14)
+    # Alpaca's IEX free feed has a 15-minute delay; pull `now - 16min` as a
+    # safe upper bound is unnecessary because we only set `start`, not `end`.
+    start = datetime.now(timezone.utc) - timedelta(days=days_back)
+    return start.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 # ---------------------------------------------------------------------------

@@ -144,17 +144,22 @@ class AlphaVantageService:
             # Differentiate premium-only endpoints, rate limits, and bad symbols
             # so operators see exactly why a request failed in logs.
             lowered = (msg or "").lower()
-            if "premium endpoint" in lowered:
+            is_premium_only = "this is a premium endpoint" in lowered
+            is_rate_limited = (
+                not is_premium_only
+                and (
+                    "thank you" in lowered
+                    or "call frequency" in lowered
+                    or "requests per" in lowered
+                    or "rate limit" in lowered
+                )
+            )
+            if is_premium_only:
                 print(
                     f"[AlphaVantage] premium-only endpoint for "
                     f"{params.get('function')}: {msg}"
                 )
-            elif (
-                "thank you" in lowered
-                or "call frequency" in lowered
-                or "requests per" in lowered
-                or "rate limit" in lowered
-            ):
+            elif is_rate_limited:
                 print(f"[AlphaVantage] rate limited: {msg}")
             else:
                 print(f"[AlphaVantage] API note: {msg}")
