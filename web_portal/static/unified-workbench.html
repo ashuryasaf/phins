@@ -386,13 +386,14 @@
     window.location.href = '/login.html';
   }
   function api(path, opts) {
+    const { headers: extraHeaders, ...rest } = opts || {};
     return fetch(path, {
       headers: {
         'Authorization': 'Bearer ' + TOKEN,
         'Content-Type': 'application/json',
-        ...((opts || {}).headers || {})
+        ...(extraHeaders || {})
       },
-      ...opts
+      ...rest
     });
   }
   function escHtml(s) {
@@ -665,7 +666,7 @@
       } catch (_) { /* non-fatal */ }
     } else {
       // Full pipeline: run all analysis types sequentially
-      const fullSteps = ['customer_360', 'risk_assessment', 'bi_summary'];
+      const fullSteps = ['customer_360', 'risk_assessment', 'bi_summary', 'describe_data'];
       snapshot.analysis = {};
       for (const step of fullSteps) {
         try {
@@ -850,13 +851,15 @@
     const body = document.getElementById('assessment-body');
     const prof = s.profile || {};
     const facts = prof.fact_count || 0;
-    const cats = ((s.analysis && s.analysis.description && s.analysis.description.sections) || []).length;
+    const descData = (s.analysis && s.analysis.describe_data && s.analysis.describe_data.description) ||
+                     (s.analysis && s.analysis.description) || {};
+    const cats = (descData.sections || []).length;
     sum.innerHTML = `
       <span class="stat-chip primary">${facts} facts</span>
       <span class="stat-chip ok">${cats} categories</span>
       ${prof.last_updated ? `<span class="stat-chip muted">updated ${escHtml(fmtDate(prof.last_updated))}</span>` : ''}
     `;
-    const sections = (s.analysis && s.analysis.description && s.analysis.description.sections) || [];
+    const sections = descData.sections || [];
     if (sections.length === 0) {
       body.innerHTML = `<div class="empty">No category breakdown available — pick depth <em>Describe data</em> or run the full pipeline.</div>`;
       return;
