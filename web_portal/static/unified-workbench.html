@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHINS — Unified Workbench</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* ──────────────────────────────────────────────────────────────────
+       PHINS UNIFIED WORKBENCH
+       One dashboard that consolidates the four legacy surfaces:
+         • Documents             (was /documents.html)
+         • Assessment Center     (was /assessment-center.html)
+         • Reports               (was /risk-reports-dashboard.html)
+         • Risk / Assessment     (was /risk-dashboard.html)
+       The screen is stacked as horizontal "bars" – one bar per function –
+       with a SINGLE primary action button at the top that drives every
+       bar in lock-step:
+         upload (if files queued) → 360 facts → risk → BI → reports →
+         repaint every bar from the same backend snapshot.
+       All bars read from the same /api/assessment-center/* endpoints
+       (single source of truth, SHA-256 dedup, provenance preserved) so
+       data integrity is identical across panels.
+       ────────────────────────────────────────────────────────────────── */
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a237e; }
+
+    .phins-header { background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 2px 12px rgba(13,71,161,0.3); position: sticky; top: 0; z-index: 100; }
+    .phins-header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem; }
+    .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: white; }
+    .phins-logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+    .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; }
+    .phins-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .phins-nav a { color: rgba(255,255,255,0.85); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 0.9rem; transition: background 0.2s; }
+    .phins-nav a:hover, .phins-nav a.active { background: rgba(255,255,255,0.2); color: white; }
+    .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%) !important; color: white !important; font-weight: 600 !important; }
+
+    .page-container { max-width: 1400px; margin: 0 auto; padding: 1.25rem 1.5rem 2.5rem; }
+
+    .page-title { font-size: 2rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
+    .page-subtitle { color: #546e7a; margin-bottom: 1.25rem; font-size: 0.95rem; max-width: 980px; }
+
+    /* ── Master control card with the ONE button ───────────────────── */
+    .master-control {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 60%, #1976d2 100%);
+      color: white;
+      border-radius: 18px;
+      padding: 1.2rem 1.5rem;
+      box-shadow: 0 8px 32px rgba(13,71,161,0.25);
+      margin-bottom: 1.25rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: center;
+    }
+    @media (max-width: 800px) { .master-control { grid-template-columns: 1fr; } }
+    .master-control .title { font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .master-control .subtitle { font-size: 0.85rem; opacity: 0.9; margin-top: 4px; }
+    .master-control select, .master-control input[type="text"] {
+      background: rgba(255,255,255,0.95); color: #1a237e; border: none;
+      padding: 8px 12px; border-radius: 8px; font-size: 0.9rem; min-width: 220px;
+    }
+    .master-control .drop-zone {
+      border: 2px dashed rgba(255,255,255,0.45); border-radius: 12px;
+      padding: 14px; text-align: center; cursor: pointer;
+      background: rgba(255,255,255,0.08); transition: background 0.2s;
+      margin-top: 10px;
+    }
+    .master-control .drop-zone:hover, .master-control .drop-zone.dragover { background: rgba(255,255,255,0.18); }
+    .master-control .drop-zone .hint { font-size: 0.78rem; opacity: 0.85; }
+    .master-control .controls-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    .master-control .controls-row label { font-size: 0.78rem; opacity: 0.85; }
+
+    .btn-unified {
+      background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);
+      color: #1a237e;
+      border: none;
+      padding: 18px 28px;
+      border-radius: 14px;
+      font-size: 1.1rem;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(255,143,0,0.45);
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      min-width: 240px;
+    }
+    .btn-unified:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(255,143,0,0.55); }
+    .btn-unified:disabled { opacity: 0.6; cursor: progress; }
+    .btn-unified .small { display: block; font-size: 0.72rem; font-weight: 600; opacity: 0.75; letter-spacing: 0.2px; }
+
+    .pipeline-status {
+      background: rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 8px 12px;
+      margin-top: 12px;
+      font-size: 0.82rem;
+      display: none;
+    }
+    .pipeline-status.visible { display: block; }
+    .pipeline-status .step { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+    .pipeline-status .step .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.4); flex-shrink: 0; }
+    .pipeline-status .step.active .dot { background: #ffeb3b; box-shadow: 0 0 8px #ffeb3b; }
+    .pipeline-status .step.done .dot { background: #69f0ae; }
+    .pipeline-status .step.error .dot { background: #ff5252; }
+
+    /* ── Function bars (one per function) ──────────────────────────── */
+    .fn-bar {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+      margin-bottom: 1rem;
+      overflow: hidden;
+      border-left: 6px solid #1565c0;
+    }
+    .fn-bar.docs       { border-left-color: #1565c0; }
+    .fn-bar.assessment { border-left-color: #2e7d32; }
+    .fn-bar.reports    { border-left-color: #6a1b9a; }
+    .fn-bar.risk       { border-left-color: #c62828; }
+    .fn-bar.charts     { border-left-color: #ef6c00; }
+    .fn-bar.integrity  { border-left-color: #455a64; }
+
+    .fn-bar-head {
+      padding: 0.85rem 1.25rem;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.75rem;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .fn-bar-head:hover { background: #fafbff; }
+    .fn-bar-title { font-size: 1.05rem; font-weight: 700; color: #1a237e; display: flex; align-items: center; gap: 8px; }
+    .fn-bar-summary { font-size: 0.85rem; color: #546e7a; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+    .fn-bar-chevron { font-size: 1.1rem; color: #90a4ae; transition: transform 0.2s; }
+    .fn-bar.collapsed .fn-bar-chevron { transform: rotate(-90deg); }
+    .fn-bar.collapsed .fn-bar-body { display: none; }
+
+    .fn-bar-body { padding: 0 1.25rem 1.25rem; }
+
+    .stat-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px;
+      background: #eceff1; color: #455a64; font-weight: 600; font-size: 0.78rem;
+    }
+    .stat-chip.ok      { background: #e8f5e9; color: #2e7d32; }
+    .stat-chip.warn    { background: #fff3e0; color: #ef6c00; }
+    .stat-chip.bad     { background: #ffebee; color: #b71c1c; }
+    .stat-chip.primary { background: #e3f2fd; color: #0d47a1; }
+    .stat-chip.muted   { background: #eceff1; color: #607d8b; }
+    .stat-chip.purple  { background: #f3e5f5; color: #6a1b9a; }
+
+    /* Bar visualisation row (label / coloured bar / value) */
+    .bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; margin: 5px 0; }
+    .bar-row .label { flex: 0 0 220px; color: #455a64; word-break: break-word; }
+    .bar-row .bar   { flex: 1; height: 12px; background: #eceff1; border-radius: 6px; overflow: hidden; min-width: 60px; }
+    .bar-row .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #1565c0, #42a5f5); }
+    .bar-row .value { flex: 0 0 100px; text-align: right; font-weight: 700; color: #1a237e; }
+
+    .bar-row.risk-low      .bar > span { background: linear-gradient(90deg, #43a047, #66bb6a); }
+    .bar-row.risk-medium   .bar > span { background: linear-gradient(90deg, #fb8c00, #ffa726); }
+    .bar-row.risk-high     .bar > span { background: linear-gradient(90deg, #e53935, #ef5350); }
+    .bar-row.risk-very_high .bar > span { background: linear-gradient(90deg, #880e4f, #c62828); }
+    .bar-row.docs-bar      .bar > span { background: linear-gradient(90deg, #0d47a1, #1976d2); }
+    .bar-row.assess-bar    .bar > span { background: linear-gradient(90deg, #2e7d32, #66bb6a); }
+    .bar-row.reports-bar   .bar > span { background: linear-gradient(90deg, #6a1b9a, #ab47bc); }
+    .bar-row.charts-bar    .bar > span { background: linear-gradient(90deg, #ef6c00, #ffa726); }
+
+    .empty { padding: 1rem; text-align: center; color: #78909c; border: 2px dashed #cfd8dc; border-radius: 12px; background: #fafbfc; font-size: 0.85rem; }
+
+    /* Documents inline list */
+    .doc-strip { max-height: 240px; overflow-y: auto; border: 1px solid #eceff1; border-radius: 10px; }
+    .doc-strip-item { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #f5f7fa; font-size: 0.85rem; }
+    .doc-strip-item:last-child { border-bottom: none; }
+    .doc-strip-item .nm { color: #1a237e; font-weight: 600; word-break: break-all; }
+    .doc-strip-item .mini { font-size: 0.72rem; color: #78909c; }
+
+    /* Result panels */
+    .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.6rem; }
+    @media (max-width: 900px) { .result-grid { grid-template-columns: 1fr; } }
+    .result-card { background: #f8fbff; border: 1px solid #e3f2fd; border-radius: 12px; padding: 0.85rem 1rem; }
+    .result-card h4 { color: #1a237e; font-size: 0.95rem; margin: 0 0 0.5rem; }
+
+    .footer-note { color: #90a4ae; font-size: 0.78rem; margin-top: 1.5rem; text-align: center; }
+
+    .ghost-link { color: #1565c0; font-weight: 600; text-decoration: none; font-size: 0.82rem; }
+    .ghost-link:hover { text-decoration: underline; }
+
+    .reports-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .reports-table th, .reports-table td { padding: 7px 10px; border-bottom: 1px solid #eceff1; text-align: left; }
+    .reports-table th { color: #546e7a; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Integrity provenance list */
+    .provenance-list { font-size: 0.82rem; }
+    .provenance-list .pv-item { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px dashed #eceff1; }
+    .provenance-list .pv-item:first-child { border-top: none; }
+    .provenance-list .pv-sha { font-family: monospace; font-size: 0.72rem; color: #455a64; }
+  </style>
+</head>
+<body>
+
+<header class="phins-header">
+  <div class="phins-header-inner">
+    <a href="/dashboard.html" class="phins-logo">
+      <div class="phins-logo-icon">🛡️</div>
+      <span class="phins-logo-text">PHINS</span>
+    </a>
+    <nav class="phins-nav">
+      <a href="/dashboard.html">Dashboard</a>
+      <a href="/unified-workbench.html" class="active">⚡ Unified Workbench</a>
+      <a href="#" class="btn-logout" onclick="logout()">Logout</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page-container">
+  <div class="page-title">⚡ Unified Workbench</div>
+  <div class="page-subtitle">
+    One screen unifying <strong>Assessment Center</strong>, <strong>Documents</strong>,
+    <strong>Risk Assessment</strong> and <strong>Reports</strong>. Every bar below is fed
+    from the same backend snapshot (SHA-256 dedup, provenance preserved) so the numbers
+    you see in the Documents bar, the Assessment bar, the Risk bar and the Reports bar
+    can never disagree. Click the single <strong>Run Unified Analysis</strong> button to
+    upload anything queued, recompute Customer 360 facts, regenerate the risk score,
+    refresh BI charts and create a comprehensive report — all in one pass.
+  </div>
+
+  <!-- ── Master control: the ONE button ─────────────────────────────── -->
+  <div class="master-control">
+    <div>
+      <div class="title">🎯 Target &amp; queue</div>
+      <div class="subtitle" id="ctx-line">Loading session…</div>
+
+      <div class="controls-row">
+        <select id="customer-select" title="Customer" style="display:none;">
+          <option value="">— loading customers —</option>
+        </select>
+        <input type="text" id="customer-override" placeholder="Override customer_id (admin only)" style="display:none; min-width: 260px;">
+        <select id="analysis-type" title="Pipeline depth">
+          <option value="full" selected>🚀 Full pipeline (360 + risk + BI + report)</option>
+          <option value="customer_360">👤 Customer 360 only</option>
+          <option value="risk_assessment">⚠️ Risk only</option>
+          <option value="bi_summary">📊 BI charts only</option>
+          <option value="describe_data">🗂️ Describe data</option>
+        </select>
+      </div>
+
+      <div class="drop-zone" id="drop-zone"
+           onclick="document.getElementById('file-input').click()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div style="font-size: 1.4rem;">📂 Drop files or click to add to the queue</div>
+        <div class="hint" id="queue-hint">No files queued — the button will just refresh every bar.</div>
+        <div class="hint">PDF · DOCX · XLSX · CSV · PNG · JPG · TXT · XML…</div>
+      </div>
+      <input type="file" id="file-input" multiple
+             accept=".pdf,.doc,.docx,.xls,.xlsx,.xsd,.csv,.txt,.json,.xml,.png,.jpg,.jpeg,.tiff,.bmp,.gif"
+             onchange="onFileSelect(event)" style="display:none;">
+
+      <div class="pipeline-status" id="pipeline-status"></div>
+    </div>
+
+    <button class="btn-unified" id="btn-unified" onclick="runUnified()">
+      ⚡ Run Unified Analysis
+      <span class="small">upload · 360 · risk · BI · report</span>
+    </button>
+  </div>
+
+  <!-- ── BAR 1: Data Integrity (provenance, dedup, SHA) ─────────────── -->
+  <section class="fn-bar integrity" id="bar-integrity">
+    <div class="fn-bar-head" onclick="toggleBar('bar-integrity')">
+      <div class="fn-bar-title">🛡️ Data Integrity</div>
+      <div class="fn-bar-summary" id="integrity-summary">
+        <span class="stat-chip muted">awaiting first run</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="integrity-body">
+        <div class="empty">No snapshot yet — click <strong>Run Unified Analysis</strong>.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BAR 2: Documents ───────────────────────────────────────────── -->
+  <section class="fn-bar docs" id="bar-docs">
+    <div class="fn-bar-head" onclick="toggleBar('bar-docs')">
+      <div class="fn-bar-title">📁 Documents</div>
+      <div class="fn-bar-summary" id="docs-summary">
+        <span class="stat-chip muted">—</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="docs-body">
+        <div class="empty">No documents loaded yet.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BAR 3: Assessment Center (Customer 360 + describe data) ────── -->
+  <section class="fn-bar assessment" id="bar-assessment">
+    <div class="fn-bar-head" onclick="toggleBar('bar-assessment')">
+      <div class="fn-bar-title">🧠 Assessment Center</div>
+      <div class="fn-bar-summary" id="assessment-summary">
+        <span class="stat-chip muted">—</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="assessment-body">
+        <div class="empty">No facts extracted yet.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BAR 4: Risk Assessment ─────────────────────────────────────── -->
+  <section class="fn-bar risk" id="bar-risk">
+    <div class="fn-bar-head" onclick="toggleBar('bar-risk')">
+      <div class="fn-bar-title">⚠️ Risk Assessment</div>
+      <div class="fn-bar-summary" id="risk-summary">
+        <span class="stat-chip muted">—</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="risk-body">
+        <div class="empty">No risk score computed yet.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BAR 5: BI Charts ───────────────────────────────────────────── -->
+  <section class="fn-bar charts" id="bar-charts">
+    <div class="fn-bar-head" onclick="toggleBar('bar-charts')">
+      <div class="fn-bar-title">📊 BI Charts</div>
+      <div class="fn-bar-summary" id="charts-summary">
+        <span class="stat-chip muted">—</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="charts-body">
+        <div class="empty">No charts yet.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BAR 6: Reports ─────────────────────────────────────────────── -->
+  <section class="fn-bar reports" id="bar-reports">
+    <div class="fn-bar-head" onclick="toggleBar('bar-reports')">
+      <div class="fn-bar-title">📄 Reports</div>
+      <div class="fn-bar-summary" id="reports-summary">
+        <span class="stat-chip muted">—</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="reports-body">
+        <div class="empty">No reports yet — run the pipeline to generate one.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer-note">
+    All bars share the same backend snapshot for guaranteed cross-panel
+    integrity. Source of truth: <code>/api/assessment-center/*</code>
+    and <code>/api/reports/*</code>.
+  </div>
+</div>
+
+<script>
+  /* ─────────────────────────────────────────────────────────────────────
+     Auth + helpers
+     ───────────────────────────────────────────────────────────────────── */
+  const TOKEN = localStorage.getItem('phins_token') || '';
+  const SESSION = (() => { try { return JSON.parse(localStorage.getItem('phins_session') || '{}'); } catch { return {}; } })();
+  const ADMIN_ROLES = new Set(['admin', 'underwriter', 'actuary', 'analyst', 'claims',
+                               'claims_agent', 'claims_manager', 'underwriting_admin']);
+  const ROLE = String(SESSION.role || '').toLowerCase();
+  const IS_ADMIN = ADMIN_ROLES.has(ROLE);
+  if (!TOKEN) { window.location.href = '/login.html'; }
+
+  function logout() {
+    localStorage.removeItem('phins_token');
+    localStorage.removeItem('phins_session');
+    window.location.href = '/login.html';
+  }
+  function api(path, opts) {
+    return fetch(path, {
+      headers: {
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json',
+        ...((opts || {}).headers || {})
+      },
+      ...opts
+    });
+  }
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+  function fmtBytes(n) {
+    if (!n && n !== 0) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Session resolution — mirrors assessment-center.html logic so the
+     workbench shares the same notion of "who is this customer".
+     ───────────────────────────────────────────────────────────────────── */
+  let SERVER_SESSION = null;
+  let SESSION_CUSTOMER_ID = '';
+  let SESSION_USERNAME = '';
+  let SESSION_ROLE = '';
+  let SESSION_IS_SYNTHETIC = false;
+  let CURRENT_CUSTOMER = '';
+
+  function actingAsAdmin() {
+    return ADMIN_ROLES.has(SESSION_ROLE || ROLE);
+  }
+
+  async function ensureServerSession() {
+    try {
+      const r = await api('/api/assessment-center/me');
+      if (r.status === 401) { logout(); return null; }
+      if (r.ok) {
+        const body = await r.json();
+        SERVER_SESSION = body;
+        SESSION_CUSTOMER_ID = String(body.customer_id || '').trim();
+        SESSION_USERNAME = String(body.username || '').trim();
+        SESSION_ROLE = String(body.role || '').toLowerCase();
+        SESSION_IS_SYNTHETIC = !!body.customer_id_is_synthetic;
+        return body;
+      }
+    } catch (_) {}
+    try {
+      const r = await api('/api/session/validate');
+      if (r.ok) {
+        const body = await r.json();
+        SESSION_USERNAME = SESSION_USERNAME || String(body.username || '').trim();
+        SESSION_ROLE = SESSION_ROLE || String(body.role || '').toLowerCase();
+        SESSION_CUSTOMER_ID = SESSION_CUSTOMER_ID || String(body.customer_id || '').trim();
+        return body;
+      }
+    } catch (_) {}
+    SESSION_CUSTOMER_ID = SESSION_CUSTOMER_ID || String(SESSION.customer_id || '').trim();
+    SESSION_USERNAME = SESSION_USERNAME || String(SESSION.username || '').trim();
+    SESSION_ROLE = SESSION_ROLE || ROLE;
+    return null;
+  }
+
+  function resolveCustomer() {
+    if (actingAsAdmin()) {
+      const override = (document.getElementById('customer-override').value || '').trim();
+      if (override) return override;
+      const sel = document.getElementById('customer-select');
+      if (sel && sel.value) return sel.value;
+    }
+    if (CURRENT_CUSTOMER) return CURRENT_CUSTOMER;
+    if (SESSION_CUSTOMER_ID) return SESSION_CUSTOMER_ID;
+    if (!actingAsAdmin() && SESSION_USERNAME) return 'USER:' + SESSION_USERNAME.toLowerCase();
+    return '';
+  }
+
+  async function loadAdminCustomerList() {
+    if (!actingAsAdmin()) return;
+    const sel = document.getElementById('customer-select');
+    const override = document.getElementById('customer-override');
+    sel.style.display = '';
+    override.style.display = '';
+    try {
+      const r = await api('/api/assessment-center/customers');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const json = await r.json();
+      const items = json.items || [];
+      if (items.length === 0) {
+        sel.innerHTML = '<option value="">— no customers with facts yet —</option>';
+      } else {
+        sel.innerHTML = items.map(it => {
+          const score = ((it.risk_score || 0) * 100).toFixed(0);
+          return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}%</option>`;
+        }).join('');
+      }
+    } catch (_) {
+      sel.innerHTML = '<option value="">— failed to load customers —</option>';
+    }
+    sel.addEventListener('change', () => { CURRENT_CUSTOMER = sel.value; refreshAllBars(); });
+  }
+
+  function renderContextLine() {
+    const ctx = document.getElementById('ctx-line');
+    if (actingAsAdmin()) {
+      ctx.innerHTML = `Acting as <strong>${escHtml(SESSION_USERNAME || 'admin')}</strong> · pick a customer or paste an ID — every bar refreshes from the same snapshot.`;
+    } else {
+      const cid = resolveCustomer();
+      ctx.innerHTML = SESSION_IS_SYNTHETIC
+        ? `Signed in as <strong>${escHtml(SESSION_USERNAME)}</strong>. Your data is stored under your account (no formal customer record linked yet).`
+        : `Signed in as <strong>${escHtml(SESSION_USERNAME)}</strong> → <strong>${escHtml(cid || '—')}</strong>.`;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Upload queue
+     ───────────────────────────────────────────────────────────────────── */
+  let QUEUED = [];
+  function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('dragover'); }
+  function onDragLeave() { document.getElementById('drop-zone').classList.remove('dragover'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('dragover');
+    addFiles(Array.from(e.dataTransfer.files));
+  }
+  function onFileSelect(e) { addFiles(Array.from(e.target.files)); }
+  function addFiles(files) {
+    files.forEach(f => {
+      if (QUEUED.length >= 20) return;
+      if (QUEUED.find(x => x.name === f.name && x.size === f.size)) return;
+      QUEUED.push(f);
+    });
+    paintQueueHint();
+  }
+  function paintQueueHint() {
+    const el = document.getElementById('queue-hint');
+    if (QUEUED.length === 0) {
+      el.textContent = 'No files queued — the button will just refresh every bar.';
+    } else {
+      el.innerHTML = `${QUEUED.length} file(s) queued: ` +
+        QUEUED.map(f => `<strong>${escHtml(f.name)}</strong> (${fmtBytes(f.size)})`).join(', ');
+    }
+  }
+  async function readB64(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Pipeline status renderer
+     ───────────────────────────────────────────────────────────────────── */
+  const PIPELINE_STEPS = [
+    { id: 'upload',    label: 'Upload & ingest queued files' },
+    { id: 'profile',   label: 'Refresh Customer 360 facts' },
+    { id: 'risk',      label: 'Recompute risk score' },
+    { id: 'charts',    label: 'Refresh BI charts' },
+    { id: 'documents', label: 'List documents on file' },
+    { id: 'reports',   label: 'List & (optionally) generate reports' },
+    { id: 'integrity', label: 'Verify cross-bar data integrity' },
+  ];
+  let PIPELINE_STATE = {};
+  function paintPipeline() {
+    const el = document.getElementById('pipeline-status');
+    el.classList.add('visible');
+    el.innerHTML = PIPELINE_STEPS.map(s => {
+      const st = PIPELINE_STATE[s.id] || 'pending';
+      return `<div class="step ${st}">
+        <span class="dot"></span>
+        <span>${escHtml(s.label)}${st === 'done' ? ' ✓' : st === 'error' ? ' ✗' : st === 'active' ? '…' : ''}</span>
+      </div>`;
+    }).join('');
+  }
+  function stepState(id, state) { PIPELINE_STATE[id] = state; paintPipeline(); }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     THE ONE BUTTON — runs the entire pipeline in lock-step
+     ───────────────────────────────────────────────────────────────────── */
+  let LAST_SNAPSHOT = null;
+
+  async function runUnified() {
+    const btn = document.getElementById('btn-unified');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Running…<span class="small">all bars are syncing</span>';
+    PIPELINE_STATE = {};
+    paintPipeline();
+
+    const cid = resolveCustomer();
+    if (!cid) {
+      stepState('upload', 'error');
+      alert('No customer context — pick a customer first.');
+      btn.disabled = false;
+      btn.innerHTML = '⚡ Run Unified Analysis<span class="small">upload · 360 · risk · BI · report</span>';
+      return;
+    }
+    CURRENT_CUSTOMER = cid;
+
+    // ── Step 1: upload anything queued (sequential to surface per-file errors)
+    stepState('upload', 'active');
+    let uploadFactsTotal = 0;
+    let uploadDocsTotal = 0;
+    const uploadErrors = [];
+    if (QUEUED.length > 0) {
+      for (const f of QUEUED) {
+        try {
+          const b64 = await readB64(f);
+          const payload = {
+            file_name: f.name,
+            file_data_b64: b64,
+            mime_type: f.type || 'application/octet-stream',
+            category: 'general',
+          };
+          if (actingAsAdmin()) payload.customer_id = cid;
+          const r = await api('/api/assessment-center/upload', { method: 'POST', body: JSON.stringify(payload) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+          uploadFactsTotal += (j.summary && j.summary.facts_extracted) || 0;
+          uploadDocsTotal += 1;
+        } catch (e) {
+          uploadErrors.push(`${f.name}: ${e.message}`);
+        }
+      }
+      QUEUED = [];
+      document.getElementById('file-input').value = '';
+      paintQueueHint();
+    }
+    stepState('upload', uploadErrors.length && uploadDocsTotal === 0 ? 'error' : 'done');
+
+    // ── Steps 2..5: pull profile + risk + charts + documents in parallel
+    const snapshot = {
+      customer_id: cid,
+      uploaded_now: { docs: uploadDocsTotal, facts: uploadFactsTotal, errors: uploadErrors },
+      profile: null, risk: null, charts: null, documents: null,
+      analysis: null, reports: null,
+    };
+
+    stepState('profile', 'active');
+    stepState('risk', 'active');
+    stepState('charts', 'active');
+    stepState('documents', 'active');
+
+    const [profileRes, riskRes, chartsRes, docsRes] = await Promise.allSettled([
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/profile`),
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/risk-indicators`),
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/charts`),
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/documents`),
+    ]);
+    snapshot.profile   = await safeJson(profileRes, 'profile');
+    snapshot.risk      = await safeJson(riskRes, 'risk');
+    snapshot.charts    = await safeJson(chartsRes, 'charts');
+    snapshot.documents = await safeJson(docsRes, 'documents');
+
+    stepState('profile', snapshot.profile ? 'done' : 'error');
+    stepState('risk', snapshot.risk ? 'done' : 'error');
+    stepState('charts', snapshot.charts ? 'done' : 'error');
+    stepState('documents', snapshot.documents ? 'done' : 'error');
+
+    // ── Step 6a: run the analysis of the chosen depth (and gather BI bars
+    //            even when the dropdown sticks to "full")
+    const depth = document.getElementById('analysis-type').value;
+    if (depth !== 'full') {
+      try {
+        const r = await api('/api/assessment-center/analysis', {
+          method: 'POST',
+          body: JSON.stringify({ customer_id: cid, analysis_type: depth }),
+        });
+        if (r.ok) snapshot.analysis = await r.json();
+      } catch (_) { /* non-fatal */ }
+    } else {
+      try {
+        const r = await api('/api/assessment-center/analysis', {
+          method: 'POST',
+          body: JSON.stringify({ customer_id: cid, analysis_type: 'bi_summary' }),
+        });
+        if (r.ok) snapshot.analysis = await r.json();
+      } catch (_) { /* non-fatal */ }
+    }
+
+    // ── Step 6b: list (and optionally generate) reports
+    stepState('reports', 'active');
+    try {
+      const r = await api('/api/reports/list');
+      if (r.ok) {
+        const j = await r.json();
+        snapshot.reports = (j && j.reports) || [];
+      }
+    } catch (_) { /* non-fatal */ }
+    stepState('reports', snapshot.reports ? 'done' : 'error');
+
+    // ── Step 7: integrity verification
+    stepState('integrity', 'active');
+    snapshot.integrity = computeIntegrity(snapshot);
+    stepState('integrity', snapshot.integrity.ok ? 'done' : 'error');
+
+    LAST_SNAPSHOT = snapshot;
+    paintAllBars(snapshot);
+
+    btn.disabled = false;
+    btn.innerHTML = '⚡ Run Unified Analysis<span class="small">upload · 360 · risk · BI · report</span>';
+  }
+
+  async function safeJson(settledRes, _label) {
+    if (!settledRes || settledRes.status !== 'fulfilled') return null;
+    const r = settledRes.value;
+    if (!r || !r.ok) return null;
+    try { return await r.json(); } catch (_) { return null; }
+  }
+
+  function computeIntegrity(s) {
+    // Single source of truth for the four bars:
+    //   • documents bar      → s.documents.items
+    //   • assessment bar     → s.profile.fact_count
+    //   • risk bar           → s.risk.risk_score
+    //   • charts bar         → s.charts.totals.external_records / categories
+    // Integrity is "ok" iff:
+    //   1. every doc carries a sha256
+    //   2. the profile's data_integrity.documents matches the docs list size
+    //   3. fact counts agree (per profile.fact_count vs sum of doc facts_extracted)
+    const docs = (s.documents && s.documents.items) || [];
+    const prof = s.profile || {};
+    const profDocs = (prof.data_integrity && prof.data_integrity.documents) || [];
+    const declaredFacts = Number(prof.fact_count || 0);
+    const summedFacts = docs.reduce((a, d) => a + Number(d.facts_extracted || 0), 0);
+    const missingSha = docs.filter(d => !d.sha256).length;
+    const docCountDelta = Math.abs(docs.length - profDocs.length);
+    const factDelta = Math.abs(declaredFacts - summedFacts);
+    const issues = [];
+    if (missingSha > 0)        issues.push(`${missingSha} document(s) missing SHA-256 fingerprint`);
+    if (docCountDelta > 0)     issues.push(`profile lists ${profDocs.length} doc(s) but docs bar shows ${docs.length}`);
+    // Facts can legitimately differ because external clearinghouse facts
+    // (Mislaka) are not attached to a single document - we only flag big drift.
+    if (factDelta > 25)        issues.push(`fact count drift: profile=${declaredFacts}, sum-of-docs=${summedFacts}`);
+    return { ok: issues.length === 0, issues, docs_total: docs.length, facts_total: declaredFacts, sum_doc_facts: summedFacts, missing_sha: missingSha };
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Painters
+     ───────────────────────────────────────────────────────────────────── */
+  function paintAllBars(s) {
+    paintIntegrity(s);
+    paintDocs(s);
+    paintAssessment(s);
+    paintRisk(s);
+    paintCharts(s);
+    paintReports(s);
+  }
+
+  function paintIntegrity(s) {
+    const sum = document.getElementById('integrity-summary');
+    const body = document.getElementById('integrity-body');
+    const i = s.integrity || {};
+    const chip = i.ok
+      ? '<span class="stat-chip ok">✅ cross-bar integrity OK</span>'
+      : `<span class="stat-chip bad">⚠️ ${i.issues.length} issue(s)</span>`;
+    sum.innerHTML = chip +
+      ` <span class="stat-chip muted">${i.docs_total || 0} docs</span>` +
+      ` <span class="stat-chip muted">${i.facts_total || 0} facts</span>` +
+      ` <span class="stat-chip muted">SHA-256 dedup</span>`;
+    const provDocs = ((s.profile || {}).data_integrity || {}).documents || [];
+    body.innerHTML = `
+      <div class="result-grid">
+        <div class="result-card">
+          <h4>Cross-bar checks</h4>
+          ${i.ok
+            ? '<div class="stat-chip ok">All bars agree on counts &amp; provenance.</div>'
+            : '<ul style="margin:0 0 0 1rem;color:#b71c1c;">' + i.issues.map(x => `<li>${escHtml(x)}</li>`).join('') + '</ul>'}
+          <div style="margin-top:0.5rem; font-size:0.82rem; color:#546e7a;">
+            Documents on file: <strong>${i.docs_total || 0}</strong> ·
+            Profile facts: <strong>${i.facts_total || 0}</strong> ·
+            Sum of per-doc facts: <strong>${i.sum_doc_facts || 0}</strong> ·
+            Missing SHA: <strong>${i.missing_sha || 0}</strong>
+          </div>
+        </div>
+        <div class="result-card">
+          <h4>Provenance (latest 8)</h4>
+          ${provDocs.length === 0
+            ? '<div class="empty">No provenance yet.</div>'
+            : '<div class="provenance-list">' + provDocs.slice(0, 8).map(d => `
+                <div class="pv-item">
+                  <span style="flex:1;color:#1a237e;font-weight:600;">${escHtml(d.name || d.id || '?')}</span>
+                  <span class="stat-chip muted">${escHtml(d.document_type || d.category || 'general')}</span>
+                  <span class="pv-sha" title="SHA-256">${escHtml(String(d.sha256 || '').slice(0, 12))}…</span>
+                </div>`).join('') + '</div>'}
+        </div>
+      </div>`;
+  }
+
+  function paintDocs(s) {
+    const docs = (s.documents && s.documents.items) || [];
+    const sum = document.getElementById('docs-summary');
+    const body = document.getElementById('docs-body');
+    const withFacts = docs.filter(d => Number(d.facts_extracted || 0) > 0).length;
+    const justUploaded = (s.uploaded_now && s.uploaded_now.docs) || 0;
+    sum.innerHTML = `
+      <span class="stat-chip primary">${docs.length} on file</span>
+      <span class="stat-chip ok">${withFacts} with extracted facts</span>
+      ${justUploaded > 0 ? `<span class="stat-chip purple">+${justUploaded} just uploaded</span>` : ''}
+      ${(s.uploaded_now && s.uploaded_now.errors && s.uploaded_now.errors.length)
+        ? `<span class="stat-chip bad">${s.uploaded_now.errors.length} upload error(s)</span>` : ''}
+    `;
+    const byType = {};
+    docs.forEach(d => {
+      const t = d.document_type || d.category || 'general';
+      byType[t] = (byType[t] || 0) + 1;
+    });
+    const max = Math.max(1, ...Object.values(byType));
+    const bars = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `
+      <div class="bar-row docs-bar">
+        <div class="label">${escHtml(t)}</div>
+        <div class="bar"><span style="width:${(n / max * 100).toFixed(1)}%"></span></div>
+        <div class="value">${n}</div>
+      </div>`).join('');
+    const top = docs.slice(0, 8).map(d => `
+      <div class="doc-strip-item">
+        <span class="nm">${escHtml(d.name || d.id || '?')}</span>
+        <span class="stat-chip muted">${escHtml(d.document_type || d.category || 'general')}</span>
+        <span class="stat-chip ${(d.facts_extracted || 0) > 0 ? 'ok' : 'muted'}">${d.facts_extracted || 0} facts</span>
+        <span class="mini">${escHtml(String(d.sha256 || '').slice(0, 10))}…</span>
+      </div>`).join('') || '<div class="empty">No documents on file.</div>';
+    const uploadErrBlock = (s.uploaded_now && s.uploaded_now.errors && s.uploaded_now.errors.length)
+      ? `<div class="result-card" style="border-color:#ffcdd2;background:#fff5f5;">
+           <h4 style="color:#b71c1c;">Upload errors</h4>
+           <ul style="margin:0 0 0 1rem;color:#b71c1c;font-size:0.85rem;">
+             ${s.uploaded_now.errors.map(e => `<li>${escHtml(e)}</li>`).join('')}
+           </ul>
+         </div>`
+      : '';
+    body.innerHTML = `
+      <div class="result-grid">
+        <div class="result-card">
+          <h4>By document type</h4>
+          ${bars || '<div class="empty">No documents to chart.</div>'}
+        </div>
+        <div class="result-card">
+          <h4>Most recent on file</h4>
+          <div class="doc-strip">${top}</div>
+        </div>
+      </div>
+      ${uploadErrBlock}`;
+  }
+
+  function paintAssessment(s) {
+    const sum = document.getElementById('assessment-summary');
+    const body = document.getElementById('assessment-body');
+    const prof = s.profile || {};
+    const facts = prof.fact_count || 0;
+    const cats = ((s.analysis && s.analysis.description && s.analysis.description.sections) || []).length;
+    sum.innerHTML = `
+      <span class="stat-chip primary">${facts} facts</span>
+      <span class="stat-chip ok">${cats} categories</span>
+      ${prof.last_updated ? `<span class="stat-chip muted">updated ${escHtml(fmtDate(prof.last_updated))}</span>` : ''}
+    `;
+    const sections = (s.analysis && s.analysis.description && s.analysis.description.sections) || [];
+    if (sections.length === 0) {
+      body.innerHTML = `<div class="empty">No category breakdown available — pick depth <em>Describe data</em> or run the full pipeline.</div>`;
+      return;
+    }
+    const maxFacts = Math.max(1, ...sections.map(x => x.fact_count || 0));
+    const bars = sections.map(sec => `
+      <div class="bar-row assess-bar">
+        <div class="label">${escHtml(sec.category)}</div>
+        <div class="bar"><span style="width:${((sec.fact_count || 0) / maxFacts * 100).toFixed(1)}%"></span></div>
+        <div class="value">${sec.fact_count || 0}</div>
+      </div>`).join('');
+    body.innerHTML = `<div class="result-card"><h4>Facts per category</h4>${bars}</div>`;
+  }
+
+  function paintRisk(s) {
+    const sum = document.getElementById('risk-summary');
+    const body = document.getElementById('risk-body');
+    const r = s.risk || {};
+    const lvl = (r.risk_level || 'minimal').toLowerCase();
+    const score = ((r.risk_score || 0) * 100).toFixed(0);
+    const lvlClass = lvl === 'very_high' ? 'bad'
+                   : (lvl === 'high' ? 'bad' : (lvl === 'medium' ? 'warn' : 'ok'));
+    sum.innerHTML = `
+      <span class="stat-chip ${lvlClass}">${score}% · ${escHtml(lvl)}</span>
+      <span class="stat-chip muted">${(r.contributors || []).length} contributor(s)</span>
+    `;
+    const contribs = (r.contributors || []).slice().sort((a, b) => (b.weight || 0) - (a.weight || 0));
+    const max = Math.max(0.01, ...contribs.map(c => c.weight || 0));
+    const bars = contribs.length === 0
+      ? '<div class="empty">No risk contributors yet.</div>'
+      : contribs.map(c => `
+          <div class="bar-row risk-${escHtml(lvl)}">
+            <div class="label"><span class="stat-chip muted">${escHtml(c.factor || '')}</span> ${escHtml(c.value || '')}</div>
+            <div class="bar"><span style="width:${((c.weight || 0) / max * 100).toFixed(1)}%"></span></div>
+            <div class="value">+${(c.weight || 0).toFixed(2)}</div>
+          </div>`).join('');
+    body.innerHTML = `<div class="result-card"><h4>Risk contributors</h4>${bars}</div>`;
+  }
+
+  function paintCharts(s) {
+    const sum = document.getElementById('charts-summary');
+    const body = document.getElementById('charts-body');
+    const c = s.charts || {};
+    const totals = c.totals || {};
+    sum.innerHTML = `
+      <span class="stat-chip primary">${totals.external_records || 0} external rows</span>
+      <span class="stat-chip muted">${Object.keys((c.charts || {})).length} chart series</span>
+    `;
+    const series = (c.charts || {});
+    const cards = Object.entries(series).map(([key, list]) => {
+      const items = Array.isArray(list) ? list : [];
+      if (items.length === 0) return `<div class="result-card"><h4>${escHtml(key)}</h4><div class="empty">no data</div></div>`;
+      const max = Math.max(0.01, ...items.map(it => Number(it.value || 0)));
+      const bars = items.slice(0, 10).map(it => `
+        <div class="bar-row charts-bar">
+          <div class="label">${escHtml(it.label || '')}</div>
+          <div class="bar"><span style="width:${(Number(it.value || 0) / max * 100).toFixed(1)}%"></span></div>
+          <div class="value">${typeof it.value === 'number' ? it.value.toLocaleString() : escHtml(it.value)}</div>
+        </div>`).join('');
+      return `<div class="result-card"><h4>${escHtml(key.replace(/_/g, ' '))}</h4>${bars}</div>`;
+    }).join('');
+    body.innerHTML = `<div class="result-grid">${cards || '<div class="empty">No chart data yet.</div>'}</div>`;
+  }
+
+  function paintReports(s) {
+    const sum = document.getElementById('reports-summary');
+    const body = document.getElementById('reports-body');
+    const reports = (s.reports || []);
+    sum.innerHTML = `
+      <span class="stat-chip purple">${reports.length} report(s)</span>
+      ${reports[0] ? `<span class="stat-chip muted">latest ${escHtml(fmtDate(reports[0].generated_at || reports[0].created_at))}</span>` : ''}
+    `;
+    if (reports.length === 0) {
+      body.innerHTML = `<div class="empty">No reports yet for this customer.</div>`;
+      return;
+    }
+    const rows = reports.slice(0, 10).map(r => `
+      <tr>
+        <td><strong>${escHtml(r.title || r.report_type || r.id || 'report')}</strong></td>
+        <td><span class="stat-chip muted">${escHtml(r.report_type || r.type || 'general')}</span></td>
+        <td>${escHtml(r.language || '—')}</td>
+        <td>${escHtml(fmtDate(r.generated_at || r.created_at))}</td>
+      </tr>`).join('');
+    body.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table class="reports-table">
+          <thead><tr><th>Title</th><th>Type</th><th>Lang</th><th>Generated</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:0.5rem;">
+        <a class="ghost-link" href="/risk-reports-dashboard.html">↗ Open full reports library</a>
+      </div>`;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Bar collapse toggling
+     ───────────────────────────────────────────────────────────────────── */
+  function toggleBar(id) {
+    document.getElementById(id).classList.toggle('collapsed');
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────
+     Initial paint (auto-refresh on load so the user sees something
+     immediately even without clicking the unified button)
+     ───────────────────────────────────────────────────────────────────── */
+  async function refreshAllBars() {
+    const cid = resolveCustomer();
+    if (!cid) return;
+    CURRENT_CUSTOMER = cid;
+    const [profileRes, riskRes, chartsRes, docsRes, reportsRes] = await Promise.allSettled([
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/profile`),
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/risk-indicators`),
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/charts`),
+      api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/documents`),
+      api('/api/reports/list'),
+    ]);
+    const snapshot = {
+      customer_id: cid,
+      uploaded_now: { docs: 0, facts: 0, errors: [] },
+      profile:   await safeJson(profileRes),
+      risk:      await safeJson(riskRes),
+      charts:    await safeJson(chartsRes),
+      documents: await safeJson(docsRes),
+      reports:   ((await safeJson(reportsRes)) || {}).reports || [],
+      analysis:  null,
+    };
+    snapshot.integrity = computeIntegrity(snapshot);
+    LAST_SNAPSHOT = snapshot;
+    paintAllBars(snapshot);
+  }
+
+  (async function init() {
+    await ensureServerSession();
+    renderContextLine();
+    if (actingAsAdmin()) {
+      await loadAdminCustomerList();
+      document.getElementById('customer-override').addEventListener('change', () => {
+        CURRENT_CUSTOMER = document.getElementById('customer-override').value.trim();
+        refreshAllBars();
+      });
+    }
+    await refreshAllBars();
+  })();
+</script>
+
+<script src="/ui-clarity.js"></script>
+</body>
+</html>

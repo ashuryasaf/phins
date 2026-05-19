@@ -496,11 +496,8 @@
         <a href="/dashboard.html#claims">Claims</a>
         <a href="/dashboard.html#referrals">🎁 Referrals</a>
         <a href="/foundation-dashboard.html">🤝 Community</a>
-        <a href="/assessment-center.html">🧠 Assessment Center</a>
-        <a href="/risk-dashboard.html">🎯 Assessment</a>
-        <a href="/risk-reports-dashboard.html">📊 Reports</a>
+        <a href="/unified-workbench.html">⚡ Unified Workbench</a>
         <a href="/customer-ai-report.html">🤖 AI Report</a>
-        <a href="/documents.html">📁 Documents</a>
         <div class="nav-divider"></div>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
           <option value="en">🌐 EN</option>
@@ -800,26 +797,17 @@
         <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Invite • Share • Earn</div>
       </a>
       
-      <!-- AI Reports & Risk Analysis Button -->
-      <a href="/risk-reports-dashboard.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(13, 71, 161, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(13, 71, 161, 0.25)';">
+      <!-- Unified Workbench (one card replacing Reports + Documents + Assessment + Risk) -->
+      <a href="/unified-workbench.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 60%, #ff8f00 100%); color: white; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25); transition: transform 0.2s, box-shadow 0.2s; grid-column: span 2;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(13, 71, 161, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(13, 71, 161, 0.25)';">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">📊</div>
-          <span id="reports-count-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">AI</span>
+          <div class="stat-icon" style="font-size: 36px;">⚡</div>
+          <span id="reports-count-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;" title="One screen, one button — Documents · Assessment · Risk · Reports">UNIFIED</span>
         </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">AI Reports</div>
-        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);" id="action-reports-count">Upload & Analyze</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Risk • Insurance • Investment</div>
-      </a>
-
-      <!-- Assessment Center quick action -->
-      <a href="/assessment-center.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; box-shadow: 0 8px 30px rgba(46, 125, 50, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(46, 125, 50, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(46, 125, 50, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">🧠</div>
-          <span id="assessment-count-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">360°</span>
-        </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Assessment Center</div>
-        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);" id="assessment-action-summary">Customer 360 from uploads</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Identity • Medical • Risk • Mislaka</div>
+        <div style="font-size: 22px; font-weight: 700; margin-top: 12px;">Unified Workbench</div>
+        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.95);" id="action-reports-count">Documents · Assessment · Risk · BI · Reports</div>
+        <div style="color: rgba(255,255,255,0.9); font-size: 13px;">One button drives every bar · SHA-256 verified data integrity</div>
+        <span id="assessment-count-badge" style="display:none;"></span>
+        <span id="assessment-action-summary" style="display:none;"></span>
       </a>
 
     </div>
