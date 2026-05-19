@@ -70,6 +70,31 @@
     .master-control .controls-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
     .master-control .controls-row label { font-size: 0.78rem; opacity: 0.85; }
 
+    /* Admin customer picker (search box + scrollable select + override) */
+    .customer-picker { margin-top: 12px; background: rgba(255,255,255,0.10); border-radius: 12px; padding: 10px 12px; }
+    .customer-picker-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .customer-picker-row input[type="text"] { flex: 1; min-width: 240px; }
+    .customer-picker .stat-chip { background: rgba(255,255,255,0.18); color: white; }
+    .customer-picker select#customer-select {
+      width: 100%; min-width: 0;
+      background: rgba(255,255,255,0.98); color: #1a237e;
+      border: none; border-radius: 8px; padding: 6px 10px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.9rem;
+    }
+    .customer-picker select#customer-select[size]:not([size="1"]) { padding: 4px; }
+    .customer-picker select#customer-select option { padding: 4px 6px; }
+    .customer-picker input#customer-override { width: 100%; margin-top: 8px; }
+    .picker-btn {
+      background: rgba(255,255,255,0.20); color: white; border: none;
+      width: 36px; height: 36px; border-radius: 8px; font-size: 1rem;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .picker-btn:hover:not(:disabled) { background: rgba(255,255,255,0.35); }
+    .picker-btn:disabled { opacity: 0.55; cursor: progress; }
+    .picker-btn.spin { animation: pickerSpin 0.8s linear infinite; }
+    @keyframes pickerSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
     .btn-unified {
       background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);
       color: #1a237e;
@@ -231,11 +256,32 @@
       <div class="title">🎯 Target &amp; queue</div>
       <div class="subtitle" id="ctx-line">Loading session…</div>
 
+      <!-- Admin customer search / picker ─────────────────────────────
+           Hidden for non-admins so customers only ever see their own
+           account context. Admins get:
+             • a live search box (filters by ID, name, email, risk level)
+             • a dropdown of matches with fact counts and risk score
+             • a reload button that bypasses the cached customer list
+             • a free-text override for IDs that aren't in the list yet
+                (e.g. fresh signups that haven't been bridged yet) -->
+      <div class="customer-picker" id="customer-picker" style="display:none;">
+        <div class="customer-picker-row">
+          <input type="text" id="customer-search"
+                 placeholder="🔎 Search customers (id, name, email, risk)…"
+                 autocomplete="off"
+                 oninput="filterCustomerList()"
+                 onkeydown="onCustomerSearchKey(event)">
+          <span class="stat-chip muted" id="customer-count" title="filtered / loaded">—</span>
+          <button class="picker-btn" id="customer-reload-btn"
+                  type="button" onclick="loadAdminCustomerList(true)"
+                  title="Re-fetch customer list from /api/assessment-center/customers">↻</button>
+        </div>
+        <select id="customer-select" title="Customer" size="1"></select>
+        <input type="text" id="customer-override"
+               placeholder="…or paste any customer_id (override)">
+      </div>
+
       <div class="controls-row">
-        <select id="customer-select" title="Customer" style="display:none;">
-          <option value="">— loading customers —</option>
-        </select>
-        <input type="text" id="customer-override" placeholder="Override customer_id (admin only)" style="display:none; min-width: 260px;">
         <select id="analysis-type" title="Pipeline depth">
           <option value="full" selected>🚀 Full pipeline (360 + risk + BI + report)</option>
           <option value="customer_360">👤 Customer 360 only</option>
@@ -469,29 +515,192 @@
     return '';
   }
 
-  async function loadAdminCustomerList() {
+  /* ─────────────────────────────────────────────────────────────────────
+     Admin customer picker
+     The picker is a server-side search:
+       1. /api/assessment-center/customers      → id, facts, risk
+       2. /api/admin/customers-for-documents    → id, name, email  (enrichment)
+     The two lists are merged into ADMIN_CUSTOMERS so the search box can
+     match on id, name, email, risk level, or fact count. Filtering runs
+     entirely in-memory so typing feels instant.
+     ───────────────────────────────────────────────────────────────────── */
+  let ADMIN_CUSTOMERS = [];       // merged list (one entry per customer)
+  let ADMIN_CUSTOMERS_LOADED_AT = 0;
+  let ADMIN_CUSTOMER_LIST_LISTENER_BOUND = false;
+
+  function _normCust(c) {
+    const id = String(c.customer_id || c.id || '').trim();
+    if (!id) return null;
+    return {
+      id,
+      name: String(c.name || '').trim(),
+      email: String(c.email || '').trim(),
+      fact_count: Number(c.fact_count || 0),
+      document_count: Number(c.document_count || 0),
+      risk_score: Number(c.risk_score || 0),
+      risk_level: String(c.risk_level || '').toLowerCase(),
+      latest_capture: String(c.latest_capture || ''),
+    };
+  }
+
+  async function loadAdminCustomerList(force) {
     if (!actingAsAdmin()) return;
+    const picker = document.getElementById('customer-picker');
     const sel = document.getElementById('customer-select');
-    const override = document.getElementById('customer-override');
-    sel.style.display = '';
-    override.style.display = '';
+    const reloadBtn = document.getElementById('customer-reload-btn');
+    const search = document.getElementById('customer-search');
+    picker.style.display = '';
+
+    // Avoid hammering the API: re-use the cached list unless the caller
+    // explicitly asked to bypass the cache (↻ button), or the cache is
+    // older than 60 s.
+    const fresh = ADMIN_CUSTOMERS.length && (Date.now() - ADMIN_CUSTOMERS_LOADED_AT < 60_000);
+    if (!force && fresh) { paintCustomerList(); return; }
+
+    reloadBtn.disabled = true;
+    reloadBtn.classList.add('spin');
+    sel.innerHTML = '<option value="">— loading customers —</option>';
+    sel.size = 1;
+
+    const merged = {};
+    let assessmentOk = false;
+    let adminOk = false;
+
     try {
       const r = await api('/api/assessment-center/customers');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const json = await r.json();
-      const items = json.items || [];
-      if (items.length === 0) {
-        sel.innerHTML = '<option value="">— no customers with facts yet —</option>';
-      } else {
-        sel.innerHTML = items.map(it => {
-          const score = ((it.risk_score || 0) * 100).toFixed(0);
-          return `<option value="${escHtml(it.customer_id)}">${escHtml(it.customer_id)} · ${it.fact_count} facts · risk ${score}%</option>`;
-        }).join('');
+      if (r.ok) {
+        const json = await r.json();
+        (json.items || []).forEach(raw => {
+          const c = _normCust(raw);
+          if (c && c.id !== '__truncated__') merged[c.id] = c;
+        });
+        assessmentOk = true;
       }
-    } catch (_) {
-      sel.innerHTML = '<option value="">— failed to load customers —</option>';
+    } catch (_) { /* fall through to enrichment */ }
+
+    try {
+      const r2 = await api('/api/admin/customers-for-documents');
+      if (r2.ok) {
+        const json = await r2.json();
+        (json.customers || []).forEach(raw => {
+          const c = _normCust(raw);
+          if (!c) return;
+          if (merged[c.id]) {
+            if (c.name)  merged[c.id].name  = merged[c.id].name  || c.name;
+            if (c.email) merged[c.id].email = merged[c.id].email || c.email;
+          } else {
+            merged[c.id] = c;
+          }
+        });
+        adminOk = true;
+      }
+    } catch (_) { /* enrichment is best-effort */ }
+
+    ADMIN_CUSTOMERS = Object.values(merged).sort((a, b) => {
+      // Newest assessed first, then customers without facts alphabetically.
+      if (a.latest_capture && b.latest_capture) return a.latest_capture < b.latest_capture ? 1 : -1;
+      if (a.latest_capture) return -1;
+      if (b.latest_capture) return 1;
+      return (a.name || a.id).localeCompare(b.name || b.id);
+    });
+    ADMIN_CUSTOMERS_LOADED_AT = Date.now();
+
+    if (ADMIN_CUSTOMERS.length === 0) {
+      sel.innerHTML = '<option value="">— no customers available —</option>';
+      document.getElementById('customer-count').textContent = '0';
+      reloadBtn.disabled = false;
+      reloadBtn.classList.remove('spin');
+      if (!assessmentOk && !adminOk) {
+        sel.innerHTML = '<option value="">— failed to load customers (check session) —</option>';
+      }
+      return;
     }
-    sel.addEventListener('change', () => { CURRENT_CUSTOMER = sel.value; refreshAllBars(); });
+
+    paintCustomerList();
+    reloadBtn.disabled = false;
+    reloadBtn.classList.remove('spin');
+
+    if (!ADMIN_CUSTOMER_LIST_LISTENER_BOUND) {
+      sel.addEventListener('change', () => {
+        CURRENT_CUSTOMER = sel.value;
+        document.getElementById('customer-override').value = '';
+        if (CURRENT_CUSTOMER) refreshAllBars();
+      });
+      sel.addEventListener('dblclick', () => { if (sel.value) runUnified(); });
+      search.addEventListener('focus', () => { sel.size = Math.min(8, ADMIN_CUSTOMERS.length + 1); });
+      search.addEventListener('blur', () => { setTimeout(() => { sel.size = 1; }, 200); });
+      ADMIN_CUSTOMER_LIST_LISTENER_BOUND = true;
+    }
+  }
+
+  function filterCustomerList() { paintCustomerList(); }
+
+  function paintCustomerList() {
+    const sel = document.getElementById('customer-select');
+    const search = document.getElementById('customer-search');
+    const countEl = document.getElementById('customer-count');
+    const q = (search.value || '').trim().toLowerCase();
+    const filtered = !q ? ADMIN_CUSTOMERS : ADMIN_CUSTOMERS.filter(c => {
+      const hay = [
+        c.id, c.name, c.email, c.risk_level,
+        (c.risk_score ? (c.risk_score * 100).toFixed(0) + '%' : ''),
+        (c.fact_count + ' facts'),
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+
+    countEl.textContent = q
+      ? `${filtered.length} / ${ADMIN_CUSTOMERS.length}`
+      : `${ADMIN_CUSTOMERS.length}`;
+    countEl.title = q
+      ? `${filtered.length} customer(s) match "${q}" out of ${ADMIN_CUSTOMERS.length} loaded`
+      : `${ADMIN_CUSTOMERS.length} customer(s) loaded`;
+
+    if (filtered.length === 0) {
+      sel.innerHTML = `<option value="">— no match for "${escHtml(q)}" —</option>`;
+      return;
+    }
+    const preserve = CURRENT_CUSTOMER || sel.value || '';
+    sel.innerHTML = filtered.map(c => {
+      const score = (c.risk_score * 100).toFixed(0);
+      const labelBits = [];
+      labelBits.push(c.name ? `${c.name} (${c.id})` : c.id);
+      if (c.fact_count)         labelBits.push(`${c.fact_count} facts`);
+      if (c.document_count)     labelBits.push(`${c.document_count} docs`);
+      if (c.risk_level)         labelBits.push(`risk ${score}% (${c.risk_level})`);
+      if (c.email)              labelBits.push(c.email);
+      return `<option value="${escHtml(c.id)}">${escHtml(labelBits.join(' · '))}</option>`;
+    }).join('');
+    // Keep the previously-selected customer highlighted if it's still in
+    // the filtered set; otherwise select the first match so a single
+    // Enter press / button click immediately works.
+    if (preserve && [...sel.options].some(o => o.value === preserve)) {
+      sel.value = preserve;
+    } else {
+      sel.selectedIndex = 0;
+    }
+  }
+
+  function onCustomerSearchKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const sel = document.getElementById('customer-select');
+      if (sel.value) {
+        CURRENT_CUSTOMER = sel.value;
+        document.getElementById('customer-override').value = '';
+        refreshAllBars();
+      }
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const sel = document.getElementById('customer-select');
+      if (sel.options.length > 0) {
+        e.preventDefault();
+        const dir = e.key === 'ArrowDown' ? 1 : -1;
+        sel.selectedIndex = Math.max(0, Math.min(sel.options.length - 1, sel.selectedIndex + dir));
+      }
+    } else if (e.key === 'Escape') {
+      e.target.value = '';
+      paintCustomerList();
+    }
   }
 
   function renderContextLine() {
