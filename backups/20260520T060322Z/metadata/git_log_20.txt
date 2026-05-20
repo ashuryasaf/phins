@@ -1,0 +1,20 @@
+816312f Fix Kling submit HTTP 400: send 'pro'/'std' mode per official Kling API
+4025fec Merge pull request #335 from ashuryasaf/cursor/optimise-kling-video-queue-1ad0
+e106071 Fix evolink model-name detection in fallback status URL and remove dead spacing variable
+103a94f Fix evolink model-name detection in fallback status URL and remove dead spacing variable
+bec5308 feat(workbench): admin customer search & load in Target & queue
+54af291 Fix evolink model-name detection in fallback status URL and remove dead spacing variable
+f1f220a Optimize Kling video generation: serial submission queue + EvoLink v3 profile
+333a28c Merge pull request #332 from ashuryasaf/cursor/unify-media-video-marketing-dashboards-d182
+64b08bb Merge pull request #333 from ashuryasaf/cursor/unified-workbench-dashboard-3eb9
+0fe8e20 Merge pull request #334 from ashuryasaf/cursor/fix-trading-terminal-insufficient-bars-5043
+f7d535a Fix trading terminal ANALYZE: 'Insufficient market history (1 bar)' for NVDA
+223bf5e Fix embed links nesting media dashboard inside iframe
+7c34d7a Fix client synthetic customer ID whitespace mismatch and false-positive integrity drift
+d6e7234 Remove three redundant analysis API calls from full pipeline in unified workbench
+659a5de Fix embed links nesting media dashboard inside iframe
+0c14396 Fix provenance display, integrity doc-count check, and remove dead IS_ADMIN constant
+8b19334 Fix embed links nesting media dashboard inside iframe
+e9683cb Fix embed mode flash: use html[data-embed] selector for immediate CSS hiding
+b9f50d4 Merge pull request #331 from ashuryasaf/cursor/fix-trading-terminal-analyze-data-fallback-5043
+441bfea Fix iframe reload: clear src before reassigning to force navigation
