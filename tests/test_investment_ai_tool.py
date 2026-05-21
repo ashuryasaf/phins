@@ -11,13 +11,42 @@ Tests cover:
 import importlib
 import json
 import os
+import re
 import sys
+from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def test_server_startup_log_does_not_print_raw_investment_ai_key():
+    """The web_portal boot path used to emit ``Investment AI Access Key: <KEY>``
+    in plain text, which Railway captures verbatim in its log stream. Anyone
+    with deployment log access could then authenticate against the
+    Investment AI APIs.
+
+    Lock in the masked-fingerprint form so a future refactor cannot
+    silently regress this back to leaking the raw key value.
+    """
+    server_path = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+    source = server_path.read_text(encoding="utf-8")
+
+    # The exact regressed form: an f-string that prints the raw key.
+    assert 'f"  Investment AI Access Key: {_ai_key}"' not in source
+    assert "f'  Investment AI Access Key: {_ai_key}'" not in source
+
+    # The masked form must still be present.
+    masked_pattern = re.compile(
+        r"Investment AI Access Key:\s+configured.*fingerprint=sha256",
+        re.DOTALL,
+    )
+    assert masked_pattern.search(source), (
+        "Expected the masked 'Investment AI Access Key: configured "
+        "(... fingerprint=sha256:...)' log line in web_portal/server.py"
+    )
 
 from services.investment_ai_tool_service import (
     analyze_market_trends,
