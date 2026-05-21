@@ -201,7 +201,10 @@ def main() -> int:
             repaired.append(normalized)
             previous_hash = new_hash
 
-        post = reconcile_ledger_entries(repaired)
+        post = reconcile_ledger_entries([
+            {k: v for k, v in entry.items() if not k.startswith("original_")}
+            for entry in repaired
+        ])
         if not post["chain_valid"]:
             print(
                 "ERROR: recomputed chain still reports "
