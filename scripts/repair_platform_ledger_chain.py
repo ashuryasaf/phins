@@ -189,11 +189,15 @@ def main() -> int:
         repaired: List[Dict[str, Any]] = []
         for sequence_no, entry in enumerate(sorted_entries, start=1):
             normalized = normalize_ledger_entry(entry)
+            original_sequence_no = normalized.get("sequence_no")
+            original_entry_hash = normalized.get("entry_hash")
             normalized["sequence_no"] = sequence_no
             normalized["previous_hash"] = previous_hash
             normalized["ledger_version"] = LEDGER_VERSION
             new_hash = compute_entry_hash(normalized, previous_hash)
             normalized["entry_hash"] = new_hash
+            normalized["original_sequence_no"] = original_sequence_no
+            normalized["original_entry_hash"] = original_entry_hash
             repaired.append(normalized)
             previous_hash = new_hash
 
@@ -208,7 +212,7 @@ def main() -> int:
         print(
             f"Recomputed chain would re-sequence "
             f"{sum(1 for r in repaired if r['sequence_no'] != r.get('original_sequence_no', r['sequence_no']))} "
-            f"rows and update {len([r for r in repaired if r.get('entry_hash')])} hashes."
+            f"rows and update {sum(1 for r in repaired if r['entry_hash'] != r.get('original_entry_hash'))} hashes."
         )
 
         if not args.apply:
@@ -224,7 +228,8 @@ def main() -> int:
             row.previous_hash = entry["previous_hash"]
             row.entry_hash = entry["entry_hash"]
             # Refresh the payload column so it matches the new chain state.
-            row.payload = json.dumps(entry, sort_keys=True, default=str)
+            persist = {k: v for k, v in entry.items() if not k.startswith("original_")}
+            row.payload = json.dumps(persist, sort_keys=True, default=str)
 
         try:
             db.commit()
