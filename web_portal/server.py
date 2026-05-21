@@ -46217,6 +46217,65 @@ For claims or questions, please contact:
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
 
 
+def _repair_hydrated_ledger_chain(*, verbose: bool = True) -> None:
+    """Post-hydration in-memory chain repair shared by all boot paths.
+
+    Parameters
+    ----------
+    verbose : bool
+        When *True* (long-running server), emit detailed pre-repair
+        diagnostics and mark persistence dirty on success.  One-shot
+        commands pass *False* for terser output.
+    """
+    try:
+        from services.platform_event_ledger_service import (
+            reconcile_ledger_entries,
+        )
+        pre = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
+        if not pre.get('chain_valid'):
+            if verbose:
+                broken = len(pre.get('broken_links', []))
+                gaps = len(pre.get('sequence_gaps', []))
+                dupes = len(pre.get('duplicate_ids', []))
+                missing = len(pre.get('missing_hash_ids', []))
+                print(
+                    f"   ⚠️  Hydrated ledger chain is divergent "
+                    f"({broken} broken links, {gaps} sequence gaps, "
+                    f"{dupes} duplicates, {missing} missing-hash rows)"
+                )
+            repair_summary = platform_event_ledger.ensure_hash_chain()
+            repaired = repair_summary.get('repaired_entries', 0)
+            post = reconcile_ledger_entries(
+                TRANSACTION_LEDGER.values()
+            )
+            if post.get('chain_valid'):
+                if verbose:
+                    print(
+                        f"   ✓ Repaired in-memory ledger chain "
+                        f"({repaired} entries re-sequenced); "
+                        f"DB rows retained as forensic history"
+                    )
+                    try:
+                        mark_ledger_dirty()
+                    except Exception:
+                        pass
+                else:
+                    print(
+                        "   ✓ Repaired in-memory ledger chain "
+                        "for one-shot command run"
+                    )
+            else:
+                print(
+                    f"   ⚠️  Post-repair ledger chain still "
+                    f"reports {len(post.get('broken_links', []))} "
+                    f"broken links — operator review required"
+                )
+    except Exception as _repair_exc:
+        print(
+            f"   ⚠️  Ledger chain repair skipped: {_repair_exc}"
+        )
+
+
 def run_server(port: int = PORT) -> None:
     # Audit security-critical secrets early so operators see misconfiguration
     # immediately and don't first learn about it via a failed login.
@@ -46280,59 +46339,11 @@ def run_server(port: int = PORT) -> None:
                 print(f"📒 Hydrated {hydrated} ledger entries from database "
                       f"(prevents sequence/hash divergence after restart)")
 
-                # Forensic check: if the hydrated rows themselves carry a
-                # broken chain (e.g. accumulated drift from older deployments
-                # that wrote entries before hydrate_from_db existed), repair
-                # the in-memory chain so the startup integrity validator
-                # stops flagging it on every boot and so future
-                # append_event() calls chain off a valid previous_hash.
-                #
-                # The DB rows are deliberately NOT mutated — they remain the
+                # Repair in-memory chain if hydrated rows carry drift.
+                # DB rows are deliberately NOT mutated — they remain the
                 # immutable historical record and can be reconciled offline
                 # via scripts/repair_platform_ledger_chain.py (operator-run).
-                try:
-                    from services.platform_event_ledger_service import (
-                        reconcile_ledger_entries,
-                    )
-                    pre = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
-                    if not pre.get('chain_valid'):
-                        broken = len(pre.get('broken_links', []))
-                        gaps = len(pre.get('sequence_gaps', []))
-                        dupes = len(pre.get('duplicate_ids', []))
-                        missing = len(pre.get('missing_hash_ids', []))
-                        print(
-                            f"   ⚠️  Hydrated ledger chain is divergent "
-                            f"({broken} broken links, {gaps} sequence gaps, "
-                            f"{dupes} duplicates, {missing} missing-hash rows)"
-                        )
-                        repair_summary = platform_event_ledger.ensure_hash_chain()
-                        repaired = repair_summary.get('repaired_entries', 0)
-                        post = reconcile_ledger_entries(
-                            TRANSACTION_LEDGER.values()
-                        )
-                        if post.get('chain_valid'):
-                            print(
-                                f"   ✓ Repaired in-memory ledger chain "
-                                f"({repaired} entries re-sequenced); "
-                                f"DB rows retained as forensic history"
-                            )
-                            # Snapshot the repaired state on the next periodic
-                            # save so a subsequent restart with a mounted
-                            # persistence volume can short-circuit hydration.
-                            try:
-                                mark_ledger_dirty()
-                            except Exception:
-                                pass
-                        else:
-                            print(
-                                f"   ⚠️  Post-repair ledger chain still "
-                                f"reports {len(post.get('broken_links', []))} "
-                                f"broken links — operator review required"
-                            )
-                except Exception as _repair_exc:
-                    print(
-                        f"   ⚠️  Ledger chain repair skipped: {_repair_exc}"
-                    )
+                _repair_hydrated_ledger_chain(verbose=True)
         except Exception as _hyd_exc:
             print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
 
@@ -47833,27 +47844,7 @@ def bootstrap_runtime_state_for_command() -> None:
             hydrated = platform_event_ledger.hydrate_from_db()
             if hydrated:
                 print(f"📒 Hydrated {hydrated} ledger entries from database")
-                # Same post-hydration repair logic as the long-running server
-                # boot path; see run_server() for the full rationale.
-                try:
-                    from services.platform_event_ledger_service import (
-                        reconcile_ledger_entries,
-                    )
-                    pre = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
-                    if not pre.get('chain_valid'):
-                        platform_event_ledger.ensure_hash_chain()
-                        post = reconcile_ledger_entries(
-                            TRANSACTION_LEDGER.values()
-                        )
-                        if post.get('chain_valid'):
-                            print(
-                                "   ✓ Repaired in-memory ledger chain "
-                                "for one-shot command run"
-                            )
-                except Exception as _repair_exc:
-                    print(
-                        f"   ⚠️  Ledger chain repair skipped: {_repair_exc}"
-                    )
+                _repair_hydrated_ledger_chain(verbose=False)
         except Exception as _hyd_exc:
             print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
 
