@@ -356,6 +356,172 @@ def test_ai_copilot_analyze_uses_atr_for_trade_levels(monkeypatch):
     assert result["trade_suggestion"]["stop_loss"] == 95.0
     assert result["trade_suggestion"]["take_profit"] == 107.5
     assert result["data_source"] == "alpaca_live"
+    assert result["last_close"] == 100.0
+    assert result["price"] == 100.0
+
+
+def test_ai_copilot_analyze_prefers_live_trade_over_stale_daily_close(monkeypatch):
+    """The displayed price must reflect the latest live trade, not the
+    previous daily bar's close. This regression covers the QBTS report
+    where ANALYZE showed yesterday's $21 close while the symbol was
+    actively trading near $31."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    import services.ai_trading_engine as ai_trading_engine
+
+    monkeypatch.setattr(
+        service,
+        "get_bars",
+        lambda symbol, timeframe="1Day", limit=100: [
+            {"close": 19.0},
+            {"close": 21.0},
+        ],
+    )
+    monkeypatch.setattr(service, "get_positions", lambda: [])
+    monkeypatch.setattr(
+        service,
+        "get_account",
+        lambda: {"buying_power": 10000, "portfolio_value": 10000},
+    )
+    monkeypatch.setattr(
+        service,
+        "get_latest_trade",
+        lambda symbol: {
+            "symbol": symbol,
+            "price": 31.0,
+            "size": 100,
+            "timestamp": "2026-05-22T15:30:00Z",
+            "exchange": "V",
+        },
+    )
+    # Should not be reached because get_latest_trade succeeds.
+    def _fail_latest_bar(symbol):
+        raise AssertionError("get_stock_latest_bar should not run when trade is fresh")
+    monkeypatch.setattr(service, "get_stock_latest_bar", _fail_latest_bar)
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "compute_technicals",
+        lambda bars: {"indicators": {"atr_14": 1.0}},
+    )
+    captured = {}
+    def _capture_signals(technicals, price):
+        captured["price"] = price
+        return {"recommendation": "BUY", "composite_score": 2, "confidence": 0.6, "details": []}
+    monkeypatch.setattr(ai_trading_engine, "generate_signals", _capture_signals)
+    monkeypatch.setattr(ai_trading_engine, "compute_risk_metrics", lambda bars, positions: {})
+
+    result = service.ai_copilot_analyze("QBTS")
+
+    assert result["price"] == 31.0
+    assert result["last_close"] == 21.0
+    assert result["quote_source"] == "alpaca_latest_trade"
+    assert result["live_quote_at"] == "2026-05-22T15:30:00Z"
+    # Stop/take-profit math must follow the live price, not the stale close.
+    assert result["trade_suggestion"]["stop_loss"] == 29.0
+    assert result["trade_suggestion"]["take_profit"] == 34.0
+    # Signals must also see the live price so RSI/MACD comparisons line up.
+    assert captured["price"] == 31.0
+
+
+def test_ai_copilot_analyze_falls_back_to_latest_bar_when_no_trade(monkeypatch):
+    """When IEX has no recent trade, fall back to the latest intraday bar
+    instead of the stale daily close."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    import services.ai_trading_engine as ai_trading_engine
+
+    monkeypatch.setattr(
+        service,
+        "get_bars",
+        lambda symbol, timeframe="1Day", limit=100: [
+            {"close": 19.0},
+            {"close": 21.0},
+        ],
+    )
+    monkeypatch.setattr(service, "get_positions", lambda: [])
+    monkeypatch.setattr(
+        service,
+        "get_account",
+        lambda: {"buying_power": 10000, "portfolio_value": 10000},
+    )
+    monkeypatch.setattr(service, "get_latest_trade", lambda symbol: None)
+    monkeypatch.setattr(
+        service,
+        "get_stock_latest_bar",
+        lambda symbol: {"bar": {"c": 30.5, "t": "2026-05-22T15:25:00Z"}, "symbol": symbol},
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "compute_technicals",
+        lambda bars: {"indicators": {"atr_14": 1.0}},
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "generate_signals",
+        lambda technicals, price: {
+            "recommendation": "BUY",
+            "composite_score": 2,
+            "confidence": 0.6,
+            "details": [],
+        },
+    )
+    monkeypatch.setattr(ai_trading_engine, "compute_risk_metrics", lambda bars, positions: {})
+
+    result = service.ai_copilot_analyze("QBTS")
+
+    assert result["price"] == 30.5
+    assert result["last_close"] == 21.0
+    assert result["quote_source"] == "alpaca_latest_bar"
+
+
+def test_ai_copilot_analyze_keeps_last_close_when_live_quote_unavailable(monkeypatch):
+    """If both live-quote endpoints fail/return invalid data, fall back to
+    the daily close so the analysis still runs (existing behavior)."""
+    service = TradingPlatformService()
+    service._connected = True
+
+    import services.ai_trading_engine as ai_trading_engine
+
+    monkeypatch.setattr(
+        service,
+        "get_bars",
+        lambda symbol, timeframe="1Day", limit=100: [
+            {"close": 19.0},
+            {"close": 21.0},
+        ],
+    )
+    monkeypatch.setattr(service, "get_positions", lambda: [])
+    monkeypatch.setattr(
+        service,
+        "get_account",
+        lambda: {"buying_power": 10000, "portfolio_value": 10000},
+    )
+    monkeypatch.setattr(service, "get_latest_trade", lambda symbol: None)
+    monkeypatch.setattr(service, "get_stock_latest_bar", lambda symbol: None)
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "compute_technicals",
+        lambda bars: {"indicators": {"atr_14": 1.0}},
+    )
+    monkeypatch.setattr(
+        ai_trading_engine,
+        "generate_signals",
+        lambda technicals, price: {
+            "recommendation": "HOLD",
+            "composite_score": 0,
+            "confidence": 0.4,
+            "details": [],
+        },
+    )
+    monkeypatch.setattr(ai_trading_engine, "compute_risk_metrics", lambda bars, positions: {})
+
+    result = service.ai_copilot_analyze("QBTS")
+
+    assert result["price"] == 21.0
+    assert result["last_close"] == 21.0
+    assert result["quote_source"] == "alpaca_live"
 
 
 def test_ai_copilot_analyze_falls_back_to_alpha_vantage(monkeypatch):
@@ -432,6 +598,10 @@ def test_ai_copilot_analyze_falls_back_to_alpha_vantage(monkeypatch):
     # Bars must be reordered ascending by date so the latest close (125.0)
     # is what feeds `price` and the trade suggestion math.
     assert result["price"] == 125.0
+    assert result["last_close"] == 125.0
+    # No Alpaca connection in this test, so live-quote lookup is skipped
+    # and the fallback source is preserved.
+    assert result["quote_source"] == "alpha_vantage_fallback"
     assert result["trade_suggestion"]["stop_loss"] == 121.0
     assert result["trade_suggestion"]["take_profit"] == 131.0
 
