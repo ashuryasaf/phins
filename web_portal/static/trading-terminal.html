@@ -1509,7 +1509,7 @@ async function runCopilot() {
         if (lc && lp && Math.abs(lc - lp) / lc > 0.005) {
             const diffPct = ((lp - lc) / lc * 100).toFixed(2);
             const diffColor = lp >= lc ? 'var(--green)' : 'var(--red)';
-            html += `<div style="color:var(--muted);font-size:14px;margin-top:2px;">Last close: $${fmt(lc)} <span style="color:${diffColor};font-weight:600;">(${diffPct >= 0 ? '+' : ''}${diffPct}%)</span></div>`;
+            html += `<div style="color:var(--muted);font-size:14px;margin-top:2px;">Last close: $${fmt(lc)} <span style="color:${diffColor};font-weight:600;">(${lp >= lc ? '+' : ''}${diffPct}%)</span></div>`;
         }
         html += `<div style="color:var(--muted);margin-top:3px;">Score: ${d.composite_score} | Confidence: ${confPct} | Action: <span style="color:var(--gold);">${d.copilot_action}</span></div>`;
         const quoteSrc = d.quote_source || d.data_source || 'live';
