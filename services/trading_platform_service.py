@@ -1466,14 +1466,48 @@ class TradingPlatformService:
         indicators = technicals.get("indicators", {})
 
         latest_bar = bars_raw[-1] if bars_raw else {}
-        price = _sf(latest_bar.get("close")) or 0
-        if not price or price <= 0:
+        last_close = _sf(latest_bar.get("close")) or 0
+        if not last_close or last_close <= 0:
             return {
                 "error": f"No live price for {sym}",
                 "symbol": sym,
                 "data_source": data_source,
                 "bars_count": len(bars_raw),
             }
+
+        # The last *daily* close can lag the live market by hours (or even
+        # days when the Alpha Vantage fallback kicks in). Reach for a live
+        # quote so the "PRICE & ACTION" card and ATR-based stop/take-profit
+        # math reflect what the symbol is actually trading at right now.
+        # Prefer the latest IEX trade; fall back to Alpaca's intraday
+        # ``bars/latest`` endpoint which still returns a fresh value when
+        # there hasn't been an IEX print recently. If neither is available
+        # we keep the last daily close (current behavior) so the analysis
+        # still runs.
+        price = last_close
+        quote_source = data_source
+        live_quote_at: Optional[str] = None
+        if self.is_connected:
+            try:
+                latest_trade = self.get_latest_trade(sym)
+            except Exception:
+                latest_trade = None
+            live_price = _sf((latest_trade or {}).get("price"))
+            if live_price and live_price > 0:
+                price = live_price
+                quote_source = "alpaca_latest_trade"
+                live_quote_at = (latest_trade or {}).get("timestamp")
+            else:
+                try:
+                    latest_bar_payload = self.get_stock_latest_bar(sym)
+                except Exception:
+                    latest_bar_payload = None
+                bar = (latest_bar_payload or {}).get("bar") or {}
+                live_bar_price = _sf(bar.get("c"))
+                if live_bar_price and live_bar_price > 0:
+                    price = live_bar_price
+                    quote_source = "alpaca_latest_bar"
+                    live_quote_at = bar.get("t")
 
         # Generate AI signals from real technicals
         signals = generate_signals(technicals, price)
@@ -1547,6 +1581,9 @@ class TradingPlatformService:
         return {
             "symbol": sym,
             "price": price,
+            "last_close": last_close,
+            "quote_source": quote_source,
+            "live_quote_at": live_quote_at,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "ai_recommendation": recommendation,
             "composite_score": score,

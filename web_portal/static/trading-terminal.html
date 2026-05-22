@@ -1504,8 +1504,16 @@ async function runCopilot() {
         html += `<div class="copilot-card"><div class="card-label">PRICE & ACTION</div>`;
         html += `<div style="font-size:26px;font-weight:700;">$${fmt(d.price)}</div>`;
         const confPct = d.confidence ? (d.confidence * 100).toFixed(0) + '%' : '—';
+        const lc = Number(d.last_close);
+        const lp = Number(d.price);
+        if (lc && lp && Math.abs(lc - lp) / lc > 0.005) {
+            const diffPct = ((lp - lc) / lc * 100).toFixed(2);
+            const diffColor = lp >= lc ? 'var(--green)' : 'var(--red)';
+            html += `<div style="color:var(--muted);font-size:14px;margin-top:2px;">Last close: $${fmt(lc)} <span style="color:${diffColor};font-weight:600;">(${lp >= lc ? '+' : ''}${diffPct}%)</span></div>`;
+        }
         html += `<div style="color:var(--muted);margin-top:3px;">Score: ${d.composite_score} | Confidence: ${confPct} | Action: <span style="color:var(--gold);">${d.copilot_action}</span></div>`;
-        html += `<div style="color:var(--muted);font-size:14px;margin-top:2px;">Source: ${d.data_source || 'live'} | ${d.bars_count || 0} bars analyzed</div></div>`;
+        const quoteSrc = d.quote_source || d.data_source || 'live';
+        html += `<div style="color:var(--muted);font-size:14px;margin-top:2px;">Source: ${quoteSrc} | History: ${d.data_source || 'live'} | ${d.bars_count || 0} bars analyzed</div></div>`;
 
         if (d.trade_suggestion) {
             const ts = d.trade_suggestion;
