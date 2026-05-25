@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PHINS - Executive Actuary Meeting Briefing</title>
+<style>
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 9pt;
+    color: #888;
+  }
+  @bottom-left {
+    content: "PHINS - Executive Actuary Meeting Briefing - Confidential";
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 9pt;
+    color: #888;
+  }
+}
+html { font-size: 10.5pt; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1a1f2c;
+  line-height: 1.5;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+}
+h1 {
+  font-size: 22pt;
+  color: #0b2545;
+  border-bottom: 3px solid #0b2545;
+  padding-bottom: 8px;
+  margin-top: 0;
+}
+h2 {
+  font-size: 15pt;
+  color: #0b2545;
+  margin-top: 28px;
+  border-bottom: 1px solid #d4dae6;
+  padding-bottom: 4px;
+  page-break-after: avoid;
+}
+h3 {
+  font-size: 12.5pt;
+  color: #13315c;
+  margin-top: 18px;
+  page-break-after: avoid;
+}
+h4, h5, h6 { color: #13315c; margin-top: 14px; }
+p { margin: 8px 0; text-align: justify; }
+ul, ol { margin: 6px 0 10px 22px; padding: 0; }
+li { margin: 3px 0; }
+li.task { list-style: none; margin-left: -18px; }
+li.task input { margin-right: 6px; }
+code {
+  background: #f1f3f8;
+  border: 1px solid #e1e5ee;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9.5pt;
+  color: #5a2ca0;
+}
+hr { border: none; border-top: 1px solid #d4dae6; margin: 18px 0; }
+blockquote {
+  border-left: 3px solid #0b2545;
+  background: #f6f8fc;
+  padding: 8px 14px;
+  margin: 12px 0;
+  color: #34405a;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 9.5pt;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #d4dae6;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #0b2545;
+  color: #ffffff;
+  font-weight: 600;
+}
+tr:nth-child(even) td { background: #f6f8fc; }
+strong { color: #0b2545; }
+.cover {
+  border: 1px solid #d4dae6;
+  background: #f6f8fc;
+  padding: 14px 18px;
+  border-radius: 6px;
+  margin: 14px 0 22px 0;
+  font-size: 10pt;
+}
+.cover strong { color: #0b2545; }
+.confidential {
+  text-align: center;
+  font-size: 9pt;
+  color: #8a3324;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+</style>
+</head>
+<body>
+<div class="confidential">Confidential - Internal Use Only</div>
+<h1>Executive Briefing — Meeting with Executive Actuary</h1>
+<p><strong>Owner:</strong> Asaf (Founder, PHINS) <strong>Counterparty:</strong> Executive Actuary — full member, IAA-recognised (Israel / Canada / USA) <strong>Date:</strong> Tomorrow <strong>Duration target:</strong> 60–90 min <strong>Decision sought from us:</strong> Engagement model and scope of cooperation <strong>Decision sought from counterparty:</strong> Willingness to sign as Appointed Actuary / Reviewing Actuary and (separately) personal interest in equity participation</p>
+<hr/>
+<h2>1. Why this meeting matters</h2>
+<p>PHINS is at the boundary between <em>built product</em> and <em>regulated entity / funded company</em>. Three gates must be crossed before we can run a real book of business or raise institutional capital, and all three require a credentialed actuary&#x27;s signature:</p>
+<ol><li><strong>Technical validation</strong> — pricing model, reserves, capital adequacy, table sourcing.</li><li><strong>Regulatory filing</strong> — appointed actuary opinion for the regulator(s) we choose to file in.</li><li><strong>Investor diligence</strong> — actuarial sign-off is a non-negotiable item in any insurance / insurtech term sheet above seed stage.</li></ol>
+<p>A single individual qualified in <strong>IL + CA + US</strong> is rare and disproportionately valuable: it lets us pick our first regulatory jurisdiction by <em>strategy</em> (tax, capital, distribution) instead of by <em>who we can get signed</em>.</p>
+<hr/>
+<h2>2. What PHINS already has (we bring this to the table)</h2>
+<p>Concrete artefacts the actuary can review on day one — this is what differentiates us from a pitch deck:</p>
+<ul><li><strong>Unified pricing model</strong> with documented formula, age curve, risk loadings and billing-frequency discounts (<code>ACTUARIAL_PRICING_MODEL.md</code>).</li><li><strong>Actuarial service layer</strong> — ~3,800 LOC across <code>services/actuarial_service.py</code> and <code>services/actuarial_valuation.py</code>; mortality/morbidity tables; risk-scoring engine (0–100 scale, 7 risk bands).</li><li><strong>Billing &amp; accounting engines</strong> — <code>billing_engine.py</code> (~660 LOC) and <code>accounting_engine.py</code> (~875 LOC), with reconciliation, late fees and audit trail.</li><li><strong>End-to-end platform</strong> — policy, underwriting, claims, reinsurance, customer portal, multi-currency / 20 languages, live at <code>www.phins.ai</code>.</li><li><strong>Audit logging</strong> across policy create, UW approve/reject, claims create/approve/reject/pay — important for any appointed-actuary working file.</li><li><strong>Reinsurance scaffolding</strong> — proportional, XoL, stop-loss treaties already modelled.</li></ul>
+<p>Translation for the meeting: <em>&quot;This is not a slide deck. You can run a portfolio through it tomorrow. We need you to tell us where the numbers don&#x27;t tie out.&quot;</em></p>
+<hr/>
+<h2>3. What we need from the actuary (in order)</h2>
+<table>
+<thead><tr><th>Phase</th><th>Deliverable</th><th>Timing</th><th>Why it matters</th></tr></thead>
+<tbody>
+<tr><td>A. Validation</td><td>Independent review of pricing model, age/risk loadings, base rates per line of business</td><td>First</td><td>Without this, the regulator and any VC will discount our numbers to zero.</td></tr>
+<tr><td>B. Reserving</td><td>Method statement (BF, chain-ladder, expected loss), IBNR assumption set</td><td>Next</td><td>Required for any go-live book and for any Series A.</td></tr>
+<tr><td>C. Capital</td><td>Solvency basis (Solvency II / RBC / Israeli capital regime) and minimum capital estimate per chosen jurisdiction</td><td>Next</td><td>Drives the size of the raise.</td></tr>
+<tr><td>D. Filing</td><td>Signed Appointed Actuary Opinion / Statement of Actuarial Opinion for chosen regulator</td><td>After A–C</td><td>Unlocks licensing path.</td></tr>
+<tr><td>E. Ongoing</td><td>Quarterly valuation + annual SAO</td><td>Recurring</td><td>Required for as long as we hold risk.</td></tr>
+</tbody></table>
+<hr/>
+<h2>4. The three engagement options — structured comparison</h2>
+<p>We evaluate each on five axes: <strong>regulatory unlock</strong>, <strong>speed</strong>, <strong>cost/dilution</strong>, <strong>alignment</strong>, <strong>optionality preserved</strong>.</p>
+<h3>Option 1 — Head of Actuary (employee / officer)</h3>
+<p><strong>Shape.</strong> Full-time or 0.6–0.8 FTE; title &quot;Chief Actuary&quot; or &quot;Appointed Actuary&quot;; salary + standard option pool grant (typically 0.5%–1.5% over 4-year vest with 1-year cliff for a senior hire at our stage).</p>
+<table>
+<thead><tr><th>Axis</th><th>Assessment</th></tr></thead>
+<tbody>
+<tr><td>Regulatory unlock</td><td><strong>High</strong> — one signatory covers IL, CA, US filings.</td></tr>
+<tr><td>Speed</td><td><strong>High</strong> — full attention, internal.</td></tr>
+<tr><td>Cost / dilution</td><td>Medium cash burn; low-to-moderate dilution.</td></tr>
+<tr><td>Alignment</td><td>High (officer fiduciary duty + equity).</td></tr>
+<tr><td>Optionality</td><td>Highest — we keep all strategic choices.</td></tr>
+</tbody></table>
+<p><strong>Best when:</strong> the actuary&#x27;s primary motivation is <em>operating a real insurance company</em> and they trust the founding team. <strong>Risk:</strong> cash burn before revenue; conflict if they also want founder-level influence without founder-level commitment.</p>
+<h3>Option 2 — Junior Co-founder</h3>
+<p><strong>Shape.</strong> Co-founder title, board seat or board observer, equity in the <strong>3%–8%</strong> range (heavily dependent on whether they bring (a) full-time commitment, (b) capital, (c) regulated-entity sponsorship, or (d) all three), 4-year vest, 1-year cliff, founder reverse-vesting on existing equity to keep alignment symmetric.</p>
+<table>
+<thead><tr><th>Axis</th><th>Assessment</th></tr></thead>
+<tbody>
+<tr><td>Regulatory unlock</td><td><strong>High</strong> + credibility halo at fundraising.</td></tr>
+<tr><td>Speed</td><td><strong>Highest</strong> — co-owner urgency.</td></tr>
+<tr><td>Cost / dilution</td><td>Low cash, <strong>high dilution</strong>.</td></tr>
+<tr><td>Alignment</td><td>Highest if full-time; <strong>dangerous</strong> if part-time.</td></tr>
+<tr><td>Optionality</td><td>Reduced — co-founder is a long-term, hard-to-reverse decision.</td></tr>
+</tbody></table>
+<p><strong>Best when:</strong> the person is willing to go full-time, brings something <em>no employee could</em> (e.g. anchor regulator relationship, named-partner credibility for a Series A, or LP/angel capital), and is personally compatible at the founder level.</p>
+<p><strong>Critical guardrails:</strong></p>
+<ul><li>Equity sized to <strong>contribution + risk taken</strong>, not title.</li><li>Strict vesting + good-leaver / bad-leaver clauses.</li><li>IP assignment and non-compete from day one.</li><li>Clear written delineation of decision rights vs the existing founder.</li></ul>
+<p><strong>Red flag heuristic:</strong> if they ask for co-founder title <em>and</em> a salary at market rate <em>and</em> part-time hours, decline. Pick at most two.</p>
+<h3>Option 3 — PHINS-for-Actuaries: a B2B platform</h3>
+<p><strong>Shape.</strong> Productise the actuarial engine, valuation workbench, mortality/morbidity table library, reserving and reporting modules as a separate SaaS offering — sold to independent actuaries, small mutuals, captives, MGAs, and consulting firms. The actuary becomes either <strong>design partner</strong>, <strong>commercial lead</strong>, or <strong>JV partner</strong> on this vertical.</p>
+<table>
+<thead><tr><th>Axis</th><th>Assessment</th></tr></thead>
+<tbody>
+<tr><td>Regulatory unlock</td><td><strong>Low</strong> by itself — does not replace an Appointed Actuary for our own carrier ambitions.</td></tr>
+<tr><td>Speed to revenue</td><td><strong>Fastest</strong> path to recurring revenue (SaaS) without holding insurance risk.</td></tr>
+<tr><td>Cost / dilution</td><td>Low if structured as JV or rev-share; medium if structured as a product line under PHINS.</td></tr>
+<tr><td>Alignment</td><td>Medium — risk of focus split between &quot;be a carrier&quot; and &quot;be a tools vendor&quot;.</td></tr>
+<tr><td>Optionality</td><td>Highest commercially — opens a market segment most insurtechs ignore.</td></tr>
+</tbody></table>
+<p><strong>Strategic note.</strong> This is the <em>non-obvious</em> and possibly the <strong>most valuable</strong> option. Reasoning:</p>
+<ul><li>The global actuarial software market is dominated by a handful of expensive incumbents (Prophet, AXIS, MoSes, RAFM, Polysystems). Most independent and mid-market actuaries are still on Excel + bespoke scripts.</li><li>PHINS already has the spine: pricing engine, reserving primitives, audit trail, multi-currency, multi-jurisdiction.</li><li>A credentialed actuary as design partner is the missing piece to make this credible to peers.</li><li>Revenue from this vertical can <strong>fund</strong> the carrier ambition rather than dilute it.</li></ul>
+<p><strong>Best when:</strong> the counterparty has a large peer network and is excited by &quot;building the tool I always wished I had.&quot;</p>
+<h3>Side-by-side scorecard</h3>
+<table>
+<thead><tr><th>Criterion (weight)</th><th>Head of Actuary</th><th>Junior Co-founder</th><th>Actuary Platform</th></tr></thead>
+<tbody>
+<tr><td>Unlocks regulatory filing (high)</td><td>●●●</td><td>●●●</td><td>●</td></tr>
+<tr><td>Unlocks Series A diligence (high)</td><td>●●●</td><td>●●●</td><td>●●</td></tr>
+<tr><td>Speed to first revenue (medium)</td><td>●●</td><td>●●</td><td>●●●</td></tr>
+<tr><td>Founder dilution (high)</td><td>●●</td><td>●</td><td>●●●</td></tr>
+<tr><td>Cash burn (medium)</td><td>●</td><td>●●</td><td>●●●</td></tr>
+<tr><td>Reversibility if it doesn&#x27;t work (medium)</td><td>●●●</td><td>●</td><td>●●●</td></tr>
+<tr><td>Strategic optionality (medium)</td><td>●●●</td><td>●</td><td>●●●</td></tr>
+</tbody></table>
+<p><code>●●●</code> = strongly positive, <code>●</code> = strongly negative.</p>
+<hr/>
+<h2>5. Recommended path — <strong>a hybrid, sequenced offer</strong></h2>
+<p>Do not present the three options as mutually exclusive. The honest answer is: <strong>we want option 1 immediately, we are open to option 2 if the person earns into it, and option 3 is a shared upside we build together.</strong></p>
+<p>Concretely, propose this in the meeting:</p>
+<ol><li><strong>Immediate (this quarter):</strong> Engage as <strong>Consulting / Appointed Actuary</strong> under a paid contract (day-rate or fixed-fee per deliverable in §3). This validates fit on both sides without anyone making an irreversible decision. Deliverable 1 = independent review of <code>ACTUARIAL_PRICING_MODEL.md</code> and the actuarial service layer.</li><li><strong>Conditional (after 60–90 days of working together):</strong> Convert to <strong>Chief Actuary / Head of Actuary</strong> with officer title, salary, and an option grant in the 0.75%–1.5% band (vesting from start of consulting engagement).</li><li><strong>Optional, parallel track:</strong> Launch <strong>PHINS-for-Actuaries</strong> as a co-led initiative. Offer either (a) a meaningful equity uplift conditional on hitting revenue milestones for that product line, or (b) a JV / rev-share if they prefer to remain external and bring their network.</li><li><strong>Co-founder upgrade:</strong> Left open as an <em>earned</em> outcome — if they go full-time, contribute commensurately, and we genuinely operate as partners, we revisit a co-founder grant at the next equity event (e.g. priced round). Avoid handing out the title on day one.</li></ol>
+<p>This structure protects the cap table, keeps the regulatory path moving, and gives a top-tier candidate a credible runway to a co-founder seat without forcing the decision before there is evidence.</p>
+<hr/>
+<h2>6. Valuing the opportunity (the actuary&#x27;s side of the table)</h2>
+<p>Anticipate how they will frame value and have answers ready.</p>
+<ul><li><strong>What they get from us:</strong> a working platform (not a spec), a real product surface to put their name on, a multi-jurisdiction launch optionality, and — uniquely — a second business line (actuary SaaS) where they can become a category-shaping figure.</li><li><strong>What they will worry about:</strong><ul><li>Professional liability on signing the SAO before the model is independently reviewed → answered by §5 step 1.</li><li>Capital runway → answered by the planned raise (we should know the target number before the meeting).</li><li>Founder dynamics → answered by clear written terms, not by charisma.</li><li>Whether the tech is real → answered by a live demo, ideally running a sample portfolio end-to-end.</li></ul></li></ul>
+<hr/>
+<h2>7. Pre-meeting checklist (do today)</h2>
+<ul><li class="task"><input type="checkbox" disabled /> Confirm which <strong>jurisdiction we file first</strong> (IL is fastest culturally; US state-by-state is hardest; CA is mid). The actuary&#x27;s answer to &quot;where should we file first?&quot; is itself a strong signal.</li><li class="task"><input type="checkbox" disabled /> Have a <strong>clean data extract</strong> ready: pricing examples (the ASAF $500K / age 47 / moderate-risk worked example is a good one), a sample reserving dataset, and the audit-log export.</li><li class="task"><input type="checkbox" disabled /> Prepare a <strong>one-page architecture</strong> (we have it: <code>PLATFORM_ARCHITECTURE_UML.md</code>) and a <strong>one-page pricing model</strong> (we have it: <code>ACTUARIAL_PRICING_MODEL.md</code>).</li><li class="task"><input type="checkbox" disabled /> Draft a <strong>mutual NDA</strong> before sharing the actuarial service code and table library.</li><li class="task"><input type="checkbox" disabled /> Have a <strong>consulting agreement template</strong> ready to sign on the spot if there is chemistry — paid by deliverable, with explicit IP assignment, with a 30-day mutual exit.</li><li class="task"><input type="checkbox" disabled /> Decide internally on the <strong>walk-away terms</strong>: minimum equity we will offer for co-founder; maximum cash day-rate for consulting; any non-negotiables on board composition.</li></ul>
+<hr/>
+<h2>8. Suggested agenda for the meeting</h2>
+<ol><li><strong>10 min — Context.</strong> Where PHINS is, what&#x27;s live, what&#x27;s not.</li><li><strong>15 min — Live demo.</strong> End-to-end policy → underwriting → billing → claim → reinsurance, with the audit log visible. Show the actuarial dashboard.</li><li><strong>15 min — Their diagnosis.</strong> Open-ended: <em>&quot;Given what you just saw, what would you sign today, what would you refuse to sign, and what would you want to rebuild?&quot;</em> Listen carefully — this is the real interview.</li><li><strong>15 min — Regulatory path.</strong> Discuss IL vs CA vs US first-filing, capital implications, and timing.</li><li><strong>15 min — Engagement options.</strong> Present §5 hybrid path. Do <strong>not</strong> lead with co-founder equity.</li><li><strong>10 min — Personal fit &amp; next steps.</strong> Sign consulting NDA + scope-of-work for deliverable 1. Set the next meeting date.</li></ol>
+<hr/>
+<h2>9. Risks and red flags to watch for</h2>
+<ul><li><strong>Title-first ask.</strong> Demands &quot;co-founder&quot; or &quot;CIO&quot; before any work has been done together → counter with the hybrid path; if refused, walk.</li><li><strong>Reluctance to put name on a working file.</strong> Many actuaries will not sign anything they did not personally build. Decide in advance whether you are willing to let them rebuild parts of the pricing engine — it may be the right answer.</li><li><strong>Single-jurisdiction bias.</strong> If they only want to file where their primary licence is, you lose the optionality that made them attractive.</li><li><strong>Over-promising on fundraising help.</strong> Investor introductions are nice, not a substitute for technical work. Don&#x27;t trade equity for a Rolodex.</li><li><strong>Conflicts of interest.</strong> If they consult to a competing carrier or insurtech, you need explicit carve-outs in writing.</li></ul>
+<hr/>
+<h2>10. Decision outputs you should leave the meeting with</h2>
+<ol><li>A signed (or hand-shook) <strong>consulting engagement</strong> for deliverable 1 — review of pricing model and actuarial service layer.</li><li>A shared view on the <strong>first filing jurisdiction</strong>.</li><li>A shared view on whether the <strong>PHINS-for-Actuaries</strong> product line is something they personally want to lead, partner on, or stay away from.</li><li>A <strong>next meeting on the calendar</strong>, ideally within two weeks, with the deliverable-1 review as the agenda.</li><li>An honest internal read on whether this person is a <strong>Chief Actuary</strong> (hire), a <strong>co-founder</strong> (rare, earned), or a <strong>vendor relationship</strong>. Write the answer down within an hour of the meeting ending, before impressions fade.</li></ol>
+<hr/>
+<h2>Bottom line for tomorrow</h2>
+<p>Lead with the product, not the cap table. Offer paid, scoped consulting today; signal the Chief Actuary path as the default destination; keep co-founder equity as an earned upgrade; and put the actuary-SaaS opportunity on the table as a shared upside that could change the funding story entirely. That sequence maximises the chance of getting them signed <em>and</em> protects PHINS&#x27;s optionality on regulator, raise size, and ownership.</p>
+<hr/>
+<p><em>Prepared for internal use. Do not share with counterparty before the meeting.</em></p>
+</body>
+</html>
