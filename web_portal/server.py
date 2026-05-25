@@ -12273,6 +12273,7 @@ For claims or questions, please contact:
             robots_content = (
                 "User-agent: *\n"
                 "Disallow: /api/\n"
+                "Disallow: /internal/\n"
                 "Disallow: /admin.html\n"
                 "Disallow: /actuary-dashboard.html\n"
                 "Disallow: /media-files/\n"
