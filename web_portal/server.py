@@ -26473,6 +26473,11 @@ For claims or questions, please contact:
             self.send_error(400, 'Invalid path')
             return
 
+        if os.path.isdir(file_path):
+            index_path = os.path.join(file_path, 'index.html')
+            if os.path.isfile(index_path):
+                file_path = index_path
+
         if os.path.isfile(file_path):
             try:
                 self._set_file_headers(file_path)
