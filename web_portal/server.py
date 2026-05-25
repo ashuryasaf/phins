@@ -26474,11 +26474,6 @@ For claims or questions, please contact:
             return
 
         if os.path.isfile(file_path):
-            if path.startswith('/internal/') and path != '/internal/index.html':
-                if not require_role(session, ['admin']):
-                    self._set_json_headers(401 if not session else 403)
-                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
-                    return
             try:
                 self._set_file_headers(file_path)
                 if file_path.endswith('.html'):
