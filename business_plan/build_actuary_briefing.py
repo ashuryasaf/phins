@@ -75,19 +75,28 @@ def md_to_html(md: str) -> str:
         if re.match(r"^(\-|\*)\s+", stripped):
             items: list[str] = []
             while i < n and re.match(r"^\s*(\-|\*)\s+", lines[i]):
-                item_text = re.sub(r"^\s*(\-|\*)\s+", "", lines[i])
-                cb = re.match(r"^\[( |x|X)\]\s+(.*)$", item_text)
-                if cb:
-                    checked = "checked" if cb.group(1).lower() == "x" else ""
-                    items.append(
-                        f'<li class="task"><input type="checkbox" disabled {checked}/> {inline(cb.group(2))}</li>'
-                    )
+                if re.match(r"^\s+(\-|\*)\s+", lines[i]) and items:
+                    sub_items: list[str] = []
+                    while i < n and re.match(r"^\s+(\-|\*)\s+", lines[i]):
+                        sub_text = re.sub(r"^\s*(\-|\*)\s+", "", lines[i])
+                        sub_items.append(f"<li>{inline(sub_text)}</li>")
+                        i += 1
+                    nested = "<ul>" + "".join(sub_items) + "</ul>"
+                    items[-1] = items[-1][:-5] + nested + "</li>"
                 else:
-                    items.append(f"<li>{inline(item_text)}</li>")
-                i += 1
-                while i < n and lines[i].startswith("    ") and not re.match(r"^\s*(\-|\*)\s+", lines[i]):
-                    items[-1] = items[-1][:-5] + " " + inline(lines[i].strip()) + "</li>"
+                    item_text = re.sub(r"^\s*(\-|\*)\s+", "", lines[i])
+                    cb = re.match(r"^\[( |x|X)\]\s+(.*)$", item_text)
+                    if cb:
+                        checked = "checked" if cb.group(1).lower() == "x" else ""
+                        items.append(
+                            f'<li class="task"><input type="checkbox" disabled {checked}/> {inline(cb.group(2))}</li>'
+                        )
+                    else:
+                        items.append(f"<li>{inline(item_text)}</li>")
                     i += 1
+                    while i < n and lines[i].startswith("    ") and not re.match(r"^\s*(\-|\*)\s+", lines[i]):
+                        items[-1] = items[-1][:-5] + " " + inline(lines[i].strip()) + "</li>"
+                        i += 1
             out.append("<ul>" + "".join(items) + "</ul>")
             continue
 
