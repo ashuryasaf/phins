@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /api/
+Disallow: /internal/
+Disallow: /admin.html
+Disallow: /actuary-dashboard.html
+Disallow: /media-files/
+Allow: /

@@ -12273,6 +12273,7 @@ For claims or questions, please contact:
             robots_content = (
                 "User-agent: *\n"
                 "Disallow: /api/\n"
+                "Disallow: /internal/\n"
                 "Disallow: /admin.html\n"
                 "Disallow: /actuary-dashboard.html\n"
                 "Disallow: /media-files/\n"
@@ -26471,6 +26472,11 @@ For claims or questions, please contact:
         except Exception as e:
             self.send_error(400, 'Invalid path')
             return
+
+        if os.path.isdir(file_path):
+            index_path = os.path.join(file_path, 'index.html')
+            if os.path.isfile(index_path):
+                file_path = index_path
 
         if os.path.isfile(file_path):
             try:
