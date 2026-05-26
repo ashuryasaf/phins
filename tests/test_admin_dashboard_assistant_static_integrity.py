@@ -100,8 +100,9 @@ def test_admin_ai_assistant_integrity_guards_and_section_ids_present():
     assert "confirm: '⚠️ Execute bill-all for eligible active policies?" in content
 
     # Reinsurance and legal sections get explicit ids for assistant navigation coverage.
-    assert '<section id="reinsurance" class="section-content">' in content
-    assert '<section id="legal" class="section-content">' in content
+    # Tolerate additional attributes (e.g. data-collapsible) being added later.
+    assert re.search(r'<section\s+id="reinsurance"\s+class="section-content"[^>]*>', content)
+    assert re.search(r'<section\s+id="legal"\s+class="section-content"[^>]*>', content)
 
 
 def test_admin_ai_assistant_voice_and_quick_action_controls_present():

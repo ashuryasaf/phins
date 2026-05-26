@@ -22,85 +22,119 @@
     .phins-header-inner {
       max-width: 1600px;
       margin: 0 auto;
-      padding: 0.85rem 2rem;
+      padding: 0.7rem 1.5rem 0.55rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      position: relative;
+    }
+    .phins-header-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      position: relative;
+      gap: 0.75rem;
     }
     .phins-logo {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.65rem;
       text-decoration: none;
     }
     .phins-logo-icon {
-      width: 44px;
-      height: 44px;
+      width: 40px;
+      height: 40px;
       background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      border-radius: 12px;
+      border-radius: 11px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.5rem;
+      font-size: 1.35rem;
       box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
       border: 1px solid rgba(255,255,255,0.2);
     }
     .phins-logo-text {
-      font-size: 1.75rem;
+      font-size: 1.5rem;
       font-weight: 700;
       background: linear-gradient(135deg, #fff 0%, #e3f2fd 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
+      letter-spacing: 0.02em;
     }
-    .phins-nav {
+    .phins-utility {
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
+    .phins-nav {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.35rem 0.45rem;
+      width: 100%;
+    }
     .phins-nav a {
-      padding: 0.5rem 1rem;
-      color: rgba(255,255,255,0.85);
+      padding: 0.4rem 0.8rem;
+      color: rgba(255,255,255,0.88);
       text-decoration: none;
       border-radius: 8px;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 500;
-      transition: all 0.2s ease;
+      transition: all 0.18s ease;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      line-height: 1.2;
+      white-space: nowrap;
     }
     .phins-nav a:hover {
-      background: rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.16);
       color: white;
+      border-color: rgba(255,255,255,0.2);
     }
     .phins-nav a.active {
       background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
       color: white;
+      border-color: transparent;
       box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
     }
-    .phins-nav .nav-divider {
-      width: 1px;
-      height: 24px;
-      background: rgba(255,255,255,0.2);
-      margin: 0 0.5rem;
-    }
-    .phins-nav .btn-logout {
+    .phins-utility .btn-logout {
       background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
       color: white;
-      padding: 0.5rem 1rem;
+      padding: 0.4rem 0.95rem;
       border-radius: 8px;
       font-weight: 600;
+      font-size: 0.82rem;
+      text-decoration: none;
+      border: 1px solid rgba(255,255,255,0.15);
+      transition: all 0.2s ease;
     }
-    .phins-nav .btn-logout:hover {
+    .phins-utility .btn-logout:hover {
       background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
       transform: translateY(-1px);
+    }
+    .phins-utility .btn-console {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: white;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    .phins-utility .btn-console:hover {
+      background: rgba(255,255,255,0.18);
     }
     .language-selector {
       background: rgba(255,255,255,0.1);
       border: 1px solid rgba(255,255,255,0.25);
       color: white;
-      padding: 0.4rem 0.75rem;
-      border-radius: 6px;
-      font-size: 0.85rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      font-size: 0.78rem;
       cursor: pointer;
     }
     .language-selector option {
@@ -138,31 +172,31 @@
         z-index: 999;
         max-height: calc(100vh - 60px);
         overflow-y: auto;
+        justify-content: flex-start;
       }
       .phins-nav.open { display: flex !important; }
       .phins-nav a { 
         width: 100%; 
         text-align: center; 
         padding: 14px 16px; 
-        font-size: 1.1rem;
+        font-size: 1.05rem;
         border-radius: 8px;
         background: rgba(255,255,255,0.05);
       }
       .phins-nav a:hover, .phins-nav a.active {
         background: rgba(255,255,255,0.2);
       }
-      .phins-nav .nav-divider { display: none; }
-      .phins-nav .btn-logout { margin-top: 8px; }
+      .phins-utility .btn-logout { margin-left: 4px; }
       .language-selector { display: none; }
     }
     @media screen and (max-width: 768px) {
       .phins-header-inner { padding: 0.5rem 1rem; }
       .phins-logo-icon { width: 36px; height: 36px; font-size: 1.2rem; }
-      .phins-logo-text { font-size: 1.3rem; }
+      .phins-logo-text { font-size: 1.25rem; }
       .container { padding: 12px !important; }
       .dashboard-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
-      .stat-box { padding: 16px !important; }
-      .stat-value { font-size: 1.5rem !important; }
+      .stat-box { padding: 14px 10px !important; }
+      .stat-value { font-size: 1.35rem !important; }
       .section-content { padding: 16px !important; }
       .table-card { overflow-x: auto; }
     }
@@ -446,6 +480,144 @@
       .admin-ai-quick-btn { padding: 6px 10px; font-size: 0.74rem; }
     }
 
+    /* ==================== COMPACT MINI STATS (Overview) ==================== */
+    .dashboard-stats {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+      gap: 14px !important;
+      margin-bottom: 20px !important;
+    }
+    .dashboard-stats .stat-box {
+      padding: 16px 14px !important;
+      border-radius: 12px !important;
+      box-shadow: 0 2px 10px rgba(21, 101, 192, 0.1);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .dashboard-stats .stat-box:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(21, 101, 192, 0.16);
+    }
+    .dashboard-stats .stat-icon {
+      font-size: 1.4rem;
+      margin-bottom: 4px;
+    }
+    .dashboard-stats .stat-value {
+      font-size: 1.55rem !important;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .dashboard-stats .stat-label {
+      font-size: 0.78rem !important;
+      opacity: 0.92;
+      margin-top: 2px;
+    }
+    .dashboard-stats .stat-change {
+      font-size: 0.72rem !important;
+      opacity: 0.85;
+      margin-top: 4px;
+    }
+
+    /* ==================== COLLAPSIBLE SECTIONS ==================== */
+    [data-collapsible="true"] {
+      position: relative;
+      transition: padding 0.25s ease;
+    }
+    [data-collapsible="true"] .section-toggle {
+      background: rgba(255,255,255,0.18);
+      color: inherit;
+      border: 1px solid rgba(255,255,255,0.25);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      line-height: 1;
+      transition: all 0.2s ease;
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+    [data-collapsible="true"] .section-toggle:hover {
+      background: rgba(255,255,255,0.32);
+      transform: scale(1.05);
+    }
+    [data-collapsible="true"][data-tone="light"] .section-toggle {
+      background: rgba(13, 71, 161, 0.08);
+      border-color: rgba(13, 71, 161, 0.18);
+      color: #0d47a1;
+    }
+    [data-collapsible="true"][data-tone="light"] .section-toggle:hover {
+      background: rgba(13, 71, 161, 0.16);
+    }
+    [data-collapsible="true"][data-collapsed="true"] {
+      padding-top: 14px !important;
+      padding-bottom: 14px !important;
+    }
+    [data-collapsible="true"][data-collapsed="true"] > .section-header {
+      margin-bottom: 0 !important;
+    }
+    [data-collapsible="true"][data-collapsed="true"] > *:not(.section-header):not(.section-toggle) {
+      display: none !important;
+    }
+    [data-collapsible="true"] .section-header {
+      cursor: pointer;
+      user-select: none;
+    }
+    [data-collapsible="true"] .section-header h2,
+    [data-collapsible="true"] .section-header h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ==================== UNIVERSAL SECTION SEARCH ==================== */
+    .section-search {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(13, 71, 161, 0.1);
+      border-radius: 10px;
+      backdrop-filter: blur(4px);
+    }
+    .section-search-input {
+      flex: 1;
+      min-width: 220px;
+      padding: 9px 12px;
+      border: 1.5px solid rgba(13, 71, 161, 0.18);
+      border-radius: 8px;
+      font-size: 0.88rem;
+      background: white;
+      color: #0d47a1;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .section-search-input:focus {
+      border-color: #1976d2;
+      box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.12);
+    }
+    .section-search-count {
+      font-size: 0.78rem;
+      color: #546e7a;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    [data-collapsible="true"][data-tone="dark"] .section-search {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.2);
+    }
+    [data-collapsible="true"][data-tone="dark"] .section-search-input {
+      background: rgba(255,255,255,0.92);
+      color: #0d47a1;
+    }
+    [data-collapsible="true"][data-tone="dark"] .section-search-count {
+      color: rgba(255,255,255,0.85);
+    }
+
     /* Embed mode: when admin.html is iframed from the Media Dashboard
        (e.g. /admin.html?embed=growth-agent-section) we only show the
        requested section and hide global chrome so the surrounding
@@ -496,13 +668,27 @@
 <body>
   <header class="phins-header">
     <div class="phins-header-inner">
-      <a href="/admin.html" class="phins-logo">
-        <div class="phins-logo-icon">🛡️</div>
-        <span class="phins-logo-text">PHINS</span>
-      </a>
-      <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+      <div class="phins-header-top">
+        <a href="/admin.html" class="phins-logo">
+          <div class="phins-logo-icon">🛡️</div>
+          <span class="phins-logo-text">PHINS</span>
+        </a>
+        <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+        <div class="phins-utility">
+          <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
+            <option value="en">🌐 EN</option>
+            <option value="es">🌐 ES</option>
+            <option value="fr">🌐 FR</option>
+            <option value="de">🌐 DE</option>
+            <option value="zh">🌐 中文</option>
+            <option value="he">🌐 עב</option>
+          </select>
+          <a href="javascript:void(0)" onclick="toggleAdminConsole()" class="btn-console">⌨️ Console</a>
+          <a href="/" class="btn-logout">Logout</a>
+        </div>
+      </div>
       <nav class="phins-nav" id="mobile-nav">
-        <a href="/admin.html" class="active">Overview</a>
+        <a href="/admin.html" class="active">🏠 Overview</a>
         <a href="/underwriter-dashboard.html">🔍 Underwriting</a>
         <a href="/claims-adjuster-dashboard.html">📋 Claims</a>
         <a href="/billing.html">💳 Billing</a>
@@ -516,17 +702,6 @@
         <a href="/risk-reports-dashboard.html">📊 AI Reports</a>
         <a href="/cyber-security.html">🛡️ Cyber Security</a>
         <a href="/pitch-dashboard.html" target="_blank">📋 IL Pitch</a>
-        <div class="nav-divider"></div>
-        <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
-          <option value="en">🌐 EN</option>
-          <option value="es">🌐 ES</option>
-          <option value="fr">🌐 FR</option>
-          <option value="de">🌐 DE</option>
-          <option value="zh">🌐 中文</option>
-          <option value="he">🌐 עב</option>
-        </select>
-        <a href="javascript:void(0)" onclick="toggleAdminConsole()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.25);color:white;padding:0.4rem 0.75rem;border-radius:6px;font-size:0.8rem;font-weight:500;text-decoration:none;white-space:nowrap;">⌨️ Console</a>
-        <a href="/" class="btn-logout">Logout</a>
       </nav>
     </div>
   </header>
@@ -815,8 +990,10 @@
     </script>
     
     <!-- Pipeline Overview -->
-    <div class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); border-radius: 12px; padding: 20px;">
-      <h3 style="margin-bottom: 16px;">📊 Insurance Pipeline Overview</h3>
+    <div id="pipeline-overview" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); border-radius: 12px; padding: 20px;">
+      <div class="section-header" style="margin-bottom: 16px;">
+        <h3 style="margin: 0;">📊 Insurance Pipeline Overview</h3>
+      </div>
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
           <div style="font-size: 24px; font-weight: bold; color: #667eea;" id="pipe-registered">0</div>
@@ -856,8 +1033,8 @@
     </div>
     
     <!-- PHINS Balance Sheet / General Reserves Section -->
-    <div id="balance-sheet-section" class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); border-radius: 12px; padding: 20px; color: white;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <div id="balance-sheet-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); border-radius: 12px; padding: 20px; color: white;">
+      <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h3 style="color: white; margin: 0;">🏦 PHINS General Reserves (Balance Sheet)</h3>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="loadAIInsights()" class="btn" style="background: rgba(156,39,176,0.4); color: white; border: 1px solid rgba(156,39,176,0.6); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">🤖 AI Insights</button>
@@ -1034,7 +1211,7 @@
     <!-- Division-Specific Sections -->
     
     <!-- Customer Management Section -->
-    <section id="customers" class="section-content" style="margin-top: 24px;">
+    <section id="customers" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px;">
       <div class="section-header">
         <h2>👥 Customer Management — Recent Activity</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1103,7 +1280,7 @@
     </section>
     
     <!-- Sales Division -->
-    <section id="policies" class="section-content">
+    <section id="policies" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
       <div class="section-header">
         <h2>📊 Sales Division — Policy Management</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1185,7 +1362,7 @@
     </section>
 
     <!-- Underwriting Division -->
-    <section id="underwriting" class="section-content">
+    <section id="underwriting" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
       <div class="section-header">
         <h2>🔍 Underwriting Division — Risk Assessment</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1244,6 +1421,10 @@
       </div>
       
       <div class="table-card">
+        <div class="section-search">
+          <input type="text" class="section-search-input" id="underwriting-search" placeholder="Search by UW ID, policy, customer, risk, status..." oninput="filterTableRowsBySearch('underwriting-tbody', this.value, 'underwriting-search-count')">
+          <span class="section-search-count" id="underwriting-search-count"></span>
+        </div>
         <table class="data-table">
           <thead>
             <tr>
@@ -1267,7 +1448,7 @@
     </section>
 
     <!-- Claims Division -->
-    <section id="claims" class="section-content">
+    <section id="claims" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
       <div class="section-header">
         <h2>📝 Claims Division — ADL-Based Disability Claims</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1323,6 +1504,10 @@
       </div>
       
       <div class="table-card">
+        <div class="section-search">
+          <input type="text" class="section-search-input" id="claims-search" placeholder="Search by claim ID, policy, customer, benefit, status..." oninput="filterTableRowsBySearch('claims-tbody', this.value, 'claims-search-count')">
+          <span class="section-search-count" id="claims-search-count"></span>
+        </div>
         <table class="data-table">
           <thead>
             <tr>
@@ -1348,7 +1533,7 @@
     </section>
 
     <!-- Accounting/Billing Division -->
-    <section id="billing" class="section-content">
+    <section id="billing" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
       <div class="section-header">
         <h2>💰 Accounting Division — Billing & Payments</h2>
       </div>
@@ -1377,6 +1562,10 @@
 
       <div class="table-card" style="margin-top:24px">
         <h3>Recent Transactions</h3>
+        <div class="section-search">
+          <input type="text" class="section-search-input" id="transactions-search" placeholder="Search by transaction ID, customer, type, status..." oninput="filterTableRowsBySearch('transactions-tbody', this.value, 'transactions-search-count')">
+          <span class="section-search-count" id="transactions-search-count"></span>
+        </div>
         <table class="data-table">
           <thead>
             <tr>
@@ -1398,12 +1587,16 @@
     </section>
 
     <!-- Reinsurance Division -->
-    <section id="reinsurance" class="section-content">
+    <section id="reinsurance" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
       <div class="section-header">
         <h2>🤝 Reinsurance Division — Partner Management</h2>
       </div>
       
       <div class="table-card">
+        <div class="section-search">
+          <input type="text" class="section-search-input" id="reinsurance-search" placeholder="Search by partner, type, status..." oninput="filterTableRowsBySearch('reinsurance-tbody', this.value, 'reinsurance-search-count')">
+          <span class="section-search-count" id="reinsurance-search-count"></span>
+        </div>
         <table class="data-table">
           <thead>
             <tr>
@@ -1425,7 +1618,7 @@
     </section>
 
     <!-- Legal Division -->
-    <section id="legal" class="section-content">
+    <section id="legal" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
       <div class="section-header">
         <h2>⚖️ Legal Division — Compliance & Disputes</h2>
       </div>
@@ -1454,7 +1647,7 @@
     </section>
     
     <!-- Marketplace & Services Division -->
-    <section id="marketplace" class="section-content" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; border: 1px solid rgba(21, 101, 192, 0.1);">
+    <section id="marketplace" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; border: 1px solid rgba(21, 101, 192, 0.1);">
       <div class="section-header">
         <h2>🛒 Marketplace Division — Services & Products</h2>
         <span class="badge badge-success" id="marketplace-status">NFT-Verified</span>
@@ -1484,14 +1677,18 @@
       </div>
       
       <div class="table-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3>Recent Service & Product Transactions</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <h3 style="margin: 0;">Recent Service & Product Transactions</h3>
           <div>
             <button class="btn btn-small" onclick="filterMarketplace('all')">All</button>
             <button class="btn btn-small" onclick="filterMarketplace('services')">Services</button>
             <button class="btn btn-small" onclick="filterMarketplace('products')">Products</button>
             <button class="btn btn-small" style="background:#ffc107;color:#333;" onclick="filterMarketplace('pending')">Pending</button>
           </div>
+        </div>
+        <div class="section-search">
+          <input type="text" class="section-search-input" id="marketplace-search" placeholder="Search by transaction, customer, item, NFT, status..." oninput="filterTableRowsBySearch('marketplace-table', this.value, 'marketplace-search-count')">
+          <span class="section-search-count" id="marketplace-search-count"></span>
         </div>
         <table class="data-table">
           <thead>
@@ -1595,79 +1792,8 @@
       </div>
     </section>
     
-    <!-- Insurance AI BI Dashboard -->
-    <section class="section-content" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
-      <div class="section-header">
-        <h2 style="color: white;">🤖 AI-Powered Insurance BI System</h2>
-        <span class="badge" style="background: #28a745;">LIVE</span>
-      </div>
-      
-      <p style="opacity: 0.9; margin-bottom: 24px;">Real-time analytics and intelligent automation for the world's most advanced insurance platform.</p>
-      
-      <div class="dashboard-stats">
-        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
-          <div class="stat-icon">📊</div>
-          <div class="stat-value">99.9%</div>
-          <div class="stat-label">System Uptime</div>
-        </div>
-        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
-          <div class="stat-icon">⚡</div>
-          <div class="stat-value">&lt;50ms</div>
-          <div class="stat-label">API Response Time</div>
-        </div>
-        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
-          <div class="stat-icon">🔒</div>
-          <div class="stat-value">AES-256</div>
-          <div class="stat-label">Encryption Standard</div>
-        </div>
-        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
-          <div class="stat-icon">🌐</div>
-          <div class="stat-value">24/7</div>
-          <div class="stat-label">Global Availability</div>
-        </div>
-      </div>
-      
-      <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
-        <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
-          <h4 style="margin-bottom: 12px;">🎯 Automated Pipeline</h4>
-          <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="padding: 4px 0;">✓ Application Processing</li>
-            <li style="padding: 4px 0;">✓ Underwriting AI</li>
-            <li style="padding: 4px 0;">✓ Policy Activation</li>
-            <li style="padding: 4px 0;">✓ Premium Billing</li>
-            <li style="padding: 4px 0;">✓ Claims Processing</li>
-            <li style="padding: 4px 0;">✓ Payment Disbursement</li>
-          </ul>
-        </div>
-        
-        <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
-          <h4 style="margin-bottom: 12px;">🔗 NFT Token System</h4>
-          <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="padding: 4px 0;">✓ Transaction Provenance</li>
-            <li style="padding: 4px 0;">✓ Data Integrity</li>
-            <li style="padding: 4px 0;">✓ Audit Trail</li>
-            <li style="padding: 4px 0;">✓ Smart Contracts</li>
-            <li style="padding: 4px 0;">✓ Product Authenticity</li>
-            <li style="padding: 4px 0;">✓ Ownership Transfer</li>
-          </ul>
-        </div>
-        
-        <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
-          <h4 style="margin-bottom: 12px;">💳 Payment Options</h4>
-          <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="padding: 4px 0;">✓ Lump Sum Payments</li>
-            <li style="padding: 4px 0;">✓ Risk Cover Disbursement</li>
-            <li style="padding: 4px 0;">✓ Service Provider Payment</li>
-            <li style="padding: 4px 0;">✓ Product Vendor Payment</li>
-            <li style="padding: 4px 0;">✓ Recurring Benefits</li>
-            <li style="padding: 4px 0;">✓ Health Wallet Credits</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
     <!-- Marketing + Sales Agent (AI + BI) -->
-    <section id="growth-agent-section" class="section-content" style="background: linear-gradient(135deg, #0b1f4d 0%, #173f8a 50%, #1e5ec8 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(11, 31, 77, 0.28);">
+    <section id="growth-agent-section" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #0b1f4d 0%, #173f8a 50%, #1e5ec8 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 10px 30px rgba(11, 31, 77, 0.28);">
       <div class="section-header" style="margin-bottom: 18px;">
         <div>
           <h2 style="color: white; margin: 0;">🚀 AI + BI Marketing & Sales Agent</h2>
@@ -1830,7 +1956,7 @@
     </section>
     
     <!-- Platform Ledger Analytics Section -->
-    <section id="platform-analytics" class="section-content" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(26, 35, 126, 0.25);">
+    <section id="platform-analytics" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(26, 35, 126, 0.25);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;">📊 Platform Ledger Analytics</h2>
@@ -1939,7 +2065,7 @@
     </section>
     
     <!-- ==================== INVITATION CODE MANAGEMENT ==================== -->
-    <section id="invitation-management" class="section-content" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(255, 107, 53, 0.25);">
+    <section id="invitation-management" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="dark" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(255, 107, 53, 0.25);">
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;">🎟️ Invitation Code Management</h2>
@@ -2080,6 +2206,10 @@
           📋 Invitation Codes
           <span id="codes-count" style="font-size: 0.9rem; opacity: 0.8;">Loading...</span>
         </h3>
+        <div class="section-search">
+          <input type="text" class="section-search-input" id="invitation-search" placeholder="Search by code, type, status, creator..." oninput="filterTableRowsBySearch('invitation-codes-list', this.value, 'invitation-search-count')">
+          <span class="section-search-count" id="invitation-search-count"></span>
+        </div>
         <div style="max-height: 300px; overflow-y: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
             <thead>
@@ -2140,6 +2270,169 @@
     function toggleMobileMenu() {
       document.getElementById('mobile-nav').classList.toggle('open');
     }
+
+    // ==================== COLLAPSIBLE SECTIONS ====================
+    // All sections marked .collapsible-section default to collapsed (data-collapsed="true").
+    // User preference is persisted per-section in localStorage so an explicit
+    // expansion sticks across page loads.
+    const PHINS_COLLAPSE_STORAGE_KEY = 'phins.admin.collapsed.v1';
+    function readCollapseStateMap() {
+      try {
+        const raw = localStorage.getItem(PHINS_COLLAPSE_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+      } catch (_) { return {}; }
+    }
+    function writeCollapseStateMap(map) {
+      try { localStorage.setItem(PHINS_COLLAPSE_STORAGE_KEY, JSON.stringify(map || {})); } catch (_) { /* non-fatal */ }
+    }
+    function setSectionCollapsed(section, collapsed) {
+      if (!section) return;
+      section.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      const btn = section.querySelector('.section-toggle[data-section-id="' + (section.id || '') + '"]') ||
+                  section.querySelector(':scope .section-toggle');
+      if (btn) {
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        btn.title = collapsed ? 'Expand section' : 'Minimise section';
+        btn.textContent = collapsed ? '▸' : '▾';
+      }
+      const id = section.id;
+      if (id) {
+        const map = readCollapseStateMap();
+        map[id] = !!collapsed;
+        writeCollapseStateMap(map);
+      }
+    }
+    function toggleSectionCollapsed(section) {
+      const collapsed = section.getAttribute('data-collapsed') === 'true';
+      setSectionCollapsed(section, !collapsed);
+    }
+    function findToggleHost(header) {
+      const children = Array.from(header.children);
+      if (children.length === 0) return header;
+      const last = children[children.length - 1];
+      const lastIsHeadingLike = ['H1','H2','H3','H4','P','SPAN'].includes(last.tagName);
+      if (children.length >= 2 && !lastIsHeadingLike) {
+        return last;
+      }
+      return header;
+    }
+    function initCollapsibleSections() {
+      const stored = readCollapseStateMap();
+      const sections = document.querySelectorAll('[data-collapsible="true"]');
+      sections.forEach(section => {
+        let header = section.querySelector(':scope > .section-header');
+        if (!header) {
+          const h = section.querySelector(':scope > h2, :scope > h3');
+          if (h) {
+            const wrap = document.createElement('div');
+            wrap.className = 'section-header';
+            h.parentNode.insertBefore(wrap, h);
+            wrap.appendChild(h);
+            header = wrap;
+          }
+        }
+        if (!header) return;
+
+        if (!section.querySelector(':scope .section-toggle')) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'section-toggle';
+          btn.setAttribute('aria-label', 'Toggle section');
+          btn.setAttribute('data-section-id', section.id || '');
+          btn.textContent = '▾';
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSectionCollapsed(section);
+          });
+          findToggleHost(header).appendChild(btn);
+        }
+        header.addEventListener('click', (e) => {
+          if (e.target.closest('button, a, input, select, textarea, .badge')) return;
+          toggleSectionCollapsed(section);
+        });
+
+        const id = section.id;
+        const hasStored = id && Object.prototype.hasOwnProperty.call(stored, id);
+        const initialCollapsed = hasStored ? !!stored[id] : (section.getAttribute('data-collapsed') !== 'false');
+        setSectionCollapsed(section, initialCollapsed);
+      });
+
+      try {
+        if (window.location.hash) {
+          const id = window.location.hash.replace(/^#/, '');
+          const target = document.getElementById(id);
+          if (target && target.getAttribute('data-collapsible') === 'true') {
+            setSectionCollapsed(target, false);
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      } catch (_) { /* non-fatal */ }
+    }
+    window.addEventListener('hashchange', () => {
+      try {
+        const id = window.location.hash.replace(/^#/, '');
+        if (!id) return;
+        const target = document.getElementById(id);
+        if (target && target.getAttribute('data-collapsible') === 'true') {
+          setSectionCollapsed(target, false);
+        }
+      } catch (_) { /* non-fatal */ }
+    });
+    document.addEventListener('DOMContentLoaded', initCollapsibleSections);
+
+    // ==================== UNIVERSAL TABLE SEARCH ====================
+    // Filters tbody rows in-place by case-insensitive substring match across
+    // the visible text of each row. Updates an optional count element with the
+    // number of matched rows so users see live feedback without losing data.
+    function filterTableRowsBySearch(tbodyId, rawQuery, countElId) {
+      const tbody = document.getElementById(tbodyId);
+      if (!tbody) return;
+      const query = (rawQuery || '').toString().trim().toLowerCase();
+      const rows = tbody.querySelectorAll(':scope > tr');
+      let visible = 0;
+      let total = 0;
+      rows.forEach(row => {
+        if (row.cells && row.cells.length === 1 && row.cells[0].hasAttribute('colspan')) {
+          return;
+        }
+        total += 1;
+        if (!query) {
+          row.style.display = '';
+          visible += 1;
+          return;
+        }
+        const text = (row.textContent || '').toLowerCase();
+        const match = text.indexOf(query) !== -1;
+        row.style.display = match ? '' : 'none';
+        if (match) visible += 1;
+      });
+      const countEl = countElId ? document.getElementById(countElId) : null;
+      if (countEl) {
+        countEl.textContent = query ? (visible + ' of ' + total + ' match') : '';
+      }
+    }
+    // Re-apply active search filters when tbody contents change (data reloads).
+    function initSectionSearchObservers() {
+      const inputs = document.querySelectorAll('.section-search-input');
+      inputs.forEach(input => {
+        const handler = input.getAttribute('oninput') || '';
+        const m = handler.match(/filterTableRowsBySearch\(\s*'([^']+)'\s*,\s*this\.value\s*,\s*'([^']+)'/);
+        if (!m) return;
+        const tbodyId = m[1];
+        const countId = m[2];
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        const observer = new MutationObserver(() => {
+          if (input.value && input.value.trim().length > 0) {
+            filterTableRowsBySearch(tbodyId, input.value, countId);
+          }
+        });
+        observer.observe(tbody, { childList: true });
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initSectionSearchObservers);
     
     // Validate admin access - check role, not just username
     const storedUser = sessionStorage.getItem('username');
