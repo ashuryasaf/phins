@@ -1,0 +1,20 @@
+9c1fa5d Merge pull request #339 from ashuryasaf/cursor/exec-actuary-pitch-card-a6cb
+a2b1ded Fix: resolve index.html for subdirectory paths in static file serving
+90f44a6 Remove broken Bearer-only auth guard on /internal/ files
+8927691 Fix security issues: sync robots.txt, add auth for /internal/ paths, add noindex meta tag
+2a9237d Fix robots.txt handler to disallow /internal/ path
+4c54159 Add Executive Actuary Meeting Briefing card to pitch dashboard
+5e4ea91 Host actuary briefing under web_portal/static/internal for phins.ai access
+d24e9b7 Merge pull request #338 from ashuryasaf/cursor/exec-actuary-briefing-a6cb
+64a120d Fix nested markdown lists flattening incorrectly in md_to_html
+b45594f Add Executive Actuary Meeting Briefing (md, html, pdf)
+8d61c8d Merge pull request #337 from ashuryasaf/cursor/fix-trading-terminal-stale-price-379f
+9bf51d3 Fix string-to-number comparison for sign prefix in trading terminal
+f03a059 Trading terminal ANALYZE: use live IEX trade for current price
+2276959 Merge pull request #336 from ashuryasaf/cursor/railway-ledger-chain-repair-and-key-mask-e044
+17b1ad5 Deduplicate post-hydration ledger repair logic into shared helper
+5bfe174 Fix: strip original_* tracking fields before hash-chain validation
+e47a59d Fix re-sequence count diagnostic always reporting zero
+ba51332 tests: cover post-hydration chain repair + masked AI key log line
+ff6a91f scripts: add operator-run platform ledger chain repair tool
+6818927 server: repair platform ledger chain after DB hydration on boot
