@@ -24326,9 +24326,9 @@ For claims or questions, please contact:
                     return None
 
             def _first_set(*sources):
-                """Return the first value that is not None."""
+                """Return the first value that is not None or empty string."""
                 for v in sources:
-                    if v is not None:
+                    if v is not None and v != '':
                         return v
                 return None
 
