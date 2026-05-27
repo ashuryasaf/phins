@@ -26316,6 +26316,7 @@ For claims or questions, please contact:
                         cleanup_results['test_investments_cleared'] += 1
                 
                 # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
+                # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
                 for claim_id, claim in list(CLAIMS.items()):
                     cust_id = claim.get('customer_id', '')
                     description = str(claim.get('description', '')).lower()
@@ -26326,7 +26327,7 @@ For claims or questions, please contact:
                         'sample' in description
                     )
                     
-                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS:
+                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in SANDBOX_PUSHED_CUSTOMERS:
                         del CLAIMS[claim_id]
                         cleanup_results['demo_claims_removed'] += 1
                         cleanup_results['details'].append(f"Removed test claim: {claim_id}")
@@ -36184,10 +36185,10 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
             except Exception as e:
                 import traceback as _tb
+                _tb.print_exc()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({
                     'error': str(e),
-                    'traceback': _tb.format_exc(),
                     'partial_created': created,
                 }).encode('utf-8'))
             return
