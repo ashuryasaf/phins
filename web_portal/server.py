@@ -24353,7 +24353,7 @@ For claims or questions, please contact:
 
             profile = {
                 'id': customer_id,
-                'name': customer.get('name', 'Customer'),
+                'name': customer.get('name') or None,
                 'email': customer.get('email'),
                 'phone': customer.get('phone'),
                 'address': customer.get('address'),
