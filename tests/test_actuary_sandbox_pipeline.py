@@ -85,9 +85,22 @@ def test_sandbox_full_purge_mirrors_cleanup_demo_data_branch():
     # Untouched control row that must survive the purge.
     portal.CUSTOMERS["CUST-CONTROL-1"] = {"id": "CUST-CONTROL-1", "name": "Real"}
 
+    # Add a protected customer to SANDBOX_PUSHED_CUSTOMERS to verify the
+    # PROTECTED_CUSTOMERS safety guard prevents its purge.
+    protected_id = "CUST-ASAF-001"
+    portal.CUSTOMERS[protected_id] = {"id": protected_id, "name": "Protected Real"}
+    portal.SANDBOX_PUSHED_CUSTOMERS.add(protected_id)
+
     try:
-        # Mirror the cleanup branch exactly.
-        for sandbox_id in list(portal.SANDBOX_PUSHED_CUSTOMERS):
+        # Mirror the cleanup branch exactly, including the PROTECTED_CUSTOMERS filter.
+        PROTECTED_CUSTOMERS = {
+            'CUST-ASAF-001',
+            'CUST-EFRAT-001',
+            'CUST-SHOSH-001',
+            'CUST-ASI-001',
+        }
+        purge_ids = {cid for cid in portal.SANDBOX_PUSHED_CUSTOMERS if cid not in PROTECTED_CUSTOMERS}
+        for sandbox_id in list(purge_ids):
             for p_id, p in list(portal.POLICIES.items()):
                 if p.get("customer_id") == sandbox_id:
                     del portal.POLICIES[p_id]
@@ -119,8 +132,12 @@ def test_sandbox_full_purge_mirrors_cleanup_demo_data_branch():
         assert cust_id not in portal.SUSPENDED_TEST_ACCOUNTS
         # Real customer was not affected.
         assert "CUST-CONTROL-1" in portal.CUSTOMERS
+        # Protected customer must survive even though it was in SANDBOX_PUSHED_CUSTOMERS.
+        assert protected_id in portal.CUSTOMERS
     finally:
         portal.CUSTOMERS.pop("CUST-CONTROL-1", None)
+        portal.CUSTOMERS.pop(protected_id, None)
+        portal.SANDBOX_PUSHED_CUSTOMERS.discard(protected_id)
         portal.UNDERWRITING_APPLICATIONS.pop(uw_id, None)
         portal.HEALTH_WALLETS.pop(cust_id, None)
         portal.INVESTMENT_ACCOUNTS.pop(cust_id, None)
