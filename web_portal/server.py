@@ -26347,35 +26347,36 @@ For claims or questions, please contact:
                 # application). PROTECTED_CUSTOMERS is still respected as
                 # a safety net even though sandbox IDs use a distinct
                 # prefix.
-                for cust_id in list(SANDBOX_PUSHED_CUSTOMERS):
-                    if cust_id in PROTECTED_CUSTOMERS:
-                        continue
-                    for pol_id, pol in list(POLICIES.items()):
-                        if pol.get('customer_id') == cust_id:
-                            del POLICIES[pol_id]
-                            cleanup_results['sandbox_policies_deleted'] += 1
-                    for clm_id, clm in list(CLAIMS.items()):
-                        if clm.get('customer_id') == cust_id:
-                            del CLAIMS[clm_id]
-                            cleanup_results['sandbox_claims_deleted'] += 1
-                    for bill_id, bill in list(BILLING.items()):
-                        if bill.get('customer_id') == cust_id:
-                            del BILLING[bill_id]
-                            cleanup_results['sandbox_bills_deleted'] += 1
-                    for uw_id, uw in list(UNDERWRITING_APPLICATIONS.items()):
-                        if uw.get('customer_id') == cust_id:
-                            del UNDERWRITING_APPLICATIONS[uw_id]
-                    HEALTH_WALLETS.pop(cust_id, None)
-                    INVESTMENT_ACCOUNTS.pop(cust_id, None)
-                    try:
-                        REGISTERED_CUSTOMERS.pop(cust_id, None)
-                    except NameError:
-                        pass
-                    if cust_id in CUSTOMERS:
-                        del CUSTOMERS[cust_id]
-                        cleanup_results['sandbox_customers_deleted'] += 1
-                    SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
-                    SANDBOX_PUSHED_CUSTOMERS.discard(cust_id)
+                with STATE_LOCK:
+                    for cust_id in list(SANDBOX_PUSHED_CUSTOMERS):
+                        if cust_id in PROTECTED_CUSTOMERS:
+                            continue
+                        for pol_id, pol in list(POLICIES.items()):
+                            if pol.get('customer_id') == cust_id:
+                                del POLICIES[pol_id]
+                                cleanup_results['sandbox_policies_deleted'] += 1
+                        for clm_id, clm in list(CLAIMS.items()):
+                            if clm.get('customer_id') == cust_id:
+                                del CLAIMS[clm_id]
+                                cleanup_results['sandbox_claims_deleted'] += 1
+                        for bill_id, bill in list(BILLING.items()):
+                            if bill.get('customer_id') == cust_id:
+                                del BILLING[bill_id]
+                                cleanup_results['sandbox_bills_deleted'] += 1
+                        for uw_id, uw in list(UNDERWRITING_APPLICATIONS.items()):
+                            if uw.get('customer_id') == cust_id:
+                                del UNDERWRITING_APPLICATIONS[uw_id]
+                        HEALTH_WALLETS.pop(cust_id, None)
+                        INVESTMENT_ACCOUNTS.pop(cust_id, None)
+                        try:
+                            REGISTERED_CUSTOMERS.pop(cust_id, None)
+                        except NameError:
+                            pass
+                        if cust_id in CUSTOMERS:
+                            del CUSTOMERS[cust_id]
+                            cleanup_results['sandbox_customers_deleted'] += 1
+                        SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
+                        SANDBOX_PUSHED_CUSTOMERS.discard(cust_id)
                 if cleanup_results['sandbox_customers_deleted']:
                     cleanup_results['details'].append(
                         f"Purged {cleanup_results['sandbox_customers_deleted']} actuarial-sandbox customers "

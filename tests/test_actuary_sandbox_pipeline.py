@@ -69,10 +69,16 @@ def test_sandbox_full_purge_mirrors_cleanup_demo_data_branch():
     clm_id = "CLM-TESTSIM-000001"
     bill_id = "BILL-TESTSIM-000001"
 
+    uw_id = "UW-TESTSIM-000001"
+
     portal.CUSTOMERS[cust_id] = {"id": cust_id, "name": "Sandbox 1", "source": "actuary_sandbox"}
     portal.POLICIES[pol_id] = {"id": pol_id, "customer_id": cust_id}
     portal.CLAIMS[clm_id] = {"id": clm_id, "customer_id": cust_id, "amount": 1000}
     portal.BILLING[bill_id] = {"id": bill_id, "customer_id": cust_id, "amount": 100}
+    portal.UNDERWRITING_APPLICATIONS[uw_id] = {"id": uw_id, "customer_id": cust_id}
+    portal.HEALTH_WALLETS[cust_id] = {"balance": 500, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[cust_id] = {"balance": 1000}
+    portal.REGISTERED_CUSTOMERS[cust_id] = {"id": cust_id, "name": "Sandbox 1"}
     portal.SANDBOX_PUSHED_CUSTOMERS.add(cust_id)
     portal.SUSPENDED_TEST_ACCOUNTS.add(cust_id)
 
@@ -91,6 +97,12 @@ def test_sandbox_full_purge_mirrors_cleanup_demo_data_branch():
             for b_id, b in list(portal.BILLING.items()):
                 if b.get("customer_id") == sandbox_id:
                     del portal.BILLING[b_id]
+            for u_id, u in list(portal.UNDERWRITING_APPLICATIONS.items()):
+                if u.get("customer_id") == sandbox_id:
+                    del portal.UNDERWRITING_APPLICATIONS[u_id]
+            portal.HEALTH_WALLETS.pop(sandbox_id, None)
+            portal.INVESTMENT_ACCOUNTS.pop(sandbox_id, None)
+            portal.REGISTERED_CUSTOMERS.pop(sandbox_id, None)
             portal.CUSTOMERS.pop(sandbox_id, None)
             portal.SUSPENDED_TEST_ACCOUNTS.discard(sandbox_id)
             portal.SANDBOX_PUSHED_CUSTOMERS.discard(sandbox_id)
@@ -99,12 +111,20 @@ def test_sandbox_full_purge_mirrors_cleanup_demo_data_branch():
         assert pol_id not in portal.POLICIES
         assert clm_id not in portal.CLAIMS
         assert bill_id not in portal.BILLING
+        assert uw_id not in portal.UNDERWRITING_APPLICATIONS
+        assert cust_id not in portal.HEALTH_WALLETS
+        assert cust_id not in portal.INVESTMENT_ACCOUNTS
+        assert cust_id not in portal.REGISTERED_CUSTOMERS
         assert cust_id not in portal.SANDBOX_PUSHED_CUSTOMERS
         assert cust_id not in portal.SUSPENDED_TEST_ACCOUNTS
         # Real customer was not affected.
         assert "CUST-CONTROL-1" in portal.CUSTOMERS
     finally:
         portal.CUSTOMERS.pop("CUST-CONTROL-1", None)
+        portal.UNDERWRITING_APPLICATIONS.pop(uw_id, None)
+        portal.HEALTH_WALLETS.pop(cust_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(cust_id, None)
+        portal.REGISTERED_CUSTOMERS.pop(cust_id, None)
         _reset_sandbox_state()
 
 
