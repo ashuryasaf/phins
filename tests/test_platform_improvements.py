@@ -558,91 +558,142 @@ class TestDeliveryBiddingService:
 
 class TestBIAnalyticsService:
     """Tests for BIAnalyticsService"""
-    
+
     @pytest.fixture
-    def bi_service(self, sample_customers, sample_suppliers, sample_policies, 
-                   sample_claims, sample_health_wallets, sample_foundations):
-        """Create BI service with sample data"""
-        return BIAnalyticsService(
+    def bi_service(self):
+        """Create BI service instance"""
+        return BIAnalyticsService()
+
+    @pytest.fixture
+    def sample_billing(self):
+        """Sample billing data for BI tests"""
+        return {
+            'BILL-001': {
+                'id': 'BILL-001',
+                'policy_id': 'POL-001',
+                'amount': 500.0,
+                'amount_paid': 500.0,
+                'status': 'paid'
+            },
+            'BILL-002': {
+                'id': 'BILL-002',
+                'policy_id': 'POL-002',
+                'amount': 1000.0,
+                'amount_paid': 500.0,
+                'status': 'partial'
+            }
+        }
+
+    @pytest.fixture
+    def sample_balance_sheet(self):
+        """Sample balance sheet for BI tests"""
+        return {
+            'total_assets': 1000000.0,
+            'total_liabilities': 200000.0,
+            'claims_reserve': 500000.0
+        }
+
+    def test_executive_dashboard(self, bi_service, sample_customers, sample_policies,
+                                  sample_claims, sample_billing, sample_balance_sheet,
+                                  sample_suppliers):
+        """Test executive dashboard generation"""
+        dashboard = bi_service.get_executive_dashboard(
             customers=sample_customers,
-            suppliers=sample_suppliers,
             policies=sample_policies,
             claims=sample_claims,
-            health_wallets=sample_health_wallets,
-            foundations=sample_foundations
+            billing=sample_billing,
+            balance_sheet=sample_balance_sheet,
+            suppliers=sample_suppliers,
         )
-    
-    def test_executive_dashboard(self, bi_service):
-        """Test executive dashboard generation"""
-        dashboard = bi_service.get_executive_dashboard()
-        
+
         assert 'generated_at' in dashboard
         assert 'summary' in dashboard
-        assert 'financial_kpis' in dashboard
-        assert 'operational_kpis' in dashboard
-        assert 'customer_kpis' in dashboard
-        assert 'insights' in dashboard
-        
-        # Check summary
+        assert 'financial' in dashboard
+        assert 'claims' in dashboard
+        assert 'health_scores' in dashboard
+
         assert dashboard['summary']['total_customers'] == 2
         assert dashboard['summary']['total_policies'] == 2
-    
-    def test_financial_kpis(self, bi_service):
-        """Test financial KPI calculations"""
-        dashboard = bi_service.get_executive_dashboard()
-        
-        financial_kpis = dashboard['financial_kpis']
-        assert len(financial_kpis) > 0
-        
-        # Find total premium KPI
-        premium_kpi = next((k for k in financial_kpis if k['name'] == 'Total Premium Revenue'), None)
-        assert premium_kpi is not None
-        assert premium_kpi['value'] == 18000.00  # 6000 + 12000
-    
-    def test_premium_statistics(self, bi_service):
-        """Test premium statistical analysis"""
-        stats = bi_service.get_premium_statistics()
-        
-        assert 'annual_premium' in stats
-        assert 'monthly_premium' in stats
-        assert stats['annual_premium']['count'] == 2
-        assert stats['annual_premium']['mean'] == 9000.00  # (6000 + 12000) / 2
-    
-    def test_claims_statistics(self, bi_service):
-        """Test claims statistical analysis"""
-        stats = bi_service.get_claims_statistics()
-        
-        assert 'claimed_amounts' in stats
-        assert 'by_status' in stats
-        assert stats['total_claims'] == 2
-        assert 'pending' in stats['by_status']
-        assert 'approved' in stats['by_status']
-    
-    def test_supplier_analytics(self, bi_service):
+
+    def test_financial_metrics(self, bi_service, sample_customers, sample_policies,
+                               sample_claims, sample_billing, sample_balance_sheet):
+        """Test financial metrics in executive dashboard"""
+        dashboard = bi_service.get_executive_dashboard(
+            customers=sample_customers,
+            policies=sample_policies,
+            claims=sample_claims,
+            billing=sample_billing,
+            balance_sheet=sample_balance_sheet,
+        )
+
+        financial = dashboard['financial']
+        assert financial['total_assets'] == 1000000.0
+        assert financial['total_liabilities'] == 200000.0
+        assert financial['net_worth'] == 800000.0
+
+    def test_claims_in_dashboard(self, bi_service, sample_customers, sample_policies,
+                                  sample_claims, sample_billing, sample_balance_sheet):
+        """Test claims data in executive dashboard"""
+        dashboard = bi_service.get_executive_dashboard(
+            customers=sample_customers,
+            policies=sample_policies,
+            claims=sample_claims,
+            billing=sample_billing,
+            balance_sheet=sample_balance_sheet,
+        )
+
+        claims_data = dashboard['claims']
+        assert claims_data['total'] == 2
+
+    def test_supplier_analytics(self, bi_service, sample_suppliers):
         """Test supplier analytics"""
-        analytics = bi_service.get_supplier_analytics()
-        
-        assert analytics['total_suppliers'] == 3
-        assert 'by_status' in analytics
-        assert 'by_type' in analytics
-        assert analytics['by_status']['approved'] == 2
-    
-    def test_optimization_recommendations(self, bi_service):
-        """Test optimization recommendations generation"""
-        recommendations = bi_service.get_optimization_recommendations()
-        
-        assert isinstance(recommendations, list)
-        for rec in recommendations:
-            assert 'area' in rec
-            assert 'priority' in rec
-            assert 'recommendation' in rec
-    
-    def test_platform_health_score(self, bi_service):
+        supplier_orders = {
+            'ORD-001': {'id': 'ORD-001', 'supplier_id': 'SUP-001', 'status': 'completed', 'total_amount': 500.0},
+            'ORD-002': {'id': 'ORD-002', 'supplier_id': 'SUP-002', 'status': 'pending', 'total_amount': 750.0},
+        }
+        supplier_metrics = {
+            'SUP-001': {'total_deliveries': 10, 'total_revenue': 5000.0, 'rating': 4.5, 'reliability_score': 0.9},
+            'SUP-002': {'total_deliveries': 20, 'total_revenue': 15000.0, 'rating': 4.8, 'reliability_score': 0.95},
+        }
+
+        analytics = bi_service.get_supplier_analytics(
+            suppliers=sample_suppliers,
+            supplier_orders=supplier_orders,
+            supplier_metrics=supplier_metrics,
+        )
+
+        assert analytics['summary']['total_suppliers'] == 3
+        assert 'status_breakdown' in analytics
+        assert analytics['status_breakdown']['approved'] == 2
+
+    def test_ai_insights(self, bi_service, sample_customers, sample_policies,
+                          sample_claims, sample_billing, sample_balance_sheet):
+        """Test AI insights generation"""
+        dashboard = bi_service.get_executive_dashboard(
+            customers=sample_customers,
+            policies=sample_policies,
+            claims=sample_claims,
+            billing=sample_billing,
+            balance_sheet=sample_balance_sheet,
+        )
+        insights = bi_service.generate_ai_insights(dashboard)
+        assert isinstance(insights, list)
+
+    def test_health_scores(self, bi_service, sample_customers, sample_policies,
+                            sample_claims, sample_billing, sample_balance_sheet):
         """Test platform health score calculation"""
-        dashboard = bi_service.get_executive_dashboard()
-        
-        health_score = dashboard['summary']['platform_health_score']
-        assert 0 <= health_score <= 100
+        dashboard = bi_service.get_executive_dashboard(
+            customers=sample_customers,
+            policies=sample_policies,
+            claims=sample_claims,
+            billing=sample_billing,
+            balance_sheet=sample_balance_sheet,
+        )
+
+        health_scores = dashboard['health_scores']
+        assert 0 <= health_scores['financial_health'] <= 100
+        assert 0 <= health_scores['operational_health'] <= 100
+        assert 0 <= health_scores['overall_health'] <= 100
 
 
 # =============================================================================

@@ -26,7 +26,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import logging
 
 logger = logging.getLogger('phins.bi_analytics')
@@ -150,51 +150,6 @@ class BIAnalyticsService:
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.cache_ttl_seconds = 300
         logger.info("BI Analytics Service initialized")
-
-    # ------------------------------------------------------------------
-    # Statistical utilities
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _summarize(values: List[float]) -> StatisticalSummary:
-        if not values:
-            return StatisticalSummary(
-                count=0, mean=0.0, median=0.0, std_dev=0.0,
-                min_value=0.0, max_value=0.0,
-                percentile_25=0.0, percentile_75=0.0, variance=0.0,
-            )
-        sorted_values = sorted(values)
-        n = len(sorted_values)
-        return StatisticalSummary(
-            count=n,
-            mean=round(statistics.mean(values), 2),
-            median=round(statistics.median(values), 2),
-            std_dev=round(statistics.stdev(values), 2) if n > 1 else 0.0,
-            min_value=round(min(values), 2),
-            max_value=round(max(values), 2),
-            percentile_25=round(sorted_values[int(n * 0.25)], 2),
-            percentile_75=round(sorted_values[min(int(n * 0.75), n - 1)], 2),
-            variance=round(statistics.variance(values), 2) if n > 1 else 0.0,
-        )
-
-    @staticmethod
-    def _trend(values: List[float]) -> Tuple[TrendDirection, float]:
-        if len(values) < 2:
-            return TrendDirection.STABLE, 0.0
-        recent = values[-1]
-        previous_avg = statistics.mean(values[:-1])
-        if previous_avg == 0:
-            return TrendDirection.STABLE, 0.0
-        change_pct = ((recent - previous_avg) / previous_avg) * 100
-        if change_pct > 20:
-            return TrendDirection.STRONG_UP, change_pct
-        if change_pct > 5:
-            return TrendDirection.UP, change_pct
-        if change_pct < -20:
-            return TrendDirection.STRONG_DOWN, change_pct
-        if change_pct < -5:
-            return TrendDirection.DOWN, change_pct
-        return TrendDirection.STABLE, change_pct
 
     # ------------------------------------------------------------------
     # Executive dashboard
@@ -383,12 +338,12 @@ class BIAnalyticsService:
             try:
                 est_dt = datetime.fromisoformat(estimated)
                 act_dt = datetime.fromisoformat(actual)
+                if act_dt <= est_dt:
+                    on_time_deliveries += 1
+                else:
+                    late_deliveries += 1
             except (TypeError, ValueError):
                 continue
-            if act_dt <= est_dt:
-                on_time_deliveries += 1
-            else:
-                late_deliveries += 1
 
         timed_total = on_time_deliveries + late_deliveries
         on_time_rate = (
