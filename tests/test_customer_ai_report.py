@@ -349,6 +349,102 @@ def test_ai_report_customer_isolation():
         srv.stop()
 
 
+def test_ai_report_exposes_demographics_for_unified_workbench():
+    """Profile section surfaces age/smoking/gender/dob/occupation/medical_conditions.
+
+    The Unified Workbench's Comprehensive Assessment bar consumes these fields
+    to render demographics + lifestyle alongside the fact-store profile.
+    They come from the customer record first and fall back to the latest
+    underwriting application, so this test seeds both to verify the merge.
+    """
+    port = 8187
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        token, customer_id = _register_and_login(base, "aitest7@test.com")
+
+        # Demographics live on the customer record - the highest priority
+        # source for the merged profile fields.
+        portal.CUSTOMERS[customer_id] = {
+            'id': customer_id,
+            'name': 'AI Report Tester',
+            'email': 'aitest7@test.com',
+            'age': 42,
+            'gender': 'female',
+            'date_of_birth': '1983-04-15',
+            'occupation': 'engineer',
+            'smoking_status': 'never',
+            'medical_conditions': ['hypertension', 'asthma'],
+            'credit_score': 720,
+            'risk_score': 25,
+        }
+        # Lower-priority fallback - exercised by other tests where the
+        # customer record is sparse but an application exists.
+        portal.UNDERWRITING_APPLICATIONS['APP-DEMO-1'] = {
+            'id': 'APP-DEMO-1',
+            'customer_id': customer_id,
+            'age': 99,  # ignored - customer record wins
+            'smoking_status': 'former',
+            'gender': 'male',
+        }
+
+        data, status = _get(base + "/api/customer/ai-report?period=all", token)
+        assert status == 200
+        prof = data['profile']
+
+        assert prof['age'] == 42
+        assert prof['gender'] == 'female'
+        assert prof['date_of_birth'] == '1983-04-15'
+        assert prof['occupation'] == 'engineer'
+        assert prof['smoking_status'] == 'never'
+        assert prof['medical_conditions'] == ['hypertension', 'asthma']
+    finally:
+        srv.stop()
+
+
+def test_ai_report_falls_back_to_application_for_demographics():
+    """When the customer record lacks demographics, fall back to the
+    latest underwriting application so the Comprehensive Assessment bar
+    still has lifestyle / age / smoking information to display."""
+    port = 8188
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        token, customer_id = _register_and_login(base, "aitest8@test.com")
+
+        # Sparse customer record - no age/smoking/gender/dob/occupation.
+        portal.CUSTOMERS[customer_id] = {
+            'id': customer_id,
+            'name': 'AI Report Tester',
+            'email': 'aitest8@test.com',
+        }
+        portal.UNDERWRITING_APPLICATIONS['APP-FALLBACK-1'] = {
+            'id': 'APP-FALLBACK-1',
+            'customer_id': customer_id,
+            'age': 47,
+            'smoking_status': 'current',
+            'gender': 'male',
+            'date_of_birth': '1978-09-01',
+            'occupation': 'pilot',
+            'created_at': '2026-05-20T12:00:00',
+        }
+
+        data, status = _get(base + "/api/customer/ai-report?period=all", token)
+        assert status == 200
+        prof = data['profile']
+        assert prof['age'] == 47
+        assert prof['smoking_status'] == 'current'
+        assert prof['gender'] == 'male'
+        assert prof['date_of_birth'] == '1978-09-01'
+        assert prof['occupation'] == 'pilot'
+    finally:
+        srv.stop()
+
+
 def test_ai_report_insights_generation():
     """AI insights reflect actual data conditions."""
     port = 8186

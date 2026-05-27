@@ -24298,6 +24298,57 @@ For claims or questions, please contact:
             _LEDGER_FIELDS = ('id', 'tx_id', 'type', 'amount', 'timestamp')
 
             customer = CUSTOMERS.get(customer_id, {})
+
+            # Look up the latest underwriting application for this customer so we
+            # can surface lifestyle / demographic fields (age, smoking, gender,
+            # height, weight, occupation, medical conditions) that don't always
+            # live on the customer record itself. These power the Unified
+            # Workbench "Comprehensive Assessment" bar.
+            try:
+                customer_apps = [
+                    a for a in UNDERWRITING_APPLICATIONS.values()
+                    if (a.get('customer_id') == customer_id
+                        or a.get('customer_email') == customer.get('email'))
+                ]
+                customer_apps.sort(
+                    key=lambda a: a.get('created_at') or a.get('submitted_at') or '',
+                    reverse=True,
+                )
+                latest_app = customer_apps[0] if customer_apps else {}
+            except Exception:
+                latest_app = {}
+
+            def _coerce_age(value):
+                try:
+                    n = int(float(value))
+                    return n if 0 < n < 130 else None
+                except (TypeError, ValueError):
+                    return None
+
+            age = (_coerce_age(customer.get('age'))
+                   or _coerce_age(latest_app.get('age')))
+            smoking_status = (customer.get('smoking_status')
+                              or latest_app.get('smoking_status')
+                              or None)
+            gender = (customer.get('gender')
+                      or latest_app.get('gender')
+                      or None)
+            dob = (customer.get('date_of_birth')
+                   or customer.get('dob')
+                   or latest_app.get('date_of_birth')
+                   or latest_app.get('dob')
+                   or None)
+            occupation = (customer.get('occupation')
+                          or latest_app.get('occupation')
+                          or None)
+            medical_conditions = (customer.get('medical_conditions')
+                                  or latest_app.get('medical_conditions')
+                                  or [])
+            if isinstance(medical_conditions, str):
+                medical_conditions = [
+                    c.strip() for c in medical_conditions.split(',') if c.strip()
+                ]
+
             profile = {
                 'id': customer_id,
                 'name': customer.get('name', 'Customer'),
@@ -24307,6 +24358,15 @@ For claims or questions, please contact:
                 'created_at': customer.get('created_at'),
                 'risk_score': customer.get('risk_score'),
                 'credit_score': customer.get('credit_score'),
+                # Demographic / lifestyle fields used by the Unified Workbench
+                # comprehensive-assessment bar so a single AI report payload can
+                # answer "what do we know about this customer".
+                'age': age,
+                'gender': gender,
+                'date_of_birth': dob,
+                'occupation': occupation,
+                'smoking_status': smoking_status,
+                'medical_conditions': medical_conditions,
             }
 
             customer_policies = [p for p in POLICIES.values()
