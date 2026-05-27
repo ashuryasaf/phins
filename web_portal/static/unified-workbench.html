@@ -1200,7 +1200,7 @@
     // the fact-store id_numbers (which include masked values).
     const identityDocs = docs.filter(d => {
       const t = String((d.document_type || d.category || '')).toLowerCase();
-      return /(id|passport|driver|license|identity|national)/.test(t);
+      return /(\bid\b|passport|driver|license|identity|national)/.test(t);
     });
     const medicalDocs = docs.filter(d => {
       const t = String((d.document_type || d.category || '')).toLowerCase();
