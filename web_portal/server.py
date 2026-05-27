@@ -36020,6 +36020,8 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Actuary access required.'}).encode('utf-8'))
                 return
 
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
             try:
                 data = json.loads(body or '{}')
             except json.JSONDecodeError:
