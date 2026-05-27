@@ -24327,23 +24327,25 @@ For claims or questions, please contact:
 
             age = (_coerce_age(customer.get('age'))
                    or _coerce_age(latest_app.get('age')))
-            smoking_status = (customer.get('smoking_status')
-                              or latest_app.get('smoking_status')
-                              or None)
-            gender = (customer.get('gender')
-                      or latest_app.get('gender')
-                      or None)
-            dob = (customer.get('date_of_birth')
-                   or customer.get('dob')
-                   or latest_app.get('date_of_birth')
-                   or latest_app.get('dob')
-                   or None)
-            occupation = (customer.get('occupation')
-                          or latest_app.get('occupation')
-                          or None)
-            medical_conditions = (customer.get('medical_conditions')
-                                  or latest_app.get('medical_conditions')
-                                  or [])
+            def _first_set(*sources):
+                """Return the first value that is not None."""
+                for v in sources:
+                    if v is not None:
+                        return v
+                return None
+
+            smoking_status = _first_set(customer.get('smoking_status'),
+                                        latest_app.get('smoking_status'))
+            gender = _first_set(customer.get('gender'),
+                                latest_app.get('gender'))
+            dob = _first_set(customer.get('date_of_birth'),
+                             customer.get('dob'),
+                             latest_app.get('date_of_birth'),
+                             latest_app.get('dob'))
+            occupation = _first_set(customer.get('occupation'),
+                                    latest_app.get('occupation'))
+            medical_conditions = _first_set(customer.get('medical_conditions'),
+                                            latest_app.get('medical_conditions')) or []
             if isinstance(medical_conditions, str):
                 medical_conditions = [
                     c.strip() for c in medical_conditions.split(',') if c.strip()
