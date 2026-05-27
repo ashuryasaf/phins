@@ -919,6 +919,8 @@
 
     // ── Step 6a: run the analysis of the chosen depth (and gather BI bars
     //            even when the dropdown sticks to "full")
+    stepState('comprehensive', 'active');
+    const comprehensivePromise = api(`/api/customer/ai-report?customer_id=${encodeURIComponent(cid)}&period=all`).catch(() => null);
     const depth = document.getElementById('analysis-type').value;
     if (depth !== 'full') {
       try {
@@ -949,10 +951,9 @@
     //            comprehensive — it complements the fact-store profile
     //            with structured ledger data the assessment-center service
     //            does not own.
-    stepState('comprehensive', 'active');
     try {
-      const r = await api(`/api/customer/ai-report?customer_id=${encodeURIComponent(cid)}&period=all`);
-      if (r.ok) snapshot.full_record = await r.json();
+      const r = await comprehensivePromise;
+      if (r && r.ok) snapshot.full_record = await r.json();
     } catch (_) { /* non-fatal */ }
     stepState('comprehensive', snapshot.full_record ? 'done' : 'error');
 

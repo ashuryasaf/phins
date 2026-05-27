@@ -24325,14 +24325,15 @@ For claims or questions, please contact:
                 except (TypeError, ValueError):
                     return None
 
-            age = (_coerce_age(customer.get('age'))
-                   or _coerce_age(latest_app.get('age')))
             def _first_set(*sources):
                 """Return the first value that is not None."""
                 for v in sources:
                     if v is not None:
                         return v
                 return None
+
+            age = _first_set(_coerce_age(customer.get('age')),
+                             _coerce_age(latest_app.get('age')))
 
             smoking_status = _first_set(customer.get('smoking_status'),
                                         latest_app.get('smoking_status'))
