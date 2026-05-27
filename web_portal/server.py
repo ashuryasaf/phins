@@ -26348,24 +26348,25 @@ For claims or questions, please contact:
                 # a safety net even though sandbox IDs use a distinct
                 # prefix.
                 with STATE_LOCK:
-                    for cust_id in list(SANDBOX_PUSHED_CUSTOMERS):
-                        if cust_id in PROTECTED_CUSTOMERS:
-                            continue
-                        for pol_id, pol in list(POLICIES.items()):
-                            if pol.get('customer_id') == cust_id:
-                                del POLICIES[pol_id]
-                                cleanup_results['sandbox_policies_deleted'] += 1
-                        for clm_id, clm in list(CLAIMS.items()):
-                            if clm.get('customer_id') == cust_id:
-                                del CLAIMS[clm_id]
-                                cleanup_results['sandbox_claims_deleted'] += 1
-                        for bill_id, bill in list(BILLING.items()):
-                            if bill.get('customer_id') == cust_id:
-                                del BILLING[bill_id]
-                                cleanup_results['sandbox_bills_deleted'] += 1
-                        for uw_id, uw in list(UNDERWRITING_APPLICATIONS.items()):
-                            if uw.get('customer_id') == cust_id:
-                                del UNDERWRITING_APPLICATIONS[uw_id]
+                    purge_ids = {cid for cid in SANDBOX_PUSHED_CUSTOMERS if cid not in PROTECTED_CUSTOMERS}
+
+                    for pol_id, pol in list(POLICIES.items()):
+                        if pol.get('customer_id') in purge_ids:
+                            del POLICIES[pol_id]
+                            cleanup_results['sandbox_policies_deleted'] += 1
+                    for clm_id, clm in list(CLAIMS.items()):
+                        if clm.get('customer_id') in purge_ids:
+                            del CLAIMS[clm_id]
+                            cleanup_results['sandbox_claims_deleted'] += 1
+                    for bill_id, bill in list(BILLING.items()):
+                        if bill.get('customer_id') in purge_ids:
+                            del BILLING[bill_id]
+                            cleanup_results['sandbox_bills_deleted'] += 1
+                    for uw_id, uw in list(UNDERWRITING_APPLICATIONS.items()):
+                        if uw.get('customer_id') in purge_ids:
+                            del UNDERWRITING_APPLICATIONS[uw_id]
+
+                    for cust_id in purge_ids:
                         HEALTH_WALLETS.pop(cust_id, None)
                         INVESTMENT_ACCOUNTS.pop(cust_id, None)
                         try:
@@ -36034,6 +36035,12 @@ For claims or questions, please contact:
             in_policies = data.get('policies') or []
             in_claims = data.get('claims') or []
             in_bills = data.get('bills') or []
+
+            for _field_name, _field_val in [('policies', in_policies), ('claims', in_claims), ('bills', in_bills)]:
+                if not isinstance(_field_val, list):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'{_field_name} must be a list'}).encode('utf-8'))
+                    return
 
             if not isinstance(in_customers, list) or not in_customers:
                 self._set_json_headers(400)
