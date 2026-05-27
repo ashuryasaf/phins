@@ -138,12 +138,33 @@
       overflow: hidden;
       border-left: 6px solid #1565c0;
     }
-    .fn-bar.docs       { border-left-color: #1565c0; }
-    .fn-bar.assessment { border-left-color: #2e7d32; }
-    .fn-bar.reports    { border-left-color: #6a1b9a; }
-    .fn-bar.risk       { border-left-color: #c62828; }
-    .fn-bar.charts     { border-left-color: #ef6c00; }
-    .fn-bar.integrity  { border-left-color: #455a64; }
+    .fn-bar.docs           { border-left-color: #1565c0; }
+    .fn-bar.assessment     { border-left-color: #2e7d32; }
+    .fn-bar.reports        { border-left-color: #6a1b9a; }
+    .fn-bar.risk           { border-left-color: #c62828; }
+    .fn-bar.charts         { border-left-color: #ef6c00; }
+    .fn-bar.integrity      { border-left-color: #455a64; }
+    .fn-bar.comprehensive  { border-left-color: #00838f; }
+
+    /* Comprehensive assessment grid:
+       a dense card-of-cards summary where each section (demographics,
+       identity, medical, policies, billing, wallet, investments, credit /
+       AI insights) is a small card so the viewer can scan every fact about
+       the customer in one glance, regardless of source (uploaded docs,
+       application data, customer record, billing ledger, wallet, etc.). */
+    .ca-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.85rem; }
+    .ca-card { background: #f6fbfc; border: 1px solid #b2ebf2; border-radius: 12px; padding: 0.75rem 0.9rem; }
+    .ca-card h4 { margin: 0 0 0.45rem; color: #006064; font-size: 0.92rem; display: flex; align-items: center; gap: 6px; }
+    .ca-kv { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 4px 10px; font-size: 0.82rem; }
+    .ca-kv dt { color: #455a64; font-weight: 600; }
+    .ca-kv dd { margin: 0; color: #1a237e; word-break: break-word; }
+    .ca-kv dd.muted { color: #90a4ae; font-style: italic; }
+    .ca-pill-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+    .ca-insight { font-size: 0.82rem; padding: 6px 8px; border-radius: 8px; margin-top: 5px; border-left: 3px solid #b0bec5; background: #fafafa; }
+    .ca-insight.critical { border-left-color: #c62828; background: #ffebee; color: #b71c1c; }
+    .ca-insight.warning  { border-left-color: #ef6c00; background: #fff3e0; color: #8d4500; }
+    .ca-insight.info     { border-left-color: #1976d2; background: #e3f2fd; color: #0d47a1; }
+    .ca-insight.positive { border-left-color: #2e7d32; background: #e8f5e9; color: #1b5e20; }
 
     .fn-bar-head {
       padding: 0.85rem 1.25rem;
@@ -355,6 +376,40 @@
     <div class="fn-bar-body">
       <div id="assessment-body">
         <div class="empty">No facts extracted yet.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BAR 3b: Comprehensive Customer Assessment ──────────────────────
+       Single bar that fuses EVERY piece of data we hold about the customer:
+         • demographics from the customer record + latest underwriting app
+           (age, smoking status, gender, occupation, DOB)
+         • identity / contact extracted from uploaded docs (id numbers,
+           full names, addresses, phones, emails)
+         • medical history (conditions, medications, allergies, vitals,
+           smoking status)
+         • policies (count, active count, coverage, premium, breakdown by
+           type) pulled live from the billing/policy ledger
+         • billing snapshot (outstanding, overdue, paid totals, next due)
+         • health-wallet balance + transaction count
+         • investment accounts (index/bonds/crypto/cash balances)
+         • credit + risk score and AI-generated insights from the
+           comprehensive customer AI report
+       Powered by /api/customer/ai-report + the assessment-center profile
+       so the same payload that drives the risk/charts/docs bars also
+       drives this consolidated executive view.
+  ──────────────────────────────────────────────────────────────────── -->
+  <section class="fn-bar comprehensive" id="bar-comprehensive">
+    <div class="fn-bar-head" onclick="toggleBar('bar-comprehensive')">
+      <div class="fn-bar-title">🧬 Comprehensive Customer Assessment</div>
+      <div class="fn-bar-summary" id="comprehensive-summary">
+        <span class="stat-chip muted">—</span>
+      </div>
+      <div class="fn-bar-chevron">▾</div>
+    </div>
+    <div class="fn-bar-body">
+      <div id="comprehensive-body">
+        <div class="empty">No comprehensive assessment yet — run the full pipeline to fuse demographics, policies, billing, wallet and uploaded documents into one view.</div>
       </div>
     </div>
   </section>
@@ -757,13 +812,14 @@
      Pipeline status renderer
      ───────────────────────────────────────────────────────────────────── */
   const PIPELINE_STEPS = [
-    { id: 'upload',    label: 'Upload & ingest queued files' },
-    { id: 'profile',   label: 'Refresh Customer 360 facts' },
-    { id: 'risk',      label: 'Recompute risk score' },
-    { id: 'charts',    label: 'Refresh BI charts' },
-    { id: 'documents', label: 'List documents on file' },
-    { id: 'reports',   label: 'List & (optionally) generate reports' },
-    { id: 'integrity', label: 'Verify cross-bar data integrity' },
+    { id: 'upload',        label: 'Upload & ingest queued files' },
+    { id: 'profile',       label: 'Refresh Customer 360 facts' },
+    { id: 'risk',          label: 'Recompute risk score' },
+    { id: 'charts',        label: 'Refresh BI charts' },
+    { id: 'documents',     label: 'List documents on file' },
+    { id: 'comprehensive', label: 'Fuse demographics · policies · billing · wallet · documents' },
+    { id: 'reports',       label: 'List & (optionally) generate reports' },
+    { id: 'integrity',     label: 'Verify cross-bar data integrity' },
   ];
   let PIPELINE_STATE = {};
   function paintPipeline() {
@@ -837,7 +893,7 @@
       customer_id: cid,
       uploaded_now: { docs: uploadDocsTotal, facts: uploadFactsTotal, errors: uploadErrors },
       profile: null, risk: null, charts: null, documents: null,
-      analysis: null, reports: null,
+      analysis: null, reports: null, full_record: null,
     };
 
     stepState('profile', 'active');
@@ -863,6 +919,8 @@
 
     // ── Step 6a: run the analysis of the chosen depth (and gather BI bars
     //            even when the dropdown sticks to "full")
+    stepState('comprehensive', 'active');
+    const comprehensivePromise = api(`/api/customer/ai-report?customer_id=${encodeURIComponent(cid)}&period=all`).catch(() => null);
     const depth = document.getElementById('analysis-type').value;
     if (depth !== 'full') {
       try {
@@ -885,6 +943,19 @@
         if (r.ok) snapshot.analysis.describe_data = await r.json();
       } catch (_) { /* non-fatal */ }
     }
+
+    // ── Step 6c: fuse comprehensive customer record (policies, billing,
+    //            wallet, investments, credit, AI insights + demographics
+    //            from the latest underwriting application). This payload
+    //            is what makes the "Comprehensive Assessment" bar genuinely
+    //            comprehensive — it complements the fact-store profile
+    //            with structured ledger data the assessment-center service
+    //            does not own.
+    try {
+      const r = await comprehensivePromise;
+      if (r && r.ok) snapshot.full_record = await r.json();
+    } catch (_) { /* non-fatal */ }
+    stepState('comprehensive', snapshot.full_record ? 'done' : 'error');
 
     // ── Step 6b: list (and optionally generate) reports
     stepState('reports', 'active');
@@ -955,6 +1026,7 @@
     paintIntegrity(s);
     paintDocs(s);
     paintAssessment(s);
+    paintComprehensive(s);
     paintRisk(s);
     paintCharts(s);
     paintReports(s);
@@ -1085,6 +1157,251 @@
     body.innerHTML = `<div class="result-card"><h4>Facts per category</h4>${bars}</div>`;
   }
 
+  function paintComprehensive(s) {
+    /* Synthesize EVERY available signal into a single executive view.
+       Sources used (in this order of preference, falling back gracefully):
+         • s.full_record  — /api/customer/ai-report (policies, claims,
+                            billing, wallet, investments, credit, insights,
+                            demographics: age, smoking, gender, occupation,
+                            DOB, medical_conditions)
+         • s.profile      — assessment-center fact-store (identity, contact,
+                            medical conditions/medications/allergies/vitals,
+                            insurance_indicators, savings_indicators,
+                            external_sources)
+         • s.documents    — uploaded files (count, identity/medical doc
+                            classification)
+         • s.risk         — computed risk_score / risk_level / contributors
+       The bar stays useful even when ai-report is unavailable (admin
+       calling against a customer with no record yet) by falling back to
+       the assessment-center profile alone. */
+    const sum = document.getElementById('comprehensive-summary');
+    const body = document.getElementById('comprehensive-body');
+    const fr = s.full_record || {};
+    const prof = s.profile || {};
+    const frProf = fr.profile || {};
+    const ident = prof.identity || {};
+    const contact = prof.contact || {};
+    const med = prof.medical || { conditions: [], medications: [], allergies: [], vital_signs: [] };
+    const docs = (s.documents && s.documents.items) || [];
+
+    // Demographics — pull from the customer record (via ai-report) and
+    // fall back to the fact-store profile (full_names / dates_of_birth)
+    // when the customer record is sparse.
+    const demoName = frProf.name || (ident.full_names || [])[0] || '—';
+    const demoAge = frProf.age != null ? `${frProf.age}` : '—';
+    const demoSmoking = (frProf.smoking_status || '').toString() || '—';
+    const demoGender = frProf.gender || '—';
+    const demoOccupation = frProf.occupation || '—';
+    const demoDob = frProf.date_of_birth || (ident.dates_of_birth || [])[0] || '—';
+    const demoEmail = frProf.email || (contact.emails || [])[0] || '—';
+    const demoPhone = frProf.phone || (contact.phones || [])[0] || '—';
+    const demoAddress = frProf.address || (contact.addresses || [])[0] || '—';
+
+    // Identity documents — counted via the uploaded documents list and
+    // the fact-store id_numbers (which include masked values).
+    const identityDocs = docs.filter(d => {
+      const t = String((d.document_type || d.category || '')).toLowerCase();
+      return /(\bid\b|passport|driver|license|identity|national)/.test(t);
+    });
+    const medicalDocs = docs.filter(d => {
+      const t = String((d.document_type || d.category || '')).toLowerCase();
+      return /(medical|health|lab|prescript|clinic|hospital|diagnos)/.test(t);
+    });
+    const policyDocs = docs.filter(d => {
+      const t = String((d.document_type || d.category || '')).toLowerCase();
+      return /(policy|insurance|coverage|underwrit)/.test(t);
+    });
+    const financialDocs = docs.filter(d => {
+      const t = String((d.document_type || d.category || '')).toLowerCase();
+      return /(bill|invoice|statement|bank|payment|wallet|finance)/.test(t);
+    });
+    const idNumbers = ident.id_numbers || [];
+
+    // Medical signal — merge fact-store medical with the latest
+    // underwriting application's medical_conditions so this card stays
+    // populated even if no medical document has been uploaded yet.
+    const conds = Array.from(new Set([
+      ...med.conditions,
+      ...((frProf.medical_conditions || []).map(c => String(c))),
+    ])).filter(Boolean);
+
+    const policies = fr.policies || { items: [], total: 0, active: 0, total_coverage: 0, total_premium: 0, by_type: {} };
+    const billing  = fr.billing  || { items: [], total: 0, outstanding: 0, paid: 0, overdue: 0, outstanding_amount: 0, total_paid: 0, next_due: null };
+    const claims   = fr.claims   || { items: [], total: 0, pending: 0, approved: 0, denied: 0, total_amount: 0 };
+    const wallet   = fr.health_wallet || { balance: 0, monthly_deposit: 0, transactions_count: 0, deposits_total: 0 };
+    const invest   = fr.investments   || { balance: 0, index_balance: 0, bonds_balance: 0, crypto_balance: 0 };
+    const credit   = fr.credit        || { credit_score: 0, risk_score: 0, risk_level: '—' };
+    const insights = fr.ai_insights || [];
+
+    // Coverage signal counts each card with at least one populated field
+    // so the summary chip can show "X of 8 categories covered" — a
+    // single-glance sense of how thorough the assessment actually is.
+    const coverageFlags = {
+      demographics: !!(frProf.age || frProf.smoking_status || frProf.gender || frProf.date_of_birth || demoName !== '—'),
+      identity:     idNumbers.length > 0 || identityDocs.length > 0,
+      contact:      (contact.emails || []).length + (contact.phones || []).length + (contact.addresses || []).length > 0 || !!(frProf.email || frProf.phone || frProf.address),
+      medical:      conds.length > 0 || (med.medications || []).length > 0 || (med.allergies || []).length > 0 || (med.vital_signs || []).length > 0 || medicalDocs.length > 0,
+      policies:     (policies.total || 0) > 0 || policyDocs.length > 0,
+      billing:      (billing.total || 0) > 0 || financialDocs.length > 0,
+      wallet:       Number(wallet.balance || 0) > 0 || (wallet.transactions_count || 0) > 0,
+      investments:  Number(invest.balance || 0) > 0 || Number(invest.index_balance || 0) > 0 || Number(invest.bonds_balance || 0) > 0 || Number(invest.crypto_balance || 0) > 0,
+    };
+    const covered = Object.values(coverageFlags).filter(Boolean).length;
+    const totalCats = Object.keys(coverageFlags).length;
+
+    const completenessChip = covered === totalCats
+      ? `<span class="stat-chip ok">${covered}/${totalCats} categories covered</span>`
+      : covered >= Math.ceil(totalCats / 2)
+        ? `<span class="stat-chip warn">${covered}/${totalCats} categories covered</span>`
+        : `<span class="stat-chip bad">${covered}/${totalCats} categories covered</span>`;
+    sum.innerHTML = `
+      ${completenessChip}
+      <span class="stat-chip primary">${docs.length} docs</span>
+      <span class="stat-chip muted">${policies.total || 0} policies · ${billing.total || 0} bills · ${claims.total || 0} claims</span>
+      ${wallet.balance ? `<span class="stat-chip purple">wallet $${Number(wallet.balance).toLocaleString()}</span>` : ''}
+    `;
+
+    const fmtMoney = (n) => '$' + (Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const kv = (label, value, muted) => `
+      <dt>${escHtml(label)}</dt>
+      <dd${muted ? ' class="muted"' : ''}>${escHtml(value)}</dd>`;
+    const pillList = (items, cls) => items.length === 0
+      ? '<span class="stat-chip muted">none on file</span>'
+      : items.slice(0, 12).map(v => `<span class="stat-chip ${cls || 'muted'}">${escHtml(typeof v === 'object' ? (v.value || v.masked || JSON.stringify(v)) : v)}</span>`).join('');
+
+    const policyTypesPills = Object.entries(policies.by_type || {})
+      .map(([t, n]) => `<span class="stat-chip primary">${escHtml(t)} · ${n}</span>`).join('') || '<span class="stat-chip muted">no breakdown</span>';
+
+    const insightHtml = insights.length === 0
+      ? '<div class="ca-insight info">No automated insights yet — uploading documents or adding a policy will produce them.</div>'
+      : insights.slice(0, 6).map(i => {
+          const sev = String(i.severity || 'info').toLowerCase();
+          return `<div class="ca-insight ${escHtml(sev)}"><strong>${escHtml((i.category || '').toUpperCase())}</strong> · ${escHtml(i.message || '')}</div>`;
+        }).join('');
+
+    const sources = [];
+    if (fr.generated_at) sources.push(`AI report ${fmtDate(fr.generated_at)}`);
+    if (prof.generated_at) sources.push(`fact store ${fmtDate(prof.generated_at)}`);
+    if (docs.length) sources.push(`${docs.length} uploaded doc(s)`);
+
+    body.innerHTML = `
+      <div class="ca-grid">
+
+        <div class="ca-card">
+          <h4>👤 Demographics</h4>
+          <dl class="ca-kv">
+            ${kv('Name', demoName, demoName === '—')}
+            ${kv('Age', demoAge, demoAge === '—')}
+            ${kv('Gender', demoGender, demoGender === '—')}
+            ${kv('Date of birth', demoDob, demoDob === '—')}
+            ${kv('Occupation', demoOccupation, demoOccupation === '—')}
+            ${kv('Smoking', demoSmoking, demoSmoking === '—')}
+            ${kv('Email', demoEmail, demoEmail === '—')}
+            ${kv('Phone', demoPhone, demoPhone === '—')}
+            ${kv('Address', demoAddress, demoAddress === '—')}
+          </dl>
+        </div>
+
+        <div class="ca-card">
+          <h4>🪪 Identity &amp; documents</h4>
+          <dl class="ca-kv">
+            ${kv('ID numbers on file', idNumbers.length || '—', idNumbers.length === 0)}
+            ${kv('Identity docs', identityDocs.length || '—', identityDocs.length === 0)}
+            ${kv('Medical docs', medicalDocs.length || '—', medicalDocs.length === 0)}
+            ${kv('Policy docs', policyDocs.length || '—', policyDocs.length === 0)}
+            ${kv('Financial docs', financialDocs.length || '—', financialDocs.length === 0)}
+            ${kv('Total uploaded', docs.length || '—', docs.length === 0)}
+          </dl>
+          <div class="ca-pill-row">${pillList((idNumbers || []).map(x => x.masked || x.value || x), 'primary')}</div>
+        </div>
+
+        <div class="ca-card">
+          <h4>🩺 Medical &amp; health status</h4>
+          <dl class="ca-kv">
+            ${kv('Conditions', conds.length || '—', conds.length === 0)}
+            ${kv('Medications', (med.medications || []).length || '—', (med.medications || []).length === 0)}
+            ${kv('Allergies', (med.allergies || []).length || '—', (med.allergies || []).length === 0)}
+            ${kv('Vital signs', (med.vital_signs || []).length || '—', (med.vital_signs || []).length === 0)}
+            ${kv('Smoking', demoSmoking, demoSmoking === '—')}
+          </dl>
+          <div class="ca-pill-row">${pillList(conds, 'bad')}</div>
+        </div>
+
+        <div class="ca-card">
+          <h4>📜 Policies</h4>
+          <dl class="ca-kv">
+            ${kv('Total / active', `${policies.total || 0} / ${policies.active || 0}`)}
+            ${kv('Total coverage', fmtMoney(policies.total_coverage || 0))}
+            ${kv('Monthly premium', fmtMoney(policies.total_premium || 0))}
+          </dl>
+          <div class="ca-pill-row">${policyTypesPills}</div>
+        </div>
+
+        <div class="ca-card">
+          <h4>💳 Billing</h4>
+          <dl class="ca-kv">
+            ${kv('Bills', `${billing.total || 0} (${billing.outstanding || 0} open · ${billing.overdue || 0} overdue)`)}
+            ${kv('Outstanding', fmtMoney(billing.outstanding_amount || 0))}
+            ${kv('Total paid', fmtMoney(billing.total_paid || 0))}
+            ${kv('Next due', billing.next_due || '—', !billing.next_due)}
+          </dl>
+        </div>
+
+        <div class="ca-card">
+          <h4>📋 Claims</h4>
+          <dl class="ca-kv">
+            ${kv('Total', claims.total || 0)}
+            ${kv('Pending', claims.pending || 0)}
+            ${kv('Approved', claims.approved || 0)}
+            ${kv('Denied', claims.denied || 0)}
+            ${kv('Total amount', fmtMoney(claims.total_amount || 0))}
+          </dl>
+        </div>
+
+        <div class="ca-card">
+          <h4>👛 Health wallet</h4>
+          <dl class="ca-kv">
+            ${kv('Balance', fmtMoney(wallet.balance || 0))}
+            ${kv('Monthly deposit', fmtMoney(wallet.monthly_deposit || 0))}
+            ${kv('Transactions', wallet.transactions_count || 0)}
+            ${kv('Deposits total', fmtMoney(wallet.deposits_total || 0))}
+          </dl>
+        </div>
+
+        <div class="ca-card">
+          <h4>📈 Investments</h4>
+          <dl class="ca-kv">
+            ${kv('Cash / general', fmtMoney(invest.balance || 0))}
+            ${kv('Index', fmtMoney(invest.index_balance || 0))}
+            ${kv('Bonds', fmtMoney(invest.bonds_balance || 0))}
+            ${kv('Crypto', fmtMoney(invest.crypto_balance || 0))}
+            ${kv('Net assets', fmtMoney(fr.total_assets || 0))}
+            ${kv('Net position', fmtMoney(fr.net_position || 0))}
+          </dl>
+        </div>
+
+        <div class="ca-card">
+          <h4>📊 Credit &amp; risk</h4>
+          <dl class="ca-kv">
+            ${kv('Credit score', credit.credit_score || '—', !credit.credit_score)}
+            ${kv('Risk score (record)', credit.risk_score || '—', !credit.risk_score)}
+            ${kv('Risk level (record)', credit.risk_level || '—', !credit.risk_level)}
+            ${kv('Risk (assessment)', s.risk ? `${(Number(s.risk.risk_score || 0) * 100).toFixed(0)}% · ${s.risk.risk_level || '—'}` : '—', !s.risk)}
+            ${kv('Risk contributors', s.risk ? (s.risk.contributors || []).length : '—', !s.risk)}
+          </dl>
+        </div>
+
+        <div class="ca-card" style="grid-column: 1 / -1;">
+          <h4>💡 AI insights (cross-data)</h4>
+          ${insightHtml}
+        </div>
+
+      </div>
+      <div style="margin-top:0.6rem; font-size:0.72rem; color:#78909c;">
+        Sources fused: ${sources.length ? escHtml(sources.join(' · ')) : 'none yet — run the pipeline'}
+      </div>`;
+  }
+
   function paintRisk(s) {
     const sum = document.getElementById('risk-summary');
     const body = document.getElementById('risk-body');
@@ -1181,22 +1498,24 @@
     const cid = resolveCustomer();
     if (!cid) return;
     CURRENT_CUSTOMER = cid;
-    const [profileRes, riskRes, chartsRes, docsRes, reportsRes] = await Promise.allSettled([
+    const [profileRes, riskRes, chartsRes, docsRes, reportsRes, fullRecRes] = await Promise.allSettled([
       api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/profile`),
       api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/risk-indicators`),
       api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/charts`),
       api(`/api/assessment-center/customer/${encodeURIComponent(cid)}/documents`),
       api('/api/reports/list'),
+      api(`/api/customer/ai-report?customer_id=${encodeURIComponent(cid)}&period=all`),
     ]);
     const snapshot = {
       customer_id: cid,
       uploaded_now: { docs: 0, facts: 0, errors: [] },
-      profile:   await safeJson(profileRes),
-      risk:      await safeJson(riskRes),
-      charts:    await safeJson(chartsRes),
-      documents: await safeJson(docsRes),
-      reports:   ((await safeJson(reportsRes)) || {}).reports || [],
-      analysis:  null,
+      profile:    await safeJson(profileRes),
+      risk:       await safeJson(riskRes),
+      charts:     await safeJson(chartsRes),
+      documents:  await safeJson(docsRes),
+      reports:    ((await safeJson(reportsRes)) || {}).reports || [],
+      analysis:   null,
+      full_record: await safeJson(fullRecRes),
     };
     snapshot.integrity = computeIntegrity(snapshot);
     LAST_SNAPSHOT = snapshot;
