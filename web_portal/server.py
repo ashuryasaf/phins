@@ -24308,7 +24308,7 @@ For claims or questions, please contact:
                 customer_apps = [
                     a for a in UNDERWRITING_APPLICATIONS.values()
                     if (a.get('customer_id') == customer_id
-                        or a.get('customer_email') == customer.get('email'))
+                        or (customer.get('email') and a.get('customer_email') == customer.get('email')))
                 ]
                 customer_apps.sort(
                     key=lambda a: a.get('created_at') or a.get('submitted_at') or '',
