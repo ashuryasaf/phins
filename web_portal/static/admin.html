@@ -618,6 +618,83 @@
       color: rgba(255,255,255,0.85);
     }
 
+    /* ==================== FRAMED TABS (per-division) ==================== */
+    /* Sections marked [data-framed="auto"] get a consistent elegant frame
+       (gradient background, rounded corners, soft border, layered shadow,
+       and a colored accent band at the top). Each division gets its own
+       accent via CSS custom properties keyed by the section id, so the
+       admin dashboard reads as a series of cohesive but distinct cards. */
+    .section-content[data-framed="auto"] {
+      background: linear-gradient(180deg, #ffffff 0%, #f6fbff 100%);
+      border-radius: 16px;
+      padding: 26px 28px;
+      margin-top: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 28px rgba(13, 71, 161, 0.09), 0 1px 3px rgba(13, 71, 161, 0.05);
+      border: 1px solid rgba(13, 71, 161, 0.1);
+      position: relative;
+      overflow: hidden;
+      transition: box-shadow 0.25s ease, transform 0.25s ease;
+    }
+    .section-content[data-framed="auto"]:hover {
+      box-shadow: 0 12px 36px rgba(13, 71, 161, 0.14), 0 2px 6px rgba(13, 71, 161, 0.06);
+    }
+    .section-content[data-framed="auto"]::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 5px;
+      background: linear-gradient(90deg, var(--frame-accent-start, #1976d2), var(--frame-accent-end, #42a5f5));
+      z-index: 1;
+    }
+    .section-content[data-framed="auto"] > .section-header {
+      position: relative;
+      z-index: 2;
+      padding-top: 4px;
+    }
+    .section-content[data-framed="auto"] > .section-header h2 {
+      color: var(--frame-accent-start, #0d47a1);
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    /* Subtle "tab"-like ribbon behind each heading icon */
+    .section-content[data-framed="auto"] > .section-header h2::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 22px;
+      border-radius: 3px;
+      background: linear-gradient(180deg, var(--frame-accent-start, #1976d2), var(--frame-accent-end, #42a5f5));
+      margin-right: 4px;
+      flex-shrink: 0;
+    }
+    /* When collapsed, keep accent band visible but compact the padding */
+    .section-content[data-framed="auto"][data-collapsed="true"] {
+      padding-top: 18px !important;
+      padding-bottom: 18px !important;
+    }
+    /* Per-division accents */
+    #customers[data-framed="auto"]    { --frame-accent-start: #00695c; --frame-accent-end: #4db6ac; }
+    #policies[data-framed="auto"]     { --frame-accent-start: #1565c0; --frame-accent-end: #64b5f6; }
+    #underwriting[data-framed="auto"] { --frame-accent-start: #6a1b9a; --frame-accent-end: #ab47bc; }
+    #claims[data-framed="auto"]       { --frame-accent-start: #d84315; --frame-accent-end: #ff8a65; }
+    #billing[data-framed="auto"]      { --frame-accent-start: #2e7d32; --frame-accent-end: #81c784; }
+    #reinsurance[data-framed="auto"]  { --frame-accent-start: #00838f; --frame-accent-end: #4dd0e1; }
+    #legal[data-framed="auto"]        { --frame-accent-start: #455a64; --frame-accent-end: #90a4ae; }
+    /* Tighter spacing on small screens so the frames don't crowd the page */
+    @media (max-width: 768px) {
+      .section-content[data-framed="auto"] {
+        padding: 20px 18px !important;
+        border-radius: 14px;
+      }
+      .section-content[data-framed="auto"] > .section-header h2 {
+        font-size: 1.15rem;
+      }
+    }
+
     /* Embed mode: when admin.html is iframed from the Media Dashboard
        (e.g. /admin.html?embed=growth-agent-section) we only show the
        requested section and hide global chrome so the surrounding
@@ -1211,7 +1288,7 @@
     <!-- Division-Specific Sections -->
     
     <!-- Customer Management Section -->
-    <section id="customers" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" style="margin-top: 24px;">
+    <section id="customers" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>👥 Customer Management — Recent Activity</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1280,7 +1357,7 @@
     </section>
     
     <!-- Sales Division -->
-    <section id="policies" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
+    <section id="policies" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>📊 Sales Division — Policy Management</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1362,7 +1439,7 @@
     </section>
 
     <!-- Underwriting Division -->
-    <section id="underwriting" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
+    <section id="underwriting" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>🔍 Underwriting Division — Risk Assessment</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1448,7 +1525,7 @@
     </section>
 
     <!-- Claims Division -->
-    <section id="claims" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
+    <section id="claims" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>📝 Claims Division — ADL-Based Disability Claims</h2>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -1533,7 +1610,7 @@
     </section>
 
     <!-- Accounting/Billing Division -->
-    <section id="billing" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
+    <section id="billing" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>💰 Accounting Division — Billing & Payments</h2>
       </div>
@@ -1587,7 +1664,7 @@
     </section>
 
     <!-- Reinsurance Division -->
-    <section id="reinsurance" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
+    <section id="reinsurance" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>🤝 Reinsurance Division — Partner Management</h2>
       </div>
@@ -1618,7 +1695,7 @@
     </section>
 
     <!-- Legal Division -->
-    <section id="legal" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light">
+    <section id="legal" class="section-content" data-collapsible="true" data-collapsed="true" data-tone="light" data-framed="auto">
       <div class="section-header">
         <h2>⚖️ Legal Division — Compliance & Disputes</h2>
       </div>
