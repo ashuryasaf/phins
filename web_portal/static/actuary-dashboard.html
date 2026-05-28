@@ -5858,8 +5858,8 @@
         const amount = Math.round(cust.coverage_amount * (0.05 + Math.random() * 0.6));
         const id = `CLM-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
         sb.claims.push({
-          id, customer_id: cust.id, type: claimType, amount,
-          status: 'pending', reported_at: ts,
+          id, customer_id: cust.id, policy_id: `POL-TESTSIM-${cust.id.split('-').pop()}`,
+          type: claimType, amount, status: 'pending', reported_at: ts,
         });
         const sev = amount > cust.coverage_amount * 0.4 ? 'breaking' : 'info';
         sandboxLogEvent('claim', `New ${claimType} claim ${id} for ${cust.id} — ${sandboxFmtMoney(amount)}.`, sev);

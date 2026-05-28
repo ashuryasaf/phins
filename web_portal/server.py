@@ -36140,7 +36140,7 @@ For claims or questions, please contact:
                         CLAIMS[clm_id] = {
                             'id': clm_id,
                             'customer_id': cust_id,
-                            'policy_id': str(clm.get('policy_id') or ''),
+                            'policy_id': str(clm.get('policy_id') or '').strip().upper(),
                             'type': str(clm.get('type') or 'sandbox'),
                             'amount': float(clm.get('amount') or 0),
                             'approved_amount': float(clm.get('approved_amount') or 0),
@@ -36163,7 +36163,7 @@ For claims or questions, please contact:
                             continue
                         BILLING[bill_id] = {
                             'id': bill_id,
-                            'policy_id': str(bill.get('policy_id') or ''),
+                            'policy_id': str(bill.get('policy_id') or '').strip().upper(),
                             'customer_id': cust_id,
                             'customer_name': CUSTOMERS.get(cust_id, {}).get('name', ''),
                             'amount': float(bill.get('amount') or 0),
