@@ -4212,7 +4212,9 @@ def save_ledger_data(_periodic: bool = False):
                 # v1.9 additions - General Policy Documents
                 'policy_documents': POLICY_DOCUMENTS,
                 # v2.1 additions - monthly auto-pay batch reporting
-                'auto_pay_run_reports': AUTO_PAY_RUN_REPORTS
+                'auto_pay_run_reports': AUTO_PAY_RUN_REPORTS,
+                # v2.2 additions - sandbox pushed customers tracking
+                'sandbox_pushed_customers': list(SANDBOX_PUSHED_CUSTOMERS),
             }
 
             # DB-backed entities: only include in the snapshot when running
@@ -4492,6 +4494,7 @@ def load_ledger_data():
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     global POLICY_DOCUMENTS
+    global SANDBOX_PUSHED_CUSTOMERS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -4619,6 +4622,12 @@ def load_ledger_data():
         if loaded_auto_pay_reports:
             AUTO_PAY_RUN_REPORTS.update(loaded_auto_pay_reports)
             print(f"  - Auto-Pay Reports: {len(AUTO_PAY_RUN_REPORTS)} batch reports loaded")
+
+        loaded_sandbox_pushed = data.get('sandbox_pushed_customers', [])
+        if loaded_sandbox_pushed:
+            SANDBOX_PUSHED_CUSTOMERS.update(loaded_sandbox_pushed)
+            SUSPENDED_TEST_ACCOUNTS.update(loaded_sandbox_pushed)
+            print(f"  - Sandbox Pushed Customers: {len(loaded_sandbox_pushed)} tracked IDs restored")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -10866,6 +10875,18 @@ SUSPENDED_TEST_ACCOUNTS: set = {
     'CUST-TEST-101',  # David Levy  - QA underwriting test
     'CUST-TEST-102',  # Rachel Green - QA underwriting test
 }
+
+# ========== ACTUARIAL SANDBOX PUSHED CUSTOMERS ==========
+# Customer IDs that were materialized on the admin side from the
+# Actuarial Dashboard's "Sandbox Testing" bar (push-to-pipeline). They are
+# tracked here so that the admin "Clean Demo Data" button can fully delete
+# them — including their policies, claims, billing, wallets and investment
+# accounts — without touching any real customer data. While present, they
+# are also added to SUSPENDED_TEST_ACCOUNTS above so their data is hidden
+# from admin BI/dashboards (data integrity), keeping the actuary
+# simulation strictly sandboxed.
+SANDBOX_PUSHED_CUSTOMERS: set = set()
+
 
 def is_suspended_account(customer_id: str) -> bool:
     """Check if a customer_id is in the suspended test accounts list"""
@@ -26228,99 +26249,155 @@ For claims or questions, please contact:
                 'demo_claims_removed': 0,
                 'demo_bills_removed': 0,
                 'test_accounts_suspended': 0,
+                'sandbox_customers_deleted': 0,
+                'sandbox_policies_deleted': 0,
+                'sandbox_claims_deleted': 0,
+                'sandbox_bills_deleted': 0,
                 'balance_sheet_corrected': False,
                 'details': []
             }
             
             try:
-                # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
-                for cust_id, wallet in list(HEALTH_WALLETS.items()):
-                    if cust_id in PROTECTED_CUSTOMERS:
-                        # Remove only demo transactions, not real ones
-                        original_txs = wallet.get('transactions', [])
-                        real_txs = [
-                            tx for tx in original_txs 
-                            if 'demo' not in str(tx.get('description', '')).lower() 
-                            and 'demo' not in str(tx.get('source', '')).lower()
-                            and tx.get('type') not in ['initial_deposit']  # Remove initial demo deposits
-                        ]
-                        
-                        if len(real_txs) < len(original_txs):
-                            demo_removed = len(original_txs) - len(real_txs)
-                            cleanup_results['demo_transactions_removed'] += demo_removed
+                # Hold STATE_LOCK for the entire cleanup so that a
+                # concurrent sandbox push cannot insert customers between
+                # the snapshot and steps 1-3, which would cause their
+                # wallets/investments to be zeroed instead of preserved
+                # for the step-4b purge.
+                with STATE_LOCK:
+                    sandbox_snapshot = set(SANDBOX_PUSHED_CUSTOMERS)
+
+                    # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
+                    for cust_id, wallet in list(HEALTH_WALLETS.items()):
+                        if cust_id in PROTECTED_CUSTOMERS:
+                            # Remove only demo transactions, not real ones
+                            original_txs = wallet.get('transactions', [])
+                            real_txs = [
+                                tx for tx in original_txs 
+                                if 'demo' not in str(tx.get('description', '')).lower() 
+                                and 'demo' not in str(tx.get('source', '')).lower()
+                                and tx.get('type') not in ['initial_deposit']
+                            ]
                             
-                            # Recalculate balance from real transactions only
-                            wallet['transactions'] = real_txs
-                            new_balance = sum(
-                                float(tx.get('amount', 0)) if tx.get('type') in ['deposit', 'credit_transfer'] 
-                                else -float(tx.get('amount', 0))
-                                for tx in real_txs
-                            )
-                            wallet['balance'] = max(0, new_balance)
-                            
-                            cleanup_results['details'].append(
-                                f"Health wallet {cust_id}: Removed {demo_removed} demo txs, balance now ${wallet['balance']:.2f}"
-                            )
-                    elif 'TEST' in cust_id.upper():
-                        # Completely clear test account wallets
-                        wallet['balance'] = 0
-                        wallet['transactions'] = []
-                        cleanup_results['test_wallets_cleared'] += 1
-                
-                # 2. Clean up demo investment account deposits
-                for cust_id, account in list(INVESTMENT_ACCOUNTS.items()):
-                    if cust_id in PROTECTED_CUSTOMERS:
-                        # Remove demo deposits
-                        original_deps = account.get('deposits', [])
-                        real_deps = [
-                            dep for dep in original_deps
-                            if 'demo' not in str(dep.get('description', '')).lower()
-                            and 'demo' not in str(dep.get('source', '')).lower()
-                            and dep.get('type') not in ['initial_deposit']
-                        ]
-                        
-                        if len(real_deps) < len(original_deps):
-                            demo_removed = len(original_deps) - len(real_deps)
-                            cleanup_results['demo_transactions_removed'] += demo_removed
-                            
-                            account['deposits'] = real_deps
-                            # Recalculate balances
-                            new_balance = sum(float(d.get('amount', 0)) for d in real_deps)
-                            account['balance'] = max(0, new_balance)
-                            account['index_balance'] = max(0, sum(float(d.get('index_amount', 0)) for d in real_deps))
-                            account['bonds_balance'] = max(0, sum(float(d.get('bonds_amount', 0)) for d in real_deps))
-                            account['crypto_balance'] = max(0, sum(float(d.get('crypto_amount', 0)) for d in real_deps))
-                            
-                            cleanup_results['details'].append(
-                                f"Investment {cust_id}: Removed {demo_removed} demo deposits, balance now ${account['balance']:.2f}"
-                            )
-                    elif 'TEST' in cust_id.upper():
-                        account['balance'] = 0
-                        account['deposits'] = []
-                        cleanup_results['test_investments_cleared'] += 1
-                
-                # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
-                for claim_id, claim in list(CLAIMS.items()):
-                    cust_id = claim.get('customer_id', '')
-                    description = str(claim.get('description', '')).lower()
+                            if len(real_txs) < len(original_txs):
+                                demo_removed = len(original_txs) - len(real_txs)
+                                cleanup_results['demo_transactions_removed'] += demo_removed
+                                
+                                wallet['transactions'] = real_txs
+                                new_balance = sum(
+                                    float(tx.get('amount', 0)) if tx.get('type') in ['deposit', 'credit_transfer'] 
+                                    else -float(tx.get('amount', 0))
+                                    for tx in real_txs
+                                )
+                                wallet['balance'] = max(0, new_balance)
+                                
+                                cleanup_results['details'].append(
+                                    f"Health wallet {cust_id}: Removed {demo_removed} demo txs, balance now ${wallet['balance']:.2f}"
+                                )
+                        elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
+                            wallet['balance'] = 0
+                            wallet['transactions'] = []
+                            cleanup_results['test_wallets_cleared'] += 1
                     
-                    is_test_claim = (
-                        'test' in description or 
-                        'demo' in description or
-                        'sample' in description
+                    # 2. Clean up demo investment account deposits
+                    for cust_id, account in list(INVESTMENT_ACCOUNTS.items()):
+                        if cust_id in PROTECTED_CUSTOMERS:
+                            original_deps = account.get('deposits', [])
+                            real_deps = [
+                                dep for dep in original_deps
+                                if 'demo' not in str(dep.get('description', '')).lower()
+                                and 'demo' not in str(dep.get('source', '')).lower()
+                                and dep.get('type') not in ['initial_deposit']
+                            ]
+                            
+                            if len(real_deps) < len(original_deps):
+                                demo_removed = len(original_deps) - len(real_deps)
+                                cleanup_results['demo_transactions_removed'] += demo_removed
+                                
+                                account['deposits'] = real_deps
+                                new_balance = sum(float(d.get('amount', 0)) for d in real_deps)
+                                account['balance'] = max(0, new_balance)
+                                account['index_balance'] = max(0, sum(float(d.get('index_amount', 0)) for d in real_deps))
+                                account['bonds_balance'] = max(0, sum(float(d.get('bonds_amount', 0)) for d in real_deps))
+                                account['crypto_balance'] = max(0, sum(float(d.get('crypto_amount', 0)) for d in real_deps))
+                                
+                                cleanup_results['details'].append(
+                                    f"Investment {cust_id}: Removed {demo_removed} demo deposits, balance now ${account['balance']:.2f}"
+                                )
+                        elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
+                            account['balance'] = 0
+                            account['deposits'] = []
+                            cleanup_results['test_investments_cleared'] += 1
+
+                    # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
+                    # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
+                    for claim_id, claim in list(CLAIMS.items()):
+                        cust_id = claim.get('customer_id', '')
+                        description = str(claim.get('description', '')).lower()
+                        
+                        is_test_claim = (
+                            'test' in description or 
+                            'demo' in description or
+                            'sample' in description
+                        )
+                        
+                        if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in sandbox_snapshot:
+                            del CLAIMS[claim_id]
+                            cleanup_results['demo_claims_removed'] += 1
+                            cleanup_results['details'].append(f"Removed test claim: {claim_id}")
+                    
+                    # 4. Add test customer IDs to suspended accounts
+                    for cust_id in list(CUSTOMERS.keys()):
+                        if 'TEST' in cust_id.upper() and cust_id not in SUSPENDED_TEST_ACCOUNTS:
+                            SUSPENDED_TEST_ACCOUNTS.add(cust_id)
+                            cleanup_results['test_accounts_suspended'] += 1
+
+                    # 4b. Fully purge accounts that were materialized by the
+                    # Actuarial Dashboard sandbox via "Push to Pipeline".
+                    # Unlike generic TEST accounts (which are just suspended),
+                    # sandbox-pushed accounts are deleted along with every
+                    # downstream record (policy, claim, bill, wallet,
+                    # investment account, registered customer, underwriting
+                    # application). PROTECTED_CUSTOMERS is still respected as
+                    # a safety net even though sandbox IDs use a distinct
+                    # prefix.
+                    purge_ids = {cid for cid in sandbox_snapshot if cid not in PROTECTED_CUSTOMERS}
+
+                    for pol_id, pol in list(POLICIES.items()):
+                        if pol.get('customer_id') in purge_ids:
+                            del POLICIES[pol_id]
+                            cleanup_results['sandbox_policies_deleted'] += 1
+                    for clm_id, clm in list(CLAIMS.items()):
+                        if clm.get('customer_id') in purge_ids:
+                            del CLAIMS[clm_id]
+                            cleanup_results['sandbox_claims_deleted'] += 1
+                    for bill_id, bill in list(BILLING.items()):
+                        if bill.get('customer_id') in purge_ids:
+                            del BILLING[bill_id]
+                            cleanup_results['sandbox_bills_deleted'] += 1
+                    for uw_id, uw in list(UNDERWRITING_APPLICATIONS.items()):
+                        if uw.get('customer_id') in purge_ids:
+                            del UNDERWRITING_APPLICATIONS[uw_id]
+
+                    for cust_id in purge_ids:
+                        HEALTH_WALLETS.pop(cust_id, None)
+                        INVESTMENT_ACCOUNTS.pop(cust_id, None)
+                        try:
+                            REGISTERED_CUSTOMERS.pop(cust_id, None)
+                        except NameError:
+                            pass
+                        if cust_id in CUSTOMERS:
+                            del CUSTOMERS[cust_id]
+                            cleanup_results['sandbox_customers_deleted'] += 1
+                        SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
+                        SANDBOX_PUSHED_CUSTOMERS.discard(cust_id)
+                if cleanup_results['sandbox_customers_deleted']:
+                    cleanup_results['details'].append(
+                        f"Purged {cleanup_results['sandbox_customers_deleted']} actuarial-sandbox customers "
+                        f"(policies={cleanup_results['sandbox_policies_deleted']}, "
+                        f"claims={cleanup_results['sandbox_claims_deleted']}, "
+                        f"bills={cleanup_results['sandbox_bills_deleted']})."
                     )
-                    
-                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS:
-                        del CLAIMS[claim_id]
-                        cleanup_results['demo_claims_removed'] += 1
-                        cleanup_results['details'].append(f"Removed test claim: {claim_id}")
-                
-                # 4. Add test customer IDs to suspended accounts
-                for cust_id in list(CUSTOMERS.keys()):
-                    if 'TEST' in cust_id.upper() and cust_id not in SUSPENDED_TEST_ACCOUNTS:
-                        SUSPENDED_TEST_ACCOUNTS.add(cust_id)
-                        cleanup_results['test_accounts_suspended'] += 1
-                
+
                 # 5. Run balance sheet reconciliation to correct any discrepancies
                 # Calculate expected values from actual (non-demo) transaction data
                 expected_premium_income = sum(
@@ -35935,7 +36012,211 @@ For claims or questions, please contact:
             return
         
         # ========== END SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
-        
+
+        # ========== ACTUARIAL SANDBOX -> PIPELINE BRIDGE ==========
+        # POST /api/admin/sandbox/push-to-pipeline
+        # Materializes the in-memory actuarial sandbox (run on
+        # actuary-dashboard.html) into admin-side records under a
+        # dedicated CUST-TESTSIM-* namespace. The accounts are added to
+        # SUSPENDED_TEST_ACCOUNTS so they stay hidden from admin BI/
+        # dashboards (data integrity), and are tracked in
+        # SANDBOX_PUSHED_CUSTOMERS so admin's "Clean Demo Data" button
+        # fully purges them. The actuary sandbox itself never touches
+        # any other endpoint, so a sandbox run is fully isolated until
+        # this explicit push.
+        if path == '/api/admin/sandbox/push-to-pipeline':
+            _sb_auth_header = self.headers.get('Authorization', '')
+            _sb_token = _sb_auth_header.replace('Bearer ', '') if _sb_auth_header.startswith('Bearer ') else None
+            session = validate_session(_sb_token) if _sb_token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Actuary access required.'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body or '{}')
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+
+            simulation_id = str(data.get('simulation_id') or '').strip() or 'SANDBOX-LOCAL'
+            in_customers = data.get('customers') or []
+            in_policies = data.get('policies') or []
+            in_claims = data.get('claims') or []
+            in_bills = data.get('bills') or []
+
+            for _field_name, _field_val in [('policies', in_policies), ('claims', in_claims), ('bills', in_bills)]:
+                if not isinstance(_field_val, list):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'{_field_name} must be a list'}).encode('utf-8'))
+                    return
+
+            if not isinstance(in_customers, list) or not in_customers:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customers must be a non-empty list'}).encode('utf-8'))
+                return
+
+            # Hard cap so a runaway sandbox push cannot blow up memory or
+            # the admin dashboards. The sandbox UI is expected to push a
+            # representative slice rather than the full simulated book.
+            MAX_PUSH = 5000
+            if len(in_customers) > MAX_PUSH:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'error': f'Too many sandbox customers in one push (max {MAX_PUSH}). '
+                             f'The dashboard pushes a representative slice; reduce the slice size.'
+                }).encode('utf-8'))
+                return
+
+            now = datetime.now()
+            actor = (session or {}).get('username', 'actuary-sandbox')
+            created = {'customers': 0, 'policies': 0, 'claims': 0, 'bills': 0}
+
+            try:
+                with STATE_LOCK:
+                    for cust in in_customers:
+                        cust_id = str(cust.get('id') or '').strip().upper()
+                        if not cust_id or 'TESTSIM' not in cust_id:
+                            continue
+                        if cust_id in CUSTOMERS:
+                            continue
+                        CUSTOMERS[cust_id] = {
+                            'id': cust_id,
+                            'name': str(cust.get('name') or f'Sandbox {cust_id}'),
+                            'email': str(cust.get('email') or f'{cust_id.lower()}@sandbox.phins.test'),
+                            'phone': str(cust.get('phone') or ''),
+                            'dob': str(cust.get('dob') or ''),
+                            'age': cust.get('age'),
+                            'gender': cust.get('gender'),
+                            'ethnicity': cust.get('ethnicity'),
+                            'health_score': cust.get('health_score'),
+                            'occupation': cust.get('occupation'),
+                            'created_date': now.isoformat(),
+                            'source': 'actuary_sandbox',
+                            'sandbox_simulation_id': simulation_id,
+                        }
+                        SANDBOX_PUSHED_CUSTOMERS.add(cust_id)
+                        SUSPENDED_TEST_ACCOUNTS.add(cust_id)
+                        created['customers'] += 1
+
+                    for pol in in_policies:
+                        pol_id = str(pol.get('id') or '').strip().upper()
+                        cust_id = str(pol.get('customer_id') or '').strip().upper()
+                        if not pol_id or not cust_id or cust_id not in SANDBOX_PUSHED_CUSTOMERS:
+                            continue
+                        if pol_id in POLICIES:
+                            continue
+                        POLICIES[pol_id] = {
+                            'id': pol_id,
+                            'customer_id': cust_id,
+                            'type': str(pol.get('type') or 'sandbox_life'),
+                            'coverage_amount': float(pol.get('coverage_amount') or 0),
+                            'annual_premium': float(pol.get('annual_premium') or 0),
+                            'monthly_premium': float(pol.get('monthly_premium') or 0),
+                            'status': str(pol.get('status') or 'active'),
+                            'risk_score': pol.get('risk_score'),
+                            'term_years': pol.get('term_years'),
+                            'start_date': now.isoformat(),
+                            'end_date': (now + timedelta(days=365 * int(pol.get('term_years') or 1))).isoformat(),
+                            'created_date': now.isoformat(),
+                            'source': 'actuary_sandbox',
+                            'sandbox_simulation_id': simulation_id,
+                            'description': 'sandbox/test policy from actuarial dashboard',
+                        }
+                        created['policies'] += 1
+
+                    for clm in in_claims:
+                        clm_id = str(clm.get('id') or '').strip().upper()
+                        cust_id = str(clm.get('customer_id') or '').strip().upper()
+                        if not clm_id or not cust_id or cust_id not in SANDBOX_PUSHED_CUSTOMERS:
+                            continue
+                        if clm_id in CLAIMS:
+                            continue
+                        CLAIMS[clm_id] = {
+                            'id': clm_id,
+                            'customer_id': cust_id,
+                            'policy_id': str(clm.get('policy_id') or '').strip().upper(),
+                            'type': str(clm.get('type') or 'sandbox'),
+                            'amount': float(clm.get('amount') or 0),
+                            'approved_amount': float(clm.get('approved_amount') or 0),
+                            'paid_amount': float(clm.get('paid_amount') or 0),
+                            'status': str(clm.get('status') or 'pending'),
+                            'description': str(clm.get('description') or 'sandbox/test claim from actuarial dashboard'),
+                            'incident_date': clm.get('incident_date') or now.isoformat(),
+                            'reported_date': now.isoformat(),
+                            'source': 'actuary_sandbox',
+                            'sandbox_simulation_id': simulation_id,
+                        }
+                        created['claims'] += 1
+
+                    for bill in in_bills:
+                        bill_id = str(bill.get('id') or '').strip().upper()
+                        cust_id = str(bill.get('customer_id') or '').strip().upper()
+                        if not bill_id or not cust_id or cust_id not in SANDBOX_PUSHED_CUSTOMERS:
+                            continue
+                        if bill_id in BILLING:
+                            continue
+                        BILLING[bill_id] = {
+                            'id': bill_id,
+                            'policy_id': str(bill.get('policy_id') or '').strip().upper(),
+                            'customer_id': cust_id,
+                            'customer_name': CUSTOMERS.get(cust_id, {}).get('name', ''),
+                            'amount': float(bill.get('amount') or 0),
+                            'amount_paid': float(bill.get('amount_paid') or 0),
+                            'status': str(bill.get('status') or 'outstanding'),
+                            'due_date': (now + timedelta(days=30)).isoformat(),
+                            'created_date': now.isoformat(),
+                            'description': 'sandbox/test bill from actuarial dashboard',
+                            'source': 'actuary_sandbox',
+                            'sandbox_simulation_id': simulation_id,
+                        }
+                        created['bills'] += 1
+
+                # Audit so admins can trace where the test accounts came from.
+                if audit:
+                    try:
+                        audit.log(
+                            actor,
+                            'push',
+                            'actuary_sandbox',
+                            simulation_id,
+                            {
+                                'created_customers': created['customers'],
+                                'created_policies': created['policies'],
+                                'created_claims': created['claims'],
+                                'created_bills': created['bills'],
+                                'note': 'Sandbox accounts are suspended (hidden from BI) and removable via Clean Demo Data.',
+                            },
+                        )
+                    except Exception:
+                        pass
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'simulation_id': simulation_id,
+                    'created': created,
+                    'sandbox_pushed_total': len(SANDBOX_PUSHED_CUSTOMERS),
+                    'message': (
+                        f"Pushed {created['customers']} sandbox customers (suspended from BI). "
+                        "They will be fully purged by 'Clean Demo Data' on the admin balance sheet bar."
+                    ),
+                }).encode('utf-8'))
+            except Exception as e:
+                import traceback as _tb
+                _tb.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': str(e),
+                    'partial_created': created,
+                }).encode('utf-8'))
+            return
+
+        # ========== END ACTUARIAL SANDBOX BRIDGE ==========
+
         # Pipeline Process - Process next step for a customer
         if path.startswith('/api/admin/pipeline-process/'):
             customer_id = path.split('/')[-1]

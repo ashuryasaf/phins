@@ -710,6 +710,175 @@
         margin-left: 220px;
       }
     }
+
+    /* ========== Actuarial Sandbox Testing Bar ==========
+       The sandbox is a self-contained "what-if" lab on the actuary
+       dashboard. It never reads from or writes to the admin pipeline
+       except through the explicit Push to Pipeline button (which is
+       gated behind a confirm dialog and the cleanup_demo_data flow). */
+    .sandbox-banner {
+      background: linear-gradient(135deg, #c53030 0%, #d69e2e 100%);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(197, 48, 48, 0.25);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .sandbox-banner-label {
+      flex: 0 0 auto;
+      background: rgba(0,0,0,0.25);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      animation: sandbox-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes sandbox-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
+      50%      { box-shadow: 0 0 0 8px rgba(255,255,255,0.0); }
+    }
+    .sandbox-ticker-track {
+      flex: 1 1 auto;
+      overflow: hidden;
+      position: relative;
+      height: 22px;
+    }
+    .sandbox-ticker-track .sandbox-ticker-line {
+      display: inline-block;
+      white-space: nowrap;
+      padding-left: 100%;
+      animation: sandbox-ticker 22s linear infinite;
+      font-weight: 600;
+      font-size: 0.92rem;
+    }
+    @keyframes sandbox-ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-100%); }
+    }
+    .sandbox-banner-empty .sandbox-ticker-line {
+      animation: none;
+      padding-left: 0;
+      opacity: 0.85;
+    }
+
+    .sandbox-disclaimer {
+      background: rgba(214, 158, 46, 0.12);
+      border: 1px dashed #d69e2e;
+      color: #744210;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      margin-bottom: 14px;
+    }
+
+    .sandbox-tabs {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .sandbox-tab {
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      padding: 10px 16px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-light);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sandbox-tab:hover { color: var(--text); }
+    .sandbox-tab.active {
+      color: var(--secondary);
+      border-bottom-color: var(--accent);
+    }
+    .sandbox-tab-panel { display: none; }
+    .sandbox-tab-panel.active { display: block; }
+
+    .sandbox-stat-card {
+      background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+    }
+    .sandbox-stat-card.success { background: linear-gradient(135deg, #276749 0%, #38a169 100%); }
+    .sandbox-stat-card.warning { background: linear-gradient(135deg, #975a16 0%, #d69e2e 100%); }
+    .sandbox-stat-card.danger  { background: linear-gradient(135deg, #c53030 0%, #e53e3e 100%); }
+
+    .sandbox-event-row {
+      display: grid;
+      grid-template-columns: 80px 130px 1fr;
+      gap: 10px;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+    .sandbox-event-row:last-child { border-bottom: none; }
+    .sandbox-event-time { color: var(--text-light); font-variant-numeric: tabular-nums; }
+    .sandbox-event-tag {
+      display: inline-block;
+      background: rgba(66, 153, 225, 0.12);
+      color: var(--secondary);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .sandbox-event-tag.claim   { background: rgba(229, 62, 62, 0.12);  color: #c53030; }
+    .sandbox-event-tag.policy  { background: rgba(56, 161, 105, 0.12); color: #276749; }
+    .sandbox-event-tag.billing { background: rgba(214, 158, 46, 0.12); color: #975a16; }
+    .sandbox-event-tag.uw      { background: rgba(43, 108, 176, 0.12); color: #2b6cb0; }
+    .sandbox-event-tag.alert   { background: rgba(229, 62, 62, 0.20);  color: #c53030; }
+
+    .sandbox-status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .sandbox-status.active   { background: #c6f6d5; color: #276749; }
+    .sandbox-status.pending  { background: #fefcbf; color: #975a16; }
+    .sandbox-status.declined { background: #fed7d7; color: #c53030; }
+    .sandbox-status.paid     { background: #c6f6d5; color: #276749; }
+    .sandbox-status.outstanding { background: #fefcbf; color: #975a16; }
+    .sandbox-status.overdue  { background: #fed7d7; color: #c53030; }
+    .sandbox-status.approved { background: #c6f6d5; color: #276749; }
+
+    .sandbox-action-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .sandbox-action-bar .sandbox-action-msg {
+      flex: 1 1 auto;
+      min-width: 200px;
+      color: var(--text-light);
+      font-size: 0.85rem;
+    }
+    .sandbox-pushed-badge {
+      background: #fed7d7;
+      color: #c53030;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -792,6 +961,10 @@
           <div class="nav-item" onclick="showSection('automation')">
             <span class="nav-icon">🤖</span>
             <span>Automation Metrics</span>
+          </div>
+          <div class="nav-item" onclick="showSection('sandbox')">
+            <span class="nav-icon">🧪</span>
+            <span>Sandbox Testing</span>
           </div>
         </div>
 
@@ -2198,6 +2371,200 @@
           </div>
         </section>
         
+        <!-- Actuarial Sandbox Testing Section -->
+        <section id="section-sandbox" class="section">
+          <h2 class="section-title">🧪 Actuarial Sandbox Testing
+            <span id="sandbox-pipeline-badge" class="sandbox-pushed-badge" style="display:none;">PUSHED TO PIPELINE</span>
+          </h2>
+
+          <!-- Breaking news ticker. Random incidents arising from the
+               sandbox lifecycle are streamed here. -->
+          <div id="sandbox-banner" class="sandbox-banner sandbox-banner-empty">
+            <span class="sandbox-banner-label">📰 Breaking News</span>
+            <div class="sandbox-ticker-track">
+              <div id="sandbox-ticker" class="sandbox-ticker-line">
+                Run a portfolio simulation, then "Generate Sandbox Accounts" to begin random policy lifecycles.
+              </div>
+            </div>
+          </div>
+
+          <div class="sandbox-disclaimer">
+            <strong>Sandboxed test bench.</strong> Everything below is held in browser memory and is wired only to the actuary simulation — it never reads from or writes to the admin dashboard. The only bridge to admin is the <strong>Push to Pipeline</strong> button below; pushed accounts use the <code>CUST-TESTSIM-*</code> namespace and are wiped by <em>Clean Demo Data</em> on the admin balance-sheet bar. Media, invitations, marketing and other non-actuarial domains are intentionally excluded to keep data integrity flawless.
+          </div>
+
+          <!-- Action bar -->
+          <div class="sandbox-action-bar">
+            <button class="btn btn-primary" id="sandbox-generate-btn" onclick="generateSandboxFromSimulation()">🎲 Generate Sandbox Accounts from Simulation</button>
+            <button class="btn btn-outline" onclick="toggleSandboxLifecycle()">
+              <span id="sandbox-lifecycle-toggle-label">▶️ Start Random Lifecycle</span>
+            </button>
+            <button class="btn btn-warning" onclick="resetSandbox()">♻️ Reset Values</button>
+            <button class="btn btn-success" id="sandbox-push-btn" onclick="pushSandboxToPipeline()">🚚 Push to Pipeline</button>
+            <span id="sandbox-action-msg" class="sandbox-action-msg">Sandbox is empty. Run a simulation, then click "Generate Sandbox Accounts".</span>
+          </div>
+
+          <!-- Stats grid (computed from in-memory sandbox state) -->
+          <div class="stats-grid">
+            <div class="stat-card sandbox-stat-card">
+              <div class="stat-label">Sandbox Customers</div>
+              <div class="stat-value" id="sandbox-stat-customers">0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card success">
+              <div class="stat-label">Active Policies</div>
+              <div class="stat-value" id="sandbox-stat-policies">0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card warning">
+              <div class="stat-label">Total Coverage</div>
+              <div class="stat-value" id="sandbox-stat-coverage">$0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card">
+              <div class="stat-label">Annual Premium Booked</div>
+              <div class="stat-value" id="sandbox-stat-premium">$0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card danger">
+              <div class="stat-label">Open Claims</div>
+              <div class="stat-value" id="sandbox-stat-claims-open">0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card">
+              <div class="stat-label">Claims Paid</div>
+              <div class="stat-value" id="sandbox-stat-claims-paid">$0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card warning">
+              <div class="stat-label">Outstanding Bills</div>
+              <div class="stat-value" id="sandbox-stat-bills-outstanding">$0</div>
+            </div>
+            <div class="stat-card sandbox-stat-card success">
+              <div class="stat-label">Loss Ratio</div>
+              <div class="stat-value" id="sandbox-stat-loss-ratio">0%</div>
+            </div>
+          </div>
+
+          <!-- Insight tabs (Underwriting / Claims / Billing / Activity) -->
+          <div class="card">
+            <div class="card-title">📊 Sandbox Insight Tabs</div>
+            <div class="sandbox-tabs">
+              <button class="sandbox-tab active" data-sandbox-tab="underwriting" onclick="showSandboxTab('underwriting')">📋 Underwriting</button>
+              <button class="sandbox-tab" data-sandbox-tab="claims" onclick="showSandboxTab('claims')">💼 Claims</button>
+              <button class="sandbox-tab" data-sandbox-tab="billing" onclick="showSandboxTab('billing')">💰 Billing</button>
+              <button class="sandbox-tab" data-sandbox-tab="activity" onclick="showSandboxTab('activity')">📜 Activity Log</button>
+            </div>
+
+            <div id="sandbox-tab-underwriting" class="sandbox-tab-panel active">
+              <div class="form-row" style="margin-bottom:12px;">
+                <div class="form-group">
+                  <div class="metric-pill">Approved: <span id="sandbox-uw-approved">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Pending: <span id="sandbox-uw-pending">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Declined: <span id="sandbox-uw-declined">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Avg Risk Score: <span id="sandbox-uw-avg-risk">—</span></div>
+                </div>
+              </div>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Customer ID</th>
+                    <th>Age</th>
+                    <th>Health</th>
+                    <th>Coverage</th>
+                    <th>Risk Score</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="sandbox-uw-body">
+                  <tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox accounts yet.</td></tr>
+                </tbody>
+              </table>
+              <p class="micro-copy" style="margin-top:8px;">Showing first 50 of <span id="sandbox-uw-total">0</span> sandbox accounts.</p>
+            </div>
+
+            <div id="sandbox-tab-claims" class="sandbox-tab-panel">
+              <div class="form-row" style="margin-bottom:12px;">
+                <div class="form-group">
+                  <div class="metric-pill">Total: <span id="sandbox-claims-total">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Pending: <span id="sandbox-claims-pending">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Approved: <span id="sandbox-claims-approved">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Paid: <span id="sandbox-claims-paid-count">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Total Paid: <span id="sandbox-claims-paid-total">$0</span></div>
+                </div>
+              </div>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Claim ID</th>
+                    <th>Customer</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Reported</th>
+                  </tr>
+                </thead>
+                <tbody id="sandbox-claims-body">
+                  <tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox claims yet.</td></tr>
+                </tbody>
+              </table>
+              <p class="micro-copy" style="margin-top:8px;">Showing first 50 of <span id="sandbox-claims-grand-total">0</span> sandbox claims.</p>
+            </div>
+
+            <div id="sandbox-tab-billing" class="sandbox-tab-panel">
+              <div class="form-row" style="margin-bottom:12px;">
+                <div class="form-group">
+                  <div class="metric-pill">Bills: <span id="sandbox-billing-total">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Outstanding: <span id="sandbox-billing-outstanding-count">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Paid: <span id="sandbox-billing-paid-count">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Overdue: <span id="sandbox-billing-overdue-count">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">Collected: <span id="sandbox-billing-collected">$0</span></div>
+                </div>
+              </div>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Bill ID</th>
+                    <th>Customer</th>
+                    <th>Amount</th>
+                    <th>Paid</th>
+                    <th>Status</th>
+                    <th>Due</th>
+                  </tr>
+                </thead>
+                <tbody id="sandbox-billing-body">
+                  <tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox bills yet.</td></tr>
+                </tbody>
+              </table>
+              <p class="micro-copy" style="margin-top:8px;">Showing first 50 of <span id="sandbox-billing-grand-total">0</span> sandbox bills.</p>
+            </div>
+
+            <div id="sandbox-tab-activity" class="sandbox-tab-panel">
+              <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
+                Live timeline of sandbox lifecycle events (newest first). Capped at the last 200 events to keep memory predictable.
+              </p>
+              <div id="sandbox-activity-feed" style="max-height:480px;overflow-y:auto;">
+                <div style="color:var(--text-light);text-align:center;padding:24px 0;">No sandbox events yet.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Audit Log Section -->
         <section id="section-audit" class="section">
           <h2 class="section-title">🔍 Audit Log</h2>
@@ -4386,6 +4753,7 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     }
+    const esc = escapeHtml;
 
     function downloadRegistryEntry(entry, format) {
       try {
@@ -5080,6 +5448,668 @@
       a.click();
       URL.revokeObjectURL(url);
     }
+
+    // ====================================================================
+    // ACTUARIAL SANDBOX TESTING BAR
+    // --------------------------------------------------------------------
+    // The sandbox is a fully client-side "what-if" lab. Test customers,
+    // policies, claims and bills are derived from the latest portfolio
+    // simulation and live entirely in window.actuarySandbox. They never
+    // hit any admin endpoint until the user clicks Push to Pipeline,
+    // which posts to /api/admin/sandbox/push-to-pipeline (the only
+    // bridge). Reset wipes the in-memory state. Random lifecycle ticks
+    // produce activity events and "breaking news" entries.
+    // ====================================================================
+
+    window.actuarySandbox = {
+      simulationId: null,
+      simulationSummary: null,
+      customers: [],         // [{id, name, age, gender, ethnicity, health_score, coverage, monthly_premium, annual_premium, term_years, risk_score, uw_status}]
+      claims: [],            // [{id, customer_id, type, amount, status, reported_at}]
+      bills: [],              // [{id, customer_id, policy_id, amount, amount_paid, status, due_date}]
+      events: [],             // [{ts, kind, severity, message}]
+      breakingNews: [],       // [string]
+      lifecycleTimer: null,
+      lifecycleRunning: false,
+      pushedToPipeline: false,
+      maxRendered: 50,
+      maxEvents: 200,
+      maxNews: 8,
+      // Display slice cap when pushing to admin so we never overwhelm
+      // the admin in-memory store. The full sandbox book remains visible
+      // here on the actuary dashboard.
+      pushSliceLimit: 500,
+    };
+
+    function sandboxFmtMoney(n) {
+      const v = Number(n || 0);
+      return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    function sandboxFmtCount(n) {
+      return Number(n || 0).toLocaleString('en-US');
+    }
+    function sandboxFmtPct(n) {
+      return (Number(n || 0) * 100).toFixed(1) + '%';
+    }
+    function sandboxNow() {
+      return new Date();
+    }
+    function sandboxTimeStr(d) {
+      const dt = (d instanceof Date) ? d : new Date(d);
+      return dt.toLocaleTimeString('en-US', { hour12: false });
+    }
+    function sandboxRandInt(a, b) {
+      return Math.floor(a + Math.random() * (b - a + 1));
+    }
+    function sandboxPick(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+    function sandboxWeighted(weights) {
+      // weights = { key: weight, ... }
+      const keys = Object.keys(weights);
+      const total = keys.reduce((s, k) => s + weights[k], 0);
+      let r = Math.random() * total;
+      for (const k of keys) {
+        r -= weights[k];
+        if (r <= 0) return k;
+      }
+      return keys[keys.length - 1];
+    }
+
+    function sandboxLogEvent(kind, message, severity) {
+      const evt = {
+        ts: sandboxNow().toISOString(),
+        kind: kind || 'info',
+        severity: severity || 'info',
+        message: String(message || ''),
+      };
+      window.actuarySandbox.events.unshift(evt);
+      if (window.actuarySandbox.events.length > window.actuarySandbox.maxEvents) {
+        window.actuarySandbox.events.length = window.actuarySandbox.maxEvents;
+      }
+      if (severity === 'breaking') {
+        window.actuarySandbox.breakingNews.unshift(`[${sandboxTimeStr(evt.ts)}] ${message}`);
+        if (window.actuarySandbox.breakingNews.length > window.actuarySandbox.maxNews) {
+          window.actuarySandbox.breakingNews.length = window.actuarySandbox.maxNews;
+        }
+        renderSandboxBanner();
+      }
+    }
+
+    function renderSandboxBanner() {
+      const banner = document.getElementById('sandbox-banner');
+      const ticker = document.getElementById('sandbox-ticker');
+      if (!banner || !ticker) return;
+      const news = window.actuarySandbox.breakingNews;
+      if (!news.length) {
+        banner.classList.add('sandbox-banner-empty');
+        ticker.textContent = 'Run a portfolio simulation, then "Generate Sandbox Accounts" to begin random policy lifecycles.';
+        return;
+      }
+      banner.classList.remove('sandbox-banner-empty');
+      ticker.textContent = news.map(n => '🚨 ' + n).join('   •   ');
+    }
+
+    function showSandboxTab(tabId) {
+      document.querySelectorAll('.sandbox-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.sandbox-tab-panel').forEach(p => p.classList.remove('active'));
+      const btn = document.querySelector(`.sandbox-tab[data-sandbox-tab="${tabId}"]`);
+      if (btn) btn.classList.add('active');
+      const panel = document.getElementById(`sandbox-tab-${tabId}`);
+      if (panel) panel.classList.add('active');
+    }
+
+    // Generate sandbox accounts from the most recently run simulation.
+    // One sandbox customer per simulated customer (e.g. 9876 customers
+    // in => 9876 sandbox accounts). To keep memory predictable we cap
+    // the materialized in-browser book at SANDBOX_HARD_CAP and report
+    // the simulator-driven total separately.
+    function generateSandboxFromSimulation() {
+      if (!currentSimulation) {
+        alert('No simulation has been run yet.\n\nGo to "Portfolio Simulator" → "Run Portfolio Simulation" first, then come back here and click Generate.');
+        return;
+      }
+      const sim = currentSimulation;
+      const portfolio = sim.portfolio_summary || {};
+      const params = sim.parameters || {};
+      const requestedCount = Number(params.customer_count || portfolio.accepted_customers || 0);
+      // Render up to SANDBOX_HARD_CAP detailed accounts in the browser
+      // so a 9.8M customer simulation does not freeze the dashboard.
+      // The sandbox stats still report the full simulation count.
+      const SANDBOX_HARD_CAP = 9876;
+      const materialize = Math.max(1, Math.min(requestedCount || 0, SANDBOX_HARD_CAP));
+
+      // Pull averages off the simulation so each sandbox account is
+      // anchored in the actual portfolio shape.
+      const avgCoverage = (portfolio.total_coverage && portfolio.accepted_customers)
+        ? portfolio.total_coverage / portfolio.accepted_customers
+        : (Number(params.coverage_median) || 250000);
+      const avgAnnualPremium = (portfolio.total_annual_premium && portfolio.accepted_customers)
+        ? portfolio.total_annual_premium / portfolio.accepted_customers
+        : 1200;
+      const ageMin = Number(params.age_min || 18);
+      const ageMax = Number(params.age_max || 65);
+      const malePct = Number(params.male_pct || 49);
+      const ethnicityWeights = params.ethnicity || { caucasian: 60, african: 13, hispanic: 18, asian: 6, other: 3 };
+
+      // Reset before regenerating so re-clicking Generate is idempotent.
+      stopSandboxLifecycle();
+      window.actuarySandbox.customers = [];
+      window.actuarySandbox.claims = [];
+      window.actuarySandbox.bills = [];
+      window.actuarySandbox.events = [];
+      window.actuarySandbox.breakingNews = [];
+      window.actuarySandbox.pushedToPipeline = false;
+      window.actuarySandbox.simulationId = sim.simulation_id;
+      window.actuarySandbox.simulationSummary = {
+        accepted: portfolio.accepted_customers || 0,
+        requested: requestedCount,
+        materialized: materialize,
+        total_coverage: portfolio.total_coverage || 0,
+        total_annual_premium: portfolio.total_annual_premium || 0,
+        loss_ratio: (sim.risk_metrics || {}).loss_ratio || 0,
+      };
+      const pushedBadge = document.getElementById('sandbox-pipeline-badge');
+      if (pushedBadge) pushedBadge.style.display = 'none';
+
+      const occupations = ['Engineer', 'Teacher', 'Driver', 'Nurse', 'Manager', 'Analyst', 'Technician', 'Sales', 'Cashier', 'Designer', 'Doctor', 'Cook'];
+      const givenNames = ['Asaf', 'Maya', 'Noa', 'Daniel', 'Tomer', 'Yael', 'Amir', 'Lior', 'Shira', 'Ronen', 'Carlos', 'Anika', 'Jin', 'Hiro', 'Olu'];
+      const familyNames = ['Levi', 'Cohen', 'Mizrachi', 'Friedman', 'Patel', 'Garcia', 'Smith', 'Wong', 'Kim', 'Okafor', 'Rossi', 'Silva'];
+
+      for (let i = 0; i < materialize; i++) {
+        const id = `CUST-TESTSIM-${String(i + 1).padStart(6, '0')}`;
+        const age = Math.max(ageMin, Math.min(ageMax, sandboxRandInt(ageMin, ageMax)));
+        const gender = (Math.random() * 100 < malePct) ? 'M' : 'F';
+        const ethnicity = sandboxWeighted(ethnicityWeights);
+        // Health score: 1..10 ADL-like banded around age.
+        const ageHealth = Math.round(2 + (age - ageMin) / Math.max(1, ageMax - ageMin) * 6 + (Math.random() * 2 - 1));
+        const health = Math.max(1, Math.min(10, ageHealth));
+        // Risk: scales with health and age, plus jitter.
+        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - ageMin) * 0.8 + (Math.random() * 20 - 10))));
+        const uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
+        // Coverage: lognormal-ish around avgCoverage with floor/ceiling
+        const cov = Math.max(50000, Math.round(avgCoverage * (0.5 + Math.random() * 1.5)));
+        const annual = Math.max(120, Math.round(avgAnnualPremium * (0.7 + Math.random() * 0.8) * (1 + (risk - 50) / 200)));
+        const monthly = Math.round(annual / 12);
+        const term = sandboxRandInt(Number(params.policy_term_min || 5), Number(params.policy_term_max || 30));
+        const name = `${sandboxPick(givenNames)} ${sandboxPick(familyNames)}`;
+        const occupation = sandboxPick(occupations);
+        window.actuarySandbox.customers.push({
+          id, name, age, gender, ethnicity, occupation,
+          health_score: health,
+          coverage_amount: cov,
+          annual_premium: annual,
+          monthly_premium: monthly,
+          term_years: term,
+          risk_score: risk,
+          uw_status,
+          created_at: sandboxNow().toISOString(),
+        });
+        // First bill created on policy issue
+        if (uw_status === 'approved') {
+          window.actuarySandbox.bills.push({
+            id: `BILL-TESTSIM-${String(i + 1).padStart(6, '0')}-001`,
+            customer_id: id,
+            policy_id: `POL-TESTSIM-${String(i + 1).padStart(6, '0')}`,
+            amount: monthly,
+            amount_paid: 0,
+            status: 'outstanding',
+            due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+            created_at: sandboxNow().toISOString(),
+          });
+        }
+      }
+
+      sandboxLogEvent(
+        'sim',
+        `Sandbox generated ${sandboxFmtCount(materialize)} test accounts from simulation ${sim.simulation_id}` +
+          (requestedCount > materialize ? ` (capped from ${sandboxFmtCount(requestedCount)} simulated customers).` : '.'),
+        'breaking'
+      );
+      const declined = window.actuarySandbox.customers.filter(c => c.uw_status === 'declined').length;
+      const pending = window.actuarySandbox.customers.filter(c => c.uw_status === 'pending').length;
+      sandboxLogEvent('uw', `Underwriting: ${sandboxFmtCount(declined)} declined, ${sandboxFmtCount(pending)} pending review.`, 'info');
+      renderSandbox();
+      const msg = document.getElementById('sandbox-action-msg');
+      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id}. Lifecycle is paused — click ▶️ Start Random Lifecycle to begin.`;
+    }
+
+    function renderSandbox() {
+      const sb = window.actuarySandbox;
+      const customers = sb.customers || [];
+      const claims = sb.claims || [];
+      const bills = sb.bills || [];
+
+      // Headline stats. We keep claims paid + premium booked at the
+      // *book* level (not the rendered slice) by using direct sums.
+      const activePolicies = customers.filter(c => c.uw_status === 'approved').length;
+      const totalCoverage = customers.filter(c => c.uw_status === 'approved')
+        .reduce((s, c) => s + (c.coverage_amount || 0), 0);
+      const totalAnnualPremium = customers.filter(c => c.uw_status === 'approved')
+        .reduce((s, c) => s + (c.annual_premium || 0), 0);
+      const openClaims = claims.filter(c => c.status === 'pending' || c.status === 'approved').length;
+      const claimsPaid = claims.filter(c => c.status === 'paid').reduce((s, c) => s + (c.paid_amount || c.approved_amount || c.amount || 0), 0);
+      const outstanding = bills.filter(b => b.status === 'outstanding' || b.status === 'overdue')
+        .reduce((s, b) => s + Math.max(0, (b.amount || 0) - (b.amount_paid || 0)), 0);
+      const collected = bills.reduce((s, b) => s + (b.amount_paid || 0), 0);
+      const lossRatio = totalAnnualPremium > 0 ? (claimsPaid / totalAnnualPremium) : 0;
+
+      const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+      setText('sandbox-stat-customers', sandboxFmtCount(customers.length));
+      setText('sandbox-stat-policies', sandboxFmtCount(activePolicies));
+      setText('sandbox-stat-coverage', sandboxFmtMoney(totalCoverage));
+      setText('sandbox-stat-premium', sandboxFmtMoney(totalAnnualPremium));
+      setText('sandbox-stat-claims-open', sandboxFmtCount(openClaims));
+      setText('sandbox-stat-claims-paid', sandboxFmtMoney(claimsPaid));
+      setText('sandbox-stat-bills-outstanding', sandboxFmtMoney(outstanding));
+      setText('sandbox-stat-loss-ratio', sandboxFmtPct(lossRatio));
+
+      // Underwriting tab
+      const uwApproved = customers.filter(c => c.uw_status === 'approved').length;
+      const uwPending = customers.filter(c => c.uw_status === 'pending').length;
+      const uwDeclined = customers.filter(c => c.uw_status === 'declined').length;
+      const avgRisk = customers.length ? Math.round(customers.reduce((s, c) => s + (c.risk_score || 0), 0) / customers.length) : 0;
+      setText('sandbox-uw-approved', sandboxFmtCount(uwApproved));
+      setText('sandbox-uw-pending', sandboxFmtCount(uwPending));
+      setText('sandbox-uw-declined', sandboxFmtCount(uwDeclined));
+      setText('sandbox-uw-avg-risk', customers.length ? String(avgRisk) : '—');
+      setText('sandbox-uw-total', sandboxFmtCount(customers.length));
+      const uwBody = document.getElementById('sandbox-uw-body');
+      if (uwBody) {
+        if (!customers.length) {
+          uwBody.innerHTML = '<tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox accounts yet.</td></tr>';
+        } else {
+          uwBody.innerHTML = customers.slice(0, sb.maxRendered).map(c => `
+            <tr>
+              <td>${esc(c.id)}</td>
+              <td>${esc(c.age)}</td>
+              <td>ADL ${esc(c.health_score)}</td>
+              <td>${sandboxFmtMoney(c.coverage_amount)}</td>
+              <td>${esc(c.risk_score)}</td>
+              <td><span class="sandbox-status ${esc(c.uw_status)}">${esc(c.uw_status)}</span></td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Claims tab
+      const claimsPending = claims.filter(c => c.status === 'pending').length;
+      const claimsApproved = claims.filter(c => c.status === 'approved').length;
+      const claimsPaidCount = claims.filter(c => c.status === 'paid').length;
+      setText('sandbox-claims-total', sandboxFmtCount(claims.length));
+      setText('sandbox-claims-pending', sandboxFmtCount(claimsPending));
+      setText('sandbox-claims-approved', sandboxFmtCount(claimsApproved));
+      setText('sandbox-claims-paid-count', sandboxFmtCount(claimsPaidCount));
+      setText('sandbox-claims-paid-total', sandboxFmtMoney(claimsPaid));
+      setText('sandbox-claims-grand-total', sandboxFmtCount(claims.length));
+      const clmBody = document.getElementById('sandbox-claims-body');
+      if (clmBody) {
+        if (!claims.length) {
+          clmBody.innerHTML = '<tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox claims yet.</td></tr>';
+        } else {
+          clmBody.innerHTML = claims.slice(0, sb.maxRendered).map(c => `
+            <tr>
+              <td>${esc(c.id)}</td>
+              <td>${esc(c.customer_id)}</td>
+              <td>${esc(c.type)}</td>
+              <td>${sandboxFmtMoney(c.amount)}</td>
+              <td><span class="sandbox-status ${esc(c.status)}">${esc(c.status)}</span></td>
+              <td>${esc((c.reported_at || '').slice(0, 10))}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Billing tab
+      const billsOutstanding = bills.filter(b => b.status === 'outstanding').length;
+      const billsPaid = bills.filter(b => b.status === 'paid').length;
+      const billsOverdue = bills.filter(b => b.status === 'overdue').length;
+      setText('sandbox-billing-total', sandboxFmtCount(bills.length));
+      setText('sandbox-billing-outstanding-count', sandboxFmtCount(billsOutstanding));
+      setText('sandbox-billing-paid-count', sandboxFmtCount(billsPaid));
+      setText('sandbox-billing-overdue-count', sandboxFmtCount(billsOverdue));
+      setText('sandbox-billing-collected', sandboxFmtMoney(collected));
+      setText('sandbox-billing-grand-total', sandboxFmtCount(bills.length));
+      const billBody = document.getElementById('sandbox-billing-body');
+      if (billBody) {
+        if (!bills.length) {
+          billBody.innerHTML = '<tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">No sandbox bills yet.</td></tr>';
+        } else {
+          billBody.innerHTML = bills.slice(0, sb.maxRendered).map(b => `
+            <tr>
+              <td>${esc(b.id)}</td>
+              <td>${esc(b.customer_id)}</td>
+              <td>${sandboxFmtMoney(b.amount)}</td>
+              <td>${sandboxFmtMoney(b.amount_paid)}</td>
+              <td><span class="sandbox-status ${esc(b.status)}">${esc(b.status)}</span></td>
+              <td>${esc((b.due_date || '').slice(0, 10))}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Activity feed
+      const feed = document.getElementById('sandbox-activity-feed');
+      if (feed) {
+        if (!sb.events.length) {
+          feed.innerHTML = '<div style="color:var(--text-light);text-align:center;padding:24px 0;">No sandbox events yet.</div>';
+        } else {
+          feed.innerHTML = sb.events.map(evt => `
+            <div class="sandbox-event-row">
+              <div class="sandbox-event-time">${esc(sandboxTimeStr(evt.ts))}</div>
+              <div><span class="sandbox-event-tag ${esc(evt.kind)}">${esc(evt.kind)}</span></div>
+              <div>${esc(evt.message)}</div>
+            </div>
+          `).join('');
+        }
+      }
+    }
+
+    function sandboxTickLifecycle() {
+      const sb = window.actuarySandbox;
+      const customers = sb.customers;
+      if (!customers.length) return;
+
+      const action = sandboxWeighted({
+        new_customer: 8,
+        new_claim: 12,
+        approve_claim: 8,
+        pay_claim: 6,
+        new_bill: 10,
+        pay_bill: 14,
+        bill_overdue: 4,
+        approve_uw: 10,
+        decline_uw: 4,
+        breaking_news: 2,
+      });
+
+      const now = sandboxNow();
+      const ts = now.toISOString();
+
+      if (action === 'new_customer' && customers.length < 50000) {
+        const idx = customers.length + 1;
+        const id = `CUST-TESTSIM-${String(idx).padStart(6, '0')}`;
+        const age = sandboxRandInt(20, 65);
+        const health = sandboxRandInt(1, 10);
+        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - 20) * 0.8 + sandboxRandInt(-10, 10))));
+        const uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
+        const annual = sandboxRandInt(800, 4500);
+        customers.push({
+          id, name: `Sandbox ${idx}`, age, gender: Math.random() < 0.5 ? 'M' : 'F',
+          ethnicity: 'caucasian', occupation: 'Other',
+          health_score: health,
+          coverage_amount: sandboxRandInt(50000, 1000000),
+          annual_premium: annual,
+          monthly_premium: Math.round(annual / 12),
+          term_years: sandboxRandInt(5, 30),
+          risk_score: risk,
+          uw_status,
+          created_at: ts,
+        });
+        sandboxLogEvent('uw', `New sandbox customer ${id} onboarded — risk ${risk}, ADL ${health}, status ${uw_status}.`, 'info');
+        return;
+      }
+
+      const cust = sandboxPick(customers);
+      if (!cust) return;
+
+      if (action === 'new_claim' && cust.uw_status === 'approved') {
+        const claimType = sandboxPick(['hospitalization', 'disability', 'mortality', 'critical_illness', 'long_term_care']);
+        const amount = Math.round(cust.coverage_amount * (0.05 + Math.random() * 0.6));
+        const id = `CLM-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
+        sb.claims.push({
+          id, customer_id: cust.id, policy_id: `POL-TESTSIM-${cust.id.split('-').pop()}`,
+          type: claimType, amount, status: 'pending', reported_at: ts,
+        });
+        const sev = amount > cust.coverage_amount * 0.4 ? 'breaking' : 'info';
+        sandboxLogEvent('claim', `New ${claimType} claim ${id} for ${cust.id} — ${sandboxFmtMoney(amount)}.`, sev);
+        return;
+      }
+
+      if (action === 'approve_claim') {
+        const target = sb.claims.find(c => c.status === 'pending');
+        if (target) {
+          target.status = 'approved';
+          target.approved_amount = Math.round(target.amount * (0.6 + Math.random() * 0.4));
+          sandboxLogEvent('claim', `Claim ${target.id} approved at ${sandboxFmtMoney(target.approved_amount)} (of ${sandboxFmtMoney(target.amount)}).`, 'info');
+        }
+        return;
+      }
+
+      if (action === 'pay_claim') {
+        const target = sb.claims.find(c => c.status === 'approved');
+        if (target) {
+          target.status = 'paid';
+          target.paid_amount = target.approved_amount || target.amount;
+          target.paid_at = ts;
+          sandboxLogEvent('claim', `Claim ${target.id} paid out ${sandboxFmtMoney(target.paid_amount)}.`, 'info');
+        }
+        return;
+      }
+
+      if (action === 'new_bill' && cust.uw_status === 'approved') {
+        const id = `BILL-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
+        sb.bills.push({
+          id, customer_id: cust.id, policy_id: `POL-TESTSIM-${cust.id.split('-').pop()}`,
+          amount: cust.monthly_premium, amount_paid: 0, status: 'outstanding',
+          due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+          created_at: ts,
+        });
+        sandboxLogEvent('billing', `New monthly bill ${id} issued to ${cust.id} for ${sandboxFmtMoney(cust.monthly_premium)}.`, 'info');
+        return;
+      }
+
+      if (action === 'pay_bill') {
+        const target = sb.bills.find(b => b.status === 'outstanding' || b.status === 'overdue');
+        if (target) {
+          target.status = 'paid';
+          target.amount_paid = target.amount;
+          target.paid_at = ts;
+          sandboxLogEvent('billing', `Bill ${target.id} paid in full (${sandboxFmtMoney(target.amount)}).`, 'info');
+        }
+        return;
+      }
+
+      if (action === 'bill_overdue') {
+        const target = sb.bills.find(b => b.status === 'outstanding');
+        if (target) {
+          target.status = 'overdue';
+          sandboxLogEvent('billing', `Bill ${target.id} flagged overdue (${sandboxFmtMoney(target.amount)}).`, 'breaking');
+        }
+        return;
+      }
+
+      if (action === 'approve_uw') {
+        const target = customers.find(c => c.uw_status === 'pending');
+        if (target) {
+          target.uw_status = 'approved';
+          sandboxLogEvent('uw', `Underwriting approved for ${target.id} (risk ${target.risk_score}).`, 'info');
+        }
+        return;
+      }
+
+      if (action === 'decline_uw') {
+        const target = customers.find(c => c.uw_status === 'pending');
+        if (target) {
+          target.uw_status = 'declined';
+          sandboxLogEvent('uw', `Underwriting declined for ${target.id} (risk ${target.risk_score}).`, 'info');
+        }
+        return;
+      }
+
+      if (action === 'breaking_news') {
+        const headlines = [
+          `🚨 Mortality cluster detected in cohort age ${sandboxRandInt(50, 75)}+ — reserve adequacy under review.`,
+          `🌪️ Catastrophic event projected: ${sandboxRandInt(20, 200)} extra disability claims this quarter.`,
+          `📈 Loss ratio drifted to ${sandboxFmtPct((50 + sandboxRandInt(0, 60)) / 100)} — pricing committee notified.`,
+          `⚠️ Spike in ADL 8+ admissions in sandbox cohort — re-running mortality basis.`,
+          `🏥 New medical guideline expected to lift average claim severity by ${sandboxRandInt(3, 15)}%.`,
+          `💸 Reinsurer signalled possible attachment-point change — hedge cost +${sandboxRandInt(5, 20)}%.`,
+          `⛈️ Regional pandemic alert raised — additional testing recommended for new applicants.`,
+        ];
+        sandboxLogEvent('alert', sandboxPick(headlines), 'breaking');
+        return;
+      }
+    }
+
+    function startSandboxLifecycle() {
+      const sb = window.actuarySandbox;
+      if (sb.lifecycleRunning) return;
+      sb.lifecycleRunning = true;
+      sb.lifecycleTimer = setInterval(() => {
+        try {
+          sandboxTickLifecycle();
+          renderSandbox();
+        } catch (err) {
+          console.error('Sandbox lifecycle tick error:', err);
+        }
+      }, 2200);
+      const lbl = document.getElementById('sandbox-lifecycle-toggle-label');
+      if (lbl) lbl.textContent = '⏸️ Pause Random Lifecycle';
+      sandboxLogEvent('uw', 'Random policy lifecycle started.', 'info');
+    }
+
+    function stopSandboxLifecycle() {
+      const sb = window.actuarySandbox;
+      if (sb.lifecycleTimer) {
+        clearInterval(sb.lifecycleTimer);
+        sb.lifecycleTimer = null;
+      }
+      if (sb.lifecycleRunning) {
+        sandboxLogEvent('uw', 'Random policy lifecycle paused.', 'info');
+      }
+      sb.lifecycleRunning = false;
+      const lbl = document.getElementById('sandbox-lifecycle-toggle-label');
+      if (lbl) lbl.textContent = '▶️ Start Random Lifecycle';
+    }
+
+    function toggleSandboxLifecycle() {
+      const sb = window.actuarySandbox;
+      if (!sb.customers.length) {
+        alert('Generate sandbox accounts first.');
+        return;
+      }
+      if (sb.lifecycleRunning) stopSandboxLifecycle();
+      else startSandboxLifecycle();
+    }
+
+    function resetSandbox() {
+      if (!confirm('♻️ Reset sandbox values?\n\nThis clears all in-memory test customers, policies, claims, bills and activity events on the actuary dashboard. It does NOT touch the admin pipeline.')) {
+        return;
+      }
+      stopSandboxLifecycle();
+      window.actuarySandbox.customers = [];
+      window.actuarySandbox.claims = [];
+      window.actuarySandbox.bills = [];
+      window.actuarySandbox.events = [];
+      window.actuarySandbox.breakingNews = [];
+      window.actuarySandbox.simulationId = null;
+      window.actuarySandbox.simulationSummary = null;
+      window.actuarySandbox.pushedToPipeline = false;
+      const pushedBadge = document.getElementById('sandbox-pipeline-badge');
+      if (pushedBadge) pushedBadge.style.display = 'none';
+      const msg = document.getElementById('sandbox-action-msg');
+      if (msg) msg.textContent = 'Sandbox reset. Run a simulation, then click "Generate Sandbox Accounts".';
+      renderSandbox();
+      renderSandboxBanner();
+    }
+
+    async function pushSandboxToPipeline() {
+      const sb = window.actuarySandbox;
+      if (!sb.customers.length) {
+        alert('Sandbox is empty. Generate sandbox accounts first.');
+        return;
+      }
+      const sliceCap = sb.pushSliceLimit;
+      const sliceCustomers = sb.customers.slice(0, sliceCap);
+      const customerIds = new Set(sliceCustomers.map(c => c.id));
+      const slicePolicies = sliceCustomers
+        .filter(c => c.uw_status === 'approved')
+        .map(c => ({
+          id: `POL-${c.id.replace('CUST-', '')}`,
+          customer_id: c.id,
+          type: 'phins_pure_risk_adjustable',
+          coverage_amount: c.coverage_amount,
+          annual_premium: c.annual_premium,
+          monthly_premium: c.monthly_premium,
+          status: 'active',
+          risk_score: c.risk_score,
+          term_years: c.term_years,
+        }));
+      const sliceClaims = sb.claims.filter(c => customerIds.has(c.customer_id));
+      const sliceBills = sb.bills.filter(b => customerIds.has(b.customer_id));
+
+      const confirmed = confirm(
+        '🚚 PUSH SANDBOX TO PIPELINE\n' +
+        '═══════════════════════════════════════\n\n' +
+        `• Customers: ${sandboxFmtCount(sliceCustomers.length)} (of ${sandboxFmtCount(sb.customers.length)} in sandbox)\n` +
+        `• Policies:  ${sandboxFmtCount(slicePolicies.length)}\n` +
+        `• Claims:    ${sandboxFmtCount(sliceClaims.length)}\n` +
+        `• Bills:     ${sandboxFmtCount(sliceBills.length)}\n\n` +
+        'Pushed accounts use the CUST-TESTSIM-* namespace. They are\n' +
+        'auto-suspended (hidden from admin BI/dashboards) and will be\n' +
+        'fully purged by "Clean Demo Data" on the admin balance-sheet\n' +
+        'bar. Real customer data is never touched.\n\n' +
+        'Continue?'
+      );
+      if (!confirmed) return;
+
+      const btn = document.getElementById('sandbox-push-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Pushing…'; }
+      const msg = document.getElementById('sandbox-action-msg');
+      if (msg) msg.textContent = 'Pushing sandbox slice to admin pipeline…';
+
+      try {
+        const res = await fetch('/api/admin/sandbox/push-to-pipeline', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            simulation_id: sb.simulationId || 'SANDBOX-LOCAL',
+            customers: sliceCustomers,
+            policies: slicePolicies,
+            claims: sliceClaims,
+            bills: sliceBills,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        sb.pushedToPipeline = true;
+        const pushedBadge = document.getElementById('sandbox-pipeline-badge');
+        if (pushedBadge) pushedBadge.style.display = 'inline-block';
+        const created = data.created || {};
+        sandboxLogEvent(
+          'alert',
+          `Pushed to admin pipeline: ${sandboxFmtCount(created.customers || 0)} customers, ` +
+            `${sandboxFmtCount(created.policies || 0)} policies, ${sandboxFmtCount(created.claims || 0)} claims, ` +
+            `${sandboxFmtCount(created.bills || 0)} bills. Auto-suspended; purgeable via Clean Demo Data.`,
+          'breaking'
+        );
+        if (msg) msg.textContent = `Pushed ${sandboxFmtCount(created.customers || 0)} sandbox customers to the admin pipeline (suspended, purgeable via Clean Demo Data).`;
+        alert(`✅ Sandbox push complete.\n\n` +
+          `Created customers: ${created.customers || 0}\n` +
+          `Created policies:  ${created.policies || 0}\n` +
+          `Created claims:    ${created.claims || 0}\n` +
+          `Created bills:     ${created.bills || 0}\n\n` +
+          `These accounts are hidden from admin BI and will be fully purged when an admin clicks "Clean Demo Data" on the balance-sheet bar.`);
+      } catch (err) {
+        sandboxLogEvent('alert', `Push to pipeline failed: ${err.message}`, 'breaking');
+        if (msg) msg.textContent = `Push failed: ${err.message}`;
+        alert('❌ Push to pipeline failed: ' + err.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🚚 Push to Pipeline'; }
+      }
+    }
+
+    // Boot the sandbox UI on first paint so the empty-state ticker is
+    // populated before the user navigates to the section.
+    document.addEventListener('DOMContentLoaded', () => {
+      try { renderSandbox(); renderSandboxBanner(); } catch (e) { /* ignore */ }
+    });
   </script>
   <script src="/ui-clarity.js"></script>
 </body>
