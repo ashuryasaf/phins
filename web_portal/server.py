@@ -26258,110 +26258,108 @@ For claims or questions, please contact:
             }
             
             try:
-                # Snapshot sandbox-pushed IDs before any steps so steps 1 and
-                # 2 can skip them (they are handled exclusively by step 4b).
+                # Hold STATE_LOCK for the entire cleanup so that a
+                # concurrent sandbox push cannot insert customers between
+                # the snapshot and steps 1-3, which would cause their
+                # wallets/investments to be zeroed instead of preserved
+                # for the step-4b purge.
                 with STATE_LOCK:
                     sandbox_snapshot = set(SANDBOX_PUSHED_CUSTOMERS)
 
-                # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
-                for cust_id, wallet in list(HEALTH_WALLETS.items()):
-                    if cust_id in PROTECTED_CUSTOMERS:
-                        # Remove only demo transactions, not real ones
-                        original_txs = wallet.get('transactions', [])
-                        real_txs = [
-                            tx for tx in original_txs 
-                            if 'demo' not in str(tx.get('description', '')).lower() 
-                            and 'demo' not in str(tx.get('source', '')).lower()
-                            and tx.get('type') not in ['initial_deposit']  # Remove initial demo deposits
-                        ]
-                        
-                        if len(real_txs) < len(original_txs):
-                            demo_removed = len(original_txs) - len(real_txs)
-                            cleanup_results['demo_transactions_removed'] += demo_removed
+                    # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
+                    for cust_id, wallet in list(HEALTH_WALLETS.items()):
+                        if cust_id in PROTECTED_CUSTOMERS:
+                            # Remove only demo transactions, not real ones
+                            original_txs = wallet.get('transactions', [])
+                            real_txs = [
+                                tx for tx in original_txs 
+                                if 'demo' not in str(tx.get('description', '')).lower() 
+                                and 'demo' not in str(tx.get('source', '')).lower()
+                                and tx.get('type') not in ['initial_deposit']
+                            ]
                             
-                            # Recalculate balance from real transactions only
-                            wallet['transactions'] = real_txs
-                            new_balance = sum(
-                                float(tx.get('amount', 0)) if tx.get('type') in ['deposit', 'credit_transfer'] 
-                                else -float(tx.get('amount', 0))
-                                for tx in real_txs
-                            )
-                            wallet['balance'] = max(0, new_balance)
-                            
-                            cleanup_results['details'].append(
-                                f"Health wallet {cust_id}: Removed {demo_removed} demo txs, balance now ${wallet['balance']:.2f}"
-                            )
-                    elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
-                        # Completely clear test account wallets
-                        wallet['balance'] = 0
-                        wallet['transactions'] = []
-                        cleanup_results['test_wallets_cleared'] += 1
-                
-                # 2. Clean up demo investment account deposits
-                for cust_id, account in list(INVESTMENT_ACCOUNTS.items()):
-                    if cust_id in PROTECTED_CUSTOMERS:
-                        # Remove demo deposits
-                        original_deps = account.get('deposits', [])
-                        real_deps = [
-                            dep for dep in original_deps
-                            if 'demo' not in str(dep.get('description', '')).lower()
-                            and 'demo' not in str(dep.get('source', '')).lower()
-                            and dep.get('type') not in ['initial_deposit']
-                        ]
-                        
-                        if len(real_deps) < len(original_deps):
-                            demo_removed = len(original_deps) - len(real_deps)
-                            cleanup_results['demo_transactions_removed'] += demo_removed
-                            
-                            account['deposits'] = real_deps
-                            # Recalculate balances
-                            new_balance = sum(float(d.get('amount', 0)) for d in real_deps)
-                            account['balance'] = max(0, new_balance)
-                            account['index_balance'] = max(0, sum(float(d.get('index_amount', 0)) for d in real_deps))
-                            account['bonds_balance'] = max(0, sum(float(d.get('bonds_amount', 0)) for d in real_deps))
-                            account['crypto_balance'] = max(0, sum(float(d.get('crypto_amount', 0)) for d in real_deps))
-                            
-                            cleanup_results['details'].append(
-                                f"Investment {cust_id}: Removed {demo_removed} demo deposits, balance now ${account['balance']:.2f}"
-                            )
-                    elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
-                        account['balance'] = 0
-                        account['deposits'] = []
-                        cleanup_results['test_investments_cleared'] += 1
-
-                # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
-                # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
-                for claim_id, claim in list(CLAIMS.items()):
-                    cust_id = claim.get('customer_id', '')
-                    description = str(claim.get('description', '')).lower()
+                            if len(real_txs) < len(original_txs):
+                                demo_removed = len(original_txs) - len(real_txs)
+                                cleanup_results['demo_transactions_removed'] += demo_removed
+                                
+                                wallet['transactions'] = real_txs
+                                new_balance = sum(
+                                    float(tx.get('amount', 0)) if tx.get('type') in ['deposit', 'credit_transfer'] 
+                                    else -float(tx.get('amount', 0))
+                                    for tx in real_txs
+                                )
+                                wallet['balance'] = max(0, new_balance)
+                                
+                                cleanup_results['details'].append(
+                                    f"Health wallet {cust_id}: Removed {demo_removed} demo txs, balance now ${wallet['balance']:.2f}"
+                                )
+                        elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
+                            wallet['balance'] = 0
+                            wallet['transactions'] = []
+                            cleanup_results['test_wallets_cleared'] += 1
                     
-                    is_test_claim = (
-                        'test' in description or 
-                        'demo' in description or
-                        'sample' in description
-                    )
-                    
-                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in sandbox_snapshot:
-                        del CLAIMS[claim_id]
-                        cleanup_results['demo_claims_removed'] += 1
-                        cleanup_results['details'].append(f"Removed test claim: {claim_id}")
-                
-                # 4. Add test customer IDs to suspended accounts
-                for cust_id in list(CUSTOMERS.keys()):
-                    if 'TEST' in cust_id.upper() and cust_id not in SUSPENDED_TEST_ACCOUNTS:
-                        SUSPENDED_TEST_ACCOUNTS.add(cust_id)
-                        cleanup_results['test_accounts_suspended'] += 1
+                    # 2. Clean up demo investment account deposits
+                    for cust_id, account in list(INVESTMENT_ACCOUNTS.items()):
+                        if cust_id in PROTECTED_CUSTOMERS:
+                            original_deps = account.get('deposits', [])
+                            real_deps = [
+                                dep for dep in original_deps
+                                if 'demo' not in str(dep.get('description', '')).lower()
+                                and 'demo' not in str(dep.get('source', '')).lower()
+                                and dep.get('type') not in ['initial_deposit']
+                            ]
+                            
+                            if len(real_deps) < len(original_deps):
+                                demo_removed = len(original_deps) - len(real_deps)
+                                cleanup_results['demo_transactions_removed'] += demo_removed
+                                
+                                account['deposits'] = real_deps
+                                new_balance = sum(float(d.get('amount', 0)) for d in real_deps)
+                                account['balance'] = max(0, new_balance)
+                                account['index_balance'] = max(0, sum(float(d.get('index_amount', 0)) for d in real_deps))
+                                account['bonds_balance'] = max(0, sum(float(d.get('bonds_amount', 0)) for d in real_deps))
+                                account['crypto_balance'] = max(0, sum(float(d.get('crypto_amount', 0)) for d in real_deps))
+                                
+                                cleanup_results['details'].append(
+                                    f"Investment {cust_id}: Removed {demo_removed} demo deposits, balance now ${account['balance']:.2f}"
+                                )
+                        elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
+                            account['balance'] = 0
+                            account['deposits'] = []
+                            cleanup_results['test_investments_cleared'] += 1
 
-                # 4b. Fully purge accounts that were materialized by the
-                # Actuarial Dashboard sandbox via "Push to Pipeline".
-                # Unlike generic TEST accounts (which are just suspended),
-                # sandbox-pushed accounts are deleted along with every
-                # downstream record (policy, claim, bill, wallet,
-                # investment account, registered customer, underwriting
-                # application). PROTECTED_CUSTOMERS is still respected as
-                # a safety net even though sandbox IDs use a distinct
-                # prefix.
-                with STATE_LOCK:
+                    # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
+                    # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
+                    for claim_id, claim in list(CLAIMS.items()):
+                        cust_id = claim.get('customer_id', '')
+                        description = str(claim.get('description', '')).lower()
+                        
+                        is_test_claim = (
+                            'test' in description or 
+                            'demo' in description or
+                            'sample' in description
+                        )
+                        
+                        if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in sandbox_snapshot:
+                            del CLAIMS[claim_id]
+                            cleanup_results['demo_claims_removed'] += 1
+                            cleanup_results['details'].append(f"Removed test claim: {claim_id}")
+                    
+                    # 4. Add test customer IDs to suspended accounts
+                    for cust_id in list(CUSTOMERS.keys()):
+                        if 'TEST' in cust_id.upper() and cust_id not in SUSPENDED_TEST_ACCOUNTS:
+                            SUSPENDED_TEST_ACCOUNTS.add(cust_id)
+                            cleanup_results['test_accounts_suspended'] += 1
+
+                    # 4b. Fully purge accounts that were materialized by the
+                    # Actuarial Dashboard sandbox via "Push to Pipeline".
+                    # Unlike generic TEST accounts (which are just suspended),
+                    # sandbox-pushed accounts are deleted along with every
+                    # downstream record (policy, claim, bill, wallet,
+                    # investment account, registered customer, underwriting
+                    # application). PROTECTED_CUSTOMERS is still respected as
+                    # a safety net even though sandbox IDs use a distinct
+                    # prefix.
                     purge_ids = {cid for cid in sandbox_snapshot if cid not in PROTECTED_CUSTOMERS}
 
                     for pol_id, pol in list(POLICIES.items()):
