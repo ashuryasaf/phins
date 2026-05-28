@@ -26258,6 +26258,11 @@ For claims or questions, please contact:
             }
             
             try:
+                # Snapshot sandbox-pushed IDs before any steps so steps 1 and
+                # 2 can skip them (they are handled exclusively by step 4b).
+                with STATE_LOCK:
+                    sandbox_snapshot = set(SANDBOX_PUSHED_CUSTOMERS)
+
                 # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
                 for cust_id, wallet in list(HEALTH_WALLETS.items()):
                     if cust_id in PROTECTED_CUSTOMERS:
@@ -26286,7 +26291,7 @@ For claims or questions, please contact:
                             cleanup_results['details'].append(
                                 f"Health wallet {cust_id}: Removed {demo_removed} demo txs, balance now ${wallet['balance']:.2f}"
                             )
-                    elif 'TEST' in cust_id.upper():
+                    elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
                         # Completely clear test account wallets
                         wallet['balance'] = 0
                         wallet['transactions'] = []
@@ -26319,16 +26324,10 @@ For claims or questions, please contact:
                             cleanup_results['details'].append(
                                 f"Investment {cust_id}: Removed {demo_removed} demo deposits, balance now ${account['balance']:.2f}"
                             )
-                    elif 'TEST' in cust_id.upper():
+                    elif 'TEST' in cust_id.upper() and cust_id not in sandbox_snapshot:
                         account['balance'] = 0
                         account['deposits'] = []
                         cleanup_results['test_investments_cleared'] += 1
-                
-                # Snapshot sandbox-pushed IDs under the lock so steps 3 and
-                # 4b see a consistent view even if a concurrent push adds
-                # new entries between steps.
-                with STATE_LOCK:
-                    sandbox_snapshot = set(SANDBOX_PUSHED_CUSTOMERS)
 
                 # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
                 # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
