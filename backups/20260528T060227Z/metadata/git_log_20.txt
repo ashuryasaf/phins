@@ -1,0 +1,20 @@
+b5b1c97 Merge pull request #343 from ashuryasaf/cursor/unified-comprehensive-assessment-2837
+859dad2 fix: treat empty strings as unset in _first_set fallback helper
+dfe4285 Fix unguarded None==None comparison in underwriting application email matching
+e568653 Fix age merge to use _first_set helper and parallelize comprehensive fetch
+8690c5c fix: don't default profile name to 'Customer' in ai-report, so demographics coverage flag reflects real data
+13d53da fix: don't default profile name to 'Customer' in ai-report, so demographics coverage flag reflects real data
+0212ed7 fix: don't default profile name to 'Customer' in ai-report, so demographics coverage flag reflects real data
+f8db5ed Merge pull request #342 from ashuryasaf/cursor/admin-tab-frames-and-styling-cba0
+edccb9b Merge pull request #341 from ashuryasaf/cursor/platform-assessment-8583
+d2940fc Fix identity doc regex matching 'id' substring in unrelated document types
+29fdb20 Fix falsy-value fallback in customer profile field resolution
+8c2e55b Fix mobile padding rule being silently overridden by existing !important
+becfa98 Fix BIAnalyticsService: update broken tests, remove dead code, protect datetime comparison
+d7c4e0f feat(unified-workbench): add Comprehensive Customer Assessment bar
+fea273b admin.html: frame each dashboard tab with per-division accents
+b666dfe fix(bi): restore importability of services/bi_analytics_service
+bba8276 docs: add PHINS platform assessment (data integrity, AI, BI, debugging)
+00e213a Merge pull request #340 from ashuryasaf/cursor/admin-header-and-sections-redesign-cba0
+fdbce12 admin.html: 2-row header, collapsible tabs, per-tab search, BI bar removed
+9c1fa5d Merge pull request #339 from ashuryasaf/cursor/exec-actuary-pitch-card-a6cb
