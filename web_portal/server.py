@@ -4212,7 +4212,9 @@ def save_ledger_data(_periodic: bool = False):
                 # v1.9 additions - General Policy Documents
                 'policy_documents': POLICY_DOCUMENTS,
                 # v2.1 additions - monthly auto-pay batch reporting
-                'auto_pay_run_reports': AUTO_PAY_RUN_REPORTS
+                'auto_pay_run_reports': AUTO_PAY_RUN_REPORTS,
+                # v2.2 additions - sandbox pushed customers tracking
+                'sandbox_pushed_customers': list(SANDBOX_PUSHED_CUSTOMERS),
             }
 
             # DB-backed entities: only include in the snapshot when running
@@ -4492,6 +4494,7 @@ def load_ledger_data():
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     global POLICY_DOCUMENTS
+    global SANDBOX_PUSHED_CUSTOMERS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -4619,6 +4622,12 @@ def load_ledger_data():
         if loaded_auto_pay_reports:
             AUTO_PAY_RUN_REPORTS.update(loaded_auto_pay_reports)
             print(f"  - Auto-Pay Reports: {len(AUTO_PAY_RUN_REPORTS)} batch reports loaded")
+
+        loaded_sandbox_pushed = data.get('sandbox_pushed_customers', [])
+        if loaded_sandbox_pushed:
+            SANDBOX_PUSHED_CUSTOMERS.update(loaded_sandbox_pushed)
+            SUSPENDED_TEST_ACCOUNTS.update(loaded_sandbox_pushed)
+            print(f"  - Sandbox Pushed Customers: {len(loaded_sandbox_pushed)} tracked IDs restored")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -26315,6 +26324,12 @@ For claims or questions, please contact:
                         account['deposits'] = []
                         cleanup_results['test_investments_cleared'] += 1
                 
+                # Snapshot sandbox-pushed IDs under the lock so steps 3 and
+                # 4b see a consistent view even if a concurrent push adds
+                # new entries between steps.
+                with STATE_LOCK:
+                    sandbox_snapshot = set(SANDBOX_PUSHED_CUSTOMERS)
+
                 # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
                 # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
                 for claim_id, claim in list(CLAIMS.items()):
@@ -26327,7 +26342,7 @@ For claims or questions, please contact:
                         'sample' in description
                     )
                     
-                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in SANDBOX_PUSHED_CUSTOMERS:
+                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in sandbox_snapshot:
                         del CLAIMS[claim_id]
                         cleanup_results['demo_claims_removed'] += 1
                         cleanup_results['details'].append(f"Removed test claim: {claim_id}")
@@ -26348,7 +26363,7 @@ For claims or questions, please contact:
                 # a safety net even though sandbox IDs use a distinct
                 # prefix.
                 with STATE_LOCK:
-                    purge_ids = {cid for cid in SANDBOX_PUSHED_CUSTOMERS if cid not in PROTECTED_CUSTOMERS}
+                    purge_ids = {cid for cid in sandbox_snapshot if cid not in PROTECTED_CUSTOMERS}
 
                     for pol_id, pol in list(POLICIES.items()):
                         if pol.get('customer_id') in purge_ids:
