@@ -1,0 +1,20 @@
+b2b7bcd Merge pull request #344 from ashuryasaf/cursor/actuary-sandbox-testing-bar-9a2a
+5b434b9 Fix race condition in demo data cleanup between sandbox snapshot and steps 1-3
+94f65ab Fix policy_id normalization in sandbox push and add missing policy_id to lifecycle claims
+893002d Fix sandbox lifecycle risk formula, cleanup ordering, and dead code
+861223b Fix sandbox tracking persistence and concurrent access bugs
+4bc651a Fix test to mirror PROTECTED_CUSTOMERS filtering from server cleanup code
+c326c92 Fix quadratic cleanup loop under STATE_LOCK and add list type validation for push-to-pipeline
+2e0c5af Fix: read request body in push-to-pipeline endpoint before parsing
+c95a89c Fix: define esc() alias for escapeHtml() in actuary-dashboard.html
+3b0f8a2 Fix race condition in sandbox cleanup and align test with actual purge contract
+130e546 Fix traceback leak in sandbox push endpoint and cleanup ordering bug
+224ed88 Add Actuarial Sandbox testing bar with isolated push-to-pipeline
+b5b1c97 Merge pull request #343 from ashuryasaf/cursor/unified-comprehensive-assessment-2837
+859dad2 fix: treat empty strings as unset in _first_set fallback helper
+dfe4285 Fix unguarded None==None comparison in underwriting application email matching
+e568653 Fix age merge to use _first_set helper and parallelize comprehensive fetch
+8690c5c fix: don't default profile name to 'Customer' in ai-report, so demographics coverage flag reflects real data
+13d53da fix: don't default profile name to 'Customer' in ai-report, so demographics coverage flag reflects real data
+0212ed7 fix: don't default profile name to 'Customer' in ai-report, so demographics coverage flag reflects real data
+f8db5ed Merge pull request #342 from ashuryasaf/cursor/admin-tab-frames-and-styling-cba0
