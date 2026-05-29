@@ -6182,6 +6182,7 @@
         const target = customers.find(c => c.uw_status === 'pending');
         if (target) {
           target.uw_status = 'approved';
+          target.policy_status = 'active';
           sandboxLogEvent('uw', `Underwriting approved for ${target.id} (risk ${target.risk_score}).`, 'info');
         }
         return;
@@ -6191,6 +6192,7 @@
         const target = customers.find(c => c.uw_status === 'pending');
         if (target) {
           target.uw_status = 'declined';
+          target.policy_status = 'declined';
           sandboxLogEvent('uw', `Underwriting declined for ${target.id} (risk ${target.risk_score}).`, 'info');
         }
         return;
