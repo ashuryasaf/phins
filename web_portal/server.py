@@ -36033,8 +36033,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Actuary access required.'}).encode('utf-8'))
                 return
 
-            length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            # NOTE: do_POST already consumed the request body once into ``body``
+            # (see the "Regular JSON POST requests" read above). Re-reading
+            # self.rfile here would block forever waiting for bytes that were
+            # already drained, hanging the Push to Pipeline request. Reuse the
+            # already-read body instead.
             try:
                 data = json.loads(body or '{}')
             except json.JSONDecodeError:
@@ -36116,6 +36119,10 @@ For claims or questions, please contact:
                             'coverage_amount': float(pol.get('coverage_amount') or 0),
                             'annual_premium': float(pol.get('annual_premium') or 0),
                             'monthly_premium': float(pol.get('monthly_premium') or 0),
+                            'risk_premium': float(pol.get('risk_premium') or 0),
+                            'savings_premium': float(pol.get('savings_premium') or 0),
+                            'savings_rate': float(pol.get('savings_rate') or 0),
+                            'disability_share_of_life': float(pol.get('disability_share_of_life') or 0),
                             'status': str(pol.get('status') or 'active'),
                             'risk_score': pol.get('risk_score'),
                             'term_years': pol.get('term_years'),
@@ -36140,11 +36147,12 @@ For claims or questions, please contact:
                             'customer_id': cust_id,
                             'policy_id': str(clm.get('policy_id') or '').strip().upper(),
                             'type': str(clm.get('type') or 'sandbox'),
+                            'cause': str(clm.get('cause') or ''),
                             'amount': float(clm.get('amount') or 0),
                             'approved_amount': float(clm.get('approved_amount') or 0),
                             'paid_amount': float(clm.get('paid_amount') or 0),
                             'status': str(clm.get('status') or 'pending'),
-                            'description': str(clm.get('description') or 'sandbox/test claim from actuarial dashboard'),
+                            'description': str(clm.get('cause') or clm.get('description') or 'sandbox/test claim from actuarial dashboard'),
                             'incident_date': clm.get('incident_date') or now.isoformat(),
                             'reported_date': now.isoformat(),
                             'source': 'actuary_sandbox',

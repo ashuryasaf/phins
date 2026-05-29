@@ -22,6 +22,11 @@ from __future__ import annotations
 
 import sys
 import os
+import json
+import urllib.error
+from urllib.request import Request, urlopen
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,6 +34,53 @@ import web_portal.server as portal
 
 
 def _reset_sandbox_state():
+    portal.SANDBOX_PUSHED_CUSTOMERS.clear()
+
+
+# ---------------------------------------------------------------------------
+# HTTP helpers for the live push-to-pipeline endpoint (embedded server is
+# started by the repository-level conftest on TEST_PORT).
+# ---------------------------------------------------------------------------
+
+def _base_url() -> str:
+    return os.environ.get("TEST_BASE_URL") or "http://127.0.0.1:8000"
+
+
+def _post_json(path: str, payload: dict, token=None):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(
+        _base_url() + path,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urlopen(req) as resp:
+        return json.loads(resp.read() or b"{}"), resp.status
+
+
+@pytest.fixture
+def admin_token() -> str:
+    body, status = _post_json("/api/login", {"username": "admin", "password": "admin123"})
+    assert status == 200, body
+    return body["token"]
+
+
+def _purge_pushed():
+    """Remove everything the push endpoint may have created so the live
+    tests leave the shared in-memory portal state pristine."""
+    for cid in list(portal.SANDBOX_PUSHED_CUSTOMERS):
+        for store, field in (
+            (portal.POLICIES, "customer_id"),
+            (portal.CLAIMS, "customer_id"),
+            (portal.BILLING, "customer_id"),
+        ):
+            for k, v in list(store.items()):
+                if v.get(field) == cid:
+                    del store[k]
+        portal.CUSTOMERS.pop(cid, None)
+        portal.SUSPENDED_TEST_ACCOUNTS.discard(cid)
     portal.SANDBOX_PUSHED_CUSTOMERS.clear()
 
 
@@ -174,3 +226,239 @@ def test_actuary_dashboard_sandbox_uses_testsim_namespace():
     assert "BILL-TESTSIM-" in content
     assert "POL-TESTSIM-" in content
     assert "CLM-TESTSIM-" in content
+
+
+def test_actuary_dashboard_wires_contract_aware_sandbox_features():
+    """The optimized sandbox must price against the Contract Being Priced
+    and expose the monthly cash-flow projection."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    # Contract-aware claim causes (death + permanent disability only).
+    assert "Death — natural or accidental" in content
+    assert "Permanent total disability (3+ ADL)" in content
+    # Monthly projection tab + seeding hooks.
+    assert "seedSandboxProjection" in content
+    assert "sandbox-projection-body" in content
+    assert "Monthly Projection" in content
+    assert "disability_share_of_life" in content
+    # Simulation parameters are consumed (age dist, coverage dist, savings).
+    assert "age_distribution" in content
+    assert "coverage_distribution" in content
+    assert "savings_rate" in content
+
+
+# ---------------------------------------------------------------------------
+# Live HTTP push-to-pipeline tests (the "Push to Pipeline" event)
+# ---------------------------------------------------------------------------
+
+def _sandbox_push_payload():
+    """A representative contract-aware sandbox slice as the dashboard posts it.
+
+    Mortality claim → full sum insured L; disability claim → L × 0.25
+    (the 1:4 contract ratio). Both reference a pushed, policy-backed
+    customer so the push has no dangling references."""
+    coverage = 500_000.0
+    return {
+        "simulation_id": "SIM-TESTPUSH-0001",
+        "customers": [
+            {
+                "id": "CUST-TESTSIM-900001",
+                "name": "Sandbox Mortality",
+                "age": 70,
+                "uw_status": "approved",
+                "coverage_amount": coverage,
+                "annual_premium": 4800,
+                "monthly_premium": 400,
+                "risk_premium": 3000,
+                "savings_premium": 600,
+                "savings_rate": 0.2,
+                "disability_share_of_life": 0.25,
+                "term_years": 10,
+                "risk_score": 40,
+            },
+            {
+                "id": "CUST-TESTSIM-900002",
+                "name": "Sandbox Disability",
+                "age": 45,
+                "uw_status": "approved",
+                "coverage_amount": coverage,
+                "annual_premium": 3600,
+                "monthly_premium": 300,
+                "term_years": 20,
+                "risk_score": 30,
+            },
+        ],
+        "policies": [
+            {
+                "id": "POL-TESTSIM-900001",
+                "customer_id": "CUST-TESTSIM-900001",
+                "type": "phins_pure_risk_adjustable",
+                "coverage_amount": coverage,
+                "annual_premium": 4800,
+                "monthly_premium": 400,
+                "risk_premium": 3000,
+                "savings_premium": 600,
+                "savings_rate": 0.2,
+                "disability_share_of_life": 0.25,
+                "status": "active",
+                "term_years": 10,
+            },
+            {
+                "id": "POL-TESTSIM-900002",
+                "customer_id": "CUST-TESTSIM-900002",
+                "type": "phins_pure_risk_adjustable",
+                "coverage_amount": coverage,
+                "annual_premium": 3600,
+                "monthly_premium": 300,
+                "status": "active",
+                "term_years": 20,
+            },
+        ],
+        "claims": [
+            {
+                "id": "CLM-TESTSIM-900001",
+                "customer_id": "CUST-TESTSIM-900001",
+                "policy_id": "POL-TESTSIM-900001",
+                "type": "mortality",
+                "cause": "Death — natural or accidental",
+                "amount": coverage,
+                "approved_amount": coverage,
+                "paid_amount": coverage,
+                "status": "paid",
+                "reported_at": "2026-05-01T00:00:00",
+            },
+            {
+                "id": "CLM-TESTSIM-900002",
+                "customer_id": "CUST-TESTSIM-900002",
+                "policy_id": "POL-TESTSIM-900002",
+                "type": "disability",
+                "cause": "Permanent total disability (3+ ADL)",
+                "amount": coverage * 0.25,
+                "status": "pending",
+                "reported_at": "2026-05-02T00:00:00",
+            },
+        ],
+        "bills": [
+            {
+                "id": "BILL-TESTSIM-900001-001",
+                "customer_id": "CUST-TESTSIM-900001",
+                "policy_id": "POL-TESTSIM-900001",
+                "amount": 400,
+                "amount_paid": 400,
+                "status": "paid",
+            },
+            {
+                "id": "BILL-TESTSIM-900002-001",
+                "customer_id": "CUST-TESTSIM-900002",
+                "policy_id": "POL-TESTSIM-900002",
+                "amount": 300,
+                "amount_paid": 0,
+                "status": "outstanding",
+            },
+        ],
+    }
+
+
+def test_push_to_pipeline_materializes_contract_aware_records(admin_token):
+    """End-to-end: the push endpoint materializes the sandbox slice,
+    preserving the contract-aware cause of claim and the savings breakdown,
+    auto-suspending the accounts, and keeping referential integrity."""
+    _purge_pushed()
+    payload = _sandbox_push_payload()
+    try:
+        body, status = _post_json("/api/admin/sandbox/push-to-pipeline", payload, admin_token)
+        assert status == 200, body
+        assert body["success"] is True
+        created = body["created"]
+        assert created == {"customers": 2, "policies": 2, "claims": 2, "bills": 2}, created
+
+        # Customers materialized + auto-suspended (hidden from admin BI).
+        for cid in ("CUST-TESTSIM-900001", "CUST-TESTSIM-900002"):
+            assert cid in portal.CUSTOMERS
+            assert portal.is_suspended_account(cid) is True
+            assert cid in portal.SANDBOX_PUSHED_CUSTOMERS
+
+        # Contract being priced: cause of claim is preserved verbatim and the
+        # mortality benefit equals the full sum insured while disability is
+        # the L × 0.25 contract ratio.
+        mort = portal.CLAIMS["CLM-TESTSIM-900001"]
+        dis = portal.CLAIMS["CLM-TESTSIM-900002"]
+        assert mort["cause"] == "Death — natural or accidental"
+        assert mort["type"] == "mortality"
+        assert mort["amount"] == 500_000.0
+        assert mort["paid_amount"] == 500_000.0
+        assert dis["cause"] == "Permanent total disability (3+ ADL)"
+        assert dis["type"] == "disability"
+        assert dis["amount"] == 125_000.0
+
+        # Savings breakdown carried onto the policy.
+        pol = portal.POLICIES["POL-TESTSIM-900001"]
+        assert pol["savings_premium"] == 600.0
+        assert pol["savings_rate"] == 0.2
+        assert pol["disability_share_of_life"] == 0.25
+
+        # Referential integrity: every pushed claim/bill resolves to a pushed
+        # customer AND a pushed policy (no dangling references).
+        for store in (portal.CLAIMS, portal.BILLING):
+            for rec in store.values():
+                if "TESTSIM-9000" in rec.get("customer_id", ""):
+                    assert rec["customer_id"] in portal.CUSTOMERS
+                    assert rec["policy_id"] in portal.POLICIES
+    finally:
+        _purge_pushed()
+
+
+def test_push_to_pipeline_rejects_non_testsim_namespace(admin_token):
+    """Data integrity: only the CUST-TESTSIM-* namespace may be materialized;
+    a stray real-looking id must be ignored, never created."""
+    _purge_pushed()
+    payload = {
+        "simulation_id": "SIM-TESTPUSH-0002",
+        "customers": [
+            {"id": "CUST-REAL-123456", "name": "Real Person", "uw_status": "approved"},
+            {"id": "CUST-TESTSIM-900050", "name": "Sandbox Ok", "uw_status": "approved",
+             "coverage_amount": 100000, "annual_premium": 1200, "monthly_premium": 100},
+        ],
+        "policies": [],
+        "claims": [],
+        "bills": [],
+    }
+    try:
+        body, status = _post_json("/api/admin/sandbox/push-to-pipeline", payload, admin_token)
+        assert status == 200, body
+        assert body["created"]["customers"] == 1
+        assert "CUST-TESTSIM-900050" in portal.CUSTOMERS
+        assert "CUST-REAL-123456" not in portal.CUSTOMERS
+    finally:
+        _purge_pushed()
+
+
+def test_push_to_pipeline_requires_non_empty_customers(admin_token):
+    """An empty push must be a 400, never a silent no-op success."""
+    _purge_pushed()
+    try:
+        _post_json(
+            "/api/admin/sandbox/push-to-pipeline",
+            {"simulation_id": "SIM-X", "customers": [], "policies": [], "claims": [], "bills": []},
+            admin_token,
+        )
+        raise AssertionError("expected HTTP 400 for empty customers")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 400
+    finally:
+        _purge_pushed()
+
+
+def test_push_to_pipeline_requires_authentication():
+    """Anonymous and bogus-token pushes must be refused (403)."""
+    for token in (None, "phins_bogus_token"):
+        try:
+            _post_json(
+                "/api/admin/sandbox/push-to-pipeline",
+                _sandbox_push_payload(),
+                token,
+            )
+            raise AssertionError("expected HTTP 401/403 for unauthorized push")
+        except urllib.error.HTTPError as exc:
+            assert exc.code in (401, 403), exc.code
