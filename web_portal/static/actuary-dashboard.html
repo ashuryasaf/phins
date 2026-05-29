@@ -5706,8 +5706,8 @@
       // Claim cause split from the simulation's risk metrics (mortality vs
       // permanent disability share of expected claims).
       const rm = sim.risk_metrics || {};
-      let mortalityShare = Number(rm.mortality_pct_of_claims || 0) / 100;
-      if (!(mortalityShare > 0 && mortalityShare < 1)) mortalityShare = 0.6;
+      let mortalityShare = rm.mortality_pct_of_claims != null ? Number(rm.mortality_pct_of_claims) / 100 : 0.6;
+      if (!(mortalityShare >= 0 && mortalityShare <= 1)) mortalityShare = 0.6;
       const lossRatioPct = Number(rm.loss_ratio || 0);
 
       // Reset before regenerating so re-clicking Generate is idempotent.
@@ -6423,7 +6423,6 @@
       }
       const sliceCap = sb.pushSliceLimit;
       const sliceCustomers = sb.customers.slice(0, sliceCap);
-      const customerIds = new Set(sliceCustomers.map(c => c.id));
       const contract = sb.contract || {};
       const productId = contract.product_id || 'phins_pure_risk_adjustable';
       const slicePolicies = sliceCustomers
