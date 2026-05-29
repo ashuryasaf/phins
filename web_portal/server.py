@@ -36033,8 +36033,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Actuary access required.'}).encode('utf-8'))
                 return
 
-            length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            # NOTE: do_POST already consumed the request body once into ``body``
+            # (see the "Regular JSON POST requests" read above). Re-reading
+            # self.rfile here would block forever waiting for bytes that were
+            # already drained, hanging the Push to Pipeline request. Reuse the
+            # already-read body instead.
             try:
                 data = json.loads(body or '{}')
             except json.JSONDecodeError:
