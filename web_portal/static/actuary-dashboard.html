@@ -6114,7 +6114,7 @@
         // Live joiners respect the same accepted Age Parameters band.
         const age = sandboxRandInt(bandMin, bandMax);
         const health = sandboxRandInt(1, 10);
-        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - 20) * 0.8 + sandboxRandInt(-10, 10))));
+        const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - bandMin) * 0.8 + sandboxRandInt(-10, 10))));
         const uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
         const cov = sandboxRandInt(50000, 1000000);
         // Price the new joiner through the same component chain as Generate
@@ -6375,6 +6375,10 @@
       proj.months = horizon;
       proj.growthPct = growthPct;
       proj.startCustomers = startCustomers;
+      // Tuning the always-on controls (or Recompute) activates the projection
+      // just like seeding does, but only once a real book exists — otherwise
+      // the table/pills bail while the charts could draw an empty forecast.
+      proj.active = startCustomers > 0;
       const g = growthPct / 100;
       const lr = lossRatioPct / 100;
       proj.baseline = {
@@ -6474,7 +6478,7 @@
 
     function sandboxRenderForecastCharts() {
       const proj = window.actuarySandbox.projection;
-      if (!proj || !proj.rows.length || typeof Chart === 'undefined') return;
+      if (!proj || !proj.active || !proj.rows.length || typeof Chart === 'undefined') return;
       const labels = proj.rows.map(r => 'M' + r.month);
       const collected = proj.rows.map(r => Math.round(r.collectedPremium));
       const claims = proj.rows.map(r => Math.round(r.claimsPaid));
@@ -6522,8 +6526,12 @@
       }
       const base = proj.baseline || {};
       const last = proj.rows[proj.rows.length - 1] || {};
-      const monthlyPremium = Number(base.monthlyPremium || 0);
-      const monthlyClaims = Number(base.monthlyClaims || 0);
+      // Headline "/ mo" pills follow the run-rate for the current elapsed month
+      // so they scale with compounding customer growth instead of staying
+      // frozen at the opening (month-one) book size.
+      const currentRow = proj.rows[Math.min(proj.rows.length - 1, Math.max(0, proj.monthsElapsed - 1))] || {};
+      const monthlyPremium = Number(currentRow.collectedPremium != null ? currentRow.collectedPremium : (base.monthlyPremium || 0));
+      const monthlyClaims = Number(currentRow.claimsPaid != null ? currentRow.claimsPaid : (base.monthlyClaims || 0));
       setText('sandbox-proj-months-elapsed', `${proj.monthsElapsed} / ${proj.months}`);
       setText('sandbox-proj-monthly-premium', sandboxFmtMoney(monthlyPremium));
       setText('sandbox-proj-monthly-claims', sandboxFmtMoney(monthlyClaims));
