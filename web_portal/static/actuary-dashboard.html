@@ -2663,7 +2663,7 @@
                   <div class="metric-pill">Forecast Customers (final mo): <span id="sandbox-proj-end-customers">0</span></div>
                 </div>
                 <div class="form-group">
-                  <div class="metric-pill">5-Yr Net Cash Flow: <span id="sandbox-proj-total-net">$0</span></div>
+                  <div class="metric-pill"><span id="sandbox-proj-total-net-label">5-Yr</span> Net Cash Flow: <span id="sandbox-proj-total-net">$0</span></div>
                 </div>
               </div>
               <div class="form-row" style="margin-bottom:12px;">
@@ -6572,7 +6572,16 @@
 
     function sandboxRenderForecastCharts() {
       const proj = window.actuarySandbox.projection;
-      if (!proj || !proj.active || !proj.rows.length || typeof Chart === 'undefined') return;
+      if (typeof Chart === 'undefined') return;
+      if (!proj || !proj.active || !proj.rows.length) {
+        // Nothing to draw — tear down any prior chart instances so stale 5-year
+        // graphics don't linger beside the now-empty projection table/pills.
+        if (window._sbCharts) {
+          Object.keys(window._sbCharts).forEach(k => { try { window._sbCharts[k].destroy(); } catch (e) {} });
+          window._sbCharts = {};
+        }
+        return;
+      }
       const labels = proj.rows.map(r => 'M' + r.month);
       const collected = proj.rows.map(r => Math.round(r.collectedPremium));
       const claims = proj.rows.map(r => Math.round(r.claimsPaid));
@@ -6607,6 +6616,10 @@
       const proj = window.actuarySandbox.projection;
       const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
       const body = document.getElementById('sandbox-projection-body');
+      // Keep the headline cumulative-net label honest with the adjustable
+      // horizon (1–60 months) instead of always claiming "5-Yr".
+      const horizonMonths = (proj && proj.months) || 60;
+      setText('sandbox-proj-total-net-label', (horizonMonths % 12 === 0) ? `${horizonMonths / 12}-Yr` : `${horizonMonths}-Mo`);
       if (!proj || !proj.active || !proj.rows.length) {
         ['sandbox-proj-monthly-premium','sandbox-proj-monthly-claims','sandbox-proj-monthly-net',
          'sandbox-proj-realized-collected','sandbox-proj-realized-claims','sandbox-proj-realized-net',
