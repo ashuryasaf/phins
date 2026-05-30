@@ -1,0 +1,20 @@
+4f41b5e Merge pull request #345 from ashuryasaf/cursor/actuary-sandbox-simulation-optimisation-4d9a
+e27c9ec Fix policy_status not updating on approve/decline UW actions
+d47e2ed Fix mortality share boundary check and remove dead customerIds variable
+6ad13dd Fix push-to-pipeline double-body-read hang; reuse pre-read request body
+3beb971 Optimize actuary sandbox: contract-aware claims, full-parameter generation, monthly projection, push integrity
+b2b7bcd Merge pull request #344 from ashuryasaf/cursor/actuary-sandbox-testing-bar-9a2a
+5b434b9 Fix race condition in demo data cleanup between sandbox snapshot and steps 1-3
+94f65ab Fix policy_id normalization in sandbox push and add missing policy_id to lifecycle claims
+893002d Fix sandbox lifecycle risk formula, cleanup ordering, and dead code
+861223b Fix sandbox tracking persistence and concurrent access bugs
+4bc651a Fix test to mirror PROTECTED_CUSTOMERS filtering from server cleanup code
+c326c92 Fix quadratic cleanup loop under STATE_LOCK and add list type validation for push-to-pipeline
+2e0c5af Fix: read request body in push-to-pipeline endpoint before parsing
+c95a89c Fix: define esc() alias for escapeHtml() in actuary-dashboard.html
+3b0f8a2 Fix race condition in sandbox cleanup and align test with actual purge contract
+130e546 Fix traceback leak in sandbox push endpoint and cleanup ordering bug
+224ed88 Add Actuarial Sandbox testing bar with isolated push-to-pipeline
+b5b1c97 Merge pull request #343 from ashuryasaf/cursor/unified-comprehensive-assessment-2837
+859dad2 fix: treat empty strings as unset in _first_set fallback helper
+dfe4285 Fix unguarded None==None comparison in underwriting application email matching
