@@ -6659,9 +6659,16 @@
       const sb = window.actuarySandbox;
       if (sb.lifecycleRunning) return;
       sb.lifecycleRunning = true;
-      // Seed the monthly cash-flow projection from the simulation at the
-      // moment the random cycle starts.
-      seedSandboxProjection();
+      // Seed the monthly cash-flow projection from the simulation only on a
+      // fresh run. Resuming after a pause must preserve the realized
+      // accumulation (realizedSeries snapshots, elapsed-month markers) that
+      // powers the CSV/Excel/PDF exports — re-seeding here would wipe it while
+      // the underlying paid bills/claims remain, leaving exports and UI
+      // inconsistent.
+      const proj = sb.projection;
+      if (!proj || !proj.tickCount) {
+        seedSandboxProjection();
+      }
       sb.lifecycleTimer = setInterval(() => {
         try {
           sandboxTickLifecycle();
