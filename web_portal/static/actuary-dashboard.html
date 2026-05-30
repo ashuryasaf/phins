@@ -5735,6 +5735,12 @@
       if (btn) btn.classList.add('active');
       const panel = document.getElementById(`sandbox-tab-${tabId}`);
       if (panel) panel.classList.add('active');
+      // Chart.js lays out at zero width inside a hidden panel, so the forecast
+      // charts (built right after Generate while this tab is display:none) stay
+      // blank. Re-render them now that the projection panel is measurable.
+      if (tabId === 'projection' && typeof sandboxRenderForecastCharts === 'function') {
+        sandboxRenderForecastCharts();
+      }
     }
 
     // Generate sandbox accounts from the most recently run simulation.
@@ -6164,7 +6170,7 @@
       const MORTALITY_CAUSE = 'Death — natural or accidental';
       const DISABILITY_CAUSE = 'Permanent total disability (3+ ADL)';
 
-      if (action === 'new_customer' && customers.length < 120000) {
+      if (action === 'new_customer' && customers.length < 100000) {
         const idx = customers.length + 1;
         const id = `CUST-TESTSIM-${String(idx).padStart(6, '0')}`;
         // Live joiners respect the same accepted Age Parameters band.
@@ -6488,6 +6494,10 @@
       proj.startedAt = sandboxNow().toISOString();
       proj.tickCount = 0;
       proj.monthsElapsed = 0;
+      // Clear any realized month snapshots from a prior run so a pause/restart
+      // doesn't append fresh month-numbered entries alongside stale ones (which
+      // would duplicate month labels in CSV/Excel/PDF exports).
+      proj.realizedSeries = [];
       recomputeSandboxForecast();
     }
 
