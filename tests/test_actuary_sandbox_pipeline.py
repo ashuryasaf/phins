@@ -248,6 +248,34 @@ def test_actuary_dashboard_wires_contract_aware_sandbox_features():
     assert "savings_rate" in content
 
 
+def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
+    """The optimized sandbox supports up to 100,000 materialized accounts and
+    a 60-month (5-year) adjustable forecast with charts and 10% growth."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    # 100,000 materialization cap.
+    assert "SANDBOX_HARD_CAP = 100000" in content
+    # 60-month / 5-year horizon.
+    assert "months: 60" in content
+    # Adjustable controls (growth defaulting to 10%, premium, loss ratio, horizon).
+    assert 'id="sandbox-forecast-growth"' in content
+    assert 'id="sandbox-forecast-premium"' in content
+    assert 'id="sandbox-forecast-lossratio"' in content
+    assert 'id="sandbox-forecast-horizon"' in content
+    assert "recomputeSandboxForecast" in content
+    # Three adjustable charts (cash flow, accumulated, capacity).
+    assert 'id="sandbox-proj-chart-cashflow"' in content
+    assert 'id="sandbox-proj-chart-accum"' in content
+    assert 'id="sandbox-proj-chart-capacity"' in content
+    assert "sandboxRenderForecastCharts" in content
+    # Contract age-trigger handling: disability ceiling is contract-driven and
+    # the accepted age band is carried so an age-55 cohort claims accordingly.
+    assert "disability_max_age" in content
+    assert "disability_eligible: age < disabilityMaxAge" in content
+    assert "age_min: acceptedAgeMin" in content
+
+
 # ---------------------------------------------------------------------------
 # Live HTTP push-to-pipeline tests (the "Push to Pipeline" event)
 # ---------------------------------------------------------------------------

@@ -2558,8 +2558,54 @@
 
             <div id="sandbox-tab-projection" class="sandbox-tab-panel">
               <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
-                Monthly cash-flow projection seeded from the simulation when you click <strong>▶️ Start Random Lifecycle</strong>. The forward projection is anchored on the active book's monthly premium and the simulation loss ratio; realized actuals (premiums collected, claims paid) accumulate live as the random cycle runs.
+                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate; monthly premiums and claims scale with the book. Tune the controls to re-run the forecast and redraw the charts; realized actuals (premiums collected, claims paid) accumulate live as the random lifecycle runs.
               </p>
+
+              <!-- Adjustable forecast controls -->
+              <div class="form-row" style="margin-bottom:12px;gap:14px;flex-wrap:wrap;">
+                <div class="form-group">
+                  <label class="form-label">Monthly Customer Growth %</label>
+                  <input type="number" id="sandbox-forecast-growth" class="form-input" value="10" min="0" max="100" step="0.5" oninput="recomputeSandboxForecast()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Monthly Premium / Customer ($)</label>
+                  <input type="number" id="sandbox-forecast-premium" class="form-input" placeholder="from simulation" min="0" step="1" oninput="recomputeSandboxForecast()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Claims / Loss Ratio %</label>
+                  <input type="number" id="sandbox-forecast-lossratio" class="form-input" placeholder="from simulation" min="0" step="0.5" oninput="recomputeSandboxForecast()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Forecast Horizon (months)</label>
+                  <input type="number" id="sandbox-forecast-horizon" class="form-input" value="60" min="1" max="60" step="1" oninput="recomputeSandboxForecast()">
+                </div>
+                <div class="form-group" style="display:flex;align-items:flex-end;">
+                  <button class="btn btn-outline" onclick="recomputeSandboxForecast()">🔄 Recompute Forecast</button>
+                </div>
+              </div>
+
+              <!-- Adjustable charts (Chart.js) on top of the projection -->
+              <div class="card" style="margin-bottom:14px;">
+                <div class="card-title">📈 5-Year Cash-Flow Forecast (monthly premiums, claims &amp; net)</div>
+                <div style="position:relative;height:260px;">
+                  <canvas id="sandbox-proj-chart-cashflow"></canvas>
+                </div>
+              </div>
+              <div class="form-row" style="gap:14px;flex-wrap:wrap;margin-bottom:14px;">
+                <div class="card" style="flex:1;min-width:320px;">
+                  <div class="card-title">💰 Accumulated Premiums vs Claims</div>
+                  <div style="position:relative;height:240px;">
+                    <canvas id="sandbox-proj-chart-accum"></canvas>
+                  </div>
+                </div>
+                <div class="card" style="flex:1;min-width:320px;">
+                  <div class="card-title">👥 Monthly Customer Capacity (compounding growth)</div>
+                  <div style="position:relative;height:240px;">
+                    <canvas id="sandbox-proj-chart-capacity"></canvas>
+                  </div>
+                </div>
+              </div>
+
               <div class="form-row" style="margin-bottom:12px;">
                 <div class="form-group">
                   <div class="metric-pill">Months Elapsed: <span id="sandbox-proj-months-elapsed">0</span></div>
@@ -2573,6 +2619,12 @@
                 <div class="form-group">
                   <div class="metric-pill">Projected Net / mo: <span id="sandbox-proj-monthly-net">$0</span></div>
                 </div>
+                <div class="form-group">
+                  <div class="metric-pill">Forecast Customers (final mo): <span id="sandbox-proj-end-customers">0</span></div>
+                </div>
+                <div class="form-group">
+                  <div class="metric-pill">5-Yr Net Cash Flow: <span id="sandbox-proj-total-net">$0</span></div>
+                </div>
               </div>
               <div class="form-row" style="margin-bottom:12px;">
                 <div class="form-group">
@@ -2585,23 +2637,25 @@
                   <div class="metric-pill">Realized Net Cash Flow: <span id="sandbox-proj-realized-net">$0</span></div>
                 </div>
               </div>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Month</th>
-                    <th>Collected Premium</th>
-                    <th>Claims Paid</th>
-                    <th>Net Cash Flow</th>
-                    <th>Accumulated Premiums</th>
-                    <th>Accumulated Claims</th>
-                  </tr>
-                </thead>
-                <tbody id="sandbox-projection-body">
-                  <tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">Click ▶️ Start Random Lifecycle to seed the monthly projection from the simulation.</td></tr>
-                </tbody>
-              </table>
+              <div style="max-height:360px;overflow-y:auto;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Active Customers</th>
+                      <th>Collected Premium</th>
+                      <th>Claims Paid</th>
+                      <th>Net Cash Flow</th>
+                      <th>Accumulated Premiums</th>
+                      <th>Accumulated Claims</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sandbox-projection-body">
+                    <tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then ▶️ Start Random Lifecycle to realize it.</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-
             <div id="sandbox-tab-activity" class="sandbox-tab-panel">
               <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
                 Live timeline of sandbox lifecycle events (newest first). Capped at the last 200 events to keep memory predictable.
@@ -5537,12 +5591,14 @@
       projection: {
         active: false,
         startedAt: null,
-        months: 12,
-        ticksPerMonth: 6,
+        months: 60,            // 5-year (60-month) forecast horizon
+        ticksPerMonth: 2,
         tickCount: 0,
         monthsElapsed: 0,
-        baseline: null,        // {monthlyPremium, monthlyClaims, lossRatio}
-        rows: [],              // [{month, collectedPremium, claimsPaid, netCashFlow, accumPremium, accumClaims}]
+        growthPct: 10,         // adjustable monthly customer growth (%)
+        startCustomers: 0,
+        baseline: null,        // {startCustomers, premiumPerCustomer, monthlyPremium, monthlyClaims, lossRatio, growthPct}
+        rows: [],              // [{month, customers, collectedPremium, claimsPaid, netCashFlow, accumPremium, accumClaims}]
         // Book-level realized actuals captured from paid bills/claims.
         realizedCollected: 0,
         realizedClaimsPaid: 0,
@@ -5652,9 +5708,10 @@
       const params = sim.parameters || {};
       const requestedCount = Number(params.customer_count || portfolio.accepted_customers || 0);
       // Render up to SANDBOX_HARD_CAP detailed accounts in the browser
-      // so a 9.8M customer simulation does not freeze the dashboard.
-      // The sandbox stats still report the full simulation count.
-      const SANDBOX_HARD_CAP = 9876;
+      // (100,000) so a multi-million customer simulation does not freeze
+      // the dashboard. The sandbox stats still report the full simulation
+      // count.
+      const SANDBOX_HARD_CAP = 100000;
       const materialize = Math.max(1, Math.min(requestedCount || 0, SANDBOX_HARD_CAP));
 
       // Pull averages off the simulation so each sandbox account is
@@ -5709,6 +5766,14 @@
       let mortalityShare = rm.mortality_pct_of_claims != null ? Number(rm.mortality_pct_of_claims) / 100 : 0.6;
       if (!(mortalityShare >= 0 && mortalityShare <= 1)) mortalityShare = 0.6;
       const lossRatioPct = Number(rm.loss_ratio || 0);
+      // Contract disability cover ceases automatically at this attained age
+      // (PHINS Adjustable Risk Contract: disability trigger age 3–65); death
+      // cover continues for life. The acceptance band comes straight from the
+      // simulation's Age Parameters, so if max acceptance age is 55 every
+      // materialized life — and therefore every claim — stays inside 3–55.
+      const disabilityMaxAge = 65;
+      const acceptedAgeMin = ageMin;
+      const acceptedAgeMax = ageMax;
 
       // Reset before regenerating so re-clicking Generate is idempotent.
       stopSandboxLifecycle();
@@ -5729,6 +5794,9 @@
         mortality_share: mortalityShare,
         loss_ratio: lossRatioPct,
         avg_term_years: Number(rm.avg_term_years || 0),
+        disability_max_age: disabilityMaxAge,
+        age_min: acceptedAgeMin,
+        age_max: acceptedAgeMax,
       };
       window.actuarySandbox.simulationSummary = {
         accepted: portfolio.accepted_customers || 0,
@@ -5818,9 +5886,13 @@
           term_years: term,
           risk_score: risk,
           uw_status,
-          // Disability cover ceases automatically at age 65 per contract.
-          disability_eligible: age < 65,
+          // Disability cover ceases automatically at the contract ceiling
+          // (default age 65); death cover continues for life. Because the age
+          // was drawn from the accepted band, an age-55 cohort can never
+          // produce an out-of-band claim.
+          disability_eligible: age < disabilityMaxAge,
           disability_share_of_life: disabilityShare,
+          disability_max_age: disabilityMaxAge,
           policy_status: uw_status === 'approved' ? 'active' : uw_status,
           has_claim: false,
           claim_cause: null,
@@ -5855,12 +5927,16 @@
         'sim',
         `Contract priced: ${productId} · disability benefit ${ratioDisplay} of life sum · ` +
           `savings add-on ${(savingsRate * 100).toFixed(1)}% of risk premium · ` +
-          `claim split ${(mortalityShare * 100).toFixed(0)}% mortality / ${((1 - mortalityShare) * 100).toFixed(0)}% disability.`,
+          `claim split ${(mortalityShare * 100).toFixed(0)}% mortality / ${((1 - mortalityShare) * 100).toFixed(0)}% disability · ` +
+          `accepted ages ${acceptedAgeMin}–${acceptedAgeMax}, disability ceases at ${disabilityMaxAge}.`,
         'info'
       );
+      // Seed the 5-year (60-month) forecast + adjustable charts immediately so
+      // the actuary can explore the projection before starting the cycle.
+      seedSandboxProjection();
       renderSandbox();
       const msg = document.getElementById('sandbox-action-msg');
-      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}). Lifecycle is paused — click ▶️ Start Random Lifecycle to begin.`;
+      if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click ▶️ Start Random Lifecycle to begin.`;
     }
 
     function renderSandbox() {
@@ -6026,13 +6102,17 @@
       const savingsRate = Number(contract.savings_rate || 0);
       const expenseLoadingPct = Number(contract.expense_loading_pct != null ? contract.expense_loading_pct : 0.15);
       const profitMarginPct = Number(contract.profit_margin_pct != null ? contract.profit_margin_pct : 0.10);
+      const disabilityMaxAge = Number(contract.disability_max_age != null ? contract.disability_max_age : 65);
+      const bandMin = Number(contract.age_min != null ? contract.age_min : 20);
+      const bandMax = Number(contract.age_max != null ? contract.age_max : 65);
       const MORTALITY_CAUSE = 'Death — natural or accidental';
       const DISABILITY_CAUSE = 'Permanent total disability (3+ ADL)';
 
-      if (action === 'new_customer' && customers.length < 50000) {
+      if (action === 'new_customer' && customers.length < 120000) {
         const idx = customers.length + 1;
         const id = `CUST-TESTSIM-${String(idx).padStart(6, '0')}`;
-        const age = sandboxRandInt(20, 65);
+        // Live joiners respect the same accepted Age Parameters band.
+        const age = sandboxRandInt(bandMin, bandMax);
         const health = sandboxRandInt(1, 10);
         const risk = Math.max(1, Math.min(100, Math.round(health * 6 + (age - 20) * 0.8 + sandboxRandInt(-10, 10))));
         const uw_status = risk >= 80 ? 'declined' : (risk >= 65 ? 'pending' : 'approved');
@@ -6059,8 +6139,9 @@
           term_years: sandboxRandInt(5, 30),
           risk_score: risk,
           uw_status,
-          disability_eligible: age < 65,
+          disability_eligible: age < disabilityMaxAge,
           disability_share_of_life: disabilityShare,
+          disability_max_age: disabilityMaxAge,
           policy_status: uw_status === 'approved' ? 'active' : uw_status,
           has_claim: false,
           claim_cause: null,
@@ -6084,7 +6165,7 @@
           && cust.uw_status === 'approved'
           && cust.policy_status !== 'terminated'
           && !cust.has_claim) {
-        const canDisable = cust.disability_eligible !== false && Number(cust.age) < 65;
+        const canDisable = cust.disability_eligible !== false && Number(cust.age) < disabilityMaxAge;
         const isMortality = !canDisable || (Math.random() < mortalityShare);
         const share = Number(cust.disability_share_of_life != null ? cust.disability_share_of_life : disabilityShare);
         const claimType = isMortality ? 'mortality' : 'disability';
@@ -6227,63 +6308,122 @@
       window.actuarySandbox.projection = {
         active: false,
         startedAt: null,
-        months: 12,
-        ticksPerMonth: 6,
+        months: 60,
+        ticksPerMonth: 2,
         tickCount: 0,
         monthsElapsed: 0,
+        growthPct: 10,
+        startCustomers: 0,
         baseline: null,
         rows: [],
         realizedCollected: 0,
         realizedClaimsPaid: 0,
         realizedNetCashFlow: 0,
       };
+      if (window._sbCharts) {
+        Object.keys(window._sbCharts).forEach(k => { try { window._sbCharts[k].destroy(); } catch (e) {} });
+        window._sbCharts = {};
+      }
       renderSandboxProjection();
     }
 
-    function sandboxActiveMonthlyPremium() {
-      // Monthly premium booked by the active (approved, non-terminated)
-      // sandbox book — the run-rate the projection collects each month.
-      return window.actuarySandbox.customers
-        .filter(c => c.uw_status === 'approved' && c.policy_status !== 'terminated')
-        .reduce((s, c) => s + (Number(c.monthly_premium) || 0), 0);
+    function sandboxActiveBook() {
+      // Active (approved, non-terminated) sandbox book: customer count and
+      // total monthly premium — the run-rate the forecast grows from.
+      let count = 0, monthlyPremium = 0;
+      for (const c of window.actuarySandbox.customers) {
+        if (c.uw_status === 'approved' && c.policy_status !== 'terminated') {
+          count += 1;
+          monthlyPremium += Number(c.monthly_premium) || 0;
+        }
+      }
+      return { count, monthlyPremium };
     }
 
-    function seedSandboxProjection() {
+    function sandboxReadForecastControls() {
+      const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+      const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+      return {
+        growthPct: num(val('sandbox-forecast-growth')),
+        premiumPerCustomer: num(val('sandbox-forecast-premium')),
+        lossRatioPct: num(val('sandbox-forecast-lossratio')),
+        horizon: num(val('sandbox-forecast-horizon')),
+      };
+    }
+
+    // Build the 5-year (up to 60-month) forecast from the active book and the
+    // adjustable controls (monthly customer growth %, premium per customer,
+    // claims/loss-ratio %, horizon). Customers compound at the growth rate;
+    // premiums and claims scale with the book so the cash-flow, accumulated
+    // and capacity charts all stay internally consistent.
+    function recomputeSandboxForecast() {
       const sb = window.actuarySandbox;
       const proj = sb.projection;
-      const monthlyPremium = sandboxActiveMonthlyPremium();
-      // Loss ratio (claims ÷ premium) is an annual percentage; apply it to
-      // the monthly premium to get the modeled monthly claims run-rate.
-      const lossRatioPct = Number((sb.contract && sb.contract.loss_ratio) || (sb.simulationSummary && sb.simulationSummary.loss_ratio) || 0);
-      const lossRatio = lossRatioPct / 100;
-      const monthlyClaims = monthlyPremium * lossRatio;
+      if (!proj) return;
+      const book = sandboxActiveBook();
+      const ctrl = sandboxReadForecastControls();
+      const startCustomers = book.count;
+      const defaultPpc = startCustomers > 0 ? (book.monthlyPremium / startCustomers) : 0;
+      const simLossPct = Number((sb.contract && sb.contract.loss_ratio) || (sb.simulationSummary && sb.simulationSummary.loss_ratio) || 0);
 
+      const growthPct = ctrl.growthPct != null ? Math.max(0, ctrl.growthPct) : 10;
+      const ppc = (ctrl.premiumPerCustomer != null && ctrl.premiumPerCustomer > 0) ? ctrl.premiumPerCustomer : defaultPpc;
+      const lossRatioPct = ctrl.lossRatioPct != null ? Math.max(0, ctrl.lossRatioPct) : simLossPct;
+      let horizon = ctrl.horizon != null ? Math.round(ctrl.horizon) : proj.months;
+      horizon = Math.max(1, Math.min(60, horizon));
+
+      proj.months = horizon;
+      proj.growthPct = growthPct;
+      proj.startCustomers = startCustomers;
+      const g = growthPct / 100;
+      const lr = lossRatioPct / 100;
       proj.baseline = {
-        monthlyPremium: monthlyPremium,
-        monthlyClaims: monthlyClaims,
-        lossRatio: lossRatio,
+        startCustomers: startCustomers,
+        premiumPerCustomer: ppc,
+        monthlyPremium: startCustomers * ppc,
+        monthlyClaims: startCustomers * ppc * lr,
+        lossRatio: lr,
+        growthPct: growthPct,
       };
       proj.rows = [];
-      let accumPremium = 0;
-      let accumClaims = 0;
-      for (let m = 1; m <= proj.months; m++) {
-        accumPremium += monthlyPremium;
-        accumClaims += monthlyClaims;
+      let accumPremium = 0, accumClaims = 0;
+      for (let m = 1; m <= horizon; m++) {
+        const customers = Math.round(startCustomers * Math.pow(1 + g, m - 1));
+        const collected = customers * ppc;
+        const claims = collected * lr;
+        accumPremium += collected;
+        accumClaims += claims;
         proj.rows.push({
           month: m,
-          collectedPremium: monthlyPremium,
-          claimsPaid: monthlyClaims,
-          netCashFlow: monthlyPremium - monthlyClaims,
+          customers: customers,
+          collectedPremium: collected,
+          claimsPaid: claims,
+          netCashFlow: collected - claims,
           accumPremium: accumPremium,
           accumClaims: accumClaims,
         });
       }
+      // Reflect resolved defaults back into any blank control so the actuary
+      // sees the values actually driving the forecast.
+      const fill = (id, v) => { const el = document.getElementById(id); if (el && el.value === '') el.value = v; };
+      fill('sandbox-forecast-growth', growthPct);
+      fill('sandbox-forecast-premium', Math.round(ppc));
+      fill('sandbox-forecast-lossratio', lossRatioPct.toFixed(1));
+      fill('sandbox-forecast-horizon', horizon);
+
+      sandboxRefreshRealized();
+      renderSandboxProjection();
+      sandboxRenderForecastCharts();
+    }
+
+    function seedSandboxProjection() {
+      const proj = window.actuarySandbox.projection;
+      if (!proj) return;
       proj.active = true;
       proj.startedAt = sandboxNow().toISOString();
       proj.tickCount = 0;
       proj.monthsElapsed = 0;
-      sandboxRefreshRealized();
-      renderSandboxProjection();
+      recomputeSandboxForecast();
     }
 
     function sandboxRefreshRealized() {
@@ -6305,31 +6445,94 @@
       sandboxRefreshRealized();
     }
 
+    // Lightweight Chart.js helper — (re)creates a chart on the given canvas,
+    // destroying any previous instance so the visuals never drift from data.
+    function sandboxMakeChart(canvasId, type, labels, datasets, opts) {
+      if (typeof Chart === 'undefined') return null;
+      const el = document.getElementById(canvasId);
+      if (!el) return null;
+      window._sbCharts = window._sbCharts || {};
+      if (window._sbCharts[canvasId]) { try { window._sbCharts[canvasId].destroy(); } catch (e) {} }
+      const chart = new Chart(el, {
+        type: type || 'line',
+        data: { labels: labels, datasets: datasets },
+        options: Object.assign({
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { boxWidth: 12, font: { size: 10 } } },
+            tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${sandboxFmtMoney(c.parsed.y)}` } },
+          },
+          scales: { y: { ticks: { callback: (v) => sandboxFmtMoney(v) } } },
+        }, opts || {}),
+      });
+      window._sbCharts[canvasId] = chart;
+      return chart;
+    }
+
+    function sandboxRenderForecastCharts() {
+      const proj = window.actuarySandbox.projection;
+      if (!proj || !proj.rows.length || typeof Chart === 'undefined') return;
+      const labels = proj.rows.map(r => 'M' + r.month);
+      const collected = proj.rows.map(r => Math.round(r.collectedPremium));
+      const claims = proj.rows.map(r => Math.round(r.claimsPaid));
+      const net = proj.rows.map(r => Math.round(r.netCashFlow));
+      const accP = proj.rows.map(r => Math.round(r.accumPremium));
+      const accC = proj.rows.map(r => Math.round(r.accumClaims));
+      const custs = proj.rows.map(r => r.customers || 0);
+
+      sandboxMakeChart('sandbox-proj-chart-cashflow', 'line', labels, [
+        { label: 'Collected Premium', data: collected, borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Claims Paid', data: claims, borderColor: '#e53e3e', backgroundColor: 'rgba(229,62,62,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Net Cash Flow', data: net, borderColor: '#38a169', backgroundColor: 'rgba(56,161,105,0.10)', tension: 0.25, pointRadius: 0, borderWidth: 2 },
+      ]);
+
+      sandboxMakeChart('sandbox-proj-chart-accum', 'line', labels, [
+        { label: 'Accumulated Premiums', data: accP, borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.18)', fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+        { label: 'Accumulated Claims', data: accC, borderColor: '#dd6b20', backgroundColor: 'rgba(221,107,32,0.18)', fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+      ]);
+
+      sandboxMakeChart('sandbox-proj-chart-capacity', 'line', labels, [
+        { label: 'Active Customers', data: custs, borderColor: '#805ad5', backgroundColor: 'rgba(128,90,213,0.15)', fill: true, tension: 0.25, pointRadius: 0, borderWidth: 2 },
+      ], {
+        plugins: {
+          legend: { labels: { boxWidth: 12, font: { size: 10 } } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${sandboxFmtCount(c.parsed.y)}` } },
+        },
+        scales: { y: { ticks: { callback: (v) => sandboxFmtCount(v) } } },
+      });
+    }
+
     function renderSandboxProjection() {
       const proj = window.actuarySandbox.projection;
       const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
       const body = document.getElementById('sandbox-projection-body');
       if (!proj || !proj.active || !proj.rows.length) {
+        ['sandbox-proj-monthly-premium','sandbox-proj-monthly-claims','sandbox-proj-monthly-net',
+         'sandbox-proj-realized-collected','sandbox-proj-realized-claims','sandbox-proj-realized-net',
+         'sandbox-proj-total-net'].forEach(id => setText(id, '$0'));
         setText('sandbox-proj-months-elapsed', '0');
-        setText('sandbox-proj-monthly-premium', '$0');
-        setText('sandbox-proj-monthly-claims', '$0');
-        setText('sandbox-proj-monthly-net', '$0');
-        setText('sandbox-proj-realized-collected', '$0');
-        setText('sandbox-proj-realized-claims', '$0');
-        setText('sandbox-proj-realized-net', '$0');
+        setText('sandbox-proj-end-customers', '0');
         if (body) {
-          body.innerHTML = '<tr><td colspan="6" class="muted-text" style="text-align:center;color:var(--text-light);">Click ▶️ Start Random Lifecycle to seed the monthly projection from the simulation.</td></tr>';
+          body.innerHTML = '<tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">Generate sandbox accounts to build the 5-year forecast, then ▶️ Start Random Lifecycle to realize it.</td></tr>';
         }
         return;
       }
-      const base = proj.baseline || { monthlyPremium: 0, monthlyClaims: 0 };
+      const base = proj.baseline || {};
+      const last = proj.rows[proj.rows.length - 1] || {};
+      const monthlyPremium = Number(base.monthlyPremium || 0);
+      const monthlyClaims = Number(base.monthlyClaims || 0);
       setText('sandbox-proj-months-elapsed', `${proj.monthsElapsed} / ${proj.months}`);
-      setText('sandbox-proj-monthly-premium', sandboxFmtMoney(base.monthlyPremium));
-      setText('sandbox-proj-monthly-claims', sandboxFmtMoney(base.monthlyClaims));
-      setText('sandbox-proj-monthly-net', sandboxFmtMoney(base.monthlyPremium - base.monthlyClaims));
+      setText('sandbox-proj-monthly-premium', sandboxFmtMoney(monthlyPremium));
+      setText('sandbox-proj-monthly-claims', sandboxFmtMoney(monthlyClaims));
+      setText('sandbox-proj-monthly-net', sandboxFmtMoney(monthlyPremium - monthlyClaims));
       setText('sandbox-proj-realized-collected', sandboxFmtMoney(proj.realizedCollected));
       setText('sandbox-proj-realized-claims', sandboxFmtMoney(proj.realizedClaimsPaid));
       setText('sandbox-proj-realized-net', sandboxFmtMoney(proj.realizedNetCashFlow));
+      setText('sandbox-proj-end-customers', sandboxFmtCount(last.customers || 0));
+      setText('sandbox-proj-total-net', sandboxFmtMoney(Number(last.accumPremium || 0) - Number(last.accumClaims || 0)));
       if (body) {
         body.innerHTML = proj.rows.map(r => {
           const elapsed = r.month <= proj.monthsElapsed;
@@ -6339,6 +6542,7 @@
           return `
             <tr${rowStyle}>
               <td>Month ${r.month}${marker}</td>
+              <td>${sandboxFmtCount(r.customers || 0)}</td>
               <td>${sandboxFmtMoney(r.collectedPremium)}</td>
               <td>${sandboxFmtMoney(r.claimsPaid)}</td>
               <td><span class="${netClass}">${sandboxFmtMoney(r.netCashFlow)}</span></td>
