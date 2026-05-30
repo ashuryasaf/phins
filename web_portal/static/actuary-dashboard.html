@@ -6924,7 +6924,7 @@
     function xmlEsc(v) {
       return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
-    function xlsSheet(name, headers, rows) {
+    function xlsSheet(name, headers, rows, totalRows) {
       const cell = (v) => {
         const isNum = typeof v === 'number' && isFinite(v);
         return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${xmlEsc(isNum ? v : (v == null ? '' : v))}</Data></Cell>`;
@@ -6932,8 +6932,11 @@
       const headRow = '<Row>' + headers.map(h => `<Cell ss:StyleID="hdr"><Data ss:Type="String">${xmlEsc(h)}</Data></Cell>`).join('') + '</Row>';
       const capped = rows.slice(0, SANDBOX_XLS_SHEET_CAP);
       const bodyRows = capped.map(r => '<Row>' + r.map(cell).join('') + '</Row>').join('');
-      const note = rows.length > capped.length
-        ? `<Row><Cell><Data ss:Type="String">… ${rows.length - capped.length} more rows truncated (Excel .xls row limit). Use CSV for the full book.</Data></Cell></Row>`
+      // Callers that pre-slice their source array pass the original length so the
+      // truncation note stays accurate without materializing the full book.
+      const total = (typeof totalRows === 'number') ? totalRows : rows.length;
+      const note = total > capped.length
+        ? `<Row><Cell><Data ss:Type="String">… ${total - capped.length} more rows truncated (Excel .xls row limit). Use CSV for the full book.</Data></Cell></Row>`
         : '';
       // Excel uses the worksheet name; strip characters it rejects.
       const safe = String(name).replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31);
@@ -6977,13 +6980,13 @@
           (ix.proj.rows || []).map(r => [r.month, r.customers, Math.round(r.collectedPremium), Math.round(r.claimsPaid), Math.round(r.netCashFlow), Math.round(r.accumPremium), Math.round(r.accumClaims)])));
 
         sheets.push(xlsSheet('Underwriting', ['Customer ID', 'Age', 'Gender', 'Health (ADL)', 'Coverage', 'Annual Premium', 'Monthly Premium', 'Risk Score', 'UW Status', 'Policy Status'],
-          ix.customers.map(c => [c.id, Number(c.age) || 0, c.gender, Number(c.health_score) || 0, Number(c.coverage_amount) || 0, Number(c.annual_premium) || 0, Number(c.monthly_premium) || 0, Number(c.risk_score) || 0, c.uw_status, c.policy_status])));
+          ix.customers.slice(0, SANDBOX_XLS_SHEET_CAP).map(c => [c.id, Number(c.age) || 0, c.gender, Number(c.health_score) || 0, Number(c.coverage_amount) || 0, Number(c.annual_premium) || 0, Number(c.monthly_premium) || 0, Number(c.risk_score) || 0, c.uw_status, c.policy_status]), ix.customers.length));
 
         sheets.push(xlsSheet('Claims', ['Claim ID', 'Customer', 'Policy', 'Type', 'Cause', 'Amount', 'Approved', 'Paid', 'Status', 'Reported'],
-          ix.claims.map(c => [c.id, c.customer_id, c.policy_id, c.type, c.cause, Number(c.amount) || 0, Number(c.approved_amount) || 0, Number(c.paid_amount) || 0, c.status, (c.reported_at || '').slice(0, 10)])));
+          ix.claims.slice(0, SANDBOX_XLS_SHEET_CAP).map(c => [c.id, c.customer_id, c.policy_id, c.type, c.cause, Number(c.amount) || 0, Number(c.approved_amount) || 0, Number(c.paid_amount) || 0, c.status, (c.reported_at || '').slice(0, 10)]), ix.claims.length));
 
         sheets.push(xlsSheet('Billing', ['Bill ID', 'Customer', 'Policy', 'Amount', 'Paid', 'Status', 'Due'],
-          ix.bills.map(b => [b.id, b.customer_id, b.policy_id, Number(b.amount) || 0, Number(b.amount_paid) || 0, b.status, (b.due_date || '').slice(0, 10)])));
+          ix.bills.slice(0, SANDBOX_XLS_SHEET_CAP).map(b => [b.id, b.customer_id, b.policy_id, Number(b.amount) || 0, Number(b.amount_paid) || 0, b.status, (b.due_date || '').slice(0, 10)]), ix.bills.length));
 
         const xml = '<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n' +
           '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
