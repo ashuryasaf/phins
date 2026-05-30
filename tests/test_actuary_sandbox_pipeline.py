@@ -248,6 +248,75 @@ def test_actuary_dashboard_wires_contract_aware_sandbox_features():
     assert "savings_rate" in content
 
 
+def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
+    """The optimized sandbox supports up to 100,000 materialized accounts and
+    a 60-month (5-year) adjustable forecast with charts and 10% growth."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    # 100,000 materialization cap.
+    assert "SANDBOX_HARD_CAP = 100000" in content
+    # 60-month / 5-year horizon.
+    assert "months: 60" in content
+    # Adjustable controls (growth defaulting to 10%, premium, loss ratio, horizon).
+    assert 'id="sandbox-forecast-growth"' in content
+    assert 'id="sandbox-forecast-premium"' in content
+    assert 'id="sandbox-forecast-lossratio"' in content
+    assert 'id="sandbox-forecast-horizon"' in content
+    assert "recomputeSandboxForecast" in content
+    # Three adjustable charts (cash flow, accumulated, capacity).
+    assert 'id="sandbox-proj-chart-cashflow"' in content
+    assert 'id="sandbox-proj-chart-accum"' in content
+    assert 'id="sandbox-proj-chart-capacity"' in content
+    assert "sandboxRenderForecastCharts" in content
+    # Contract age-trigger handling: disability ceiling is contract-driven and
+    # the accepted age band is carried so an age-55 cohort claims accordingly.
+    assert "disability_max_age" in content
+    assert "disability_eligible: age < disabilityMaxAge" in content
+    assert "age_min: acceptedAgeMin" in content
+
+
+def test_actuary_dashboard_renders_sandbox_stats_single_pass():
+    """The large-book performance fix consolidates renderSandbox's per-tab
+    filter/reduce scans into one pass per array so a 100k book does not stall
+    the lifecycle tick. The duplicate filter passes must be gone."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    # Single-pass markers introduced by the consolidation.
+    assert "counts already tallied in the single pass above" in content
+    # The old repeated full-array scans for the same metric must be gone.
+    assert "customers.filter(c => c.uw_status === 'approved').length" not in content
+    assert "claims.filter(c => c.status === 'pending').length" not in content
+    assert "bills.filter(b => b.status === 'outstanding').length" not in content
+    # Shrinking the forecast horizon clamps elapsed months.
+    assert "proj.monthsElapsed = Math.min(proj.monthsElapsed, horizon)" in content
+
+
+def test_actuary_dashboard_wires_sandbox_export_downloads():
+    """The sandbox insight tabs expose client-side CSV / Excel / PDF exports,
+    all generated from the in-memory book (no server round-trip)."""
+    from pathlib import Path
+    html_path = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "actuary-dashboard.html"
+    content = html_path.read_text(encoding="utf-8")
+    # Buttons + handlers.
+    assert "exportSandboxCSV" in content
+    assert "exportSandboxExcel" in content
+    assert "exportSandboxAssessmentPDF" in content
+    # Shared roll-up + per-month lifecycle accumulation that the PDF outlines.
+    assert "sandboxComputeInsights" in content
+    assert "realizedSeries" in content
+    # Excel multi-sheet (SpreadsheetML) + CSV mime types.
+    assert "application/vnd.ms-excel" in content
+    assert "urn:schemas-microsoft-com:office:spreadsheet" in content
+    assert "text/csv" in content
+    # PDF AI assessment uses jsPDF (loaded from the CSP-allowed jsdelivr CDN)
+    # and surfaces the claim-type distribution outline.
+    assert "jspdf" in content
+    assert "Claim Type Distribution" in content
+    assert "Random Lifecycle" in content
+
+
 # ---------------------------------------------------------------------------
 # Live HTTP push-to-pipeline tests (the "Push to Pipeline" event)
 # ---------------------------------------------------------------------------
