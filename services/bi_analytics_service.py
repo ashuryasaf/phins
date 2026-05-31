@@ -21,13 +21,19 @@ Public API (consumed by `web_portal/api_bi_analytics.py`):
 - get_bi_analytics_service() — module-level singleton accessor
 """
 
+import hashlib
+import json
 import statistics
+import threading
+import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import logging
+
+from services import kpi_definitions as kpi
 
 logger = logging.getLogger('phins.bi_analytics')
 
@@ -143,13 +149,82 @@ class BIAnalyticsService:
     `web_portal/server.py`. (See `PHINS_PLATFORM_ASSESSMENT.md` §2.1.)
     """
 
-    def __init__(self):
-        # `cache_ttl_seconds` is currently unused by the public methods — see
-        # the BI-2 recommendation in PHINS_PLATFORM_ASSESSMENT.md for the plan
-        # to put it to work.
+    def __init__(self, cache_ttl_seconds: int = 300):
+        # BI-2: the cache is now wired into every dashboard method. Each entry is
+        # keyed by method name + a cheap content fingerprint of the inputs, so a
+        # cached dashboard can never contradict a changed data store (when the
+        # underlying data changes, the fingerprint changes and we recompute).
+        # The cache holds READ-ONLY derived views; it is never a write source.
         self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl_seconds = 300
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self._cache_lock = threading.Lock()
         logger.info("BI Analytics Service initialized")
+
+    # ------------------------------------------------------------------
+    # Caching primitives (BI-2)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fingerprint(*sources: Any) -> str:
+        """Cheap, stable content fingerprint over dashboard inputs.
+
+        Single pass over the inputs; far cheaper than the multi-aggregation
+        dashboards it guards, but sensitive enough that *any* field change
+        invalidates the cache. We hash the full content of each record (not a
+        hand-picked subset) so a cached dashboard can never contradict changed
+        inputs — every KPI driver, including fields like ``bid_amount``,
+        ``distance_km``, ``urgency``, ``customer_id`` and ``category``, is
+        covered.
+        """
+        hasher = hashlib.sha256()
+        for src in sources:
+            if isinstance(src, dict):
+                hasher.update(str(len(src)).encode())
+                # Sort keys so ordering never affects the fingerprint.
+                for key in sorted(src.keys(), key=str):
+                    val = src[key]
+                    hasher.update(repr(key).encode())
+                    try:
+                        hasher.update(
+                            json.dumps(val, sort_keys=True, default=str).encode()
+                        )
+                    except (TypeError, ValueError):
+                        hasher.update(repr(val).encode())
+            else:
+                try:
+                    hasher.update(json.dumps(src, sort_keys=True, default=str).encode())
+                except (TypeError, ValueError):
+                    hasher.update(repr(src).encode())
+        return hasher.hexdigest()
+
+    def _cached(self, key: str, fingerprint: str, compute: Callable[[], Any]) -> Any:
+        """Return a cached value if fresh and inputs unchanged, else recompute.
+
+        On *any* doubt (TTL elapsed or fingerprint mismatch) we recompute, so the
+        cache can only ever return data consistent with the current inputs.
+        """
+        now = time.monotonic()
+        with self._cache_lock:
+            entry = self.cache.get(key)
+            if (
+                entry is not None
+                and entry.get('fingerprint') == fingerprint
+                and (now - entry.get('stored_at', 0)) < self.cache_ttl_seconds
+            ):
+                return entry['value']
+        value = compute()
+        with self._cache_lock:
+            self.cache[key] = {
+                'fingerprint': fingerprint,
+                'stored_at': now,
+                'value': value,
+            }
+        return value
+
+    def invalidate_cache(self) -> None:
+        """Drop all cached dashboards (e.g. after a bulk data import)."""
+        with self._cache_lock:
+            self.cache.clear()
 
     # ------------------------------------------------------------------
     # Executive dashboard
@@ -165,7 +240,29 @@ class BIAnalyticsService:
         suppliers: Optional[Dict[str, Any]] = None,
         deliveries: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Generate executive dashboard with high-level KPIs."""
+        """Generate executive dashboard with high-level KPIs (cached, BI-2)."""
+        fingerprint = self._fingerprint(
+            customers, policies, claims, billing, balance_sheet, suppliers, deliveries
+        )
+        return self._cached(
+            'executive_dashboard',
+            fingerprint,
+            lambda: self._compute_executive_dashboard(
+                customers, policies, claims, billing, balance_sheet,
+                suppliers, deliveries,
+            ),
+        )
+
+    def _compute_executive_dashboard(
+        self,
+        customers: Dict[str, Any],
+        policies: Dict[str, Any],
+        claims: Dict[str, Any],
+        billing: Dict[str, Any],
+        balance_sheet: Dict[str, Any],
+        suppliers: Optional[Dict[str, Any]] = None,
+        deliveries: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         now = datetime.now(timezone.utc)
 
         total_customers = len(customers)
@@ -204,9 +301,7 @@ class BIAnalyticsService:
             if status == 'paid':
                 total_paid += claim.get('approved_amount', 0)
 
-        claims_approval_rate = (
-            (total_approved / total_claimed * 100) if total_claimed > 0 else 0
-        )
+        claims_approval_rate = kpi.approval_rate_pct(total_approved, total_claimed)
 
         outstanding_amount = sum(
             b.get('amount', 0) - b.get('amount_paid', 0)
@@ -217,7 +312,7 @@ class BIAnalyticsService:
         total_assets = balance_sheet.get('total_assets', 0)
         claims_reserve = balance_sheet.get('claims_reserve', 0)
         total_liabilities = balance_sheet.get('total_liabilities', 0)
-        net_worth = total_assets - total_liabilities
+        net_worth = kpi.net_worth(total_assets, total_liabilities)
 
         supplier_metrics: Dict[str, Any] = {}
         if suppliers:
@@ -269,10 +364,7 @@ class BIAnalyticsService:
                 'claims_reserve': claims_reserve,
                 'outstanding_receivables': outstanding_amount,
                 'total_coverage': total_coverage,
-                'loss_ratio': (
-                    (total_paid / annual_premium_revenue * 100)
-                    if annual_premium_revenue > 0 else 0
-                ),
+                'loss_ratio': kpi.loss_ratio_pct(total_paid, annual_premium_revenue),
             },
             'claims': {
                 'total': total_claims,
@@ -305,7 +397,28 @@ class BIAnalyticsService:
         delivery_history: Dict[str, Any],
         supplier_metrics: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Analyze delivery system performance."""
+        """Analyze delivery system performance (cached, BI-2)."""
+        fingerprint = self._fingerprint(
+            delivery_requests, delivery_bids, active_deliveries,
+            delivery_history, supplier_metrics,
+        )
+        return self._cached(
+            'delivery_analytics',
+            fingerprint,
+            lambda: self._compute_delivery_analytics(
+                delivery_requests, delivery_bids, active_deliveries,
+                delivery_history, supplier_metrics,
+            ),
+        )
+
+    def _compute_delivery_analytics(
+        self,
+        delivery_requests: Dict[str, Any],
+        delivery_bids: Dict[str, Any],
+        active_deliveries: Dict[str, Any],
+        delivery_history: Dict[str, Any],
+        supplier_metrics: Dict[str, Any],
+    ) -> Dict[str, Any]:
         total_requests = len(delivery_requests)
         open_requests = sum(
             1 for r in delivery_requests.values()
@@ -409,7 +522,28 @@ class BIAnalyticsService:
         transaction_ledger: Dict[str, Any],
         policies: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Analyze customer behavior and engagement."""
+        """Analyze customer behavior and engagement (cached, BI-2)."""
+        fingerprint = self._fingerprint(
+            customers, health_wallets, investment_accounts,
+            transaction_ledger, policies,
+        )
+        return self._cached(
+            'customer_analytics',
+            fingerprint,
+            lambda: self._compute_customer_analytics(
+                customers, health_wallets, investment_accounts,
+                transaction_ledger, policies,
+            ),
+        )
+
+    def _compute_customer_analytics(
+        self,
+        customers: Dict[str, Any],
+        health_wallets: Dict[str, Any],
+        investment_accounts: Dict[str, Any],
+        transaction_ledger: Dict[str, Any],
+        policies: Dict[str, Any],
+    ) -> Dict[str, Any]:
         total_customers = len(customers)
 
         wallet_balances = [w.get('balance', 0) for w in health_wallets.values()]
@@ -508,7 +642,22 @@ class BIAnalyticsService:
         supplier_orders: Dict[str, Any],
         supplier_metrics: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Analyze supplier ecosystem performance."""
+        """Analyze supplier ecosystem performance (cached, BI-2)."""
+        fingerprint = self._fingerprint(suppliers, supplier_orders, supplier_metrics)
+        return self._cached(
+            'supplier_analytics',
+            fingerprint,
+            lambda: self._compute_supplier_analytics(
+                suppliers, supplier_orders, supplier_metrics,
+            ),
+        )
+
+    def _compute_supplier_analytics(
+        self,
+        suppliers: Dict[str, Any],
+        supplier_orders: Dict[str, Any],
+        supplier_metrics: Dict[str, Any],
+    ) -> Dict[str, Any]:
         total_suppliers = len(suppliers)
 
         status_breakdown: Dict[str, int] = defaultdict(int)

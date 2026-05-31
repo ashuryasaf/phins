@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""
+Generate downloadable PDF reports for PHINS investor / pitch documents.
+=======================================================================
+Converts the served investor markdown documents under
+``web_portal/static/investor-docs/`` into clean, print-ready PDFs in the same
+directory, so the pitch dashboard can offer "⬇ PDF" downloads (e.g. for the
+Israel pitch and the AI/BI optimization review).
+
+Design / data-integrity notes:
+- **Deterministic, content-faithful rendering.** PDFs are generated *from* the
+  canonical markdown so they cannot drift in content; regenerating reproduces
+  the same document. No platform data (policies, claims, ledgers) is read or
+  written — this only renders static documentation.
+- **No new runtime dependency.** Uses ``reportlab``, already in
+  ``requirements.txt``. The PHINS web server does not import this module; it is a
+  build/ops script (run manually or in CI) and the resulting PDFs are committed.
+- Supports a pragmatic markdown subset: ATX headings, paragraphs, bold/inline
+  code, bullet and numbered lists, blockquotes, fenced code blocks, and pipe
+  tables. Anything unrecognized is rendered as a paragraph, so output is always
+  readable even for constructs outside the subset.
+
+Usage:
+    python3 scripts/generate_investor_pdfs.py
+    python3 scripts/generate_investor_pdfs.py --check   # verify outputs exist
+"""
+
+import argparse
+import html
+import os
+import re
+import sys
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    ListFlowable, ListItem, Paragraph, Preformatted, SimpleDocTemplate,
+    Spacer, Table, TableStyle,
+)
+
+INVESTOR_DOCS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'web_portal', 'static', 'investor-docs',
+)
+
+# (markdown filename, output pdf filename, document title)
+DOCUMENTS = [
+    ('israel-pitch-executive-summary.md', 'israel-pitch-executive-summary.pdf',
+     'PHINS — Israel (IL) Pitch: Executive Summary'),
+    ('ai-bi-optimization-review.md', 'ai-bi-optimization-review.pdf',
+     'PHINS — AI & BI Optimization Review'),
+    ('ai-bi-implementation-summary.md', 'ai-bi-implementation-summary.pdf',
+     'PHINS — AI & BI Optimization: Implementation Summary'),
+    ('platform-data-architecture.md', 'platform-data-architecture.pdf',
+     'PHINS — Platform Data Architecture'),
+    ('health-marketplace-architecture.md', 'health-marketplace-architecture.pdf',
+     'PHINS — Global Health Marketplace Architecture'),
+]
+
+PHINS_BLUE = colors.HexColor('#0d47a1')
+PHINS_BLUE_MID = colors.HexColor('#1565c0')
+CODE_BG = colors.HexColor('#f3f4f6')
+QUOTE_BG = colors.HexColor('#eef3fb')
+
+
+def _styles():
+    base = getSampleStyleSheet()
+    styles = {
+        'title': ParagraphStyle('PhinsTitle', parent=base['Title'], fontSize=20,
+                                 textColor=PHINS_BLUE, spaceAfter=14, leading=24),
+        'h1': ParagraphStyle('PhinsH1', parent=base['Heading1'], fontSize=15,
+                              textColor=PHINS_BLUE, spaceBefore=14, spaceAfter=6, leading=18),
+        'h2': ParagraphStyle('PhinsH2', parent=base['Heading2'], fontSize=12.5,
+                              textColor=PHINS_BLUE_MID, spaceBefore=12, spaceAfter=5, leading=15),
+        'h3': ParagraphStyle('PhinsH3', parent=base['Heading3'], fontSize=11,
+                              textColor=PHINS_BLUE_MID, spaceBefore=10, spaceAfter=4, leading=14),
+        'body': ParagraphStyle('PhinsBody', parent=base['BodyText'], fontSize=9.5,
+                               leading=14, spaceAfter=6, alignment=TA_LEFT),
+        'bullet': ParagraphStyle('PhinsBullet', parent=base['BodyText'], fontSize=9.5,
+                                 leading=13, spaceAfter=2),
+        'quote': ParagraphStyle('PhinsQuote', parent=base['BodyText'], fontSize=9.5,
+                                leading=14, leftIndent=10, textColor=colors.HexColor('#33425a'),
+                                backColor=QUOTE_BG, borderPadding=6, spaceAfter=6),
+        'code': ParagraphStyle('PhinsCode', parent=base['Code'], fontSize=8,
+                               leading=10.5, backColor=CODE_BG, borderPadding=6,
+                               textColor=colors.HexColor('#1a202c')),
+        'cell': ParagraphStyle('PhinsCell', parent=base['BodyText'], fontSize=8,
+                               leading=10.5),
+        'cellhdr': ParagraphStyle('PhinsCellHdr', parent=base['BodyText'], fontSize=8,
+                                  leading=10.5, textColor=colors.white),
+    }
+    return styles
+
+
+def _inline(text: str) -> str:
+    """Convert a small markdown inline subset to reportlab mini-HTML, safely."""
+    # Extract code spans first so their contents aren't escaped twice.
+    code_spans = []
+
+    def _stash(m):
+        code_spans.append(m.group(1))
+        return f"\x00CODE{len(code_spans) - 1}\x00"
+
+    text = re.sub(r'`([^`]+)`', _stash, text)
+    text = html.escape(text)
+    # Bold then italics (order matters); links -> text (url).
+    text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'__([^_]+)__', r'<b>\1</b>', text)
+    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', text)
+    for i, span in enumerate(code_spans):
+        text = text.replace(
+            f"\x00CODE{i}\x00",
+            f'<font face="Courier">{html.escape(span)}</font>',
+        )
+    return text
+
+
+def _flush_list(items, ordered, styles, story):
+    if not items:
+        return
+    flow = [
+        ListItem(Paragraph(_inline(it), styles['bullet']), leftIndent=12)
+        for it in items
+    ]
+    story.append(ListFlowable(
+        flow,
+        bulletType='1' if ordered else 'bullet',
+        start='1' if ordered else None,
+        leftIndent=14,
+    ))
+    story.append(Spacer(1, 4))
+
+
+def _table(rows, styles, story):
+    if not rows:
+        return
+    header, body = rows[0], rows[1:]
+    data = [[Paragraph(_inline(c), styles['cellhdr']) for c in header]]
+    for r in body:
+        # Pad/truncate to header width.
+        r = (r + [''] * len(header))[:len(header)]
+        data.append([Paragraph(_inline(c), styles['cell']) for c in r])
+    tbl = Table(data, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), PHINS_BLUE_MID),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#cbd5e1')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 8))
+
+
+def _parse_table_row(line: str):
+    cells = [c.strip() for c in line.strip().strip('|').split('|')]
+    return cells
+
+
+def markdown_to_story(md_text: str, title: str, styles):
+    story = [Paragraph(html.escape(title), styles['title']), Spacer(1, 6)]
+    lines = md_text.splitlines()
+    i = 0
+    list_items: list = []
+    list_ordered = False
+
+    def flush_list():
+        nonlocal list_items, list_ordered
+        _flush_list(list_items, list_ordered, styles, story)
+        list_items = []
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Fenced code block
+        if stripped.startswith('```'):
+            flush_list()
+            i += 1
+            buf = []
+            while i < len(lines) and not lines[i].strip().startswith('```'):
+                buf.append(lines[i])
+                i += 1
+            i += 1  # skip closing fence
+            story.append(Preformatted('\n'.join(buf) or ' ', styles['code']))
+            story.append(Spacer(1, 6))
+            continue
+
+        # Table (header line followed by a separator of dashes)
+        if '|' in stripped and i + 1 < len(lines) and re.match(
+            r'^\s*\|?[\s:|-]+\|[\s:|-]+$', lines[i + 1]
+        ):
+            flush_list()
+            rows = [_parse_table_row(stripped)]
+            i += 2  # skip header + separator
+            while i < len(lines) and '|' in lines[i] and lines[i].strip():
+                rows.append(_parse_table_row(lines[i]))
+                i += 1
+            _table(rows, styles, story)
+            continue
+
+        if not stripped:
+            flush_list()
+            i += 1
+            continue
+
+        # Headings
+        m = re.match(r'^(#{1,6})\s+(.*)$', stripped)
+        if m:
+            flush_list()
+            level = len(m.group(1))
+            key = 'h1' if level <= 1 else ('h2' if level == 2 else 'h3')
+            story.append(Paragraph(_inline(m.group(2)), styles[key]))
+            i += 1
+            continue
+
+        # Horizontal rule
+        if re.match(r'^(\*\s*){3,}$|^(-\s*){3,}$|^(_\s*){3,}$', stripped):
+            flush_list()
+            story.append(Spacer(1, 6))
+            i += 1
+            continue
+
+        # Blockquote
+        if stripped.startswith('>'):
+            flush_list()
+            quote = re.sub(r'^>\s?', '', stripped)
+            story.append(Paragraph(_inline(quote), styles['quote']))
+            i += 1
+            continue
+
+        # Bullet list
+        mb = re.match(r'^[-*+]\s+(.*)$', stripped)
+        if mb:
+            if list_items and list_ordered:
+                flush_list()
+            list_ordered = False
+            list_items.append(mb.group(1))
+            i += 1
+            continue
+
+        # Numbered list
+        mn = re.match(r'^\d+[.)]\s+(.*)$', stripped)
+        if mn:
+            if list_items and not list_ordered:
+                flush_list()
+            list_ordered = True
+            list_items.append(mn.group(1))
+            i += 1
+            continue
+
+        # Paragraph
+        flush_list()
+        story.append(Paragraph(_inline(stripped), styles['body']))
+        i += 1
+
+    flush_list()
+    return story
+
+
+def _footer(canvas, doc):
+    canvas.saveState()
+    canvas.setFont('Helvetica', 7)
+    canvas.setFillColor(colors.HexColor('#94a3b8'))
+    canvas.drawString(2 * cm, 1.1 * cm,
+                      'PHINS — Confidential investor document · generated from canonical markdown')
+    canvas.drawRightString(A4[0] - 2 * cm, 1.1 * cm, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def generate_one(md_path: str, pdf_path: str, title: str, styles) -> None:
+    with open(md_path, 'r', encoding='utf-8') as fh:
+        md_text = fh.read()
+    doc = SimpleDocTemplate(
+        pdf_path, pagesize=A4,
+        leftMargin=2 * cm, rightMargin=2 * cm,
+        topMargin=1.8 * cm, bottomMargin=1.8 * cm,
+        title=title, author='PHINS',
+    )
+    story = markdown_to_story(md_text, title, styles)
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description='Generate investor PDF reports')
+    parser.add_argument('--check', action='store_true',
+                        help='only verify that expected PDFs exist')
+    args = parser.parse_args(argv)
+
+    if args.check:
+        missing = [
+            pdf for _, pdf, _ in DOCUMENTS
+            if not os.path.isfile(os.path.join(INVESTOR_DOCS_DIR, pdf))
+        ]
+        if missing:
+            print('Missing PDFs:', ', '.join(missing))
+            return 1
+        print('All investor PDFs present.')
+        return 0
+
+    styles = _styles()
+    generated = []
+    for md_name, pdf_name, title in DOCUMENTS:
+        md_path = os.path.join(INVESTOR_DOCS_DIR, md_name)
+        pdf_path = os.path.join(INVESTOR_DOCS_DIR, pdf_name)
+        if not os.path.isfile(md_path):
+            print(f"  ! skip (source missing): {md_name}")
+            continue
+        generate_one(md_path, pdf_path, title, styles)
+        size_kb = os.path.getsize(pdf_path) / 1024
+        generated.append(pdf_name)
+        print(f"  ✓ {pdf_name} ({size_kb:.0f} KB)")
+    print(f"Generated {len(generated)} investor PDF(s) in {INVESTOR_DOCS_DIR}")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
