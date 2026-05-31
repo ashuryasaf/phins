@@ -1,0 +1,20 @@
+c6796c9 Merge pull request #346 from ashuryasaf/cursor/actuary-sandbox-60mo-forecast-4d9a
+0da0a2b Fix sandbox forecast: clear stale charts and dynamic horizon label
+3ec7525 Fix Excel export materializing full sandbox book before truncation
+770f90a Fix sandbox lifecycle resume wiping export realized series
+50e7010 Fix actuary sandbox projection export/chart bugs
+9f74f08 Sandbox: single-pass renderSandbox + horizon clamp; add CSV/Excel/PDF insight exports
+961b2e9 Fix actuary sandbox forecast pills, joiner risk base, and recompute active flag
+f658145 Sandbox: 100k accounts, contract age-band claims, 60-month adjustable forecast with Chart.js (10% growth)
+4f41b5e Merge pull request #345 from ashuryasaf/cursor/actuary-sandbox-simulation-optimisation-4d9a
+e27c9ec Fix policy_status not updating on approve/decline UW actions
+d47e2ed Fix mortality share boundary check and remove dead customerIds variable
+6ad13dd Fix push-to-pipeline double-body-read hang; reuse pre-read request body
+3beb971 Optimize actuary sandbox: contract-aware claims, full-parameter generation, monthly projection, push integrity
+b2b7bcd Merge pull request #344 from ashuryasaf/cursor/actuary-sandbox-testing-bar-9a2a
+5b434b9 Fix race condition in demo data cleanup between sandbox snapshot and steps 1-3
+94f65ab Fix policy_id normalization in sandbox push and add missing policy_id to lifecycle claims
+893002d Fix sandbox lifecycle risk formula, cleanup ordering, and dead code
+861223b Fix sandbox tracking persistence and concurrent access bugs
+4bc651a Fix test to mirror PROTECTED_CUSTOMERS filtering from server cleanup code
+c326c92 Fix quadratic cleanup loop under STATE_LOCK and add list type validation for push-to-pipeline
