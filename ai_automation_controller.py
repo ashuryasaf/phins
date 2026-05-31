@@ -14,7 +14,21 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, date
 from enum import Enum
+import logging
 import random
+
+# AI-1/AI-2/AI-3 wiring. These are light, dependency-free modules; importing them
+# never pulls in a numeric/ML stack. All are best-effort: if anything here fails
+# the controller still makes its deterministic rule-based decision.
+try:
+    from services.ai_decision_log import get_ai_decision_log
+    from services.ai_threshold_config import get_threshold_config, segment_key
+    from services.ai_model_registry import get_model_registry
+    _AI_SUPPORT = True
+except Exception:  # pragma: no cover - defensive import guard
+    _AI_SUPPORT = False
+
+logger = logging.getLogger('phins.ai_automation')
 
 
 class AutomationDecision(Enum):
@@ -59,8 +73,98 @@ class AIAutomationController:
         """Initialize the automation controller"""
         self.metrics = AutomationMetrics()
         self.fraud_detection_enabled = True
+        # Global defaults. Per-segment thresholds (AI-2) default to these exact
+        # values, so segmentation changes nothing until an operator explicitly
+        # promotes calibrated thresholds.
         self.auto_approve_threshold = 0.85  # 85% confidence for auto-approval
         self.auto_reject_threshold = 0.15   # Below 15% confidence = auto-reject
+        # AI-1/AI-2/AI-3 collaborators (None when support is unavailable).
+        self._decision_log = get_ai_decision_log() if _AI_SUPPORT else None
+        self._thresholds = get_threshold_config() if _AI_SUPPORT else None
+        self._model_registry = get_model_registry() if _AI_SUPPORT else None
+
+    # ------------------------------------------------------------------
+    # AI-1: append-only decision logging (best-effort, never fatal)
+    # ------------------------------------------------------------------
+
+    def _log_decision(
+        self,
+        decision_type: str,
+        output: Dict[str, Any],
+        inputs: Optional[Dict[str, Any]] = None,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        model_version: str = 'rules-v1',
+        confidence: Optional[float] = None,
+        segment: Optional[str] = None,
+    ) -> Optional[str]:
+        if not self._decision_log:
+            return None
+        try:
+            return self._decision_log.record(
+                decision_type=decision_type,
+                output=output,
+                inputs=inputs,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                model_version=model_version,
+                confidence=confidence,
+                segment=segment,
+            )
+        except Exception as exc:  # never break decisioning
+            logger.warning("decision logging failed: %s", exc)
+            return None
+
+    def record_human_override(
+        self,
+        decision_id: str,
+        human_decision: str,
+        reason: Optional[str] = None,
+        overridden_by: Optional[str] = None,
+    ) -> bool:
+        """Record that a human overrode an automated decision (feedback loop).
+
+        Append-only: this links an override to the original decision without
+        rewriting the original inputs/output.
+        """
+        if not self._decision_log:
+            return False
+        return self._decision_log.record_override(
+            decision_id, human_decision, reason, overridden_by
+        )
+
+    def get_decision_log_summary(self) -> Dict[str, Any]:
+        """Aggregate view of logged decisions (counts, override/disagreement rate)."""
+        if not self._decision_log:
+            return {'total_decisions': 0, 'available': False}
+        summary = self._decision_log.summary()
+        summary['available'] = True
+        return summary
+
+    def _segment_thresholds(self, application_data: Dict[str, Any]) -> Tuple[float, float, str]:
+        """Resolve (approve, reject, segment) thresholds for an application.
+
+        Defaults to the controller's global constants, so behavior is identical
+        to the pre-segmentation controller unless thresholds were promoted.
+        """
+        if not self._thresholds:
+            return self.auto_approve_threshold, self.auto_reject_threshold, 'global'
+        seg = segment_key(application_data)
+        approve, reject = self._thresholds.get(seg)
+        return approve, reject, seg
+
+    def _model_score(self, name: str, features: Dict[str, Any]) -> Tuple[Optional[float], str]:
+        """Consult the model registry. Returns (score_or_None, model_version).
+
+        With no artifact present (the default everywhere today) this returns
+        (None, 'rules-v1') and the caller uses the deterministic rule scorer.
+        """
+        if not self._model_registry:
+            return None, 'rules-v1'
+        handle = self._model_registry.get_model(name)
+        if handle is None:
+            return None, 'rules-v1'
+        return handle.score(features), handle.registry_id
         
     # =========================================================================
     # AUTO-QUOTE GENERATION
@@ -122,7 +226,7 @@ class AIAutomationController:
         # Calculate confidence score
         confidence = self._calculate_quote_confidence(customer_data)
         
-        return {
+        quote = {
             'quote_id': f"QT-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}",
             'annual_premium': round(annual_premium, 2),
             'monthly_premium': round(monthly_premium, 2),
@@ -137,6 +241,21 @@ class AIAutomationController:
             'generated_at': datetime.now().isoformat(),
             'valid_until': (datetime.now().replace(hour=23, minute=59, second=59)).isoformat()
         }
+        # AI-1: log the quote decision (advisory record; no money movement).
+        self._log_decision(
+            decision_type='quote',
+            inputs=customer_data,
+            output={
+                'decision': 'quote_generated',
+                'annual_premium': quote['annual_premium'],
+                'monthly_premium': quote['monthly_premium'],
+                'coverage_amount': coverage_amount,
+            },
+            entity_type='customer',
+            entity_id=customer_data.get('customer_id') or customer_data.get('id'),
+            confidence=confidence,
+        )
+        return quote
     
     def _calculate_quote_confidence(self, customer_data: Dict[str, Any]) -> float:
         """Calculate confidence score for quote"""
@@ -168,54 +287,73 @@ class AIAutomationController:
         """
         self.metrics.total_processed += 1
         
-        # Risk assessment
+        # Risk assessment (deterministic rule scorer — authoritative by default)
         risk_score = self._assess_risk(application_data)
         fraud_risk = self._detect_fraud(application_data) if self.fraud_detection_enabled else FraudRisk.LOW
-        
+
+        # AI-2: per-segment thresholds (default to the global constants).
+        approve_threshold, reject_threshold, segment = self._segment_thresholds(application_data)
+        # AI-3: a trained model may *inform* (logged for drift) but rules decide.
+        model_score, model_version = self._model_score('underwriting', application_data)
+
         # Check for fraud first
         if fraud_risk in [FraudRisk.HIGH, FraudRisk.CRITICAL]:
             self.metrics.fraud_detected += 1
             self.metrics.human_review += 1
-            return (
-                AutomationDecision.HUMAN_REVIEW,
-                {
-                    'reason': 'Potential fraud detected',
-                    'fraud_risk': fraud_risk.value,
-                    'requires_investigation': True
-                }
-            )
-        
+            decision = AutomationDecision.HUMAN_REVIEW
+            details = {
+                'reason': 'Potential fraud detected',
+                'fraud_risk': fraud_risk.value,
+                'requires_investigation': True
+            }
         # Auto-decision based on risk score
-        if risk_score >= self.auto_approve_threshold:
+        elif risk_score >= approve_threshold:
             self.metrics.auto_approved += 1
-            return (
-                AutomationDecision.AUTO_APPROVE,
-                {
-                    'risk_score': risk_score,
-                    'premium_adjustment': 1.0,  # No adjustment
-                    'conditions': []
-                }
-            )
-        elif risk_score <= self.auto_reject_threshold:
+            decision = AutomationDecision.AUTO_APPROVE
+            details = {
+                'risk_score': risk_score,
+                'premium_adjustment': 1.0,  # No adjustment
+                'conditions': []
+            }
+        elif risk_score <= reject_threshold:
             self.metrics.auto_rejected += 1
-            return (
-                AutomationDecision.AUTO_REJECT,
-                {
-                    'risk_score': risk_score,
-                    'rejection_reason': 'Risk score too low for coverage'
-                }
-            )
+            decision = AutomationDecision.AUTO_REJECT
+            details = {
+                'risk_score': risk_score,
+                'rejection_reason': 'Risk score too low for coverage'
+            }
         else:
             # Mid-range - needs human review
             self.metrics.human_review += 1
-            return (
-                AutomationDecision.HUMAN_REVIEW,
-                {
-                    'risk_score': risk_score,
-                    'review_priority': 'medium' if risk_score > 0.5 else 'high',
-                    'suggested_action': 'approve_with_conditions' if risk_score > 0.5 else 'request_medical_exam'
-                }
-            )
+            decision = AutomationDecision.HUMAN_REVIEW
+            details = {
+                'risk_score': risk_score,
+                'review_priority': 'medium' if risk_score > 0.5 else 'high',
+                'suggested_action': 'approve_with_conditions' if risk_score > 0.5 else 'request_medical_exam'
+            }
+
+        # AI-1: persist the decision (append-only, advisory; never moves money).
+        decision_id = self._log_decision(
+            decision_type='underwrite',
+            inputs=application_data,
+            output={
+                'decision': decision.value,
+                'risk_score': risk_score,
+                'approve_threshold': approve_threshold,
+                'reject_threshold': reject_threshold,
+                'fraud_risk': fraud_risk.value,
+                'model_score': model_score,
+            },
+            entity_type='underwriting_application',
+            entity_id=application_data.get('application_id') or application_data.get('id'),
+            model_version=model_version,
+            confidence=risk_score,
+            segment=segment,
+        )
+        if decision_id:
+            details['decision_id'] = decision_id
+        details['segment'] = segment
+        return (decision, details)
     
     def _assess_risk(self, application_data: Dict[str, Any]) -> float:
         """
@@ -306,61 +444,68 @@ class AIAutomationController:
         claim_amount = claim_data.get('claimed_amount', 0)
         claim_type = claim_data.get('type', 'unknown')
         policy_coverage = claim_data.get('policy_coverage', 0)
-        
+        fraud_risk = FraudRisk.LOW
+
         # Auto-approve low-value straightforward claims
         if claim_amount < 1000 and claim_type in ['medical', 'dental']:
-            return (
-                AutomationDecision.AUTO_APPROVE,
-                {
-                    'approved_amount': claim_amount,
-                    'reason': 'Low-value claim with standard documentation',
-                    'payment_method': 'direct_deposit'
-                }
-            )
-        
-        # Check fraud risk
-        fraud_risk = self._detect_claim_fraud(claim_data)
-        if fraud_risk in [FraudRisk.HIGH, FraudRisk.CRITICAL]:
-            return (
-                AutomationDecision.HUMAN_REVIEW,
-                {
+            decision = AutomationDecision.AUTO_APPROVE
+            details = {
+                'approved_amount': claim_amount,
+                'reason': 'Low-value claim with standard documentation',
+                'payment_method': 'direct_deposit'
+            }
+        else:
+            # Check fraud risk
+            fraud_risk = self._detect_claim_fraud(claim_data)
+            if fraud_risk in [FraudRisk.HIGH, FraudRisk.CRITICAL]:
+                decision = AutomationDecision.HUMAN_REVIEW
+                details = {
                     'reason': 'Potential fraud detected in claim',
                     'fraud_risk': fraud_risk.value,
                     'requires_investigation': True
                 }
-            )
-        
-        # Check if claim exceeds coverage
-        if claim_amount > policy_coverage:
-            return (
-                AutomationDecision.HUMAN_REVIEW,
-                {
+            # Check if claim exceeds coverage
+            elif claim_amount > policy_coverage:
+                decision = AutomationDecision.HUMAN_REVIEW
+                details = {
                     'reason': 'Claim exceeds policy coverage',
                     'suggested_action': 'approve_partial',
                     'max_approved_amount': policy_coverage
                 }
-            )
-        
-        # Complex claims need human review
-        if claim_type in ['disability', 'death', 'major_medical']:
-            return (
-                AutomationDecision.HUMAN_REVIEW,
-                {
+            # Complex claims need human review
+            elif claim_type in ['disability', 'death', 'major_medical']:
+                decision = AutomationDecision.HUMAN_REVIEW
+                details = {
                     'reason': 'Complex claim type requires adjuster review',
                     'priority': 'high'
                 }
-            )
-        
-        # Medium-value claims with complete documentation
-        return (
-            AutomationDecision.HUMAN_REVIEW,
-            {
-                'reason': 'Standard review required',
-                'priority': 'normal',
-                'suggested_action': 'approve',
-                'suggested_amount': claim_amount
-            }
+            else:
+                # Medium-value claims with complete documentation
+                decision = AutomationDecision.HUMAN_REVIEW
+                details = {
+                    'reason': 'Standard review required',
+                    'priority': 'normal',
+                    'suggested_action': 'approve',
+                    'suggested_amount': claim_amount
+                }
+
+        # AI-1: persist the claim decision (append-only; advisory, never posts).
+        decision_id = self._log_decision(
+            decision_type='claim',
+            inputs=claim_data,
+            output={
+                'decision': decision.value,
+                'reason': details.get('reason'),
+                'fraud_risk': fraud_risk.value,
+                'claimed_amount': claim_amount,
+                'claim_type': claim_type,
+            },
+            entity_type='claim',
+            entity_id=claim_data.get('claim_id') or claim_data.get('id'),
         )
+        if decision_id:
+            details['decision_id'] = decision_id
+        return (decision, details)
     
     def _detect_claim_fraud(self, claim_data: Dict[str, Any]) -> FraudRisk:
         """Detect potential fraud in claim submission"""

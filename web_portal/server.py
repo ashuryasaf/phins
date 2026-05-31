@@ -1315,6 +1315,12 @@ except ImportError:
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
+# Data-integrity guardrail (opt-in, default OFF so existing behavior is unchanged).
+# When PHINS_REQUIRE_DATABASE is truthy, the platform refuses to run on the
+# volatile in-memory fallback — this prevents the silent split-brain where the
+# request path writes to one store while reports/integrity read another. See
+# docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 (DI-1).
+DATABASE_REQUIRED = os.environ.get('PHINS_REQUIRE_DATABASE', 'false').lower() in ('1', 'true', 'yes', 'on')
 database_enabled = False
 _db_init_done = False  # guards against duplicate init_database + seed_default_users calls
 
@@ -1446,6 +1452,18 @@ else:
     SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
     print("✓ Using in-memory storage (demo data will be loaded at startup)")
+
+# DI-1 guardrail: if the operator explicitly requires durable storage but we
+# ended up on the in-memory fallback, fail fast rather than silently serving a
+# store that cannot back the platform's data-integrity guarantees. Default OFF.
+if DATABASE_REQUIRED and not (USE_DATABASE and database_enabled):
+    print("=" * 60)
+    print("FATAL: PHINS_REQUIRE_DATABASE is set but durable database storage is")
+    print("       unavailable. Refusing to start on volatile in-memory storage to")
+    print("       protect data-integrity guarantees. Fix the DB connection or unset")
+    print("       PHINS_REQUIRE_DATABASE. See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6.")
+    print("=" * 60)
+    raise SystemExit(1)
 
 
 def attempt_database_recovery():
