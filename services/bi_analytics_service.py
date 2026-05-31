@@ -169,9 +169,12 @@ class BIAnalyticsService:
         """Cheap, stable content fingerprint over dashboard inputs.
 
         Single pass over the inputs; far cheaper than the multi-aggregation
-        dashboards it guards, but sensitive enough that any add/remove/amount
-        change invalidates the cache. We deliberately hash a compact signature
-        rather than the full payload to keep this O(n) and allocation-light.
+        dashboards it guards, but sensitive enough that *any* field change
+        invalidates the cache. We hash the full content of each record (not a
+        hand-picked subset) so a cached dashboard can never contradict changed
+        inputs — every KPI driver, including fields like ``bid_amount``,
+        ``distance_km``, ``urgency``, ``customer_id`` and ``category``, is
+        covered.
         """
         hasher = hashlib.sha256()
         for src in sources:
@@ -180,26 +183,13 @@ class BIAnalyticsService:
                 # Sort keys so ordering never affects the fingerprint.
                 for key in sorted(src.keys(), key=str):
                     val = src[key]
-                    if isinstance(val, dict):
-                        # Signature = a few mutation-sensitive fields only.
-                        sig = (
-                            key,
-                            val.get('status'),
-                            val.get('balance'),
-                            val.get('amount'),
-                            val.get('amount_paid'),
-                            val.get('monthly_premium'),
-                            val.get('annual_premium'),
-                            val.get('coverage_amount'),
-                            val.get('claimed_amount'),
-                            val.get('approved_amount'),
-                            val.get('total_amount'),
-                            val.get('total_revenue'),
-                            val.get('total_deliveries'),
+                    hasher.update(repr(key).encode())
+                    try:
+                        hasher.update(
+                            json.dumps(val, sort_keys=True, default=str).encode()
                         )
-                        hasher.update(repr(sig).encode())
-                    else:
-                        hasher.update(repr((key, val)).encode())
+                    except (TypeError, ValueError):
+                        hasher.update(repr(val).encode())
             else:
                 try:
                     hasher.update(json.dumps(src, sort_keys=True, default=str).encode())

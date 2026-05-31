@@ -45,11 +45,10 @@ def _utc_now_iso() -> str:
 class AIDecisionLog:
     """Thread-safe, append-only AI decision record."""
 
-    def __init__(self, max_in_memory: int = 5000):
+    def __init__(self):
         self._records: List[Dict[str, Any]] = []
         self._index: Dict[str, int] = {}  # decision_id -> position in _records
         self._lock = threading.Lock()
-        self._max_in_memory = max_in_memory
         # Optional DB mirror: a callable(record_dict) -> None. Best-effort.
         self._db_persister: Optional[Callable[[Dict[str, Any]], None]] = None
 
@@ -82,8 +81,9 @@ class AIDecisionLog:
     ) -> str:
         """Append an immutable decision record. Returns the decision_id.
 
-        Never raises into the caller — on failure it logs and returns a best
-        effort id so the AI agent flow is unaffected.
+        Never raises into the caller. If storing the decision fails, it logs and
+        returns an empty string rather than a phantom id, so callers never
+        reference a decision that was not actually recorded.
         """
         decision_id = f"AIDEC-{uuid.uuid4().hex[:16]}"
         try:
@@ -105,18 +105,15 @@ class AIDecisionLog:
                 'overridden_at': None,
             }
             with self._lock:
+                # Append-only: records are retained for audit and calibration
+                # and never dropped, so every decision_id stays resolvable for
+                # overrides and threshold calibration.
                 self._records.append(record)
                 self._index[decision_id] = len(self._records) - 1
-                # Bound memory: drop oldest while preserving index integrity.
-                if len(self._records) > self._max_in_memory:
-                    drop = len(self._records) - self._max_in_memory
-                    self._records = self._records[drop:]
-                    self._index = {
-                        r['decision_id']: i for i, r in enumerate(self._records)
-                    }
             self._mirror_to_db(record)
         except Exception as exc:  # never propagate
             logger.warning("AI decision log record failed: %s", exc)
+            return ''
         return decision_id
 
     def record_override(
