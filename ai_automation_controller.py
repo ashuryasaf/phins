@@ -30,6 +30,36 @@ except Exception:  # pragma: no cover - defensive import guard
 
 logger = logging.getLogger('phins.ai_automation')
 
+# ---------------------------------------------------------------------------
+# PII minimization for the decision log.
+#
+# The append-only decision log is audit/calibration data, NOT a copy of the
+# customer record. We log only the non-PII *features* that actually drive a
+# decision (age band inputs, risk indicators, amounts) and deliberately exclude
+# direct identifiers and sensitive fields (name, email, phone, address, SSN /
+# national id, dates of birth, free-text medical notes, raw documents). This
+# upholds data-minimization / HIPAA expectations and keeps the log from becoming
+# a concentrated PII target. ``entity_id`` is kept separately for linkage.
+# ---------------------------------------------------------------------------
+
+QUOTE_FEATURE_FIELDS = (
+    'age', 'occupation', 'health_score', 'coverage_amount', 'coverage_type',
+    'smoking', 'complete_medical_history', 'stable_employment',
+    'no_pre_existing_conditions',
+)
+UNDERWRITE_FEATURE_FIELDS = (
+    'age', 'occupation', 'smoker', 'pre_existing_conditions', 'health_score',
+    'employment_stable', 'employment_stable', 'coverage_amount',
+    'recent_claims_count', 'multiple_applications_same_day',
+    'inconsistent_information', 'high_coverage_new_customer',
+    'suspicious_documents',
+)
+CLAIM_FEATURE_FIELDS = (
+    'claimed_amount', 'amount', 'type', 'claim_type', 'policy_coverage',
+    'days_since_policy_start', 'has_complete_documentation', 'has_documents',
+    'recent_claims_count', 'average_claim_for_type',
+)
+
 
 class AutomationDecision(Enum):
     """Automation decision types"""
@@ -86,6 +116,18 @@ class AIAutomationController:
     # ------------------------------------------------------------------
     # AI-1: append-only decision logging (best-effort, never fatal)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _feature_snapshot(data: Dict[str, Any], allowed_fields) -> Dict[str, Any]:
+        """Return only the allowlisted, non-PII feature fields present in ``data``.
+
+        Everything else (names, emails, addresses, national ids, free-text
+        medical notes, raw documents, etc.) is dropped before the decision is
+        logged, so the append-only log never accumulates raw PII.
+        """
+        if not data:
+            return {}
+        return {k: data[k] for k in allowed_fields if k in data}
 
     def _log_decision(
         self,
@@ -242,9 +284,10 @@ class AIAutomationController:
             'valid_until': (datetime.now().replace(hour=23, minute=59, second=59)).isoformat()
         }
         # AI-1: log the quote decision (advisory record; no money movement).
+        # PII-minimized: only non-PII rating features are logged.
         self._log_decision(
             decision_type='quote',
-            inputs=customer_data,
+            inputs=self._feature_snapshot(customer_data, QUOTE_FEATURE_FIELDS),
             output={
                 'decision': 'quote_generated',
                 'annual_premium': quote['annual_premium'],
@@ -333,9 +376,11 @@ class AIAutomationController:
             }
 
         # AI-1: persist the decision (append-only, advisory; never moves money).
+        # PII-minimized: only non-PII risk features are logged, not the raw
+        # application payload.
         decision_id = self._log_decision(
             decision_type='underwrite',
-            inputs=application_data,
+            inputs=self._feature_snapshot(application_data, UNDERWRITE_FEATURE_FIELDS),
             output={
                 'decision': decision.value,
                 'risk_score': risk_score,
@@ -490,9 +535,10 @@ class AIAutomationController:
                 }
 
         # AI-1: persist the claim decision (append-only; advisory, never posts).
+        # PII-minimized: only non-PII claim features are logged.
         decision_id = self._log_decision(
             decision_type='claim',
-            inputs=claim_data,
+            inputs=self._feature_snapshot(claim_data, CLAIM_FEATURE_FIELDS),
             output={
                 'decision': decision.value,
                 'reason': details.get('reason'),

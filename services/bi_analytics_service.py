@@ -178,11 +178,22 @@ class BIAnalyticsService:
         """
         hasher = hashlib.sha256()
         for src in sources:
-            if isinstance(src, dict):
-                hasher.update(str(len(src)).encode())
-                # Sort keys so ordering never affects the fingerprint.
-                for key in sorted(src.keys(), key=str):
-                    val = src[key]
+            # Treat any mapping-like source (plain ``dict`` *and* the
+            # ``DatabaseDict`` wrapper used in database mode) as content to walk.
+            # ``DatabaseDict`` is not a ``dict`` subclass, so an ``isinstance``
+            # check would fall through to hashing the wrapper's identity/repr,
+            # leaving the fingerprint constant while the backing rows change
+            # (a stale-cache / integrity hazard).
+            entries = None
+            if hasattr(src, 'items') and callable(getattr(src, 'items')):
+                try:
+                    entries = list(src.items())
+                except Exception:
+                    entries = None
+            if entries is not None:
+                hasher.update(str(len(entries)).encode())
+                # Sort by key so ordering never affects the fingerprint.
+                for key, val in sorted(entries, key=lambda kv: str(kv[0])):
                     hasher.update(repr(key).encode())
                     try:
                         hasher.update(

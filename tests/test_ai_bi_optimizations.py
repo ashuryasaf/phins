@@ -179,5 +179,78 @@ def test_controller_logs_decisions_and_preserves_behavior():
     assert summary['total_decisions'] >= 2
 
 
+def test_decision_log_scrubs_pii_from_inputs():
+    """Raw PII must never reach the append-only decision log."""
+    c = AIAutomationController()
+    if c._decision_log:
+        c._decision_log.clear()
+
+    c.auto_underwrite({
+        # PII that must be dropped:
+        'name': 'Jane Doe', 'email': 'jane@example.com', 'phone': '+972-50-0000000',
+        'national_id': '123456789', 'address': '1 Herzl St, Tel Aviv',
+        'medical_notes': 'sensitive free text',
+        # Non-PII features that may be logged:
+        'age': 40, 'occupation': 'construction', 'smoker': True,
+        'pre_existing_conditions': False, 'health_score': 6, 'employment_stable': True,
+    })
+    rec = c._decision_log.recent(1)[0]
+    logged = rec['inputs']
+    for pii in ('name', 'email', 'phone', 'national_id', 'address', 'medical_notes'):
+        assert pii not in logged, f"PII field {pii} leaked into decision log"
+    assert logged.get('age') == 40
+    assert logged.get('occupation') == 'construction'
+
+
+def test_decision_log_deepcopy_detaches_snapshot():
+    log = AIDecisionLog()
+    payload = {'nested': {'amount': 100}, 'items': [1, 2]}
+    did = log.record(decision_type='claim', output={'decision': 'x'}, inputs=payload)
+    # Mutate the caller's payload after recording.
+    payload['nested']['amount'] = 999
+    payload['items'].append(3)
+    snap = log.get(did)['inputs']
+    assert snap['nested']['amount'] == 100   # snapshot detached
+    assert snap['items'] == [1, 2]
+
+
+def test_model_registry_refuses_unsigned_artifact(tmp_path, monkeypatch):
+    from services.ai_model_registry import ModelRegistry, MODEL_HMAC_KEY_ENV
+    artifact = tmp_path / 'underwriting-v1.joblib'
+    artifact.write_bytes(b'not-a-real-model')
+
+    reg = ModelRegistry(model_dir=str(tmp_path))
+
+    # No key configured -> refuse to load (returns None, falls back to rules).
+    monkeypatch.delenv(MODEL_HMAC_KEY_ENV, raising=False)
+    assert reg.get_model('underwriting') is None
+
+    # Key set but no/!invalid signature -> still refuse.
+    reg.reload()
+    monkeypatch.setenv(MODEL_HMAC_KEY_ENV, 'test-secret')
+    assert reg.get_model('underwriting') is None  # no .sig file present
+    assert ModelRegistry._signature_valid(str(artifact), b'not-a-real-model') is False
+
+
+def test_model_registry_signature_gate_accepts_valid_hmac(tmp_path, monkeypatch):
+    import hashlib
+    import hmac as _hmac
+    from services.ai_model_registry import ModelRegistry, MODEL_HMAC_KEY_ENV
+
+    data = b'model-bytes'
+    artifact = tmp_path / 'underwriting-v1.joblib'
+    artifact.write_bytes(data)
+    key = 'top-secret-key'
+    sig = _hmac.new(key.encode(), data, hashlib.sha256).hexdigest()
+    (tmp_path / 'underwriting-v1.joblib.sig').write_text(sig)
+
+    monkeypatch.setenv(MODEL_HMAC_KEY_ENV, key)
+    # The HMAC gate itself accepts the valid signature...
+    assert ModelRegistry._signature_valid(str(artifact), data) is True
+    # ...and a wrong key is rejected.
+    monkeypatch.setenv(MODEL_HMAC_KEY_ENV, 'wrong-key')
+    assert ModelRegistry._signature_valid(str(artifact), data) is False
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

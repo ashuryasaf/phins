@@ -29,6 +29,7 @@ Storage:
   avoids a hard DB dependency in demo/test mode.
 """
 
+import copy
 import logging
 import threading
 import uuid
@@ -92,8 +93,13 @@ class AIDecisionLog:
                 'decision_type': decision_type,
                 'entity_type': entity_type,
                 'entity_id': entity_id,
-                'inputs': dict(inputs) if inputs else {},
-                'output': dict(output) if output else {},
+                # Deep-copy so the append-only snapshot is fully detached from
+                # the caller's mutable payload. A shallow ``dict(...)`` copy
+                # leaves nested dicts/lists aliased, so later in-place edits to
+                # ``application_data``/``claim_data`` would silently rewrite the
+                # decision-time record and corrupt audit/calibration history.
+                'inputs': copy.deepcopy(inputs) if inputs else {},
+                'output': copy.deepcopy(output) if output else {},
                 'model_version': model_version,
                 'confidence': confidence,
                 'segment': segment,
