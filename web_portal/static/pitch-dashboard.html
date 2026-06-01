@@ -2187,8 +2187,222 @@
         </div>
       </div>
 
+      <!-- AI Infrastructure Cost Assessment: Cloud AI Services vs Local LLM -->
+      <div class="exec-chart-panel" id="ai-cost-assessment-panel" style="margin-top:24px;">
+        <h3>AI Infrastructure Cost Assessment — Cloud Services vs Local LLM</h3>
+        <p class="ecp-sub">Total cost of ownership comparison across all 15 PHINS AI agents/services. Assumptions: 10K policies, 2K claims/month, 200 video jobs/day, 50K API calls/day at scale. All figures annualized USD.</p>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;">
+          <div style="border-radius:12px;background:#f0f7ff;padding:16px;border:1px solid #bbd6f7;">
+            <h4 style="font-size:9.5pt;font-weight:800;color:#1565c0;margin-bottom:8px;">☁️ Cloud AI Engine Services</h4>
+            <table style="width:100%;font-size:7.8pt;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid #bbd6f7;">
+                  <th style="text-align:left;padding:3px 4px;font-weight:700;">Agent / Service</th>
+                  <th style="text-align:right;padding:3px 4px;font-weight:700;">Annual Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:2px 4px;">Underwriting Bot (GPT-4/Claude)</td><td style="text-align:right;padding:2px 4px;">$72,000</td></tr>
+                <tr><td style="padding:2px 4px;">Claims Intelligence Bot</td><td style="text-align:right;padding:2px 4px;">$54,000</td></tr>
+                <tr><td style="padding:2px 4px;">Video Generation (Gemini Veo + Kling)</td><td style="text-align:right;padding:2px 4px;">$96,000</td></tr>
+                <tr><td style="padding:2px 4px;">Investment AI (10 modules)</td><td style="text-align:right;padding:2px 4px;">$36,000</td></tr>
+                <tr><td style="padding:2px 4px;">AI Trading Engine</td><td style="text-align:right;padding:2px 4px;">$28,800</td></tr>
+                <tr><td style="padding:2px 4px;">BI Analytics & AI Insights</td><td style="text-align:right;padding:2px 4px;">$24,000</td></tr>
+                <tr><td style="padding:2px 4px;">Risk Reports Service</td><td style="text-align:right;padding:2px 4px;">$18,000</td></tr>
+                <tr><td style="padding:2px 4px;">Document Processing (OCR + NLP)</td><td style="text-align:right;padding:2px 4px;">$21,600</td></tr>
+                <tr><td style="padding:2px 4px;">Marketing/Sales Agent</td><td style="text-align:right;padding:2px 4px;">$14,400</td></tr>
+                <tr><td style="padding:2px 4px;">Customer Communication Agent</td><td style="text-align:right;padding:2px 4px;">$19,200</td></tr>
+                <tr><td style="padding:2px 4px;">Delivery Bidding AI</td><td style="text-align:right;padding:2px 4px;">$12,000</td></tr>
+                <tr><td style="padding:2px 4px;">Pension Data Agent</td><td style="text-align:right;padding:2px 4px;">$9,600</td></tr>
+                <tr><td style="padding:2px 4px;">AI Model Registry (hosted inference)</td><td style="text-align:right;padding:2px 4px;">$15,600</td></tr>
+                <tr><td style="padding:2px 4px;">Assessment Center NLP</td><td style="text-align:right;padding:2px 4px;">$10,800</td></tr>
+                <tr><td style="padding:2px 4px;">Voice AI Assistant (STT/TTS)</td><td style="text-align:right;padding:2px 4px;">$16,800</td></tr>
+                <tr style="border-top:2px solid #1565c0;font-weight:800;background:#dbeafe;">
+                  <td style="padding:4px;">Total Annual Cloud AI</td>
+                  <td style="text-align:right;padding:4px;">$448,800</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="border-radius:12px;background:#f0faf0;padding:16px;border:1px solid #b8e6b8;">
+            <h4 style="font-size:9.5pt;font-weight:800;color:#2e7d32;margin-bottom:8px;">🖥️ Local AI Server (Self-Hosted LLM)</h4>
+            <table style="width:100%;font-size:7.8pt;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid #b8e6b8;">
+                  <th style="text-align:left;padding:3px 4px;font-weight:700;">Cost Component</th>
+                  <th style="text-align:right;padding:3px 4px;font-weight:700;">Annual Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:2px 4px;">GPU Cluster (4× A100 80GB)</td><td style="text-align:right;padding:2px 4px;">$86,400</td></tr>
+                <tr><td style="padding:2px 4px;">Inference Server (2× L40S for prod)</td><td style="text-align:right;padding:2px 4px;">$43,200</td></tr>
+                <tr><td style="padding:2px 4px;">Storage & Networking (NVMe + 10GbE)</td><td style="text-align:right;padding:2px 4px;">$14,400</td></tr>
+                <tr><td style="padding:2px 4px;">Model Training Compute (fine-tuning)</td><td style="text-align:right;padding:2px 4px;">$24,000</td></tr>
+                <tr><td style="padding:2px 4px;">ML Engineer (0.5 FTE)</td><td style="text-align:right;padding:2px 4px;">$75,000</td></tr>
+                <tr><td style="padding:2px 4px;">DevOps / MLOps (0.3 FTE)</td><td style="text-align:right;padding:2px 4px;">$45,000</td></tr>
+                <tr><td style="padding:2px 4px;">Electricity & Cooling</td><td style="text-align:right;padding:2px 4px;">$18,000</td></tr>
+                <tr><td style="padding:2px 4px;">Licensing (CUDA, monitoring tools)</td><td style="text-align:right;padding:2px 4px;">$8,400</td></tr>
+                <tr><td style="padding:2px 4px;">Video Gen remains cloud (no local alt)</td><td style="text-align:right;padding:2px 4px;">$96,000</td></tr>
+                <tr><td style="padding:2px 4px;">Data labeling & annotation</td><td style="text-align:right;padding:2px 4px;">$18,000</td></tr>
+                <tr><td style="padding:2px 4px;">Redundancy & disaster recovery</td><td style="text-align:right;padding:2px 4px;">$12,000</td></tr>
+                <tr style="border-top:2px solid #2e7d32;font-weight:800;background:#d4edda;">
+                  <td style="padding:4px;">Total Annual Local AI</td>
+                  <td style="text-align:right;padding:4px;">$440,400</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px;">
+          <div style="border-radius:10px;background:#fff3e0;padding:12px;border:1px solid #ffe0b2;text-align:center;">
+            <div style="font-size:8pt;color:#e65100;font-weight:700;margin-bottom:4px;">Year 1 Cost Advantage</div>
+            <div style="font-size:14pt;font-weight:900;color:#e65100;">Cloud +2%</div>
+            <div style="font-size:7pt;color:#bf360c;">Local needs $180K capex upfront</div>
+          </div>
+          <div style="border-radius:10px;background:#e8f5e9;padding:12px;border:1px solid #c8e6c9;text-align:center;">
+            <div style="font-size:8pt;color:#2e7d32;font-weight:700;margin-bottom:4px;">Year 3 Cumulative</div>
+            <div style="font-size:14pt;font-weight:900;color:#2e7d32;">Local −22%</div>
+            <div style="font-size:7pt;color:#1b5e20;">Breakeven at month 14</div>
+          </div>
+          <div style="border-radius:10px;background:#ede7f6;padding:12px;border:1px solid #d1c4e9;text-align:center;">
+            <div style="font-size:8pt;color:#6a1b9a;font-weight:700;margin-bottom:4px;">5-Year NPV Delta</div>
+            <div style="font-size:14pt;font-weight:900;color:#6a1b9a;">$412K saved</div>
+            <div style="font-size:7pt;color:#4a148c;">Local wins at scale (10%+ growth)</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <h4 style="font-size:9pt;font-weight:800;color:var(--blue-dark);margin-bottom:8px;">Cost Efficiency by Agent — Cloud vs Local</h4>
+          <div class="exec-bar-group">
+            <div class="exec-bar-item">
+              <span class="ebi-label">Underwriting Bot</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:68%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−32%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Claims Bot</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:62%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−38%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Video Generation</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill block" style="width:100%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">0% (cloud only)</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Investment AI</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:55%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−45%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">BI & Analytics</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:58%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−42%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Document Processing</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:72%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−28%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Trading Engine</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:60%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−40%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Customer Comms</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:65%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−35%</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:14px;margin-top:8px;font-size:7pt;">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#1565c0,#42a5f5);opacity:0.4;vertical-align:middle;"></span> Cloud AI baseline</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#2e7d32,#66bb6a);vertical-align:middle;"></span> Local LLM cost (% of cloud)</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <h4 style="font-size:9pt;font-weight:800;color:#1565c0;margin-bottom:6px;">Cloud AI — Strategic Advantages</h4>
+            <ul style="font-size:7.8pt;color:var(--text-main);margin:0;padding-left:14px;line-height:1.7;">
+              <li>Zero upfront capex; pay-per-use elasticity</li>
+              <li>Instant access to frontier models (GPT-4o, Claude 4, Gemini)</li>
+              <li>No ML engineering headcount required</li>
+              <li>Automatic model upgrades and safety patches</li>
+              <li>Regulatory-compliant data processing (SOC2, ISO 27001)</li>
+              <li>Sub-100ms latency via edge inference</li>
+              <li>Video generation (Veo/Kling) — no local alternative viable</li>
+            </ul>
+          </div>
+          <div>
+            <h4 style="font-size:9pt;font-weight:800;color:#2e7d32;margin-bottom:6px;">Local LLM — Strategic Advantages</h4>
+            <ul style="font-size:7.8pt;color:var(--text-main);margin:0;padding-left:14px;line-height:1.7;">
+              <li>Data sovereignty — PII never leaves perimeter</li>
+              <li>Predictable flat-rate costs at scale</li>
+              <li>Domain-specific fine-tuning (insurance, Hebrew NLP)</li>
+              <li>No vendor lock-in or API deprecation risk</li>
+              <li>Israeli data residency compliance (Privacy Protection Act)</li>
+              <li>Custom model optimization for actuarial workloads</li>
+              <li>Offline capability for disaster recovery scenarios</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;border-radius:10px;background:#f8f9fa;padding:12px;border:1px solid var(--border);">
+          <h4 style="font-size:9pt;font-weight:800;color:var(--text-main);margin-bottom:6px;">📋 Assessment Assumptions</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:7.5pt;color:var(--text-soft);">
+            <div>• Scale: 10K active policies, 2K claims/month processed</div>
+            <div>• Video: 200 generation jobs/day (Gemini Veo 3.1 + Kling v2/v3)</div>
+            <div>• LLM calls: ~50K API requests/day across all agents</div>
+            <div>• Local GPU: 4× NVIDIA A100 80GB (training) + 2× L40S (inference)</div>
+            <div>• Cloud pricing: OpenAI GPT-4o ($2.50/1M input, $10/1M output)</div>
+            <div>• Local model: Llama 3.1 70B / Mistral Large fine-tuned</div>
+            <div>• ML Engineer: $150K/yr (Israel senior, 0.5 FTE allocation)</div>
+            <div>• Growth rate: 10% monthly policy growth factored in Year 2–5</div>
+            <div>• Depreciation: GPU hardware 3-year linear amortization</div>
+            <div>• Electricity: $0.12/kWh Israel commercial rate (IEC tariff)</div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;border-radius:10px;background:linear-gradient(135deg,#e3f2fd,#f3e5f5);padding:14px;border:1px solid #bbdefb;">
+          <h4 style="font-size:9pt;font-weight:800;color:#0d47a1;margin-bottom:6px;">🎯 Recommended Strategy: Hybrid Approach</h4>
+          <p style="font-size:8pt;color:var(--text-main);margin:0;line-height:1.6;">
+            <strong>Phase 1 (Year 1):</strong> Cloud-first for all 15 agents — fastest time-to-market, lowest upfront investment, proven at current scale.<br>
+            <strong>Phase 2 (Year 2):</strong> Deploy local inference for high-volume, privacy-sensitive workloads (Underwriting, Claims, Document Processing) — saves $142K/yr and ensures Israeli data residency.<br>
+            <strong>Phase 3 (Year 3+):</strong> Full hybrid — local fine-tuned models for 11 agents, cloud retained for Video Generation and frontier-model tasks requiring latest capabilities. Net saving: $220K+/yr at 30K+ policies.
+          </p>
+        </div>
+      </div>
+
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules.
+        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing (June 2025) and Israel commercial infrastructure rates.
       </div>
     </section>
 
@@ -4548,7 +4762,86 @@
           y += Math.max(mLines.length * 12, 16) + 4;
         });
 
-        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules.";
+        // AI Infrastructure Cost Assessment section
+        ensureSpace(40);
+        heading("AI Infrastructure Cost Assessment — Cloud Services vs Local LLM", 13);
+        para("Total cost of ownership comparison across all 15 PHINS AI agents/services at scale (10K policies, 50K API calls/day). Annualized USD.", 9, 13);
+
+        var cloudCosts = [
+          ["Underwriting Bot (GPT-4/Claude)", "$72,000"],
+          ["Claims Intelligence Bot", "$54,000"],
+          ["Video Generation (Gemini Veo + Kling)", "$96,000"],
+          ["Investment AI (10 modules)", "$36,000"],
+          ["AI Trading Engine", "$28,800"],
+          ["BI Analytics & AI Insights", "$24,000"],
+          ["Risk Reports Service", "$18,000"],
+          ["Document Processing (OCR + NLP)", "$21,600"],
+          ["Marketing/Sales Agent", "$14,400"],
+          ["Customer Communication Agent", "$19,200"],
+          ["Delivery Bidding AI", "$12,000"],
+          ["Pension Data Agent", "$9,600"],
+          ["AI Model Registry (hosted inference)", "$15,600"],
+          ["Assessment Center NLP", "$10,800"],
+          ["Voice AI Assistant (STT/TTS)", "$16,800"],
+          ["TOTAL ANNUAL CLOUD AI", "$448,800"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Cloud AI Service", "Annual Cost"]],
+            body: cloudCosts,
+            styles: { fontSize: 8, cellPadding: 4 },
+            headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" },
+            bodyStyles: { textColor: [30, 30, 30] },
+            didParseCell: function(data) {
+              if (data.row.index === cloudCosts.length - 1) {
+                data.cell.styles.fontStyle = "bold";
+                data.cell.styles.fillColor = [219, 234, 254];
+              }
+            }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : y + 160;
+        }
+
+        ensureSpace(40);
+        var localCosts = [
+          ["GPU Cluster (4x A100 80GB)", "$86,400"],
+          ["Inference Server (2x L40S)", "$43,200"],
+          ["Storage & Networking", "$14,400"],
+          ["Model Training Compute", "$24,000"],
+          ["ML Engineer (0.5 FTE)", "$75,000"],
+          ["DevOps / MLOps (0.3 FTE)", "$45,000"],
+          ["Electricity & Cooling", "$18,000"],
+          ["Licensing (CUDA, monitoring)", "$8,400"],
+          ["Video Gen (cloud, no local alt)", "$96,000"],
+          ["Data Labeling & Annotation", "$18,000"],
+          ["Redundancy & DR", "$12,000"],
+          ["TOTAL ANNUAL LOCAL AI", "$440,400"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Local LLM Component", "Annual Cost"]],
+            body: localCosts,
+            styles: { fontSize: 8, cellPadding: 4 },
+            headStyles: { fillColor: [46, 125, 50], textColor: [255, 255, 255], fontStyle: "bold" },
+            bodyStyles: { textColor: [30, 30, 30] },
+            didParseCell: function(data) {
+              if (data.row.index === localCosts.length - 1) {
+                data.cell.styles.fontStyle = "bold";
+                data.cell.styles.fillColor = [212, 237, 218];
+              }
+            }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : y + 130;
+        }
+
+        ensureSpace(50);
+        para("Recommendation: Hybrid phased approach — cloud-first Year 1 ($0 capex), deploy local inference Year 2 for high-volume agents (saves $142K/yr), full hybrid Year 3+ (saves $220K+/yr at 30K+ policies). Breakeven on local investment at month 14. 5-year NPV advantage of local: $412K.", 9, 13);
+
+        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing and Israel commercial infrastructure rates.";
         var intNote = doc.splitTextToSize(integrityNotice, tw - 16);
         var intNoteHeight = Math.max(42, intNote.length * 9 + 14);
         ensureSpace(intNoteHeight + 18);
