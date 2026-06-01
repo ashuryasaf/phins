@@ -2436,6 +2436,156 @@
             <strong>Phase 3 (Year 3+):</strong> Full hybrid — local fine-tuned models serve 12 of 15 agents at near-zero marginal cost. Cloud retained only for Video Generation + frontier-model tasks. At 200K+ customers, cloud would cost $1.2M+/yr while local stays flat at ~$648K. Net saving: <strong>$550K+/yr</strong>.
           </p>
         </div>
+
+        <!-- Hardware Recommendations: AI Supercomputer & Server Options -->
+        <div style="margin-top:18px;">
+          <h4 style="font-size:10pt;font-weight:850;color:var(--blue-dark);margin-bottom:12px;">🖥️ Recommended AI Infrastructure Components — Supercomputer &amp; Server Options</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+            <!-- Option 1: NVIDIA DGX H100 -->
+            <div style="border-radius:12px;border:2px solid #76b900;background:linear-gradient(135deg,#f9fff0,#ffffff);padding:14px;position:relative;">
+              <div style="position:absolute;top:8px;right:10px;font-size:6.5pt;background:#76b900;color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;">RECOMMENDED</div>
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">1. NVIDIA DGX H100</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> AI Supercomputer (turnkey)</div>
+                <div><strong>GPUs:</strong> 8× NVIDIA H100 80GB SXM5 (NVLink)</div>
+                <div><strong>Memory:</strong> 640GB GPU + 2TB system RAM</div>
+                <div><strong>Interconnect:</strong> NVSwitch 900 GB/s per GPU</div>
+                <div><strong>Performance:</strong> 32 PFLOPS FP8 / 16 PFLOPS FP16</div>
+                <div><strong>Ideal for:</strong> Full-scale training + inference for all 15 agents</div>
+                <div style="margin-top:6px;padding:6px;background:#e8f5e9;border-radius:6px;">
+                  <div style="font-weight:800;color:#2e7d32;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $320,000 – $420,000</div>
+                  <div><strong>Lease (36mo):</strong> $12,000 – $15,000/month</div>
+                  <div><strong>DGX Cloud (on-demand):</strong> $37,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Supports: Llama 3.1 70B/405B, Mistral Large, full fine-tuning at 100K scale. Single node handles all PHINS workloads.</div>
+              </div>
+            </div>
+
+            <!-- Option 2: Lambda Hyperplane -->
+            <div style="border-radius:12px;border:1px solid #6c5ce7;background:linear-gradient(135deg,#f8f6ff,#ffffff);padding:14px;">
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">2. Lambda Hyperplane (8×H100)</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> AI Server (high-performance)</div>
+                <div><strong>GPUs:</strong> 8× NVIDIA H100 SXM5 80GB</div>
+                <div><strong>Memory:</strong> 640GB GPU + 1–2TB system RAM</div>
+                <div><strong>Interconnect:</strong> NVSwitch + InfiniBand HDR</div>
+                <div><strong>Performance:</strong> 32 PFLOPS FP8 (same as DGX)</div>
+                <div><strong>Ideal for:</strong> Training + inference, 20–30% below DGX pricing</div>
+                <div style="margin-top:6px;padding:6px;background:#ede7f6;border-radius:6px;">
+                  <div style="font-weight:800;color:#6a1b9a;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $250,000 – $350,000</div>
+                  <div><strong>Lease (36mo):</strong> $9,500 – $13,000/month</div>
+                  <div><strong>Lambda Cloud (reserved):</strong> $24,000 – $30,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Lambda-built alternative to DGX. Same GPU topology, lower total cost. Includes Lambda Stack (PyTorch, CUDA, drivers pre-configured).</div>
+              </div>
+            </div>
+
+            <!-- Option 3: Dell PowerEdge XE9680 -->
+            <div style="border-radius:12px;border:1px solid #0076ce;background:linear-gradient(135deg,#f0f8ff,#ffffff);padding:14px;">
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">3. Dell PowerEdge XE9680 (8×H100)</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> Enterprise AI Server (rack-mount)</div>
+                <div><strong>GPUs:</strong> 8× NVIDIA H100 SXM5 80GB</div>
+                <div><strong>Memory:</strong> 640GB GPU + up to 4TB system RAM</div>
+                <div><strong>Interconnect:</strong> NVSwitch + PCIe Gen5</div>
+                <div><strong>Performance:</strong> 32 PFLOPS FP8 training + inference</div>
+                <div><strong>Ideal for:</strong> Enterprise deployment with Dell ProSupport + Israeli resellers</div>
+                <div style="margin-top:6px;padding:6px;background:#e3f2fd;border-radius:6px;">
+                  <div style="font-weight:800;color:#1565c0;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $280,000 – $380,000</div>
+                  <div><strong>Lease (36mo):</strong> $10,500 – $14,000/month</div>
+                  <div><strong>Dell APEX (pay-per-use):</strong> $28,000 – $35,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Enterprise-grade with Dell ProSupport 24/7. Available through Israeli Dell partners. 4U rack form factor, liquid cooling option.</div>
+              </div>
+            </div>
+
+            <!-- Option 4: Multi-Node Inference Cluster -->
+            <div style="border-radius:12px;border:1px solid #e65100;background:linear-gradient(135deg,#fff8f0,#ffffff);padding:14px;">
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">4. Inference-Optimized Cluster (L40S / A6000)</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> Inference AI Server (cost-optimized)</div>
+                <div><strong>GPUs:</strong> 4× NVIDIA L40S 48GB + 2× A6000 48GB</div>
+                <div><strong>Memory:</strong> 288GB GPU + 512GB system RAM</div>
+                <div><strong>Interconnect:</strong> PCIe Gen4 x16 (per GPU)</div>
+                <div><strong>Performance:</strong> 3.2 PFLOPS FP8 inference-optimized</div>
+                <div><strong>Ideal for:</strong> Inference-only (Phase 2) — pair with cloud for training</div>
+                <div style="margin-top:6px;padding:6px;background:#fff3e0;border-radius:6px;">
+                  <div style="font-weight:800;color:#e65100;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $85,000 – $140,000</div>
+                  <div><strong>Lease (36mo):</strong> $3,200 – $5,500/month</div>
+                  <div><strong>Colocation (Israel DC):</strong> $4,500 – $7,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Best value for Phase 2 hybrid: local inference serving 100K customers, training stays on cloud. Runs Llama 70B quantized or Mistral at full precision.</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Summary comparison table -->
+          <div style="margin-top:14px;overflow-x:auto;">
+            <table style="width:100%;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+              <thead>
+                <tr style="background:#0d47a1;color:#fff;">
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Option</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Purchase Range</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Monthly Lease</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Capability</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Best For</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">3-Yr TCO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#f9fff0;">
+                  <td style="padding:5px 8px;font-weight:700;">NVIDIA DGX H100</td>
+                  <td style="padding:5px 8px;text-align:center;">$320K – $420K</td>
+                  <td style="padding:5px 8px;text-align:center;">$12K – $15K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Train + Infer (full)</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 3 — all agents</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$540K – $720K</td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px;font-weight:700;">Lambda Hyperplane</td>
+                  <td style="padding:5px 8px;text-align:center;">$250K – $350K</td>
+                  <td style="padding:5px 8px;text-align:center;">$9.5K – $13K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Train + Infer (full)</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 3 — cost-efficient</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$430K – $600K</td>
+                </tr>
+                <tr style="background:#f8f9fa;">
+                  <td style="padding:5px 8px;font-weight:700;">Dell XE9680</td>
+                  <td style="padding:5px 8px;text-align:center;">$280K – $380K</td>
+                  <td style="padding:5px 8px;text-align:center;">$10.5K – $14K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Train + Infer (enterprise)</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 3 — enterprise SLA</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$480K – $650K</td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px;font-weight:700;">L40S/A6000 Cluster</td>
+                  <td style="padding:5px 8px;text-align:center;">$85K – $140K</td>
+                  <td style="padding:5px 8px;text-align:center;">$3.2K – $5.5K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Inference only</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 2 — hybrid start</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$160K – $240K</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:7.5pt;">
+            <div style="background:#f0faf0;border-radius:8px;padding:10px;border:1px solid #c8e6c9;">
+              <div style="font-weight:800;color:#2e7d32;margin-bottom:4px;">Recommended Path (Cost-Optimized)</div>
+              <div>Start with <strong>Option 4</strong> (L40S Cluster, $85–140K) for Phase 2 inference, then add <strong>Option 2</strong> (Lambda Hyperplane, $250–350K) for Phase 3 full training. Total capex: <strong>$335K – $490K</strong> over 18 months.</div>
+            </div>
+            <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
+              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Recommended Path (Enterprise-Grade)</div>
+              <div>Deploy <strong>Option 1</strong> (NVIDIA DGX H100, $320–420K) as single turnkey solution for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support, certified stack, and single-vendor warranty. Total capex: <strong>$320K – $420K</strong> at once.</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="exec-integrity-note">
@@ -4883,6 +5033,35 @@
         ensureSpace(60);
         para("Assumptions: 100K underwritten customers, 1.5 claims per 100 customers/month (1,500 claims/mo), 200 video jobs/week, monthly customer platform usage (1 session/customer/month = 100K interactions/mo). Cloud: GPT-4o $2.50/1M input, $10/1M output. Local: 8x A100 + 4x L40S, Llama 3.1 70B fine-tuned. Israel IEC electricity $0.12/kWh.", 8.5, 13);
         para("Recommendation: Hybrid phased approach — cloud-first Year 1 ($604K opex, $0 capex), deploy local for high-volume agents Year 2 (saves $248K/yr), full hybrid Year 3+ (marginal cost per customer approaches $0). At 200K+ customers cloud would reach $1.2M+/yr while local stays flat at ~$648K. Breakeven month 18. 5-year NPV advantage: $680K.", 9, 13);
+
+        // AI Hardware Recommendations
+        ensureSpace(40);
+        heading("Recommended AI Supercomputer & Server Options", 13);
+        para("Hardware component recommendations with cost ranges for local AI deployment (Phase 2–3). All prices reflect 2025–2026 market rates.", 9, 13);
+
+        var hwOptions = [
+          ["NVIDIA DGX H100", "8x H100 80GB SXM5", "Train + Infer", "$320K–$420K", "$12K–$15K/mo", "$540K–$720K"],
+          ["Lambda Hyperplane 8×H100", "8x H100 80GB SXM5", "Train + Infer", "$250K–$350K", "$9.5K–$13K/mo", "$430K–$600K"],
+          ["Dell PowerEdge XE9680", "8x H100 80GB SXM5", "Train + Infer (Enterprise)", "$280K–$380K", "$10.5K–$14K/mo", "$480K–$650K"],
+          ["L40S/A6000 Inference Cluster", "4x L40S + 2x A6000", "Inference Only", "$85K–$140K", "$3.2K–$5.5K/mo", "$160K–$240K"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Option", "GPUs", "Capability", "Purchase", "Lease/mo", "3-Yr TCO"]],
+            body: hwOptions,
+            styles: { fontSize: 7.5, cellPadding: 4 },
+            headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" },
+            bodyStyles: { textColor: [30, 30, 30] },
+            columnStyles: { 0: { fontStyle: "bold" } }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : y + 60;
+        }
+
+        ensureSpace(30);
+        para("Cost-optimized path: Start with L40S Cluster ($85–140K) for Phase 2 inference, add Lambda Hyperplane ($250–350K) for Phase 3 training. Total: $335K–$490K over 18 months.", 8.5, 13);
+        para("Enterprise path: Single NVIDIA DGX H100 ($320–420K) for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support and certified stack.", 8.5, 13);
 
         var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing and Israel commercial infrastructure rates.";
         var intNote = doc.splitTextToSize(integrityNotice, tw - 16);
