@@ -1,0 +1,20 @@
+f289760 Merge pull request #347 from ashuryasaf/cursor/investor-ai-bi-optimization-review-ac1a
+d319d76 feat(investor): downloadable PDF reports for investor/IL pitch docs
+27ae04d fix(ai/bi): address Bugbot findings (decision log append-only + no phantom id; BI fingerprint hashes full record)
+39d529f docs(investor): surface investor/DD documents on pitch dashboard + mark shipped items
+e7bf414 feat(ai/bi): decision log, segment thresholds, model registry, BI cache + canonical KPIs, DB-required guardrail
+227f017 docs: investor-lens AI & BI optimization review (no code changes)
+c6796c9 Merge pull request #346 from ashuryasaf/cursor/actuary-sandbox-60mo-forecast-4d9a
+0da0a2b Fix sandbox forecast: clear stale charts and dynamic horizon label
+3ec7525 Fix Excel export materializing full sandbox book before truncation
+770f90a Fix sandbox lifecycle resume wiping export realized series
+50e7010 Fix actuary sandbox projection export/chart bugs
+9f74f08 Sandbox: single-pass renderSandbox + horizon clamp; add CSV/Excel/PDF insight exports
+961b2e9 Fix actuary sandbox forecast pills, joiner risk base, and recompute active flag
+f658145 Sandbox: 100k accounts, contract age-band claims, 60-month adjustable forecast with Chart.js (10% growth)
+4f41b5e Merge pull request #345 from ashuryasaf/cursor/actuary-sandbox-simulation-optimisation-4d9a
+e27c9ec Fix policy_status not updating on approve/decline UW actions
+d47e2ed Fix mortality share boundary check and remove dead customerIds variable
+6ad13dd Fix push-to-pipeline double-body-read hang; reuse pre-read request body
+3beb971 Optimize actuary sandbox: contract-aware claims, full-parameter generation, monthly projection, push integrity
+b2b7bcd Merge pull request #344 from ashuryasaf/cursor/actuary-sandbox-testing-bar-9a2a
