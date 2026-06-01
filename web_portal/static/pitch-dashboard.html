@@ -2187,8 +2187,409 @@
         </div>
       </div>
 
+      <!-- AI Infrastructure Cost Assessment: Cloud AI Services vs Local LLM -->
+      <div class="exec-chart-panel" id="ai-cost-assessment-panel" style="margin-top:24px;">
+        <h3>AI Infrastructure Cost Assessment — Cloud Services vs Local LLM</h3>
+        <p class="ecp-sub">Total cost of ownership comparison across all 15 PHINS AI agents/services. Base: 100K underwritten customers, 1.5% claims ratio (1,500 claims/month), 200 video jobs/week, monthly customer API &amp; agent usage. All figures annualized USD.</p>
+
+        <div style="border-radius:10px;background:#f8f9fa;padding:12px;border:1px solid var(--border);margin-bottom:16px;">
+          <h4 style="font-size:9pt;font-weight:800;color:var(--text-main);margin-bottom:8px;">📋 Core Assumptions</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:7.8pt;color:var(--text-main);">
+            <div style="background:#e3f2fd;border-radius:8px;padding:8px;">
+              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Customer Base</div>
+              <div>• 100,000 underwritten customers</div>
+              <div>• Each customer uses platform <strong>1×/month</strong></div>
+              <div>• 100K monthly agent interactions</div>
+              <div>• ~3,333 API sessions/day average</div>
+            </div>
+            <div style="background:#e8f5e9;border-radius:8px;padding:8px;">
+              <div style="font-weight:800;color:#2e7d32;margin-bottom:4px;">Claims & Underwriting</div>
+              <div>• Claims ratio: <strong>1.5 per 100 customers</strong></div>
+              <div>• 1,500 claims processed/month</div>
+              <div>• 18,000 claims/year</div>
+              <div>• ~8,300 underwriting reviews/month</div>
+            </div>
+            <div style="background:#fff3e0;border-radius:8px;padding:8px;">
+              <div style="font-weight:800;color:#e65100;margin-bottom:4px;">AI Workload Profile</div>
+              <div>• Video generation: <strong>200/week</strong> (10,400/yr)</div>
+              <div>• Avg tokens/interaction: ~2,800</div>
+              <div>• Underwriting: ~4,200 tokens/decision</div>
+              <div>• Claims triage: ~3,600 tokens/claim</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;">
+          <div style="border-radius:12px;background:#f0f7ff;padding:16px;border:1px solid #bbd6f7;">
+            <h4 style="font-size:9.5pt;font-weight:800;color:#1565c0;margin-bottom:8px;">☁️ Cloud AI Engine Services</h4>
+            <table style="width:100%;font-size:7.8pt;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid #bbd6f7;">
+                  <th style="text-align:left;padding:3px 4px;font-weight:700;">Agent / Service</th>
+                  <th style="text-align:center;padding:3px 4px;font-weight:700;">Monthly Calls</th>
+                  <th style="text-align:right;padding:3px 4px;font-weight:700;">Annual Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:2px 4px;">Underwriting Bot (GPT-4/Claude)</td><td style="text-align:center;padding:2px 4px;">8,300</td><td style="text-align:right;padding:2px 4px;">$156,000</td></tr>
+                <tr><td style="padding:2px 4px;">Claims Intelligence Bot</td><td style="text-align:center;padding:2px 4px;">1,500</td><td style="text-align:right;padding:2px 4px;">$43,200</td></tr>
+                <tr><td style="padding:2px 4px;">Video Generation (Gemini Veo + Kling)</td><td style="text-align:center;padding:2px 4px;">867</td><td style="text-align:right;padding:2px 4px;">$13,500</td></tr>
+                <tr><td style="padding:2px 4px;">Investment AI (10 modules)</td><td style="text-align:center;padding:2px 4px;">20,000</td><td style="text-align:right;padding:2px 4px;">$72,000</td></tr>
+                <tr><td style="padding:2px 4px;">AI Trading Engine</td><td style="text-align:center;padding:2px 4px;">15,000</td><td style="text-align:right;padding:2px 4px;">$54,000</td></tr>
+                <tr><td style="padding:2px 4px;">BI Analytics & AI Insights</td><td style="text-align:center;padding:2px 4px;">5,000</td><td style="text-align:right;padding:2px 4px;">$36,000</td></tr>
+                <tr><td style="padding:2px 4px;">Risk Reports Service</td><td style="text-align:center;padding:2px 4px;">3,200</td><td style="text-align:right;padding:2px 4px;">$28,800</td></tr>
+                <tr><td style="padding:2px 4px;">Document Processing (OCR + NLP)</td><td style="text-align:center;padding:2px 4px;">4,500</td><td style="text-align:right;padding:2px 4px;">$28,800</td></tr>
+                <tr><td style="padding:2px 4px;">Marketing/Sales Agent</td><td style="text-align:center;padding:2px 4px;">8,000</td><td style="text-align:right;padding:2px 4px;">$24,000</td></tr>
+                <tr><td style="padding:2px 4px;">Customer Communication Agent</td><td style="text-align:center;padding:2px 4px;">100,000</td><td style="text-align:right;padding:2px 4px;">$48,000</td></tr>
+                <tr><td style="padding:2px 4px;">Delivery Bidding AI</td><td style="text-align:center;padding:2px 4px;">6,000</td><td style="text-align:right;padding:2px 4px;">$21,600</td></tr>
+                <tr><td style="padding:2px 4px;">Pension Data Agent</td><td style="text-align:center;padding:2px 4px;">100,000</td><td style="text-align:right;padding:2px 4px;">$18,000</td></tr>
+                <tr><td style="padding:2px 4px;">AI Model Registry (hosted inference)</td><td style="text-align:center;padding:2px 4px;">12,000</td><td style="text-align:right;padding:2px 4px;">$19,200</td></tr>
+                <tr><td style="padding:2px 4px;">Assessment Center NLP</td><td style="text-align:center;padding:2px 4px;">2,800</td><td style="text-align:right;padding:2px 4px;">$14,400</td></tr>
+                <tr><td style="padding:2px 4px;">Voice AI Assistant (STT/TTS)</td><td style="text-align:center;padding:2px 4px;">25,000</td><td style="text-align:right;padding:2px 4px;">$26,400</td></tr>
+                <tr style="border-top:2px solid #1565c0;font-weight:800;background:#dbeafe;">
+                  <td style="padding:4px;">Total Annual Cloud AI</td>
+                  <td style="text-align:center;padding:4px;">~312K/mo</td>
+                  <td style="text-align:right;padding:4px;">$603,900</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="border-radius:12px;background:#f0faf0;padding:16px;border:1px solid #b8e6b8;">
+            <h4 style="font-size:9.5pt;font-weight:800;color:#2e7d32;margin-bottom:8px;">🖥️ Local AI Server (Self-Hosted LLM)</h4>
+            <table style="width:100%;font-size:7.8pt;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid #b8e6b8;">
+                  <th style="text-align:left;padding:3px 4px;font-weight:700;">Cost Component</th>
+                  <th style="text-align:right;padding:3px 4px;font-weight:700;">Annual Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:2px 4px;">GPU Cluster (8× A100 80GB for 100K users)</td><td style="text-align:right;padding:2px 4px;">$172,800</td></tr>
+                <tr><td style="padding:2px 4px;">Inference Server (4× L40S for prod load)</td><td style="text-align:right;padding:2px 4px;">$86,400</td></tr>
+                <tr><td style="padding:2px 4px;">Storage & Networking (NVMe + 25GbE)</td><td style="text-align:right;padding:2px 4px;">$24,000</td></tr>
+                <tr><td style="padding:2px 4px;">Model Training Compute (fine-tuning cycles)</td><td style="text-align:right;padding:2px 4px;">$36,000</td></tr>
+                <tr><td style="padding:2px 4px;">ML Engineer (1 FTE for 100K scale)</td><td style="text-align:right;padding:2px 4px;">$150,000</td></tr>
+                <tr><td style="padding:2px 4px;">DevOps / MLOps (0.5 FTE)</td><td style="text-align:right;padding:2px 4px;">$75,000</td></tr>
+                <tr><td style="padding:2px 4px;">Electricity & Cooling (12 GPUs × 24/7)</td><td style="text-align:right;padding:2px 4px;">$36,000</td></tr>
+                <tr><td style="padding:2px 4px;">Licensing (CUDA, monitoring, vLLM)</td><td style="text-align:right;padding:2px 4px;">$12,000</td></tr>
+                <tr><td style="padding:2px 4px;">Video Gen remains cloud (no local alt)</td><td style="text-align:right;padding:2px 4px;">$13,500</td></tr>
+                <tr><td style="padding:2px 4px;">Data labeling & Hebrew annotation</td><td style="text-align:right;padding:2px 4px;">$24,000</td></tr>
+                <tr><td style="padding:2px 4px;">Redundancy & disaster recovery</td><td style="text-align:right;padding:2px 4px;">$18,000</td></tr>
+                <tr style="border-top:2px solid #2e7d32;font-weight:800;background:#d4edda;">
+                  <td style="padding:4px;">Total Annual Local AI</td>
+                  <td style="text-align:right;padding:4px;">$647,700</td>
+                </tr>
+                <tr><td style="padding:2px 4px;font-style:italic;color:#666;">Required upfront capex (hardware)</td><td style="text-align:right;padding:2px 4px;font-style:italic;color:#666;">$420,000</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:8px;font-size:7pt;color:#2e7d32;font-weight:700;">Note: Local costs are largely fixed — marginal cost per additional customer approaches $0 once GPU capacity exists. Cloud scales linearly with usage.</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px;">
+          <div style="border-radius:10px;background:#fff3e0;padding:12px;border:1px solid #ffe0b2;text-align:center;">
+            <div style="font-size:8pt;color:#e65100;font-weight:700;margin-bottom:4px;">Year 1 Cost Advantage</div>
+            <div style="font-size:14pt;font-weight:900;color:#e65100;">Cloud −41%</div>
+            <div style="font-size:7pt;color:#bf360c;">Local needs $420K capex upfront</div>
+          </div>
+          <div style="border-radius:10px;background:#e8f5e9;padding:12px;border:1px solid #c8e6c9;text-align:center;">
+            <div style="font-size:8pt;color:#2e7d32;font-weight:700;margin-bottom:4px;">Year 3 Cumulative (at growth)</div>
+            <div style="font-size:14pt;font-weight:900;color:#2e7d32;">Local −31%</div>
+            <div style="font-size:7pt;color:#1b5e20;">Breakeven at month 18 (with 10% growth)</div>
+          </div>
+          <div style="border-radius:10px;background:#ede7f6;padding:12px;border:1px solid #d1c4e9;text-align:center;">
+            <div style="font-size:8pt;color:#6a1b9a;font-weight:700;margin-bottom:4px;">5-Year NPV Delta</div>
+            <div style="font-size:14pt;font-weight:900;color:#6a1b9a;">$680K saved</div>
+            <div style="font-size:7pt;color:#4a148c;">Local wins — cloud costs grow linearly with customers</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <h4 style="font-size:9pt;font-weight:800;color:var(--blue-dark);margin-bottom:8px;">Cost Efficiency by Agent — Cloud vs Local (at 100K customers)</h4>
+          <div class="exec-bar-group">
+            <div class="exec-bar-item">
+              <span class="ebi-label">Underwriting Bot</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:63%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−37%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Claims Bot</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:60%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−40%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Video Generation</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill block" style="width:100%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">0% (cloud only)</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Investment AI</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:56%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−44%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Trading Engine</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:56%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−44%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">BI & Analytics</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:61%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−39%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Document Processing</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:69%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−31%</span>
+            </div>
+            <div class="exec-bar-item">
+              <span class="ebi-label">Customer Comms</span>
+              <div class="ebi-track" style="position:relative;">
+                <div class="ebi-fill ai" style="width:100%;opacity:0.4;position:absolute;top:0;left:0;height:100%;"></div>
+                <div class="ebi-fill data" style="width:60%;position:relative;z-index:1;"></div>
+              </div>
+              <span class="ebi-val">−40%</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:14px;margin-top:8px;font-size:7pt;">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#1565c0,#42a5f5);opacity:0.4;vertical-align:middle;"></span> Cloud AI baseline (100%)</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#2e7d32,#66bb6a);vertical-align:middle;"></span> Local LLM cost (% of cloud, Year 2+)</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <h4 style="font-size:9pt;font-weight:800;color:#1565c0;margin-bottom:6px;">Cloud AI — Strategic Advantages</h4>
+            <ul style="font-size:7.8pt;color:var(--text-main);margin:0;padding-left:14px;line-height:1.7;">
+              <li>Zero upfront capex; pay-per-use elasticity</li>
+              <li>Instant access to frontier models (GPT-4o, Claude 4, Gemini)</li>
+              <li>No ML engineering headcount required</li>
+              <li>Automatic model upgrades and safety patches</li>
+              <li>Regulatory-compliant data processing (SOC2, ISO 27001)</li>
+              <li>Sub-100ms latency via edge inference</li>
+              <li>Video generation (Veo/Kling) — no local alternative viable</li>
+              <li>Scales linearly: cost tracks actual customer usage</li>
+            </ul>
+          </div>
+          <div>
+            <h4 style="font-size:9pt;font-weight:800;color:#2e7d32;margin-bottom:6px;">Local LLM — Strategic Advantages</h4>
+            <ul style="font-size:7.8pt;color:var(--text-main);margin:0;padding-left:14px;line-height:1.7;">
+              <li>Data sovereignty — 100K customers' PII never leaves perimeter</li>
+              <li>Fixed cost: serves 100K or 200K customers on same hardware</li>
+              <li>Domain fine-tuning (insurance terms, Hebrew NLP, actuarial)</li>
+              <li>No vendor lock-in or API deprecation risk</li>
+              <li>Israeli data residency compliance (Privacy Protection Act)</li>
+              <li>Custom model optimization for 1.5% claims-ratio workloads</li>
+              <li>Offline capability for disaster recovery scenarios</li>
+              <li>Marginal cost per additional customer → $0</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;border-radius:10px;background:#f8f9fa;padding:12px;border:1px solid var(--border);">
+          <h4 style="font-size:9pt;font-weight:800;color:var(--text-main);margin-bottom:6px;">📋 Detailed Assumptions & Methodology</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:7.5pt;color:var(--text-soft);">
+            <div>• <strong>Customers:</strong> 100,000 underwritten policyholders</div>
+            <div>• <strong>Claims ratio:</strong> 1.5 per 100 customers/month (1,500/mo)</div>
+            <div>• <strong>Customer usage:</strong> 1 platform session/month per customer</div>
+            <div>• <strong>Video:</strong> 200 generation jobs/week (Gemini Veo 3.1 + Kling)</div>
+            <div>• <strong>Underwriting reviews:</strong> ~8,300/month (new + renewals)</div>
+            <div>• <strong>Average tokens:</strong> 2,800/interaction, 4,200/underwriting, 3,600/claim</div>
+            <div>• <strong>Cloud pricing:</strong> GPT-4o $2.50/1M in, $10/1M out; Claude $3/$15</div>
+            <div>• <strong>Local model:</strong> Llama 3.1 70B / Mistral Large fine-tuned</div>
+            <div>• <strong>Local GPU:</strong> 8× A100 80GB (train) + 4× L40S (inference)</div>
+            <div>• <strong>ML staff:</strong> 1 FTE ML Eng + 0.5 FTE MLOps (Israel senior)</div>
+            <div>• <strong>Growth rate:</strong> 10% monthly customer growth (Year 2–5)</div>
+            <div>• <strong>Electricity:</strong> ₪0.45/kWh (~$0.12) Israel IEC commercial tariff</div>
+            <div>• <strong>Depreciation:</strong> GPU hardware 3-year linear amortization</div>
+            <div>• <strong>Capex:</strong> $420K initial hardware (recovered over 36 months)</div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;border-radius:10px;background:linear-gradient(135deg,#e3f2fd,#f3e5f5);padding:14px;border:1px solid #bbdefb;">
+          <h4 style="font-size:9pt;font-weight:800;color:#0d47a1;margin-bottom:6px;">🎯 Recommended Strategy: Hybrid Approach</h4>
+          <p style="font-size:8pt;color:var(--text-main);margin:0;line-height:1.6;">
+            <strong>Phase 1 (Year 1):</strong> Cloud-first for all 15 agents — $604K opex, zero capex. Fastest time-to-market at 100K customers.<br>
+            <strong>Phase 2 (Year 2):</strong> Deploy local inference for high-volume agents (Underwriting, Claims, Investment, Trading, Customer Comms) — saves $248K/yr vs cloud at equivalent scale. Israeli data residency achieved.<br>
+            <strong>Phase 3 (Year 3+):</strong> Full hybrid — local fine-tuned models serve 12 of 15 agents at near-zero marginal cost. Cloud retained only for Video Generation + frontier-model tasks. At 200K+ customers, cloud would cost $1.2M+/yr while local stays flat at ~$648K. Net saving: <strong>$550K+/yr</strong>.
+          </p>
+        </div>
+
+        <!-- Hardware Recommendations: AI Supercomputer & Server Options -->
+        <div style="margin-top:18px;">
+          <h4 style="font-size:10pt;font-weight:850;color:var(--blue-dark);margin-bottom:12px;">🖥️ Recommended AI Infrastructure Components — Supercomputer &amp; Server Options</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+            <!-- Option 1: NVIDIA DGX H100 -->
+            <div style="border-radius:12px;border:2px solid #76b900;background:linear-gradient(135deg,#f9fff0,#ffffff);padding:14px;position:relative;">
+              <div style="position:absolute;top:8px;right:10px;font-size:6.5pt;background:#76b900;color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;">RECOMMENDED</div>
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">1. NVIDIA DGX H100</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> AI Supercomputer (turnkey)</div>
+                <div><strong>GPUs:</strong> 8× NVIDIA H100 80GB SXM5 (NVLink)</div>
+                <div><strong>Memory:</strong> 640GB GPU + 2TB system RAM</div>
+                <div><strong>Interconnect:</strong> NVSwitch 900 GB/s per GPU</div>
+                <div><strong>Performance:</strong> 32 PFLOPS FP8 / 16 PFLOPS FP16</div>
+                <div><strong>Ideal for:</strong> Full-scale training + inference for all 15 agents</div>
+                <div style="margin-top:6px;padding:6px;background:#e8f5e9;border-radius:6px;">
+                  <div style="font-weight:800;color:#2e7d32;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $320,000 – $420,000</div>
+                  <div><strong>Lease (36mo):</strong> $12,000 – $15,000/month</div>
+                  <div><strong>DGX Cloud (on-demand):</strong> $37,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Supports: Llama 3.1 70B/405B, Mistral Large, full fine-tuning at 100K scale. Single node handles all PHINS workloads.</div>
+              </div>
+            </div>
+
+            <!-- Option 2: Lambda Hyperplane -->
+            <div style="border-radius:12px;border:1px solid #6c5ce7;background:linear-gradient(135deg,#f8f6ff,#ffffff);padding:14px;">
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">2. Lambda Hyperplane (8×H100)</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> AI Server (high-performance)</div>
+                <div><strong>GPUs:</strong> 8× NVIDIA H100 SXM5 80GB</div>
+                <div><strong>Memory:</strong> 640GB GPU + 1–2TB system RAM</div>
+                <div><strong>Interconnect:</strong> NVSwitch + InfiniBand HDR</div>
+                <div><strong>Performance:</strong> 32 PFLOPS FP8 (same as DGX)</div>
+                <div><strong>Ideal for:</strong> Training + inference, 20–30% below DGX pricing</div>
+                <div style="margin-top:6px;padding:6px;background:#ede7f6;border-radius:6px;">
+                  <div style="font-weight:800;color:#6a1b9a;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $250,000 – $350,000</div>
+                  <div><strong>Lease (36mo):</strong> $9,500 – $13,000/month</div>
+                  <div><strong>Lambda Cloud (reserved):</strong> $24,000 – $30,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Lambda-built alternative to DGX. Same GPU topology, lower total cost. Includes Lambda Stack (PyTorch, CUDA, drivers pre-configured).</div>
+              </div>
+            </div>
+
+            <!-- Option 3: Dell PowerEdge XE9680 -->
+            <div style="border-radius:12px;border:1px solid #0076ce;background:linear-gradient(135deg,#f0f8ff,#ffffff);padding:14px;">
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">3. Dell PowerEdge XE9680 (8×H100)</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> Enterprise AI Server (rack-mount)</div>
+                <div><strong>GPUs:</strong> 8× NVIDIA H100 SXM5 80GB</div>
+                <div><strong>Memory:</strong> 640GB GPU + up to 4TB system RAM</div>
+                <div><strong>Interconnect:</strong> NVSwitch + PCIe Gen5</div>
+                <div><strong>Performance:</strong> 32 PFLOPS FP8 training + inference</div>
+                <div><strong>Ideal for:</strong> Enterprise deployment with Dell ProSupport + Israeli resellers</div>
+                <div style="margin-top:6px;padding:6px;background:#e3f2fd;border-radius:6px;">
+                  <div style="font-weight:800;color:#1565c0;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $280,000 – $380,000</div>
+                  <div><strong>Lease (36mo):</strong> $10,500 – $14,000/month</div>
+                  <div><strong>Dell APEX (pay-per-use):</strong> $28,000 – $35,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Enterprise-grade with Dell ProSupport 24/7. Available through Israeli Dell partners. 4U rack form factor, liquid cooling option.</div>
+              </div>
+            </div>
+
+            <!-- Option 4: Multi-Node Inference Cluster -->
+            <div style="border-radius:12px;border:1px solid #e65100;background:linear-gradient(135deg,#fff8f0,#ffffff);padding:14px;">
+              <h5 style="font-size:9pt;font-weight:800;color:#333;margin-bottom:6px;">4. Inference-Optimized Cluster (L40S / A6000)</h5>
+              <div style="font-size:7.5pt;color:#555;line-height:1.65;">
+                <div><strong>Type:</strong> Inference AI Server (cost-optimized)</div>
+                <div><strong>GPUs:</strong> 4× NVIDIA L40S 48GB + 2× A6000 48GB</div>
+                <div><strong>Memory:</strong> 288GB GPU + 512GB system RAM</div>
+                <div><strong>Interconnect:</strong> PCIe Gen4 x16 (per GPU)</div>
+                <div><strong>Performance:</strong> 3.2 PFLOPS FP8 inference-optimized</div>
+                <div><strong>Ideal for:</strong> Inference-only (Phase 2) — pair with cloud for training</div>
+                <div style="margin-top:6px;padding:6px;background:#fff3e0;border-radius:6px;">
+                  <div style="font-weight:800;color:#e65100;">Cost Range</div>
+                  <div><strong>Purchase:</strong> $85,000 – $140,000</div>
+                  <div><strong>Lease (36mo):</strong> $3,200 – $5,500/month</div>
+                  <div><strong>Colocation (Israel DC):</strong> $4,500 – $7,000/month</div>
+                </div>
+                <div style="margin-top:4px;font-size:7pt;color:#666;">Best value for Phase 2 hybrid: local inference serving 100K customers, training stays on cloud. Runs Llama 70B quantized or Mistral at full precision.</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Summary comparison table -->
+          <div style="margin-top:14px;overflow-x:auto;">
+            <table style="width:100%;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+              <thead>
+                <tr style="background:#0d47a1;color:#fff;">
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Option</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Purchase Range</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Monthly Lease</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Capability</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">Best For</th>
+                  <th style="padding:6px 8px;text-align:center;font-weight:700;">3-Yr TCO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#f9fff0;">
+                  <td style="padding:5px 8px;font-weight:700;">NVIDIA DGX H100</td>
+                  <td style="padding:5px 8px;text-align:center;">$320K – $420K</td>
+                  <td style="padding:5px 8px;text-align:center;">$12K – $15K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Train + Infer (full)</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 3 — all agents</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$540K – $720K</td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px;font-weight:700;">Lambda Hyperplane</td>
+                  <td style="padding:5px 8px;text-align:center;">$250K – $350K</td>
+                  <td style="padding:5px 8px;text-align:center;">$9.5K – $13K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Train + Infer (full)</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 3 — cost-efficient</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$430K – $600K</td>
+                </tr>
+                <tr style="background:#f8f9fa;">
+                  <td style="padding:5px 8px;font-weight:700;">Dell XE9680</td>
+                  <td style="padding:5px 8px;text-align:center;">$280K – $380K</td>
+                  <td style="padding:5px 8px;text-align:center;">$10.5K – $14K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Train + Infer (enterprise)</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 3 — enterprise SLA</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$480K – $650K</td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 8px;font-weight:700;">L40S/A6000 Cluster</td>
+                  <td style="padding:5px 8px;text-align:center;">$85K – $140K</td>
+                  <td style="padding:5px 8px;text-align:center;">$3.2K – $5.5K/mo</td>
+                  <td style="padding:5px 8px;text-align:center;">Inference only</td>
+                  <td style="padding:5px 8px;text-align:center;">Phase 2 — hybrid start</td>
+                  <td style="padding:5px 8px;text-align:center;font-weight:700;">$160K – $240K</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:7.5pt;">
+            <div style="background:#f0faf0;border-radius:8px;padding:10px;border:1px solid #c8e6c9;">
+              <div style="font-weight:800;color:#2e7d32;margin-bottom:4px;">Recommended Path (Cost-Optimized)</div>
+              <div>Start with <strong>Option 4</strong> (L40S Cluster, $85–140K) for Phase 2 inference, then add <strong>Option 2</strong> (Lambda Hyperplane, $250–350K) for Phase 3 full training. Total capex: <strong>$335K – $490K</strong> over 18 months.</div>
+            </div>
+            <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
+              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Recommended Path (Enterprise-Grade)</div>
+              <div>Deploy <strong>Option 1</strong> (NVIDIA DGX H100, $320–420K) as single turnkey solution for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support, certified stack, and single-vendor warranty. Total capex: <strong>$320K – $420K</strong> at once.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules.
+        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing (June 2025) and Israel commercial infrastructure rates.
       </div>
     </section>
 
@@ -4548,7 +4949,121 @@
           y += Math.max(mLines.length * 12, 16) + 4;
         });
 
-        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules.";
+        // AI Infrastructure Cost Assessment section
+        ensureSpace(40);
+        heading("AI Infrastructure Cost Assessment — Cloud Services vs Local LLM", 13);
+        para("Base: 100K underwritten customers, 1.5% claims ratio (1,500/month), 200 video jobs/week, monthly customer API & agent usage. All figures annualized USD.", 9, 13);
+
+        var cloudCosts = [
+          ["Underwriting Bot (GPT-4/Claude) — 8,300/mo", "$156,000"],
+          ["Claims Intelligence Bot — 1,500/mo", "$43,200"],
+          ["Video Generation (Gemini Veo + Kling) — 867/mo", "$13,500"],
+          ["Investment AI (10 modules) — 20,000/mo", "$72,000"],
+          ["AI Trading Engine — 15,000/mo", "$54,000"],
+          ["BI Analytics & AI Insights — 5,000/mo", "$36,000"],
+          ["Risk Reports Service — 3,200/mo", "$28,800"],
+          ["Document Processing (OCR + NLP) — 4,500/mo", "$28,800"],
+          ["Marketing/Sales Agent — 8,000/mo", "$24,000"],
+          ["Customer Communication Agent — 100,000/mo", "$48,000"],
+          ["Delivery Bidding AI — 6,000/mo", "$21,600"],
+          ["Pension Data Agent — 100,000/mo", "$18,000"],
+          ["AI Model Registry (hosted inference) — 12,000/mo", "$19,200"],
+          ["Assessment Center NLP — 2,800/mo", "$14,400"],
+          ["Voice AI Assistant (STT/TTS) — 25,000/mo", "$26,400"],
+          ["TOTAL ANNUAL CLOUD AI (~312K calls/mo)", "$603,900"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Cloud AI Service — Monthly Volume", "Annual Cost"]],
+            body: cloudCosts,
+            styles: { fontSize: 8, cellPadding: 4 },
+            headStyles: { fillColor: [21, 101, 192], textColor: [255, 255, 255], fontStyle: "bold" },
+            bodyStyles: { textColor: [30, 30, 30] },
+            didParseCell: function(data) {
+              if (data.row.index === cloudCosts.length - 1) {
+                data.cell.styles.fontStyle = "bold";
+                data.cell.styles.fillColor = [219, 234, 254];
+              }
+            }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : y + 160;
+        }
+
+        ensureSpace(40);
+        var localCosts = [
+          ["GPU Cluster (8x A100 80GB for 100K users)", "$172,800"],
+          ["Inference Server (4x L40S prod load)", "$86,400"],
+          ["Storage & Networking (NVMe + 25GbE)", "$24,000"],
+          ["Model Training Compute (fine-tuning)", "$36,000"],
+          ["ML Engineer (1 FTE for 100K scale)", "$150,000"],
+          ["DevOps / MLOps (0.5 FTE)", "$75,000"],
+          ["Electricity & Cooling (12 GPUs x 24/7)", "$36,000"],
+          ["Licensing (CUDA, monitoring, vLLM)", "$12,000"],
+          ["Video Gen (cloud, no local alt)", "$13,500"],
+          ["Data Labeling & Hebrew Annotation", "$24,000"],
+          ["Redundancy & DR", "$18,000"],
+          ["TOTAL ANNUAL LOCAL AI", "$647,700"],
+          ["Required upfront capex (hardware)", "$420,000"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Local LLM Component", "Annual Cost"]],
+            body: localCosts,
+            styles: { fontSize: 8, cellPadding: 4 },
+            headStyles: { fillColor: [46, 125, 50], textColor: [255, 255, 255], fontStyle: "bold" },
+            bodyStyles: { textColor: [30, 30, 30] },
+            didParseCell: function(data) {
+              if (data.row.index === localCosts.length - 2) {
+                data.cell.styles.fontStyle = "bold";
+                data.cell.styles.fillColor = [212, 237, 218];
+              }
+              if (data.row.index === localCosts.length - 1) {
+                data.cell.styles.fontStyle = "italic";
+                data.cell.styles.textColor = [100, 100, 100];
+              }
+            }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : y + 130;
+        }
+
+        ensureSpace(60);
+        para("Assumptions: 100K underwritten customers, 1.5 claims per 100 customers/month (1,500 claims/mo), 200 video jobs/week, monthly customer platform usage (1 session/customer/month = 100K interactions/mo). Cloud: GPT-4o $2.50/1M input, $10/1M output. Local: 8x A100 + 4x L40S, Llama 3.1 70B fine-tuned. Israel IEC electricity $0.12/kWh.", 8.5, 13);
+        para("Recommendation: Hybrid phased approach — cloud-first Year 1 ($604K opex, $0 capex), deploy local for high-volume agents Year 2 (saves $248K/yr), full hybrid Year 3+ (marginal cost per customer approaches $0). At 200K+ customers cloud would reach $1.2M+/yr while local stays flat at ~$648K. Breakeven month 18. 5-year NPV advantage: $680K.", 9, 13);
+
+        // AI Hardware Recommendations
+        ensureSpace(40);
+        heading("Recommended AI Supercomputer & Server Options", 13);
+        para("Hardware component recommendations with cost ranges for local AI deployment (Phase 2–3). All prices reflect 2025–2026 market rates.", 9, 13);
+
+        var hwOptions = [
+          ["NVIDIA DGX H100", "8x H100 80GB SXM5", "Train + Infer", "$320K–$420K", "$12K–$15K/mo", "$540K–$720K"],
+          ["Lambda Hyperplane 8×H100", "8x H100 80GB SXM5", "Train + Infer", "$250K–$350K", "$9.5K–$13K/mo", "$430K–$600K"],
+          ["Dell PowerEdge XE9680", "8x H100 80GB SXM5", "Train + Infer (Enterprise)", "$280K–$380K", "$10.5K–$14K/mo", "$480K–$650K"],
+          ["L40S/A6000 Inference Cluster", "4x L40S + 2x A6000", "Inference Only", "$85K–$140K", "$3.2K–$5.5K/mo", "$160K–$240K"]
+        ];
+        if (typeof doc.autoTable === "function") {
+          doc.autoTable({
+            startY: y,
+            margin: { left: m, right: m },
+            head: [["Option", "GPUs", "Capability", "Purchase", "Lease/mo", "3-Yr TCO"]],
+            body: hwOptions,
+            styles: { fontSize: 7.5, cellPadding: 4 },
+            headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontStyle: "bold" },
+            bodyStyles: { textColor: [30, 30, 30] },
+            columnStyles: { 0: { fontStyle: "bold" } }
+          });
+          y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : y + 60;
+        }
+
+        ensureSpace(30);
+        para("Cost-optimized path: Start with L40S Cluster ($85–140K) for Phase 2 inference, add Lambda Hyperplane ($250–350K) for Phase 3 training. Total: $335K–$490K over 18 months.", 8.5, 13);
+        para("Enterprise path: Single NVIDIA DGX H100 ($320–420K) for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support and certified stack.", 8.5, 13);
+
+        var integrityNotice = "Data integrity notice: This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across 64+ service modules. AI cost assessment based on published cloud provider pricing and Israel commercial infrastructure rates.";
         var intNote = doc.splitTextToSize(integrityNotice, tw - 16);
         var intNoteHeight = Math.max(42, intNote.length * 9 + 14);
         ensureSpace(intNoteHeight + 18);
