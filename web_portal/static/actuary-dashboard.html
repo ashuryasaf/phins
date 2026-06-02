@@ -2598,7 +2598,7 @@
 
             <div id="sandbox-tab-projection" class="sandbox-tab-panel">
               <p style="color:var(--text-light);font-size:0.88rem;margin-bottom:10px;">
-                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate; monthly premiums and claims scale with the book. Tune the controls to re-run the forecast and redraw the charts; realized actuals (premiums collected, claims paid) accumulate live as the random lifecycle runs.
+                Adjustable <strong>5-year (60-month) cash-flow forecast</strong>, seeded from the simulation and the active sandbox book. Customers compound at the monthly growth rate; monthly premiums and claims scale with the book. Tune the controls to re-run the forecast and redraw the charts; realized actuals (premiums collected, claims paid) accumulate live as the random lifecycle runs. Premiums collected assume bills are paid as expected (a policy is cancelled if its premium is unpaid after 30 days), and the savings add-on portion is reported separately in the PDF AI Assessment as a liability owed back to policyholders. Premiums collected assume bills are paid as expected (a policy is cancelled if its premium is unpaid after 30 days), and the savings add-on portion is reported separately in the PDF AI Assessment as a liability owed back to policyholders.
               </p>
 
               <!-- Adjustable forecast controls -->
@@ -2668,7 +2668,7 @@
               </div>
               <div class="form-row" style="margin-bottom:12px;">
                 <div class="form-group">
-                  <div class="metric-pill">Realized Collected: <span id="sandbox-proj-realized-collected">$0</span></div>
+                  <div class="metric-pill" title="Premiums collected assuming bills are paid as expected (policy cancelled if unpaid after 30 days); includes the savings add-on owed back to customers.">Collected (paid as expected): <span id="sandbox-proj-realized-collected">$0</span></div>
                 </div>
                 <div class="form-group">
                   <div class="metric-pill">Realized Claims Paid: <span id="sandbox-proj-realized-claims">$0</span></div>
@@ -6505,7 +6505,14 @@
       const sb = window.actuarySandbox;
       const proj = sb.projection;
       if (!proj) return;
-      proj.realizedCollected = sb.bills.reduce((s, b) => s + (Number(b.amount_paid) || 0), 0);
+      // Premiums collected assume bills are paid as expected (a policy is
+      // cancelled if unpaid after 30 days), so in-force bills count at face
+      // value rather than only the randomly-paid subset. The savings add-on
+      // portion is tracked separately as it is owed back to policyholders.
+      const collected = sandboxCollectedPremium();
+      proj.realizedCollected = collected.total;
+      proj.realizedSavingsCollected = collected.savings;
+      proj.realizedRiskCollected = collected.risk;
       proj.realizedClaimsPaid = sb.claims
         .filter(c => c.status === 'paid')
         .reduce((s, c) => s + (Number(c.paid_amount || c.approved_amount || c.amount) || 0), 0);
@@ -6777,6 +6784,45 @@
       URL.revokeObjectURL(url);
     }
 
+    // ───────────────────────────────────────────────────────────────────
+    // Premium collection — "bills paid as expected" basis
+    //
+    // The PHINS contract collects premium by enforced auto-pay and cancels a
+    // policy whose bill is unpaid after 30 days, so an in-force policy's bills
+    // are collected as billed rather than left perpetually outstanding. Random
+    // partial payment in the lifecycle therefore UNDER-states premiums
+    // collected (the source of the "unlikely" assessment figure). We instead
+    // treat every bill that has NOT been voided as collected at its face
+    // amount — a voided bill belongs to a policy already terminated by a paid
+    // death claim, so that premium is genuinely never collected.
+    //
+    // Premium is priced as risk + savings add-on + loadings. The savings
+    // add-on is money accumulated FOR the policyholder (e.g. a 300% add-on
+    // means 3/4 of the risk+savings subtotal is savings, 1/4 risk), so it is a
+    // liability owed back to the customer and is NOT available to meet claims.
+    // We split the collected premium into the savings add-on and the risk
+    // premium (everything else) using each policy's own priced components, so
+    // the two parts always reconcile exactly to the collected total.
+    function sandboxCollectedPremium() {
+      const sb = window.actuarySandbox;
+      const bills = sb.bills || [];
+      const customers = sb.customers || [];
+      const savingsFracById = new Map();
+      for (const c of customers) {
+        const annual = Number(c.annual_premium) || 0;
+        const savings = Number(c.savings_premium) || 0;
+        savingsFracById.set(c.id, annual > 0 ? Math.min(1, Math.max(0, savings / annual)) : 0);
+      }
+      let total = 0, savings = 0;
+      for (const b of bills) {
+        if (b.status === 'voided') continue; // terminated policy — premium not collected
+        const amt = Number(b.amount) || 0;
+        total += amt;
+        savings += amt * (savingsFracById.get(b.customer_id) || 0);
+      }
+      return { total: total, savings: savings, risk: Math.max(0, total - savings) };
+    }
+
     // One single-pass roll-up of the in-memory book that every export shares,
     // so CSV/Excel/PDF all report identical numbers.
     function sandboxComputeInsights() {
@@ -6818,14 +6864,18 @@
         byCause[cause].count += 1; byCause[cause].paid += paid;
       }
 
-      let billsOutstanding = 0, billsPaid = 0, billsOverdue = 0, billsVoided = 0, collected = 0, outstandingAmt = 0;
+      let billsOutstanding = 0, billsPaid = 0, billsOverdue = 0, billsVoided = 0, outstandingAmt = 0;
       for (const b of bills) {
-        collected += b.amount_paid || 0;
         if (b.status === 'outstanding') { billsOutstanding += 1; outstandingAmt += Math.max(0, (b.amount || 0) - (b.amount_paid || 0)); }
         else if (b.status === 'overdue') { billsOverdue += 1; outstandingAmt += Math.max(0, (b.amount || 0) - (b.amount_paid || 0)); }
         else if (b.status === 'paid') { billsPaid += 1; }
         else if (b.status === 'voided') { billsVoided += 1; }
       }
+      // Premiums collected on the "bills paid as expected" basis (see
+      // sandboxCollectedPremium), split into the savings add-on owed back to
+      // policyholders and the risk premium available to meet claims.
+      const collectedSplit = sandboxCollectedPremium();
+      const collected = collectedSplit.total;
 
       const lossRatio = totalAnnualPremium > 0 ? (claimsPaidTotal / totalAnnualPremium) : 0;
       return {
@@ -6841,7 +6891,8 @@
           totalCoverage, totalAnnualPremium,
           totalClaims: claims.length, openClaims, claimsPaidCount, claimsPaidTotal,
           totalBills: bills.length, billsOutstanding, billsPaid, billsOverdue, billsVoided,
-          collected, outstandingAmt, lossRatio,
+          collected, savingsCollected: collectedSplit.savings, riskCollected: collectedSplit.risk,
+          outstandingAmt, lossRatio,
         },
         byType, byStatus, byCause,
       };
@@ -6885,7 +6936,10 @@
           ['Open Claims', s.openClaims],
           ['Claims Paid (count)', s.claimsPaidCount],
           ['Claims Paid (amount)', s.claimsPaidTotal],
-          ['Premium Collected', s.collected],
+          ['Premiums Collected (bills paid as expected)', s.collected],
+          ['Savings Add-on Collected (held for customers)', s.savingsCollected],
+          ['Risk Premium Collected (meets claims)', s.riskCollected],
+          ['Realized Underwriting Net (risk premium - claims)', s.riskCollected - s.claimsPaidTotal],
           ['Outstanding Bills', s.outstandingAmt],
           ['Loss Ratio', (s.lossRatio * 100).toFixed(2) + '%'],
         ]));
@@ -6976,7 +7030,11 @@
           ['Total Coverage', s.totalCoverage], ['Total Annual Premium', s.totalAnnualPremium],
           ['Total Claims', s.totalClaims], ['Open Claims', s.openClaims],
           ['Claims Paid (count)', s.claimsPaidCount], ['Claims Paid (amount)', s.claimsPaidTotal],
-          ['Premium Collected', s.collected], ['Outstanding Bills', s.outstandingAmt],
+          ['Premiums Collected (bills paid as expected)', s.collected],
+          ['Savings Add-on Collected (held for customers)', s.savingsCollected],
+          ['Risk Premium Collected (meets claims)', s.riskCollected],
+          ['Realized Underwriting Net (risk premium - claims)', s.riskCollected - s.claimsPaidTotal],
+          ['Outstanding Bills', s.outstandingAmt],
           ['Loss Ratio %', Number((s.lossRatio * 100).toFixed(2))],
         ]));
 
@@ -7034,7 +7092,9 @@
         out.push(`Claim experience splits ${deathPct.toFixed(0)}% death / ${(100 - deathPct).toFixed(0)}% permanent disability by count, consistent with the contract being priced (death pays the full sum insured L; disability pays L × the contract ratio and ceases at age ${ix.contract.disability_max_age || 65}).`);
       }
       if (months > 0) {
-        out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, accumulated claims paid reached ${sandboxFmtMoney(s.claimsPaidTotal)} while premiums collected reached ${sandboxFmtMoney(s.collected)} — a realized net of ${sandboxFmtMoney(s.collected - s.claimsPaidTotal)}.`);
+        const savingsPctOfCollected = s.collected > 0 ? (s.savingsCollected / s.collected * 100) : 0;
+        const underwritingNet = s.riskCollected - s.claimsPaidTotal;
+        out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, and assuming bills are paid as expected (a policy is cancelled if its premium is unpaid after 30 days), premiums collected reached ${sandboxFmtMoney(s.collected)}. Of this, ${sandboxFmtMoney(s.savingsCollected)} (${savingsPctOfCollected.toFixed(0)}%) is the elected savings add-on accumulated for policyholders — a liability owed back to customers, not available to meet claims — leaving ${sandboxFmtMoney(s.riskCollected)} of risk premium. Against ${sandboxFmtMoney(s.claimsPaidTotal)} of claims paid, the realized underwriting net is ${sandboxFmtMoney(underwritingNet)}.`);
       }
       const last = (ix.proj.rows || [])[(ix.proj.rows || []).length - 1];
       if (last) {
@@ -7097,8 +7157,11 @@
           ['Average age / risk score', `${s.avgAge} / ${s.avgRisk}`],
           ['Total coverage in force', sandboxFmtMoney(s.totalCoverage)],
           ['Annual premium booked', sandboxFmtMoney(s.totalAnnualPremium)],
-          ['Premium collected (realized)', sandboxFmtMoney(s.collected)],
+          ['Premiums collected (bills paid as expected)', sandboxFmtMoney(s.collected)],
+          ['  — savings add-on (held for customers)', sandboxFmtMoney(s.savingsCollected)],
+          ['  — risk premium (meets claims)', sandboxFmtMoney(s.riskCollected)],
           ['Claims paid (realized)', `${sandboxFmtMoney(s.claimsPaidTotal)} (${sandboxFmtCount(s.claimsPaidCount)})`],
+          ['Realized underwriting net (risk premium − claims)', sandboxFmtMoney(s.riskCollected - s.claimsPaidTotal)],
           ['Open claims', sandboxFmtCount(s.openClaims)],
           ['Loss ratio', (s.lossRatio * 100).toFixed(1) + '%'],
         ]));
