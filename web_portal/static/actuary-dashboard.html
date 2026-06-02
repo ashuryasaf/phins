@@ -2668,7 +2668,7 @@
               </div>
               <div class="form-row" style="margin-bottom:12px;">
                 <div class="form-group">
-                  <div class="metric-pill" title="Premiums collected at an assumed ~95% collection rate (premiums unpaid past the 30-day grace lapse and the policy is cancelled); includes the savings add-on owed back to customers.">Premiums Collected: <span id="sandbox-proj-realized-collected">$0</span></div>
+                  <div class="metric-pill" title="Premiums collected via auto-pay at a ~95% collection rate (policies unpaid past the 30-day grace are cancelled); includes the savings add-on owed back to customers.">Premiums Collected: <span id="sandbox-proj-realized-collected">$0</span></div>
                 </div>
                 <div class="form-group">
                   <div class="metric-pill">Realized Claims Paid: <span id="sandbox-proj-realized-claims">$0</span></div>
@@ -5922,6 +5922,7 @@
         const monthly = Math.round(annual / 12);
         const name = `${sandboxPick(givenNames)} ${sandboxPick(familyNames)}`;
         const occupation = sandboxPick(occupations);
+        const reliablePayer = Math.random() < SANDBOX_COLLECTION_RATE;
         window.actuarySandbox.customers.push({
           id, name, age, gender, ethnicity, occupation,
           health_score: health,
@@ -5946,18 +5947,23 @@
           policy_status: uw_status === 'approved' ? 'active' : uw_status,
           has_claim: false,
           claim_cause: null,
+          reliable_payer: reliablePayer,
           created_at: sandboxNow().toISOString(),
         });
-        // First bill created on policy issue
+        // First bill on policy issue. Reliable payers auto-pay immediately so
+        // most premiums are collected; the rest stay unpaid and the policy is
+        // cancelled after the 30-day grace (see sandboxCancelLapsedPolicies).
         if (uw_status === 'approved') {
           window.actuarySandbox.bills.push({
             id: `BILL-TESTSIM-${seq}-001`,
             customer_id: id,
             policy_id: `POL-TESTSIM-${seq}`,
             amount: monthly,
-            amount_paid: 0,
-            status: 'outstanding',
+            amount_paid: reliablePayer ? monthly : 0,
+            status: reliablePayer ? 'paid' : 'outstanding',
+            issued_month: 0,
             due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+            paid_at: reliablePayer ? sandboxNow().toISOString() : null,
             created_at: sandboxNow().toISOString(),
           });
         }
@@ -5999,14 +6005,17 @@
       // large materialized book (up to SANDBOX_HARD_CAP) does not pay for a
       // dozen separate filter/reduce scans on every 2.2s lifecycle tick.
       let activePolicies = 0, totalCoverage = 0, totalAnnualPremium = 0, totalAnnualRiskPremium = 0;
-      let uwPending = 0, uwDeclined = 0, riskSum = 0;
+      let uwApprovedAll = 0, uwPending = 0, uwDeclined = 0, riskSum = 0;
       for (const c of customers) {
         riskSum += c.risk_score || 0;
         if (c.uw_status === 'approved') {
-          activePolicies += 1;
-          totalCoverage += c.coverage_amount || 0;
-          totalAnnualPremium += c.annual_premium || 0;
-          totalAnnualRiskPremium += c.risk_premium || 0;
+          uwApprovedAll += 1;
+          if (c.policy_status !== 'terminated' && c.policy_status !== 'cancelled') {
+            activePolicies += 1;
+            totalCoverage += c.coverage_amount || 0;
+            totalAnnualPremium += c.annual_premium || 0;
+            totalAnnualRiskPremium += c.risk_premium || 0;
+          }
         } else if (c.uw_status === 'pending') {
           uwPending += 1;
         } else if (c.uw_status === 'declined') {
@@ -6041,7 +6050,7 @@
       setText('sandbox-stat-loss-ratio', sandboxFmtPct(lossRatio));
 
       // Underwriting tab (counts already tallied in the single pass above)
-      const uwApproved = activePolicies;
+      const uwApproved = uwApprovedAll;
       const avgRisk = customers.length ? Math.round(riskSum / customers.length) : 0;
       setText('sandbox-uw-approved', sandboxFmtCount(uwApproved));
       setText('sandbox-uw-pending', sandboxFmtCount(uwPending));
@@ -6147,9 +6156,9 @@
         new_claim: 12,
         approve_claim: 8,
         pay_claim: 6,
-        new_bill: 10,
-        pay_bill: 14,
-        bill_overdue: 4,
+        new_bill: 20,
+        pay_bill: 0,
+        bill_overdue: 6,
         approve_uw: 10,
         decline_uw: 4,
         breaking_news: 2,
@@ -6208,6 +6217,7 @@
           policy_status: uw_status === 'approved' ? 'active' : uw_status,
           has_claim: false,
           claim_cause: null,
+          reliable_payer: Math.random() < SANDBOX_COLLECTION_RATE,
           created_at: ts,
         });
         sandboxLogEvent('uw', `New sandbox customer ${id} onboarded — risk ${risk}, ADL ${health}, status ${uw_status}.`, 'info');
@@ -6227,6 +6237,7 @@
       if (action === 'new_claim'
           && cust.uw_status === 'approved'
           && cust.policy_status !== 'terminated'
+          && cust.policy_status !== 'cancelled'
           && !cust.has_claim) {
         const canDisable = cust.disability_eligible !== false && Number(cust.age) < disabilityMaxAge;
         const isMortality = !canDisable || (Math.random() < mortalityShare);
@@ -6289,16 +6300,23 @@
 
       if (action === 'new_bill'
           && cust.uw_status === 'approved'
-          && cust.policy_status !== 'terminated') {
+          && cust.policy_status !== 'terminated'
+          && cust.policy_status !== 'cancelled') {
         const seq = cust.id.split('-').pop();
         const id = `BILL-TESTSIM-${Date.now()}-${sandboxRandInt(1000, 9999)}`;
+        const autopaid = cust.reliable_payer !== false;
         sb.bills.push({
           id, customer_id: cust.id, policy_id: `POL-TESTSIM-${seq}`,
-          amount: cust.monthly_premium, amount_paid: 0, status: 'outstanding',
+          amount: cust.monthly_premium, amount_paid: autopaid ? cust.monthly_premium : 0,
+          status: autopaid ? 'paid' : 'outstanding',
+          issued_month: (sb.projection && sb.projection.monthsElapsed) || 0,
           due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+          paid_at: autopaid ? ts : null,
           created_at: ts,
         });
-        sandboxLogEvent('billing', `New monthly bill ${id} issued to ${cust.id} for ${sandboxFmtMoney(cust.monthly_premium)}.`, 'info');
+        sandboxLogEvent('billing', autopaid
+          ? `Monthly bill ${id} issued to ${cust.id} and auto-paid (${sandboxFmtMoney(cust.monthly_premium)}).`
+          : `Monthly bill ${id} issued to ${cust.id} for ${sandboxFmtMoney(cust.monthly_premium)}; awaiting payment.`, 'info');
         return;
       }
 
@@ -6396,7 +6414,7 @@
       // total monthly premium — the run-rate the forecast grows from.
       let count = 0, monthlyPremium = 0;
       for (const c of window.actuarySandbox.customers) {
-        if (c.uw_status === 'approved' && c.policy_status !== 'terminated') {
+        if (c.uw_status === 'approved' && c.policy_status !== 'terminated' && c.policy_status !== 'cancelled') {
           count += 1;
           monthlyPremium += Number(c.monthly_premium) || 0;
         }
@@ -6531,6 +6549,9 @@
       // accumulation so the AI assessment can show "months of random
       // lifecycle accumulated claims" and the death/disability split.
       if (proj.monthsElapsed > prevElapsed) {
+        // Cancel policies left unpaid past the 30-day grace, then refresh the
+        // realized totals so this month's snapshot reflects the voided bills.
+        if (sandboxCancelLapsedPolicies(proj.monthsElapsed) > 0) sandboxRefreshRealized();
         const paidClaims = window.actuarySandbox.claims.filter(c => c.status === 'paid');
         let mortalityPaid = 0, disabilityPaid = 0;
         for (const c of paidClaims) {
@@ -6785,15 +6806,19 @@
       URL.revokeObjectURL(url);
     }
 
+    // Per-policy auto-pay probability (the billing/collection rate). Reliable
+    // policyholders auto-pay every bill; the unpaid remainder lapses and the
+    // policy is cancelled after the 30-day grace (see sandboxCancelLapsedPolicies).
+    const SANDBOX_COLLECTION_RATE = 0.95;
+
     // -------------------------------------------------------------------
-    // Premium collection - assumed collection rate
+    // Premium collection - actual collected, savings add-on split
     //
-    // Premium is billed monthly to in-force policies, but not every billed
-    // dollar is collected: a policy whose premium is unpaid past the 30-day
-    // grace lapses and is cancelled. We therefore recognise premiums collected
-    // as an assumed ~95% of the premium billed on every bill that has not been
-    // voided (a voided bill belongs to a policy already terminated by a paid
-    // death claim, so it is never collected).
+    // Bills are auto-paid by reliable policyholders, so premiums collected are
+    // simply the actual amount_paid summed over every non-voided bill. This
+    // reconciles exactly with the operational billing ledger (the Billing tab).
+    // Premium billed is the face amount of those same non-voided bills, and the
+    // collection rate is collected / billed.
     //
     // Premium is priced as risk + savings add-on + loadings. The savings
     // add-on is money accumulated FOR the policyholder (a 300% add-on means
@@ -6812,17 +6837,49 @@
         const savings = Number(c.savings_premium) || 0;
         savingsFracById.set(c.id, annual > 0 ? Math.min(1, Math.max(0, savings / annual)) : 0);
       }
-      let billed = 0, billedSavings = 0;
+      let billed = 0, collected = 0, collectedSavings = 0;
       for (const b of bills) {
         if (b.status === 'voided') continue; // terminated policy — premium not collected
         const amt = Number(b.amount) || 0;
+        const paid = Number(b.amount_paid) || 0;
+        const frac = savingsFracById.get(b.customer_id) || 0;
         billed += amt;
-        billedSavings += amt * (savingsFracById.get(b.customer_id) || 0);
+        collected += paid;
+        collectedSavings += paid * frac;
       }
-      const rate = 0.95; // assumed share of billed premium actually collected
-      const total = billed * rate;
-      const savings = billedSavings * rate;
-      return { billed: billed, rate: rate, total: total, savings: savings, risk: Math.max(0, total - savings) };
+      const rate = billed > 0 ? collected / billed : 0;
+      return { billed: billed, rate: rate, total: collected, savings: collectedSavings, risk: Math.max(0, collected - collectedSavings) };
+    }
+
+    // Cancel policies whose premium went unpaid past the 30-day grace (a bill
+    // left outstanding/overdue for at least one elapsed month), voiding their
+    // remaining bills. Returns the number of policies cancelled this pass.
+    function sandboxCancelLapsedPolicies(currentMonth) {
+      const sb = window.actuarySandbox;
+      const ts = sandboxNow().toISOString();
+      const lapsed = new Set();
+      for (const b of sb.bills) {
+        if ((b.status === 'outstanding' || b.status === 'overdue')
+            && (currentMonth - (Number(b.issued_month) || 0)) >= 1) {
+          lapsed.add(b.customer_id);
+        }
+      }
+      if (!lapsed.size) return 0;
+      const byId = new Map();
+      for (const c of sb.customers) byId.set(c.id, c);
+      let cancelledCount = 0;
+      lapsed.forEach((cid) => {
+        const owner = byId.get(cid);
+        if (!owner || owner.policy_status === 'terminated' || owner.policy_status === 'cancelled') return;
+        owner.policy_status = 'cancelled';
+        owner.cancelled_at = ts;
+        sb.bills.forEach((b) => {
+          if (b.customer_id === cid && (b.status === 'outstanding' || b.status === 'overdue')) b.status = 'voided';
+        });
+        cancelledCount += 1;
+        sandboxLogEvent('billing', `Policy ${owner.id} cancelled for non-payment after the 30-day grace; outstanding bills voided.`, 'breaking');
+      });
+      return cancelledCount;
     }
 
     // One single-pass roll-up of the in-memory book that every export shares,
@@ -6834,19 +6891,20 @@
       const bills = sb.bills || [];
       const proj = sb.projection || {};
 
-      let activePolicies = 0, terminated = 0, totalCoverage = 0, totalAnnualPremium = 0, totalAnnualRiskPremium = 0;
+      let activePolicies = 0, terminated = 0, cancelled = 0, totalCoverage = 0, totalAnnualPremium = 0, totalAnnualRiskPremium = 0;
       let uwApproved = 0, uwPending = 0, uwDeclined = 0, riskSum = 0, ageSum = 0;
       for (const c of customers) {
         riskSum += c.risk_score || 0;
         ageSum += Number(c.age) || 0;
         if (c.uw_status === 'approved') { uwApproved += 1; } else if (c.uw_status === 'pending') { uwPending += 1; } else if (c.uw_status === 'declined') { uwDeclined += 1; }
-        if (c.uw_status === 'approved' && c.policy_status !== 'terminated') {
+        if (c.uw_status === 'approved' && c.policy_status !== 'terminated' && c.policy_status !== 'cancelled') {
           activePolicies += 1;
           totalCoverage += c.coverage_amount || 0;
           totalAnnualPremium += c.annual_premium || 0;
           totalAnnualRiskPremium += c.risk_premium || 0;
         }
         if (c.policy_status === 'terminated') terminated += 1;
+        else if (c.policy_status === 'cancelled') cancelled += 1;
       }
 
       // Claim distribution by type / cause / status.
@@ -6887,7 +6945,7 @@
         simulationSummary: sb.simulationSummary || {},
         simulationId: sb.simulationId || 'SANDBOX-LOCAL',
         stats: {
-          totalCustomers: customers.length, activePolicies, terminated,
+          totalCustomers: customers.length, activePolicies, terminated, cancelled,
           uwApproved, uwPending, uwDeclined,
           avgRisk: customers.length ? Math.round(riskSum / customers.length) : 0,
           avgAge: customers.length ? Math.round(ageSum / customers.length) : 0,
@@ -6929,6 +6987,7 @@
           ['Sandbox Customers', s.totalCustomers],
           ['Active Policies', s.activePolicies],
           ['Terminated Policies', s.terminated],
+          ['Cancelled Policies (non-payment)', s.cancelled],
           ['UW Approved', s.uwApproved],
           ['UW Pending', s.uwPending],
           ['UW Declined', s.uwDeclined],
@@ -6941,7 +7000,7 @@
           ['Claims Paid (count)', s.claimsPaidCount],
           ['Claims Paid (amount)', s.claimsPaidTotal],
           ['Premium Billed', s.premiumBilled],
-          ['Collection Rate (assumed)', (s.collectionRate * 100).toFixed(0) + '%'],
+          ['Collection Rate', (s.collectionRate * 100).toFixed(0) + '%'],
           ['Premiums Collected', s.collected],
           ['Savings Add-on Collected (held for customers)', s.savingsCollected],
           ['Risk Premium Collected (meets claims)', s.riskCollected],
@@ -7032,13 +7091,14 @@
           ['Sandbox Customers', s.totalCustomers],
           ['Active Policies', s.activePolicies],
           ['Terminated Policies', s.terminated],
+          ['Cancelled Policies (non-payment)', s.cancelled],
           ['UW Approved', s.uwApproved], ['UW Pending', s.uwPending], ['UW Declined', s.uwDeclined],
           ['Average Age', s.avgAge], ['Average Risk Score', s.avgRisk],
           ['Total Coverage', s.totalCoverage], ['Total Annual Premium', s.totalAnnualPremium],
           ['Total Claims', s.totalClaims], ['Open Claims', s.openClaims],
           ['Claims Paid (count)', s.claimsPaidCount], ['Claims Paid (amount)', s.claimsPaidTotal],
           ['Premium Billed', s.premiumBilled],
-          ['Collection Rate (assumed)', (s.collectionRate * 100).toFixed(0) + '%'],
+          ['Collection Rate', (s.collectionRate * 100).toFixed(0) + '%'],
           ['Premiums Collected', s.collected],
           ['Savings Add-on Collected (held for customers)', s.savingsCollected],
           ['Risk Premium Collected (meets claims)', s.riskCollected],
@@ -7090,7 +7150,7 @@
       const months = (ix.proj.realizedSeries || []).length;
       const mort = ix.byType.mortality, dis = ix.byType.disability;
       const paidClaims = mort.count + dis.count > 0;
-      out.push(`The sandbox book holds ${sandboxFmtCount(s.totalCustomers)} simulated lives, of which ${sandboxFmtCount(s.activePolicies)} carry active policies (${sandboxFmtCount(s.terminated)} terminated after a paid death claim). Total in-force coverage is ${sandboxFmtMoney(s.totalCoverage)} against ${sandboxFmtMoney(s.totalAnnualPremium)} of annual premium.`);
+      out.push(`The sandbox book holds ${sandboxFmtCount(s.totalCustomers)} simulated lives, of which ${sandboxFmtCount(s.activePolicies)} carry active policies (${sandboxFmtCount(s.terminated)} terminated after a paid death claim; ${sandboxFmtCount(s.cancelled)} cancelled for non-payment). Total in-force coverage is ${sandboxFmtMoney(s.totalCoverage)} against ${sandboxFmtMoney(s.totalAnnualPremium)} of annual premium.`);
       if (lr > 0) {
         const verdict = lr < 0.6 ? 'comfortably profitable on a pure-risk basis' : (lr <= 0.85 ? 'within a workable underwriting margin' : 'under loss-ratio pressure and would need re-pricing or reinsurance');
         out.push(`The realized loss ratio (claims paid / annual risk premium, excluding the savings add-on) is ${(lr * 100).toFixed(1)}%, which is ${verdict}. Claims paid to date total ${sandboxFmtMoney(s.claimsPaidTotal)} across ${sandboxFmtCount(s.claimsPaidCount)} settled claims.`);
@@ -7104,7 +7164,7 @@
       if (months > 0) {
         const savingsPctOfCollected = s.collected > 0 ? (s.savingsCollected / s.collected * 100) : 0;
         const underwritingNet = s.riskCollected - s.claimsPaidTotal;
-        out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, ${sandboxFmtMoney(s.premiumBilled)} of premium was billed; at an assumed ${(s.collectionRate * 100).toFixed(0)}% collection rate (premiums unpaid past the 30-day grace lapse and the policy is cancelled), premiums collected reached ${sandboxFmtMoney(s.collected)}. Of this, ${sandboxFmtMoney(s.savingsCollected)} (${savingsPctOfCollected.toFixed(0)}%) is the elected savings add-on accumulated for policyholders — a liability owed back to customers, not available to meet claims — leaving ${sandboxFmtMoney(s.riskCollected)} of risk premium. Against ${sandboxFmtMoney(s.claimsPaidTotal)} of claims paid, the realized underwriting net is ${sandboxFmtMoney(underwritingNet)}.`);
+        out.push(`Over ${months} elapsed lifecycle month${months === 1 ? '' : 's'}, ${sandboxFmtMoney(s.premiumBilled)} of premium was billed and auto-paid by policyholders at a ${(s.collectionRate * 100).toFixed(0)}% collection rate (policies unpaid past the 30-day grace are cancelled); premiums collected reached ${sandboxFmtMoney(s.collected)}. Of this, ${sandboxFmtMoney(s.savingsCollected)} (${savingsPctOfCollected.toFixed(0)}%) is the elected savings add-on accumulated for policyholders — a liability owed back to customers, not available to meet claims — leaving ${sandboxFmtMoney(s.riskCollected)} of risk premium. Against ${sandboxFmtMoney(s.claimsPaidTotal)} of claims paid, the realized underwriting net is ${sandboxFmtMoney(underwritingNet)}.`);
       }
       const last = (ix.proj.rows || [])[(ix.proj.rows || []).length - 1];
       if (last) {
@@ -7142,6 +7202,9 @@
         doc.text('PHINS Actuarial Sandbox', margin, 34);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(208, 220, 236);
         doc.text('AI Assessment - illustrative portfolio review', margin, 52);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+        doc.text('PHINS ACTUARY DIVISION', pageW - margin, 30, { align: 'right' });
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(208, 220, 236);
         doc.setFontSize(8.5);
         doc.text(`Contract ${ix.contract.product_id || 'phins_pure_risk_adjustable'}   .   Simulation ${ix.simulationId}   .   ${sandboxNow().toLocaleString('en-US')}`, margin, 67);
         y = 98;
@@ -7206,17 +7269,18 @@
 
         // Portfolio snapshot
         sectionHeading('Portfolio Snapshot');
-        const netRowIndex = 13;
+        const netRowIndex = 14;
         doc.autoTable(baseTableOpts(['Metric', 'Value'], [
           ['Sandbox customers', sandboxFmtCount(s.totalCustomers)],
           ['Active policies', sandboxFmtCount(s.activePolicies)],
           ['Terminated (paid death)', sandboxFmtCount(s.terminated)],
+          ['Cancelled (non-payment)', sandboxFmtCount(s.cancelled)],
           ['Average age / risk score', `${s.avgAge} / ${s.avgRisk}`],
           ['Total coverage in force', sandboxFmtMoney(s.totalCoverage)],
           ['Annual premium booked (gross)', sandboxFmtMoney(s.totalAnnualPremium)],
           ['Annual risk premium booked', sandboxFmtMoney(s.totalAnnualRiskPremium)],
           ['Premium billed', sandboxFmtMoney(s.premiumBilled)],
-          ['Collection rate (assumed)', (s.collectionRate * 100).toFixed(0) + '%'],
+          ['Collection rate', (s.collectionRate * 100).toFixed(0) + '%'],
           ['Premiums collected', sandboxFmtMoney(s.collected)],
           ['     savings add-on (held for customers)', sandboxFmtMoney(s.savingsCollected)],
           ['     risk premium (meets claims)', sandboxFmtMoney(s.riskCollected)],
@@ -7281,7 +7345,7 @@
           doc.setDrawColor(225, 230, 236); doc.setLineWidth(0.5);
           doc.line(margin, pageH - 28, pageW - margin, pageH - 28);
           doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
-          doc.text('PHINS Actuarial Sandbox - illustrative, browser-memory only', margin, pageH - 16);
+          doc.text('PHINS Actuary Division  -  Actuarial Sandbox (illustrative, browser-memory only)', margin, pageH - 16);
           doc.text(`Page ${p} of ${pages}`, pageW - margin, pageH - 16, { align: 'right' });
         }
 
