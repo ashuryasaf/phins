@@ -3019,6 +3019,7 @@
       currentReinsuranceProgram = program || null;
       updateOverviewReinsurance(currentReinsuranceProgram);
       renderReinsuranceResearch(currentReinsuranceProgram);
+      refreshAnnualReportSources();
 
       const summary = document.getElementById('reins-program-summary');
       if (!program) {
@@ -3750,7 +3751,13 @@
         
         if (data.success) {
           currentSimulation = data.simulation;
+          // A fresh simulation supersedes any earlier reserve/valuation
+          // snapshots; drop them so the annual report can never pair this
+          // run's premiums with a previous run's reserves/valuation.
+          currentReserveProjection = null;
+          currentValuation = null;
           renderSimulationResults(data.simulation);
+          refreshAnnualReportSources();
           // Auto-fill reserves and reports forms with this simulation id
           const reserveIdField = document.getElementById('reserve-sim-id');
           if (reserveIdField) reserveIdField.value = data.simulation.simulation_id;
@@ -4163,6 +4170,7 @@
         return;
       }
       currentReserveProjection = projection;
+      refreshAnnualReportSources();
       const totals = projection.totals || {};
       const rows = (projection.yearly_projection || []).map((row) => `
         <tr>
@@ -5436,6 +5444,7 @@
         return;
       }
       currentValuation = val;
+      refreshAnnualReportSources();
       const bands = val.bands || {};
       const order = [
         ['insurance_portfolio', '🛡️ Insurance Portfolio'],
@@ -7770,8 +7779,15 @@
           sandboxIx = sandboxComputeInsights();
         }
       } catch (e) { sandboxIx = null; }
-      const reserves = currentReserveProjection || null;
-      const valuation = currentValuation || null;
+      // Only pair reserve/valuation snapshots that were produced for the
+      // current simulation. A stale projection/valuation left in memory from
+      // a previous (or superseded) run would otherwise mix one simulation's
+      // premiums with another run's BEL, balance sheet, and capital metrics.
+      const simId = sim?.simulation_id || null;
+      const reserves = (currentReserveProjection && currentReserveProjection.simulation_id === simId)
+        ? currentReserveProjection : null;
+      const valuation = (currentValuation && currentValuation.simulation_id === simId)
+        ? currentValuation : null;
       const reinsurance = currentReinsuranceProgram || null;
 
       // ----- Derived statements -----
