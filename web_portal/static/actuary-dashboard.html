@@ -2737,6 +2737,8 @@
     let currentConfig = null;
     let currentSimulation = null;
     let currentReinsuranceProgram = null;
+    let currentReserveProjection = null;
+    let currentValuation = null;
     let currentRecommendedQuote = null;
     
     const ADL_DESCRIPTIONS = {
@@ -4160,6 +4162,7 @@
         resultsEl.innerHTML = '<p class="text-danger">No projection returned.</p>';
         return;
       }
+      currentReserveProjection = projection;
       const totals = projection.totals || {};
       const rows = (projection.yearly_projection || []).map((row) => `
         <tr>
@@ -5432,6 +5435,7 @@
         bandsEl.innerHTML = '<p class="text-danger">No valuation returned.</p>';
         return;
       }
+      currentValuation = val;
       const bands = val.bands || {};
       const order = [
         ['insurance_portfolio', '🛡️ Insurance Portfolio'],
@@ -7565,15 +7569,18 @@
     function addAnnualCapRow() {
       const publicIdx = annualReport.capRows.findIndex(r => (r.type || '').toLowerCase() === 'public float');
       const newRow = { name: '', type: 'Institutional', pct: 0, voting: true, notes: '' };
+      let insertedIdx;
       if (publicIdx >= 0 && publicIdx === annualReport.capRows.length - 1) {
         annualReport.capRows.splice(publicIdx, 0, newRow);
+        insertedIdx = publicIdx;
       } else {
         annualReport.capRows.push(newRow);
+        insertedIdx = annualReport.capRows.length - 1;
       }
       // Up-to-five-named-holders + public float cap.
       const named = annualReport.capRows.filter(r => (r.type || '').toLowerCase() !== 'public float').length;
       if (named > 5) {
-        annualReport.capRows.pop();
+        annualReport.capRows.splice(insertedIdx, 1);
         alert('Cap table is limited to 5 named holders + public float. Remove a holder before adding another.');
       }
       renderAnnualCapTable();
@@ -7883,8 +7890,8 @@
         // Balance Sheet — assets driven by valuation + reserves snapshot.
         const closingReserve = reserves?.totals?.closing_reserve || 0;
         const cumDividends = reserves?.totals?.cumulative_dividends || 0;
-        const csmBalance = (reserves?.yearly_projection || []).reduce((s, r) => s + (r.ifrs17?.csm_balance || 0), 0);
         const lastYear = (reserves?.yearly_projection || [])[(reserves?.yearly_projection || []).length - 1] || {};
+        const csmBalance = lastYear.ifrs17?.csm_balance || 0;
         const savingsFundClosing = lastYear.savings_fund?.closing_balance || 0;
         const ibnrProvision = lastYear.ibnr_provision || 0;
         const beCompany = valuation?.summary?.best_estimate_total_company || 0;
@@ -8038,7 +8045,7 @@
             tax: -(r.tax || 0),
             dividends: -(r.dividends || 0),
             reserve_contribution: -(r.reserve_contribution || 0),
-            net_cash_flow: (r.in_force_premium || 0) - (r.in_force_expected_claims || 0) - (r.tax || 0) - (r.dividends || 0),
+            net_cash_flow: (r.in_force_premium || 0) - (r.in_force_expected_claims || 0) - (r.tax || 0) - (r.dividends || 0) - (r.reserve_contribution || 0),
           }));
         }
       }
@@ -8320,6 +8327,7 @@
         msg.textContent = `Built — hash ${payload.integrity_hash} · ${okChecks}/${payload.checks.length} integrity checks passed.`;
         msg.style.color = okChecks === payload.checks.length ? 'var(--success)' : 'var(--warning)';
       } catch (err) {
+        annualReport.lastBuilt = null;
         previewEl.innerHTML = `<p class="text-danger">Build failed: ${annualEsc(err.message)}</p>`;
         msg.textContent = 'Build failed: ' + err.message;
         msg.style.color = 'var(--danger)';
