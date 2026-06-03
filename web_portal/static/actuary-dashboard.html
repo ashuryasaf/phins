@@ -7930,7 +7930,9 @@
         const totalAssets = investmentsBacking + goodwill + cash;
         // Liabilities
         const totalLiabilities = closingReserve + ibnrProvision + savingsFundClosing + debtTotalPrincipal;
-        const totalEquity = Math.max(0, beCompany - debtTotalPrincipal);
+        // Equity is the accounting residual so the statement of financial
+        // position balances by identity (Assets = Liabilities + Equity).
+        const totalEquity = totalAssets - totalLiabilities;
         out.balance_sheet = {
           assets: [
             ['Cash and cash equivalents (realized net premium - claims)', cash],
@@ -7945,7 +7947,7 @@
             ['Policyholder savings liability', savingsFundClosing],
             ['Long-term debt (principal)', debtTotalPrincipal],
             ['Total Liabilities', totalLiabilities],
-            ['Shareholders\' Equity (valuation residual)', totalEquity],
+            ['Shareholders\' Equity (balancing residual)', totalEquity],
             ['Total Liabilities + Equity', totalLiabilities + totalEquity],
           ],
           totals: { totalAssets, totalLiabilities, totalEquity },
