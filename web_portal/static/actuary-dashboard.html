@@ -6006,6 +6006,9 @@
       // the actuary can explore the projection before starting the cycle.
       seedSandboxProjection();
       renderSandbox();
+      // Keep the annual report binding panel in sync with the freshly
+      // generated sandbox so it reflects the latest pipeline state.
+      refreshAnnualReportSources();
       const msg = document.getElementById('sandbox-action-msg');
       if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click ▶️ Start Random Lifecycle to begin.`;
     }
@@ -7707,6 +7710,7 @@
         if (detail) detail.textContent = label || (ok ? 'Ready.' : 'Not bound.');
       };
       const sim = currentSimulation;
+      const simId = sim?.simulation_id || null;
       set('annual-src-simulation', !!sim, sim
         ? `${sim.simulation_id} · tables ${sim.tables_version} · ${annualFmtCount(sim.portfolio_summary?.accepted_customers)} lives`
         : null);
@@ -7717,14 +7721,18 @@
           sandboxIx = sandboxComputeInsights();
         }
       } catch (e) { sandboxIx = null; }
-      set('annual-src-sandbox', !!sandboxIx, sandboxIx
+      // Only treat the sandbox as bound when it was generated for the current
+      // simulation, mirroring buildAnnualReportPayload (sandboxStmtsIx) —
+      // otherwise a stale sandbox left over from a prior run would show BOUND
+      // while the built report drops its realized premiums and cash.
+      const sandboxBound = !!(sandboxIx && sandboxIx.simulationId === simId);
+      set('annual-src-sandbox', sandboxBound, sandboxBound
         ? `${sandboxIx.simulationId} · ${annualFmtCount(sandboxIx.stats.totalCustomers)} sandbox lives · ${annualFmtCount(sandboxIx.stats.claimsPaidCount)} claims paid`
         : null);
 
       // Only treat reserves/valuation as bound when they belong to the current
       // simulation, mirroring buildAnnualReportPayload — otherwise the panel
       // would show BOUND while the built report drops the stale snapshot.
-      const simId = sim?.simulation_id || null;
       const reservesBound = !!(currentReserveProjection && currentReserveProjection.simulation_id === simId);
       set('annual-src-reserves', reservesBound, reservesBound
         ? `${currentReserveProjection.projection_years || 0}-year projection · closing reserve ${annualFmtMoney(currentReserveProjection.totals?.closing_reserve || 0, document.getElementById('annual-currency')?.value)}`
@@ -7741,7 +7749,7 @@
 
       const badge = document.getElementById('annual-report-source-badge');
       if (badge) {
-        const bound = [!!sim, !!sandboxIx, reservesBound, valuationBound].filter(Boolean).length;
+        const bound = [!!sim, sandboxBound, reservesBound, valuationBound].filter(Boolean).length;
         badge.textContent = `Pipeline: ${bound}/4 simulation sources bound`;
       }
     }
