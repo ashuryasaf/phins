@@ -8015,7 +8015,7 @@
         const c4 = grossPremium * 0.02;
         const aclRBC = Math.sqrt(Math.max(0, c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4)) + c0;
         const totalAdjustedCapital = ownFunds;
-        const rbcRatio = aclRBC > 0 ? (totalAdjustedCapital / (aclRBC * 2)) : 0;
+        const rbcRatio = aclRBC > 0 ? (totalAdjustedCapital / aclRBC) : 0;
         out.rbc = {
           components: [
             ['C0 — Affiliate / off-balance risk', c0],
@@ -8025,7 +8025,7 @@
             ['C4 — Business risk', c4],
             ['Authorized Control Level RBC (ACL)', aclRBC],
             ['Total Adjusted Capital (TAC)', totalAdjustedCapital],
-            ['RBC Ratio (TAC / Company Action Level)', rbcRatio, 'pct'],
+            ['RBC Ratio (TAC / Authorized Control Level)', rbcRatio, 'pct'],
           ],
           aclRBC, totalAdjustedCapital, rbcRatio,
         };
@@ -8242,7 +8242,7 @@
       if (statements.rbc && incPacks.has('us_rbc')) {
         capitalSections.push(`<h4>F.2 NAIC Risk-Based Capital (RBC)</h4>
           ${annualMoneyTable(statements.rbc.components, ccy)}
-          <p><strong>RBC Ratio (TAC / Company Action Level):</strong> ${annualFmtPct((statements.rbc.rbcRatio || 0) * 100)}.
+          <p><strong>RBC Ratio (TAC / Authorized Control Level):</strong> ${annualFmtPct((statements.rbc.rbcRatio || 0) * 100)}.
           Regulatory thresholds: Company Action ≥ 200%, Regulatory Action 150–200%, Authorized Control 100–150%, Mandatory Control &lt; 70%.</p>`);
       }
       if (statements.licat && incPacks.has('ca_osfi_licat')) {
