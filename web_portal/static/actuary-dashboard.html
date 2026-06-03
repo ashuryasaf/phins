@@ -7796,13 +7796,21 @@
       const valuation = (currentValuation && currentValuation.simulation_id === simId)
         ? currentValuation : null;
       const reinsurance = currentReinsuranceProgram || null;
+      // Only feed sandbox realized premiums, claims, and cash into the
+      // statements when the sandbox was generated for the current simulation.
+      // A stale sandbox left over from a prior run (sandbox accounts are not
+      // regenerated automatically) would otherwise mix one simulation's
+      // modelled book with another run's realized figures, mirroring the
+      // reserve/valuation gating above.
+      const sandboxStmtsIx = (sandboxIx && sandboxIx.simulationId === simId)
+        ? sandboxIx : null;
 
       // ----- Derived statements -----
       // The deterministic financial statements are built from the
       // simulation/sandbox/reserves snapshot. Nothing is invented: every
       // line is either copied directly from a pipeline output or
       // computed as an explicit arithmetic of those outputs.
-      const stmts = buildAnnualFinancialStatements({ sim, sandboxIx, reserves, valuation, reinsurance, debtTotalPrincipal, debtWAC });
+      const stmts = buildAnnualFinancialStatements({ sim, sandboxIx: sandboxStmtsIx, reserves, valuation, reinsurance, debtTotalPrincipal, debtWAC });
 
       // Integrity checks across the pipeline
       const checks = [];
