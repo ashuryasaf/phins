@@ -8225,7 +8225,7 @@
 
       // Section F — Solvency / Capital Adequacy (jurisdiction-specific)
       const capitalSections = [];
-      if (statements.solvency && (incPacks.has('il_cmisa') || issuer.home_jurisdiction === 'israel' || !incPacks.size)) {
+      if (statements.solvency && (incPacks.has('il_cmisa') || issuer.home_jurisdiction === 'israel')) {
         capitalSections.push(`<h4>F.1 Solvency II (Israel CMISA — Forms 5/6/7)</h4>
           ${annualMoneyTable(statements.solvency.components, ccy)}
           <p><strong>Solvency Ratio:</strong> ${annualFmtPct((statements.solvency.solvencyRatio || 0) * 100)} ·
@@ -8616,7 +8616,7 @@
       // Section F — Capital adequacy
       const capBlocks = [];
       const incPacks = new Set(p.packs || []);
-      if (p.statements.solvency && (incPacks.has('il_cmisa') || p.issuer.home_jurisdiction === 'israel' || !incPacks.size)) {
+      if (p.statements.solvency && (incPacks.has('il_cmisa') || p.issuer.home_jurisdiction === 'israel')) {
         capBlocks.push(['F.1 Israel CMISA Solvency II (Forms 5/6/7)', p.statements.solvency.components]);
       }
       if (p.statements.rbc && incPacks.has('us_rbc')) capBlocks.push(['F.2 NAIC Risk-Based Capital (USA)', p.statements.rbc.components]);
