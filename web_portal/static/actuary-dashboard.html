@@ -3751,11 +3751,13 @@
         
         if (data.success) {
           currentSimulation = data.simulation;
-          // A fresh simulation supersedes any earlier reserve/valuation
-          // snapshots; drop them so the annual report can never pair this
-          // run's premiums with a previous run's reserves/valuation.
+          // A fresh simulation supersedes any earlier reserve/valuation/
+          // reinsurance snapshots; drop them so the annual report can never
+          // pair this run's premiums with a previous run's reserves,
+          // valuation, or hedge program.
           currentReserveProjection = null;
           currentValuation = null;
+          currentReinsuranceProgram = null;
           renderSimulationResults(data.simulation);
           refreshAnnualReportSources();
           // Auto-fill reserves and reports forms with this simulation id
@@ -7719,11 +7721,17 @@
         ? `${sandboxIx.simulationId} · ${annualFmtCount(sandboxIx.stats.totalCustomers)} sandbox lives · ${annualFmtCount(sandboxIx.stats.claimsPaidCount)} claims paid`
         : null);
 
-      set('annual-src-reserves', !!currentReserveProjection, currentReserveProjection
+      // Only treat reserves/valuation as bound when they belong to the current
+      // simulation, mirroring buildAnnualReportPayload — otherwise the panel
+      // would show BOUND while the built report drops the stale snapshot.
+      const simId = sim?.simulation_id || null;
+      const reservesBound = !!(currentReserveProjection && currentReserveProjection.simulation_id === simId);
+      set('annual-src-reserves', reservesBound, reservesBound
         ? `${currentReserveProjection.projection_years || 0}-year projection · closing reserve ${annualFmtMoney(currentReserveProjection.totals?.closing_reserve || 0, document.getElementById('annual-currency')?.value)}`
         : null);
 
-      set('annual-src-valuation', !!currentValuation, currentValuation
+      const valuationBound = !!(currentValuation && currentValuation.simulation_id === simId);
+      set('annual-src-valuation', valuationBound, valuationBound
         ? `hash ${currentValuation.integrity_hash} · BE ${annualFmtMoney(currentValuation.summary?.best_estimate_total_company || 0, document.getElementById('annual-currency')?.value)}`
         : null);
 
@@ -7733,8 +7741,7 @@
 
       const badge = document.getElementById('annual-report-source-badge');
       if (badge) {
-        const sources = [sim, sandboxIx, currentReserveProjection, currentValuation];
-        const bound = sources.filter(Boolean).length;
+        const bound = [!!sim, !!sandboxIx, reservesBound, valuationBound].filter(Boolean).length;
         badge.textContent = `Pipeline: ${bound}/4 simulation sources bound`;
       }
     }
@@ -7834,6 +7841,7 @@
       payload.integrity_hash = annualIntegrityHash({
         issuer: payload.issuer, packs: payload.packs,
         capRows: payload.capRows, debtRows: payload.debtRows,
+        appendix: payload.appendix,
         bound: payload.bound, statements: payload.statements,
       });
       return payload;
@@ -8351,7 +8359,10 @@
     }
 
     function annualEnsureBuilt() {
-      if (!annualReport.lastBuilt) buildAnnualReportPreview();
+      // Always rebuild before an export so edits to issuer fields, cap table,
+      // debt, packs, or appendix are reflected in the downloaded document and
+      // its integrity hash. The build is deterministic from current inputs.
+      buildAnnualReportPreview();
       return annualReport.lastBuilt;
     }
 
