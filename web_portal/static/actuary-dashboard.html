@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <!-- Build stamp: bumped whenever a substantive pricing change ships so
        cached browsers can tell users they are running an old UI. -->
-  <meta name="phins-actuary-dashboard-build" content="2026-05-15.annuity-reserves-forecast">
+  <meta name="phins-actuary-dashboard-build" content="2026-06-03.annual-regulatory-report-ui">
   <!-- Chart.js for the Annuity Reserves forecast bar/line charts. Loaded
        from the same CDN as risk-reports-dashboard.html for consistency. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -718,6 +718,136 @@
       }
     }
 
+    /* ========== Annual Regulatory Report Bar ==========
+       A first-class regulator-grade report that aggregates the
+       simulation, sandbox, reserves and valuation pipeline into a
+       single jurisdiction-aware filing (US 10-K / NAIC, Canada
+       OSFI/CSA, Israel ISA/CMISA + IFRS 17). */
+    .annual-report-preview {
+      background: #fff;
+      color: #1a202c;
+      padding: 28px 32px;
+      border: 1px solid #cbd5e0;
+      border-radius: 6px;
+      font-family: 'Times New Roman', Georgia, serif;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      max-height: 720px;
+      overflow-y: auto;
+    }
+    .annual-report-preview h1,
+    .annual-report-preview h2,
+    .annual-report-preview h3,
+    .annual-report-preview h4 {
+      font-family: 'Times New Roman', Georgia, serif;
+      color: #1a365d;
+      margin-top: 14px;
+      margin-bottom: 8px;
+    }
+    .annual-report-preview h1 { font-size: 1.6rem; border-bottom: 2px solid #1a365d; padding-bottom: 8px; }
+    .annual-report-preview h2 { font-size: 1.25rem; border-bottom: 1px solid #cbd5e0; padding-bottom: 4px; margin-top: 22px; }
+    .annual-report-preview h3 { font-size: 1.05rem; margin-top: 16px; }
+    .annual-report-preview table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.85rem;
+    }
+    .annual-report-preview th,
+    .annual-report-preview td {
+      border: 1px solid #cbd5e0;
+      padding: 5px 8px;
+      text-align: left;
+    }
+    .annual-report-preview th {
+      background: #ebf4ff;
+      color: #1a365d;
+      font-weight: 600;
+    }
+    .annual-report-preview td.num,
+    .annual-report-preview th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .annual-report-preview .annual-cover {
+      text-align: center;
+      padding: 24px 12px 18px;
+      border-bottom: 1px solid #1a365d;
+      margin-bottom: 18px;
+    }
+    .annual-report-preview .annual-cover .doc-title {
+      font-size: 1.8rem;
+      color: #1a365d;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .annual-report-preview .annual-cover .issuer {
+      font-size: 1.2rem;
+      color: #2b6cb0;
+      margin-bottom: 4px;
+    }
+    .annual-report-preview .annual-cover .meta {
+      color: #4a5568;
+      font-size: 0.95rem;
+    }
+    .annual-report-preview .integrity {
+      background: #f0fff4;
+      border: 1px solid #9ae6b4;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin: 12px 0;
+      font-size: 0.85rem;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+    }
+    .annual-report-preview .integrity.bad {
+      background: #fff5f5;
+      border-color: #fc8181;
+      color: #742a2a;
+    }
+    .annual-report-preview .note {
+      background: #fffaf0;
+      border-left: 3px solid #d69e2e;
+      padding: 8px 12px;
+      margin: 10px 0;
+      font-size: 0.88rem;
+    }
+    .annual-report-preview .jurisdiction-tag {
+      display: inline-block;
+      background: #1a365d;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-right: 4px;
+    }
+    .annual-report-preview .appendix {
+      background: #f7fafc;
+      border-left: 3px solid #2b6cb0;
+      padding: 10px 14px;
+      margin: 10px 0;
+      white-space: pre-wrap;
+      font-family: 'Times New Roman', Georgia, serif;
+    }
+    #annual-cap-table .num-input,
+    #annual-debt-table .num-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px 6px;
+      border: 1px solid #cbd5e0;
+      border-radius: 4px;
+      font-size: 0.88rem;
+    }
+    #annual-cap-table .row-del,
+    #annual-debt-table .row-del {
+      background: transparent;
+      border: 1px solid #fc8181;
+      color: #c53030;
+      border-radius: 4px;
+      padding: 2px 6px;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+
     /* ========== Actuarial Sandbox Testing Bar ==========
        The sandbox is a self-contained "what-if" lab on the actuary
        dashboard. It never reads from or writes to the admin pipeline
@@ -1015,6 +1145,14 @@
           <div class="nav-item" onclick="showSection('reports')">
             <span class="nav-icon">📑</span>
             <span>Reports &amp; Exports</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Regulatory</div>
+          <div class="nav-item" onclick="showSection('annual-report')">
+            <span class="nav-icon">🏛️</span>
+            <span>Annual Regulatory Report</span>
           </div>
         </div>
 
@@ -2703,6 +2841,283 @@
               <div id="sandbox-activity-feed" style="max-height:480px;overflow-y:auto;">
                 <div style="color:var(--text-light);text-align:center;padding:24px 0;">No sandbox events yet.</div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Annual Regulatory Report Section -->
+        <section id="section-annual-report" class="section">
+          <h2 class="section-title">🏛️ Annual Regulatory Report
+            <span id="annual-report-source-badge" class="header-badge" style="background:rgba(43,108,176,0.12);color:var(--secondary);margin-left:8px;">
+              Pipeline: not bound
+            </span>
+          </h2>
+
+          <div class="alert alert-warning">
+            <strong>First-class annual filing.</strong> This bar produces a single, jurisdiction-aware annual report that public insurance issuers in the
+            <strong>United States (SEC&nbsp;10-K + NAIC&nbsp;statutory)</strong>, <strong>Canada (OSFI&nbsp;MCT/LICAT + CSA AIF on SEDAR+)</strong>, and
+            <strong>Israel (ISA prospectus + CMISA Solvency II + IFRS&nbsp;17)</strong> file with their regulators and stock-exchange chamber.
+            Every figure is sourced deterministically from the <em>Simulation</em> bars (portfolio simulator + sandbox lifecycle + reserves + valuation)
+            so the pipeline stays the single source of truth — no figures are invented in this section.
+          </div>
+
+          <!-- ===================== 1. Pipeline data binding ===================== -->
+          <div class="card">
+            <div class="card-title">📥 Pipeline Data Sources</div>
+            <p style="color:var(--text-light);margin-bottom:10px;font-size:0.9rem;">
+              The report binds to the most recent run of each <em>Simulation</em> bar. Run the relevant sections first to populate every block.
+            </p>
+            <table class="data-table" id="annual-pipeline-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Status</th>
+                  <th>Snapshot</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-source="simulation">
+                  <td>Portfolio Simulator</td>
+                  <td><span id="annual-src-simulation" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-simulation-detail" class="muted-text">No simulation linked.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('simulator')">Open</button></td>
+                </tr>
+                <tr data-source="sandbox">
+                  <td>Sandbox Testing (realized lifecycle)</td>
+                  <td><span id="annual-src-sandbox" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-sandbox-detail" class="muted-text">No sandbox book generated.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('sandbox')">Open</button></td>
+                </tr>
+                <tr data-source="reserves">
+                  <td>Reserves &amp; IFRS 17 Projection</td>
+                  <td><span id="annual-src-reserves" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-reserves-detail" class="muted-text">No reserve projection bound.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('reserves')">Open</button></td>
+                </tr>
+                <tr data-source="valuation">
+                  <td>Portfolio Valuation</td>
+                  <td><span id="annual-src-valuation" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-valuation-detail" class="muted-text">No valuation bound.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('valuation')">Open</button></td>
+                </tr>
+                <tr data-source="reinsurance">
+                  <td>Reinsurance Hedge Program</td>
+                  <td><span id="annual-src-reinsurance" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-reinsurance-detail" class="muted-text">No bound reinsurance program.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('reinsurance')">Open</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-outline" onclick="refreshAnnualReportSources()">🔄 Re-bind Pipeline</button>
+              <span id="annual-sources-msg" class="muted-text"></span>
+            </div>
+          </div>
+
+          <!-- ===================== 2. Issuer profile ===================== -->
+          <div class="card">
+            <div class="card-title">🏢 Issuer Profile (adjustable)</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Issuer Legal Name</label>
+                <input type="text" id="annual-issuer-name" class="form-input" value="PHINS Insurance Holdings Ltd.">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Trading Symbol / Ticker</label>
+                <input type="text" id="annual-issuer-ticker" class="form-input" value="PHINS">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Registration / CIK / Issuer #</label>
+                <input type="text" id="annual-issuer-regno" class="form-input" value="—">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Reporting Currency</label>
+                <select id="annual-currency" class="form-input">
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="ILS">ILS — Israeli Shekel</option>
+                  <option value="CAD">CAD — Canadian Dollar</option>
+                  <option value="EUR">EUR — Euro</option>
+                  <option value="GBP">GBP — Pound Sterling</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Fiscal Year</label>
+                <input type="number" id="annual-fy" class="form-input" value="2026" min="2000" max="2100" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Period Start</label>
+                <input type="date" id="annual-period-start" class="form-input" value="2026-01-01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Period End</label>
+                <input type="date" id="annual-period-end" class="form-input" value="2026-12-31">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Home Jurisdiction</label>
+                <select id="annual-home-jurisdiction" class="form-input">
+                  <option value="israel">Israel — primary listing on TASE</option>
+                  <option value="usa">United States — primary listing on NYSE/Nasdaq</option>
+                  <option value="canada">Canada — primary listing on TSX</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Stock Exchange Chamber Filing</label>
+                <input type="text" id="annual-exchange-filing" class="form-input"
+                       value="Tel-Aviv Stock Exchange · Magna / EDGAR / SEDAR+ as applicable">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Auditor (Big-4 or local PA firm)</label>
+                <input type="text" id="annual-auditor" class="form-input" value="To be appointed by Audit Committee">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex:2;">
+                <label class="form-label">Description of Business</label>
+                <textarea id="annual-business-desc" class="form-input" rows="2"
+                  >PHINS is a digital insurance issuer underwriting a transparent adjustable life-and-disability product line. The book is priced and reserved by a single deterministic actuarial kernel that flows into the financial statements without manual overrides.</textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================== 3. Standards selector ===================== -->
+          <div class="card">
+            <div class="card-title">📚 Regulatory Standards to Include</div>
+            <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
+              Tick every standards pack the issuer is required to file under. Sections of the report are generated, named and ordered to match the selected regulators.
+            </p>
+            <div class="form-row" style="flex-wrap:wrap;gap:18px;">
+              <div class="form-group" style="min-width:280px;">
+                <strong style="display:block;margin-bottom:6px;">🇮🇱 Israel</strong>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="il_isa" checked> ISA prospectus / annual report (Securities Law 5728-1968)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="il_cmisa" checked> CMISA — Capital Markets, Insurance &amp; Savings Authority Solvency II quantitative reporting (Forms 5/6/7)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="il_ifrs17" checked> IFRS 17 insurance-contract disclosure (Israeli GAAP convergence)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="il_tase"> TASE corporate-governance &amp; periodic-report addendum</label>
+              </div>
+              <div class="form-group" style="min-width:280px;">
+                <strong style="display:block;margin-bottom:6px;">🇺🇸 United States</strong>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="us_sec_10k" checked> SEC Form 10-K (Items 1, 1A, 7, 8)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="us_naic" checked> NAIC Annual Statement (Statutory Blue Book — Schedule P / IRIS ratios)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="us_rbc" checked> NAIC Risk-Based Capital (RBC) computation</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="us_orsa"> ORSA Summary Report (NAIC Model #505)</label>
+              </div>
+              <div class="form-group" style="min-width:280px;">
+                <strong style="display:block;margin-bottom:6px;">🇨🇦 Canada</strong>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="ca_osfi_licat" checked> OSFI LICAT — Life Insurance Capital Adequacy Test</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="ca_osfi_mct"> OSFI MCT — Minimum Capital Test (P&amp;C only)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="ca_csa_aif" checked> CSA Annual Information Form (NI 51-102, SEDAR+)</label>
+                <label style="display:block;font-size:0.9rem;"><input type="checkbox" class="annual-pack" value="ca_amf"> AMF (Quebec) — supplementary disclosures</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================== 4. Capital structure — cap table ===================== -->
+          <div class="card">
+            <div class="card-title">📊 Capital Structure — Cap Table (up to 5 named holders + public float)</div>
+            <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
+              Each row defines a shareholder block. The <em>Public Float</em> row is reserved (always last). Percentages are validated to sum to <strong>100%</strong>;
+              the report flags any deviation as a data-integrity error.
+            </p>
+            <table class="data-table" id="annual-cap-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Holder Legal Name</th>
+                  <th>Type</th>
+                  <th>% Equity</th>
+                  <th>Voting?</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="annual-cap-table-body"></tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="3" style="text-align:right;">Total</th>
+                  <th id="annual-cap-total">0.00%</th>
+                  <th colspan="2"><span id="annual-cap-total-msg" class="muted-text">—</span></th>
+                </tr>
+              </tfoot>
+            </table>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn-small btn-outline" onclick="addAnnualCapRow()">+ Add holder</button>
+              <button class="btn-small btn-outline" onclick="resetAnnualCapTable()">↺ Reset to defaults (100% Enable + public float)</button>
+            </div>
+          </div>
+
+          <!-- ===================== 5. Debt schedule ===================== -->
+          <div class="card">
+            <div class="card-title">💳 Debt Schedule (creditors, %&nbsp;of debt, %&nbsp;credit/coupon)</div>
+            <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
+              Add any subordinated debt, credit lines or convertible notes. The report computes total debt, weighted-average coupon and a debt-to-equity ratio derived from the bound valuation snapshot.
+            </p>
+            <table class="data-table" id="annual-debt-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Creditor / Instrument</th>
+                  <th>Type</th>
+                  <th>Principal</th>
+                  <th>% of Total Debt</th>
+                  <th>% Coupon / Credit Rate</th>
+                  <th>Maturity</th>
+                </tr>
+              </thead>
+              <tbody id="annual-debt-table-body"></tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="3" style="text-align:right;">Totals</th>
+                  <th id="annual-debt-total-principal">$0.00</th>
+                  <th id="annual-debt-total-pct">0.00%</th>
+                  <th id="annual-debt-wac">0.00%</th>
+                  <th></th>
+                </tr>
+              </tfoot>
+            </table>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn-small btn-outline" onclick="addAnnualDebtRow()">+ Add creditor</button>
+              <button class="btn-small btn-outline" onclick="resetAnnualDebtTable()">↺ Clear schedule</button>
+            </div>
+          </div>
+
+          <!-- ===================== 6. Adjustable appendix ===================== -->
+          <div class="card">
+            <div class="card-title">📎 Adjustable Appendix</div>
+            <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
+              Free-form text appended at the end of the report (Notes to the Financial Statements, legal disclaimers, signed-off opinions, regulator-specific addenda).
+              Use blank lines to separate paragraphs.
+            </p>
+            <textarea id="annual-appendix" class="form-input" rows="6" style="font-family:var(--font-mono, monospace);font-size:0.9rem;"
+              >Appendix A — Going Concern Statement
+The Board has reviewed the cash-flow forecast for the next twelve months and is satisfied the Company will continue to meet its obligations as they fall due.
+
+Appendix B — Subsequent Events
+None requiring disclosure as of the date of issuance.
+
+Appendix C — Officer Certifications
+The undersigned Chief Executive Officer and Chief Financial Officer certify that the financial statements present fairly, in all material respects, the financial condition and results of operations of the issuer.</textarea>
+          </div>
+
+          <!-- ===================== 7. Build / export bar ===================== -->
+          <div class="card">
+            <div class="card-title">⬇️ Build &amp; Distribute</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-primary" onclick="buildAnnualReportPreview()">📄 Build Report Preview</button>
+              <button class="btn btn-success" onclick="downloadAnnualReportPDF()">🧾 Download PDF</button>
+              <button class="btn btn-outline" onclick="downloadAnnualReportHTML()">🌐 Download HTML</button>
+              <button class="btn btn-outline" onclick="downloadAnnualReportCSV()">📄 Download CSV bundle</button>
+              <span id="annual-build-msg" class="muted-text"></span>
+            </div>
+          </div>
+
+          <!-- ===================== 8. Preview ===================== -->
+          <div class="card">
+            <div class="card-title">📑 Annual Report Preview</div>
+            <div id="annual-report-preview" class="annual-report-preview">
+              <p style="color:var(--text-light);">Click <strong>Build Report Preview</strong> to render the annual filing. The preview mirrors the downloadable PDF/HTML one-for-one.</p>
             </div>
           </div>
         </section>
