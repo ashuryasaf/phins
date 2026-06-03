@@ -8451,6 +8451,25 @@
       if (p.statements.licat) sections.push(section('OSFI LICAT (Canada)', ['Component', 'Value', 'Kind'], p.statements.licat.components.map(r => [r[0], r[1], r[2] || 'money'])));
       if (p.statements.cash_flow) sections.push(section('Cash Flow', ['Year', 'PremiumInflow', 'ClaimsOutflow', 'OperatingProfit', 'Tax', 'Dividends', 'ReserveContribution', 'NetCashFlow'],
         p.statements.cash_flow.map(x => [x.year, x.premium_inflow, x.claim_outflow, x.operating_profit, x.tax, x.dividends, x.reserve_contribution, x.net_cash_flow])));
+      if (p.statements.demographics) {
+        const d = p.statements.demographics;
+        const demoRows = [
+          ...Object.entries(d.age_distribution || {}).map(([k, v]) => ['Age band', k, v]),
+          ...Object.entries(d.gender || {}).map(([k, v]) => ['Gender', k, v]),
+          ...Object.entries(d.ethnicity || {}).map(([k, v]) => ['Ethnicity', k, v]),
+        ];
+        sections.push(section('Demographic Statistics', ['Category', 'Segment', 'Lives'], demoRows));
+      }
+      if (p.statements.underwriting_kpis) {
+        const u = p.statements.underwriting_kpis;
+        sections.push(section('Underwriting KPIs', ['Metric', 'Value'], [
+          ['Customers Accepted', u.customers_accepted], ['Acceptance Rate (%)', u.acceptance_rate],
+          ['Total Coverage', u.total_coverage], ['Gross Premium', u.gross_premium],
+          ['Loss Ratio (%)', u.loss_ratio], ['Mortality % of Claims', u.mortality_pct],
+          ['Disability % of Claims', u.disability_pct], ['Automation Rate (%)', u.automation_rate],
+          ['Declined Count', u.declined_count],
+        ]));
+      }
       sections.push(section('Integrity Checks', ['Check', 'Result', 'Detail'], p.checks.map(c => [c.name, c.ok ? 'PASS' : 'FAIL', c.detail])));
       sections.push(section('Standards Packs Selected', ['Pack ID', 'Label'], p.packs.map(pk => [pk, ANNUAL_PACK_LABELS[pk] || pk])));
       const csv = '\uFEFF' + sections.join('\n\n');
@@ -8535,13 +8554,13 @@
             (p.debtTotalPrincipal > 0 ? ((r.principal / p.debtTotalPrincipal) * 100).toFixed(2) + '%' : '—'),
             r.coupon.toFixed(2) + '%', r.maturity || '—']),
           { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } }));
+        afterTable();
       } else {
         doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(...MUTED);
         doc.text('No interest-bearing debt outstanding.', margin, y + 10);
         y += 22;
         doc.setTextColor(...INK);
       }
-      afterTable();
 
       // Section B — MD&A
       const u = p.statements.underwriting_kpis || {};
@@ -8625,6 +8644,21 @@
           ['Reserve relief', annualFmtMoney(r.reserve_relief, ccy)],
         ], { columnStyles: { 1: { halign: 'right' } } }));
         afterTable();
+      }
+
+      // Section H — Demographics & underwriting statistics
+      if (p.statements.demographics) {
+        const d = p.statements.demographics;
+        const demoTable = (heading, columnHeader, obj) => {
+          const rows = Object.entries(obj || {}).map(([k, v]) => [k, annualFmtCount(v)]);
+          if (!rows.length) return;
+          sectionHeading(heading);
+          doc.autoTable(tableOpts([columnHeader, 'Lives'], rows, { columnStyles: { 1: { halign: 'right' } } }));
+          afterTable();
+        };
+        demoTable('Section H.1 — Age Distribution', 'Age band', d.age_distribution);
+        demoTable('Section H.2 — Gender Distribution', 'Gender', d.gender);
+        demoTable('Section H.3 — Ethnicity Distribution', 'Ethnicity', d.ethnicity);
       }
 
       // Section I — Cash flow
