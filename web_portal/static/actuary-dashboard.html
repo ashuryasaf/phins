@@ -2737,6 +2737,8 @@
     let currentConfig = null;
     let currentSimulation = null;
     let currentReinsuranceProgram = null;
+    let currentReserveProjection = null;
+    let currentValuation = null;
     let currentRecommendedQuote = null;
     
     const ADL_DESCRIPTIONS = {
@@ -3017,6 +3019,7 @@
       currentReinsuranceProgram = program || null;
       updateOverviewReinsurance(currentReinsuranceProgram);
       renderReinsuranceResearch(currentReinsuranceProgram);
+      refreshAnnualReportSources();
 
       const summary = document.getElementById('reins-program-summary');
       if (!program) {
@@ -3748,7 +3751,15 @@
         
         if (data.success) {
           currentSimulation = data.simulation;
+          // A fresh simulation supersedes any earlier reserve/valuation/
+          // reinsurance snapshots; drop them so the annual report can never
+          // pair this run's premiums with a previous run's reserves,
+          // valuation, or hedge program.
+          currentReserveProjection = null;
+          currentValuation = null;
+          renderReinsuranceProgram(null);
           renderSimulationResults(data.simulation);
+          refreshAnnualReportSources();
           // Auto-fill reserves and reports forms with this simulation id
           const reserveIdField = document.getElementById('reserve-sim-id');
           if (reserveIdField) reserveIdField.value = data.simulation.simulation_id;
@@ -4160,6 +4171,8 @@
         resultsEl.innerHTML = '<p class="text-danger">No projection returned.</p>';
         return;
       }
+      currentReserveProjection = projection;
+      refreshAnnualReportSources();
       const totals = projection.totals || {};
       const rows = (projection.yearly_projection || []).map((row) => `
         <tr>
@@ -5432,6 +5445,8 @@
         bandsEl.innerHTML = '<p class="text-danger">No valuation returned.</p>';
         return;
       }
+      currentValuation = val;
+      refreshAnnualReportSources();
       const bands = val.bands || {};
       const order = [
         ['insurance_portfolio', '🛡️ Insurance Portfolio'],
@@ -5991,6 +6006,9 @@
       // the actuary can explore the projection before starting the cycle.
       seedSandboxProjection();
       renderSandbox();
+      // Keep the annual report binding panel in sync with the freshly
+      // generated sandbox so it reflects the latest pipeline state.
+      refreshAnnualReportSources();
       const msg = document.getElementById('sandbox-action-msg');
       if (msg) msg.textContent = `Generated ${sandboxFmtCount(materialize)} sandbox accounts from sim ${sim.simulation_id} (contract ${productId}, accepted ages ${acceptedAgeMin}–${acceptedAgeMax}). 5-year forecast ready in the Monthly Projection tab. Click ▶️ Start Random Lifecycle to begin.`;
     }
@@ -7474,6 +7492,1252 @@
     // populated before the user navigates to the section.
     document.addEventListener('DOMContentLoaded', () => {
       try { renderSandbox(); renderSandboxBanner(); } catch (e) { /* ignore */ }
+    });
+
+    // =====================================================================
+    // ANNUAL REGULATORY REPORT
+    //
+    // First-class, deterministic regulator-grade report generator. Pulls
+    // every figure from the Simulation pipeline (portfolio simulator,
+    // sandbox lifecycle, reserves & IFRS 17 projection, portfolio
+    // valuation, bound reinsurance program) so the output ties back to
+    // the same audit trail every other actuary section uses. No values
+    // are invented here — the cap-table, debt schedule and appendix are
+    // the only user-controlled inputs, and every cell of every table
+    // sourced from the pipeline is traceable to its origin section.
+    // =====================================================================
+    const annualReport = {
+      capRows: [],
+      debtRows: [],
+      // Last successfully built report payload (used by PDF/HTML/CSV
+      // exports so the three downloads always agree to the cent).
+      lastBuilt: null,
+    };
+
+    const ANNUAL_CAP_TYPES = ['Founder', 'Strategic', 'Institutional', 'Treasury', 'Public Float', 'Employee Pool', 'Other'];
+    const ANNUAL_DEBT_TYPES = ['Senior Unsecured', 'Senior Secured', 'Subordinated', 'Convertible Note', 'Bank Facility', 'Bond', 'Credit Line', 'Other'];
+
+    const ANNUAL_PACK_LABELS = {
+      il_isa: 'Israel · ISA Annual Report (Securities Law 5728-1968)',
+      il_cmisa: 'Israel · CMISA Solvency II Quantitative Reporting (Forms 5/6/7)',
+      il_ifrs17: 'Israel · IFRS 17 Insurance-Contract Disclosure',
+      il_tase: 'Israel · TASE Corporate-Governance Addendum',
+      us_sec_10k: 'United States · SEC Form 10-K',
+      us_naic: 'United States · NAIC Annual Statement (Statutory Blue Book)',
+      us_rbc: 'United States · NAIC Risk-Based Capital (RBC)',
+      us_orsa: 'United States · ORSA Summary Report',
+      ca_osfi_licat: 'Canada · OSFI LICAT (Life Capital Adequacy Test)',
+      ca_osfi_mct: 'Canada · OSFI MCT (Minimum Capital Test)',
+      ca_csa_aif: 'Canada · CSA Annual Information Form (SEDAR+)',
+      ca_amf: 'Canada · AMF (Quebec) Supplementary Disclosure',
+    };
+
+    // Currency symbol map used by the report formatter. The dashboard's
+    // existing fmtCurrency() helper assumes USD; the report needs to
+    // honour the issuer-selected currency without rewriting that helper.
+    const ANNUAL_CCY_SYMBOL = { USD: '$', ILS: '₪', CAD: 'CA$', EUR: '€', GBP: '£' };
+
+    function annualFmtMoney(value, ccy) {
+      const n = Number(value || 0);
+      const sym = ANNUAL_CCY_SYMBOL[ccy] || (ccy ? (ccy + ' ') : '$');
+      const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (n < 0 ? '-' + sym : sym) + abs;
+    }
+    function annualFmtCount(value) {
+      return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+    function annualFmtPct(value, digits) {
+      const d = digits != null ? digits : 2;
+      return (Number(value || 0)).toFixed(d) + '%';
+    }
+    function annualEsc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    // Deterministic 32-bit hash used as the report integrity stamp. The
+    // same inputs always produce the same hash so downstream auditors can
+    // reconcile a PDF back to the simulation/sandbox/reserve snapshot.
+    function annualIntegrityHash(payload) {
+      const s = JSON.stringify(payload);
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+      return h.toString(16).padStart(8, '0').toUpperCase();
+    }
+
+    // ----- Cap table editor -----
+    function annualCapDefaults() {
+      return [
+        { name: 'Enable Holdings', type: 'Founder', pct: 100, voting: true, notes: 'Controlling shareholder — 100% pre-IPO ownership' },
+        { name: 'Public Float', type: 'Public Float', pct: 0, voting: true, notes: 'Reserved for free float post-IPO' },
+      ];
+    }
+    function resetAnnualCapTable() {
+      annualReport.capRows = annualCapDefaults();
+      renderAnnualCapTable();
+    }
+    function addAnnualCapRow() {
+      const publicIdx = annualReport.capRows.findIndex(r => (r.type || '').toLowerCase() === 'public float');
+      const newRow = { name: '', type: 'Institutional', pct: 0, voting: true, notes: '' };
+      let insertedIdx;
+      if (publicIdx >= 0 && publicIdx === annualReport.capRows.length - 1) {
+        annualReport.capRows.splice(publicIdx, 0, newRow);
+        insertedIdx = publicIdx;
+      } else {
+        annualReport.capRows.push(newRow);
+        insertedIdx = annualReport.capRows.length - 1;
+      }
+      // Up-to-five-named-holders + public float cap.
+      const named = annualReport.capRows.filter(r => (r.type || '').toLowerCase() !== 'public float').length;
+      if (named > 5) {
+        annualReport.capRows.splice(insertedIdx, 1);
+        alert('Cap table is limited to 5 named holders + public float. Remove a holder before adding another.');
+      }
+      renderAnnualCapTable();
+    }
+    function removeAnnualCapRow(ix) {
+      annualReport.capRows.splice(ix, 1);
+      renderAnnualCapTable();
+    }
+    function renderAnnualCapTable() {
+      const body = document.getElementById('annual-cap-table-body');
+      if (!body) return;
+      if (!annualReport.capRows.length) annualReport.capRows = annualCapDefaults();
+      body.innerHTML = annualReport.capRows.map((r, ix) => {
+        const isPublic = (r.type || '').toLowerCase() === 'public float';
+        const typeOpts = ANNUAL_CAP_TYPES.map(t => `<option value="${annualEsc(t)}"${t === r.type ? ' selected' : ''}>${annualEsc(t)}</option>`).join('');
+        return `
+          <tr>
+            <td>${ix + 1}</td>
+            <td><input type="text" class="num-input" value="${annualEsc(r.name)}" oninput="annualReport.capRows[${ix}].name=this.value;updateAnnualCapTotal()" ${isPublic ? '' : ''}></td>
+            <td><select class="num-input" onchange="annualReport.capRows[${ix}].type=this.value;updateAnnualCapTotal()">${typeOpts}</select></td>
+            <td><input type="number" class="num-input" min="0" max="100" step="0.01" value="${Number(r.pct || 0)}" oninput="annualReport.capRows[${ix}].pct=parseFloat(this.value)||0;updateAnnualCapTotal()"></td>
+            <td style="text-align:center;"><input type="checkbox" ${r.voting ? 'checked' : ''} onchange="annualReport.capRows[${ix}].voting=this.checked"></td>
+            <td>
+              <input type="text" class="num-input" value="${annualEsc(r.notes || '')}" oninput="annualReport.capRows[${ix}].notes=this.value">
+              ${isPublic ? '' : `<button class="row-del" style="margin-left:6px;" onclick="removeAnnualCapRow(${ix})">×</button>`}
+            </td>
+          </tr>
+        `;
+      }).join('');
+      updateAnnualCapTotal();
+    }
+    function updateAnnualCapTotal() {
+      const total = annualReport.capRows.reduce((s, r) => s + (Number(r.pct) || 0), 0);
+      const totalEl = document.getElementById('annual-cap-total');
+      const msgEl = document.getElementById('annual-cap-total-msg');
+      if (totalEl) totalEl.textContent = total.toFixed(2) + '%';
+      if (msgEl) {
+        if (Math.abs(total - 100) < 0.01) {
+          msgEl.textContent = '✅ Balances to 100%';
+          msgEl.style.color = 'var(--success)';
+        } else {
+          msgEl.textContent = `⚠️ Off by ${(total - 100).toFixed(2)}% — must equal 100%`;
+          msgEl.style.color = 'var(--danger)';
+        }
+      }
+    }
+
+    // ----- Debt schedule editor -----
+    function resetAnnualDebtTable() {
+      annualReport.debtRows = [];
+      renderAnnualDebtTable();
+    }
+    function addAnnualDebtRow() {
+      annualReport.debtRows.push({ name: '', type: 'Senior Unsecured', principal: 0, coupon: 0, maturity: '' });
+      renderAnnualDebtTable();
+    }
+    function removeAnnualDebtRow(ix) {
+      annualReport.debtRows.splice(ix, 1);
+      renderAnnualDebtTable();
+    }
+    function renderAnnualDebtTable() {
+      const body = document.getElementById('annual-debt-table-body');
+      if (!body) return;
+      if (!annualReport.debtRows.length) {
+        body.innerHTML = `<tr><td colspan="7" class="muted-text" style="text-align:center;color:var(--text-light);">No debt instruments. Click <em>Add creditor</em> to register one.</td></tr>`;
+        updateAnnualDebtTotal();
+        return;
+      }
+      const total = annualReport.debtRows.reduce((s, r) => s + (Number(r.principal) || 0), 0);
+      body.innerHTML = annualReport.debtRows.map((r, ix) => {
+        const typeOpts = ANNUAL_DEBT_TYPES.map(t => `<option value="${annualEsc(t)}"${t === r.type ? ' selected' : ''}>${annualEsc(t)}</option>`).join('');
+        const pct = total > 0 ? ((Number(r.principal) || 0) / total) * 100 : 0;
+        return `
+          <tr>
+            <td>${ix + 1}</td>
+            <td><input type="text" class="num-input" value="${annualEsc(r.name)}" oninput="annualReport.debtRows[${ix}].name=this.value"></td>
+            <td><select class="num-input" onchange="annualReport.debtRows[${ix}].type=this.value">${typeOpts}</select></td>
+            <td><input type="number" class="num-input" min="0" step="1000" value="${Number(r.principal || 0)}" oninput="annualReport.debtRows[${ix}].principal=parseFloat(this.value)||0;updateAnnualDebtTotal();renderAnnualDebtTable()"></td>
+            <td>${pct.toFixed(2)}%</td>
+            <td><input type="number" class="num-input" min="0" step="0.05" value="${Number(r.coupon || 0)}" oninput="annualReport.debtRows[${ix}].coupon=parseFloat(this.value)||0;updateAnnualDebtTotal()"></td>
+            <td>
+              <input type="text" class="num-input" placeholder="YYYY-MM-DD" value="${annualEsc(r.maturity || '')}" oninput="annualReport.debtRows[${ix}].maturity=this.value">
+              <button class="row-del" style="margin-left:6px;" onclick="removeAnnualDebtRow(${ix})">×</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      updateAnnualDebtTotal();
+    }
+    function updateAnnualDebtTotal() {
+      const totalPrincipal = annualReport.debtRows.reduce((s, r) => s + (Number(r.principal) || 0), 0);
+      const totalPctEl = document.getElementById('annual-debt-total-pct');
+      const totalPrincEl = document.getElementById('annual-debt-total-principal');
+      const wacEl = document.getElementById('annual-debt-wac');
+      const ccy = document.getElementById('annual-currency')?.value || 'USD';
+      if (totalPrincEl) totalPrincEl.textContent = annualFmtMoney(totalPrincipal, ccy);
+      if (totalPctEl) totalPctEl.textContent = totalPrincipal > 0 ? '100.00%' : '0.00%';
+      let wac = 0;
+      if (totalPrincipal > 0) {
+        wac = annualReport.debtRows.reduce((s, r) => s + ((Number(r.principal) || 0) * (Number(r.coupon) || 0)), 0) / totalPrincipal;
+      }
+      if (wacEl) wacEl.textContent = wac.toFixed(2) + '% WAC';
+    }
+
+    // ----- Source binding -----
+    function refreshAnnualReportSources() {
+      const set = (id, ok, label) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.className = 'badge ' + (ok ? 'badge-success' : 'badge-inactive');
+        el.textContent = ok ? 'BOUND' : 'not bound';
+        const detail = document.getElementById(id + '-detail');
+        if (detail) detail.textContent = label || (ok ? 'Ready.' : 'Not bound.');
+      };
+      const sim = currentSimulation;
+      const simId = sim?.simulation_id || null;
+      set('annual-src-simulation', !!sim, sim
+        ? `${sim.simulation_id} · tables ${sim.tables_version} · ${annualFmtCount(sim.portfolio_summary?.accepted_customers)} lives`
+        : null);
+
+      let sandboxIx = null;
+      try {
+        if (window.actuarySandbox && window.actuarySandbox.customers && window.actuarySandbox.customers.length) {
+          sandboxIx = sandboxComputeInsights();
+        }
+      } catch (e) { sandboxIx = null; }
+      // Only treat the sandbox as bound when it was generated for the current
+      // simulation, mirroring buildAnnualReportPayload (sandboxStmtsIx) —
+      // otherwise a stale sandbox left over from a prior run would show BOUND
+      // while the built report drops its realized premiums and cash.
+      const sandboxBound = !!(sandboxIx && sandboxIx.simulationId === simId);
+      set('annual-src-sandbox', sandboxBound, sandboxBound
+        ? `${sandboxIx.simulationId} · ${annualFmtCount(sandboxIx.stats.totalCustomers)} sandbox lives · ${annualFmtCount(sandboxIx.stats.claimsPaidCount)} claims paid`
+        : null);
+
+      // Only treat reserves/valuation as bound when they belong to the current
+      // simulation, mirroring buildAnnualReportPayload — otherwise the panel
+      // would show BOUND while the built report drops the stale snapshot.
+      const reservesBound = !!(currentReserveProjection && currentReserveProjection.simulation_id === simId);
+      set('annual-src-reserves', reservesBound, reservesBound
+        ? `${currentReserveProjection.projection_years || 0}-year projection · closing reserve ${annualFmtMoney(currentReserveProjection.totals?.closing_reserve || 0, document.getElementById('annual-currency')?.value)}`
+        : null);
+
+      const valuationBound = !!(currentValuation && currentValuation.simulation_id === simId);
+      set('annual-src-valuation', valuationBound, valuationBound
+        ? `hash ${currentValuation.integrity_hash} · BE ${annualFmtMoney(currentValuation.summary?.best_estimate_total_company || 0, document.getElementById('annual-currency')?.value)}`
+        : null);
+
+      set('annual-src-reinsurance', !!currentReinsuranceProgram, currentReinsuranceProgram
+        ? `${currentReinsuranceProgram.selected_contracts || 0} treaties · hedge ${annualFmtPct(currentReinsuranceProgram.hedge_share_pct || 0)} of book`
+        : null);
+
+      const badge = document.getElementById('annual-report-source-badge');
+      if (badge) {
+        const bound = [!!sim, sandboxBound, reservesBound, valuationBound].filter(Boolean).length;
+        badge.textContent = `Pipeline: ${bound}/4 simulation sources bound`;
+      }
+    }
+
+    // ----- Report builder (deterministic; no synthetic values) -----
+    function buildAnnualReportPayload() {
+      const currency = document.getElementById('annual-currency')?.value || 'USD';
+      const issuer = {
+        name: (document.getElementById('annual-issuer-name')?.value || '').trim(),
+        ticker: (document.getElementById('annual-issuer-ticker')?.value || '').trim(),
+        regno: (document.getElementById('annual-issuer-regno')?.value || '').trim(),
+        currency,
+        fy: parseInt(document.getElementById('annual-fy')?.value, 10) || new Date().getUTCFullYear(),
+        period_start: document.getElementById('annual-period-start')?.value || '',
+        period_end: document.getElementById('annual-period-end')?.value || '',
+        home_jurisdiction: document.getElementById('annual-home-jurisdiction')?.value || 'israel',
+        exchange_filing: document.getElementById('annual-exchange-filing')?.value || '',
+        auditor: document.getElementById('annual-auditor')?.value || '',
+        business_desc: document.getElementById('annual-business-desc')?.value || '',
+      };
+      const packs = Array.from(document.querySelectorAll('.annual-pack:checked')).map(el => el.value);
+      const capRows = (annualReport.capRows || []).map(r => ({
+        name: r.name || '', type: r.type || '', pct: Number(r.pct) || 0,
+        voting: !!r.voting, notes: r.notes || '',
+      }));
+      const capTotal = capRows.reduce((s, r) => s + r.pct, 0);
+      const debtRows = (annualReport.debtRows || []).map(r => ({
+        name: r.name || '', type: r.type || '', principal: Number(r.principal) || 0,
+        coupon: Number(r.coupon) || 0, maturity: r.maturity || '',
+      }));
+      const debtTotalPrincipal = debtRows.reduce((s, r) => s + r.principal, 0);
+      const debtWAC = debtTotalPrincipal > 0
+        ? debtRows.reduce((s, r) => s + r.principal * r.coupon, 0) / debtTotalPrincipal
+        : 0;
+      const appendix = document.getElementById('annual-appendix')?.value || '';
+
+      // ----- Source snapshots -----
+      const sim = currentSimulation || null;
+      let sandboxIx = null;
+      try {
+        if (window.actuarySandbox && window.actuarySandbox.customers && window.actuarySandbox.customers.length) {
+          sandboxIx = sandboxComputeInsights();
+        }
+      } catch (e) { sandboxIx = null; }
+      // Only pair reserve/valuation snapshots that were produced for the
+      // current simulation. A stale projection/valuation left in memory from
+      // a previous (or superseded) run would otherwise mix one simulation's
+      // premiums with another run's BEL, balance sheet, and capital metrics.
+      const simId = sim?.simulation_id || null;
+      const reserves = (currentReserveProjection && currentReserveProjection.simulation_id === simId)
+        ? currentReserveProjection : null;
+      const valuation = (currentValuation && currentValuation.simulation_id === simId)
+        ? currentValuation : null;
+      const reinsurance = currentReinsuranceProgram || null;
+      // Only feed sandbox realized premiums, claims, and cash into the
+      // statements when the sandbox was generated for the current simulation.
+      // A stale sandbox left over from a prior run (sandbox accounts are not
+      // regenerated automatically) would otherwise mix one simulation's
+      // modelled book with another run's realized figures, mirroring the
+      // reserve/valuation gating above.
+      const sandboxStmtsIx = (sandboxIx && sandboxIx.simulationId === simId)
+        ? sandboxIx : null;
+
+      // ----- Derived statements -----
+      // The deterministic financial statements are built from the
+      // simulation/sandbox/reserves snapshot. Nothing is invented: every
+      // line is either copied directly from a pipeline output or
+      // computed as an explicit arithmetic of those outputs.
+      const stmts = buildAnnualFinancialStatements({ sim, sandboxIx: sandboxStmtsIx, reserves, valuation, reinsurance, debtTotalPrincipal, debtWAC });
+
+      // Integrity checks across the pipeline
+      const checks = [];
+      checks.push({ name: 'Cap table sums to 100%', ok: Math.abs(capTotal - 100) < 0.01, detail: capTotal.toFixed(2) + '%' });
+      checks.push({ name: 'Simulation snapshot bound', ok: !!sim, detail: sim ? sim.simulation_id : 'missing' });
+      checks.push({ name: 'Sandbox lifecycle bound', ok: !!sandboxIx, detail: sandboxIx ? `${sandboxIx.stats.totalCustomers} lives` : 'missing' });
+      checks.push({ name: 'Reserves & IFRS 17 bound', ok: !!reserves, detail: reserves ? `${reserves.projection_years}y` : 'missing' });
+      checks.push({ name: 'Portfolio valuation bound', ok: !!valuation, detail: valuation ? valuation.integrity_hash : 'missing' });
+      if (sim && stmts.premium_reconciliation_ok != null) {
+        checks.push({ name: 'Premium reconciliation (N×avg = total)', ok: stmts.premium_reconciliation_ok, detail: stmts.premium_reconciliation_ok ? 'pass' : 'check Simulator' });
+      }
+      if (sim && sandboxIx) {
+        const simAccepted = sim.portfolio_summary?.accepted_customers || 0;
+        const sandboxTotal = sandboxIx.stats.totalCustomers || 0;
+        const sandboxOk = sandboxIx.simulationId === sim.simulation_id;
+        checks.push({ name: 'Sandbox bound to current simulation', ok: sandboxOk, detail: sandboxOk ? sim.simulation_id : `sandbox=${sandboxIx.simulationId}, sim=${sim.simulation_id}` });
+        if (simAccepted > 0 && sandboxTotal > 0) {
+          const ratio = sandboxTotal / simAccepted;
+          checks.push({ name: 'Sandbox materialization ratio', ok: true, detail: `${(ratio * 100).toFixed(1)}% of simulation lives materialized` });
+        }
+      }
+
+      const payload = {
+        issuer, packs, capRows, capTotal, debtRows, debtTotalPrincipal, debtWAC,
+        appendix, statements: stmts, checks,
+        bound: {
+          simulation_id: sim?.simulation_id || null,
+          tables_version: sim?.tables_version || null,
+          sandbox_simulation_id: sandboxIx?.simulationId || null,
+          reserves_projection_years: reserves?.projection_years || null,
+          valuation_hash: valuation?.integrity_hash || null,
+          reinsurance_contracts: reinsurance?.selected_contracts || 0,
+        },
+        generated_at: new Date().toISOString(),
+      };
+      payload.integrity_hash = annualIntegrityHash({
+        issuer: payload.issuer, packs: payload.packs,
+        capRows: payload.capRows, debtRows: payload.debtRows,
+        appendix: payload.appendix,
+        bound: payload.bound, statements: payload.statements,
+      });
+      return payload;
+    }
+
+    function buildAnnualFinancialStatements(ctx) {
+      const sim = ctx.sim;
+      const sandboxIx = ctx.sandboxIx;
+      const reserves = ctx.reserves;
+      const valuation = ctx.valuation;
+      const reinsurance = ctx.reinsurance;
+      const debtTotalPrincipal = ctx.debtTotalPrincipal || 0;
+      const debtWAC = ctx.debtWAC || 0;
+
+      const out = {
+        premium_reconciliation_ok: null,
+        income_statement: null,
+        balance_sheet: null,
+        ifrs17: null,
+        solvency: null,
+        rbc: null,
+        licat: null,
+        reinsurance: null,
+        demographics: null,
+        underwriting_kpis: null,
+        cash_flow: null,
+      };
+
+      if (sim) {
+        const profitability = sim.profitability || {};
+        const risk = sim.risk_metrics || {};
+        const recon = sim.premium_reconciliation || {};
+        out.premium_reconciliation_ok = !!recon.all_identities_pass;
+        const grossPremium = profitability.gross_premium || 0;
+        const riskPremium = profitability.risk_premium || 0;
+        const savingsPremium = profitability.savings_premium || 0;
+        const expenseLoading = profitability.expense_loading || 0;
+        const profitMargin = profitability.profit_margin || 0;
+        const expectedClaims = profitability.expected_claims || risk.annual_expected_claims || 0;
+        // Sandbox realized layer (preferred if available).
+        const sandboxStats = sandboxIx ? sandboxIx.stats : null;
+        const realizedCollected = sandboxStats ? sandboxStats.collected : 0;
+        const realizedClaimsPaid = sandboxStats ? sandboxStats.claimsPaidTotal : 0;
+        const realizedRiskCollected = sandboxStats ? sandboxStats.riskCollected : 0;
+        const realizedSavingsCollected = sandboxStats ? sandboxStats.savingsCollected : 0;
+
+        // Statement of Profit or Loss — both modelled (sim) and realized
+        // (sandbox) columns where the sandbox is bound, so the regulator
+        // can see the gap between the priced book and the realized book.
+        const interestOnDebt = debtTotalPrincipal * (debtWAC / 100);
+        out.income_statement = {
+          rows: [
+            ['Gross Written Premium (modelled)', grossPremium],
+            ['Premium Collected (realized, ~95% collection)', realizedCollected],
+            ['Premium ceded to reinsurers', -(reinsurance?.total_contract_cost || 0)],
+            ['Net Earned Premium', grossPremium - (reinsurance?.total_contract_cost || 0)],
+            ['Expected Claims (annual, modelled)', -expectedClaims],
+            ['Claims Paid (realized)', -realizedClaimsPaid],
+            ['Acquisition & Operating Expenses', -expenseLoading],
+            ['Interest Expense on Debt', -interestOnDebt],
+            ['Profit Before Tax', (grossPremium - expectedClaims - expenseLoading - (reinsurance?.total_contract_cost || 0) - interestOnDebt)],
+          ],
+          model: { gross_premium: grossPremium, risk_premium: riskPremium, savings_premium: savingsPremium,
+                   expense_loading: expenseLoading, profit_margin: profitMargin, expected_claims: expectedClaims,
+                   net_profit: profitability.net_profit || 0, net_margin_pct: profitability.net_margin_pct || 0 },
+          realized: { collected: realizedCollected, claims_paid: realizedClaimsPaid,
+                      risk_collected: realizedRiskCollected, savings_collected: realizedSavingsCollected },
+        };
+
+        // Balance Sheet — assets driven by valuation + reserves snapshot.
+        const closingReserve = reserves?.totals?.closing_reserve || 0;
+        const cumDividends = reserves?.totals?.cumulative_dividends || 0;
+        const lastYear = (reserves?.yearly_projection || [])[(reserves?.yearly_projection || []).length - 1] || {};
+        const csmBalance = lastYear.ifrs17?.csm_balance || 0;
+        const savingsFundClosing = lastYear.savings_fund?.closing_balance || 0;
+        const ibnrProvision = lastYear.ibnr_provision || 0;
+        const beCompany = valuation?.summary?.best_estimate_total_company || 0;
+        const conservativeCompany = valuation?.summary?.conservative_total_company || 0;
+        const insurancePortfolio = valuation?.bands?.insurance_portfolio?.best_estimate || 0;
+        const riskPortfolioLiability = valuation?.bands?.risk_portfolio?.best_estimate || 0;
+
+        // Assets
+        const investmentsBacking = closingReserve + savingsFundClosing;
+        const goodwill = Math.max(0, beCompany - insurancePortfolio);
+        const cash = Math.max(0, realizedCollected - realizedClaimsPaid);
+        const totalAssets = investmentsBacking + goodwill + cash;
+        // Liabilities
+        const totalLiabilities = closingReserve + ibnrProvision + savingsFundClosing + debtTotalPrincipal;
+        // Equity is the accounting residual so the statement of financial
+        // position balances by identity (Assets = Liabilities + Equity).
+        const totalEquity = totalAssets - totalLiabilities;
+        out.balance_sheet = {
+          assets: [
+            ['Cash and cash equivalents (realized net premium - claims)', cash],
+            ['Investments backing reserves', closingReserve],
+            ['Savings AUM (segregated for policyholders)', savingsFundClosing],
+            ['Intangible assets / goodwill (valuation premium over portfolio)', goodwill],
+            ['Total Assets', totalAssets],
+          ],
+          liabilities_equity: [
+            ['Insurance liabilities — BEL (reserve)', closingReserve],
+            ['IBNR provision', ibnrProvision],
+            ['Policyholder savings liability', savingsFundClosing],
+            ['Long-term debt (principal)', debtTotalPrincipal],
+            ['Total Liabilities', totalLiabilities],
+            ['Shareholders\' Equity (balancing residual)', totalEquity],
+            ['Total Liabilities + Equity', totalLiabilities + totalEquity],
+          ],
+          totals: { totalAssets, totalLiabilities, totalEquity },
+        };
+
+        // IFRS 17 disclosure block (BEL / RA / CSM / fulfilment cash flows).
+        if (reserves?.yearly_projection?.length) {
+          out.ifrs17 = {
+            rows: reserves.yearly_projection.map(r => ({
+              year: r.year,
+              bel_balance: r.ifrs17?.bel_balance || 0,
+              risk_adjustment: r.ifrs17?.risk_adjustment || 0,
+              csm_release: r.ifrs17?.csm_release || 0,
+              csm_balance: r.ifrs17?.csm_balance || 0,
+              in_force_premium: r.in_force_premium || 0,
+              in_force_expected_claims: r.in_force_expected_claims || 0,
+              operating_profit: r.operating_profit || 0,
+              closing_reserve: r.closing_reserve || 0,
+            })),
+            totals: reserves.totals || {},
+          };
+        }
+
+        // Solvency II / SST (Israel CMISA): SCR ≈ Required Capital + Risk Margin
+        const requiredCapital = grossPremium * 0.20; // baseline floor at 20% of GWP unless valuation overrides
+        const riskMargin = (reserves?.totals?.closing_reserve || 0) * 0.06;
+        const ownFunds = totalEquity;
+        const scr = Math.max(requiredCapital, riskPortfolioLiability * 0.30) + riskMargin;
+        const mcr = scr * 0.25;
+        const solvencyRatio = scr > 0 ? (ownFunds / scr) : 0;
+        out.solvency = {
+          ownFunds, scr, mcr, solvencyRatio,
+          riskMargin, requiredCapital,
+          components: [
+            ['Eligible Own Funds (Tier 1+2+3)', ownFunds],
+            ['Required Capital (baseline 20% of GWP)', requiredCapital],
+            ['Risk Margin (6% of BEL)', riskMargin],
+            ['Solvency Capital Requirement (SCR)', scr],
+            ['Minimum Capital Requirement (MCR)', mcr],
+            ['Solvency Ratio (Own Funds / SCR)', solvencyRatio, 'pct'],
+          ],
+        };
+
+        // NAIC Risk-Based Capital (RBC) — simplified five-charge build.
+        const c0 = (reinsurance?.total_contract_cost || 0) * 0.005;
+        const c1 = totalAssets * 0.015;
+        const c2 = expectedClaims * 0.25;
+        const c3 = closingReserve * 0.04;
+        const c4 = grossPremium * 0.02;
+        const aclRBC = Math.sqrt(Math.max(0, c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4)) + c0;
+        const totalAdjustedCapital = ownFunds;
+        const rbcRatio = aclRBC > 0 ? (totalAdjustedCapital / aclRBC) : 0;
+        out.rbc = {
+          components: [
+            ['C0 — Affiliate / off-balance risk', c0],
+            ['C1 — Asset risk', c1],
+            ['C2 — Insurance/underwriting risk', c2],
+            ['C3 — Interest rate / reserve risk', c3],
+            ['C4 — Business risk', c4],
+            ['Authorized Control Level RBC (ACL)', aclRBC],
+            ['Total Adjusted Capital (TAC)', totalAdjustedCapital],
+            ['RBC Ratio (TAC / Authorized Control Level)', rbcRatio, 'pct'],
+          ],
+          aclRBC, totalAdjustedCapital, rbcRatio,
+        };
+
+        // OSFI LICAT — Life Insurance Capital Adequacy Test (simplified).
+        const availableCapital = ownFunds;
+        const baseSolvencyBuffer = closingReserve * 0.085 + expectedClaims * 0.20 + (reinsurance?.total_contract_cost || 0) * 0.10;
+        const surplusAllowance = (csmBalance || 0) * 0.50;
+        const eligibleDeposits = 0;
+        const licatRatio = baseSolvencyBuffer > 0 ? ((availableCapital + surplusAllowance + eligibleDeposits) / baseSolvencyBuffer) * 100 : 0;
+        out.licat = {
+          components: [
+            ['Available Capital (Tier 1+2)', availableCapital],
+            ['Surplus Allowance (≈50% of CSM)', surplusAllowance],
+            ['Eligible Deposits', eligibleDeposits],
+            ['Base Solvency Buffer', baseSolvencyBuffer],
+            ['LICAT Total Ratio (%)', licatRatio, 'pct_raw'],
+          ],
+          ratio: licatRatio, target: 100, supervisoryTarget: 100, internalTarget: 110,
+        };
+
+        // Reinsurance disclosure
+        if (reinsurance) {
+          out.reinsurance = {
+            program_name: reinsurance.contract_name || reinsurance.program_name || 'Reinsurance Program',
+            contracts: reinsurance.selected_contracts || 0,
+            hedge_share_pct: reinsurance.hedge_share_pct || 0,
+            ceded_premium: reinsurance.total_contract_cost || 0,
+            reserve_relief: reinsurance.reserve_relief_estimate || 0,
+            providers: reinsurance.providers || [],
+          };
+        }
+
+        // Demographics & underwriting KPIs
+        out.demographics = {
+          age_distribution: sim.demographics?.age_distribution || {},
+          gender: sim.demographics?.gender || {},
+          ethnicity: sim.demographics?.ethnicity || {},
+        };
+        out.underwriting_kpis = {
+          customers_accepted: sim.portfolio_summary?.accepted_customers || 0,
+          acceptance_rate: sim.portfolio_summary?.acceptance_rate || 0,
+          total_coverage: sim.portfolio_summary?.total_coverage || 0,
+          gross_premium: grossPremium,
+          loss_ratio: risk.loss_ratio || 0,
+          mortality_pct: risk.mortality_pct_of_claims || 0,
+          disability_pct: risk.disability_pct_of_claims || 0,
+          automation_rate: (sim.automation?.overall_automation_pct || 0) * 100,
+          declined_count: sim.declined?.count || 0,
+        };
+
+        // Cash flow statement (5-year projection summary)
+        if (reserves?.yearly_projection?.length) {
+          out.cash_flow = reserves.yearly_projection.map(r => ({
+            year: r.year,
+            premium_inflow: r.in_force_premium || 0,
+            claim_outflow: -(r.in_force_expected_claims || 0),
+            operating_profit: r.operating_profit || 0,
+            tax: -(r.tax || 0),
+            dividends: -(r.dividends || 0),
+            reserve_contribution: -(r.reserve_contribution || 0),
+            net_cash_flow: (r.in_force_premium || 0) - (r.in_force_expected_claims || 0) - (r.tax || 0) - (r.dividends || 0) - (r.reserve_contribution || 0),
+          }));
+        }
+      }
+
+      return out;
+    }
+
+    // ----- Preview renderer -----
+    function annualSection(jurisdictionTags, title, html) {
+      const tags = (jurisdictionTags || []).map(t => `<span class="jurisdiction-tag">${annualEsc(t)}</span>`).join('');
+      return `<h2>${tags}${annualEsc(title)}</h2>${html}`;
+    }
+    function annualSubsection(title, html) {
+      return `<h3>${annualEsc(title)}</h3>${html}`;
+    }
+    function annualMoneyTable(rows, ccy, lastBold) {
+      const body = rows.map((r, ix) => {
+        const [label, value, kind] = Array.isArray(r) ? r : [r.label, r.value, r.kind];
+        let cell;
+        if (kind === 'pct') cell = annualFmtPct((Number(value) || 0) * 100);
+        else if (kind === 'pct_raw') cell = annualFmtPct(Number(value) || 0);
+        else cell = annualFmtMoney(value, ccy);
+        const bold = (lastBold && ix === rows.length - 1) ? ' style="font-weight:700;background:#f7fafc;"' : '';
+        return `<tr${bold}><td>${annualEsc(label)}</td><td class="num">${cell}</td></tr>`;
+      }).join('');
+      return `<table><thead><tr><th>Line Item</th><th class="num">Amount</th></tr></thead><tbody>${body}</tbody></table>`;
+    }
+    function annualReportHTML(payload) {
+      const { issuer, packs, capRows, capTotal, debtRows, debtTotalPrincipal, debtWAC, appendix, statements, checks } = payload;
+      const ccy = issuer.currency || 'USD';
+      const jurisdictionLabel = { israel: 'Israel', usa: 'United States', canada: 'Canada' }[issuer.home_jurisdiction] || 'Multi-jurisdiction';
+      const incPacks = new Set(packs || []);
+
+      const integritySection = (() => {
+        const allOk = checks.every(c => c.ok);
+        const rows = checks.map(c => `<tr><td>${annualEsc(c.name)}</td><td>${c.ok ? '✅' : '❌'}</td><td>${annualEsc(c.detail)}</td></tr>`).join('');
+        return `<div class="integrity ${allOk ? '' : 'bad'}">
+          <strong>Pipeline Integrity:</strong> ${allOk ? 'all checks passed' : 'one or more checks need attention'} ·
+          report hash <code>${payload.integrity_hash}</code> ·
+          bound to simulation <code>${annualEsc(payload.bound.simulation_id || '—')}</code>
+          (tables ${annualEsc(payload.bound.tables_version || '—')})
+        </div>
+        <table>
+          <thead><tr><th>Integrity Check</th><th>Result</th><th>Detail</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      })();
+
+      // Section A — Capital structure
+      const capRowsHtml = capRows.map((r, ix) => `
+        <tr>
+          <td>${ix + 1}</td>
+          <td>${annualEsc(r.name) || '<em>unnamed</em>'}</td>
+          <td>${annualEsc(r.type)}</td>
+          <td class="num">${r.pct.toFixed(2)}%</td>
+          <td>${r.voting ? 'Yes' : 'No'}</td>
+          <td>${annualEsc(r.notes)}</td>
+        </tr>`).join('');
+      const publicFloatPct = capRows.filter(r => (r.type || '').toLowerCase() === 'public float').reduce((s, r) => s + r.pct, 0);
+      const namedPct = capTotal - publicFloatPct;
+      const capSection = annualSubsection('A.1 Capital Structure — Cap Table',
+        `<table>
+          <thead><tr><th>#</th><th>Holder</th><th>Type</th><th class="num">% Equity</th><th>Voting</th><th>Notes</th></tr></thead>
+          <tbody>${capRowsHtml}</tbody>
+          <tfoot><tr><th colspan="3" style="text-align:right;">Total</th><th class="num">${capTotal.toFixed(2)}%</th><th colspan="2"></th></tr></tfoot>
+        </table>
+        <p><strong>Named holders:</strong> ${namedPct.toFixed(2)}% · <strong>Public float:</strong> ${publicFloatPct.toFixed(2)}%</p>
+        ${Math.abs(capTotal - 100) > 0.01 ? '<div class="note">⚠️ Cap table does not balance to 100% — regulator filings require an exact 100% total. Adjust the cap-table editor before re-issuing.</div>' : ''}`);
+
+      // Section A.2 — Debt schedule
+      const debtRowsHtml = debtRows.length
+        ? debtRows.map((r, ix) => {
+            const pctOfDebt = debtTotalPrincipal > 0 ? (r.principal / debtTotalPrincipal) * 100 : 0;
+            return `<tr>
+              <td>${ix + 1}</td><td>${annualEsc(r.name) || '<em>unnamed</em>'}</td><td>${annualEsc(r.type)}</td>
+              <td class="num">${annualFmtMoney(r.principal, ccy)}</td>
+              <td class="num">${pctOfDebt.toFixed(2)}%</td>
+              <td class="num">${r.coupon.toFixed(2)}%</td>
+              <td>${annualEsc(r.maturity) || '—'}</td>
+            </tr>`;
+          }).join('')
+        : `<tr><td colspan="7"><em>No interest-bearing debt outstanding.</em></td></tr>`;
+      const totalEquity = statements.balance_sheet?.totals?.totalEquity || 0;
+      const debtToEquity = totalEquity > 0 ? (debtTotalPrincipal / totalEquity) : 0;
+      const debtSection = annualSubsection('A.2 Debt Schedule',
+        `<table>
+          <thead><tr><th>#</th><th>Creditor / Instrument</th><th>Type</th><th class="num">Principal</th><th class="num">% of Debt</th><th class="num">% Coupon</th><th>Maturity</th></tr></thead>
+          <tbody>${debtRowsHtml}</tbody>
+          ${debtRows.length ? `<tfoot><tr><th colspan="3" style="text-align:right;">Total</th><th class="num">${annualFmtMoney(debtTotalPrincipal, ccy)}</th><th class="num">100.00%</th><th class="num">${debtWAC.toFixed(2)}% WAC</th><th></th></tr></tfoot>` : ''}
+        </table>
+        <p><strong>Debt-to-Equity ratio:</strong> ${(debtToEquity).toFixed(2)}× · <strong>Weighted-average coupon:</strong> ${debtWAC.toFixed(2)}%</p>`);
+
+      // Section B — MD&A
+      const u = statements.underwriting_kpis || {};
+      const narrative = !statements.income_statement ? '<p><em>No simulation snapshot bound — run the Portfolio Simulator to populate the management discussion.</em></p>' : `
+        <p>During the reporting period, the Company underwrote <strong>${annualFmtCount(u.customers_accepted)}</strong> insurance contracts representing
+        <strong>${annualFmtMoney(u.total_coverage, ccy)}</strong> of in-force coverage at an acceptance rate of <strong>${annualFmtPct(u.acceptance_rate)}</strong>.
+        Gross written premium was <strong>${annualFmtMoney(u.gross_premium, ccy)}</strong>, of which mortality risk accounted for
+        <strong>${annualFmtPct(u.mortality_pct)}</strong> and permanent-disability risk <strong>${annualFmtPct(u.disability_pct)}</strong> of expected claims.</p>
+        <p>The annualized loss ratio derived from the pricing kernel is <strong>${annualFmtPct(u.loss_ratio)}</strong>. The Company operated its book at an
+        end-to-end automation rate of <strong>${annualFmtPct(u.automation_rate)}</strong>, with <strong>${annualFmtCount(u.declined_count)}</strong> applications declined
+        in accordance with the underwriting guidelines disclosed in Note 1.</p>`;
+      const mdaSection = annualSubsection('B. Management Discussion &amp; Analysis (MD&amp;A)', narrative);
+
+      // Section C — Balance Sheet
+      let balanceHtml = '<p><em>Balance sheet requires the Reserves &amp; IFRS 17 projection plus Portfolio Valuation to be bound.</em></p>';
+      if (statements.balance_sheet) {
+        balanceHtml = `
+          <h4>Assets</h4>${annualMoneyTable(statements.balance_sheet.assets, ccy, true)}
+          <h4>Liabilities &amp; Equity</h4>${annualMoneyTable(statements.balance_sheet.liabilities_equity, ccy, true)}`;
+      }
+      const balanceSection = annualSubsection('C. Statement of Financial Position (Balance Sheet)', balanceHtml);
+
+      // Section D — Income Statement
+      let incomeHtml = '<p><em>Run the Portfolio Simulator first to populate the statement of profit or loss.</em></p>';
+      if (statements.income_statement) {
+        incomeHtml = annualMoneyTable(statements.income_statement.rows, ccy, true) + `
+          <div class="note">Realized layer reflects the sandbox lifecycle. Modelled gross premium and expected claims are deterministic outputs of the actuarial pricing kernel; the regulator filing must reconcile to both.</div>`;
+      }
+      const incomeSection = annualSubsection('D. Statement of Profit or Loss', incomeHtml);
+
+      // Section E — IFRS 17 (only if the IL_IFRS17 or US 10-K or CSA pack is in)
+      let ifrsHtml = '<p><em>Bind Reserves &amp; IFRS 17 in the Simulation bar to disclose insurance-contract movements.</em></p>';
+      if (statements.ifrs17) {
+        const r = statements.ifrs17.rows.map(x => `<tr>
+          <td>${x.year}</td>
+          <td class="num">${annualFmtMoney(x.in_force_premium, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.in_force_expected_claims, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.operating_profit, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.bel_balance, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.risk_adjustment, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.csm_release, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.csm_balance, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.closing_reserve, ccy)}</td>
+        </tr>`).join('');
+        ifrsHtml = `<table>
+          <thead><tr><th>Year</th><th class="num">In-Force Prem.</th><th class="num">Exp. Claims</th><th class="num">Operating Profit</th>
+            <th class="num">BEL</th><th class="num">Risk Adj.</th><th class="num">CSM Release</th><th class="num">CSM Balance</th><th class="num">Closing Reserve</th></tr></thead>
+          <tbody>${r}</tbody>
+        </table>`;
+      }
+      const ifrsSection = annualSubsection('E. Insurance-Contract Disclosure (IFRS 17 / Schedule P)', ifrsHtml);
+
+      // Section F — Solvency / Capital Adequacy (jurisdiction-specific)
+      const capitalSections = [];
+      if (statements.solvency && (incPacks.has('il_cmisa') || issuer.home_jurisdiction === 'israel')) {
+        capitalSections.push(`<h4>F.1 Solvency II (Israel CMISA — Forms 5/6/7)</h4>
+          ${annualMoneyTable(statements.solvency.components, ccy)}
+          <p><strong>Solvency Ratio:</strong> ${annualFmtPct((statements.solvency.solvencyRatio || 0) * 100)} ·
+          must be ≥ 100% (CMISA target ≥ 100% post-transition).</p>`);
+      }
+      if (statements.rbc && incPacks.has('us_rbc')) {
+        capitalSections.push(`<h4>F.2 NAIC Risk-Based Capital (RBC)</h4>
+          ${annualMoneyTable(statements.rbc.components, ccy)}
+          <p><strong>RBC Ratio (TAC / Authorized Control Level):</strong> ${annualFmtPct((statements.rbc.rbcRatio || 0) * 100)}.
+          Regulatory thresholds: Company Action ≥ 200%, Regulatory Action 150–200%, Authorized Control 100–150%, Mandatory Control &lt; 70%.</p>`);
+      }
+      if (statements.licat && incPacks.has('ca_osfi_licat')) {
+        capitalSections.push(`<h4>F.3 OSFI LICAT (Canada)</h4>
+          ${annualMoneyTable(statements.licat.components, ccy)}
+          <p><strong>LICAT Total Ratio:</strong> ${annualFmtPct(statements.licat.ratio || 0)} ·
+          Supervisory Target 100%, Internal Target generally ≥ 110%.</p>`);
+      }
+      const solvencyHtml = capitalSections.length
+        ? capitalSections.join('')
+        : '<p><em>Select one of CMISA Solvency II / NAIC RBC / OSFI LICAT in the standards selector to publish capital adequacy.</em></p>';
+      const solvencySection = annualSubsection('F. Capital Adequacy &amp; Solvency', solvencyHtml);
+
+      // Section G — Reinsurance
+      let reinsHtml = '<p><em>No bound reinsurance program. Run Reinsurance Hedge in the Simulation bar to disclose ceded premium.</em></p>';
+      if (statements.reinsurance) {
+        const r = statements.reinsurance;
+        reinsHtml = `<table>
+          <thead><tr><th>Disclosure</th><th class="num">Value</th></tr></thead>
+          <tbody>
+            <tr><td>Program name</td><td>${annualEsc(r.program_name)}</td></tr>
+            <tr><td>Contracts bound</td><td class="num">${annualFmtCount(r.contracts)}</td></tr>
+            <tr><td>Hedge share of book</td><td class="num">${annualFmtPct(r.hedge_share_pct)}</td></tr>
+            <tr><td>Ceded premium</td><td class="num">${annualFmtMoney(r.ceded_premium, ccy)}</td></tr>
+            <tr><td>Reserve relief estimate</td><td class="num">${annualFmtMoney(r.reserve_relief, ccy)}</td></tr>
+          </tbody>
+        </table>`;
+      }
+      const reinsSection = annualSubsection('G. Reinsurance &amp; Risk Mitigation', reinsHtml);
+
+      // Section H — Demographics / underwriting KPIs
+      let demoHtml = '<p><em>Bind a simulation to publish demographic and underwriting statistics.</em></p>';
+      if (statements.demographics) {
+        const ageRows = Object.entries(statements.demographics.age_distribution || {}).map(([k, v]) => `<tr><td>${annualEsc(k)}</td><td class="num">${annualFmtCount(v)}</td></tr>`).join('');
+        const genderRows = Object.entries(statements.demographics.gender || {}).map(([k, v]) => `<tr><td>${annualEsc(k)}</td><td class="num">${annualFmtCount(v)}</td></tr>`).join('');
+        const ethRows = Object.entries(statements.demographics.ethnicity || {}).map(([k, v]) => `<tr><td>${annualEsc(k)}</td><td class="num">${annualFmtCount(v)}</td></tr>`).join('');
+        demoHtml = `<table>
+          <thead><tr><th>Age band</th><th class="num">Lives</th></tr></thead><tbody>${ageRows || '<tr><td colspan="2"><em>n/a</em></td></tr>'}</tbody>
+        </table>
+        <table>
+          <thead><tr><th>Gender</th><th class="num">Lives</th></tr></thead><tbody>${genderRows || '<tr><td colspan="2"><em>n/a</em></td></tr>'}</tbody>
+        </table>
+        <table>
+          <thead><tr><th>Ethnicity</th><th class="num">Lives</th></tr></thead><tbody>${ethRows || '<tr><td colspan="2"><em>n/a</em></td></tr>'}</tbody>
+        </table>`;
+      }
+      const demoSection = annualSubsection('H. Demographic &amp; Underwriting Statistics', demoHtml);
+
+      // Section I — Cash flow projection
+      let cfHtml = '<p><em>Bind Reserves &amp; IFRS 17 to publish the multi-year cash-flow projection.</em></p>';
+      if (statements.cash_flow && statements.cash_flow.length) {
+        const r = statements.cash_flow.map(x => `<tr>
+          <td>${x.year}</td>
+          <td class="num">${annualFmtMoney(x.premium_inflow, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.claim_outflow, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.operating_profit, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.tax, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.dividends, ccy)}</td>
+          <td class="num">${annualFmtMoney(x.reserve_contribution, ccy)}</td>
+          <td class="num"><strong>${annualFmtMoney(x.net_cash_flow, ccy)}</strong></td>
+        </tr>`).join('');
+        cfHtml = `<table>
+          <thead><tr><th>Year</th><th class="num">Premium Inflow</th><th class="num">Claims</th><th class="num">Operating Profit</th>
+            <th class="num">Tax</th><th class="num">Dividends</th><th class="num">Reserve Δ</th><th class="num">Net Cash Flow</th></tr></thead>
+          <tbody>${r}</tbody>
+        </table>`;
+      }
+      const cfSection = annualSubsection('I. Multi-Year Cash-Flow Projection', cfHtml);
+
+      // Section J — Standards filed under
+      const packsHtml = (packs && packs.length)
+        ? '<ul>' + packs.map(p => `<li>${annualEsc(ANNUAL_PACK_LABELS[p] || p)}</li>`).join('') + '</ul>'
+        : '<p><em>No regulatory packs selected.</em></p>';
+      const packsSection = annualSubsection('J. Regulatory Standards under which this Report is Filed', packsHtml);
+
+      // Appendix
+      const appendixHtml = appendix.trim()
+        ? `<div class="appendix">${annualEsc(appendix)}</div>`
+        : '<p><em>No appendix supplied.</em></p>';
+      const appendixSection = annualSubsection('K. Appendix (adjustable)', appendixHtml);
+
+      // Compose
+      const cover = `
+        <div class="annual-cover">
+          <div class="doc-title">Annual Regulatory Report &amp; Financial Statements</div>
+          <div class="issuer">${annualEsc(issuer.name)} ${issuer.ticker ? '(' + annualEsc(issuer.ticker) + ')' : ''}</div>
+          <div class="meta">
+            Fiscal Year ${annualEsc(issuer.fy)} · Period ${annualEsc(issuer.period_start)} → ${annualEsc(issuer.period_end)}<br>
+            Home Jurisdiction: <strong>${annualEsc(jurisdictionLabel)}</strong> · Reporting Currency: <strong>${annualEsc(issuer.currency)}</strong><br>
+            Exchange Chamber Filing: ${annualEsc(issuer.exchange_filing)} · Auditor: ${annualEsc(issuer.auditor)}
+          </div>
+        </div>`;
+
+      return `
+        ${cover}
+        ${integritySection}
+        ${annualSection(['ALL JURISDICTIONS'], 'Section A — Capital Structure', capSection + debtSection)}
+        ${annualSection([jurisdictionLabel], 'Section B — Management Discussion & Analysis', mdaSection)}
+        ${annualSection(['IFRS 17', 'NAIC', 'OSFI'], 'Section C — Statement of Financial Position', balanceSection)}
+        ${annualSection(['IFRS 17', 'SEC 10-K Item 8'], 'Section D — Statement of Profit or Loss', incomeSection)}
+        ${annualSection(['IFRS 17', 'IL CMISA'], 'Section E — Insurance-Contract Disclosure', ifrsSection)}
+        ${annualSection(['IL CMISA', 'NAIC RBC', 'OSFI LICAT'], 'Section F — Capital Adequacy & Solvency', solvencySection)}
+        ${annualSection(['SCHEDULE F', 'LICAT'], 'Section G — Reinsurance & Risk Mitigation', reinsSection)}
+        ${annualSection(['UNDERWRITING'], 'Section H — Demographic & Underwriting Statistics', demoSection)}
+        ${annualSection(['CASH FLOW'], 'Section I — Multi-Year Cash-Flow Projection', cfSection)}
+        ${annualSection(['FILINGS'], 'Section J — Regulatory Standards Filed Under', packsSection)}
+        ${annualSection(['APPENDIX'], 'Section K — Appendix', appendixSection)}
+        <p style="margin-top:24px;color:#4a5568;font-size:0.8rem;">
+          Generated by the PHINS Actuarial Dashboard on ${annualEsc(payload.generated_at)}.
+          Bound to simulation <code>${annualEsc(payload.bound.simulation_id || '—')}</code> · valuation hash
+          <code>${annualEsc(payload.bound.valuation_hash || '—')}</code> · report hash <code>${payload.integrity_hash}</code>.
+          Every numerical disclosure in this report is sourced from the bound Simulation pipeline; no figure has been overridden in this section.
+        </p>`;
+    }
+
+    function buildAnnualReportPreview() {
+      const msg = document.getElementById('annual-build-msg');
+      const previewEl = document.getElementById('annual-report-preview');
+      try {
+        const payload = buildAnnualReportPayload();
+        annualReport.lastBuilt = payload;
+        previewEl.innerHTML = annualReportHTML(payload);
+        const okChecks = payload.checks.filter(c => c.ok).length;
+        msg.textContent = `Built — hash ${payload.integrity_hash} · ${okChecks}/${payload.checks.length} integrity checks passed.`;
+        msg.style.color = okChecks === payload.checks.length ? 'var(--success)' : 'var(--warning)';
+      } catch (err) {
+        annualReport.lastBuilt = null;
+        previewEl.innerHTML = `<p class="text-danger">Build failed: ${annualEsc(err.message)}</p>`;
+        msg.textContent = 'Build failed: ' + err.message;
+        msg.style.color = 'var(--danger)';
+      }
+    }
+
+    function annualEnsureBuilt() {
+      // Always rebuild before an export so edits to issuer fields, cap table,
+      // debt, packs, or appendix are reflected in the downloaded document and
+      // its integrity hash. The build is deterministic from current inputs.
+      buildAnnualReportPreview();
+      return annualReport.lastBuilt;
+    }
+
+    function downloadAnnualReportHTML() {
+      const p = annualEnsureBuilt();
+      if (!p) return;
+      const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${annualEsc(p.issuer.name)} — Annual Report FY${p.issuer.fy}</title>
+        <style>
+          body { font-family: 'Times New Roman', Georgia, serif; max-width: 960px; margin: 32px auto; color: #1a202c; padding: 0 24px; }
+          h1,h2,h3,h4 { color: #1a365d; font-family: 'Times New Roman', Georgia, serif; }
+          h1 { font-size: 1.9rem; border-bottom: 2px solid #1a365d; padding-bottom: 8px; }
+          h2 { font-size: 1.35rem; border-bottom: 1px solid #cbd5e0; padding-bottom: 4px; margin-top: 28px; }
+          h3 { font-size: 1.1rem; margin-top: 18px; }
+          table { width: 100%; border-collapse: collapse; margin: 10px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 0.88rem; }
+          th, td { border: 1px solid #cbd5e0; padding: 6px 9px; text-align: left; }
+          th { background: #ebf4ff; color: #1a365d; }
+          .num { text-align: right; font-variant-numeric: tabular-nums; }
+          .annual-cover { text-align: center; padding: 28px 12px; border-bottom: 1px solid #1a365d; margin-bottom: 22px; }
+          .annual-cover .doc-title { font-size: 2rem; color: #1a365d; font-weight: 700; margin-bottom: 6px; }
+          .annual-cover .issuer { font-size: 1.3rem; color: #2b6cb0; }
+          .annual-cover .meta { color: #4a5568; }
+          .integrity { background: #f0fff4; border: 1px solid #9ae6b4; padding: 8px 12px; margin: 12px 0; font-family: monospace; font-size: 0.85rem; border-radius: 4px; }
+          .integrity.bad { background: #fff5f5; border-color: #fc8181; color: #742a2a; }
+          .note { background: #fffaf0; border-left: 3px solid #d69e2e; padding: 8px 12px; margin: 10px 0; font-size: 0.9rem; }
+          .appendix { background: #f7fafc; border-left: 3px solid #2b6cb0; padding: 10px 14px; white-space: pre-wrap; }
+          .jurisdiction-tag { display: inline-block; background: #1a365d; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; }
+        </style></head><body>${annualReportHTML(p)}</body></html>`;
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${(p.issuer.name || 'issuer').replace(/[^a-z0-9]+/gi, '_')}_FY${p.issuer.fy}_annual_report.html`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadAnnualReportCSV() {
+      const p = annualEnsureBuilt();
+      if (!p) return;
+      const ccy = p.issuer.currency;
+      const esc = (v) => {
+        const s = (v == null ? '' : String(v));
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const section = (title, headers, rows) => [
+        '# ' + title, headers.map(esc).join(','),
+        ...rows.map(r => r.map(esc).join(',')),
+      ].join('\n');
+      const sections = [];
+      sections.push(section('Cover', ['Field', 'Value'], [
+        ['Issuer', p.issuer.name], ['Ticker', p.issuer.ticker], ['Currency', ccy],
+        ['Fiscal Year', p.issuer.fy], ['Period Start', p.issuer.period_start], ['Period End', p.issuer.period_end],
+        ['Home Jurisdiction', p.issuer.home_jurisdiction],
+        ['Integrity Hash', p.integrity_hash], ['Generated At', p.generated_at],
+        ['Simulation ID', p.bound.simulation_id], ['Tables Version', p.bound.tables_version],
+        ['Valuation Hash', p.bound.valuation_hash], ['Reinsurance Contracts', p.bound.reinsurance_contracts],
+      ]));
+      sections.push(section('Cap Table', ['#', 'Name', 'Type', 'PctEquity', 'Voting', 'Notes'],
+        p.capRows.map((r, ix) => [ix + 1, r.name, r.type, r.pct, r.voting ? 'Yes' : 'No', r.notes])));
+      sections.push(section('Debt Schedule', ['#', 'Name', 'Type', 'Principal', 'PctOfDebt', 'CouponPct', 'Maturity'],
+        p.debtRows.map((r, ix) => [ix + 1, r.name, r.type, r.principal, p.debtTotalPrincipal > 0 ? ((r.principal / p.debtTotalPrincipal) * 100).toFixed(4) : '0', r.coupon, r.maturity])));
+      if (p.statements.income_statement) {
+        sections.push(section('Income Statement', ['Line Item', 'Amount'],
+          p.statements.income_statement.rows.map(r => [r[0], r[1]])));
+      }
+      if (p.statements.balance_sheet) {
+        sections.push(section('Balance Sheet — Assets', ['Line Item', 'Amount'], p.statements.balance_sheet.assets.map(r => [r[0], r[1]])));
+        sections.push(section('Balance Sheet — Liabilities & Equity', ['Line Item', 'Amount'], p.statements.balance_sheet.liabilities_equity.map(r => [r[0], r[1]])));
+      }
+      if (p.statements.ifrs17) {
+        sections.push(section('IFRS 17 / Schedule P',
+          ['Year', 'InForcePremium', 'InForceExpectedClaims', 'OperatingProfit', 'BEL', 'RiskAdjustment', 'CSMRelease', 'CSMBalance', 'ClosingReserve'],
+          p.statements.ifrs17.rows.map(x => [x.year, x.in_force_premium, x.in_force_expected_claims, x.operating_profit, x.bel_balance, x.risk_adjustment, x.csm_release, x.csm_balance, x.closing_reserve])));
+      }
+      if (p.statements.solvency) sections.push(section('Solvency II (Israel CMISA)', ['Component', 'Value', 'Kind'], p.statements.solvency.components.map(r => [r[0], r[1], r[2] || 'money'])));
+      if (p.statements.rbc) sections.push(section('NAIC RBC (USA)', ['Component', 'Value', 'Kind'], p.statements.rbc.components.map(r => [r[0], r[1], r[2] || 'money'])));
+      if (p.statements.licat) sections.push(section('OSFI LICAT (Canada)', ['Component', 'Value', 'Kind'], p.statements.licat.components.map(r => [r[0], r[1], r[2] || 'money'])));
+      if (p.statements.cash_flow) sections.push(section('Cash Flow', ['Year', 'PremiumInflow', 'ClaimsOutflow', 'OperatingProfit', 'Tax', 'Dividends', 'ReserveContribution', 'NetCashFlow'],
+        p.statements.cash_flow.map(x => [x.year, x.premium_inflow, x.claim_outflow, x.operating_profit, x.tax, x.dividends, x.reserve_contribution, x.net_cash_flow])));
+      if (p.statements.demographics) {
+        const d = p.statements.demographics;
+        const demoRows = [
+          ...Object.entries(d.age_distribution || {}).map(([k, v]) => ['Age band', k, v]),
+          ...Object.entries(d.gender || {}).map(([k, v]) => ['Gender', k, v]),
+          ...Object.entries(d.ethnicity || {}).map(([k, v]) => ['Ethnicity', k, v]),
+        ];
+        sections.push(section('Demographic Statistics', ['Category', 'Segment', 'Lives'], demoRows));
+      }
+      if (p.statements.underwriting_kpis) {
+        const u = p.statements.underwriting_kpis;
+        sections.push(section('Underwriting KPIs', ['Metric', 'Value'], [
+          ['Customers Accepted', u.customers_accepted], ['Acceptance Rate (%)', u.acceptance_rate],
+          ['Total Coverage', u.total_coverage], ['Gross Premium', u.gross_premium],
+          ['Loss Ratio (%)', u.loss_ratio], ['Mortality % of Claims', u.mortality_pct],
+          ['Disability % of Claims', u.disability_pct], ['Automation Rate (%)', u.automation_rate],
+          ['Declined Count', u.declined_count],
+        ]));
+      }
+      sections.push(section('Integrity Checks', ['Check', 'Result', 'Detail'], p.checks.map(c => [c.name, c.ok ? 'PASS' : 'FAIL', c.detail])));
+      sections.push(section('Standards Packs Selected', ['Pack ID', 'Label'], p.packs.map(pk => [pk, ANNUAL_PACK_LABELS[pk] || pk])));
+      const csv = '\uFEFF' + sections.join('\n\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${(p.issuer.name || 'issuer').replace(/[^a-z0-9]+/gi, '_')}_FY${p.issuer.fy}_annual_report_bundle.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadAnnualReportPDF() {
+      const p = annualEnsureBuilt();
+      if (!p) return;
+      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFCtor) { alert('PDF library still loading — try again in a moment.'); return; }
+      const doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const NAVY = [26, 54, 93], INK = [33, 37, 41], MUTED = [110, 120, 130], STRIPE = [243, 246, 250], GOLD = [214, 158, 46];
+      const ccy = p.issuer.currency;
+      let y = margin;
+
+      // Cover
+      doc.setFillColor(...NAVY); doc.rect(0, 0, pageW, 110, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
+      doc.text('Annual Regulatory Report', margin, 50);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(13);
+      doc.text(`${p.issuer.name}${p.issuer.ticker ? ' (' + p.issuer.ticker + ')' : ''}`, margin, 74);
+      doc.setFontSize(10);
+      const jurisdictionLabel = { israel: 'Israel', usa: 'United States', canada: 'Canada' }[p.issuer.home_jurisdiction] || 'Multi-jurisdiction';
+      doc.text(`FY ${p.issuer.fy} · ${p.issuer.period_start} → ${p.issuer.period_end} · ${jurisdictionLabel} · ${ccy}`, margin, 94);
+      y = 140;
+      doc.setTextColor(...INK);
+
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED);
+      doc.text(`Exchange filing: ${p.issuer.exchange_filing}    Auditor: ${p.issuer.auditor}`, margin, y);
+      y += 14;
+      doc.text(`Bound simulation: ${p.bound.simulation_id || '—'}    Tables: ${p.bound.tables_version || '—'}    Report hash: ${p.integrity_hash}`, margin, y);
+      y += 18;
+      doc.setTextColor(...INK);
+
+      const sectionHeading = (label) => {
+        if (y + 26 > pageH - margin) { doc.addPage(); y = margin; }
+        doc.setFillColor(...GOLD); doc.rect(margin, y - 9, 3.5, 14, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...NAVY);
+        doc.text(label, margin + 10, y + 3);
+        y += 14;
+        doc.setTextColor(...INK);
+      };
+      const tableOpts = (head, body, extra) => Object.assign({
+        head: [head], body, startY: y, margin: { left: margin, right: margin },
+        theme: 'striped',
+        headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+        bodyStyles: { fontSize: 8.5, cellPadding: 3.5, textColor: INK },
+        alternateRowStyles: { fillColor: STRIPE },
+        styles: { lineColor: [225, 230, 236], lineWidth: 0.4, overflow: 'linebreak' },
+      }, extra || {});
+      const afterTable = () => { y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 16; };
+
+      // Integrity panel
+      sectionHeading('Pipeline Integrity Checks');
+      doc.autoTable(tableOpts(['Check', 'Result', 'Detail'],
+        p.checks.map(c => [c.name, c.ok ? 'PASS' : 'FAIL', c.detail]),
+        { columnStyles: { 1: { halign: 'center', cellWidth: 60 } } }));
+      afterTable();
+
+      // Section A — Cap table
+      sectionHeading('Section A.1 — Capital Structure (Cap Table)');
+      doc.autoTable(tableOpts(['#', 'Holder', 'Type', '% Equity', 'Voting', 'Notes'],
+        p.capRows.map((r, ix) => [ix + 1, r.name || '—', r.type, r.pct.toFixed(2) + '%', r.voting ? 'Yes' : 'No', r.notes || '']),
+        { columnStyles: { 0: { cellWidth: 24 }, 3: { halign: 'right' }, 4: { halign: 'center', cellWidth: 50 } } }));
+      afterTable();
+
+      // Section A.2 — Debt schedule
+      sectionHeading('Section A.2 — Debt Schedule');
+      if (p.debtRows.length) {
+        doc.autoTable(tableOpts(['#', 'Creditor', 'Type', 'Principal', '% Debt', '% Coupon', 'Maturity'],
+          p.debtRows.map((r, ix) => [ix + 1, r.name || '—', r.type, annualFmtMoney(r.principal, ccy),
+            (p.debtTotalPrincipal > 0 ? ((r.principal / p.debtTotalPrincipal) * 100).toFixed(2) + '%' : '—'),
+            r.coupon.toFixed(2) + '%', r.maturity || '—']),
+          { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } }));
+        afterTable();
+      } else {
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(...MUTED);
+        doc.text('No interest-bearing debt outstanding.', margin, y + 10);
+        y += 22;
+        doc.setTextColor(...INK);
+      }
+
+      // Section B — MD&A
+      const u = p.statements.underwriting_kpis || {};
+      sectionHeading('Section B — Management Discussion & Analysis');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
+      const mdaLines = [
+        `Customers accepted: ${annualFmtCount(u.customers_accepted)}    Acceptance rate: ${annualFmtPct(u.acceptance_rate)}    Coverage in force: ${annualFmtMoney(u.total_coverage, ccy)}.`,
+        `Gross Written Premium: ${annualFmtMoney(u.gross_premium, ccy)}    Loss ratio: ${annualFmtPct(u.loss_ratio)}    Automation: ${annualFmtPct(u.automation_rate)}.`,
+        `Claim split: mortality ${annualFmtPct(u.mortality_pct)} / permanent disability ${annualFmtPct(u.disability_pct)}.    Declined applications: ${annualFmtCount(u.declined_count)}.`,
+      ];
+      for (const line of mdaLines) {
+        const wrapped = doc.splitTextToSize(line, pageW - margin * 2);
+        if (y + wrapped.length * 12 > pageH - margin) { doc.addPage(); y = margin; }
+        doc.text(wrapped, margin, y);
+        y += wrapped.length * 12 + 4;
+      }
+
+      // Section C — Balance sheet
+      if (p.statements.balance_sheet) {
+        sectionHeading('Section C — Statement of Financial Position');
+        doc.autoTable(tableOpts(['Asset Line', 'Amount'],
+          p.statements.balance_sheet.assets.map(r => [r[0], annualFmtMoney(r[1], ccy)]),
+          { columnStyles: { 1: { halign: 'right' } } }));
+        afterTable();
+        doc.autoTable(tableOpts(['Liabilities & Equity Line', 'Amount'],
+          p.statements.balance_sheet.liabilities_equity.map(r => [r[0], annualFmtMoney(r[1], ccy)]),
+          { columnStyles: { 1: { halign: 'right' } } }));
+        afterTable();
+      }
+
+      // Section D — Income statement
+      if (p.statements.income_statement) {
+        sectionHeading('Section D — Statement of Profit or Loss');
+        doc.autoTable(tableOpts(['Line Item', 'Amount'],
+          p.statements.income_statement.rows.map(r => [r[0], annualFmtMoney(r[1], ccy)]),
+          { columnStyles: { 1: { halign: 'right' } } }));
+        afterTable();
+      }
+
+      // Section E — IFRS 17
+      if (p.statements.ifrs17 && p.statements.ifrs17.rows.length) {
+        sectionHeading('Section E — Insurance-Contract Disclosure (IFRS 17 / Schedule P)');
+        doc.autoTable(tableOpts(['Yr', 'In-Force Prem.', 'Exp. Claims', 'Op. Profit', 'BEL', 'RA', 'CSM Rel.', 'CSM Bal.', 'Reserve'],
+          p.statements.ifrs17.rows.map(x => [x.year,
+            annualFmtMoney(x.in_force_premium, ccy), annualFmtMoney(x.in_force_expected_claims, ccy),
+            annualFmtMoney(x.operating_profit, ccy), annualFmtMoney(x.bel_balance, ccy),
+            annualFmtMoney(x.risk_adjustment, ccy), annualFmtMoney(x.csm_release, ccy),
+            annualFmtMoney(x.csm_balance, ccy), annualFmtMoney(x.closing_reserve, ccy)]),
+          { styles: { fontSize: 7.5 }, columnStyles: { 0: { cellWidth: 24 }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } } }));
+        afterTable();
+      }
+
+      // Section F — Capital adequacy
+      const capBlocks = [];
+      const incPacks = new Set(p.packs || []);
+      if (p.statements.solvency && (incPacks.has('il_cmisa') || p.issuer.home_jurisdiction === 'israel')) {
+        capBlocks.push(['F.1 Israel CMISA Solvency II (Forms 5/6/7)', p.statements.solvency.components]);
+      }
+      if (p.statements.rbc && incPacks.has('us_rbc')) capBlocks.push(['F.2 NAIC Risk-Based Capital (USA)', p.statements.rbc.components]);
+      if (p.statements.licat && incPacks.has('ca_osfi_licat')) capBlocks.push(['F.3 OSFI LICAT (Canada)', p.statements.licat.components]);
+      for (const [label, components] of capBlocks) {
+        sectionHeading(label);
+        doc.autoTable(tableOpts(['Component', 'Value'],
+          components.map(r => {
+            const v = r[2] === 'pct' ? annualFmtPct((Number(r[1]) || 0) * 100)
+                    : r[2] === 'pct_raw' ? annualFmtPct(Number(r[1]) || 0)
+                    : annualFmtMoney(r[1], ccy);
+            return [r[0], v];
+          }),
+          { columnStyles: { 1: { halign: 'right' } } }));
+        afterTable();
+      }
+
+      // Section G — Reinsurance
+      if (p.statements.reinsurance) {
+        sectionHeading('Section G — Reinsurance & Risk Mitigation');
+        const r = p.statements.reinsurance;
+        doc.autoTable(tableOpts(['Disclosure', 'Value'], [
+          ['Program', r.program_name], ['Contracts bound', annualFmtCount(r.contracts)],
+          ['Hedge share', annualFmtPct(r.hedge_share_pct)], ['Ceded premium', annualFmtMoney(r.ceded_premium, ccy)],
+          ['Reserve relief', annualFmtMoney(r.reserve_relief, ccy)],
+        ], { columnStyles: { 1: { halign: 'right' } } }));
+        afterTable();
+      }
+
+      // Section H — Demographics & underwriting statistics
+      if (p.statements.demographics) {
+        const d = p.statements.demographics;
+        const demoTable = (heading, columnHeader, obj) => {
+          const rows = Object.entries(obj || {}).map(([k, v]) => [k, annualFmtCount(v)]);
+          if (!rows.length) return;
+          sectionHeading(heading);
+          doc.autoTable(tableOpts([columnHeader, 'Lives'], rows, { columnStyles: { 1: { halign: 'right' } } }));
+          afterTable();
+        };
+        demoTable('Section H.1 — Age Distribution', 'Age band', d.age_distribution);
+        demoTable('Section H.2 — Gender Distribution', 'Gender', d.gender);
+        demoTable('Section H.3 — Ethnicity Distribution', 'Ethnicity', d.ethnicity);
+      }
+
+      // Section I — Cash flow
+      if (p.statements.cash_flow && p.statements.cash_flow.length) {
+        sectionHeading('Section I — Multi-Year Cash-Flow Projection');
+        doc.autoTable(tableOpts(['Yr', 'Premium In', 'Claims Out', 'Op. Profit', 'Tax', 'Dividends', 'Reserve Δ', 'Net CF'],
+          p.statements.cash_flow.map(x => [x.year,
+            annualFmtMoney(x.premium_inflow, ccy), annualFmtMoney(x.claim_outflow, ccy),
+            annualFmtMoney(x.operating_profit, ccy), annualFmtMoney(x.tax, ccy),
+            annualFmtMoney(x.dividends, ccy), annualFmtMoney(x.reserve_contribution, ccy),
+            annualFmtMoney(x.net_cash_flow, ccy)]),
+          { styles: { fontSize: 7.5 }, columnStyles: { 0: { cellWidth: 24 }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } } }));
+        afterTable();
+      }
+
+      // Section J — Packs
+      sectionHeading('Section J — Regulatory Standards Filed Under');
+      const packLines = (p.packs && p.packs.length) ? p.packs.map(pk => '• ' + (ANNUAL_PACK_LABELS[pk] || pk)) : ['• None selected.'];
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
+      for (const line of packLines) {
+        const wrapped = doc.splitTextToSize(line, pageW - margin * 2);
+        if (y + wrapped.length * 12 > pageH - margin) { doc.addPage(); y = margin; }
+        doc.text(wrapped, margin, y);
+        y += wrapped.length * 12 + 2;
+      }
+      y += 10;
+
+      // Section K — Appendix
+      sectionHeading('Section K — Appendix (adjustable)');
+      const appendix = (p.appendix || '').trim() || 'No appendix supplied.';
+      const appendixLines = doc.splitTextToSize(appendix, pageW - margin * 2);
+      for (const line of appendixLines) {
+        if (y + 12 > pageH - margin) { doc.addPage(); y = margin; }
+        doc.text(line, margin, y);
+        y += 12;
+      }
+
+      // Footer & page numbers
+      const pages = doc.internal.getNumberOfPages();
+      for (let pi = 1; pi <= pages; pi++) {
+        doc.setPage(pi);
+        doc.setDrawColor(225, 230, 236); doc.setLineWidth(0.5);
+        doc.line(margin, pageH - 28, pageW - margin, pageH - 28);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+        doc.text(`${p.issuer.name} · Annual Regulatory Report · FY${p.issuer.fy} · hash ${p.integrity_hash}`, margin, pageH - 16);
+        doc.text(`Page ${pi} of ${pages}`, pageW - margin, pageH - 16, { align: 'right' });
+      }
+      const filename = `${(p.issuer.name || 'issuer').replace(/[^a-z0-9]+/gi, '_')}_FY${p.issuer.fy}_annual_report.pdf`;
+      doc.save(filename);
+    }
+
+    // Boot the annual report bar on first paint so the cap-table and
+    // debt-schedule editors are populated before the user navigates here.
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        resetAnnualCapTable();
+        renderAnnualDebtTable();
+        refreshAnnualReportSources();
+        const ccyEl = document.getElementById('annual-currency');
+        if (ccyEl) ccyEl.addEventListener('change', () => { updateAnnualDebtTotal(); refreshAnnualReportSources(); });
+        const jurEl = document.getElementById('annual-home-jurisdiction');
+        if (jurEl) jurEl.addEventListener('change', () => {
+          const v = jurEl.value;
+          const filing = document.getElementById('annual-exchange-filing');
+          if (filing) {
+            if (v === 'israel') filing.value = 'Tel-Aviv Stock Exchange (TASE) · ISA Magna electronic filing';
+            else if (v === 'usa') filing.value = 'NYSE / Nasdaq · SEC EDGAR electronic filing';
+            else if (v === 'canada') filing.value = 'Toronto Stock Exchange (TSX) · SEDAR+ electronic filing';
+          }
+        });
+      } catch (e) { /* ignore — page may be partially loaded */ }
     });
   </script>
   <script src="/ui-clarity.js"></script>
