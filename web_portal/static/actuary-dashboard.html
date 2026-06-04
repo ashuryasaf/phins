@@ -8770,8 +8770,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           const yrLoss = yrPrem ? (yrClaims / yrPrem) * 100 : 0;
           const yrExp = yrPrem ? (expenseLoading * (yrPrem / Math.max(1, grossPremium)) / yrPrem) * 100 : 0;
           const yrCombined = yrLoss + yrExp;
-          runningEquity += (r.retained_earnings || 0);
+          // RoE uses beginning-of-year equity (capital accumulated through prior
+          // periods) so the denominator is not inflated by the same year's
+          // retained earnings that drive the numerator; roll equity forward after.
           const yrRoe = runningEquity > 0 ? (yrAfterTax / runningEquity) * 100 : 0;
+          runningEquity += (r.retained_earnings || 0);
           return {
             year: r.year,
             premium: yrPrem,
@@ -8888,15 +8891,19 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       };
 
       // ===== Persistency curve (J.4) — geometric decay derived from collection rate -----
-      // Pre-sandbox runs default to the documented 95% collection rate (critical estimates Note 15);
-      // a bound sandbox supplies the realized rate.
-      const effectiveCollectionRate = sandboxCollectionRate > 0 ? sandboxCollectionRate : 0.95;
-      const annualLapse = Math.min(0.05, Math.max(0.001, 1 - effectiveCollectionRate));
-      const persistencyYears = (reserves?.yearly_projection?.length) || 5;
-      out.persistency_curve = Array.from({ length: persistencyYears + 1 }, (_, ix) => ({
-        year: ix,
-        survival_pct: Math.pow(1 - annualLapse, ix) * 100,
-      }));
+      // Only modelled when a sandbox supplies a realized collection rate, so the
+      // curve's driver matches the collection rate shown in J.3 and the MD&A
+      // rather than silently assuming a different default. Annual lapse is the
+      // full shortfall implied by the collection rate (1 - collection rate),
+      // bounded only to remain a valid probability.
+      if (sandboxCollectionRate > 0) {
+        const annualLapse = Math.min(0.999, Math.max(0.001, 1 - sandboxCollectionRate));
+        const persistencyYears = (reserves?.yearly_projection?.length) || 5;
+        out.persistency_curve = Array.from({ length: persistencyYears + 1 }, (_, ix) => ({
+          year: ix,
+          survival_pct: Math.pow(1 - annualLapse, ix) * 100,
+        }));
+      }
 
       // ===== Decline reasons pie (J.2) -----
       out.decline_pie = Object.entries(sim.declined?.reasons || {}).map(([k, v]) => ({ label: k, value: Number(v) || 0 }));
@@ -9415,6 +9422,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const svc = cr.service || {};
         const declinedReasonsHtml = Object.entries(acq.declined_reasons || {}).map(([k, v]) => `<tr><td>${annualEsc(k)}</td><td class="num">${annualFmtCount(v)}</td></tr>`).join('') || `<tr><td colspan="2"><em>n/a</em></td></tr>`;
         const persistencyTbl = (statements.persistency_curve || []).map(p => `<tr><td>Year ${p.year}</td><td class="num">${p.survival_pct.toFixed(2)}%</td></tr>`).join('');
+        const persistencyCurveHtml = statements.persistency_curve?.length ? `
+          <h4>J.4 Persistency decay curve (modelled)</h4>
+          <table>
+            <thead><tr><th>Year</th><th class="num">Survival %</th></tr></thead>
+            <tbody>${persistencyTbl}</tbody>
+          </table>
+          ${annualChartCanvas('annual-chart-persistency', 220)}` : '';
         crHtml = `
           <h4>J.1 Acquisition funnel</h4>
           <table>
@@ -9451,13 +9465,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <tr><td>Open claims at reporting date</td><td class="num">${annualFmtCount(exp.open_claims)}</td></tr>
             </tbody>
           </table>
-
-          <h4>J.4 Persistency decay curve (modelled)</h4>
-          <table>
-            <thead><tr><th>Year</th><th class="num">Survival %</th></tr></thead>
-            <tbody>${persistencyTbl}</tbody>
-          </table>
-          ${annualChartCanvas('annual-chart-persistency', 220)}`;
+          ${persistencyCurveHtml}`;
       }
       const crSection = annualSubsection('J. Customer Relations &amp; Operational KPIs', crHtml);
 
