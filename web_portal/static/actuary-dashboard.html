@@ -8885,7 +8885,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       };
 
       // ===== Persistency curve (J.4) — geometric decay derived from collection rate -----
-      const monthlyChurn = Math.min(0.05, Math.max(0.001, 1 - Math.max(0.5, sandboxCollectionRate)));
+      // Pre-sandbox runs default to the documented 95% collection rate (critical estimates Note 15);
+      // a bound sandbox supplies the realized rate.
+      const effectiveCollectionRate = sandboxCollectionRate > 0 ? sandboxCollectionRate : 0.95;
+      const monthlyChurn = Math.min(0.05, Math.max(0.001, 1 - effectiveCollectionRate));
       const persistencyYears = (reserves?.yearly_projection?.length) || 5;
       out.persistency_curve = Array.from({ length: persistencyYears + 1 }, (_, ix) => ({
         year: ix,
@@ -10013,6 +10016,21 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       y += 18; doc.setTextColor(...INK);
 
+      // Cover capital-adequacy snapshot — kept on page 1 to match the HTML executive cover.
+      const coverSnap = annualSnapshotChart('annual-chart-cover-capital');
+      if (coverSnap) {
+        const coverChartW = pageW - margin * 2;
+        const coverChartH = 180;
+        if (y + coverChartH + 22 <= pageH - margin) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...TEAL);
+          doc.text('Capital adequacy snapshot (cover)', margin, y + 3);
+          y += 14;
+          doc.setTextColor(...INK);
+          try { doc.addImage(coverSnap.dataUrl, 'PNG', margin, y, coverChartW, coverChartH); } catch (e) {}
+          y += coverChartH + 12;
+        }
+      }
+
       // Now a new page for the detailed report.
       doc.addPage();
       y = margin;
@@ -10070,9 +10088,6 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         p.checks.map(c => [c.name, c.ok ? 'PASS' : 'FAIL', c.detail]),
         { columnStyles: { 1: { halign: 'center', cellWidth: 60 } } }));
       afterTable();
-
-      // Cover-page mini chart on the report body
-      embedChart('annual-chart-cover-capital', 'Capital adequacy snapshot (cover)', 180);
 
       // Table of Contents
       sectionHeading('Table of Contents');
