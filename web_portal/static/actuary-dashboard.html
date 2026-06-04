@@ -8888,11 +8888,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // Pre-sandbox runs default to the documented 95% collection rate (critical estimates Note 15);
       // a bound sandbox supplies the realized rate.
       const effectiveCollectionRate = sandboxCollectionRate > 0 ? sandboxCollectionRate : 0.95;
-      const monthlyChurn = Math.min(0.05, Math.max(0.001, 1 - effectiveCollectionRate));
+      const annualLapse = Math.min(0.05, Math.max(0.001, 1 - effectiveCollectionRate));
       const persistencyYears = (reserves?.yearly_projection?.length) || 5;
       out.persistency_curve = Array.from({ length: persistencyYears + 1 }, (_, ix) => ({
         year: ix,
-        survival_pct: Math.pow(1 - monthlyChurn, ix * 12) * 100,
+        survival_pct: Math.pow(1 - annualLapse, ix) * 100,
       }));
 
       // ===== Decline reasons pie (J.2) -----
@@ -9980,6 +9980,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
       doc.text('Single-page summary of every figure disclosed in the full report below.', margin, y);
       y += 14;
+      let tilesDrawn = 0;
       for (let i = 0; i < tiles.length; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
@@ -9995,8 +9996,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...accent);
         const valueLines = doc.splitTextToSize(String(tiles[i].value), tileW - 16);
         doc.text(valueLines[0] || '', tx + 8, ty + 32);
+        tilesDrawn++;
       }
-      const rowsUsed = Math.ceil(tiles.length / cols);
+      const rowsUsed = Math.ceil(tilesDrawn / cols);
       y += rowsUsed * (tileH + gap) + 6;
       doc.setTextColor(...INK);
 
