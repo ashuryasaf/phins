@@ -8758,7 +8758,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       // ===== Five-year selected financial highlights (Item 6) =====
       if (reserves?.yearly_projection?.length) {
-        out.five_year_highlights = reserves.yearly_projection.slice(0, 5).map((r, ix) => {
+        out.five_year_highlights = reserves.yearly_projection.slice(0, 5).map((r) => {
           const yrPrem = r.in_force_premium || 0;
           const yrClaims = r.in_force_expected_claims || 0;
           const yrOp = r.operating_profit || 0;
@@ -8767,8 +8767,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           const yrLoss = yrPrem ? (yrClaims / yrPrem) * 100 : 0;
           const yrExp = yrPrem ? (expenseLoading * (yrPrem / Math.max(1, grossPremium)) / yrPrem) * 100 : 0;
           const yrCombined = yrLoss + yrExp;
-          const yrEquityProxy = (totalEquity / Math.max(1, reserves.yearly_projection.length)) * (ix + 1);
-          const yrRoe = yrEquityProxy > 0 ? (yrAfterTax / yrEquityProxy) * 100 : 0;
+          const yrRoe = totalEquity > 0 ? (yrAfterTax / totalEquity) * 100 : 0;
           return {
             year: r.year,
             premium: yrPrem,
@@ -9650,7 +9649,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           data: { labels: mr.rows.map(r => r.label.length > 38 ? r.label.slice(0, 36) + '…' : r.label), datasets: [
             { label: 'Δ (shocked − base)', data: mr.rows.map(r => r.delta), backgroundColor: mr.rows.map(r => r.delta >= 0 ? palette[3] : palette[5]) },
           ] },
-          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Quantitative market-risk sensitivities (B.6)' }, legend: { display: false }, tooltip: { callbacks: { label: moneyTooltip } } }, scales: { x: { ticks: { callback: moneyTick } } } },
+          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Quantitative market-risk sensitivities (B.6)' }, legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label || ctx.label}: ${annualFmtMoney(ctx.parsed.x, ccy)}` } } }, scales: { x: { ticks: { callback: moneyTick } } } },
         });
       }
 
