@@ -8505,7 +8505,6 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // ===== Balance Sheet =====
       const closingReserve = reserves?.totals?.closing_reserve || 0;
       const lastYear = (reserves?.yearly_projection || [])[(reserves?.yearly_projection || []).length - 1] || {};
-      const firstYear = (reserves?.yearly_projection || [])[0] || {};
       const csmBalance = lastYear.ifrs17?.csm_balance || 0;
       const savingsFundClosing = lastYear.savings_fund?.closing_balance || 0;
       const ibnrProvision = lastYear.ibnr_provision || 0;
@@ -8758,6 +8757,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       // ===== Five-year selected financial highlights (Item 6) =====
       if (reserves?.yearly_projection?.length) {
+        // Roll equity forward from an opening base (terminal equity less all
+        // retained earnings) so each year's RoE uses the capital accumulated
+        // by that period rather than a single static terminal denominator.
+        let runningEquity = totalEquity - (reserves?.totals?.cumulative_retained_earnings || 0);
         out.five_year_highlights = reserves.yearly_projection.slice(0, 5).map((r) => {
           const yrPrem = r.in_force_premium || 0;
           const yrClaims = r.in_force_expected_claims || 0;
@@ -8767,7 +8770,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           const yrLoss = yrPrem ? (yrClaims / yrPrem) * 100 : 0;
           const yrExp = yrPrem ? (expenseLoading * (yrPrem / Math.max(1, grossPremium)) / yrPrem) * 100 : 0;
           const yrCombined = yrLoss + yrExp;
-          const yrRoe = totalEquity > 0 ? (yrAfterTax / totalEquity) * 100 : 0;
+          runningEquity += (r.retained_earnings || 0);
+          const yrRoe = runningEquity > 0 ? (yrAfterTax / runningEquity) * 100 : 0;
           return {
             year: r.year,
             premium: yrPrem,
