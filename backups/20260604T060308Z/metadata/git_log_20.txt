@@ -1,0 +1,20 @@
+eb90aca Merge pull request #352 from ashuryasaf/cursor/fix-annual-report-missing-ui-08c5
+bebf1ac fix(actuary): restore missing Annual Regulatory Report UI (nav + section + CSS)
+e0a5a11 Merge pull request #351 from ashuryasaf/cursor/actuary-annual-reporting-08c5
+4feb333 Fix NAIC RBC ratio scale to TAC/ACL to match cited thresholds
+fc0ffa6 Gate annual report sandbox binding on current simulation and refresh after generate
+a8ccaf8 Gate Israel solvency section behind selected standards packs
+0f2c2c6 Fix annual report export parity for Section H and empty-debt PDF layout
+284ca8e Gate stale sandbox out of annual report statements
+f8c8312 Fix balance sheet so assets equal liabilities plus equity
+355f5dd Fix stale reinsurance UI after new portfolio simulation
+eb8f720 fix(actuary): close annual report data-integrity gaps
+c1e4adc fix(actuary): keep annual report sources fresh and simulation-coherent
+f173b8f fix(actuary): correct annual report logic bugs
+7bce93f feat(actuary): add first-class Annual Regulatory Report bar
+e29df9f feat(actuary): auto-pay billing, 30-day non-payment cancellation, division label
+603928c fix(actuary): assumed ~95% collection, pure-risk loss ratio, PDF restyle
+c953582 Merge pull request #349 from ashuryasaf/cursor/fix-premiums-collected-savings-eb4f
+876c806 fix(actuary): realistic premiums-collected in PDF AI Assessment
+27cd387 Merge pull request #348 from ashuryasaf/cursor/ai-cost-assessment-pitch-d11b
+a9a0878 feat(pitch): add AI supercomputer & server hardware recommendations with cost ranges
