@@ -8575,7 +8575,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // ===== Reserve roll-forward (E.3) =====
       if (reserves?.yearly_projection?.length) {
         const rows = reserves.yearly_projection;
-        let opening = 0;
+        let opening = reserves.opening_balances?.reserve || 0;
         out.reserve_movement = rows.map((r, ix) => {
           const open = opening;
           const close = r.closing_reserve || 0;
