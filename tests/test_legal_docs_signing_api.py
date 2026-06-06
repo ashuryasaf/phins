@@ -166,6 +166,49 @@ def test_void_then_resign_same_hash_verifies_active():
     assert vd["chain_valid"] is True
 
 
+def test_conflicting_content_for_same_hash_is_rejected():
+    # Two parties anchoring the SAME documentHash must attest to identical
+    # content. A second signature carrying a divergent snapshot under the same
+    # hash is rejected so verify cannot succeed over mismatched content.
+    doc_id = _doc_id()
+    base = {
+        "docType": "term-sheet",
+        "docInstanceId": doc_id,
+        "documentHash": "1" * 64,
+        "content": {"context": "investor", "fieldValues": {"amount": "1000000"}, "tableData": {}},
+    }
+    first = requests.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json=dict(base, role="Investor", signerName="Acme Ventures"),
+        timeout=10,
+    )
+    assert first.status_code == 200, first.text
+
+    # Same hash, different content snapshot → conflict.
+    conflict = requests.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json={
+            "docType": "term-sheet",
+            "docInstanceId": doc_id,
+            "role": "Company",
+            "signerName": "PHINS Insurance, Inc.",
+            "documentHash": "1" * 64,
+            "content": {"context": "investor", "fieldValues": {"amount": "9999999"}, "tableData": {}},
+        },
+        timeout=10,
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert "error" in conflict.json()
+
+    # Same hash, matching content snapshot → accepted (genuine co-signer).
+    cosign = requests.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json=dict(base, role="Company", signerName="PHINS Insurance, Inc."),
+        timeout=10,
+    )
+    assert cosign.status_code == 200, cosign.text
+
+
 def test_verify_rejects_tampered_hash():
     doc_id = _doc_id()
     requests.post(

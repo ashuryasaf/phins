@@ -1645,6 +1645,24 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
     if content_snapshot is not None and len(json.dumps(content_snapshot, default=str)) > 200000:
         return 400, {'error': 'content snapshot exceeds allowed maximum'}
 
+    # Data-integrity guard: every party anchoring a given ``documentHash`` must
+    # attest to the same underlying content. The server cannot recompute the
+    # digest itself (the client hashes a richer, context-filtered view than the
+    # stored snapshot), but it can reject a snapshot that disagrees with one
+    # already anchored under the same (instance, hash). Without this, a direct
+    # API caller could anchor a digest whose stored/hydrated content differs from
+    # what other signatures attest to, so verify would still succeed.
+    if content_snapshot is not None:
+        new_canonical = json.dumps(content_snapshot, sort_keys=True, default=str)
+        for prior in _legal_doc_signatures_for(doc_instance_id):
+            if str(prior.get('document_hash') or '').lower() != document_hash:
+                continue
+            prior_content = prior.get('content')
+            if not isinstance(prior_content, dict):
+                continue
+            if json.dumps(prior_content, sort_keys=True, default=str) != new_canonical:
+                return 409, {'error': 'content snapshot does not match the content already anchored for this documentHash'}
+
     role_slug = _legal_doc_role_slug(role)
     event_type = 'legal_document_voided' if is_void else 'legal_document_signed'
     # Deterministic entry id → idempotent signing; void events are uniquely keyed.
