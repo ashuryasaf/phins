@@ -929,10 +929,20 @@
         self.refreshIntegrity();
       } else if (res.data && res.data.error) {
         // The ledger definitively rejected this anchor (e.g. content conflict or
-        // validation), not a transient outage. Surface the server error so the
-        // signer doesn't mistake a rejection for a pending/offline retry.
-        self.flash('Anchor rejected: ' + res.data.error, 'err');
-        self.markAnchorPending(rid);
+        // validation), not a transient outage. Roll back the local signature so
+        // the UI doesn't keep showing a signed/locked document for a party that
+        // has no active anchor on the append-only ledger. If this was the only
+        // signature, clear the frozen hash and unlock editing again.
+        delete self.signatures[rid];
+        if (Object.keys(self.signatures).length === 0) {
+          self.lockedHash = null;
+          self.locking = false;
+        }
+        self.persist();
+        self.renderSignatures();
+        self.recompute();
+        self.refreshIntegrity();
+        self.flash('Anchor rejected: ' + res.data.error + ' — signature was not applied.', 'err');
       } else {
         self.markAnchorPending(rid);
       }
