@@ -832,23 +832,34 @@
     if (!confirm('Void ALL signatures on this document? This records a void event in the ledger and unlocks editing. This cannot be undone.')) return;
     var self = this;
     var roles = Object.keys(this.signatures);
-    roles.forEach(function (rid) {
+    // Anchor every void to the ledger BEFORE clearing local state. Editing must
+    // not resume (and the UI must not claim "voided") until the ledger confirms,
+    // otherwise prior signatures stay active server-side while the UI looks
+    // unsigned, letting a user re-sign over still-active anchors.
+    var voids = roles.map(function (rid) {
       var sig = self.signatures[rid];
-      postJSON(API.sign, {
+      return postJSON(API.sign, {
         docType: self.cfg.docType, docInstanceId: self.docInstanceId, context: self.context,
         role: sig.role, signerName: sig.signerName, signedAt: new Date().toISOString(),
         documentHash: sig.documentHash, event: 'void'
-      }).catch(function () {});
+      }).then(function (res) {
+        if (!(res.ok && res.data && res.data.entry_hash)) throw new Error('void not anchored');
+      });
     });
-    this.signatures = {};
-    this.lockedHash = null;
-    this.locking = false;
-    this.persist();
-    this.applyLockUI();
-    this.renderSignatures();
-    this.recompute();
-    this.refreshIntegrity();
-    this.flash('Signatures voided. Document unlocked.', 'ok');
+    this.flash('Voiding signatures…', 'ok');
+    Promise.all(voids).then(function () {
+      self.signatures = {};
+      self.lockedHash = null;
+      self.locking = false;
+      self.persist();
+      self.applyLockUI();
+      self.renderSignatures();
+      self.recompute();
+      self.refreshIntegrity();
+      self.flash('Signatures voided. Document unlocked.', 'ok');
+    }).catch(function () {
+      self.flash('Void failed to anchor — signatures remain active. Check your connection and retry.', 'err');
+    });
   };
 
   // ------------------------------------------------------------- integrity

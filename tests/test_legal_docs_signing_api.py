@@ -113,6 +113,59 @@ def test_registry_lists_signatures():
         assert item["document_hash"] == "c" * 64
 
 
+def test_void_then_resign_same_hash_verifies_active():
+    # Sign, void, then re-sign the SAME content hash. The re-sign must anchor a
+    # fresh ledger row (not idempotently reuse the now-voided one) so verify
+    # reports an active match again.
+    doc_id = _doc_id()
+    base = {
+        "docType": "term-sheet",
+        "docInstanceId": doc_id,
+        "role": "Investor",
+        "signerName": "Recurring Investor LP",
+        "documentHash": "f" * 64,
+    }
+
+    s1 = requests.post(f"{BASE_URL}/api/legal-docs/sign", json=base, timeout=10)
+    assert s1.status_code == 200, s1.text
+
+    v_after_sign = requests.post(
+        f"{BASE_URL}/api/legal-docs/verify",
+        json={"docInstanceId": doc_id, "documentHash": "f" * 64},
+        timeout=10,
+    )
+    assert v_after_sign.json()["verified"] is True
+
+    void = requests.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json=dict(base, event="void"),
+        timeout=10,
+    )
+    assert void.status_code == 200
+    assert void.json()["event"] == "legal_document_voided"
+
+    v_after_void = requests.post(
+        f"{BASE_URL}/api/legal-docs/verify",
+        json={"docInstanceId": doc_id, "documentHash": "f" * 64},
+        timeout=10,
+    )
+    assert v_after_void.json()["verified"] is False
+
+    # Re-sign identical content: should anchor a new entry and verify active.
+    s2 = requests.post(f"{BASE_URL}/api/legal-docs/sign", json=base, timeout=10)
+    assert s2.status_code == 200, s2.text
+    assert s2.json()["entry_id"] != s1.json()["entry_id"]
+
+    v_after_resign = requests.post(
+        f"{BASE_URL}/api/legal-docs/verify",
+        json={"docInstanceId": doc_id, "documentHash": "f" * 64},
+        timeout=10,
+    )
+    vd = v_after_resign.json()
+    assert vd["verified"] is True
+    assert vd["chain_valid"] is True
+
+
 def test_verify_rejects_tampered_hash():
     doc_id = _doc_id()
     requests.post(

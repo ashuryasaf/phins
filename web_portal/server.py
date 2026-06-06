@@ -1641,10 +1641,24 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
     # Deterministic entry id → idempotent signing; void events are uniquely keyed.
     # Use the full document hash (not a prefix) so distinct content digests can
     # never collide on the same entry_id and reuse a different document's anchor.
+    #
+    # A void-then-re-sign cycle reuses the same (role, content hash), so without a
+    # generation suffix the re-sign would hit the original (now superseded) row by
+    # idempotency and verify would still treat it as voided. Key each entry by the
+    # number of prior void events for this (instance, role, hash) so every re-sign
+    # — and the void that follows it — anchors a fresh row with a higher sequence,
+    # while genuine retries within a generation stay idempotent.
+    prior_voids = 0
+    for prior in _legal_doc_signatures_for(doc_instance_id):
+        if (_legal_doc_role_slug(prior.get('role') or '') == role_slug
+                and str(prior.get('document_hash') or '').lower() == document_hash
+                and (prior.get('event') == 'legal_document_voided' or prior.get('voided'))):
+            prior_voids += 1
+    generation = '' if prior_voids == 0 else f"-v{prior_voids}"
     if is_void:
-        entry_id = f"LGLVOID-{doc_instance_id}-{role_slug}-{document_hash}"
+        entry_id = f"LGLVOID-{doc_instance_id}-{role_slug}-{document_hash}{generation}"
     else:
-        entry_id = f"LGLSIG-{doc_instance_id}-{role_slug}-{document_hash}"
+        entry_id = f"LGLSIG-{doc_instance_id}-{role_slug}-{document_hash}{generation}"
 
     try:
         entry = platform_event_ledger.append_event(
