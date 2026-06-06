@@ -12,12 +12,12 @@
       "used_by": [
         {
           "email": "newcustomer@example.com",
-          "customer_id": "CUST-61188",
+          "customer_id": "CUST-19324",
           "used_at": "2026-06-06T11:48:56.259648"
         },
         {
           "email": "legacyotp@example.com",
-          "customer_id": "CUST-55212",
+          "customer_id": "CUST-15830",
           "used_at": "2026-06-06T11:48:57.006295"
         }
       ],
@@ -35,7 +35,7 @@
       "used_by": [
         {
           "email": "invitation-flow-primary@example.com",
-          "customer_id": "CUST-55705",
+          "customer_id": "CUST-38734",
           "used_at": "2026-06-06T11:48:57.730437"
         }
       ]
@@ -51,7 +51,7 @@
       "used_by": [
         {
           "email": "invitation-flow-secondary@example.com",
-          "customer_id": "CUST-78772",
+          "customer_id": "CUST-12985",
           "used_at": "2026-06-06T11:48:57.773708"
         }
       ]

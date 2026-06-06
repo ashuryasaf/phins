@@ -1639,10 +1639,12 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
     role_slug = _legal_doc_role_slug(role)
     event_type = 'legal_document_voided' if is_void else 'legal_document_signed'
     # Deterministic entry id → idempotent signing; void events are uniquely keyed.
+    # Use the full document hash (not a prefix) so distinct content digests can
+    # never collide on the same entry_id and reuse a different document's anchor.
     if is_void:
-        entry_id = f"LGLVOID-{doc_instance_id}-{role_slug}-{document_hash[:8]}"
+        entry_id = f"LGLVOID-{doc_instance_id}-{role_slug}-{document_hash}"
     else:
-        entry_id = f"LGLSIG-{doc_instance_id}-{role_slug}-{document_hash[:8]}"
+        entry_id = f"LGLSIG-{doc_instance_id}-{role_slug}-{document_hash}"
 
     try:
         entry = platform_event_ledger.append_event(

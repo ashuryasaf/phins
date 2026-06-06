@@ -120,11 +120,12 @@
     this.tableData = {};
     this.signatures = {};      // role -> {signerName, signerTitle, method, signatureData, signedAt, receipt}
     this.lockedHash = null;    // frozen content hash at first signature
+    this.locking = false;      // synchronous lock engaged at sign click, before async hash resolves
     this.storageKey = null;
     this.bindEls = {};
   }
 
-  LegalDoc.prototype.locked = function () { return !!this.lockedHash; };
+  LegalDoc.prototype.locked = function () { return !!this.lockedHash || this.locking; };
 
   LegalDoc.prototype.boot = function () {
     var self = this;
@@ -730,6 +731,11 @@
     var signatureData = mode === 'draw' ? canvas.toDataURL('image/png') : typed;
     var signedAt = new Date().toISOString();
 
+    // Lock editing synchronously the moment Sign is clicked, so edits made while
+    // the hash is computing asynchronously cannot mutate the live document.
+    this.locking = true;
+    this.applyLockUI();
+
     // Freeze the content hash on the FIRST signature; reuse it thereafter.
     var ensureHash = this.lockedHash
       ? Promise.resolve(this.lockedHash)
@@ -836,6 +842,7 @@
     });
     this.signatures = {};
     this.lockedHash = null;
+    this.locking = false;
     this.persist();
     this.applyLockUI();
     this.renderSignatures();
