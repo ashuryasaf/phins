@@ -916,7 +916,10 @@
       signedAt: sig.signedAt, documentHash: sig.documentHash, signatureMethod: sig.method,
       // Persist the exact signed content so a counterparty opening the shared
       // ?doc= link on another device renders the document the hash attests to.
-      content: { context: this.context, fieldValues: this.values, tableData: this.tableData }
+      // Use the same context-filtered field set that fed the signed hash, so two
+      // parties sharing a hash anchor identical snapshots instead of hitting the
+      // server's content-conflict guard over hidden/default keys in this.values.
+      content: { context: this.context, fieldValues: this.activeFieldValues(), tableData: this.tableData }
     }).then(function (res) {
       if (res.ok && res.data && res.data.entry_hash) {
         sig.receipt = { sequence_no: res.data.sequence_no, entry_hash: res.data.entry_hash, entry_id: res.data.entry_id };
@@ -924,6 +927,12 @@
         var panel = $('[data-sigpanel="' + cssEsc(rid) + '"]');
         if (panel) self.renderSignedPanel(panel, rid);
         self.refreshIntegrity();
+      } else if (res.data && res.data.error) {
+        // The ledger definitively rejected this anchor (e.g. content conflict or
+        // validation), not a transient outage. Surface the server error so the
+        // signer doesn't mistake a rejection for a pending/offline retry.
+        self.flash('Anchor rejected: ' + res.data.error, 'err');
+        self.markAnchorPending(rid);
       } else {
         self.markAnchorPending(rid);
       }
@@ -1002,22 +1011,36 @@
         role: sig.role, signerName: sig.signerName, signedAt: new Date().toISOString(),
         documentHash: sig.documentHash, event: 'void'
       }).then(function (res) {
-        if (!(res.ok && res.data && res.data.entry_hash)) throw new Error('void not anchored');
+        return { rid: rid, ok: !!(res.ok && res.data && res.data.entry_hash) };
+      }).catch(function () {
+        return { rid: rid, ok: false };
       });
     });
     this.flash('Voiding signatures…', 'ok');
-    Promise.all(voids).then(function () {
-      self.signatures = {};
-      self.lockedHash = null;
-      self.locking = false;
+    // Reconcile per-role: drop only the signatures whose void actually anchored.
+    // If some voids fail, those signatures stay active server-side, so they must
+    // remain locally too (document stays locked) instead of clearing everything
+    // on an all-or-nothing basis — which would desync the UI from the ledger.
+    Promise.all(voids).then(function (results) {
+      var failed = 0;
+      results.forEach(function (r) {
+        if (r.ok) { delete self.signatures[r.rid]; }
+        else { failed++; }
+      });
+      if (Object.keys(self.signatures).length === 0) {
+        self.lockedHash = null;
+        self.locking = false;
+      }
       self.persist();
       self.applyLockUI();
       self.renderSignatures();
       self.recompute();
       self.refreshIntegrity();
-      self.flash('Signatures voided. Document unlocked.', 'ok');
-    }).catch(function () {
-      self.flash('Void failed to anchor — signatures remain active. Check your connection and retry.', 'err');
+      if (failed) {
+        self.flash(failed + ' of ' + results.length + ' voids failed to anchor — those signatures remain active. Check your connection and retry.', 'err');
+      } else {
+        self.flash('Signatures voided. Document unlocked.', 'ok');
+      }
     });
   };
 
