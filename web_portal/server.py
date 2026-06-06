@@ -1593,6 +1593,155 @@ platform_event_ledger = PlatformEventLedgerService(
     use_database=lambda: USE_DATABASE and database_enabled,
 )
 
+
+# ---------------------------------------------------------------------------
+# Legal / corporate / funding document signing (data-integrity anchoring)
+# ---------------------------------------------------------------------------
+# The adjustable document templates under /legal/*.html capture LIVE signatures
+# (draw or typed) per relevant entity (investor / company / employee / founder…),
+# lock the signature + date, hash the document content (SHA-256), and anchor each
+# signature into the existing append-only, hash-chained ``platform_event_ledger``.
+# Nothing is anchored without an explicit human signature; entries are append-only
+# and idempotent (re-posting the same signature returns the existing entry), and
+# voiding records a new event rather than mutating/deleting — consistent with the
+# platform's tamper-evident integrity contract.
+
+_LEGAL_DOC_HASH_RE = re.compile(r'^[0-9a-f]{64}$')
+
+
+def _legal_doc_role_slug(role: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', str(role or 'party').lower()).strip('-') or 'party'
+
+
+def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dict[str, Any]]:
+    """Validate + anchor a single document signature (or a void event).
+
+    Returns (status_code, response_dict). Errors use the ``{"error": ...}`` shape.
+    """
+    doc_type = str(body_data.get('docType') or '').strip()
+    doc_instance_id = str(body_data.get('docInstanceId') or '').strip()
+    role = str(body_data.get('role') or '').strip()
+    signer_name = str(body_data.get('signerName') or '').strip()
+    document_hash = str(body_data.get('documentHash') or '').strip().lower()
+    signed_at = str(body_data.get('signedAt') or '').strip() or datetime.utcnow().isoformat()
+    signer_title = str(body_data.get('signerTitle') or '').strip()
+    context = str(body_data.get('context') or '').strip()
+    signature_method = str(body_data.get('signatureMethod') or '').strip()
+    is_void = str(body_data.get('event') or '').strip().lower() == 'void'
+
+    if not doc_type or not doc_instance_id or not role or not signer_name:
+        return 400, {'error': 'docType, docInstanceId, role and signerName are required'}
+    if len(doc_instance_id) > 120 or len(doc_type) > 80 or len(signer_name) > 160:
+        return 400, {'error': 'Field length exceeds allowed maximum'}
+    if not _LEGAL_DOC_HASH_RE.match(document_hash):
+        return 400, {'error': 'documentHash must be a 64-character hex SHA-256 digest'}
+
+    role_slug = _legal_doc_role_slug(role)
+    event_type = 'legal_document_voided' if is_void else 'legal_document_signed'
+    # Deterministic entry id → idempotent signing; void events are uniquely keyed.
+    if is_void:
+        entry_id = f"LGLVOID-{doc_instance_id}-{role_slug}-{document_hash[:8]}"
+    else:
+        entry_id = f"LGLSIG-{doc_instance_id}-{role_slug}-{document_hash[:8]}"
+
+    try:
+        entry = platform_event_ledger.append_event(
+            event_type=event_type,
+            entity_type='legal_document',
+            entity_id=doc_instance_id,
+            actor=signer_name,
+            source_system='legal_docs',
+            status='voided' if is_void else 'signed',
+            entry_id=entry_id,
+            payload={
+                'doc_type': doc_type,
+                'context': context,
+                'role': role,
+                'role_slug': role_slug,
+                'signer_name': signer_name,
+                'signer_title': signer_title,
+                'signed_at': signed_at,
+                'document_hash': document_hash,
+                'signature_method': signature_method,
+                'client_ip': client_ip,
+                'voided': is_void,
+            },
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[legal-docs] anchor error: {exc}")
+        return 500, {'error': 'Failed to anchor signature'}
+
+    return 200, {
+        'ok': True,
+        'event': event_type,
+        'entry_id': entry.get('id'),
+        'sequence_no': entry.get('sequence_no'),
+        'entry_hash': entry.get('entry_hash'),
+        'previous_hash': entry.get('previous_hash'),
+        'document_hash': document_hash,
+        'signed_at': signed_at,
+    }
+
+
+def _legal_doc_signatures_for(doc_instance_id: str) -> List[Dict[str, Any]]:
+    """Return anchored signature events for a document instance (sorted by seq)."""
+    items: List[Dict[str, Any]] = []
+    for entry in TRANSACTION_LEDGER.values():
+        if str(entry.get('entity_type')) != 'legal_document':
+            continue
+        if str(entry.get('entity_id')) != str(doc_instance_id):
+            continue
+        payload = entry.get('payload') or entry.get('metadata') or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+        items.append({
+            'event': entry.get('event_type') or entry.get('type'),
+            'role': payload.get('role'),
+            'signer_name': payload.get('signer_name'),
+            'signer_title': payload.get('signer_title'),
+            'signed_at': payload.get('signed_at'),
+            'document_hash': payload.get('document_hash'),
+            'signature_method': payload.get('signature_method'),
+            'voided': bool(payload.get('voided')),
+            'sequence_no': entry.get('sequence_no'),
+            'entry_hash': entry.get('entry_hash'),
+            'entry_id': entry.get('id'),
+        })
+    items.sort(key=lambda x: (int(x.get('sequence_no') or 0)))
+    return items
+
+
+def _legal_doc_verify(body_data: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    """Confirm an anchored signature matches the supplied hash + chain is intact."""
+    doc_instance_id = str(body_data.get('docInstanceId') or '').strip()
+    document_hash = str(body_data.get('documentHash') or '').strip().lower()
+    if not doc_instance_id:
+        return 400, {'error': 'docInstanceId required'}
+    if not _LEGAL_DOC_HASH_RE.match(document_hash):
+        return 400, {'error': 'documentHash must be a 64-character hex SHA-256 digest'}
+
+    signatures = _legal_doc_signatures_for(doc_instance_id)
+    matched = [
+        s for s in signatures
+        if s.get('document_hash') == document_hash and not s.get('voided')
+        and s.get('event') == 'legal_document_signed'
+    ]
+    try:
+        from services.platform_event_ledger_service import reconcile_ledger_entries
+        reconcile = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
+        chain_valid = bool(reconcile.get('chain_valid', True))
+    except Exception:
+        chain_valid = False
+    return 200, {
+        'verified': len(matched) > 0,
+        'matched_signatures': matched,
+        'chain_valid': chain_valid,
+        'total_signatures': len([s for s in signatures if s.get('event') == 'legal_document_signed' and not s.get('voided')]),
+    }
+
 # Claim files storage - stores uploaded documents for claims
 # Indexed by file_id -> {claim_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
 CLAIM_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 content
@@ -12376,7 +12525,23 @@ For claims or questions, please contact:
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
-        
+
+        # Legal/corporate document signature registry (read-only, ledger-anchored)
+        if path == '/api/legal-docs/registry':
+            doc_id = (qs.get('doc_id', [''])[0] or '').strip()
+            if not doc_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'doc_id required'}).encode('utf-8'))
+                return
+            items = _legal_doc_signatures_for(doc_id)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'items': items,
+                'total': len(items),
+                'doc_id': doc_id,
+            }, default=str).encode('utf-8'))
+            return
+
         # Redirect deprecated client-portal.html to main dashboard
         if path == '/client-portal.html':
             self.send_response(301)
@@ -26747,7 +26912,35 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
-        
+
+        # ── Legal/corporate/funding document signing + verification ──
+        # Anchors live signatures into the hash-chained platform event ledger.
+        # Session-optional: external counterparties (investors/candidates) may
+        # sign without a PHINS login; the client IP is recorded for audit.
+        if path in ('/api/legal-docs/sign', '/api/legal-docs/verify'):
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(body_data, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            if path == '/api/legal-docs/sign':
+                status_code, response_data = _legal_doc_sign(body_data, client_ip)
+            else:
+                status_code, response_data = _legal_doc_verify(body_data)
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+            return
+
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
             self.handle_quote_submission()
