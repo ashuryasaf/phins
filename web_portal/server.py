@@ -1691,12 +1691,18 @@ def _legal_doc_signatures_for(doc_instance_id: str) -> List[Dict[str, Any]]:
             continue
         if str(entry.get('entity_id')) != str(doc_instance_id):
             continue
-        payload = entry.get('payload') or entry.get('metadata') or {}
-        if isinstance(payload, str):
+        # append_event() merges the supplied payload fields onto the top level of
+        # the stored entry, so read from the entry directly (with a nested-payload
+        # fallback for forward/backward compatibility).
+        payload = entry
+        nested = entry.get('payload') or entry.get('metadata')
+        if isinstance(nested, str):
             try:
-                payload = json.loads(payload)
+                nested = json.loads(nested)
             except Exception:
-                payload = {}
+                nested = None
+        if isinstance(nested, dict) and nested.get('role'):
+            payload = nested
         items.append({
             'event': entry.get('event_type') or entry.get('type'),
             'role': payload.get('role'),
