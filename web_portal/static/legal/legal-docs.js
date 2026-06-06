@@ -121,11 +121,12 @@
     this.signatures = {};      // role -> {signerName, signerTitle, method, signatureData, signedAt, receipt}
     this.lockedHash = null;    // frozen content hash at first signature
     this.locking = false;      // synchronous lock engaged at sign click, before async hash resolves
+    this.hydrating = false;    // registry fetch in flight for a shared ?doc= link, before signed state loads
     this.storageKey = null;
     this.bindEls = {};
   }
 
-  LegalDoc.prototype.locked = function () { return !!this.lockedHash || this.locking; };
+  LegalDoc.prototype.locked = function () { return !!this.lockedHash || this.locking || this.hydrating; };
 
   LegalDoc.prototype.boot = function () {
     var self = this;
@@ -136,6 +137,10 @@
     });
     // instance id (restore if same doc opened before, else mint)
     this.loadOrMint();
+    // A shared link must not be editable or signable until the registry fetch
+    // resolves, otherwise edits/signatures made during the in-flight window
+    // produce a hash that conflicts with the already-anchored content.
+    this.hydrating = !!this._needsRegistryHydration;
     this.render();
     this.recompute();
     this.refreshIntegrity();
@@ -199,32 +204,67 @@
   // snapshot. Best-effort and offline-safe; never mints or posts anything.
   LegalDoc.prototype.loadFromRegistry = function () {
     var self = this;
-    if (!this.docInstanceId) return;
+    if (!this.docInstanceId) { this.finishHydration(); return; }
     fetch(API.registry + '?doc_id=' + encodeURIComponent(this.docInstanceId))
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        if (!data || !Array.isArray(data.items) || !data.items.length) return;
-        var active = self.activeAnchoredSignatures(data.items);
-        var rids = Object.keys(active);
-        if (!rids.length) return;
-        rids.forEach(function (rid) {
-          if (self.signatures[rid]) return; // never overwrite a local signature
-          var it = active[rid];
-          self.signatures[rid] = {
-            role: it.role, party: '', signerName: it.signer_name || '',
-            signerTitle: it.signer_title || '', method: it.signature_method || 'type',
-            signatureData: '', signedAt: it.signed_at || '', documentHash: it.document_hash || '',
-            receipt: { sequence_no: it.sequence_no, entry_hash: it.entry_hash, entry_id: it.entry_id }
-          };
-          if (!self.lockedHash && it.document_hash) self.lockedHash = it.document_hash;
-        });
-        self.persist();
-        self.renderSignatures();
-        self.applyLockUI();
-        self.recompute();
-        self.refreshIntegrity();
+        if (data && Array.isArray(data.items) && data.items.length) {
+          var active = self.activeAnchoredSignatures(data.items);
+          var rids = Object.keys(active);
+          if (rids.length) {
+            rids.forEach(function (rid) {
+              if (self.signatures[rid]) return; // never overwrite a local signature
+              var it = active[rid];
+              self.signatures[rid] = {
+                role: it.role, party: '', signerName: it.signer_name || '',
+                signerTitle: it.signer_title || '', method: it.signature_method || 'type',
+                signatureData: '', signedAt: it.signed_at || '', documentHash: it.document_hash || '',
+                receipt: { sequence_no: it.sequence_no, entry_hash: it.entry_hash, entry_id: it.entry_id }
+              };
+              if (!self.lockedHash && it.document_hash) self.lockedHash = it.document_hash;
+            });
+            // Reconstruct the signed field/table content from the anchored
+            // snapshot so the live hash matches lockedHash; this content exists
+            // only server-side for a device with no local snapshot. Without it
+            // the rendered defaults diverge from the signed hash and integrity
+            // falsely reports tampering.
+            self.hydrateContent(active, rids);
+            self.persist();
+          }
+        }
+        self.finishHydration();
       })
-      .catch(function () {});
+      .catch(function () { self.finishHydration(); });
+  };
+
+  // Restore the field values, table data and context that were anchored with a
+  // signature so a shared ?doc= link renders the actual agreed document.
+  LegalDoc.prototype.hydrateContent = function (active, rids) {
+    var self = this;
+    var snap = null;
+    rids.forEach(function (rid) {
+      var it = active[rid];
+      if (!it || !it.content || typeof it.content !== 'object') return;
+      // Prefer the snapshot that matches the frozen hash; all signatories attest
+      // to the same content, but this guards against mixed/legacy entries.
+      if (!snap || it.document_hash === self.lockedHash) snap = it.content;
+    });
+    if (!snap) return;
+    if (snap.context) self.context = snap.context;
+    if (snap.fieldValues && typeof snap.fieldValues === 'object') {
+      self.values = Object.assign({}, self.values, snap.fieldValues);
+    }
+    if (snap.tableData && typeof snap.tableData === 'object') self.tableData = snap.tableData;
+  };
+
+  // Release the shared-link hydration lock and re-render with whatever signed
+  // state (if any) was loaded. Runs on every completion path so the document
+  // never stays stuck locked when the registry is empty or offline.
+  LegalDoc.prototype.finishHydration = function () {
+    this.hydrating = false;
+    this.render();
+    this.recompute();
+    this.refreshIntegrity();
   };
 
   // Reduce raw registry events to the active signature per role, mirroring the
@@ -271,8 +311,10 @@
     shell.appendChild(this.buildDoc());
     root.appendChild(shell);
 
-    this.toast = el('div', 'ld-toast');
-    document.body.appendChild(this.toast);
+    if (!this.toast) {
+      this.toast = el('div', 'ld-toast');
+      document.body.appendChild(this.toast);
+    }
 
     this.wireFields();
     this.applyContext();
@@ -784,6 +826,10 @@
 
   LegalDoc.prototype.commitSignature = function (panel, s, rid, mode, canvas) {
     var self = this;
+    // Block signing until a shared link finishes loading anchored state, so a
+    // new signature can't be captured over content that doesn't yet match the
+    // already-anchored document hash.
+    if (this.hydrating) { this.flash('Loading the signed document — please wait…', 'err'); return; }
     var name = (panel.querySelector('[data-signame]').value || '').trim();
     var title = (panel.querySelector('[data-sigtitle]').value || '').trim();
     var typed = (panel.querySelector('[data-sigtyped]').value || '').trim();
@@ -827,7 +873,10 @@
     postJSON(API.sign, {
       docType: this.cfg.docType, docInstanceId: this.docInstanceId, context: this.context,
       role: sig.role, signerName: sig.signerName, signerTitle: sig.signerTitle,
-      signedAt: sig.signedAt, documentHash: sig.documentHash, signatureMethod: sig.method
+      signedAt: sig.signedAt, documentHash: sig.documentHash, signatureMethod: sig.method,
+      // Persist the exact signed content so a counterparty opening the shared
+      // ?doc= link on another device renders the document the hash attests to.
+      content: { context: this.context, fieldValues: this.values, tableData: this.tableData }
     }).then(function (res) {
       if (res.ok && res.data && res.data.entry_hash) {
         sig.receipt = { sequence_no: res.data.sequence_no, entry_hash: res.data.entry_hash, entry_id: res.data.entry_id };

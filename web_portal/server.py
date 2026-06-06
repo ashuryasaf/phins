@@ -1628,6 +1628,13 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
     context = str(body_data.get('context') or '').strip()
     signature_method = str(body_data.get('signatureMethod') or '').strip()
     is_void = str(body_data.get('event') or '').strip().lower() == 'void'
+    # Snapshot of the signed field values / table data / context. Anchored
+    # alongside the hash so a counterparty opening the shared link on another
+    # device can reconstruct the exact content the signatures attest to (the
+    # content otherwise lives only in the signer's browser).
+    content_snapshot = body_data.get('content')
+    if not isinstance(content_snapshot, dict):
+        content_snapshot = None
 
     if not doc_type or not doc_instance_id or not role or not signer_name:
         return 400, {'error': 'docType, docInstanceId, role and signerName are required'}
@@ -1635,6 +1642,8 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
         return 400, {'error': 'Field length exceeds allowed maximum'}
     if not _LEGAL_DOC_HASH_RE.match(document_hash):
         return 400, {'error': 'documentHash must be a 64-character hex SHA-256 digest'}
+    if content_snapshot is not None and len(json.dumps(content_snapshot, default=str)) > 200000:
+        return 400, {'error': 'content snapshot exceeds allowed maximum'}
 
     role_slug = _legal_doc_role_slug(role)
     event_type = 'legal_document_voided' if is_void else 'legal_document_signed'
@@ -1686,6 +1695,7 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
                 'signature_method': signature_method,
                 'client_ip': client_ip,
                 'voided': is_void,
+                'content': content_snapshot,
             },
         )
     except Exception as exc:  # pragma: no cover - defensive
@@ -1732,6 +1742,7 @@ def _legal_doc_signatures_for(doc_instance_id: str) -> List[Dict[str, Any]]:
             'signed_at': payload.get('signed_at'),
             'document_hash': payload.get('document_hash'),
             'signature_method': payload.get('signature_method'),
+            'content': payload.get('content'),
             'voided': bool(payload.get('voided')),
             'sequence_no': entry.get('sequence_no'),
             'entry_hash': entry.get('entry_hash'),
