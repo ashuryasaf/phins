@@ -175,10 +175,10 @@
     // Honor an explicit ?doc= instance id even without a local snapshot so a
     // shared link resolves to the same ledger-anchored document on any device.
     if (!this.docInstanceId && fromQuery && id) this.docInstanceId = id;
-    // A shared link opened on a new browser/device has no local snapshot, so the
-    // anchored signatures must be pulled from the ledger registry during boot —
-    // otherwise the counterparty sees an unsigned draft for an already-signed doc.
-    this._needsRegistryHydration = fromQuery && !this.lockedHash;
+    // A shared link must always reconcile against the ledger during boot — even
+    // when a local snapshot exists — because a void or re-sign in another session
+    // would otherwise be invisible, leaving cached signed/locked state on screen.
+    this._needsRegistryHydration = fromQuery;
     if (!this.docInstanceId) {
       var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       this.docInstanceId = 'LGL-' + this.cfg.docType.toUpperCase().replace(/[^A-Z0-9]+/g, '-') +
@@ -211,9 +211,20 @@
         if (data && Array.isArray(data.items) && data.items.length) {
           var active = self.activeAnchoredSignatures(data.items);
           var rids = Object.keys(active);
+          // The ledger is authoritative for a shared link. Drop any locally cached
+          // signature that is no longer active on the ledger — voided, or superseded
+          // by a re-sign under a different content hash — so a voided or outdated
+          // document never keeps appearing signed.
+          Object.keys(self.signatures).forEach(function (rid) {
+            var it = active[rid];
+            if (!it || (it.document_hash && self.signatures[rid].documentHash &&
+                        it.document_hash !== self.signatures[rid].documentHash)) {
+              delete self.signatures[rid];
+            }
+          });
           if (rids.length) {
             rids.forEach(function (rid) {
-              if (self.signatures[rid]) return; // never overwrite a local signature
+              if (self.signatures[rid]) return; // keep a local signature (e.g. drawn ink)
               var it = active[rid];
               self.signatures[rid] = {
                 role: it.role, party: '', signerName: it.signer_name || '',
@@ -221,16 +232,22 @@
                 signatureData: '', signedAt: it.signed_at || '', documentHash: it.document_hash || '',
                 receipt: { sequence_no: it.sequence_no, entry_hash: it.entry_hash, entry_id: it.entry_id }
               };
-              if (!self.lockedHash && it.document_hash) self.lockedHash = it.document_hash;
             });
+            // Adopt the ledger's frozen content hash (all signatories share it) so a
+            // re-signed document reflects the active anchored version, not stale local state.
+            rids.forEach(function (rid) { if (active[rid].document_hash) self.lockedHash = active[rid].document_hash; });
             // Reconstruct the signed field/table content from the anchored
             // snapshot so the live hash matches lockedHash; this content exists
             // only server-side for a device with no local snapshot. Without it
             // the rendered defaults diverge from the signed hash and integrity
             // falsely reports tampering.
             self.hydrateContent(active, rids);
-            self.persist();
+          } else {
+            // Every anchor for this instance has been voided on the ledger — drop the
+            // stale signed/locked state so the shared link no longer appears signed.
+            self.lockedHash = null;
           }
+          self.persist();
         }
         self.finishHydration();
       })
@@ -810,10 +827,26 @@
       docType: this.cfg.docType,
       docInstanceId: this.docInstanceId,
       context: this.context,
-      fields: this.values,
+      fields: this.activeFieldValues(),
       derived: stripDisplay(this.derived || {}),
       tables: this.tableData
     };
+  };
+  // Only the fields visible in the active context contribute to the signed hash.
+  // Fields hidden by data-field-context (e.g. co-founder B/C on a solo-founder
+  // agreement) are not part of the rendered document, so their defaults must not
+  // change the digest signers attest to.
+  LegalDoc.prototype.activeFieldValues = function () {
+    var self = this;
+    var out = {};
+    this.fields.forEach(function (f) {
+      if (f.context) {
+        var allow = f.context.split(',').map(function (s) { return s.trim(); });
+        if (allow.indexOf(self.context) < 0) return;
+      }
+      if (self.values[f.key] !== undefined) out[f.key] = self.values[f.key];
+    });
+    return out;
   };
   function stripDisplay(d) {
     var out = {};
@@ -845,12 +878,19 @@
     this.locking = true;
     this.applyLockUI();
 
-    // Freeze the content hash on the FIRST signature; reuse it thereafter.
-    var ensureHash = this.lockedHash
-      ? Promise.resolve(this.lockedHash)
-      : sha256Hex(stableStringify(this.contentState())).then(function (h) { self.lockedHash = h; return h; });
-
-    ensureHash.then(function (docHash) {
+    // Freeze the content hash on the FIRST signature. Later signers re-hash the
+    // live content and must match the frozen hash, so every signatory attests to
+    // identical content (e.g. if registry hydration did not restore the anchored
+    // snapshot). A mismatch blocks the signature rather than anchoring stale content.
+    sha256Hex(stableStringify(this.contentState())).then(function (liveHash) {
+      if (self.lockedHash && liveHash !== self.lockedHash) {
+        self.locking = false;
+        self.applyLockUI();
+        self.flash('Document content no longer matches the hash signed by earlier parties — reload the anchored version before signing.', 'err');
+        return;
+      }
+      var docHash = self.lockedHash || liveHash;
+      self.lockedHash = docHash;
       self.signatures[rid] = {
         role: s.role, party: self.resolveParty(s), signerName: name, signerTitle: title,
         method: mode, signatureData: signatureData, signedAt: signedAt,
