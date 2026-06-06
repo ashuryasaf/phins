@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Term Sheet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "term-sheet",
+  title: "Term Sheet",
+  subtitle: "Non-binding summary of proposed terms for a financing of PHINS Insurance, Inc. (except for the Confidentiality, Exclusivity and Governing Law sections, which are binding).",
+  refLabel: "FUNDING · TERM SHEET",
+  defaultContext: "investor",
+  contexts: [
+    { id: "investor",   label: "Investor (lead/individual)" },
+    { id: "investment", label: "Investment (fund / SPV round)" }
+  ],
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Company", default: "$",
+      options: [{value:"$",label:"USD ($)"},{value:"₪",label:"ILS (₪)"},{value:"€",label:"EUR (€)"},{value:"£",label:"GBP (£)"}] },
+    { key: "companyName", label: "Company", type: "text", group: "Company", default: "PHINS Insurance, Inc." },
+    { key: "companyEntity", label: "Entity / jurisdiction", type: "text", group: "Company", default: "Delaware C-Corporation" },
+    { key: "effectiveDate", label: "Date of term sheet", type: "date", group: "Company" },
+
+    { key: "investorName", label: "Investor / lead", type: "text", group: "Investor", default: "" },
+    { key: "investorType", label: "Investor type", type: "select", group: "Investor", default: "Venture fund",
+      options: ["Venture fund","Angel investor","Strategic / corporate","Family office","SPV","Accelerator"] },
+    { key: "investorContact", label: "Signatory / contact", type: "text", group: "Investor", default: "" },
+
+    { key: "roundName", label: "Round", type: "select", group: "Round economics", default: "Seed",
+      options: ["Pre-Seed","Seed","Series A","Series B","Bridge"] },
+    { key: "instrument", label: "Instrument", type: "select", group: "Round economics", default: "Priced equity (Preferred)",
+      options: ["Priced equity (Preferred)","SAFE (post-money)","Convertible note"] },
+    { key: "investmentAmount", label: "Investment amount", type: "currency", group: "Round economics", default: 1500000 },
+    { key: "preMoney", label: "Pre-money valuation", type: "currency", group: "Round economics", default: 8500000,
+      hint: "For priced rounds. For SAFE/note this is informational." },
+    { key: "valuationCap", label: "Valuation cap", type: "currency", group: "Round economics", default: 10000000,
+      hint: "SAFE / convertible note only." },
+    { key: "discountRate", label: "Discount rate", type: "percent", group: "Round economics", default: 20,
+      hint: "SAFE / convertible note only." },
+    { key: "interestRate", label: "Interest rate (note)", type: "percent", group: "Round economics", default: 6 },
+    { key: "maturityMonths", label: "Maturity (months, note)", type: "number", group: "Round economics", default: 24 },
+
+    { key: "liquidationPref", label: "Liquidation preference", type: "select", group: "Terms", default: "1x non-participating",
+      options: ["1x non-participating","1x participating","1x participating (capped 2x)","None"] },
+    { key: "antiDilution", label: "Anti-dilution", type: "select", group: "Terms", default: "Broad-based weighted average",
+      options: ["Broad-based weighted average","Narrow-based weighted average","Full ratchet","None"] },
+    { key: "optionPoolPct", label: "Option pool (post-money)", type: "percent", group: "Terms", default: 10 },
+    { key: "boardSeats", label: "Board", type: "select", group: "Terms", default: "1 investor seat; founder majority",
+      options: ["Observer only","1 investor seat; founder majority","1 investor seat; balanced","Negotiated"] },
+    { key: "proRata", label: "Pro-rata rights", type: "select", group: "Terms", default: "Yes", options: ["Yes","No"] },
+    { key: "closingDate", label: "Target closing", type: "date", group: "Terms" },
+    { key: "exclusivityDays", label: "Exclusivity (days)", type: "number", group: "Terms", default: 30 },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Terms", default: "State of Delaware, USA" }
+  ],
+  compute: function (v) {
+    var cur = v.currency || "$";
+    function money(n){ return cur + (parseFloat(n)||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
+    var inv = parseFloat(v.investmentAmount) || 0;
+    var pre = parseFloat(v.preMoney) || 0;
+    var post = pre + inv;
+    var own = post > 0 ? (inv / post * 100) : 0;
+    return {
+      postMoney: { value: post, display: money(post) },
+      investorOwnership: { value: own, display: own.toLocaleString(undefined,{maximumFractionDigits:2}) + "%" },
+      pricePerShareNote: { value: 0, display: "Set at conversion" }
+    };
+  },
+  signatories: [
+    { role: "Investor", label: "Investor", party: "{{investorName}}", context: "investor,investment" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>This Term Sheet, dated <strong>{{effectiveDate}}</strong>, summarizes the principal terms of a proposed
+       <strong>{{roundName}}</strong> financing of <strong>{{companyName}}</strong> (the “Company”, a {{companyEntity}})
+       by <strong>{{investorName}}</strong> (the “Investor”, a {{investorType}}).</p>
+
+    <div class="ld-kpi-strip">
+      <div class="ld-kpi"><div class="v">{{investmentAmount}}</div><div class="l">Investment</div></div>
+      <div class="ld-kpi"><div class="v">{{preMoney}}</div><div class="l">Pre-money</div></div>
+      <div class="ld-kpi"><div class="v">{{postMoney}}</div><div class="l">Post-money</div></div>
+      <div class="ld-kpi"><div class="v">{{investorOwnership}}</div><div class="l">Investor ownership</div></div>
+    </div>
+
+    <h2>1. Offering Terms</h2>
+    <table class="ld-table">
+      <tbody>
+        <tr><td style="width:40%"><strong>Security / instrument</strong></td><td>{{instrument}}</td></tr>
+        <tr><td><strong>Round</strong></td><td>{{roundName}}</td></tr>
+        <tr><td><strong>Amount of financing</strong></td><td>{{investmentAmount}}</td></tr>
+        <tr><td><strong>Pre-money valuation</strong></td><td>{{preMoney}}</td></tr>
+        <tr><td><strong>Post-money valuation</strong></td><td>{{postMoney}}</td></tr>
+        <tr><td><strong>Resulting investor ownership</strong></td><td>{{investorOwnership}} (fully diluted, indicative)</td></tr>
+        <tr><td><strong>Valuation cap</strong> (SAFE/note)</td><td>{{valuationCap}}</td></tr>
+        <tr><td><strong>Discount</strong> (SAFE/note)</td><td>{{discountRate}}</td></tr>
+        <tr><td><strong>Interest / maturity</strong> (note)</td><td>{{interestRate}} · {{maturityMonths}} months</td></tr>
+      </tbody>
+    </table>
+
+    <h2>2. Rights, Preferences &amp; Governance</h2>
+    <table class="ld-table">
+      <tbody>
+        <tr><td style="width:40%"><strong>Liquidation preference</strong></td><td>{{liquidationPref}}</td></tr>
+        <tr><td><strong>Anti-dilution</strong></td><td>{{antiDilution}}</td></tr>
+        <tr><td><strong>Option pool</strong></td><td>{{optionPoolPct}} of post-money fully-diluted capitalization</td></tr>
+        <tr><td><strong>Board composition</strong></td><td>{{boardSeats}}</td></tr>
+        <tr><td><strong>Pro-rata rights</strong></td><td>{{proRata}}</td></tr>
+        <tr><td><strong>Information rights</strong></td><td>Standard quarterly reporting and annual budget; integrity-anchored platform metrics available on request.</td></tr>
+      </tbody>
+    </table>
+
+    <div data-context-block="investment" class="ld-section">
+      <h3>Fund / SPV provisions</h3>
+      <p>Where the Investor is a fund or SPV, customary side-letter terms (MFN, regulatory excuse rights, and transfer
+         to affiliates) apply, and capital is drawn at the {{closingDate}} closing in a single tranche unless otherwise agreed.</p>
+    </div>
+
+    <h2>3. PHINS Platform Diligence &amp; Use of Proceeds</h2>
+    <p>The Company operates a deployed insurtech platform (64+ service modules) spanning automated underwriting, claims
+       adjudication, billing, actuarial and risk analytics, a health marketplace, community foundations, and an
+       append-only, hash-chained platform event ledger that makes every balance and decision reproducible.
+       Proceeds of this financing will be applied to regulatory licensing (including the Israeli Authority of Capital
+       Markets, Insurance &amp; Savings posture), actuarial certification, go-to-market in the launch market, and
+       engineering. Data-room materials are available in the PHINS Investor Documents center.</p>
+
+    <h2>4. Conditions &amp; Process</h2>
+    <ul>
+      <li>Target closing on or about <strong>{{closingDate}}</strong>, subject to satisfactory completion of legal and
+          financial due diligence and execution of definitive documents.</li>
+      <li><strong>Exclusivity (binding):</strong> for <strong>{{exclusivityDays}}</strong> days from the date hereof the
+          Company will not solicit competing financing proposals.</li>
+      <li><strong>Confidentiality (binding):</strong> the existence and terms of this Term Sheet are confidential.</li>
+    </ul>
+
+    <h2>5. Non-binding; Governing Law</h2>
+    <p>Except for the Exclusivity, Confidentiality and this Governing Law section, this Term Sheet is a non-binding
+       expression of intent and does not constitute a commitment to invest or to issue securities. It is governed by the
+       laws of <strong>{{governingLaw}}</strong>. This is a negotiation template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

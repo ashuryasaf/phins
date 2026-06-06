@@ -410,6 +410,10 @@
   LegalDoc.prototype.expandBody = function (html) {
     return html.replace(/\{\{\s*table:([\w.-]+)\s*\}\}/g, function (m, key) {
       return '<div data-table="' + key + '"></div>';
+    }).replace(/\{\{\s*html:([\w.-]+)\s*\}\}/g, function (m, key) {
+      // engine-generated HTML (e.g. computed projection tables); compute() must
+      // escape any user-supplied text — only numeric/derived output goes here.
+      return '<div data-bindhtml="' + key + '"></div>';
     }).replace(/\{\{\s*([\w.+-]+)\s*\}\}/g, function (m, key) {
       return '<span class="ld-bind" data-bind="' + key + '"></span>';
     });
@@ -462,6 +466,13 @@
   LegalDoc.prototype.refreshBindings = function () {
     var self = this;
     var merged = Object.assign({}, this.values, this.derived || {});
+    // engine-generated HTML bindings (computed tables) — innerHTML, trusted output
+    Array.prototype.forEach.call(document.querySelectorAll('[data-bindhtml]'), function (n) {
+      var key = n.getAttribute('data-bindhtml');
+      var val = merged[key];
+      var html = (val && typeof val === 'object' && 'display' in val) ? val.display : (val || '');
+      n.innerHTML = html || '';
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-bind]'), function (n) {
       var key = n.getAttribute('data-bind');
       if (key === '__docid') { n.textContent = self.docInstanceId; return; }
@@ -489,9 +500,12 @@
       catch (e) { this.derived = {}; }
     } else { this.derived = {}; }
     this.refreshBindings();
-    // recompute table footers
+    // recompute table computed cells + footers
     var self = this;
-    this.tables.forEach(function (t) { if (t.computeFooter) self.refreshTableFooter(t); });
+    this.tables.forEach(function (t) {
+      self.refreshComputedCells(t);
+      if (t.computeFooter) self.refreshTableFooter(t);
+    });
   };
 
   // ---------------------------------------------------------------- tables

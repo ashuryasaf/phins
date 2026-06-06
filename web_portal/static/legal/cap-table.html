@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Cap Table</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "cap-table",
+  title: "Capitalization Table",
+  subtitle: "Certified capitalization of PHINS Insurance, Inc. — ownership, fully-diluted totals and ESOP pool.",
+  refLabel: "EQUITY · CAP TABLE",
+  defaultContext: "current",
+  contexts: [
+    { id: "current",   label: "Current (as-issued)" },
+    { id: "pro-forma", label: "Pro-forma (post-round)" }
+  ],
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Company", default: "$",
+      options: [{value:"$",label:"USD ($)"},{value:"₪",label:"ILS (₪)"},{value:"€",label:"EUR (€)"}] },
+    { key: "companyName", label: "Company", type: "text", group: "Company", default: "PHINS Insurance, Inc." },
+    { key: "asOfDate", label: "As of date", type: "date", group: "Company" },
+    { key: "esopPool", label: "ESOP pool (unallocated, shares)", type: "number", group: "Company", default: 1000000,
+      hint: "Reserved option pool not yet granted; included in fully-diluted total." }
+  ],
+  tables: [
+    {
+      key: "holders", title: "Shareholders",
+      columns: [
+        { key: "holder", label: "Holder", type: "text" },
+        { key: "klass", label: "Security class", type: "text" },
+        { key: "shares", label: "Shares", type: "number", num: true },
+        { key: "invested", label: "Invested", type: "number", num: true },
+        { key: "ownership", label: "FD %", num: true, computed: function (row, d) {
+            var fd = (d.fdTotal && d.fdTotal.value) || 0;
+            var s = parseFloat(row.shares) || 0;
+            return fd > 0 ? (s / fd * 100).toFixed(2) + "%" : "—";
+          } }
+      ],
+      default: [
+        { holder: "Founders (common)", klass: "Common", shares: 8000000, invested: 0 },
+        { holder: "Seed investors", klass: "Preferred Seed", shares: 1500000, invested: 1500000 },
+        { holder: "Advisors", klass: "Common", shares: 500000, invested: 0 }
+      ],
+      computeFooter: function (rows, d) {
+        var sh = rows.reduce(function (a, r) { return a + (parseFloat(r.shares) || 0); }, 0);
+        var inv = rows.reduce(function (a, r) { return a + (parseFloat(r.invested) || 0); }, 0);
+        var cur = (window.__phinsLegalDoc && window.__phinsLegalDoc.values.currency) || "$";
+        var fd = (d.fdTotal && d.fdTotal.value) || sh;
+        return '<tr class="total-row"><td>Issued total</td><td></td>' +
+          '<td class="num">' + sh.toLocaleString() + '</td>' +
+          '<td class="num">' + cur + inv.toLocaleString() + '</td>' +
+          '<td class="num">' + (fd>0?(sh/fd*100).toFixed(2):'0') + '%</td></tr>' +
+          '<tr class="total-row"><td>+ ESOP pool (reserved)</td><td></td>' +
+          '<td class="num">' + ((d.esop&&d.esop.value)||0).toLocaleString() + '</td><td class="num"></td>' +
+          '<td class="num">' + (fd>0?(((d.esop&&d.esop.value)||0)/fd*100).toFixed(2):'0') + '%</td></tr>' +
+          '<tr class="total-row"><td>Fully-diluted total</td><td></td>' +
+          '<td class="num">' + fd.toLocaleString() + '</td><td class="num"></td><td class="num">100.00%</td></tr>';
+      }
+    }
+  ],
+  compute: function (v, self) {
+    var rows = (self && self.tableData.holders) || [];
+    var issued = rows.reduce(function (a, r) { return a + (parseFloat(r.shares) || 0); }, 0);
+    var esop = parseFloat(v.esopPool) || 0;
+    var fd = issued + esop;
+    var inv = rows.reduce(function (a, r) { return a + (parseFloat(r.invested) || 0); }, 0);
+    var cur = v.currency || "$";
+    return {
+      issuedTotal: { value: issued, display: issued.toLocaleString() },
+      esop: { value: esop, display: esop.toLocaleString() },
+      fdTotal: { value: fd, display: fd.toLocaleString() },
+      investedTotal: { value: inv, display: cur + inv.toLocaleString() }
+    };
+  },
+  signatories: [
+    { role: "Company Officer", label: "Certifying officer", party: "{{companyName}} — authorized officer (certifies this cap table is true and correct)" }
+  ],
+  body: `
+    <p>This capitalization table sets forth the issued and outstanding securities and reserved option pool of
+       <strong>{{companyName}}</strong> as of <strong>{{asOfDate}}</strong>. It is provided for the PHINS data room and,
+       once signed below, is <em>certified true and correct</em> by an authorized officer.</p>
+
+    <div class="ld-kpi-strip">
+      <div class="ld-kpi"><div class="v">{{issuedTotal}}</div><div class="l">Issued shares</div></div>
+      <div class="ld-kpi"><div class="v">{{esop}}</div><div class="l">ESOP pool</div></div>
+      <div class="ld-kpi"><div class="v">{{fdTotal}}</div><div class="l">Fully-diluted</div></div>
+      <div class="ld-kpi"><div class="v">{{investedTotal}}</div><div class="l">Capital invested</div></div>
+    </div>
+
+    {{table:holders}}
+
+    <div data-context-block="pro-forma" class="ld-section">
+      <h3>Pro-forma note</h3>
+      <p>This view reflects the capitalization on a pro-forma basis assuming completion of the contemplated round and the
+         option-pool top-up. Add the new investor as a row (Preferred) and adjust the ESOP pool accordingly; ownership
+         percentages recompute live.</p>
+    </div>
+
+    <h2>Certification</h2>
+    <p>The undersigned officer certifies that, to their knowledge, the foregoing capitalization is true, complete and
+       correct as of the date stated. Underlying share issuances are recorded in the Company's books and, where applicable,
+       anchored to the PHINS append-only platform event ledger for tamper-evidence. This is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>
