@@ -12579,22 +12579,6 @@ For claims or questions, please contact:
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
 
-        # Legal/corporate document signature registry (read-only, ledger-anchored)
-        if path == '/api/legal-docs/registry':
-            doc_id = (qs.get('doc_id', [''])[0] or '').strip()
-            if not doc_id:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'doc_id required'}).encode('utf-8'))
-                return
-            items = _legal_doc_signatures_for(doc_id)
-            self._set_json_headers(200)
-            self.wfile.write(json.dumps({
-                'items': items,
-                'total': len(items),
-                'doc_id': doc_id,
-            }, default=str).encode('utf-8'))
-            return
-
         # Redirect deprecated client-portal.html to main dashboard
         if path == '/client-portal.html':
             self.send_response(301)
@@ -12624,6 +12608,22 @@ For claims or questions, please contact:
                     self.end_headers()
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
+
+        # Legal/corporate document signature registry (read-only, ledger-anchored)
+        if path == '/api/legal-docs/registry':
+            doc_id = (qs.get('doc_id', [''])[0] or '').strip()
+            if not doc_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'doc_id required'}).encode('utf-8'))
+                return
+            items = _legal_doc_signatures_for(doc_id)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'items': items,
+                'total': len(items),
+                'doc_id': doc_id,
+            }, default=str).encode('utf-8'))
+            return
 
         # Session validation
         auth_header = self.headers.get('Authorization', '')
