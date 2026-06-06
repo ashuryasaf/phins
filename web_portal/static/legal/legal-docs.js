@@ -100,8 +100,17 @@
   }
 
   function postJSON(url, body) {
+    var headers = { 'Content-Type': 'application/json' };
+    // Attach the PHINS session token when present so privileged actions (e.g.
+    // voiding signatures) are authenticated. Anchoring a signature stays
+    // session-optional server-side, so omitting the token for counterparties is
+    // still fine; voiding requires an authenticated session.
+    try {
+      var token = localStorage.getItem('phins_token');
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+    } catch (e) {}
     return fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: headers,
       body: JSON.stringify(body)
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); });
   }
@@ -172,13 +181,17 @@
         }
       } catch (e) {}
     }
-    // Honor an explicit ?doc= instance id even without a local snapshot so a
-    // shared link resolves to the same ledger-anchored document on any device.
-    if (!this.docInstanceId && fromQuery && id) this.docInstanceId = id;
-    // A shared link must always reconcile against the ledger during boot — even
-    // when a local snapshot exists — because a void or re-sign in another session
-    // would otherwise be invisible, leaving cached signed/locked state on screen.
-    this._needsRegistryHydration = fromQuery;
+    // Honor a known instance id — from an explicit ?doc= link OR this browser's
+    // stored pointer — even without a local snapshot, so the document resolves to
+    // the same ledger-anchored instance on any device.
+    if (!this.docInstanceId && id) this.docInstanceId = id;
+    // Any previously-known instance must reconcile against the ledger during
+    // boot — whether opened via a shared ?doc= link or restored from the stored
+    // pointer/local snapshot — because a co-signer's anchor, void, or re-sign in
+    // another session would otherwise stay invisible, leaving cached
+    // signed/locked state on screen. Only a freshly minted instance (no id yet)
+    // skips hydration, since it has nothing anchored to reconcile with.
+    this._needsRegistryHydration = !!id;
     if (!this.docInstanceId) {
       var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       this.docInstanceId = 'LGL-' + this.cfg.docType.toUpperCase().replace(/[^A-Z0-9]+/g, '-') +

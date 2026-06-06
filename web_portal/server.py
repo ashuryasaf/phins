@@ -1613,10 +1613,16 @@ def _legal_doc_role_slug(role: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', str(role or 'party').lower()).strip('-') or 'party'
 
 
-def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dict[str, Any]]:
+def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str,
+                    session: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
     """Validate + anchor a single document signature (or a void event).
 
     Returns (status_code, response_dict). Errors use the ``{"error": ...}`` shape.
+
+    Anchoring a signature is intentionally session-optional so external
+    counterparties (investors/candidates) can sign without a PHINS login. Voiding,
+    however, supersedes active tamper-evident anchors, so it requires an
+    authenticated session (see the void guard below).
     """
     doc_type = str(body_data.get('docType') or '').strip()
     doc_instance_id = str(body_data.get('docInstanceId') or '').strip()
@@ -1628,6 +1634,15 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
     context = str(body_data.get('context') or '').strip()
     signature_method = str(body_data.get('signatureMethod') or '').strip()
     is_void = str(body_data.get('event') or '').strip().lower() == 'void'
+
+    # Security: voiding a signature records a superseding event that invalidates
+    # active, tamper-evident anchors for legitimate parties. Unlike anchoring a
+    # new signature (session-optional for counterparties), it must require an
+    # authenticated PHINS session — otherwise anyone who learns a docInstanceId
+    # (e.g. from a shared link or the unauthenticated registry) could void other
+    # parties' signatures and break verification.
+    if is_void and not session:
+        return 401, {'error': 'Authentication required to void signatures'}
     # Snapshot of the signed field values / table data / context. Anchored
     # alongside the hash so a counterparty opening the shared link on another
     # device can reconstruct the exact content the signatures attest to (the
@@ -27005,7 +27020,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
                 return
             if path == '/api/legal-docs/sign':
-                status_code, response_data = _legal_doc_sign(body_data, client_ip)
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                status_code, response_data = _legal_doc_sign(body_data, client_ip, session)
             else:
                 status_code, response_data = _legal_doc_verify(body_data)
             self._set_json_headers(status_code)

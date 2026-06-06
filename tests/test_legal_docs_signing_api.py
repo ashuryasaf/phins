@@ -30,6 +30,22 @@ def _doc_id():
     return "LGL-TERM-SHEET-TEST-" + uuid.uuid4().hex[:10].upper()
 
 
+def _admin_token():
+    # Voiding a signature requires an authenticated PHINS session (test-mode
+    # legacy password allowed). Anchoring a signature stays session-optional.
+    r = requests.post(
+        f"{BASE_URL}/api/login",
+        json={"username": "admin", "password": "admin123"},
+        timeout=10,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["token"]
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _hash(seed="a"):
     # deterministic 64-hex string for the test (not a real digest)
     return (seed * 64)[:64].replace(seed, "0" if seed == "z" else seed)
@@ -139,6 +155,7 @@ def test_void_then_resign_same_hash_verifies_active():
     void = requests.post(
         f"{BASE_URL}/api/legal-docs/sign",
         json=dict(base, event="void"),
+        headers=_auth(_admin_token()),
         timeout=10,
     )
     assert void.status_code == 200
@@ -207,6 +224,55 @@ def test_conflicting_content_for_same_hash_is_rejected():
         timeout=10,
     )
     assert cosign.status_code == 200, cosign.text
+
+
+def test_void_requires_authentication():
+    # Anchoring is session-optional, but voiding supersedes active anchors and
+    # must require an authenticated session — otherwise anyone who learns a
+    # docInstanceId could void legitimate parties' signatures.
+    doc_id = _doc_id()
+    base = {
+        "docType": "term-sheet",
+        "docInstanceId": doc_id,
+        "role": "Investor",
+        "signerName": "Protected Investor LP",
+        "documentHash": "9" * 64,
+    }
+    sign = requests.post(f"{BASE_URL}/api/legal-docs/sign", json=base, timeout=10)
+    assert sign.status_code == 200, sign.text
+
+    # Unauthenticated void is rejected and the signature stays active.
+    void = requests.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json=dict(base, event="void"),
+        timeout=10,
+    )
+    assert void.status_code == 401, void.text
+    assert "error" in void.json()
+
+    v = requests.post(
+        f"{BASE_URL}/api/legal-docs/verify",
+        json={"docInstanceId": doc_id, "documentHash": "9" * 64},
+        timeout=10,
+    )
+    assert v.json()["verified"] is True
+
+    # Authenticated void succeeds and supersedes the signature.
+    auth_void = requests.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json=dict(base, event="void"),
+        headers=_auth(_admin_token()),
+        timeout=10,
+    )
+    assert auth_void.status_code == 200, auth_void.text
+    assert auth_void.json()["event"] == "legal_document_voided"
+
+    v_after = requests.post(
+        f"{BASE_URL}/api/legal-docs/verify",
+        json={"docInstanceId": doc_id, "documentHash": "9" * 64},
+        timeout=10,
+    )
+    assert v_after.json()["verified"] is False
 
 
 def test_verify_rejects_tampered_hash():
