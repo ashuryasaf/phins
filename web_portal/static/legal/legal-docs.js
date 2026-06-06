@@ -139,6 +139,7 @@
     this.render();
     this.recompute();
     this.refreshIntegrity();
+    if (this._needsRegistryHydration) this.loadFromRegistry();
   };
 
   LegalDoc.prototype.loadOrMint = function () {
@@ -169,6 +170,10 @@
     // Honor an explicit ?doc= instance id even without a local snapshot so a
     // shared link resolves to the same ledger-anchored document on any device.
     if (!this.docInstanceId && fromQuery && id) this.docInstanceId = id;
+    // A shared link opened on a new browser/device has no local snapshot, so the
+    // anchored signatures must be pulled from the ledger registry during boot —
+    // otherwise the counterparty sees an unsigned draft for an already-signed doc.
+    this._needsRegistryHydration = fromQuery && !this.lockedHash;
     if (!this.docInstanceId) {
       var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       this.docInstanceId = 'LGL-' + this.cfg.docType.toUpperCase().replace(/[^A-Z0-9]+/g, '-') +
@@ -187,6 +192,64 @@
         savedAt: new Date().toISOString()
       }));
     } catch (e) {}
+  };
+
+  // Pull ledger-anchored signatures for this instance and reflect them locally so
+  // a shared ?doc= link shows the signed/locked state on a device with no local
+  // snapshot. Best-effort and offline-safe; never mints or posts anything.
+  LegalDoc.prototype.loadFromRegistry = function () {
+    var self = this;
+    if (!this.docInstanceId) return;
+    fetch(API.registry + '?doc_id=' + encodeURIComponent(this.docInstanceId))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !Array.isArray(data.items) || !data.items.length) return;
+        var active = self.activeAnchoredSignatures(data.items);
+        var rids = Object.keys(active);
+        if (!rids.length) return;
+        rids.forEach(function (rid) {
+          if (self.signatures[rid]) return; // never overwrite a local signature
+          var it = active[rid];
+          self.signatures[rid] = {
+            role: it.role, party: '', signerName: it.signer_name || '',
+            signerTitle: it.signer_title || '', method: it.signature_method || 'type',
+            signatureData: '', signedAt: it.signed_at || '', documentHash: it.document_hash || '',
+            receipt: { sequence_no: it.sequence_no, entry_hash: it.entry_hash, entry_id: it.entry_id }
+          };
+          if (!self.lockedHash && it.document_hash) self.lockedHash = it.document_hash;
+        });
+        self.persist();
+        self.renderSignatures();
+        self.applyLockUI();
+        self.recompute();
+        self.refreshIntegrity();
+      })
+      .catch(function () {});
+  };
+
+  // Reduce raw registry events to the active signature per role, mirroring the
+  // server verify() rule: a void only supersedes a signature when it carries a
+  // strictly higher sequence number for the same (role, content hash).
+  LegalDoc.prototype.activeAnchoredSignatures = function (items) {
+    var self = this;
+    var voidSeq = {};
+    items.forEach(function (it) {
+      if (it.event !== 'legal_document_voided' && !it.voided) return;
+      var k = (it.role || '') + '|' + (it.document_hash || '');
+      var seq = safeNum(it.sequence_no, 0);
+      if (seq > (voidSeq[k] == null ? -1 : voidSeq[k])) voidSeq[k] = seq;
+    });
+    var active = {};
+    items.forEach(function (it) {
+      if (it.event !== 'legal_document_signed' || it.voided) return;
+      var k = (it.role || '') + '|' + (it.document_hash || '');
+      var seq = safeNum(it.sequence_no, 0);
+      if (voidSeq[k] != null && voidSeq[k] > seq) return; // superseded by a later void
+      var rid = self.sigRoleId({ role: it.role });
+      var prev = active[rid];
+      if (!prev || seq >= safeNum(prev.sequence_no, 0)) active[rid] = it;
+    });
+    return active;
   };
 
   LegalDoc.prototype.newCopy = function () {
@@ -793,9 +856,16 @@
     var dateStr = new Date(sig.signedAt).toLocaleString(undefined, {
       year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
     });
-    var sigHtml = sig.method === 'draw'
-      ? '<img alt="signature" src="' + sig.signatureData + '">'
-      : '<span class="typed">' + esc(sig.signatureData) + '</span>';
+    var sigHtml;
+    if (!sig.signatureData) {
+      // Anchored on another device — the signature mark isn't stored server-side,
+      // so attest to the signer by name instead of rendering a broken image.
+      sigHtml = '<span class="typed">' + esc(sig.signerName || 'Signed') + '</span>';
+    } else if (sig.method === 'draw') {
+      sigHtml = '<img alt="signature" src="' + sig.signatureData + '">';
+    } else {
+      sigHtml = '<span class="typed">' + esc(sig.signatureData) + '</span>';
+    }
     var receipt;
     if (sig.receipt) {
       receipt = '<div class="ld-sig-receipt"><span class="ok">✔ Anchored to PHINS ledger</span><br>' +

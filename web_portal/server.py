@@ -1655,10 +1655,15 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str) -> Tuple[int, Dic
                 and (prior.get('event') == 'legal_document_voided' or prior.get('voided'))):
             prior_voids += 1
     generation = '' if prior_voids == 0 else f"-v{prior_voids}"
-    if is_void:
-        entry_id = f"LGLVOID-{doc_instance_id}-{role_slug}-{document_hash}{generation}"
-    else:
-        entry_id = f"LGLSIG-{doc_instance_id}-{role_slug}-{document_hash}{generation}"
+    # The composite key (instance id + role slug + full 64-char hash + generation)
+    # routinely exceeds the platform_ledger_entries.id column limit (120 chars)
+    # for client-minted instance ids, which silently breaks SQL persistence while
+    # in-memory signing still succeeds. Hash the key into a fixed-length,
+    # collision-resistant digest so the entry_id stays bounded while remaining
+    # deterministic (idempotent) and unique per content hash / generation.
+    entry_prefix = 'LGLVOID' if is_void else 'LGLSIG'
+    entry_key = f"{doc_instance_id}-{role_slug}-{document_hash}{generation}"
+    entry_id = f"{entry_prefix}-{hashlib.sha256(entry_key.encode('utf-8')).hexdigest()}"
 
     try:
         entry = platform_event_ledger.append_event(
