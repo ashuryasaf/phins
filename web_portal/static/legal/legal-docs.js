@@ -45,6 +45,7 @@
     return s;
   }
   function safeNum(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+  function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/[^\w-]/g, '\\$&'); }
 
   function fmt(value, type, currency) {
     if (value == null || value === '') return '';
@@ -633,7 +634,7 @@
 
     sigs.forEach(function (s) {
       var rid = self.sigRoleId(s);
-      var panel = wrap.querySelector('[data-sigpanel="' + CSS.escape(rid) + '"]');
+      var panel = wrap.querySelector('[data-sigpanel="' + cssEsc(rid) + '"]');
       if (!panel) return;
       if (self.signatures[rid]) { self.renderSignedPanel(panel, rid); }
       else { self.wireSigPanel(panel, s, rid); }
@@ -758,7 +759,7 @@
       if (res.ok && res.data && res.data.entry_hash) {
         sig.receipt = { sequence_no: res.data.sequence_no, entry_hash: res.data.entry_hash, entry_id: res.data.entry_id };
         self.persist();
-        var panel = $('[data-sigpanel="' + CSS.escape(rid) + '"]');
+        var panel = $('[data-sigpanel="' + cssEsc(rid) + '"]');
         if (panel) self.renderSignedPanel(panel, rid);
         self.refreshIntegrity();
       } else {
@@ -768,7 +769,7 @@
   };
 
   LegalDoc.prototype.markAnchorPending = function (rid) {
-    var panel = $('[data-sigpanel="' + CSS.escape(rid) + '"]');
+    var panel = $('[data-sigpanel="' + cssEsc(rid) + '"]');
     if (panel) this.renderSignedPanel(panel, rid, true);
   };
 
