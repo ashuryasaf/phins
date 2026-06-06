@@ -50,11 +50,11 @@ PhinsLegalDoc.init({
     { key: "governingLaw", label: "Governing law", type: "text", group: "Vesting", default: "State of Delaware, USA" }
   ],
   compute: function (v) {
-    var a = parseFloat(v.founderAEquity) || 0;
-    var b = (v.founderBName !== undefined) ? (parseFloat(v.founderBEquity) || 0) : 0;
-    var c = (parseFloat(v.founderCEquity) || 0);
     var ctx = (window.__phinsLegalDoc && window.__phinsLegalDoc.context) || "two-founders";
-    var total = a + (ctx === "solo" ? 0 : b) + (ctx === "three-founders" ? c : 0);
+    var a = parseFloat(v.founderAEquity) || 0;
+    var b = (ctx === "solo") ? 0 : (parseFloat(v.founderBEquity) || 0);
+    var c = (ctx === "three-founders") ? (parseFloat(v.founderCEquity) || 0) : 0;
+    var total = a + b + c;
     var ts = parseFloat(v.totalShares) || 0;
     return {
       totalEquity: { value: total, display: total.toLocaleString(undefined,{maximumFractionDigits:2}) + "%" },

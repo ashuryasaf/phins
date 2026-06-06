@@ -59,10 +59,10 @@ PhinsLegalDoc.init({
     { key: "noticeWeeks", label: "Notice period (weeks)", type: "number", group: "Compensation", default: 4 },
     { key: "ptoDays", label: "Paid time off (days/yr)", type: "number", group: "Compensation", default: 20 },
 
-    { key: "includeEquity", label: "Include equity grant?", type: "select", group: "Equity", default: "Yes", options: ["Yes","No"] },
-    { key: "optionGrant", label: "Option grant (shares)", type: "number", group: "Equity", default: 50000 },
-    { key: "vestingYears", label: "Vesting (years)", type: "number", group: "Equity", default: 4 },
-    { key: "cliffMonths", label: "Cliff (months)", type: "number", group: "Equity", default: 12 },
+    { key: "includeEquity", label: "Include equity grant?", type: "select", group: "Equity", context: "employee", default: "Yes", options: ["Yes","No"] },
+    { key: "optionGrant", label: "Option grant (shares)", type: "number", group: "Equity", context: "employee", default: 50000 },
+    { key: "vestingYears", label: "Vesting (years)", type: "number", group: "Equity", context: "employee", default: 4 },
+    { key: "cliffMonths", label: "Cliff (months)", type: "number", group: "Equity", context: "employee", default: 12 },
 
     { key: "scope", label: "Scope of duties", type: "textarea", group: "Duties", default: "" }
   ],
