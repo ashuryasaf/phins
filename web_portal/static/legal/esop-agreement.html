@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — ESOP / Option Grant Agreement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "esop-agreement",
+  title: "Stock Option Grant Agreement",
+  subtitle: "Grant under the PHINS Insurance, Inc. Equity Incentive Plan (ESOP) — adjustable per optionee.",
+  refLabel: "EQUITY · OPTION GRANT",
+  defaultContext: "employee",
+  contexts: [
+    { id: "employee", label: "Employee optionee (ISO/NSO)" },
+    { id: "advisor",  label: "Advisor / contractor (NSO)" }
+  ],
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Plan", default: "$",
+      options: [{value:"$",label:"USD ($)"},{value:"₪",label:"ILS (₪)"},{value:"€",label:"EUR (€)"}] },
+    { key: "companyName", label: "Company", type: "text", group: "Plan", default: "PHINS Insurance, Inc." },
+    { key: "planName", label: "Plan name", type: "text", group: "Plan", default: "2026 Equity Incentive Plan" },
+    { key: "poolSize", label: "Plan pool (shares)", type: "number", group: "Plan", default: 1000000 },
+    { key: "grantDate", label: "Grant date", type: "date", group: "Plan" },
+
+    { key: "optioneeName", label: "Optionee name", type: "text", group: "Optionee", default: "" },
+    { key: "optioneeRole", label: "Role / title", type: "text", group: "Optionee", default: "" },
+    { key: "grantType", label: "Option type", type: "select", group: "Optionee", default: "ISO",
+      options: ["ISO","NSO","102 capital gains (IL)"] },
+
+    { key: "optionsGranted", label: "Options granted (shares)", type: "number", group: "Grant", default: 50000 },
+    { key: "strikePrice", label: "Strike / exercise price", type: "currency", group: "Grant", default: 0.50 },
+    { key: "fmv", label: "Current FMV / share", type: "currency", group: "Grant", default: 1.20 },
+    { key: "vestingYears", label: "Vesting (years)", type: "number", group: "Grant", default: 4 },
+    { key: "cliffMonths", label: "Cliff (months)", type: "number", group: "Grant", default: 12 },
+    { key: "vestingFreq", label: "Vesting frequency", type: "select", group: "Grant", default: "Monthly", options: ["Monthly","Quarterly"] },
+    { key: "exerciseWindowDays", label: "Post-termination exercise (days)", type: "number", group: "Grant", default: 90 },
+    { key: "earlyExercise", label: "Early exercise allowed?", type: "select", group: "Grant", default: "No", options: ["Yes","No"] }
+  ],
+  compute: function (v) {
+    var cur = v.currency || "$";
+    function money(n){ return cur + (parseFloat(n)||0).toLocaleString(undefined,{maximumFractionDigits:2}); }
+    var n = parseFloat(v.optionsGranted) || 0;
+    var strike = parseFloat(v.strikePrice) || 0;
+    var fmv = parseFloat(v.fmv) || 0;
+    var years = parseFloat(v.vestingYears) || 0;
+    var cliff = parseFloat(v.cliffMonths) || 0;
+    var cliffShares = years > 0 ? Math.round(n * (cliff / (years * 12))) : 0;
+    var poolPct = (parseFloat(v.poolSize)||0) > 0 ? (n / parseFloat(v.poolSize) * 100) : 0;
+    return {
+      totalStrikeCost: { value: n*strike, display: money(n*strike) },
+      notionalGain: { value: Math.max(0,(fmv-strike))*n, display: money(Math.max(0,(fmv-strike))*n) },
+      cliffVested: { value: cliffShares, display: cliffShares.toLocaleString() + " shares at cliff" },
+      poolPct: { value: poolPct, display: poolPct.toFixed(2) + "% of plan pool" }
+    };
+  },
+  signatories: [
+    { role: "Optionee", label: "Optionee", party: "{{optioneeName}} — {{optioneeRole}}" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>This Stock Option Grant Agreement is made as of <strong>{{grantDate}}</strong> under the
+       <strong>{{planName}}</strong> of <strong>{{companyName}}</strong> (the “Company”), granting to
+       <strong>{{optioneeName}}</strong> (the “Optionee”) an option to purchase shares of the Company's Common Stock on
+       the terms below.</p>
+
+    <div class="ld-kpi-strip">
+      <div class="ld-kpi"><div class="v">{{optionsGranted}}</div><div class="l">Options granted</div></div>
+      <div class="ld-kpi"><div class="v">{{strikePrice}}</div><div class="l">Strike price</div></div>
+      <div class="ld-kpi"><div class="v">{{totalStrikeCost}}</div><div class="l">Total exercise cost</div></div>
+      <div class="ld-kpi"><div class="v">{{poolPct}}</div><div class="l">Share of pool</div></div>
+    </div>
+
+    <h2>1. Grant</h2>
+    <table class="ld-table"><tbody>
+      <tr><td style="width:42%"><strong>Option type</strong></td><td>{{grantType}}</td></tr>
+      <tr><td><strong>Shares subject to option</strong></td><td>{{optionsGranted}}</td></tr>
+      <tr><td><strong>Exercise price per share</strong></td><td>{{strikePrice}}</td></tr>
+      <tr><td><strong>Current FMV per share</strong></td><td>{{fmv}} (indicative; built-in gain {{notionalGain}})</td></tr>
+      <tr><td><strong>Plan pool</strong></td><td>{{poolSize}} shares ({{poolPct}})</td></tr>
+    </tbody></table>
+
+    <h2>2. Vesting</h2>
+    <p>The option vests over <strong>{{vestingYears}}</strong> years with a <strong>{{cliffMonths}}</strong>-month cliff,
+       <strong>{{vestingFreq}}</strong> thereafter, subject to continued service. At the cliff,
+       <strong>{{cliffVested}}</strong> become exercisable. Early exercise: <strong>{{earlyExercise}}</strong>.</p>
+    <div data-context-block="advisor"><p class="muted">As an advisor/contractor grant, this is a Non-Statutory Option (NSO); a shorter vesting schedule and milestone-based vesting may be substituted by board approval.</p></div>
+
+    <h2>3. Exercise &amp; Termination</h2>
+    <p>Vested options may be exercised by payment of the exercise price. Upon cessation of service, vested options may be
+       exercised for <strong>{{exerciseWindowDays}}</strong> days (subject to ISO holding rules where applicable);
+       unvested options are forfeited.</p>
+
+    <h2>4. Tax &amp; Plan Terms</h2>
+    <p>The option is subject to the {{planName}} and applicable tax treatment for its type ({{grantType}}). For Israeli
+       optionees, Section 102 capital-gains track terms apply where elected. The Optionee should obtain independent tax advice.</p>
+
+    <h2>5. Integrity of Records</h2>
+    <p>This grant and the Optionee's signature are anchored to the Company's append-only, hash-chained platform event
+       ledger for tamper-evidence. This is a template and not legal or tax advice.</p>
+  `
+});
+</script>
+</body>
+</html>

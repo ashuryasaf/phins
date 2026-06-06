@@ -1593,6 +1593,241 @@ platform_event_ledger = PlatformEventLedgerService(
     use_database=lambda: USE_DATABASE and database_enabled,
 )
 
+
+# ---------------------------------------------------------------------------
+# Legal / corporate / funding document signing (data-integrity anchoring)
+# ---------------------------------------------------------------------------
+# The adjustable document templates under /legal/*.html capture LIVE signatures
+# (draw or typed) per relevant entity (investor / company / employee / founder…),
+# lock the signature + date, hash the document content (SHA-256), and anchor each
+# signature into the existing append-only, hash-chained ``platform_event_ledger``.
+# Nothing is anchored without an explicit human signature; entries are append-only
+# and idempotent (re-posting the same signature returns the existing entry), and
+# voiding records a new event rather than mutating/deleting — consistent with the
+# platform's tamper-evident integrity contract.
+
+_LEGAL_DOC_HASH_RE = re.compile(r'^[0-9a-f]{64}$')
+
+
+def _legal_doc_role_slug(role: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', str(role or 'party').lower()).strip('-') or 'party'
+
+
+def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str,
+                    session: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
+    """Validate + anchor a single document signature (or a void event).
+
+    Returns (status_code, response_dict). Errors use the ``{"error": ...}`` shape.
+
+    Anchoring a signature is intentionally session-optional so external
+    counterparties (investors/candidates) can sign without a PHINS login. Voiding,
+    however, supersedes active tamper-evident anchors, so it requires an
+    authenticated session (see the void guard below).
+    """
+    doc_type = str(body_data.get('docType') or '').strip()
+    doc_instance_id = str(body_data.get('docInstanceId') or '').strip()
+    role = str(body_data.get('role') or '').strip()
+    signer_name = str(body_data.get('signerName') or '').strip()
+    document_hash = str(body_data.get('documentHash') or '').strip().lower()
+    signed_at = str(body_data.get('signedAt') or '').strip() or datetime.utcnow().isoformat()
+    signer_title = str(body_data.get('signerTitle') or '').strip()
+    context = str(body_data.get('context') or '').strip()
+    signature_method = str(body_data.get('signatureMethod') or '').strip()
+    is_void = str(body_data.get('event') or '').strip().lower() == 'void'
+
+    # Security: voiding a signature records a superseding event that invalidates
+    # active, tamper-evident anchors for legitimate parties. Unlike anchoring a
+    # new signature (session-optional for counterparties), it must require an
+    # authenticated PHINS session — otherwise anyone who learns a docInstanceId
+    # (e.g. from a shared link or the unauthenticated registry) could void other
+    # parties' signatures and break verification.
+    if is_void and not session:
+        return 401, {'error': 'Authentication required to void signatures'}
+    # Snapshot of the signed field values / table data / context. Anchored
+    # alongside the hash so a counterparty opening the shared link on another
+    # device can reconstruct the exact content the signatures attest to (the
+    # content otherwise lives only in the signer's browser).
+    content_snapshot = body_data.get('content')
+    if not isinstance(content_snapshot, dict):
+        content_snapshot = None
+
+    if not doc_type or not doc_instance_id or not role or not signer_name:
+        return 400, {'error': 'docType, docInstanceId, role and signerName are required'}
+    if len(doc_instance_id) > 120 or len(doc_type) > 80 or len(signer_name) > 160:
+        return 400, {'error': 'Field length exceeds allowed maximum'}
+    if not _LEGAL_DOC_HASH_RE.match(document_hash):
+        return 400, {'error': 'documentHash must be a 64-character hex SHA-256 digest'}
+    if content_snapshot is not None and len(json.dumps(content_snapshot, default=str)) > 200000:
+        return 400, {'error': 'content snapshot exceeds allowed maximum'}
+
+    # Data-integrity guard: every party anchoring a given ``documentHash`` must
+    # attest to the same underlying content. The server cannot recompute the
+    # digest itself (the client hashes a richer, context-filtered view than the
+    # stored snapshot), but it can reject a snapshot that disagrees with one
+    # already anchored under the same (instance, hash). Without this, a direct
+    # API caller could anchor a digest whose stored/hydrated content differs from
+    # what other signatures attest to, so verify would still succeed.
+    if content_snapshot is not None:
+        new_canonical = json.dumps(content_snapshot, sort_keys=True, default=str)
+        for prior in _legal_doc_signatures_for(doc_instance_id):
+            if str(prior.get('document_hash') or '').lower() != document_hash:
+                continue
+            prior_content = prior.get('content')
+            if not isinstance(prior_content, dict):
+                continue
+            if json.dumps(prior_content, sort_keys=True, default=str) != new_canonical:
+                return 409, {'error': 'content snapshot does not match the content already anchored for this documentHash'}
+
+    role_slug = _legal_doc_role_slug(role)
+    event_type = 'legal_document_voided' if is_void else 'legal_document_signed'
+    # Deterministic entry id → idempotent signing; void events are uniquely keyed.
+    # Use the full document hash (not a prefix) so distinct content digests can
+    # never collide on the same entry_id and reuse a different document's anchor.
+    #
+    # A void-then-re-sign cycle reuses the same (role, content hash), so without a
+    # generation suffix the re-sign would hit the original (now superseded) row by
+    # idempotency and verify would still treat it as voided. Key each entry by the
+    # number of prior void events for this (instance, role, hash) so every re-sign
+    # — and the void that follows it — anchors a fresh row with a higher sequence,
+    # while genuine retries within a generation stay idempotent.
+    prior_voids = 0
+    for prior in _legal_doc_signatures_for(doc_instance_id):
+        if (_legal_doc_role_slug(prior.get('role') or '') == role_slug
+                and str(prior.get('document_hash') or '').lower() == document_hash
+                and (prior.get('event') == 'legal_document_voided' or prior.get('voided'))):
+            prior_voids += 1
+    generation = '' if prior_voids == 0 else f"-v{prior_voids}"
+    # The composite key (instance id + role slug + full 64-char hash + generation)
+    # routinely exceeds the platform_ledger_entries.id column limit (120 chars)
+    # for client-minted instance ids, which silently breaks SQL persistence while
+    # in-memory signing still succeeds. Hash the key into a fixed-length,
+    # collision-resistant digest so the entry_id stays bounded while remaining
+    # deterministic (idempotent) and unique per content hash / generation.
+    entry_prefix = 'LGLVOID' if is_void else 'LGLSIG'
+    entry_key = f"{doc_instance_id}-{role_slug}-{document_hash}{generation}"
+    entry_id = f"{entry_prefix}-{hashlib.sha256(entry_key.encode('utf-8')).hexdigest()}"
+
+    try:
+        entry = platform_event_ledger.append_event(
+            event_type=event_type,
+            entity_type='legal_document',
+            entity_id=doc_instance_id,
+            actor=signer_name,
+            source_system='legal_docs',
+            status='voided' if is_void else 'signed',
+            entry_id=entry_id,
+            payload={
+                'doc_type': doc_type,
+                'context': context,
+                'role': role,
+                'role_slug': role_slug,
+                'signer_name': signer_name,
+                'signer_title': signer_title,
+                'signed_at': signed_at,
+                'document_hash': document_hash,
+                'signature_method': signature_method,
+                'client_ip': client_ip,
+                'voided': is_void,
+                'content': content_snapshot,
+            },
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[legal-docs] anchor error: {exc}")
+        return 500, {'error': 'Failed to anchor signature'}
+
+    return 200, {
+        'ok': True,
+        'event': event_type,
+        'entry_id': entry.get('id'),
+        'sequence_no': entry.get('sequence_no'),
+        'entry_hash': entry.get('entry_hash'),
+        'previous_hash': entry.get('previous_hash'),
+        'document_hash': document_hash,
+        'signed_at': signed_at,
+    }
+
+
+def _legal_doc_signatures_for(doc_instance_id: str) -> List[Dict[str, Any]]:
+    """Return anchored signature events for a document instance (sorted by seq)."""
+    items: List[Dict[str, Any]] = []
+    for entry in TRANSACTION_LEDGER.values():
+        if str(entry.get('entity_type')) != 'legal_document':
+            continue
+        if str(entry.get('entity_id')) != str(doc_instance_id):
+            continue
+        # append_event() merges the supplied payload fields onto the top level of
+        # the stored entry, so read from the entry directly (with a nested-payload
+        # fallback for forward/backward compatibility).
+        payload = entry
+        nested = entry.get('payload') or entry.get('metadata')
+        if isinstance(nested, str):
+            try:
+                nested = json.loads(nested)
+            except Exception:
+                nested = None
+        if isinstance(nested, dict) and nested.get('role'):
+            payload = nested
+        items.append({
+            'event': entry.get('event_type') or entry.get('type'),
+            'role': payload.get('role'),
+            'signer_name': payload.get('signer_name'),
+            'signer_title': payload.get('signer_title'),
+            'signed_at': payload.get('signed_at'),
+            'document_hash': payload.get('document_hash'),
+            'signature_method': payload.get('signature_method'),
+            'content': payload.get('content'),
+            'voided': bool(payload.get('voided')),
+            'sequence_no': entry.get('sequence_no'),
+            'entry_hash': entry.get('entry_hash'),
+            'entry_id': entry.get('id'),
+        })
+    items.sort(key=lambda x: (int(x.get('sequence_no') or 0)))
+    return items
+
+
+def _legal_doc_verify(body_data: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    """Confirm an anchored signature matches the supplied hash + chain is intact."""
+    doc_instance_id = str(body_data.get('docInstanceId') or '').strip()
+    document_hash = str(body_data.get('documentHash') or '').strip().lower()
+    if not doc_instance_id:
+        return 400, {'error': 'docInstanceId required'}
+    if not _LEGAL_DOC_HASH_RE.match(document_hash):
+        return 400, {'error': 'documentHash must be a 64-character hex SHA-256 digest'}
+
+    signatures = _legal_doc_signatures_for(doc_instance_id)
+    # A later void event (same role + content hash, higher sequence_no) supersedes
+    # an earlier signature even though the original sign row is left untouched.
+    void_seq: Dict[Tuple[Any, Any], int] = {}
+    for s in signatures:
+        if s.get('event') == 'legal_document_voided' or s.get('voided'):
+            key = (s.get('role'), s.get('document_hash'))
+            seq = int(s.get('sequence_no') or 0)
+            if seq > void_seq.get(key, -1):
+                void_seq[key] = seq
+
+    def _is_active(sig: Dict[str, Any]) -> bool:
+        if sig.get('event') != 'legal_document_signed' or sig.get('voided'):
+            return False
+        voided_at = void_seq.get((sig.get('role'), sig.get('document_hash')))
+        return voided_at is None or voided_at <= int(sig.get('sequence_no') or 0)
+
+    matched = [
+        s for s in signatures
+        if s.get('document_hash') == document_hash and _is_active(s)
+    ]
+    try:
+        from services.platform_event_ledger_service import reconcile_ledger_entries
+        reconcile = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
+        chain_valid = bool(reconcile.get('chain_valid', True))
+    except Exception:
+        chain_valid = False
+    return 200, {
+        'verified': len(matched) > 0,
+        'matched_signatures': matched,
+        'chain_valid': chain_valid,
+        'total_signatures': len([s for s in signatures if _is_active(s)]),
+    }
+
 # Claim files storage - stores uploaded documents for claims
 # Indexed by file_id -> {claim_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
 CLAIM_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 content
@@ -12376,7 +12611,7 @@ For claims or questions, please contact:
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
-        
+
         # Redirect deprecated client-portal.html to main dashboard
         if path == '/client-portal.html':
             self.send_response(301)
@@ -12406,6 +12641,22 @@ For claims or questions, please contact:
                     self.end_headers()
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
+
+        # Legal/corporate document signature registry (read-only, ledger-anchored)
+        if path == '/api/legal-docs/registry':
+            doc_id = (qs.get('doc_id', [''])[0] or '').strip()
+            if not doc_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'doc_id required'}).encode('utf-8'))
+                return
+            items = _legal_doc_signatures_for(doc_id)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'items': items,
+                'total': len(items),
+                'doc_id': doc_id,
+            }, default=str).encode('utf-8'))
+            return
 
         # Session validation
         auth_header = self.headers.get('Authorization', '')
@@ -26747,7 +26998,38 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
-        
+
+        # ── Legal/corporate/funding document signing + verification ──
+        # Anchors live signatures into the hash-chained platform event ledger.
+        # Session-optional: external counterparties (investors/candidates) may
+        # sign without a PHINS login; the client IP is recorded for audit.
+        if path in ('/api/legal-docs/sign', '/api/legal-docs/verify'):
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                body_data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(body_data, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            if path == '/api/legal-docs/sign':
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                status_code, response_data = _legal_doc_sign(body_data, client_ip, session)
+            else:
+                status_code, response_data = _legal_doc_verify(body_data)
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+            return
+
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
             self.handle_quote_submission()

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Non-Disclosure Agreement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "nda",
+  title: "Non-Disclosure Agreement",
+  subtitle: "Adjustable mutual or one-way NDA for PHINS counterparties — investor, employee, supplier or advisor.",
+  refLabel: "LEGAL · NDA",
+  defaultContext: "investor",
+  contexts: [
+    { id: "investor",     label: "Investor / due diligence" },
+    { id: "employee",     label: "Employee / candidate" },
+    { id: "supplier",     label: "Supplier / partner" },
+    { id: "counterparty", label: "General counterparty" }
+  ],
+  fields: [
+    { key: "companyName", label: "Disclosing party (Company)", type: "text", group: "Parties", default: "PHINS Insurance, Inc." },
+    { key: "counterpartyName", label: "Receiving / other party", type: "text", group: "Parties", default: "" },
+    { key: "mutual", label: "Mutual or one-way", type: "select", group: "Parties", default: "Mutual", options: ["Mutual","One-way (Company discloses)"] },
+    { key: "effectiveDate", label: "Effective date", type: "date", group: "Parties" },
+    { key: "purpose", label: "Purpose", type: "textarea", group: "Terms",
+      default: "Evaluation of a potential business and/or investment relationship with PHINS." },
+    { key: "termYears", label: "Agreement term (years)", type: "number", group: "Terms", default: 2 },
+    { key: "confidYears", label: "Confidentiality survives (years)", type: "number", group: "Terms", default: 5 },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Terms", default: "State of Delaware, USA" }
+  ],
+  signatories: [
+    { role: "Company", label: "Disclosing party", party: "{{companyName}} (by an authorized officer)" },
+    { role: "Receiving Party", label: "Receiving party", party: "{{counterpartyName}}" }
+  ],
+  body: `
+    <p>This <strong>{{mutual}}</strong> Non-Disclosure Agreement is entered into as of <strong>{{effectiveDate}}</strong>
+       between <strong>{{companyName}}</strong> (the “Company”) and <strong>{{counterpartyName}}</strong> (the
+       “Receiving Party”; together the “Parties”).</p>
+
+    <h2>1. Purpose</h2>
+    <p>{{purpose}}</p>
+
+    <div data-context-block="investor"><p>The Receiving Party is reviewing confidential materials in the PHINS investor
+       data room (pitch, architecture, AI/BI optimization, financial model and cap table) solely to evaluate a potential investment.</p></div>
+    <div data-context-block="employee"><p>The Receiving Party is a prospective or current member of staff who will access
+       confidential platform, customer and operational information in connection with their role.</p></div>
+    <div data-context-block="supplier"><p>The Receiving Party is a prospective supplier or partner evaluating integration
+       with the PHINS health marketplace and supply-chain modules.</p></div>
+
+    <h2>2. Confidential Information</h2>
+    <p>“Confidential Information” means non-public information disclosed by a Party, including the PHINS platform
+       architecture, the append-only hash-chained ledger design, actuarial and pricing models, AI/automation
+       specifications, source code, financial projections, cap table, customer and claims data, and business plans,
+       whether or not marked confidential.</p>
+
+    <h2>3. Obligations</h2>
+    <ul>
+      <li>Use Confidential Information solely for the Purpose.</li>
+      <li>Protect it with at least reasonable care and restrict access to those with a need to know who are bound by like obligations.</li>
+      <li>Not reverse-engineer, copy, or disclose it to third parties without prior written consent.</li>
+      <li><span data-context-block="investor,supplier,counterparty">Where this Agreement is one-way, only the Company's information is protected; where mutual, each Party protects the other's.</span></li>
+    </ul>
+
+    <h2>4. Exclusions</h2>
+    <p>Confidential Information does not include information that is or becomes public through no fault of the Receiving
+       Party, was rightfully known before disclosure, is independently developed, or is required to be disclosed by law
+       (with notice where permitted).</p>
+
+    <h2>5. Term</h2>
+    <p>This Agreement remains in effect for <strong>{{termYears}}</strong> years; confidentiality obligations survive for
+       <strong>{{confidYears}}</strong> years after disclosure (and indefinitely for trade secrets while they remain such).</p>
+
+    <h2>6. No License; Return</h2>
+    <p>No license or ownership is granted. Upon request or termination, the Receiving Party will return or destroy
+       Confidential Information and certify the same.</p>
+
+    <h2>7. Governing Law</h2>
+    <p>This Agreement is governed by the laws of <strong>{{governingLaw}}</strong>. This is a template and not legal advice.
+       Country-specific regulator NDAs are also available in the PHINS NDA Center.</p>
+  `
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Financial Model</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+function _esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+PhinsLegalDoc.init({
+  docType: "financial-model",
+  title: "Financial Model",
+  subtitle: "PHINS-grounded multi-year projection. Public market context is locked; PHINS assumptions are adjustable.",
+  refLabel: "FUNDING · MODEL",
+  defaultContext: "investor",
+  contexts: [
+    { id: "investor",   label: "Investor summary" },
+    { id: "investment", label: "Investment committee (detailed)" }
+  ],
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Setup", default: "₪",
+      options: [{value:"₪",label:"ILS (₪)"},{value:"$",label:"USD ($)"},{value:"€",label:"EUR (€)"}] },
+    { key: "companyName", label: "Company", type: "text", group: "Setup", default: "PHINS Insurance, Inc." },
+    { key: "asOfDate", label: "Model date", type: "date", group: "Setup" },
+    { key: "years", label: "Projection years", type: "number", group: "Setup", default: 3 },
+
+    { key: "startCustomers", label: "Starting customers", type: "number", group: "Assumptions", default: 1000 },
+    { key: "monthlyPremium", label: "Avg monthly premium", type: "currency", group: "Assumptions", default: 53,
+      hint: "IL reference: ₪53/mo for age-35 medium-risk, 20-year term." },
+    { key: "growthMonthly", label: "Monthly customer growth %", type: "percent", group: "Assumptions", default: 8 },
+    { key: "lossRatio", label: "Loss ratio %", type: "percent", group: "Assumptions", default: 55 },
+    { key: "aiSavingsPct", label: "AI cost-savings on opex %", type: "percent", group: "Assumptions", default: 30,
+      hint: "Platform reduces operational cost up to ~73% vs legacy; modeled conservatively." },
+    { key: "opexBaseAnnual", label: "Base annual opex (yr1)", type: "currency", group: "Assumptions", default: 4200000 },
+    { key: "reserveCoverage", label: "Reserve coverage %", type: "percent", group: "Assumptions", default: 160 }
+  ],
+  compute: function (v) {
+    var cur = v.currency || "₪";
+    function m(n){ return cur + Math.round(n).toLocaleString(); }
+    var years = Math.max(1, Math.min(7, parseInt(v.years)||3));
+    var cust = parseFloat(v.startCustomers)||0;
+    var prem = parseFloat(v.monthlyPremium)||0;
+    var g = (parseFloat(v.growthMonthly)||0)/100;
+    var lr = (parseFloat(v.lossRatio)||0)/100;
+    var aiSave = (parseFloat(v.aiSavingsPct)||0)/100;
+    var opex0 = parseFloat(v.opexBaseAnnual)||0;
+    var resCov = (parseFloat(v.reserveCoverage)||0)/100;
+    var rows = [];
+    var endY1Rev = 0, finalCust = cust;
+    for (var y=1; y<=years; y++){
+      // compound 12 monthly growth steps, summing monthly premium revenue
+      var rev=0, c=cust;
+      for (var mo=0; mo<12; mo++){ rev += c*prem; c = c*(1+g); }
+      var claims = rev*lr;
+      var opex = opex0*Math.pow(1.12,(y-1))*(1-aiSave);
+      var gross = rev - claims;
+      var ebitda = gross - opex;
+      var reserves = claims*resCov;
+      cust = c; finalCust = Math.round(c);
+      if (y===1) endY1Rev = rev;
+      rows.push({y:y,cust:Math.round(c),rev:rev,claims:claims,gross:gross,opex:opex,ebitda:ebitda,reserves:reserves});
+    }
+    var html = '<table class="ld-table"><thead><tr><th>Year</th><th class="num">Customers (EoY)</th>'+
+      '<th class="num">Premium revenue</th><th class="num">Claims</th><th class="num">Gross margin</th>'+
+      '<th class="num">Opex (AI-adj.)</th><th class="num">EBITDA</th><th class="num">Reserves</th></tr></thead><tbody>';
+    rows.forEach(function(r){
+      html += '<tr><td>Year '+r.y+'</td><td class="num">'+_esc(r.cust.toLocaleString())+'</td>'+
+        '<td class="num">'+_esc(m(r.rev))+'</td><td class="num">'+_esc(m(r.claims))+'</td>'+
+        '<td class="num">'+_esc(m(r.gross))+'</td><td class="num">'+_esc(m(r.opex))+'</td>'+
+        '<td class="num" style="font-weight:700;color:'+(r.ebitda>=0?'#15803d':'#b91c1c')+'">'+_esc(m(r.ebitda))+'</td>'+
+        '<td class="num">'+_esc(m(r.reserves))+'</td></tr>';
+    });
+    html += '</tbody></table>';
+    var arr = Math.round(finalCust*prem*12);
+    return {
+      projection: { value: rows.length, display: html },
+      y1Revenue: { value: endY1Rev, display: m(endY1Rev) },
+      finalCustomers: { value: finalCust, display: finalCust.toLocaleString() },
+      exitARR: { value: arr, display: m(arr) }
+    };
+  },
+  signatories: [
+    { role: "Preparer", label: "Prepared & certified by", party: "{{companyName}} — CFO / Founder (certifies the model version)" }
+  ],
+  body: `
+    <p>This financial model for <strong>{{companyName}}</strong> (model date <strong>{{asOfDate}}</strong>) projects
+       <strong>{{years}}</strong>-year performance from adjustable PHINS assumptions. Figures are management estimates,
+       not guarantees; public market context is sourced separately and is not modified by these inputs.</p>
+
+    <div class="ld-kpi-strip">
+      <div class="ld-kpi"><div class="v">{{y1Revenue}}</div><div class="l">Year-1 premium revenue</div></div>
+      <div class="ld-kpi"><div class="v">{{finalCustomers}}</div><div class="l">Customers (end of horizon)</div></div>
+      <div class="ld-kpi"><div class="v">{{exitARR}}</div><div class="l">Run-rate ARR (exit)</div></div>
+      <div class="ld-kpi"><div class="v">{{monthlyPremium}}</div><div class="l">Avg monthly premium</div></div>
+    </div>
+
+    <h2>1. Projection</h2>
+    {{html:projection}}
+    <p class="muted">Premium revenue compounds monthly customer growth across each year. Claims = loss ratio × premium.
+       Opex grows ~12%/yr before applying modeled AI cost-savings. Reserves = claims × reserve coverage.</p>
+
+    <h2>2. Key Assumptions</h2>
+    <table class="ld-table"><tbody>
+      <tr><td style="width:42%"><strong>Starting customers</strong></td><td>{{startCustomers}}</td></tr>
+      <tr><td><strong>Avg monthly premium</strong></td><td>{{monthlyPremium}}</td></tr>
+      <tr><td><strong>Monthly customer growth</strong></td><td>{{growthMonthly}}</td></tr>
+      <tr><td><strong>Loss ratio</strong></td><td>{{lossRatio}}</td></tr>
+      <tr><td><strong>AI cost-savings on opex</strong></td><td>{{aiSavingsPct}}</td></tr>
+      <tr><td><strong>Reserve coverage</strong></td><td>{{reserveCoverage}}</td></tr>
+    </tbody></table>
+
+    <div data-context-block="investment" class="ld-section">
+      <h3>Investment-committee notes</h3>
+      <p>Sensitivity: a 10-point change in loss ratio or a 2-point change in monthly growth materially moves EBITDA.
+         The PHINS platform's automation (automated underwriting, claims adjudication, billing, fraud detection) is the
+         lever behind the modeled opex efficiency. Reserve adequacy is governed by the actuarial engine and reconciled
+         against the append-only platform ledger.</p>
+    </div>
+
+    <h2>3. Certification &amp; Integrity</h2>
+    <p>The undersigned certifies that this model version reflects the Company's current assumptions in good faith. On
+       signing, the model inputs are hashed (SHA-256) and anchored to the PHINS append-only platform event ledger so the
+       exact assumption set behind the certified figures is tamper-evident. This is not financial advice or a forecast of returns.</p>
+  `
+});
+</script>
+</body>
+</html>

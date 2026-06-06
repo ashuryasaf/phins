@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Offer Letter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "offer-letter",
+  title: "Employment Offer Letter",
+  subtitle: "Adjustable offer for a PHINS platform role — role presets, salary, equity, start date and offer expiry.",
+  refLabel: "EMPLOYMENT · OFFER",
+  defaultContext: "employee",
+  contexts: [
+    { id: "employee",   label: "Employee offer" },
+    { id: "contractor", label: "Contractor offer" }
+  ],
+  presets: {
+    label: "Role preset (admin dashboard position)",
+    hint: "Pre-fills title, department and a default comp band. Editable.",
+    options: [
+      { id: "actuary", label: "Actuary", values: { jobTitle: "Actuary", department: "Actuarial & Risk", salary: 165000, optionGrant: 60000 } },
+      { id: "claims", label: "Claims Adjuster", values: { jobTitle: "Claims Adjuster", department: "Claims", salary: 92000, optionGrant: 20000 } },
+      { id: "underwriter", label: "Underwriter", values: { jobTitle: "Underwriter", department: "Underwriting", salary: 105000, optionGrant: 25000 } },
+      { id: "media", label: "Media / Content", values: { jobTitle: "Media & Content Manager", department: "Marketing & Media", salary: 88000, optionGrant: 15000 } },
+      { id: "support", label: "Customer Support", values: { jobTitle: "Customer Support Specialist", department: "Customer Operations", salary: 64000, optionGrant: 8000 } },
+      { id: "foundation", label: "Foundation Manager", values: { jobTitle: "Community Foundation Manager", department: "Community Foundations", salary: 96000, optionGrant: 20000 } },
+      { id: "supplier", label: "Marketplace Ops", values: { jobTitle: "Marketplace Operations Lead", department: "Health Marketplace", salary: 102000, optionGrant: 22000 } },
+      { id: "bi", label: "BI Analyst", values: { jobTitle: "Business Intelligence Analyst", department: "Data & BI", salary: 118000, optionGrant: 30000 } },
+      { id: "trading", label: "Investment Ops", values: { jobTitle: "Investment Operations Analyst", department: "Investments & Treasury", salary: 128000, optionGrant: 35000 } },
+      { id: "compliance", label: "Compliance Officer", values: { jobTitle: "Compliance Officer", department: "Legal & Compliance", salary: 135000, optionGrant: 30000 } },
+      { id: "engineer", label: "Software Engineer", values: { jobTitle: "Software Engineer", department: "Engineering", salary: 150000, optionGrant: 50000 } },
+      { id: "admin", label: "Platform Administrator", values: { jobTitle: "Platform Administrator", department: "Operations", salary: 110000, optionGrant: 25000 } }
+    ]
+  },
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Setup", default: "$",
+      options: [{value:"$",label:"USD ($)"},{value:"₪",label:"ILS (₪)"},{value:"€",label:"EUR (€)"}] },
+    { key: "companyName", label: "Company", type: "text", group: "Setup", default: "PHINS Insurance, Inc." },
+    { key: "offerDate", label: "Offer date", type: "date", group: "Setup" },
+    { key: "candidateName", label: "Candidate", type: "text", group: "Candidate", default: "" },
+    { key: "jobTitle", label: "Job title", type: "text", group: "Candidate", default: "" },
+    { key: "department", label: "Department", type: "text", group: "Candidate", default: "" },
+    { key: "startDate", label: "Proposed start date", type: "date", group: "Candidate" },
+    { key: "offerExpiry", label: "Offer expiry date", type: "date", group: "Candidate" },
+    { key: "salary", label: "Base salary (annual)", type: "currency", group: "Compensation", default: 100000 },
+    { key: "bonusPct", label: "Target bonus %", type: "percent", group: "Compensation", default: 10 },
+    { key: "optionGrant", label: "Option grant (shares)", type: "number", group: "Compensation", default: 25000 },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Compensation", default: "State of Delaware, USA" }
+  ],
+  compute: function (v) {
+    var cur = v.currency || "$";
+    var sal = parseFloat(v.salary)||0;
+    return { monthly: { value: sal/12, display: cur + Math.round(sal/12).toLocaleString() } };
+  },
+  signatories: [
+    { role: "Candidate", label: "Candidate (acceptance)", party: "{{candidateName}} — accepts this offer" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>Dear <strong>{{candidateName}}</strong>,</p>
+    <p>On behalf of <strong>{{companyName}}</strong> (the “Company”), we are delighted to offer you the position of
+       <strong>{{jobTitle}}</strong> in <strong>{{department}}</strong>, with a proposed start date of
+       <strong>{{startDate}}</strong>. This offer is dated <strong>{{offerDate}}</strong>.</p>
+
+    <h2>Summary of Terms</h2>
+    <table class="ld-table"><tbody>
+      <tr><td style="width:38%"><strong>Position</strong></td><td>{{jobTitle}} — {{department}}</td></tr>
+      <tr><td><strong>Base salary</strong></td><td>{{salary}} per year ({{monthly}} / month)</td></tr>
+      <tr><td><strong>Target bonus</strong></td><td>{{bonusPct}} of base, subject to performance</td></tr>
+      <tr><td><strong>Equity</strong></td><td>An option to purchase {{optionGrant}} shares, subject to board approval and the Company's ESOP (4-yr vest, 1-yr cliff)</td></tr>
+      <tr><td><strong>Start date</strong></td><td>{{startDate}}</td></tr>
+    </tbody></table>
+
+    <h2>Conditions</h2>
+    <ul>
+      <li>This offer is contingent on satisfactory background/reference checks and your right to work in the applicable jurisdiction.</li>
+      <li>You will be required to sign the Company's Employment Agreement<span data-context-block="contractor"> (or Contractor Agreement)</span>,
+          IP Assignment Agreement and NDA, and to acknowledge the HR Policies.</li>
+      <li><span data-context-block="employee">Employment is at-will where permitted by {{governingLaw}}.</span>
+          <span data-context-block="contractor">The engagement is as an independent contractor; you are responsible for your own taxes and benefits.</span></li>
+    </ul>
+
+    <h2>Offer Expiry</h2>
+    <p>Please indicate your acceptance by signing below on or before <strong>{{offerExpiry}}</strong>, after which this
+       offer lapses unless extended in writing.</p>
+
+    <p>We are excited about the prospect of you joining PHINS and contributing to a platform built on automation,
+       actuarial discipline and tamper-evident data integrity.</p>
+    <p class="muted">This letter is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

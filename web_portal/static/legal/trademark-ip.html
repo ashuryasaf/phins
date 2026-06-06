@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Trademark &amp; IP Register</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "trademark-ip",
+  title: "Trademark Filing &amp; IP Asset Register",
+  subtitle: "PHINS mark particulars (Nice classes 36 / 42), jurisdictions, and the Company's intellectual-property inventory.",
+  refLabel: "IP · TRADEMARK",
+  defaultContext: "application",
+  contexts: [
+    { id: "application", label: "Trademark application record" },
+    { id: "assignment",  label: "Trademark assignment" }
+  ],
+  fields: [
+    { key: "ownerName", label: "Owner / applicant", type: "text", group: "Mark", default: "PHINS Insurance, Inc." },
+    { key: "mark", label: "Mark (wordmark)", type: "text", group: "Mark", default: "PHINS" },
+    { key: "markDesc", label: "Logo / design description", type: "textarea", group: "Mark",
+      default: "Stylized shield device (🛡️) with the wordmark “PHINS” and tagline “Personal Health Insurance & Savings”." },
+    { key: "filingBasis", label: "Filing basis", type: "select", group: "Mark", default: "Intent to use (1(b))",
+      options: ["Use in commerce (1(a))","Intent to use (1(b))","Madrid Protocol","National"] },
+    { key: "priorityDate", label: "Priority / first-use date", type: "date", group: "Mark" },
+    { key: "classes", label: "Nice classes", type: "text", group: "Mark", default: "36 (insurance & financial), 42 (SaaS)" },
+    { key: "jurisdictions", label: "Jurisdictions", type: "text", group: "Mark", default: "USPTO (US), EUIPO (EU), Israel PTO (IL)" },
+    { key: "assigneeName", label: "Assignee (assignment)", type: "text", group: "Assignment", context: "assignment", default: "" },
+    { key: "effectiveDate", label: "Record / effective date", type: "date", group: "Mark" }
+  ],
+  tables: [
+    {
+      key: "ipassets", title: "IP assets",
+      columns: [
+        { key: "asset", label: "Asset", type: "text" },
+        { key: "type", label: "Type", type: "text" },
+        { key: "owner", label: "Owner", type: "text" },
+        { key: "status", label: "Status", type: "text" }
+      ],
+      default: [
+        { asset: "PHINS wordmark + shield device", type: "Trademark", owner: "PHINS Insurance, Inc.", status: "Filed / pending" },
+        { asset: "Hash-chained platform event ledger", type: "Trade secret", owner: "PHINS Insurance, Inc.", status: "Maintained" },
+        { asset: "Automated underwriting & fraud models", type: "Trade secret / patent-pending", owner: "PHINS Insurance, Inc.", status: "In review" },
+        { asset: "Platform source code (64+ modules)", type: "Copyright", owner: "PHINS Insurance, Inc.", status: "Owned" },
+        { asset: "phins.ai domain & brand assets", type: "Domain / brand", owner: "PHINS Insurance, Inc.", status: "Registered" }
+      ]
+    }
+  ],
+  signatories: [
+    { role: "Owner", label: "Owner / applicant", party: "{{ownerName}} (by an authorized signatory)" },
+    { role: "Assignee", label: "Assignee", party: "{{assigneeName}}", context: "assignment" }
+  ],
+  body: `
+    <p>This record, dated <strong>{{effectiveDate}}</strong>, sets forth the trademark particulars and intellectual-property
+       inventory of <strong>{{ownerName}}</strong> relating to the PHINS brand and platform.</p>
+
+    <h2>1. Mark Particulars</h2>
+    <table class="ld-table"><tbody>
+      <tr><td style="width:34%"><strong>Mark</strong></td><td>{{mark}}</td></tr>
+      <tr><td><strong>Design</strong></td><td>{{markDesc}}</td></tr>
+      <tr><td><strong>Owner / applicant</strong></td><td>{{ownerName}}</td></tr>
+      <tr><td><strong>Filing basis</strong></td><td>{{filingBasis}}</td></tr>
+      <tr><td><strong>Nice classes</strong></td><td>{{classes}}</td></tr>
+      <tr><td><strong>Jurisdictions</strong></td><td>{{jurisdictions}}</td></tr>
+      <tr><td><strong>Priority / first use</strong></td><td>{{priorityDate}}</td></tr>
+    </tbody></table>
+
+    <div data-context-block="assignment" class="ld-section">
+      <h2>2. Assignment</h2>
+      <p>The Owner hereby assigns all right, title and interest in the above mark(s), together with the associated goodwill,
+         to <strong>{{assigneeName}}</strong> (the “Assignee”), effective on the date of execution.</p>
+    </div>
+
+    <h2>3. IP Asset Register</h2>
+    {{table:ipassets}}
+
+    <h2>4. Maintenance &amp; Integrity</h2>
+    <p>The Owner shall maintain registrations and police infringement. Trade-secret assets — notably the append-only,
+       hash-chained platform ledger and proprietary models — are protected by access controls and confidentiality
+       obligations. This register is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

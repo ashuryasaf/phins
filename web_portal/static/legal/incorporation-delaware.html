@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Delaware Incorporation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "incorporation-delaware",
+  title: "Certificate of Incorporation",
+  subtitle: "Delaware C-Corporation formation documents (DGCL §102) with incorporator action and bylaws summary.",
+  refLabel: "CORPORATE · INCORPORATION",
+  defaultContext: "certificate",
+  contexts: [
+    { id: "certificate", label: "Certificate of Incorporation" },
+    { id: "action",      label: "Incorporator's Action + Bylaws" }
+  ],
+  fields: [
+    { key: "companyName", label: "Corporation name", type: "text", group: "Corporation", default: "PHINS Insurance, Inc." },
+    { key: "filingDate", label: "Filing date", type: "date", group: "Corporation" },
+    { key: "principalOffice", label: "Principal office", type: "text", group: "Corporation", default: "" },
+    { key: "regAgent", label: "DE registered agent", type: "text", group: "Corporation", default: "Registered Agent Solutions, Inc." },
+    { key: "regAgentAddr", label: "Registered office (DE)", type: "text", group: "Corporation", default: "838 Walker Road, Suite 21-2, Dover, DE 19904" },
+
+    { key: "authorizedShares", label: "Authorized shares", type: "number", group: "Capital", default: 10000000 },
+    { key: "parValue", label: "Par value / share", type: "currency", group: "Capital", default: 0.0001 },
+    { key: "commonShares", label: "Common shares", type: "number", group: "Capital", default: 9000000 },
+    { key: "preferredShares", label: "Preferred shares", type: "number", group: "Capital", default: 1000000 },
+
+    { key: "incorporatorName", label: "Incorporator", type: "text", group: "People", default: "" },
+    { key: "directorName", label: "Initial director", type: "text", group: "People", default: "" },
+    { key: "officerName", label: "Initial president/CEO", type: "text", group: "People", default: "" }
+  ],
+  compute: function (v) {
+    var auth = parseFloat(v.authorizedShares)||0, par = parseFloat(v.parValue)||0;
+    return { statedCapital: { value: auth*par, display: "$" + (auth*par).toLocaleString(undefined,{maximumFractionDigits:2}) } };
+  },
+  signatories: [
+    { role: "Incorporator", label: "Incorporator", party: "{{incorporatorName}}" }
+  ],
+  body: `
+    <p>The undersigned, for the purpose of forming a corporation under the General Corporation Law of the State of
+       Delaware (the “DGCL”), hereby certifies as follows, effective <strong>{{filingDate}}</strong>:</p>
+
+    <h2>Article I — Name</h2>
+    <p>The name of the corporation is <strong>{{companyName}}</strong> (the “Corporation”).</p>
+
+    <h2>Article II — Registered Office &amp; Agent</h2>
+    <p>The address of the Corporation's registered office in Delaware is <strong>{{regAgentAddr}}</strong>. The name of
+       its registered agent at such address is <strong>{{regAgent}}</strong>.</p>
+
+    <h2>Article III — Purpose</h2>
+    <p>The purpose of the Corporation is to engage in any lawful act or activity for which corporations may be organized
+       under the DGCL, including the operation of the PHINS insurance, savings and health-technology platform.</p>
+
+    <h2>Article IV — Authorized Capital Stock</h2>
+    <p>The total number of shares the Corporation is authorized to issue is <strong>{{authorizedShares}}</strong> shares,
+       par value <strong>{{parValue}}</strong> per share (aggregate stated capital {{statedCapital}}), consisting of
+       <strong>{{commonShares}}</strong> shares of Common Stock and <strong>{{preferredShares}}</strong> shares of
+       Preferred Stock. The Board may fix the designations and rights of Preferred Stock by resolution (blank-check preferred).</p>
+
+    <h2>Article V — Incorporator</h2>
+    <p>The name of the incorporator is <strong>{{incorporatorName}}</strong>, with principal office at {{principalOffice}}.</p>
+
+    <h2>Article VI — Director Liability &amp; Indemnification</h2>
+    <p>To the fullest extent permitted by the DGCL, no director shall be personally liable for monetary damages for breach
+       of fiduciary duty, and the Corporation shall indemnify its directors and officers.</p>
+
+    <div data-context-block="action">
+      <h2>Action of Sole Incorporator &amp; Bylaws Summary</h2>
+      <p>The undersigned incorporator hereby (a) adopts the Bylaws of the Corporation; (b) appoints
+         <strong>{{directorName}}</strong> as the initial director; and (c) ratifies the appointment of
+         <strong>{{officerName}}</strong> as initial President/CEO. The Bylaws provide for: a board of directors,
+         officer roles, shareholder and board meetings and quorum, share issuance and transfer mechanics, fiscal year,
+         and an integrity policy whereby corporate financial records reconcile to the PHINS append-only platform ledger.</p>
+    </div>
+
+    <h2>Execution</h2>
+    <p>The incorporator executes this Certificate below. Filing with the Delaware Secretary of State is required for
+       legal effect. This is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

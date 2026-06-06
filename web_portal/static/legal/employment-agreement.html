@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Employment Agreement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "employment-agreement",
+  title: "Employment Agreement",
+  subtitle: "Adjustable employment terms for a PHINS platform role — salary, equity, duties and access tier.",
+  refLabel: "EMPLOYMENT · CONTRACT",
+  defaultContext: "employee",
+  contexts: [
+    { id: "employee",   label: "Employee (W-2 / payroll)" },
+    { id: "contractor", label: "Independent contractor" }
+  ],
+  presets: {
+    label: "Role preset (admin dashboard position)",
+    hint: "Pre-fills title, department, duties and a default comp band. All values remain editable.",
+    options: [
+      { id: "actuary", label: "Actuary", values: { jobTitle: "Actuary", department: "Actuarial & Risk", accessTier: "Actuary dashboard (pricing models, reserves, reconciliation)", salary: 165000, scope: "Own premium pricing models, reserving (IBNR, catastrophe), loss-ratio monitoring, rate filings, and actuarial certification across products. Validate the platform's actuarial engine outputs and maintain assumption governance." } },
+      { id: "claims", label: "Claims Adjuster", values: { jobTitle: "Claims Adjuster", department: "Claims", accessTier: "Claims dashboard (adjudication, payouts, fraud flags)", salary: 92000, scope: "Adjudicate claims within authority limits, apply objective severity triggers, review AI fraud flags, manage claimant communications and the 72-hour acknowledgement SLA, and route home-care navigation before institutional escalation." } },
+      { id: "underwriter", label: "Underwriter", values: { jobTitle: "Underwriter", department: "Underwriting", accessTier: "Underwriting dashboard (applications, risk scoring)", salary: 105000, scope: "Review applications, set terms within underwriting guidelines, oversee automated underwriting decisions and exceptions, and maintain per-segment threshold governance." } },
+      { id: "media", label: "Media / Content", values: { jobTitle: "Media & Content Manager", department: "Marketing & Media", accessTier: "Admin media dashboard (assets, hero/video, providers)", salary: 88000, scope: "Manage brand and marketing assets, hero/landing media, provider integrations, subtitles/video pipeline, and campaign content within the admin media dashboard." } },
+      { id: "support", label: "Customer Support", values: { jobTitle: "Customer Support Specialist", department: "Customer Operations", accessTier: "Customer 360 (read), messaging, tickets", salary: 64000, scope: "Resolve customer inquiries across policies, billing and claims; operate the assistant-augmented support workflow; escalate per policy and uphold complaint-handling procedures." } },
+      { id: "foundation", label: "Foundation Manager", values: { jobTitle: "Community Foundation Manager", department: "Community Foundations", accessTier: "Foundations admin (contributions, voting, ledger)", salary: 96000, scope: "Operate the foundation lifecycle — contributions, voting governance, messaging, wallet deposits, member approvals — with audit-ready ledger persistence." } },
+      { id: "supplier", label: "Supplier / Marketplace Ops", values: { jobTitle: "Marketplace Operations Lead", department: "Health Marketplace", accessTier: "Supplier & marketplace admin (offers, orders, settlement)", salary: 102000, scope: "Onboard suppliers, manage offers/orders and delivery bidding, oversee settlement and payer recovery, and maintain supplier document and ledger integrity." } },
+      { id: "bi", label: "BI Analyst", values: { jobTitle: "Business Intelligence Analyst", department: "Data & BI", accessTier: "BI analytics (read), KPI definitions", salary: 118000, scope: "Build KPI definitions and dashboards over governed platform data; ensure BI layers recommend but never post; maintain caching and data-integrity guardrails." } },
+      { id: "trading", label: "Investment / Trading Ops", values: { jobTitle: "Investment Operations Analyst", department: "Investments & Treasury", accessTier: "Trading & portfolio (positions, options wheel)", salary: 128000, scope: "Operate reserve investment and algorithmic strategies within mandate, monitor positions and the options-wheel service, and maintain portfolio integrity controls." } },
+      { id: "compliance", label: "Compliance Officer", values: { jobTitle: "Compliance Officer", department: "Legal & Compliance", accessTier: "Compliance register, audit trail (read)", salary: 135000, scope: "Maintain AML/KYC, GDPR/PDPA and data-residency, Solvency/capital and regulator (ISA/IL) compliance; own the compliance register, attestations and audit-trail review." } },
+      { id: "engineer", label: "Software Engineer", values: { jobTitle: "Software Engineer", department: "Engineering", accessTier: "Engineering (code, deploys, observability)", salary: 150000, scope: "Build and operate platform services across underwriting, claims, billing, marketplace and the hash-chained event ledger; uphold the append-only integrity contract." } },
+      { id: "admin", label: "Platform Administrator", values: { jobTitle: "Platform Administrator", department: "Operations", accessTier: "Admin dashboard (full operational)", salary: 110000, scope: "Operate the admin dashboard across financials, customers, policies, underwriting, claims, billing, marketplace, analytics and invitations, with confirmation-gated high-impact actions." } }
+    ]
+  },
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Company", default: "$",
+      options: [{value:"$",label:"USD ($)"},{value:"₪",label:"ILS (₪)"},{value:"€",label:"EUR (€)"}] },
+    { key: "companyName", label: "Employer", type: "text", group: "Company", default: "PHINS Insurance, Inc." },
+    { key: "effectiveDate", label: "Agreement date", type: "date", group: "Company" },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Company", default: "State of Delaware, USA" },
+
+    { key: "employeeName", label: "Employee name", type: "text", group: "Employee", default: "" },
+    { key: "jobTitle", label: "Job title", type: "text", group: "Employee", default: "" },
+    { key: "department", label: "Department", type: "text", group: "Employee", default: "" },
+    { key: "startDate", label: "Start date", type: "date", group: "Employee" },
+    { key: "accessTier", label: "System access tier", type: "text", group: "Employee", default: "" },
+
+    { key: "salary", label: "Base salary (annual)", type: "currency", group: "Compensation", default: 100000 },
+    { key: "bonusPct", label: "Target bonus %", type: "percent", group: "Compensation", default: 10 },
+    { key: "probationMonths", label: "Probation (months)", type: "number", group: "Compensation", default: 3 },
+    { key: "noticeWeeks", label: "Notice period (weeks)", type: "number", group: "Compensation", default: 4 },
+    { key: "ptoDays", label: "Paid time off (days/yr)", type: "number", group: "Compensation", default: 20 },
+
+    { key: "includeEquity", label: "Include equity grant?", type: "select", group: "Equity", context: "employee", default: "Yes", options: ["Yes","No"] },
+    { key: "optionGrant", label: "Option grant (shares)", type: "number", group: "Equity", context: "employee", default: 50000 },
+    { key: "vestingYears", label: "Vesting (years)", type: "number", group: "Equity", context: "employee", default: 4 },
+    { key: "cliffMonths", label: "Cliff (months)", type: "number", group: "Equity", context: "employee", default: 12 },
+
+    { key: "scope", label: "Scope of duties", type: "textarea", group: "Duties", default: "" }
+  ],
+  compute: function (v) {
+    var cur = v.currency || "$";
+    var sal = parseFloat(v.salary) || 0;
+    var bonus = sal * (parseFloat(v.bonusPct) || 0) / 100;
+    return {
+      monthlySalary: { value: sal/12, display: cur + Math.round(sal/12).toLocaleString() },
+      targetBonus: { value: bonus, display: cur + Math.round(bonus).toLocaleString() },
+      totalTargetComp: { value: sal+bonus, display: cur + Math.round(sal+bonus).toLocaleString() }
+    };
+  },
+  signatories: [
+    { role: "Employee", label: "Employee", party: "{{employeeName}}" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>This Employment Agreement is made as of <strong>{{effectiveDate}}</strong> between <strong>{{companyName}}</strong>
+       (the “Company”) and <strong>{{employeeName}}</strong> (the
+       <span data-context-block="employee">“Employee”</span><span data-context-block="contractor">“Contractor”</span>).</p>
+
+    <div class="ld-kpi-strip">
+      <div class="ld-kpi"><div class="v">{{salary}}</div><div class="l">Base / year</div></div>
+      <div class="ld-kpi"><div class="v">{{monthlySalary}}</div><div class="l">Per month</div></div>
+      <div class="ld-kpi"><div class="v">{{targetBonus}}</div><div class="l">Target bonus</div></div>
+      <div class="ld-kpi"><div class="v">{{totalTargetComp}}</div><div class="l">Total target comp</div></div>
+    </div>
+
+    <h2>1. Position</h2>
+    <p>The Company engages the individual as <strong>{{jobTitle}}</strong> in <strong>{{department}}</strong>, commencing
+       <strong>{{startDate}}</strong>. Authorized system access: <strong>{{accessTier}}</strong>. All access follows the
+       Company's least-privilege and audit-trail policies for the PHINS platform.</p>
+
+    <h2>2. Duties</h2>
+    <p>{{scope}}</p>
+
+    <h2>3. Compensation &amp; Benefits</h2>
+    <ul>
+      <li>Base salary of <strong>{{salary}}</strong> per year ({{monthlySalary}} per month)<span data-context-block="contractor"> paid against invoices</span>.</li>
+      <li>Target annual bonus of <strong>{{bonusPct}}</strong> ({{targetBonus}}), subject to performance.</li>
+      <li><span data-context-block="employee"><strong>{{ptoDays}}</strong> days paid time off per year and standard Company benefits.</span>
+          <span data-context-block="contractor">Contractor is responsible for their own taxes, benefits and equipment; no PTO accrues.</span></li>
+      <li>Probationary period of <strong>{{probationMonths}}</strong> months.</li>
+    </ul>
+
+    <div data-context-block="employee">
+      <h2>4. Equity</h2>
+      <p>Subject to board approval and the Company's equity plan, the Employee will be granted (if elected: <strong>{{includeEquity}}</strong>)
+         an option to purchase <strong>{{optionGrant}}</strong> shares, vesting over <strong>{{vestingYears}}</strong> years
+         with a <strong>{{cliffMonths}}</strong>-month cliff, on the terms of the ESOP / Option Grant Agreement.</p>
+    </div>
+
+    <h2>5. Confidentiality &amp; IP Assignment</h2>
+    <p>The individual shall protect Company confidential information and assigns all work product and inventions to the
+       Company pursuant to the Company's IP Assignment Agreement. The PHINS append-only, hash-chained integrity model and
+       related code and models are Company trade secrets.</p>
+
+    <h2>6. Term &amp; Termination</h2>
+    <p><span data-context-block="employee">Employment is at-will where permitted by {{governingLaw}}; either party may terminate
+       on <strong>{{noticeWeeks}}</strong> weeks' notice (or pay in lieu), without prejudice to summary termination for cause.</span>
+       <span data-context-block="contractor">Either party may terminate this engagement on <strong>{{noticeWeeks}}</strong> weeks'
+       written notice; the Company may terminate immediately for material breach.</span></p>
+
+    <h2>7. Governing Law</h2>
+    <p>This Agreement is governed by the laws of <strong>{{governingLaw}}</strong>. This is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

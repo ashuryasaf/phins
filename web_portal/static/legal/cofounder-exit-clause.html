@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Co-founder Exit Clause</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "cofounder-exit-clause",
+  title: "Co-founder Exit Clause",
+  subtitle: "Leaver treatment, share repurchase and restrictions on a founder's departure — addendum to the Founder Agreement.",
+  refLabel: "CORPORATE · EXIT",
+  defaultContext: "good-leaver",
+  contexts: [
+    { id: "good-leaver", label: "Good leaver" },
+    { id: "bad-leaver",  label: "Bad leaver (cause)" }
+  ],
+  fields: [
+    { key: "currency", label: "Currency", type: "select", group: "Setup", default: "$",
+      options: [{value:"$",label:"USD ($)"},{value:"₪",label:"ILS (₪)"},{value:"€",label:"EUR (€)"}] },
+    { key: "companyName", label: "Company", type: "text", group: "Setup", default: "PHINS Insurance, Inc." },
+    { key: "effectiveDate", label: "Effective date", type: "date", group: "Setup" },
+    { key: "founderName", label: "Departing founder", type: "text", group: "Departing founder", default: "" },
+    { key: "totalShares", label: "Founder's total shares", type: "number", group: "Departing founder", default: 5000000 },
+    { key: "vestedShares", label: "Vested shares at exit", type: "number", group: "Departing founder", default: 2500000 },
+    { key: "exitDate", label: "Exit / cessation date", type: "date", group: "Departing founder" },
+
+    { key: "goodPrice", label: "Good-leaver repurchase / share", type: "currency", group: "Terms", default: 1.00 },
+    { key: "badPrice", label: "Bad-leaver repurchase / share", type: "currency", group: "Terms", default: 0.0001,
+      hint: "Typically lower of cost or FMV for bad leavers." },
+    { key: "noticeDays", label: "Repurchase notice (days)", type: "number", group: "Terms", default: 60 },
+    { key: "nonCompeteMonths", label: "Non-compete (months)", type: "number", group: "Terms", default: 12 },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Terms", default: "State of Delaware, USA" }
+  ],
+  compute: function (v) {
+    var cur = v.currency || "$";
+    function money(n){ return cur + (parseFloat(n)||0).toLocaleString(undefined,{maximumFractionDigits:2}); }
+    var total = parseFloat(v.totalShares)||0, vested = parseFloat(v.vestedShares)||0;
+    var unvested = Math.max(0, total - vested);
+    var ctx = (window.__phinsLegalDoc && window.__phinsLegalDoc.context) || "good-leaver";
+    var price = ctx === "bad-leaver" ? (parseFloat(v.badPrice)||0) : (parseFloat(v.goodPrice)||0);
+    return {
+      unvestedShares: { value: unvested, display: unvested.toLocaleString() + " shares forfeited" },
+      vestedDisplay: { value: vested, display: vested.toLocaleString() },
+      repurchaseValue: { value: vested*price, display: money(vested*price) },
+      leaverClass: { value: ctx, display: ctx === "bad-leaver" ? "Bad leaver (for cause)" : "Good leaver" }
+    };
+  },
+  signatories: [
+    { role: "Departing Founder", label: "Departing founder", party: "{{founderName}}" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>This Co-founder Exit Clause, dated <strong>{{effectiveDate}}</strong>, supplements the Founder Agreement of
+       <strong>{{companyName}}</strong> (the “Company”) and governs the treatment of equity held by
+       <strong>{{founderName}}</strong> (the “Departing Founder”) upon cessation of service on <strong>{{exitDate}}</strong>.</p>
+
+    <div class="ld-kpi-strip">
+      <div class="ld-kpi"><div class="v">{{leaverClass}}</div><div class="l">Classification</div></div>
+      <div class="ld-kpi"><div class="v">{{vestedDisplay}}</div><div class="l">Vested shares</div></div>
+      <div class="ld-kpi"><div class="v">{{unvestedShares}}</div><div class="l">Unvested</div></div>
+      <div class="ld-kpi"><div class="v">{{repurchaseValue}}</div><div class="l">Repurchase value (vested)</div></div>
+    </div>
+
+    <h2>1. Leaver Classification</h2>
+    <div data-context-block="good-leaver"><p>A <strong>Good Leaver</strong> is a founder who ceases service due to death,
+       disability, redundancy, or resignation in good standing. Vested shares are retained or repurchased at fair value;
+       unvested shares are forfeited.</p></div>
+    <div data-context-block="bad-leaver"><p>A <strong>Bad Leaver</strong> is a founder terminated for cause or who breaches
+       restrictive covenants. The Company may repurchase <em>all</em> shares (vested and unvested) at the lower of cost or
+       fair market value.</p></div>
+
+    <h2>2. Vesting Cut-off &amp; Forfeiture</h2>
+    <p>Vesting ceases on the exit date. Of <strong>{{totalShares}}</strong> total shares, <strong>{{vestedDisplay}}</strong>
+       are vested and <strong>{{unvestedShares}}</strong>. Unvested shares are automatically forfeited / subject to
+       repurchase at nominal value.</p>
+
+    <h2>3. Repurchase Right</h2>
+    <p>The Company (or its assignee) may, within <strong>{{noticeDays}}</strong> days of the exit date, repurchase the
+       Departing Founder's vested shares at <span data-context-block="good-leaver">fair value</span><span data-context-block="bad-leaver">the lower of cost or fair value</span>,
+       for an aggregate of approximately <strong>{{repurchaseValue}}</strong> at the stated price per share.</p>
+
+    <h2>4. Restrictive Covenants</h2>
+    <p>For <strong>{{nonCompeteMonths}}</strong> months following exit, the Departing Founder shall not compete with the
+       Company's insurtech/health-platform business or solicit its employees or customers, to the extent enforceable under {{governingLaw}}.</p>
+
+    <h2>5. IP &amp; Confidentiality</h2>
+    <p>All IP assigned under the Founder Agreement and IP Assignment Agreement remains with the Company; confidentiality
+       obligations survive indefinitely for trade secrets, including the PHINS integrity model and proprietary algorithms.</p>
+
+    <h2>6. Governing Law</h2>
+    <p>This clause is governed by the laws of <strong>{{governingLaw}}</strong>. This is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

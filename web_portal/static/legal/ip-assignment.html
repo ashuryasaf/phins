@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — IP Assignment Agreement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "ip-assignment",
+  title: "Intellectual Property Assignment Agreement",
+  subtitle: "Assignment of inventions, code and works to PHINS Insurance, Inc., with a prior-inventions schedule.",
+  refLabel: "IP · ASSIGNMENT",
+  defaultContext: "employee",
+  contexts: [
+    { id: "employee",   label: "Employee" },
+    { id: "founder",    label: "Founder" },
+    { id: "contractor", label: "Contractor / consultant" }
+  ],
+  fields: [
+    { key: "companyName", label: "Assignee (Company)", type: "text", group: "Parties", default: "PHINS Insurance, Inc." },
+    { key: "assignorName", label: "Assignor", type: "text", group: "Parties", default: "" },
+    { key: "assignorRole", label: "Assignor role", type: "text", group: "Parties", default: "" },
+    { key: "effectiveDate", label: "Effective date", type: "date", group: "Parties" },
+    { key: "priorInventions", label: "Prior inventions (excluded)", type: "textarea", group: "Scope",
+      default: "None.", hint: "List any pre-existing IP the assignor wishes to exclude; 'None' if not applicable." },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Scope", default: "State of Delaware, USA" }
+  ],
+  signatories: [
+    { role: "Assignor", label: "Assignor", party: "{{assignorName}} — {{assignorRole}}" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>This IP Assignment Agreement is entered into as of <strong>{{effectiveDate}}</strong> by
+       <strong>{{assignorName}}</strong> (the “Assignor”, a {{assignorRole}}) in favor of
+       <strong>{{companyName}}</strong> (the “Company”).</p>
+
+    <h2>1. Assignment of Inventions</h2>
+    <p>The Assignor hereby irrevocably assigns to the Company all worldwide right, title and interest in and to all
+       inventions, discoveries, software, source code, machine-learning models, designs, data structures, documentation
+       and other works of authorship that the Assignor conceives, develops or reduces to practice, alone or with others,
+       in connection with the Company's business or using the Company's resources (the “Assigned IP”), including all
+       patents, copyrights, trade secrets and related rights.</p>
+
+    <div data-context-block="employee,founder"><p>This includes all contributions to the PHINS platform — underwriting,
+       claims, billing, actuarial and risk engines, the health marketplace, and the append-only, hash-chained event
+       ledger — which constitute core Company trade secrets.</p></div>
+    <div data-context-block="contractor"><p>As a contractor, the Assignor assigns all deliverables and work product created
+       under any statement of work with the Company, and agrees the work is “work made for hire” to the extent permitted by law.</p></div>
+
+    <h2>2. Prior Inventions (Excluded)</h2>
+    <p>The following pre-existing inventions are excluded from this assignment: <strong>{{priorInventions}}</strong>. The
+       Assignor grants the Company a non-exclusive license to any such prior IP incorporated into Company products.</p>
+
+    <h2>3. Moral Rights &amp; Further Assurances</h2>
+    <p>To the extent permitted by law, the Assignor waives moral rights in the Assigned IP and agrees to execute documents
+       and take actions reasonably required to perfect and enforce the Company's rights, including patent and trademark filings.</p>
+
+    <h2>4. Confidentiality</h2>
+    <p>The Assignor shall maintain the confidentiality of the Company's proprietary information and the Assigned IP,
+       consistent with the Company's NDA and applicable employment/contractor agreements.</p>
+
+    <h2>5. Governing Law</h2>
+    <p>This Agreement is governed by the laws of <strong>{{governingLaw}}</strong>. This is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

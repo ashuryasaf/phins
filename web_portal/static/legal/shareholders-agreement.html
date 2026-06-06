@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Shareholders Agreement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "shareholders-agreement",
+  title: "Shareholders Agreement",
+  subtitle: "Governance, transfer and protective provisions among the shareholders of PHINS Insurance, Inc.",
+  refLabel: "EQUITY · SHA",
+  defaultContext: "investor",
+  contexts: [
+    { id: "investor", label: "Investor round (priced)" },
+    { id: "founders", label: "Founders-only / early" }
+  ],
+  fields: [
+    { key: "companyName", label: "Company", type: "text", group: "Setup", default: "PHINS Insurance, Inc." },
+    { key: "effectiveDate", label: "Effective date", type: "date", group: "Setup" },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Setup", default: "State of Delaware, USA" },
+    { key: "boardSize", label: "Board size", type: "number", group: "Governance", default: 3 },
+    { key: "investorSeats", label: "Investor board seats", type: "number", group: "Governance", default: 1, context: "investor" },
+    { key: "dragThreshold", label: "Drag-along threshold %", type: "percent", group: "Governance", default: 60 },
+    { key: "rofrDays", label: "ROFR notice (days)", type: "number", group: "Governance", default: 30 }
+  ],
+  tables: [
+    {
+      key: "shareholders", title: "Shareholders",
+      columns: [
+        { key: "name", label: "Shareholder", type: "text" },
+        { key: "klass", label: "Class", type: "text" },
+        { key: "shares", label: "Shares", type: "number", num: true },
+        { key: "pct", label: "%", num: true, computed: function (row, d) {
+            var t = (d.totalShares && d.totalShares.value) || 0; var s = parseFloat(row.shares)||0;
+            return t>0 ? (s/t*100).toFixed(2)+"%" : "—"; } }
+      ],
+      default: [
+        { name: "Founders", klass: "Common", shares: 8000000 },
+        { name: "Seed Investors", klass: "Preferred Seed", shares: 1500000 },
+        { name: "ESOP (reserved)", klass: "Options", shares: 1000000 }
+      ],
+      computeFooter: function (rows, d) {
+        var t = (d.totalShares && d.totalShares.value) || 0;
+        return '<tr class="total-row"><td>Total</td><td></td><td class="num">'+t.toLocaleString()+'</td><td class="num">100.00%</td></tr>';
+      }
+    }
+  ],
+  compute: function (v, self) {
+    var rows = (self && self.tableData.shareholders) || [];
+    var t = rows.reduce(function(a,r){return a+(parseFloat(r.shares)||0);},0);
+    return { totalShares: { value: t, display: t.toLocaleString() } };
+  },
+  signatories: [
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" },
+    { role: "Founders", label: "Founder representative", party: "Founder representative (on behalf of founding holders)" },
+    { role: "Investor", label: "Investor representative", party: "Lead investor representative", context: "investor" }
+  ],
+  body: `
+    <p>This Shareholders Agreement, dated <strong>{{effectiveDate}}</strong>, is made among the shareholders of
+       <strong>{{companyName}}</strong> (the “Company”) and the Company, and governs their relationship as holders of the
+       Company's securities.</p>
+
+    <h2>1. Capitalization</h2>
+    {{table:shareholders}}
+
+    <h2>2. Board Composition</h2>
+    <p>The board shall consist of <strong>{{boardSize}}</strong> directors.
+       <span data-context-block="investor">Investors are entitled to designate <strong>{{investorSeats}}</strong> director(s); founders retain the balance.</span>
+       <span data-context-block="founders">Directors are designated by the founders pending the first priced round.</span>
+       Reserved matters (financing, sale, new share classes, budget, related-party transactions) require board and, where
+       applicable, investor-majority approval.</p>
+
+    <h2>3. Transfer Restrictions &amp; ROFR</h2>
+    <p>No shareholder may transfer shares except as permitted herein. The Company and then the other shareholders have a
+       <strong>{{rofrDays}}</strong>-day right of first refusal on any proposed transfer, plus co-sale (tag-along) rights.</p>
+
+    <h2>4. Drag-Along &amp; Tag-Along</h2>
+    <p>If holders of at least <strong>{{dragThreshold}}</strong>% approve a bona fide sale of the Company, remaining
+       shareholders shall be required to participate (drag-along) on the same terms. Minority holders have tag-along rights
+       to participate in significant third-party sales.</p>
+
+    <h2>5. Pre-emptive &amp; Information Rights</h2>
+    <p>Holders have pre-emptive rights to maintain their pro-rata ownership in future issuances (subject to customary
+       exceptions), and the Company shall provide quarterly financial statements and an annual budget.
+       Platform metrics are reconcilable to the PHINS append-only, hash-chained ledger.</p>
+
+    <h2>6. Protective Provisions &amp; Confidentiality</h2>
+    <p>Certain actions require the consent of a specified majority of Preferred (where applicable). Shareholders shall keep
+       Company information confidential consistent with the Company's NDA.</p>
+
+    <h2>7. Governing Law</h2>
+    <p>This Agreement is governed by the laws of <strong>{{governingLaw}}</strong>. This is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>

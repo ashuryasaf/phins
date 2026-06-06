@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Founder Agreement</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "founder-agreement",
+  title: "Founder Agreement",
+  subtitle: "Equity, roles, vesting, IP and commitment among the founders of PHINS Insurance, Inc.",
+  refLabel: "CORPORATE · FOUNDERS",
+  defaultContext: "two-founders",
+  contexts: [
+    { id: "solo",          label: "Solo founder" },
+    { id: "two-founders",  label: "Two founders" },
+    { id: "three-founders",label: "Three founders" }
+  ],
+  fields: [
+    { key: "companyName", label: "Company", type: "text", group: "Company", default: "PHINS Insurance, Inc." },
+    { key: "companyEntity", label: "Entity / jurisdiction", type: "text", group: "Company", default: "Delaware C-Corporation" },
+    { key: "effectiveDate", label: "Effective date", type: "date", group: "Company" },
+    { key: "totalShares", label: "Total founder shares", type: "number", group: "Company", default: 10000000 },
+
+    { key: "founderAName", label: "Founder A — name", type: "text", group: "Founder A", default: "" },
+    { key: "founderARole", label: "Founder A — title", type: "text", group: "Founder A", default: "Chief Executive Officer" },
+    { key: "founderAEquity", label: "Founder A — equity %", type: "percent", group: "Founder A", default: 50 },
+
+    { key: "founderBName", label: "Founder B — name", type: "text", group: "Founder B", context: "two-founders,three-founders", default: "" },
+    { key: "founderBRole", label: "Founder B — title", type: "text", group: "Founder B", context: "two-founders,three-founders", default: "Chief Technology Officer" },
+    { key: "founderBEquity", label: "Founder B — equity %", type: "percent", group: "Founder B", context: "two-founders,three-founders", default: 50 },
+
+    { key: "founderCName", label: "Founder C — name", type: "text", group: "Founder C", context: "three-founders", default: "" },
+    { key: "founderCRole", label: "Founder C — title", type: "text", group: "Founder C", context: "three-founders", default: "Chief Operating Officer" },
+    { key: "founderCEquity", label: "Founder C — equity %", type: "percent", group: "Founder C", context: "three-founders", default: 0 },
+
+    { key: "vestingYears", label: "Vesting (years)", type: "number", group: "Vesting", default: 4 },
+    { key: "cliffMonths", label: "Cliff (months)", type: "number", group: "Vesting", default: 12 },
+    { key: "acceleration", label: "Acceleration", type: "select", group: "Vesting", default: "Double-trigger",
+      options: ["None","Single-trigger","Double-trigger"] },
+    { key: "commitment", label: "Time commitment", type: "select", group: "Vesting", default: "Full-time",
+      options: ["Full-time","Part-time","Advisory"] },
+    { key: "governingLaw", label: "Governing law", type: "text", group: "Vesting", default: "State of Delaware, USA" }
+  ],
+  compute: function (v) {
+    var ctx = (window.__phinsLegalDoc && window.__phinsLegalDoc.context) || "two-founders";
+    var a = parseFloat(v.founderAEquity) || 0;
+    var b = (ctx === "solo") ? 0 : (parseFloat(v.founderBEquity) || 0);
+    var c = (ctx === "three-founders") ? (parseFloat(v.founderCEquity) || 0) : 0;
+    var total = a + b + c;
+    var ts = parseFloat(v.totalShares) || 0;
+    return {
+      totalEquity: { value: total, display: total.toLocaleString(undefined,{maximumFractionDigits:2}) + "%" },
+      equityStatus: { value: total, display: (Math.abs(total - 100) < 0.01 ? "✓ allocations total 100%" : "⚠ allocations total " + total.toFixed(2) + "% (should equal 100%)") },
+      founderAShares: { value: Math.round(ts*a/100), display: Math.round(ts*a/100).toLocaleString() },
+      founderBShares: { value: Math.round(ts*b/100), display: Math.round(ts*b/100).toLocaleString() },
+      founderCShares: { value: Math.round(ts*c/100), display: Math.round(ts*c/100).toLocaleString() }
+    };
+  },
+  signatories: [
+    { role: "Founder A", label: "Founder A", party: "{{founderAName}} — {{founderARole}}" },
+    { role: "Founder B", label: "Founder B", party: "{{founderBName}} — {{founderBRole}}", context: "two-founders,three-founders" },
+    { role: "Founder C", label: "Founder C", party: "{{founderCName}} — {{founderCRole}}", context: "three-founders" },
+    { role: "Company", label: "Company", party: "{{companyName}} (by an authorized officer)" }
+  ],
+  body: `
+    <p>This Founder Agreement (the “Agreement”) is entered into as of <strong>{{effectiveDate}}</strong> by and among the
+       founders identified below (each a “Founder”) in connection with <strong>{{companyName}}</strong>, a {{companyEntity}}
+       (the “Company”).</p>
+
+    <h2>1. Founders, Roles &amp; Equity</h2>
+    <table class="ld-table">
+      <thead><tr><th>Founder</th><th>Role</th><th class="num">Equity %</th><th class="num">Shares</th></tr></thead>
+      <tbody>
+        <tr><td>{{founderAName}}</td><td>{{founderARole}}</td><td class="num">{{founderAEquity}}</td><td class="num">{{founderAShares}}</td></tr>
+        <tr data-context-block="two-founders,three-founders"><td>{{founderBName}}</td><td>{{founderBRole}}</td><td class="num">{{founderBEquity}}</td><td class="num">{{founderBShares}}</td></tr>
+        <tr data-context-block="three-founders"><td>{{founderCName}}</td><td>{{founderCRole}}</td><td class="num">{{founderCEquity}}</td><td class="num">{{founderCShares}}</td></tr>
+        <tr class="total-row"><td colspan="2">Total (of {{totalShares}} shares)</td><td class="num">{{totalEquity}}</td><td class="num">&nbsp;</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">{{equityStatus}}</p>
+
+    <h2>2. Vesting</h2>
+    <p>Each Founder's equity is subject to vesting over <strong>{{vestingYears}}</strong> years with a
+       <strong>{{cliffMonths}}</strong>-month cliff, vesting monthly thereafter. Acceleration on change of control or
+       termination is <strong>{{acceleration}}</strong>. Unvested shares are subject to repurchase at the lower of cost
+       or fair market value upon cessation of service, as further described in the Co-founder Exit Clause.</p>
+
+    <h2>3. Commitment &amp; Responsibilities</h2>
+    <p>Each Founder shall devote a <strong>{{commitment}}</strong> commitment to the Company and discharge the duties of
+       their role in good faith. Founders will collaborate on product, regulatory, actuarial, and go-to-market execution
+       for the PHINS platform.</p>
+
+    <h2>4. Intellectual Property</h2>
+    <p>Each Founder hereby assigns to the Company all right, title and interest in inventions, code, models, designs and
+       works of authorship created in connection with the Company's business, and shall execute the Company's standard
+       IP Assignment Agreement. PHINS's integrity model — append-only, hash-chained platform state — is a core Company asset.</p>
+
+    <h2>5. Confidentiality &amp; Non-Solicitation</h2>
+    <p>Each Founder shall hold Company confidential information in strict confidence and, for twelve (12) months following
+       cessation of service, shall not solicit Company employees or customers, to the extent enforceable under {{governingLaw}}.</p>
+
+    <h2>6. Decision-Making</h2>
+    <p>Ordinary-course decisions are made by the responsible officer; major decisions (financing, sale, issuance of equity,
+       budget approval) require approval consistent with the Company's bylaws and any Shareholders Agreement.</p>
+
+    <h2>7. Governing Law</h2>
+    <p>This Agreement is governed by the laws of <strong>{{governingLaw}}</strong>. This is a negotiation template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>
