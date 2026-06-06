@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Corporate, Legal &amp; Funding Document Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue-dark:#0d47a1; --blue-mid:#1565c0; --blue-light:#1976d2;
+      --accent-1:#42a5f5; --accent-2:#64b5f6; --green-1:#4caf50; --amber-1:#f59e0b;
+      --gradient-hdr:linear-gradient(135deg,#0d47a1 0%,#1565c0 50%,#1976d2 100%);
+      --gradient-logo:linear-gradient(135deg,#42a5f5 0%,#64b5f6 100%);
+      --text-main:#1a202c; --text-sub:#4a5568; --border:#e2e8f0; --bg-light:#f8fafc;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:var(--text-main);min-height:100vh;}
+    .site-header{background:var(--gradient-hdr);color:#fff;padding:18px 32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 2px 12px rgba(13,71,161,0.3);}
+    .logo-row{display:flex;align-items:center;gap:10px;}
+    .logo-icon{width:38px;height:38px;border-radius:10px;background:var(--gradient-logo);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 3px 10px rgba(0,0,0,0.2);}
+    .logo-text{font-size:20pt;font-weight:900;letter-spacing:.06em;}
+    .logo-tagline{font-size:8.5pt;opacity:.8;letter-spacing:.1em;text-transform:uppercase;margin-top:1px;}
+    .header-links{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .back-link{color:rgba(255,255,255,.85);text-decoration:none;font-size:9pt;border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:6px 14px;transition:background .2s;}
+    .back-link:hover{background:rgba(255,255,255,.15);}
+    .hero{background:var(--blue-dark);color:#fff;text-align:center;padding:36px 32px 30px;}
+    .hero h1{font-size:22pt;font-weight:800;margin-bottom:8px;}
+    .hero p{font-size:10pt;opacity:.88;max-width:760px;margin:0 auto;}
+    .container{max-width:1200px;margin:0 auto;padding:32px 24px 56px;}
+    .stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:34px;}
+    @media (max-width:720px){.stats-strip{grid-template-columns:repeat(2,1fr);}}
+    .stat-box{background:var(--gradient-hdr);color:#fff;border-radius:14px;padding:18px 14px;text-align:center;}
+    .stat-val{font-size:20pt;font-weight:800;}
+    .stat-lbl{font-size:7.5pt;opacity:.85;margin-top:4px;text-transform:uppercase;letter-spacing:.05em;}
+    .section-label{font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--blue-dark);border-left:4px solid var(--accent-1);padding-left:10px;margin:26px 0 16px;}
+    .doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;margin-bottom:8px;}
+    .doc-card{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:18px 16px 16px;text-decoration:none;color:var(--text-main);transition:transform .18s,box-shadow .18s,border-color .18s;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden;}
+    .doc-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--gradient-hdr);}
+    .doc-card.equity::before{background:linear-gradient(135deg,#7c3aed,#a855f7);}
+    .doc-card.people::before{background:linear-gradient(135deg,#0891b2,#06b6d4);}
+    .doc-card.ip::before{background:linear-gradient(135deg,#f59e0b,#fbbf24);}
+    .doc-card.funding::before{background:linear-gradient(135deg,#16a34a,#22c55e);}
+    .doc-card:hover{transform:translateY(-3px);box-shadow:0 8px 28px rgba(13,71,161,0.18);border-color:var(--accent-1);}
+    .doc-ico{font-size:26px;line-height:1;}
+    .doc-name{font-size:11pt;font-weight:700;color:var(--blue-dark);}
+    .doc-desc{font-size:8.3pt;color:var(--text-sub);line-height:1.45;flex:1;}
+    .doc-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+    .doc-tag{font-size:6.8pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#ebf4ff;color:var(--blue-mid);border-radius:20px;padding:2px 8px;}
+    .doc-cta{margin-top:6px;font-size:8pt;font-weight:600;color:#fff;background:var(--blue-mid);border-radius:20px;padding:5px 12px;text-align:center;}
+    .doc-card:hover .doc-cta{background:var(--blue-dark);}
+    .intro-note{background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:26px;font-size:9pt;color:var(--text-sub);line-height:1.6;box-shadow:0 6px 22px rgba(13,71,161,0.08);}
+    .intro-note strong{color:var(--blue-dark);}
+    .site-footer{background:var(--blue-dark);color:rgba(255,255,255,.7);text-align:center;padding:18px 32px;font-size:8pt;}
+    .site-footer a{color:inherit;text-decoration:underline;}
+  </style>
+</head>
+<body>
+<header class="site-header">
+  <div class="logo-row">
+    <div class="logo-icon">🛡️</div>
+    <div><div class="logo-text">PHINS</div><div class="logo-tagline">Personal Health Insurance &amp; Savings</div></div>
+  </div>
+  <div class="header-links">
+    <a href="/pitch-dashboard.html#investor-documents-section" class="back-link">📂 Investor Documents</a>
+    <a href="/nda-dashboard.html" class="back-link">📋 NDA Center</a>
+    <a href="/admin.html" class="back-link">← Back to Admin</a>
+  </div>
+</header>
+
+<div class="hero">
+  <h1>📑 Corporate, Legal &amp; Funding Document Center</h1>
+  <p>Adjustable, context-aware document templates for incorporation, equity, employment, IP, compliance, and fundraising —
+     each with <strong>live signature panels</strong> (draw or type) that lock the signature and date and anchor a tamper-evident
+     hash into the PHINS hash-chained platform ledger.</p>
+</div>
+
+<div class="container">
+
+  <div class="stats-strip">
+    <div class="stat-box"><div class="stat-val">15</div><div class="stat-lbl">Document Templates</div></div>
+    <div class="stat-box"><div class="stat-val">Live</div><div class="stat-lbl">Draw / Type Signatures</div></div>
+    <div class="stat-box"><div class="stat-val">SHA-256</div><div class="stat-lbl">Content Integrity Hash</div></div>
+    <div class="stat-box"><div class="stat-val">Ledger</div><div class="stat-lbl">Append-only Anchoring</div></div>
+  </div>
+
+  <div class="intro-note">
+    <strong>How these documents work.</strong> Open any document, choose its <em>context / audience</em>
+    (investor, investment, employee, company, co-founder, counterparty) and edit the fields that matter —
+    investor details, investment amount, salary, equity, vesting period, valuation, and more. Every relevant party
+    gets a live signature panel; on signing, the signature, signer, and <em>date &amp; time</em> are locked, the
+    document content is hashed (SHA-256) and the signature is anchored append-only into PHINS's tamper-evident
+    platform event ledger. Editing a signed document is blocked and any change is flagged.
+    <strong>These are negotiation templates, not legal advice</strong> — have counsel review before use.
+  </div>
+
+  <!-- Incorporation & Founders -->
+  <div class="section-label">🏛️ Incorporation &amp; Founders</div>
+  <div class="doc-grid">
+    <a href="/legal/incorporation-delaware.html" class="doc-card">
+      <div class="doc-ico">🏛️</div><div class="doc-name">Incorporation (Delaware)</div>
+      <div class="doc-desc">Certificate of Incorporation, bylaws summary &amp; incorporator action for a Delaware C-corp.</div>
+      <div class="doc-tags"><span class="doc-tag">Company</span><span class="doc-tag">DGCL §102</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/founder-agreement.html" class="doc-card">
+      <div class="doc-ico">🤝</div><div class="doc-name">Founder Agreement</div>
+      <div class="doc-desc">Equity split, roles, vesting (4-yr / 1-yr cliff), IP, and time commitment between co-founders.</div>
+      <div class="doc-tags"><span class="doc-tag">Co-founder</span><span class="doc-tag">Vesting</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/cofounder-exit-clause.html" class="doc-card">
+      <div class="doc-ico">🚪</div><div class="doc-name">Co-founder Exit Clause</div>
+      <div class="doc-desc">Good/bad-leaver treatment, share repurchase, unvested forfeiture and notice on founder departure.</div>
+      <div class="doc-tags"><span class="doc-tag">Co-founder</span><span class="doc-tag">Repurchase</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+  </div>
+
+  <!-- Equity & Cap -->
+  <div class="section-label">📈 Equity &amp; Ownership</div>
+  <div class="doc-grid">
+    <a href="/legal/shareholders-agreement.html" class="doc-card equity">
+      <div class="doc-ico">📜</div><div class="doc-name">Shareholders Agreement</div>
+      <div class="doc-desc">Board composition, ROFR, drag/tag-along, pre-emptive &amp; information rights.</div>
+      <div class="doc-tags"><span class="doc-tag">Investor</span><span class="doc-tag">Governance</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/cap-table.html" class="doc-card equity">
+      <div class="doc-ico">📊</div><div class="doc-name">Cap Table</div>
+      <div class="doc-desc">Editable capitalization table with live ownership %, fully-diluted totals and ESOP pool.</div>
+      <div class="doc-tags"><span class="doc-tag">Company</span><span class="doc-tag">Fully-diluted</span></div>
+      <div class="doc-cta">Open &amp; certify →</div>
+    </a>
+    <a href="/legal/esop-agreement.html" class="doc-card equity">
+      <div class="doc-ico">🎯</div><div class="doc-name">ESOP / Option Grant</div>
+      <div class="doc-desc">Option pool, grant size, strike, vesting schedule and exercise window for an employee optionee.</div>
+      <div class="doc-tags"><span class="doc-tag">Employee</span><span class="doc-tag">Vesting</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+  </div>
+
+  <!-- Employment & HR -->
+  <div class="section-label">👥 Employment &amp; HR</div>
+  <div class="doc-grid">
+    <a href="/legal/employment-agreement.html" class="doc-card people">
+      <div class="doc-ico">💼</div><div class="doc-name">Employment Agreement</div>
+      <div class="doc-desc">Adjustable per admin-dashboard role (Actuary, Claims, Underwriting, Media, BI…): salary, equity, duties.</div>
+      <div class="doc-tags"><span class="doc-tag">Employee</span><span class="doc-tag">Role presets</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/offer-letter.html" class="doc-card people">
+      <div class="doc-ico">✉️</div><div class="doc-name">Offer Letter</div>
+      <div class="doc-desc">Role, salary, equity, start date and offer expiry — with candidate acceptance signature.</div>
+      <div class="doc-tags"><span class="doc-tag">Employee</span><span class="doc-tag">Salary</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/hr-policies.html" class="doc-card people">
+      <div class="doc-ico">📘</div><div class="doc-name">HR Policies</div>
+      <div class="doc-desc">Employee handbook: conduct, leave, remote, data-security/access tiers — with acknowledgement.</div>
+      <div class="doc-tags"><span class="doc-tag">Employee</span><span class="doc-tag">Handbook</span></div>
+      <div class="doc-cta">Open &amp; acknowledge →</div>
+    </a>
+  </div>
+
+  <!-- IP & Compliance -->
+  <div class="section-label">🛡️ Intellectual Property &amp; Compliance</div>
+  <div class="doc-grid">
+    <a href="/legal/ip-assignment.html" class="doc-card ip">
+      <div class="doc-ico">🧠</div><div class="doc-name">IP Assignment</div>
+      <div class="doc-desc">Assignment of inventions &amp; works to the company, with prior-inventions schedule.</div>
+      <div class="doc-tags"><span class="doc-tag">Founder</span><span class="doc-tag">Employee</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/trademark-ip.html" class="doc-card ip">
+      <div class="doc-ico">®️</div><div class="doc-name">Trademark / IP Register</div>
+      <div class="doc-desc">PHINS mark filing record (Nice classes 36 / 42), jurisdictions and IP asset inventory.</div>
+      <div class="doc-tags"><span class="doc-tag">Company</span><span class="doc-tag">Trademark</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/legal-compliance.html" class="doc-card ip">
+      <div class="doc-ico">⚖️</div><div class="doc-name">Legal Compliance Register</div>
+      <div class="doc-desc">AML/KYC, GDPR/PDPA &amp; data residency, Solvency, ISA/IL Capital Markets posture &amp; attestation.</div>
+      <div class="doc-tags"><span class="doc-tag">Company</span><span class="doc-tag">Attestation</span></div>
+      <div class="doc-cta">Open &amp; attest →</div>
+    </a>
+    <a href="/legal/nda.html" class="doc-card ip">
+      <div class="doc-ico">🔒</div><div class="doc-name">NDA (adjustable)</div>
+      <div class="doc-desc">Mutual or one-way NDA for investor, employee, supplier or counterparty — live-signed.</div>
+      <div class="doc-tags"><span class="doc-tag">Investor</span><span class="doc-tag">Counterparty</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+  </div>
+
+  <!-- Funding -->
+  <div class="section-label">💰 Funding &amp; Financials</div>
+  <div class="doc-grid">
+    <a href="/legal/term-sheet.html" class="doc-card funding">
+      <div class="doc-ico">📝</div><div class="doc-name">Term Sheet</div>
+      <div class="doc-desc">Round, valuation (pre/post), investment amount, instrument, liquidation preference, board &amp; pool.</div>
+      <div class="doc-tags"><span class="doc-tag">Investor</span><span class="doc-tag">Investment</span></div>
+      <div class="doc-cta">Open &amp; sign →</div>
+    </a>
+    <a href="/legal/financial-model.html" class="doc-card funding">
+      <div class="doc-ico">📉</div><div class="doc-name">Financial Model</div>
+      <div class="doc-desc">PHINS-grounded multi-year model: customers, premium (₪53), loss ratio, reserves, runway.</div>
+      <div class="doc-tags"><span class="doc-tag">Investor</span><span class="doc-tag">Assumptions</span></div>
+      <div class="doc-cta">Open &amp; certify →</div>
+    </a>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  &copy; 2026 PHINS Insurance Company &nbsp;|&nbsp; Templates — not legal advice &nbsp;|&nbsp; phins.ai
+  &nbsp;|&nbsp; <a href="/privacy-policy.html">Privacy Policy</a>
+  &nbsp;|&nbsp; <a href="/terms-of-use.html">Terms of Use</a>
+</footer>
+</body>
+</html>
