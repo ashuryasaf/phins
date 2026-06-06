@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — HR Policies</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "hr-policies",
+  title: "Employee Handbook &amp; HR Policies",
+  subtitle: "PHINS people policies — conduct, leave, remote work, and data-security/access — with employee acknowledgement.",
+  refLabel: "HR · HANDBOOK",
+  defaultContext: "employee",
+  contexts: [
+    { id: "employee",  label: "Employee acknowledgement" },
+    { id: "company",   label: "Company policy (master)" }
+  ],
+  fields: [
+    { key: "companyName", label: "Company", type: "text", group: "Setup", default: "PHINS Insurance, Inc." },
+    { key: "version", label: "Policy version", type: "text", group: "Setup", default: "v1.0 (2026)" },
+    { key: "effectiveDate", label: "Effective date", type: "date", group: "Setup" },
+    { key: "jurisdiction", label: "Primary jurisdiction", type: "text", group: "Setup", default: "United States / Israel" },
+    { key: "employeeName", label: "Employee (acknowledging)", type: "text", group: "Employee", context: "employee", default: "" },
+    { key: "ptoDays", label: "Annual PTO (days)", type: "number", group: "Leave", default: 20 },
+    { key: "sickDays", label: "Sick days", type: "number", group: "Leave", default: 10 },
+    { key: "remotePolicy", label: "Work model", type: "select", group: "Leave", default: "Hybrid",
+      options: ["Remote-first","Hybrid","On-site"] }
+  ],
+  signatories: [
+    { role: "Employee", label: "Employee acknowledgement", party: "{{employeeName}} — acknowledges receipt & agreement", context: "employee" },
+    { role: "HR", label: "Company (HR)", party: "{{companyName}} — Human Resources", context: "company" }
+  ],
+  body: `
+    <p><strong>{{companyName}}</strong> — Employee Handbook <strong>{{version}}</strong>, effective
+       <strong>{{effectiveDate}}</strong> ({{jurisdiction}}). These policies apply to all personnel and supplement
+       individual employment agreements.</p>
+
+    <h2>1. Code of Conduct</h2>
+    <p>All personnel act with integrity, treat colleagues, customers and partners with respect, avoid conflicts of
+       interest, and comply with applicable laws and Company policies. Insurance, actuarial and financial work must meet
+       professional and regulatory standards.</p>
+
+    <h2>2. Equal Opportunity &amp; Anti-Harassment</h2>
+    <p>The Company is an equal-opportunity employer and prohibits discrimination and harassment of any kind. Reports may
+       be made confidentially to HR or via the whistleblowing channel and will be investigated without retaliation.</p>
+
+    <h2>3. Leave &amp; Work Model</h2>
+    <ul>
+      <li>Paid time off: <strong>{{ptoDays}}</strong> days/year; sick leave: <strong>{{sickDays}}</strong> days/year (plus statutory entitlements).</li>
+      <li>Work model: <strong>{{remotePolicy}}</strong>. Parental, bereavement and statutory leave apply per local law.</li>
+    </ul>
+
+    <h2>4. Data Security &amp; System Access</h2>
+    <p>PHINS handles sensitive insurance, health and financial data. All personnel must:</p>
+    <ul>
+      <li>Use least-privilege access aligned to their dashboard role (e.g. claims, underwriting, actuary, BI, media) and never share credentials.</li>
+      <li>Protect customer PII and platform secrets; follow encryption, MFA and device-security requirements.</li>
+      <li>Respect the platform's integrity model: the append-only, hash-chained ledger is the system of record — never attempt to alter historical records; corrections are made by new, audited entries.</li>
+      <li>Report security incidents immediately; comply with GDPR/PDPA, data-residency and AML/KYC obligations.</li>
+    </ul>
+
+    <h2>5. Acceptable Use &amp; Confidentiality</h2>
+    <p>Company systems are for business use; activity may be monitored as permitted by law. Confidential information and
+       intellectual property are protected per the NDA and IP Assignment Agreement.</p>
+
+    <h2>6. Whistleblowing</h2>
+    <p>Personnel are encouraged to report suspected wrongdoing in good faith. The Company prohibits retaliation against
+       good-faith reporters.</p>
+
+    <div data-context-block="employee">
+      <h2>7. Employee Acknowledgement</h2>
+      <p>By signing below, <strong>{{employeeName}}</strong> acknowledges having received, read and agreed to comply with
+         these HR Policies, version {{version}}.</p>
+    </div>
+
+    <p class="muted">This handbook is a template and not legal advice; local statutory rights prevail where more favorable.</p>
+  `
+});
+</script>
+</body>
+</html>

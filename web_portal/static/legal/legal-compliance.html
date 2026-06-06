@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Legal Compliance Register</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/legal/legal-docs.css">
+</head>
+<body>
+<div id="ld-root"></div>
+<script src="/legal/legal-docs.js"></script>
+<script>
+PhinsLegalDoc.init({
+  docType: "legal-compliance",
+  title: "Legal &amp; Regulatory Compliance Register",
+  subtitle: "PHINS compliance posture — AML/KYC, data protection, solvency and securities — with officer attestation.",
+  refLabel: "LEGAL · COMPLIANCE",
+  defaultContext: "il",
+  contexts: [
+    { id: "il", label: "Israel (ISA / Capital Markets Authority)" },
+    { id: "us", label: "United States (SEC / NAIC)" },
+    { id: "eu", label: "European Union (Solvency II / GDPR)" }
+  ],
+  fields: [
+    { key: "companyName", label: "Company", type: "text", group: "Setup", default: "PHINS Insurance, Inc." },
+    { key: "asOfDate", label: "As of date", type: "date", group: "Setup" },
+    { key: "officerName", label: "Compliance officer", type: "text", group: "Setup", default: "" },
+    { key: "officerTitle", label: "Officer title", type: "text", group: "Setup", default: "Chief Compliance Officer" }
+  ],
+  tables: [
+    {
+      key: "controls", title: "Compliance controls",
+      columns: [
+        { key: "control", label: "Framework / control", type: "text" },
+        { key: "owner", label: "Owner", type: "text" },
+        { key: "status", label: "Status", type: "text" },
+        { key: "evidence", label: "Evidence", type: "text" }
+      ],
+      default: [
+        { control: "AML / KYC program", owner: "Compliance", status: "Operational", evidence: "Identity verification, monitoring, SAR procedures" },
+        { control: "Data protection (GDPR / PDPA) & residency", owner: "DPO", status: "Operational", evidence: "Privacy policy, DPAs, data-subject rights, IL residency" },
+        { control: "Solvency / capital adequacy", owner: "Actuarial", status: "In progress", evidence: "Reserve model, capital plan, board approval" },
+        { control: "Securities / capital markets licensing", owner: "Legal", status: "In progress", evidence: "License applications, custodial arrangements" },
+        { control: "IT security (ISO 27001 / SOC 2)", owner: "Security", status: "In progress", evidence: "Pen test, controls, SOC 2 Type II in progress" },
+        { control: "Audit trail & data integrity", owner: "Engineering", status: "Operational", evidence: "Append-only, hash-chained platform event ledger" }
+      ]
+    }
+  ],
+  signatories: [
+    { role: "Compliance Officer", label: "Attesting officer", party: "{{officerName}} — {{officerTitle}}" }
+  ],
+  body: `
+    <p>This Compliance Register records the regulatory posture of <strong>{{companyName}}</strong> as of
+       <strong>{{asOfDate}}</strong>, and is attested by the Company's compliance officer below.</p>
+
+    <div data-context-block="il" class="ld-section"><h3>Israel</h3>
+      <p>Posture aligned to the Israeli Authority of Capital Markets, Insurance &amp; Savings (רשות שוק ההון), the
+         Supervision of Insurance Business Law 5741-1981, AML/KYC obligations, the Privacy Protection Act and data
+         residency. Actuarial rates filed for approval; investment/savings licensing in progress.</p></div>
+    <div data-context-block="us" class="ld-section"><h3>United States</h3>
+      <p>Posture aligned to applicable state insurance regulation (NAIC model laws) and, for any securities activity,
+         SEC/FINRA requirements; AML program per FinCEN expectations.</p></div>
+    <div data-context-block="eu" class="ld-section"><h3>European Union</h3>
+      <p>Posture aligned to Solvency II capital and governance requirements and GDPR for data protection; Portugal
+         considered as an EU gateway (ASF / CMVM).</p></div>
+
+    <h2>Control Register</h2>
+    {{table:controls}}
+
+    <h2>Data-Integrity Attestation</h2>
+    <p>The Company maintains a tamper-evident system of record: every balance and material decision is reproducible from
+       an append-only, hash-chained platform event ledger; AI/BI layers may recommend but never post. This supports
+       audit, regulatory examination and the integrity of financial and claims records.</p>
+
+    <h2>Attestation</h2>
+    <p>The undersigned officer attests that, to the best of their knowledge, the foregoing fairly represents the Company's
+       compliance status as of the date stated, and that remediation of in-progress items is being pursued. This register
+       is a template and not legal advice.</p>
+  `
+});
+</script>
+</body>
+</html>
