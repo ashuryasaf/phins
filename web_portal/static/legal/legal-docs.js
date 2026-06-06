@@ -145,9 +145,10 @@
     // pointer to the most recent instance of this docType in this browser
     var ptrKey = 'phins.legal.ptr.' + this.cfg.docType;
     var id = null;
+    var fromQuery = false;
     try {
       var q = new URLSearchParams(location.search).get('doc');
-      if (q) id = q;
+      if (q) { id = q; fromQuery = true; }
       if (!id) id = localStorage.getItem(ptrKey);
     } catch (e) {}
     if (id) {
@@ -164,6 +165,9 @@
         }
       } catch (e) {}
     }
+    // Honor an explicit ?doc= instance id even without a local snapshot so a
+    // shared link resolves to the same ledger-anchored document on any device.
+    if (!this.docInstanceId && fromQuery && id) this.docInstanceId = id;
     if (!this.docInstanceId) {
       var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       this.docInstanceId = 'LGL-' + this.cfg.docType.toUpperCase().replace(/[^A-Z0-9]+/g, '-') +

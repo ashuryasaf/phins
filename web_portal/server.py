@@ -1730,10 +1730,25 @@ def _legal_doc_verify(body_data: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         return 400, {'error': 'documentHash must be a 64-character hex SHA-256 digest'}
 
     signatures = _legal_doc_signatures_for(doc_instance_id)
+    # A later void event (same role + content hash, higher sequence_no) supersedes
+    # an earlier signature even though the original sign row is left untouched.
+    void_seq: Dict[Tuple[Any, Any], int] = {}
+    for s in signatures:
+        if s.get('event') == 'legal_document_voided' or s.get('voided'):
+            key = (s.get('role'), s.get('document_hash'))
+            seq = int(s.get('sequence_no') or 0)
+            if seq > void_seq.get(key, -1):
+                void_seq[key] = seq
+
+    def _is_active(sig: Dict[str, Any]) -> bool:
+        if sig.get('event') != 'legal_document_signed' or sig.get('voided'):
+            return False
+        voided_at = void_seq.get((sig.get('role'), sig.get('document_hash')))
+        return voided_at is None or voided_at <= int(sig.get('sequence_no') or 0)
+
     matched = [
         s for s in signatures
-        if s.get('document_hash') == document_hash and not s.get('voided')
-        and s.get('event') == 'legal_document_signed'
+        if s.get('document_hash') == document_hash and _is_active(s)
     ]
     try:
         from services.platform_event_ledger_service import reconcile_ledger_entries
@@ -1745,7 +1760,7 @@ def _legal_doc_verify(body_data: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         'verified': len(matched) > 0,
         'matched_signatures': matched,
         'chain_valid': chain_valid,
-        'total_signatures': len([s for s in signatures if s.get('event') == 'legal_document_signed' and not s.get('voided')]),
+        'total_signatures': len([s for s in signatures if _is_active(s)]),
     }
 
 # Claim files storage - stores uploaded documents for claims
