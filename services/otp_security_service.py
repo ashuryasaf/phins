@@ -923,7 +923,8 @@ class OTPSecurityService:
         verification_id: str,
         expected_email: Optional[str] = None,
         expected_purpose: Optional[OTPPurpose] = None,
-        ip_address: Optional[str] = None
+        ip_address: Optional[str] = None,
+        expected_user_type: Optional[str] = None
     ) -> SecurityResult:
         """
         Mark a verified OTP as consumed for one-time backend operations.
@@ -957,6 +958,13 @@ class OTPSecurityService:
                     success=False,
                     error_code="EMAIL_MISMATCH",
                     message="Verified email does not match registration email"
+                )
+
+            if expected_user_type and verification.user_type != expected_user_type:
+                return SecurityResult(
+                    success=False,
+                    error_code="USER_TYPE_MISMATCH",
+                    message="Verification does not match this account type"
                 )
 
             if expected_purpose and verification.purpose != expected_purpose:
