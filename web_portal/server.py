@@ -32535,15 +32535,12 @@ For claims or questions, please contact:
                 if result.get('success'):
                     _persist_supplier(result['supplier_id'], SUPPLIERS.get(result['supplier_id'], {}))
 
-                    # Revoke existing supplier sessions
+                    # Revoke existing supplier sessions everywhere: in-memory,
+                    # persisted DB rows, and v2 token JTIs. Supplier sessions are
+                    # keyed by username == supplier_id, so _revoke_user_sessions
+                    # covers all of them.
                     supplier_id = result['supplier_id']
-                    with STATE_LOCK:
-                        tokens_to_remove = [
-                            t for t, s in SESSIONS.items()
-                            if s.get('supplier_id') == supplier_id or s.get('username') == supplier_id
-                        ]
-                        for t in tokens_to_remove:
-                            SESSIONS.pop(t, None)
+                    _revoke_user_sessions(supplier_id)
 
                     _notify_supplier_password_reset_completed(supplier_id, email, client_ip)
 
