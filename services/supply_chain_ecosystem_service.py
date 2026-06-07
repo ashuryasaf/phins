@@ -2300,12 +2300,17 @@ class SupplyChainEcosystemService:
                     incoming_media = []
             if not isinstance(incoming_media, list):
                 incoming_media = []
+            # SECURITY: only accept media that was produced by this offer's
+            # upload pipeline (served from /media-files/supplier-offers/<id>/).
+            # This prevents attaching another offer's assets or arbitrary
+            # external URLs that bypass the upload size/type/ownership checks.
+            allowed_media_prefix = f"/media-files/supplier-offers/{offer_id}/"
             sanitized_media: list = []
             for item in incoming_media:
                 if not isinstance(item, dict):
                     continue
                 url = str(item.get("url") or "").strip()
-                if not url:
+                if not url or not url.startswith(allowed_media_prefix):
                     continue
                 media_type = str(item.get("type") or "image").strip().lower()
                 if media_type not in ("image", "video"):

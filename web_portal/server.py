@@ -32475,7 +32475,13 @@ For claims or questions, please contact:
                         raw_media = payload.get('media') or []
                         if not isinstance(raw_media, list):
                             raw_media = []
-                        existing_media_list = [m for m in raw_media if isinstance(m, dict) and (m.get('url') or '').strip()]
+                        # SECURITY: only keep media bound to this offer's upload
+                        # pipeline, mirroring the supply-chain service guard.
+                        allowed_media_prefix = f"/media-files/supplier-offers/{offer_id}/"
+                        existing_media_list = [
+                            m for m in raw_media
+                            if isinstance(m, dict) and str(m.get('url') or '').strip().startswith(allowed_media_prefix)
+                        ]
                     else:
                         existing_media_list = (existing or {}).get('media') or []
                         if not isinstance(existing_media_list, list):
@@ -32720,6 +32726,8 @@ For claims or questions, please contact:
                 VIDEO_EXTS = {'.mp4', '.webm', '.mov'}
                 MAX_IMAGE_BYTES = 10 * 1024 * 1024
                 MAX_VIDEO_BYTES = 50 * 1024 * 1024
+                # Cap matches the supplier portal copy (up to 8 photos/videos).
+                MAX_GALLERY_ITEMS = 8
 
                 lower_name = filename_raw.lower()
                 ext = os.path.splitext(lower_name)[1]
@@ -32774,8 +32782,16 @@ For claims or questions, please contact:
 
                 # Stable on-disk storage under MEDIA_STORAGE_DIR/supplier-offers/<offer_id>/<media_id><ext>.
                 # Served via existing /media-files/ static endpoint.
+                # SECURITY: offer_id is client-chosen (upsert accepts arbitrary
+                # ids), so guard against path traversal escaping the
+                # supplier-offers tree before touching the filesystem.
                 ensure_media_storage_dir()
-                offer_dir = os.path.join(MEDIA_STORAGE_DIR, 'supplier-offers', offer_id)
+                supplier_offers_root = os.path.join(MEDIA_STORAGE_DIR, 'supplier-offers')
+                offer_dir = os.path.normpath(os.path.join(supplier_offers_root, offer_id))
+                if not os.path.abspath(offer_dir).startswith(os.path.abspath(supplier_offers_root) + os.sep):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid offer_id'}).encode('utf-8'))
+                    return
                 os.makedirs(offer_dir, exist_ok=True)
 
                 media_id = f"MED-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
@@ -32844,6 +32860,17 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({
                             'error': 'Identical media already attached to this offer',
                             'sha256': sha256,
+                        }).encode('utf-8'))
+                        return
+                    if len(media_list) >= MAX_GALLERY_ITEMS:
+                        try:
+                            os.remove(stored_path)
+                        except Exception:
+                            pass
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': f'Media gallery limit reached (maximum {MAX_GALLERY_ITEMS} items per offer)',
+                            'media_count': len(media_list),
                         }).encode('utf-8'))
                         return
                     media_list = list(media_list) + [media_item]
