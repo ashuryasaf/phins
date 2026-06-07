@@ -9,9 +9,9 @@ behavior:
 - ``api_extensions._send_otp_via_channel`` dispatches to email, SMS, or
   both, surfacing a partial-failure error when 'both' is chosen and one
   channel fails.
-- ``handle_otp_request`` returns ``masked_phone`` and routes via SMS
-  when the caller asks for it.
-- ``handle_otp_request`` rejects SMS requests that don't supply a phone.
+- ``handle_otp_request`` refuses SMS/'both' delivery: the generic endpoint
+  only knows a caller-supplied email and cannot prove the caller controls the
+  supplied phone, so honouring it would allow an OTP phone-hijack.
 """
 
 from __future__ import annotations
@@ -66,7 +66,11 @@ def test_otp_security_service_rejects_sms_without_phone():
     assert result.error_code == 'MISSING_PHONE'
 
 
-def test_handle_otp_request_returns_masked_phone_for_sms_channel():
+def test_handle_otp_request_refuses_sms_channel():
+    # The generic endpoint must not deliver an OTP to a caller-supplied phone:
+    # an attacker who knows a victim's email could otherwise have that account's
+    # code sent to their own device. SMS-bound codes must use a flow that targets
+    # the account's registered phone.
     status, payload = api_extensions.handle_otp_request(
         client_ip='127.0.0.1',
         body_data={
@@ -78,25 +82,24 @@ def test_handle_otp_request_returns_masked_phone_for_sms_channel():
         },
         user_agent='pytest',
     )
-    assert status == 200
-    assert payload['notification_sent'] is True
-    assert payload['delivery_channel'] == 'sms'
-    assert payload['masked_phone'].endswith('90')
+    assert status == 400
+    assert payload.get('error_code') == 'UNSUPPORTED_CHANNEL'
 
 
-def test_handle_otp_request_rejects_sms_without_phone():
+def test_handle_otp_request_refuses_both_channel():
     status, payload = api_extensions.handle_otp_request(
         client_ip='127.0.0.1',
         body_data={
-            'email': 'sms-missing@example.com',
-            'delivery_channel': 'sms',
+            'email': 'both-route@example.com',
+            'phone': '+15551237890',
+            'delivery_channel': 'both',
             'purpose': 'login',
             'user_type': 'customer',
         },
         user_agent='pytest',
     )
     assert status == 400
-    assert payload.get('error_code') == 'MISSING_PHONE'
+    assert payload.get('error_code') == 'UNSUPPORTED_CHANNEL'
 
 
 def test_send_otp_via_channel_email_only_path(monkeypatch):
