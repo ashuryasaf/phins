@@ -31399,14 +31399,6 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Username and email are required'}).encode('utf-8'))
                     return
 
-                if requested_channel in ('sms', 'both') and not requested_phone:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'A phone number is required for SMS verification.',
-                        'error_code': 'MISSING_PHONE',
-                    }).encode('utf-8'))
-                    return
-
                 user = USERS.get(username)
                 if not user:
                     user = USERS.get(email)
@@ -31497,8 +31489,11 @@ For claims or questions, please contact:
                                     ip_address=client_ip,
                                 )
                                 notification_sent = sent
-                                if not sent:
-                                    notification_error = send_err
+                                # ``_send_otp_via_channel`` may return an error
+                                # string even when it reports success (e.g. one
+                                # leg of a 'both' delivery failed). Capture it so
+                                # partial failures are still surfaced below.
+                                notification_error = send_err
                             else:
                                 try:
                                     from services.notification_service import (
@@ -31508,21 +31503,54 @@ For claims or questions, please contact:
                                         get_notification_service,
                                     )
                                     ns = get_notification_service()
-                                    nr = ns.send(NotificationRequest(
-                                        channel=NotificationChannel.EMAIL,
-                                        recipient=email,
-                                        template_id='otp_email',
-                                        template_vars={
-                                            'code': otp_code,
-                                            'expiry_minutes': max(1, int(expiry_seconds // 60)),
-                                        },
-                                        priority=NotificationPriority.HIGH,
-                                        ip_address=client_ip,
-                                        metadata={'purpose': 'password_reset'},
-                                    ))
-                                    notification_sent = bool(nr.success)
-                                    if not nr.success:
-                                        notification_error = nr.error_message
+                                    expiry_minutes = max(1, int(expiry_seconds // 60))
+                                    email_ok = sms_ok = False
+                                    email_err = sms_err = None
+                                    if effective_channel in ('email', 'both'):
+                                        nr = ns.send(NotificationRequest(
+                                            channel=NotificationChannel.EMAIL,
+                                            recipient=email,
+                                            template_id='otp_email',
+                                            template_vars={
+                                                'code': otp_code,
+                                                'expiry_minutes': expiry_minutes,
+                                            },
+                                            priority=NotificationPriority.HIGH,
+                                            ip_address=client_ip,
+                                            metadata={'purpose': 'password_reset'},
+                                        ))
+                                        email_ok = bool(nr.success)
+                                        if not email_ok:
+                                            email_err = nr.error_message
+                                    if effective_channel in ('sms', 'both') and effective_phone:
+                                        sr = ns.send(NotificationRequest(
+                                            channel=NotificationChannel.SMS,
+                                            recipient=effective_phone,
+                                            content=(
+                                                f"Your PHINS verification code is {otp_code}. "
+                                                f"It expires in {expiry_minutes} minute(s)."
+                                            ),
+                                            priority=NotificationPriority.HIGH,
+                                            ip_address=client_ip,
+                                            metadata={'purpose': 'password_reset', 'kind': 'otp'},
+                                        ))
+                                        sms_ok = bool(sr.success)
+                                        if not sms_ok:
+                                            sms_err = sr.error_message
+                                    if effective_channel == 'sms':
+                                        notification_sent = sms_ok
+                                        notification_error = sms_err
+                                    elif effective_channel == 'both':
+                                        notification_sent = email_ok or sms_ok
+                                        if not notification_sent:
+                                            notification_error = '; '.join(
+                                                e for e in (email_err, sms_err) if e
+                                            ) or None
+                                        elif not (email_ok and sms_ok):
+                                            notification_error = sms_err if email_ok else email_err
+                                    else:
+                                        notification_sent = email_ok
+                                        notification_error = email_err
                                 except Exception as ns_exc:
                                     notification_error = str(ns_exc)
                         except Exception as mail_exc:
@@ -31548,8 +31576,13 @@ For claims or questions, please contact:
                         'notification_sent': notification_sent,
                         'delivery_channel': effective_channel,
                     }
-                    if not notification_sent and notification_error:
-                        response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
+                    if notification_error:
+                        if notification_sent:
+                            # Partial delivery (e.g. SMS leg of 'both' failed):
+                            # surface the descriptive error so operators can act.
+                            response_data['notification_error'] = notification_error
+                        else:
+                            response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
                     if otp_result.data and otp_result.data.get('masked_email'):
                         response_data['masked_email'] = otp_result.data['masked_email']
                     if otp_result.data and otp_result.data.get('masked_phone'):
