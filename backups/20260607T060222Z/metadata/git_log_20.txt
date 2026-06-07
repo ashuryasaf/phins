@@ -1,0 +1,20 @@
+b335f3a Merge pull request #355 from ashuryasaf/cursor/bc-98b3fd22-cd6c-410e-a2d3-05115f66d0a9-4668
+8ed2bf2 Fix legal-docs ledger reconciliation and require auth to void signatures
+1996617 Fix context-hidden fields leaking into signed legal-doc hashes
+737ddb2 Roll back local signature when ledger anchor is rejected
+3c1a4c9 Fix legal-docs ledger UI consistency bugs
+8641b4d Reject conflicting content snapshots for the same legal-doc hash
+e9ed132 Fix legal-docs signature integrity: verify hash on later signs, sync shared links to ledger, exclude hidden fields from hash
+f0ae116 fix: run query validation before legal-docs registry handler
+ba0fc20 Fix shared legal-doc link: persist signed content snapshot and lock UI during registry hydration
+badbcd7 Fix legal-docs ledger entry_id overflow and shared-link registry hydration
+665b371 Fix legal-doc void semantics: re-sign after void anchors fresh row; void waits for ledger before unlocking
+c1a22e1 Fix invitation seed ID mismatch, sign-lock race, and ledger id hash collision
+b733b75 Fix legal-docs verify ignoring voided signatures and ?doc= instance minting
+d7a7c01 Add static-integrity tests for legal doc suite (Phase 5): 24 checks; full suite 69 passed, smoke OK
+88a34f2 Wire legal docs into investor documents section, header nav, and IL pitch data-room link (Phase 4); E2E verified
+8424b93 Add remaining 9 legal docs: NDA, Delaware incorporation, exit clause, SHA, IP assignment, trademark, offer letter, HR policies, compliance (Phase 3) — all 15 verified via jsdom
+5afe9b5 Engine: cssEsc fallback + html-binding for computed tables; verified all core docs via jsdom
+39b368a Add core legal docs: term sheet, founder agreement, cap table, employment, ESOP, financial model (Phase 2)
+a8fe697 Fix legal-docs registry/verify to read ledger payload from entry top-level; add signing API tests (Phase 1 verified)
+2daf577 Add /api/legal-docs sign/verify/registry endpoints with ledger anchoring (Phase 1)
