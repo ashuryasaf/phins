@@ -666,7 +666,30 @@
             <label><input type="checkbox" name="wallet" value="general"> General Wallet</label>
           </div>
         </div>
-        
+
+        <div class="form-group" id="offer-media-section">
+          <label>Photos &amp; Videos
+            <span style="font-weight:normal; color:#607d8b; font-size:0.85rem;">
+              (Optimise this offer so customers can find it in the Health Wallet AI search)
+            </span>
+          </label>
+          <div id="offer-media-help" style="font-size:0.82rem; color:#607d8b; margin-bottom:8px;">
+            Save the offer first, then upload up to 8 visuals: jpg/png/webp/gif (≤10&nbsp;MB)
+            or mp4/webm/mov (≤50&nbsp;MB). Add an alt-text caption to each so the AI search can rank it.
+          </div>
+          <div id="offer-media-gallery" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;"></div>
+          <div id="offer-media-controls" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;">
+            <input type="file" id="offer-media-file"
+                   accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov,image/*,video/*"
+                   style="flex:1 1 240px;">
+            <input type="text" id="offer-media-alt" placeholder="Alt text / caption for AI search"
+                   maxlength="240" style="flex:1 1 240px;">
+            <button type="button" class="btn btn-secondary" id="offer-media-upload-btn"
+                    onclick="uploadOfferMedia()">Upload</button>
+          </div>
+          <div id="offer-media-status" style="font-size:0.82rem; margin-top:6px;"></div>
+        </div>
+
         <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:24px;">
           <button type="button" class="btn btn-secondary" onclick="closeOfferModal()">Cancel</button>
           <button type="button" class="btn btn-primary" onclick="saveOffer()">Save Offer</button>
@@ -1041,6 +1064,10 @@
           const billingTerms = offer?.billing_config?.billing_terms || offer.billing_terms;
           const wallets = Array.isArray(offer.wallet_compatible) ? offer.wallet_compatible : [];
 
+          const mediaList = Array.isArray(offer.media) ? offer.media : [];
+          const photoCount = mediaList.filter(m => m && m.type === 'image').length;
+          const videoCount = mediaList.filter(m => m && m.type === 'video').length;
+
           return `
             <div class="offer-card ${offer.active ? '' : 'inactive'}">
               <div class="type-badge ${offer.item_type}">${offer.item_type}</div>
@@ -1048,6 +1075,7 @@
               <div class="category">${esc(offer.category)}</div>
               <div class="price">${formatCurrency(offer.price, offer.currency)}</div>
               <div class="unit">${(offer.unit || 'per_item').replace(/_/g, ' ')}</div>
+              ${(photoCount + videoCount) ? `<div style="font-size:12px;color:#00695c;margin-bottom:6px;">📷 ${photoCount} photo${photoCount === 1 ? '' : 's'} • 🎬 ${videoCount} video${videoCount === 1 ? '' : 's'}</div>` : `<div style="font-size:12px;color:#b71c1c;margin-bottom:6px;">⚠️ Add photos/videos to boost AI search visibility</div>`}
               ${deliveryMode ? `<div style="font-size:12px;color:#666;margin-bottom:6px;">🚚 ${esc(String(deliveryMode).replace(/_/g, ' '))}${deliveryEta != null ? ` • ${esc(deliveryEta)} day(s)` : ''}${deliveryFee ? ` • ${formatCurrency(deliveryFee, offer.currency || 'USD')} fee` : ''}</div>` : ''}
               ${billingCycle ? `<div style="font-size:12px;color:#666;margin-bottom:8px;">🧾 ${esc(String(billingCycle).replace(/_/g, ' '))}${billingTerms ? ` • ${esc(billingTerms)}` : ''}</div>` : ''}
               ${wallets.length ? `
@@ -1127,10 +1155,138 @@
     }
 
     // Offer Modal Functions
+    let currentOfferMedia = [];
+
+    function setOfferMediaControlsVisible(offerId) {
+      const controls = document.getElementById('offer-media-controls');
+      const help = document.getElementById('offer-media-help');
+      if (!controls) return;
+      if (offerId) {
+        controls.style.display = 'flex';
+        if (help) {
+          help.textContent = 'Upload up to 8 visuals: jpg/png/webp/gif (≤10 MB) or mp4/webm/mov (≤50 MB). Add an alt-text caption to each so the AI search can rank it.';
+        }
+      } else {
+        controls.style.display = 'none';
+      }
+    }
+
+    function renderOfferMediaGallery() {
+      const gallery = document.getElementById('offer-media-gallery');
+      if (!gallery) return;
+      if (!currentOfferMedia.length) {
+        gallery.innerHTML = '<div style="font-size:0.82rem; color:#90a4ae;">No photos or videos yet.</div>';
+        return;
+      }
+      gallery.innerHTML = currentOfferMedia.map(media => {
+        const safeUrl = esc(media.url || '');
+        const safeAlt = esc(media.alt_text || media.filename || 'Offer media');
+        const safeId = esc(media.id || '');
+        const isVideo = media.type === 'video';
+        const preview = isVideo
+          ? `<video src="${safeUrl}" muted playsinline preload="metadata"
+                   style="width:120px; height:90px; object-fit:cover; border-radius:8px; background:#000;"></video>`
+          : `<img src="${safeUrl}" alt="${safeAlt}" loading="lazy"
+                  style="width:120px; height:90px; object-fit:cover; border-radius:8px;">`;
+        const caption = media.alt_text ? esc(media.alt_text) : (isVideo ? 'Video' : 'Photo');
+        return `
+          <div style="position:relative; width:120px;">
+            ${preview}
+            <div style="font-size:0.72rem; color:#37474f; margin-top:4px; word-break:break-word;">${caption}</div>
+            <button type="button" class="btn-sm btn-toggle"
+                    style="position:absolute; top:4px; right:4px; padding:2px 6px; font-size:0.72rem;"
+                    onclick="deleteOfferMedia('${safeId}')" title="Remove media">×</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function setOfferMediaStatus(message, isError) {
+      const status = document.getElementById('offer-media-status');
+      if (!status) return;
+      status.textContent = message || '';
+      status.style.color = isError ? '#c62828' : '#2e7d32';
+    }
+
+    async function uploadOfferMedia() {
+      const offerId = document.getElementById('offer-id').value;
+      if (!offerId) {
+        setOfferMediaStatus('Save the offer first, then upload media.', true);
+        return;
+      }
+      const fileInput = document.getElementById('offer-media-file');
+      const altInput = document.getElementById('offer-media-alt');
+      const button = document.getElementById('offer-media-upload-btn');
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      if (!file) {
+        setOfferMediaStatus('Choose a photo or video to upload.', true);
+        return;
+      }
+      const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
+      if (file.type && !allowed.includes(file.type) && !/\.(jpe?g|png|webp|gif|mp4|webm|mov)$/i.test(file.name)) {
+        setOfferMediaStatus('Unsupported file type. Use jpg, png, webp, gif, mp4, webm, or mov.', true);
+        return;
+      }
+      const isVideo = (file.type || '').startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
+      const max = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+      if (file.size > max) {
+        setOfferMediaStatus(`File too large. Max ${isVideo ? '50' : '10'} MB.`, true);
+        return;
+      }
+      try {
+        if (button) button.disabled = true;
+        setOfferMediaStatus('Uploading…', false);
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('File read failed'));
+          reader.readAsDataURL(file);
+        });
+        const base64 = String(dataUrl).split(',')[1] || '';
+        const result = await apiPost('/api/supplier/offers/media/upload', {
+          offer_id: offerId,
+          filename: file.name,
+          content_type: file.type || undefined,
+          alt_text: (altInput && altInput.value.trim()) || undefined,
+          data: base64
+        });
+        if (result && result.media) {
+          currentOfferMedia = [...currentOfferMedia, result.media];
+          renderOfferMediaGallery();
+          setOfferMediaStatus('Uploaded. Customers can now find this offer through visual cues in the Health Wallet AI search.', false);
+          await loadOffers();
+        }
+        if (fileInput) fileInput.value = '';
+        if (altInput) altInput.value = '';
+      } catch (e) {
+        setOfferMediaStatus('Upload failed: ' + (e.message || e), true);
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    async function deleteOfferMedia(mediaId) {
+      const offerId = document.getElementById('offer-id').value;
+      if (!offerId || !mediaId) return;
+      if (!confirm('Remove this media item from the offer?')) return;
+      try {
+        await apiPost('/api/supplier/offers/media/delete', {
+          offer_id: offerId,
+          media_id: mediaId
+        });
+        currentOfferMedia = currentOfferMedia.filter(m => m.id !== mediaId);
+        renderOfferMediaGallery();
+        setOfferMediaStatus('Media removed.', false);
+        await loadOffers();
+      } catch (e) {
+        setOfferMediaStatus('Failed to remove media: ' + (e.message || e), true);
+      }
+    }
+
     function openOfferModal(offerId = null) {
       document.getElementById('modal-title').textContent = offerId ? 'Edit Offer' : 'Add New Offer';
       document.getElementById('offer-id').value = offerId || '';
-      
+
       if (!offerId) {
         // Clear form for new offer
         document.getElementById('offer-name').value = '';
@@ -1149,8 +1305,13 @@
         document.querySelectorAll('input[name="wallet"]').forEach(cb => {
           cb.checked = cb.value === 'health';
         });
+        currentOfferMedia = [];
       }
-      
+
+      setOfferMediaStatus('', false);
+      setOfferMediaControlsVisible(!!offerId);
+      renderOfferMediaGallery();
+
       document.getElementById('offer-modal').classList.add('active');
     }
 
@@ -1196,7 +1357,9 @@
         document.querySelectorAll('input[name="wallet"]').forEach(cb => {
           cb.checked = wallets.includes(cb.value);
         });
-        
+
+        currentOfferMedia = Array.isArray(offer.media) ? offer.media.filter(Boolean) : [];
+
         openOfferModal(offerId);
       } catch (e) {
         alert('Failed to load offer: ' + e.message);
@@ -1250,10 +1413,20 @@
           }
         };
         
-        await apiPost('/api/supplier/offers/upsert', payload);
-        closeOfferModal();
-        loadOffers();
-        alert(offerId ? 'Offer updated successfully' : 'Offer created successfully');
+        const result = await apiPost('/api/supplier/offers/upsert', payload);
+        const savedId = (result && result.id) || offerId;
+        await loadOffers();
+        if (!offerId && savedId) {
+          // Re-open the modal in edit mode so the supplier can immediately add
+          // photos/videos to the freshly created offer (media uploads require
+          // an offer_id to persist).
+          document.getElementById('offer-id').value = savedId;
+          setOfferMediaControlsVisible(true);
+          setOfferMediaStatus('Offer saved. Add photos or videos so customers find it in the Health Wallet AI search.', false);
+        } else {
+          closeOfferModal();
+          alert('Offer updated successfully');
+        }
       } catch (e) {
         alert('Failed to save offer: ' + e.message);
       }

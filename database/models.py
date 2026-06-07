@@ -1435,7 +1435,12 @@ class SupplierOffer(Base):
     active = Column(Boolean, default=True, index=True)
     featured = Column(Boolean, default=False)
     image_url = Column(String(500), nullable=True)
-    
+    # Media gallery: JSON array of media items
+    # [{"id": "MED-...", "type": "image|video", "url": "/media-files/...",
+    #   "filename": "x.jpg", "mime_type": "image/jpeg", "size_bytes": 12345,
+    #   "sha256": "...", "alt_text": "...", "uploaded_at": "...", "uploaded_by": "..."}]
+    media = Column(Text, nullable=True)
+
     # Availability
     availability = Column(Text, nullable=True)  # JSON: {days: [], hours: {start, end}, blackout_dates: []}
     requires_appointment = Column(Boolean, default=False)
@@ -1484,6 +1489,7 @@ class SupplierOffer(Base):
             'active': self.active,
             'featured': self.featured,
             'image_url': self.image_url,
+            'media': safe_json_loads(self.media) if self.media else [],
             'availability': safe_json_loads(self.availability) if self.availability else None,
             'requires_appointment': self.requires_appointment,
             'lead_time_hours': self.lead_time_hours,
