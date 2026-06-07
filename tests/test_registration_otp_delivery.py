@@ -6,6 +6,7 @@ import web_portal.api_extensions as api_extensions
 
 def test_send_otp_email_uses_provider_fallback_on_delivery_failure(monkeypatch):
     monkeypatch.setattr(api_extensions, "PHINS_TEST_MODE", False)
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
     monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
     monkeypatch.setattr(
         api_extensions,
@@ -55,6 +56,7 @@ def test_send_otp_email_uses_provider_fallback_on_delivery_failure(monkeypatch):
 
 def test_send_otp_email_returns_combined_errors_when_all_providers_fail(monkeypatch):
     monkeypatch.setattr(api_extensions, "PHINS_TEST_MODE", False)
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
     monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
     monkeypatch.setattr(
         api_extensions,

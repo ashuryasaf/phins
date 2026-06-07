@@ -1302,8 +1302,16 @@ class SendGridEmailProvider(EmailProvider):
             
             api_key = _first_non_empty_env('SENDGRID_API_KEY') or NotificationConfig.SENDGRID_API_KEY
             if not api_key:
-                logger.warning("SendGrid API key not configured, falling back to mock")
-                return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
+                # Do NOT silently fall back to mock — that produces false-positive
+                # "delivery succeeded" results and is the most common reason real
+                # users never receive verification codes in production.
+                logger.error(
+                    "SendGrid selected but SENDGRID_API_KEY is not configured; "
+                    "verification email will not be delivered."
+                )
+                return False, None, (
+                    "SendGrid not configured: set SENDGRID_API_KEY to enable delivery."
+                )
             
             from_addr, from_display = _resolve_email_sender(
                 provider_type='sendgrid',
@@ -1389,8 +1397,13 @@ class AWSSESEmailProvider(EmailProvider):
                 import boto3
                 from botocore.exceptions import ClientError, NoCredentialsError
             except ImportError:
-                logger.warning("boto3 library not installed, falling back to mock")
-                return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
+                logger.error(
+                    "AWS SES selected but boto3 is not installed; "
+                    "verification email will not be delivered."
+                )
+                return False, None, (
+                    "AWS SES not configured: install boto3 to enable delivery."
+                )
             
             region = _first_non_empty_env('AWS_SES_REGION') or NotificationConfig.AWS_SES_REGION
             
@@ -1398,8 +1411,14 @@ class AWSSESEmailProvider(EmailProvider):
             try:
                 ses = boto3.client('ses', region_name=region)
             except NoCredentialsError:
-                logger.warning("AWS credentials not configured, falling back to mock")
-                return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
+                logger.error(
+                    "AWS SES selected but AWS credentials are not configured; "
+                    "verification email will not be delivered."
+                )
+                return False, None, (
+                    "AWS SES not configured: provide AWS credentials "
+                    "(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or instance role)."
+                )
             
             from_addr, from_display = _resolve_email_sender(
                 provider_type='ses',
@@ -1474,8 +1493,18 @@ class MailgunEmailProvider(EmailProvider):
             domain = _first_non_empty_env('MAILGUN_DOMAIN') or NotificationConfig.MAILGUN_DOMAIN
             
             if not api_key or not domain:
-                logger.warning("Mailgun not configured, falling back to mock")
-                return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
+                missing = []
+                if not api_key:
+                    missing.append('MAILGUN_API_KEY')
+                if not domain:
+                    missing.append('MAILGUN_DOMAIN')
+                logger.error(
+                    "Mailgun selected but missing %s; verification email will not be delivered.",
+                    ', '.join(missing),
+                )
+                return False, None, (
+                    f"Mailgun not configured: set {' and '.join(missing)} to enable delivery."
+                )
             
             from_addr, from_display = _resolve_email_sender(
                 provider_type='mailgun',
@@ -1546,9 +1575,12 @@ class ResendEmailProvider(EmailProvider):
                 or str(NotificationConfig.RESEND_API_KEY or '').strip()
             )
             if not api_key:
-                logger.warning("Resend API key not configured, falling back to mock")
-                return MockEmailProvider().send(
-                    to, subject, body, html_body, from_address, from_name
+                logger.error(
+                    "Resend selected but RESEND_API_KEY is not configured; "
+                    "verification email will not be delivered."
+                )
+                return False, None, (
+                    "Resend not configured: set RESEND_API_KEY to enable delivery."
                 )
 
             base_url = (
@@ -1624,9 +1656,14 @@ class ActiveNotificationsEmailProvider(EmailProvider):
                 or str(NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY or '').strip()
             )
             if not api_key:
-                logger.warning("Active Notifications API key not configured, falling back to mock")
-                return MockEmailProvider().send(
-                    to, subject, body, html_body, from_address, from_name
+                logger.error(
+                    "Active Notifications/Pingram selected but no API key configured; "
+                    "verification email will not be delivered."
+                )
+                return False, None, (
+                    "Active Notifications not configured: set "
+                    "ACTIVE_NOTIFICATIONS_API_KEY (or PINGRAM_API_KEY/NOTIFICATIONAPI_API_KEY) "
+                    "to enable delivery."
                 )
 
             customer_id = (
@@ -1811,15 +1848,30 @@ class TwilioSMSProvider(SMSProvider):
         try:
             # Check for Twilio credentials
             if not NotificationConfig.TWILIO_ACCOUNT_SID or not NotificationConfig.TWILIO_AUTH_TOKEN:
-                logger.warning("Twilio credentials not configured, using mock")
-                return MockSMSProvider().send(to, message, from_number)
+                missing = []
+                if not NotificationConfig.TWILIO_ACCOUNT_SID:
+                    missing.append('TWILIO_ACCOUNT_SID')
+                if not NotificationConfig.TWILIO_AUTH_TOKEN:
+                    missing.append('TWILIO_AUTH_TOKEN')
+                logger.error(
+                    "Twilio selected but missing %s; SMS verification will not be delivered.",
+                    ', '.join(missing),
+                )
+                return False, None, (
+                    f"Twilio not configured: set {' and '.join(missing)} to enable delivery."
+                )
             
             # Import Twilio client (optional dependency)
             try:
                 from twilio.rest import Client
             except ImportError:
-                logger.warning("Twilio library not installed, using mock")
-                return MockSMSProvider().send(to, message, from_number)
+                logger.error(
+                    "Twilio selected but twilio library is not installed; "
+                    "SMS verification will not be delivered."
+                )
+                return False, None, (
+                    "Twilio not configured: install the 'twilio' package to enable delivery."
+                )
             
             client = Client(
                 NotificationConfig.TWILIO_ACCOUNT_SID,
@@ -1855,8 +1907,13 @@ class AWSSNSProvider(SMSProvider):
                 import boto3
                 from botocore.exceptions import ClientError, NoCredentialsError
             except ImportError:
-                logger.warning("boto3 library not installed, falling back to mock")
-                return MockSMSProvider().send(to, message, from_number)
+                logger.error(
+                    "AWS SNS selected but boto3 is not installed; "
+                    "SMS verification will not be delivered."
+                )
+                return False, None, (
+                    "AWS SNS not configured: install boto3 to enable delivery."
+                )
             
             region = NotificationConfig.AWS_SNS_REGION
             
@@ -1864,8 +1921,14 @@ class AWSSNSProvider(SMSProvider):
             try:
                 sns = boto3.client('sns', region_name=region)
             except NoCredentialsError:
-                logger.warning("AWS credentials not configured, falling back to mock")
-                return MockSMSProvider().send(to, message, from_number)
+                logger.error(
+                    "AWS SNS selected but AWS credentials are not configured; "
+                    "SMS verification will not be delivered."
+                )
+                return False, None, (
+                    "AWS SNS not configured: provide AWS credentials "
+                    "(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or instance role)."
+                )
             
             # Normalize phone number
             phone = normalize_phone(to)
@@ -1913,8 +1976,18 @@ class VonageSMSProvider(SMSProvider):
             api_secret = NotificationConfig.VONAGE_API_SECRET
             
             if not api_key or not api_secret:
-                logger.warning("Vonage not configured, falling back to mock")
-                return MockSMSProvider().send(to, message, from_number)
+                missing = []
+                if not api_key:
+                    missing.append('VONAGE_API_KEY')
+                if not api_secret:
+                    missing.append('VONAGE_API_SECRET')
+                logger.error(
+                    "Vonage selected but missing %s; SMS verification will not be delivered.",
+                    ', '.join(missing),
+                )
+                return False, None, (
+                    f"Vonage not configured: set {' and '.join(missing)} to enable delivery."
+                )
             
             # Normalize phone number
             phone = normalize_phone(to)
@@ -1972,8 +2045,13 @@ class MessageBirdSMSProvider(SMSProvider):
             api_key = NotificationConfig.MESSAGEBIRD_API_KEY
             
             if not api_key:
-                logger.warning("MessageBird not configured, falling back to mock")
-                return MockSMSProvider().send(to, message, from_number)
+                logger.error(
+                    "MessageBird selected but MESSAGEBIRD_API_KEY is not configured; "
+                    "SMS verification will not be delivered."
+                )
+                return False, None, (
+                    "MessageBird not configured: set MESSAGEBIRD_API_KEY to enable delivery."
+                )
             
             # Normalize phone number
             phone = normalize_phone(to)
@@ -3629,6 +3707,146 @@ def get_active_email_provider_type() -> str:
     return provider_type
 
 
+def get_active_sms_provider_type() -> str:
+    """Return the SMS provider that would be used for delivery, or 'mock'/'noop'."""
+    if should_use_mock_notifications():
+        return 'mock'
+    provider_type = (NotificationConfig.SMS_PROVIDER or 'twilio').lower()
+    if provider_type not in {'twilio', 'sns', 'vonage', 'messagebird'}:
+        provider_type = 'twilio'
+    if provider_type == 'twilio' and not (
+        NotificationConfig.TWILIO_ACCOUNT_SID and NotificationConfig.TWILIO_AUTH_TOKEN
+    ):
+        return 'noop'
+    if provider_type == 'vonage' and not (
+        NotificationConfig.VONAGE_API_KEY and NotificationConfig.VONAGE_API_SECRET
+    ):
+        return 'noop'
+    if provider_type == 'messagebird' and not NotificationConfig.MESSAGEBIRD_API_KEY:
+        return 'noop'
+    if provider_type == 'sns' and not _aws_identity_configured():
+        return 'noop'
+    return provider_type
+
+
+def get_notification_provider_diagnostics() -> Dict[str, Any]:
+    """
+    Return a structured snapshot of notification provider configuration.
+
+    Designed for ops dashboards and an admin diagnostics endpoint so operators
+    can answer "why aren't users receiving verification codes?" without trial
+    and error.
+    """
+    email_active = get_active_email_provider_type()
+    sms_active = get_active_sms_provider_type()
+
+    email_status = {
+        'configured_provider': _normalize_email_provider_type(
+            os.environ.get('EMAIL_PROVIDER', NotificationConfig.EMAIL_PROVIDER),
+            default='smtp',
+        ),
+        'active_provider': email_active,
+        'will_deliver': email_active not in ('mock', 'noop'),
+        'providers': {
+            'smtp': {
+                'configured': not _smtp_looks_unconfigured(),
+                'host': _env_or_default('SMTP_HOST', NotificationConfig.SMTP_HOST),
+                'has_credentials': bool(
+                    _env_or_default('SMTP_USERNAME', NotificationConfig.SMTP_USERNAME)
+                ),
+            },
+            'sendgrid': {
+                'configured': bool(
+                    _first_non_empty_env('SENDGRID_API_KEY')
+                    or NotificationConfig.SENDGRID_API_KEY
+                )
+            },
+            'ses': {
+                'configured': _aws_identity_configured()
+            },
+            'mailgun': {
+                'configured': bool(
+                    (_first_non_empty_env('MAILGUN_API_KEY') or NotificationConfig.MAILGUN_API_KEY)
+                    and (_first_non_empty_env('MAILGUN_DOMAIN') or NotificationConfig.MAILGUN_DOMAIN)
+                )
+            },
+            'resend': {
+                'configured': bool(
+                    _first_non_empty_env('RESEND_API_KEY') or NotificationConfig.RESEND_API_KEY
+                )
+            },
+            'active_notifications': {
+                'configured': bool(
+                    _first_non_empty_env(
+                        'ACTIVE_NOTIFICATIONS_API_KEY',
+                        'PINGRAM_API_KEY',
+                        'NOTIFICATIONAPI_API_KEY',
+                    )
+                    or NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY
+                )
+            },
+        },
+    }
+
+    sms_status = {
+        'configured_provider': (NotificationConfig.SMS_PROVIDER or 'twilio').lower(),
+        'active_provider': sms_active,
+        'will_deliver': sms_active not in ('mock', 'noop'),
+        'providers': {
+            'twilio': {
+                'configured': bool(
+                    NotificationConfig.TWILIO_ACCOUNT_SID
+                    and NotificationConfig.TWILIO_AUTH_TOKEN
+                ),
+                'has_from_number': bool(NotificationConfig.TWILIO_FROM_NUMBER),
+            },
+            'sns': {'configured': _aws_identity_configured()},
+            'vonage': {
+                'configured': bool(
+                    NotificationConfig.VONAGE_API_KEY and NotificationConfig.VONAGE_API_SECRET
+                )
+            },
+            'messagebird': {
+                'configured': bool(NotificationConfig.MESSAGEBIRD_API_KEY)
+            },
+        },
+    }
+
+    return {
+        'mock_mode': should_use_mock_notifications(),
+        'mock_mode_reason': (
+            'PHINS_TEST_MODE/PHINS_USE_MOCK_NOTIFICATIONS is set'
+            if should_use_mock_notifications()
+            else None
+        ),
+        'environment': NotificationConfig.ENVIRONMENT,
+        'email': email_status,
+        'sms': sms_status,
+        'recommendation': _provider_diagnostics_recommendation(email_status, sms_status),
+    }
+
+
+def _provider_diagnostics_recommendation(
+    email_status: Dict[str, Any],
+    sms_status: Dict[str, Any]
+) -> Optional[str]:
+    """Produce an operator-friendly hint when delivery would not actually happen."""
+    email_active = email_status.get('active_provider')
+    if email_active == 'noop':
+        return (
+            "No email provider configured. Verification codes will NOT be delivered. "
+            "Set SENDGRID_API_KEY, MAILGUN_API_KEY+MAILGUN_DOMAIN, RESEND_API_KEY, "
+            "ACTIVE_NOTIFICATIONS_API_KEY, AWS credentials for SES, or a real "
+            "SMTP_HOST + SMTP_USERNAME/SMTP_PASSWORD."
+        )
+    if email_active == 'mock':
+        return (
+            "Mock email provider is active because PHINS_TEST_MODE or "
+            "PHINS_USE_MOCK_NOTIFICATIONS is set. Disable these in production."
+        )
+    return None
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -3636,6 +3854,10 @@ def get_active_email_provider_type() -> str:
 __all__ = [
     # Configuration
     'NotificationConfig',
+    'get_active_email_provider_type',
+    'get_active_sms_provider_type',
+    'get_notification_provider_diagnostics',
+    'should_use_mock_notifications',
     
     # Enums
     'NotificationChannel',
