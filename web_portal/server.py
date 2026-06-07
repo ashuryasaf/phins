@@ -10384,6 +10384,78 @@ def _notify_password_reset_completed(
         )
 
 
+def _notify_supplier_password_reset_requested(
+    supplier_id: str,
+    email: str,
+    ip_address: Optional[str] = None
+) -> None:
+    """Send a notification when a supplier password reset OTP is requested."""
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+        notification_service = get_notification_service()
+        notification_service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            subject='PHINS Supplier Portal: Password Reset Requested',
+            content=(
+                f"A password reset was requested for your PHINS Supplier Portal account "
+                f"(ID: {supplier_id}). If you did not request this, please ignore this "
+                f"message or contact support immediately. "
+                f"Request originated from IP: {ip_address or 'unknown'}."
+            ),
+            priority=NotificationPriority.HIGH,
+            metadata={
+                'category': 'security_alert',
+                'event': 'supplier_password_reset_requested',
+                'supplier_id': supplier_id,
+                'ip_address': ip_address,
+            },
+        ))
+    except Exception:
+        pass
+
+
+def _notify_supplier_password_reset_completed(
+    supplier_id: str,
+    email: str,
+    ip_address: Optional[str] = None
+) -> None:
+    """Send a notification when a supplier password has been successfully reset."""
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
+        )
+        notification_service = get_notification_service()
+        notification_service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            subject='PHINS Supplier Portal: Password Changed',
+            content=(
+                f"Your PHINS Supplier Portal account password (ID: {supplier_id}) "
+                f"has been successfully changed. If you did not make this change, "
+                f"please contact support immediately. "
+                f"Change originated from IP: {ip_address or 'unknown'}."
+            ),
+            priority=NotificationPriority.HIGH,
+            metadata={
+                'category': 'security_alert',
+                'event': 'supplier_password_reset_completed',
+                'supplier_id': supplier_id,
+                'ip_address': ip_address,
+            },
+        ))
+    except Exception:
+        pass
+
+
 def generate_action_accounting_documents(
     *,
     action_type: str,
@@ -32234,6 +32306,260 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Login failed'}).encode('utf-8'))
             return
         
+        # Supplier Password Reset - Step 1: Request OTP (supplier-only)
+        if path == '/api/supplier/request-password-reset':
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                payload = json.loads(body or '{}')
+                email = sanitize_input(payload.get('email', ''), 254).lower().strip()
+
+                if not email:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Email is required'}).encode('utf-8'))
+                    return
+
+                from services.otp_security_service import mask_email as _mask_email
+
+                def _supplier_decoy_response():
+                    decoy_id = f"OTP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}"
+                    return {
+                        'success': True,
+                        'message': 'If a supplier account exists for this email, a verification code has been sent.',
+                        'verification_id': decoy_id,
+                        'requires_otp': True,
+                        'notification_sent': True,
+                        'masked_email': _mask_email(email),
+                        'expires_in_seconds': 300,
+                    }
+
+                supplier = supplier_service.find_supplier_by_email(email)
+                if not supplier:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(_supplier_decoy_response()).encode('utf-8'))
+                    return
+
+                try:
+                    from services.otp_security_service import get_otp_security_service, OTPPurpose
+                    otp_service = get_otp_security_service()
+                    otp_result = otp_service.create_otp_verification(
+                        user_type='supplier',
+                        user_id=supplier['id'],
+                        email=email,
+                        purpose=OTPPurpose.PASSWORD_RESET,
+                        ip_address=client_ip,
+                        user_agent=self.headers.get('User-Agent', ''),
+                    )
+
+                    if not otp_result.success:
+                        self._set_json_headers(429)
+                        self.wfile.write(json.dumps({
+                            'error': otp_result.message or 'Too many requests. Please try again later.'
+                        }).encode('utf-8'))
+                        return
+
+                    otp_code = otp_result.data.get('otp_code') if otp_result.data else None
+                    verification_id = otp_result.verification_id
+                    expiry_seconds = (otp_result.data or {}).get('expires_in_seconds', 300)
+
+                    notification_sent = False
+                    notification_error = None
+                    if otp_code:
+                        try:
+                            if api_extensions_enabled:
+                                try:
+                                    from web_portal.api_extensions import _send_otp_email
+                                except ImportError:
+                                    from api_extensions import _send_otp_email
+                                sent, send_err = _send_otp_email(
+                                    email=email,
+                                    otp_code=otp_code,
+                                    expiry_seconds=expiry_seconds,
+                                    purpose='supplier_password_reset',
+                                    ip_address=client_ip,
+                                )
+                                notification_sent = sent
+                                if not sent:
+                                    notification_error = send_err
+                            else:
+                                try:
+                                    from services.notification_service import (
+                                        NotificationRequest,
+                                        NotificationChannel,
+                                        NotificationPriority,
+                                        get_notification_service,
+                                    )
+                                    ns = get_notification_service()
+                                    nr = ns.send(NotificationRequest(
+                                        channel=NotificationChannel.EMAIL,
+                                        recipient=email,
+                                        template_id='otp_email',
+                                        template_vars={
+                                            'code': otp_code,
+                                            'expiry_minutes': max(1, int(expiry_seconds // 60)),
+                                        },
+                                        priority=NotificationPriority.HIGH,
+                                        ip_address=client_ip,
+                                        metadata={'purpose': 'supplier_password_reset'},
+                                    ))
+                                    notification_sent = bool(nr.success)
+                                    if not nr.success:
+                                        notification_error = nr.error_message
+                                except Exception as ns_exc:
+                                    notification_error = str(ns_exc)
+                        except Exception as mail_exc:
+                            notification_error = str(mail_exc)
+
+                    _notify_supplier_password_reset_requested(supplier['id'], email, client_ip)
+
+                    response_data = {
+                        'success': True,
+                        'message': 'If a supplier account exists for this email, a verification code has been sent.',
+                        'verification_id': verification_id,
+                        'requires_otp': True,
+                        'notification_sent': notification_sent,
+                    }
+                    if not notification_sent and notification_error:
+                        response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
+                    if otp_result.data and otp_result.data.get('masked_email'):
+                        response_data['masked_email'] = otp_result.data['masked_email']
+                    if otp_result.data and otp_result.data.get('expires_in_seconds'):
+                        response_data['expires_in_seconds'] = otp_result.data['expires_in_seconds']
+
+                    phins_test = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+                    expose_demo = phins_test or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in ('1', 'true', 'yes', 'y')
+                    if expose_demo and otp_code:
+                        response_data['demo_otp_code'] = otp_code
+
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                except ImportError:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'OTP security service is not available. Password reset is disabled.'
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"[SECURITY] Supplier password reset request error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Password reset request failed'}).encode('utf-8'))
+            return
+
+        # Supplier Password Reset - Step 2: Verify OTP and reset password (supplier-only)
+        if path == '/api/supplier/reset-password':
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                payload = json.loads(body or '{}')
+                email = sanitize_input(payload.get('email', ''), 254).lower().strip()
+                new_password = payload.get('new_password', '')
+                verification_id = payload.get('verification_id', '')
+                otp_code = payload.get('otp_code', '')
+
+                if not email or not new_password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Email and new password are required'}).encode('utf-8'))
+                    return
+
+                if len(new_password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                    return
+
+                if not verification_id or not otp_code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'OTP verification is required. Please request a password reset first.',
+                        'requires_otp': True
+                    }).encode('utf-8'))
+                    return
+
+                supplier = supplier_service.find_supplier_by_email(email)
+                if not supplier:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
+                    return
+
+                try:
+                    from services.otp_security_service import get_otp_security_service, OTPPurpose
+                    otp_service = get_otp_security_service()
+
+                    verify_result = otp_service.verify_otp(
+                        verification_id=verification_id,
+                        otp_code=otp_code,
+                        ip_address=client_ip,
+                    )
+                    already_verified = (
+                        not verify_result.success
+                        and verify_result.error_code == 'INVALID_STATUS'
+                    )
+                    if not verify_result.success and not already_verified:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({
+                            'error': verify_result.message or 'OTP verification failed',
+                            'error_code': verify_result.error_code,
+                        }).encode('utf-8'))
+                        return
+
+                    consume_result = otp_service.consume_verification(
+                        verification_id=verification_id,
+                        expected_email=email,
+                        expected_purpose=OTPPurpose.PASSWORD_RESET,
+                        ip_address=client_ip,
+                    )
+                    if not consume_result.success:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({
+                            'error': consume_result.message or 'Verification failed',
+                            'error_code': consume_result.error_code,
+                        }).encode('utf-8'))
+                        return
+                except ImportError:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'OTP security service is not available. Password reset is disabled.'
+                    }).encode('utf-8'))
+                    return
+
+                result = supplier_service.reset_supplier_password(email, new_password)
+
+                if result.get('success'):
+                    _persist_supplier(result['supplier_id'], SUPPLIERS.get(result['supplier_id'], {}))
+
+                    # Revoke existing supplier sessions
+                    supplier_id = result['supplier_id']
+                    with STATE_LOCK:
+                        tokens_to_remove = [
+                            t for t, s in SESSIONS.items()
+                            if s.get('supplier_id') == supplier_id or s.get('username') == supplier_id
+                        ]
+                        for t in tokens_to_remove:
+                            SESSIONS.pop(t, None)
+
+                    _notify_supplier_password_reset_completed(supplier_id, email, client_ip)
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"[SECURITY] Supplier password reset error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Password reset failed'}).encode('utf-8'))
+            return
+
         # Admin: Approve supplier
         if path.startswith('/api/admin/suppliers/') and path.endswith('/approve'):
             auth_header = self.headers.get('Authorization', '')
