@@ -13190,6 +13190,30 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return
+
+        # Notification provider diagnostics — answers "why are users not
+        # receiving verification codes / billing emails?" without trial and
+        # error. Admin-only because it reveals provider configuration.
+        if path == '/api/admin/notifications/diagnostics':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            try:
+                from services.notification_service import (
+                    get_notification_provider_diagnostics,
+                )
+                diagnostics = get_notification_provider_diagnostics()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'diagnostics': diagnostics,
+                }).encode('utf-8'))
+                return
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':

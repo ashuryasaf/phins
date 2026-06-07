@@ -175,17 +175,29 @@ def _normalize_provider_alias_token(raw_provider: Optional[str]) -> str:
 
 
 def _aws_identity_configured() -> bool:
-    """Check whether AWS runtime credentials are available."""
-    return any(
-        str(os.environ.get(name, '') or '').strip()
-        for name in (
-            'AWS_ACCESS_KEY_ID',
-            'AWS_PROFILE',
-            'AWS_WEB_IDENTITY_TOKEN_FILE',
-            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
-            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+    """Check whether AWS runtime credentials are available.
+
+    Delegates to the notification service so SES fallback detection stays
+    aligned with the SES/SNS send paths, which resolve credentials through
+    botocore's default chain (env vars, shared config, ECS/EKS task roles,
+    and EC2 instance-profile metadata). Falls back to an env-only probe if the
+    service module is unavailable.
+    """
+    try:
+        from services.notification_service import _aws_identity_configured as _svc_aws_identity_configured
+        return _svc_aws_identity_configured()
+    except Exception:
+        return any(
+            str(os.environ.get(name, '') or '').strip()
+            for name in (
+                'AWS_ACCESS_KEY_ID',
+                'AWS_PROFILE',
+                'AWS_WEB_IDENTITY_TOKEN_FILE',
+                'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+                'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+                'AWS_ROLE_ARN',
+            )
         )
-    )
 
 
 def _normalize_email_provider_type(raw_provider: Optional[str]) -> str:
