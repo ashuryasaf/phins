@@ -3945,11 +3945,24 @@ def _provider_diagnostics_recommendation(
 
     sms_active = sms_status.get('active_provider')
     if sms_active == 'noop':
-        hints.append(
-            "No SMS provider configured. Verification codes will NOT be delivered via SMS. "
-            "Set TWILIO_ACCOUNT_SID+TWILIO_AUTH_TOKEN+TWILIO_FROM_NUMBER, AWS credentials "
-            "for SNS, VONAGE_API_KEY+VONAGE_API_SECRET, or MESSAGEBIRD_API_KEY."
-        )
+        twilio_info = sms_status.get('providers', {}).get('twilio', {})
+        if (
+            sms_status.get('configured_provider') == 'twilio'
+            and twilio_info.get('configured')
+            and twilio_info.get('has_from_number')
+            and not _module_available('twilio')
+        ):
+            hints.append(
+                "Twilio is configured but the optional 'twilio' package is not installed, "
+                "so SMS verification codes will NOT be delivered. Install it with "
+                "'pip install twilio'."
+            )
+        else:
+            hints.append(
+                "No SMS provider configured. Verification codes will NOT be delivered via SMS. "
+                "Set TWILIO_ACCOUNT_SID+TWILIO_AUTH_TOKEN+TWILIO_FROM_NUMBER, AWS credentials "
+                "for SNS, VONAGE_API_KEY+VONAGE_API_SECRET, or MESSAGEBIRD_API_KEY."
+            )
     elif sms_active == 'mock':
         hints.append(
             "Mock SMS provider is active because PHINS_TEST_MODE or "
@@ -4019,11 +4032,9 @@ __all__ = [
     'create_notification_service',
     'get_notification_service',
     'reset_notification_service',
-    'should_use_mock_notifications',
     
     # SMTP resilience
     'get_smtp_circuit_breaker',
-    'get_active_email_provider_type',
     'NoOpEmailProvider',
     
     # Helper functions
