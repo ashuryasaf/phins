@@ -32993,7 +32993,12 @@ For claims or questions, please contact:
                     if rel.startswith('/media-files/'):
                         rel_path = rel[len('/media-files/'):].lstrip('/')
                         disk_path = os.path.normpath(os.path.join(MEDIA_STORAGE_DIR, rel_path))
-                        if os.path.abspath(disk_path).startswith(os.path.abspath(MEDIA_STORAGE_DIR)) and os.path.isfile(disk_path):
+                        storage_root = os.path.abspath(MEDIA_STORAGE_DIR)
+                        abs_disk = os.path.abspath(disk_path)
+                        # Require a path-separator boundary so sibling directories
+                        # (e.g. media-backup next to media) cannot be treated as
+                        # in-bounds by a bare prefix match.
+                        if (abs_disk == storage_root or abs_disk.startswith(storage_root + os.sep)) and os.path.isfile(disk_path):
                             os.remove(disk_path)
                 except Exception:
                     pass

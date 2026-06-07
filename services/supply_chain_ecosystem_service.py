@@ -2312,6 +2312,11 @@ class SupplyChainEcosystemService:
                 url = str(item.get("url") or "").strip()
                 if not url or not url.startswith(allowed_media_prefix):
                     continue
+                # Reject path traversal: a URL can satisfy the prefix yet still
+                # contain ".." segments that escape the offer's media tree when
+                # later resolved to a filesystem path during deletion.
+                if ".." in url.split("/"):
+                    continue
                 media_type = str(item.get("type") or "image").strip().lower()
                 if media_type not in ("image", "video"):
                     media_type = "image"
