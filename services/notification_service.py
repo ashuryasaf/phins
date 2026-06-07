@@ -3895,7 +3895,9 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
                 ),
                 'has_from_number': bool(NotificationConfig.TWILIO_FROM_NUMBER),
             },
-            'sns': {'configured': _aws_identity_configured()},
+            'sns': {
+                'configured': _aws_identity_configured() and _module_available('boto3')
+            },
             'vonage': {
                 'configured': bool(
                     NotificationConfig.VONAGE_API_KEY and NotificationConfig.VONAGE_API_SECRET
