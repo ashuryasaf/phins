@@ -25,13 +25,14 @@ import html
 import secrets
 import hashlib
 import logging
+import importlib.util
 from email.utils import parseaddr
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
-from functools import wraps
+from functools import wraps, lru_cache
 import threading
 import uuid
 
@@ -3487,8 +3488,15 @@ def _smtp_looks_unconfigured() -> bool:
 
 
 def _aws_identity_configured() -> bool:
-    """Check whether AWS runtime credentials are available."""
-    return any(
+    """Check whether AWS runtime credentials are available.
+
+    Covers explicit environment configuration as well as ambient credentials
+    resolvable through botocore's default chain (shared config files, ECS/EKS
+    task roles, and EC2 instance-profile metadata). The SES/SNS send paths rely
+    on that same chain via ``boto3.client(...)``, so diagnostics must not report
+    ``noop`` simply because no AWS_* environment variable is set.
+    """
+    if any(
         os.environ.get(name)
         for name in (
             'AWS_ACCESS_KEY_ID',
@@ -3496,8 +3504,38 @@ def _aws_identity_configured() -> bool:
             'AWS_WEB_IDENTITY_TOKEN_FILE',
             'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
             'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+            'AWS_ROLE_ARN',
         )
-    )
+    ):
+        return True
+    return _aws_credentials_resolvable()
+
+
+@lru_cache(maxsize=1)
+def _aws_credentials_resolvable() -> bool:
+    """Detect ambient AWS credentials (e.g. EC2 instance profile) via botocore.
+
+    Result is cached for the process lifetime to avoid repeated instance
+    metadata lookups on hot paths such as ``/api/health``.
+    """
+    try:
+        import botocore.session
+        return botocore.session.get_session().get_credentials() is not None
+    except Exception:
+        return False
+
+
+def _module_available(module_name: str) -> bool:
+    """Return True when an optional dependency can be imported.
+
+    The SES/SNS/Twilio send paths return a hard failure when ``boto3`` or
+    ``twilio`` is not installed, so diagnostics must treat a missing SDK as
+    "will not deliver" even when credentials are present.
+    """
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
 
 
 def _detect_configured_api_email_provider() -> Optional[str]:
@@ -3698,21 +3736,34 @@ def reset_notification_service():
 
 
 def _email_api_provider_has_credentials(provider_type: str) -> bool:
-    """Check whether a selected API email provider has usable credentials."""
+    """Check whether a selected API email provider has usable credentials.
+
+    Credential resolution mirrors the provider ``send`` paths, which use
+    ``_first_non_empty_env(...) or NotificationConfig.*``. This skips blank env
+    vars (rather than treating them as configured) and falls back to config
+    defaults, so diagnostics agree with what the send paths can actually use.
+    """
     if provider_type == 'sendgrid':
-        return bool(_env_or_default('SENDGRID_API_KEY', NotificationConfig.SENDGRID_API_KEY))
+        return bool(
+            _first_non_empty_env('SENDGRID_API_KEY') or NotificationConfig.SENDGRID_API_KEY
+        )
     if provider_type == 'mailgun':
         return bool(
-            _env_or_default('MAILGUN_API_KEY', NotificationConfig.MAILGUN_API_KEY)
-            and _env_or_default('MAILGUN_DOMAIN', NotificationConfig.MAILGUN_DOMAIN)
+            (_first_non_empty_env('MAILGUN_API_KEY') or NotificationConfig.MAILGUN_API_KEY)
+            and (_first_non_empty_env('MAILGUN_DOMAIN') or NotificationConfig.MAILGUN_DOMAIN)
         )
     if provider_type == 'resend':
-        return bool(_env_or_default('RESEND_API_KEY', NotificationConfig.RESEND_API_KEY))
+        return bool(
+            _first_non_empty_env('RESEND_API_KEY') or NotificationConfig.RESEND_API_KEY
+        )
     if provider_type == 'active_notifications':
         return bool(
-            _env_or_default('ACTIVE_NOTIFICATIONS_API_KEY', NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY)
-            or _env_or_default('PINGRAM_API_KEY')
-            or _env_or_default('NOTIFICATIONAPI_API_KEY')
+            _first_non_empty_env(
+                'ACTIVE_NOTIFICATIONS_API_KEY',
+                'PINGRAM_API_KEY',
+                'NOTIFICATIONAPI_API_KEY',
+            )
+            or NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY
         )
     if provider_type == 'ses':
         return _aws_identity_configured()
@@ -3728,9 +3779,12 @@ def get_active_email_provider_type() -> str:
         if _smtp_looks_unconfigured():
             return 'noop'
         return provider_type
-    # An explicitly selected API provider without credentials cannot deliver;
-    # report 'noop' so diagnostics don't imply delivery will succeed.
+    # An explicitly selected API provider that cannot deliver — missing
+    # credentials or a missing optional SDK — should report 'noop' so
+    # diagnostics don't imply delivery will succeed.
     if not _email_api_provider_has_credentials(provider_type):
+        return 'noop'
+    if provider_type == 'ses' and not _module_available('boto3'):
         return 'noop'
     return provider_type
 
@@ -3742,18 +3796,26 @@ def get_active_sms_provider_type() -> str:
     provider_type = (NotificationConfig.SMS_PROVIDER or 'twilio').lower()
     if provider_type not in {'twilio', 'sns', 'vonage', 'messagebird'}:
         provider_type = 'twilio'
-    if provider_type == 'twilio' and not (
-        NotificationConfig.TWILIO_ACCOUNT_SID and NotificationConfig.TWILIO_AUTH_TOKEN
-    ):
-        return 'noop'
+    if provider_type == 'twilio':
+        if not (
+            NotificationConfig.TWILIO_ACCOUNT_SID and NotificationConfig.TWILIO_AUTH_TOKEN
+        ):
+            return 'noop'
+        # Twilio delivery needs the optional 'twilio' SDK at send time.
+        if not _module_available('twilio'):
+            return 'noop'
     if provider_type == 'vonage' and not (
         NotificationConfig.VONAGE_API_KEY and NotificationConfig.VONAGE_API_SECRET
     ):
         return 'noop'
     if provider_type == 'messagebird' and not NotificationConfig.MESSAGEBIRD_API_KEY:
         return 'noop'
-    if provider_type == 'sns' and not _aws_identity_configured():
-        return 'noop'
+    if provider_type == 'sns':
+        if not _aws_identity_configured():
+            return 'noop'
+        # SNS delivery needs boto3 at send time.
+        if not _module_available('boto3'):
+            return 'noop'
     return provider_type
 
 
