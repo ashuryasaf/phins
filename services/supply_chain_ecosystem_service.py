@@ -2279,6 +2279,65 @@ class SupplyChainEcosystemService:
         offer_approved_on = (existing or {}).get("offer_approved_on") or now
         offer_active = bool(data.get("active", True))
 
+        # Media gallery handling (photos/videos uploaded via the supplier portal).
+        # Preserve existing media unless the caller explicitly provides a new
+        # list. This protects integrity for upsert payloads that omit `media`.
+        existing_media = (existing or {}).get("media")
+        if isinstance(existing_media, str):
+            try:
+                existing_media = json.loads(existing_media)
+            except Exception:
+                existing_media = []
+        if not isinstance(existing_media, list):
+            existing_media = []
+
+        if "media" in data:
+            incoming_media = data.get("media")
+            if isinstance(incoming_media, str):
+                try:
+                    incoming_media = json.loads(incoming_media)
+                except Exception:
+                    incoming_media = []
+            if not isinstance(incoming_media, list):
+                incoming_media = []
+            sanitized_media: list = []
+            for item in incoming_media:
+                if not isinstance(item, dict):
+                    continue
+                url = str(item.get("url") or "").strip()
+                if not url:
+                    continue
+                media_type = str(item.get("type") or "image").strip().lower()
+                if media_type not in ("image", "video"):
+                    media_type = "image"
+                sanitized_media.append({
+                    "id": str(item.get("id") or "").strip() or None,
+                    "type": media_type,
+                    "url": url,
+                    "filename": str(item.get("filename") or "").strip() or None,
+                    "mime_type": str(item.get("mime_type") or "").strip() or None,
+                    "size_bytes": self._safe_int(item.get("size_bytes"), 0),
+                    "sha256": str(item.get("sha256") or "").strip() or None,
+                    "alt_text": str(item.get("alt_text") or "").strip() or None,
+                    "uploaded_at": str(item.get("uploaded_at") or "").strip() or None,
+                    "uploaded_by": str(item.get("uploaded_by") or "").strip() or None,
+                })
+            media_list = sanitized_media
+        else:
+            media_list = existing_media
+
+        # Primary image: explicit image_url wins, else first image in gallery,
+        # else preserve existing.
+        explicit_image = str(data.get("image_url") or "").strip() or None
+        if explicit_image:
+            image_url = explicit_image
+        else:
+            first_image = next(
+                (m.get("url") for m in media_list if isinstance(m, dict) and m.get("type") == "image"),
+                None,
+            )
+            image_url = first_image or (existing or {}).get("image_url")
+
         offer = {
             "id": offer_id,
             "supplier_id": supplier_id,
@@ -2299,6 +2358,8 @@ class SupplyChainEcosystemService:
             "wallet_compatible": wallet_compatible,
             "active": offer_active,
             "featured": bool(data.get("featured", (existing or {}).get("featured", False))),
+            "image_url": image_url,
+            "media": media_list,
             "delivery_config": delivery_config,
             "billing_config": billing_config,
             "delivery_mode": delivery_mode,
@@ -2323,6 +2384,10 @@ class SupplyChainEcosystemService:
 
         self.offers[offer_id] = offer
 
+        media_count = len(media_list)
+        media_image_count = sum(1 for m in media_list if isinstance(m, dict) and m.get("type") == "image")
+        media_video_count = sum(1 for m in media_list if isinstance(m, dict) and m.get("type") == "video")
+
         self._record_ledger_entry(
             entry_type="offer_upsert",
             supplier_id=supplier_id,
@@ -2335,7 +2400,10 @@ class SupplyChainEcosystemService:
                 "active": offer["active"],
                 "delivery_mode": delivery_mode,
                 "billing_cycle": billing_cycle,
-                "updated_by": actor
+                "updated_by": actor,
+                "media_count": media_count,
+                "media_image_count": media_image_count,
+                "media_video_count": media_video_count,
             }
         )
 

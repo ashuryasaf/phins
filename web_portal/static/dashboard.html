@@ -5383,6 +5383,11 @@
 
     function scoreHealthWalletOffer(offer, queryTerms) {
       if (!queryTerms.length) return 0;
+      const mediaList = Array.isArray(offer.media) ? offer.media : [];
+      const mediaAlts = mediaList
+        .map(m => (m && m.alt_text) ? String(m.alt_text) : '')
+        .filter(Boolean)
+        .join(' ');
       const haystack = [
         offer.name,
         offer.description,
@@ -5390,7 +5395,8 @@
         offer.normalized_category,
         offer.supplier_name,
         offer.supplier_type,
-        offer.item_type
+        offer.item_type,
+        mediaAlts
       ].map(v => String(v || '').toLowerCase()).join(' ');
       let score = 0;
       queryTerms.forEach(term => {
@@ -5399,9 +5405,14 @@
         if (String(offer.name || '').toLowerCase().includes(term)) score += 4;
         if (String(offer.supplier_name || '').toLowerCase().includes(term)) score += 2;
         if (String(offer.normalized_category || offer.category || '').toLowerCase().includes(term)) score += 2;
+        if (mediaAlts && mediaAlts.toLowerCase().includes(term)) score += 2;
       });
       if (String(offer.item_type || '').toLowerCase() === 'service') score += queryTerms.includes('service') ? 2 : 0;
       if (String(offer.item_type || '').toLowerCase() === 'product') score += queryTerms.includes('product') ? 2 : 0;
+      // Visual offers get a small visibility boost so suppliers who optimise
+      // their listings with photos/videos surface higher in AI search.
+      if (mediaList.some(m => m && m.type === 'image')) score += 1;
+      if (mediaList.some(m => m && m.type === 'video')) score += 1;
       return score;
     }
 
@@ -5421,8 +5432,36 @@
         ...Object.fromEntries(results.map(item => [item.id, item]))
       };
 
-      resultsEl.innerHTML = results.map(offer => `
+      resultsEl.innerHTML = results.map(offer => {
+        const mediaList = Array.isArray(offer.media) ? offer.media.filter(Boolean) : [];
+        const heroImage = mediaList.find(m => m && m.type === 'image');
+        const heroVideo = mediaList.find(m => m && m.type === 'video');
+        const fallbackImage = offer.image_url ? { url: offer.image_url, type: 'image', alt_text: offer.name } : null;
+        const heroMedia = heroImage || heroVideo || fallbackImage;
+        const photoCount = mediaList.filter(m => m && m.type === 'image').length;
+        const videoCount = mediaList.filter(m => m && m.type === 'video').length;
+        let mediaBlock = '';
+        if (heroMedia) {
+          if (heroMedia.type === 'video') {
+            mediaBlock = `
+              <div style="position:relative; margin: -2px -2px 12px -2px;">
+                <video src="${escapeHtml(heroMedia.url)}" controls preload="metadata" muted playsinline
+                       style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; background:#000;"></video>
+                <div style="position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.6); color:white; padding:2px 8px; border-radius:999px; font-size:0.72rem; font-weight:600;">▶ Video</div>
+              </div>`;
+          } else {
+            mediaBlock = `
+              <div style="position:relative; margin: -2px -2px 12px -2px;">
+                <img src="${escapeHtml(heroMedia.url)}" alt="${escapeHtml(heroMedia.alt_text || offer.name || 'Offer media')}"
+                     loading="lazy"
+                     style="width:100%; max-height:220px; object-fit:cover; border-radius:10px;">
+                ${(photoCount + videoCount) > 1 ? `<div style="position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.6); color:white; padding:2px 8px; border-radius:999px; font-size:0.72rem; font-weight:600;">📷 ${photoCount} • 🎬 ${videoCount}</div>` : ''}
+              </div>`;
+          }
+        }
+        return `
         <div style="background:white; border-radius:14px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border:1px solid rgba(0, 137, 123, 0.12);">
+          ${mediaBlock}
           <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
             <div>
               <div style="font-size:0.78rem; color:#00897b; font-weight:700; text-transform:uppercase; margin-bottom:6px;">${escapeHtml(offer.item_type || 'offer')}</div>
@@ -5435,6 +5474,7 @@
             <span style="background:#e0f2f1; color:#00695c; padding:4px 10px; border-radius:999px; font-size:0.78rem;">🏢 ${escapeHtml(offer.supplier_name || 'Approved Supplier')}</span>
             <span style="background:#e3f2fd; color:#0d47a1; padding:4px 10px; border-radius:999px; font-size:0.78rem;">📁 ${escapeHtml(offer.normalized_category || offer.category || 'general')}</span>
             <span style="background:#f3e5f5; color:#6a1b9a; padding:4px 10px; border-radius:999px; font-size:0.78rem;">💳 ${(offer.wallet_compatible || []).map(w => escapeHtml(w)).join(', ') || 'health'}</span>
+            ${(photoCount + videoCount) ? `<span style="background:#fff3e0; color:#e65100; padding:4px 10px; border-radius:999px; font-size:0.78rem;">🎞️ ${photoCount} photo${photoCount === 1 ? '' : 's'} • ${videoCount} video${videoCount === 1 ? '' : 's'}</span>` : ''}
           </div>
           ${offer.delivery_config?.mode ? `<div style="font-size:0.82rem; color:#607d8b; margin-bottom:10px;">🚚 ${escapeHtml(String(offer.delivery_config.mode).replace(/_/g, ' '))}${Number.isFinite(Number(offer.delivery_config.eta_days)) ? ` • ${Number(offer.delivery_config.eta_days)} day(s)` : ''}</div>` : ''}
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -5442,7 +5482,8 @@
             <button onclick="showMedicalCategory('${escapeHtml(offer.normalized_category || offer.category || 'pharmacy').replace(/'/g, "\\'")}')" style="background:#f5f5f5; color:#37474f; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600;">🛒 Open Category</button>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     async function runHealthWalletAISearch() {

@@ -15,7 +15,7 @@ import os
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import uuid
 import hashlib
@@ -15729,6 +15729,15 @@ For claims or questions, please contact:
                     row['delivery_config'] = {}
                 if not isinstance(row.get('billing_config'), dict):
                     row['billing_config'] = {}
+                media_value = row.get('media')
+                if isinstance(media_value, str):
+                    try:
+                        media_value = json.loads(media_value)
+                    except Exception:
+                        media_value = []
+                if not isinstance(media_value, list):
+                    media_value = []
+                row['media'] = media_value
                 normalized_offers.append(row)
             offers = normalized_offers
             offers = sorted(offers, key=lambda x: x.get('updated_at') or x.get('created_at') or '', reverse=True)
@@ -15798,15 +15807,34 @@ For claims or questions, please contact:
                         if not supplier or (supplier.get('supplier_type') or '').lower() != supplier_type:
                             continue
                     
-                    # Search filter (name, description, category)
+                    # Normalize media list once for both search and enrichment.
+                    media_list_raw = offer.get('media')
+                    if isinstance(media_list_raw, str):
+                        try:
+                            media_list_raw = json.loads(media_list_raw)
+                        except Exception:
+                            media_list_raw = []
+                    if not isinstance(media_list_raw, list):
+                        media_list_raw = []
+                    media_alt_texts = ' '.join(
+                        str((m or {}).get('alt_text') or '')
+                        for m in media_list_raw
+                        if isinstance(m, dict) and (m or {}).get('alt_text')
+                    ).lower()
+
+                    # Search filter (name, description, category, supplier, media alt-text)
                     if search:
                         name = (offer.get('name') or '').lower()
                         desc = (offer.get('description') or '').lower()
                         cat = offer_category
                         supplier_name = (approved_suppliers.get(offer.get('supplier_id'), {}).get('company_name') or '').lower()
-                        if search not in name and search not in desc and search not in cat and search not in supplier_name:
+                        if (search not in name
+                                and search not in desc
+                                and search not in cat
+                                and search not in supplier_name
+                                and search not in media_alt_texts):
                             continue
-                    
+
                     # Enrich offer with supplier info
                     supplier = approved_suppliers.get(offer.get('supplier_id'), {})
                     enriched_offer = dict(offer)
@@ -15822,7 +15850,22 @@ For claims or questions, please contact:
                     )
                     enriched_offer['delivery_config'] = offer.get('delivery_config', {})
                     enriched_offer['billing_config'] = offer.get('billing_config', {})
-                    
+                    # Media gallery (photos/videos uploaded by the supplier).
+                    enriched_offer['media'] = media_list_raw
+                    enriched_offer['has_video'] = any(
+                        isinstance(m, dict) and m.get('type') == 'video' for m in media_list_raw
+                    )
+                    enriched_offer['has_image'] = any(
+                        isinstance(m, dict) and m.get('type') == 'image' for m in media_list_raw
+                    )
+                    if not enriched_offer.get('image_url'):
+                        first_image = next(
+                            (m.get('url') for m in media_list_raw if isinstance(m, dict) and m.get('type') == 'image'),
+                            None,
+                        )
+                        if first_image:
+                            enriched_offer['image_url'] = first_image
+
                     filtered_offers.append(enriched_offer)
                 
                 # Sort by featured first, then by rating
@@ -32426,6 +32469,22 @@ For claims or questions, please contact:
                     offer_id = str(payload.get('id') or '').strip() or f"OFF-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
                     now = datetime.now().isoformat()
                     created_at = (existing or {}).get('created_at') or now
+                    # Preserve existing media list unless the upsert payload
+                    # explicitly provides a new one. Avoids accidental data loss.
+                    if 'media' in payload:
+                        raw_media = payload.get('media') or []
+                        if not isinstance(raw_media, list):
+                            raw_media = []
+                        existing_media_list = [m for m in raw_media if isinstance(m, dict) and (m.get('url') or '').strip()]
+                    else:
+                        existing_media_list = (existing or {}).get('media') or []
+                        if not isinstance(existing_media_list, list):
+                            existing_media_list = []
+                    image_url_value = (
+                        str(payload.get('image_url') or '').strip()
+                        or next((m.get('url') for m in existing_media_list if isinstance(m, dict) and m.get('type') == 'image'), None)
+                        or (existing or {}).get('image_url')
+                    )
                     offer_row = {
                         'id': offer_id,
                         'supplier_id': supplier_id,
@@ -32438,6 +32497,8 @@ For claims or questions, please contact:
                         'currency': currency,
                         'unit': payload.get('unit', 'per_item'),
                         'wallet_compatible': parse_wallet_compatible(payload.get('wallet_compatible', ['health'])),
+                        'image_url': image_url_value,
+                        'media': existing_media_list,
                         'delivery_config': payload.get('delivery_config') or {
                             'mode': payload.get('delivery_mode', 'delivery'),
                             'eta_days': safe_int(payload.get('delivery_eta_days', 0), 0),
@@ -32591,6 +32652,364 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to delete offer', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier: upload photo/video for an offer
+        # Enables suppliers to enrich an offer at creation/edit time so the
+        # health wallet AI search can surface visual context to customers.
+        if path == '/api/supplier/offers/media/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                payload = json.loads(body or '{}')
+                offer_id = str(payload.get('offer_id') or payload.get('id') or '').strip()
+                if not offer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing offer_id'}).encode('utf-8'))
+                    return
+
+                user = get_session_user(session) or {}
+                role = (user.get('role') or session.get('role') or '').lower()
+                actor = (session or {}).get('username') if session else 'unknown'
+
+                with STATE_LOCK:
+                    offer = SUPPLIER_OFFERS.get(offer_id)
+                    if not offer:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Offer not found'}).encode('utf-8'))
+                        return
+                    # SECURITY: supplier may only attach media to own offer.
+                    if role == 'supplier' and offer.get('supplier_id') != (session or {}).get('username'):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+
+                filename_raw = str(payload.get('filename') or '').strip()
+                data_b64 = str(payload.get('data') or payload.get('data_base64') or '').strip()
+                content_type_hint = str(payload.get('content_type') or payload.get('mime_type') or '').strip().lower()
+                alt_text = str(payload.get('alt_text') or '').strip()[:240] or None
+
+                if not filename_raw or not data_b64:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'filename and base64 data are required'}).encode('utf-8'))
+                    return
+
+                if ',' in data_b64 and data_b64.lower().startswith('data:'):
+                    data_b64 = data_b64.split(',', 1)[1]
+
+                # Local aliases. Other handlers in do_POST re-import some of
+                # these modules inside their own branches, which would
+                # otherwise shadow the module-level bindings for the entire
+                # function scope and trigger UnboundLocalError here.
+                import base64 as _b64dec
+                import hashlib as _hashlib
+                try:
+                    file_bytes = _b64dec.b64decode(data_b64, validate=False)
+                except Exception:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid base64 data'}).encode('utf-8'))
+                    return
+
+                # File type and size validation. Photos and short videos only.
+                IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+                VIDEO_EXTS = {'.mp4', '.webm', '.mov'}
+                MAX_IMAGE_BYTES = 10 * 1024 * 1024
+                MAX_VIDEO_BYTES = 50 * 1024 * 1024
+
+                lower_name = filename_raw.lower()
+                ext = os.path.splitext(lower_name)[1]
+                if ext in IMAGE_EXTS:
+                    media_type = 'image'
+                    max_bytes = MAX_IMAGE_BYTES
+                    default_mime = {
+                        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                        '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
+                    }.get(ext, 'application/octet-stream')
+                elif ext in VIDEO_EXTS:
+                    media_type = 'video'
+                    max_bytes = MAX_VIDEO_BYTES
+                    default_mime = {
+                        '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+                    }.get(ext, 'application/octet-stream')
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Unsupported file type. Allowed: jpg, jpeg, png, webp, gif, mp4, webm, mov'
+                    }).encode('utf-8'))
+                    return
+
+                size_bytes = len(file_bytes)
+                if size_bytes <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Empty file'}).encode('utf-8'))
+                    return
+                if size_bytes > max_bytes:
+                    self._set_json_headers(413)
+                    self.wfile.write(json.dumps({
+                        'error': f'File exceeds {max_bytes // (1024 * 1024)}MB limit for {media_type}s'
+                    }).encode('utf-8'))
+                    return
+
+                # Optional malware/macro scan when the security scanner is wired in.
+                if _file_scanner_enabled:
+                    try:
+                        scan_result = scan_file_bytes(file_bytes, filename_raw)
+                        if scan_result and not getattr(scan_result, 'is_safe', True):
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'File rejected by security scanner',
+                                'details': getattr(scan_result, 'threats', None) or 'unsafe content',
+                            }).encode('utf-8'))
+                            return
+                    except Exception:
+                        pass
+
+                mime_type = content_type_hint or default_mime
+                sha256 = _hashlib.sha256(file_bytes).hexdigest()
+
+                # Stable on-disk storage under MEDIA_STORAGE_DIR/supplier-offers/<offer_id>/<media_id><ext>.
+                # Served via existing /media-files/ static endpoint.
+                ensure_media_storage_dir()
+                offer_dir = os.path.join(MEDIA_STORAGE_DIR, 'supplier-offers', offer_id)
+                os.makedirs(offer_dir, exist_ok=True)
+
+                media_id = f"MED-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+                stored_filename = f"{media_id}{ext}"
+                stored_path = os.path.join(offer_dir, stored_filename)
+
+                # Atomic write: temp file + rename, with hash verification afterwards.
+                tmp_path = stored_path + '.tmp'
+                try:
+                    with open(tmp_path, 'wb') as fh:
+                        fh.write(file_bytes)
+                    # Verify on-disk content matches advertised hash.
+                    with open(tmp_path, 'rb') as fh:
+                        on_disk = fh.read()
+                    if _hashlib.sha256(on_disk).hexdigest() != sha256:
+                        try:
+                            os.remove(tmp_path)
+                        except Exception:
+                            pass
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({'error': 'Storage integrity check failed'}).encode('utf-8'))
+                        return
+                    os.replace(tmp_path, stored_path)
+                except Exception as e:
+                    try:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+                    except Exception:
+                        pass
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to store media', 'details': str(e)}).encode('utf-8'))
+                    return
+
+                public_url = f"/media-files/supplier-offers/{offer_id}/{stored_filename}"
+                now_iso = datetime.now(timezone.utc).isoformat()
+                media_item = {
+                    'id': media_id,
+                    'type': media_type,
+                    'url': public_url,
+                    'filename': filename_raw[:200],
+                    'mime_type': mime_type,
+                    'size_bytes': size_bytes,
+                    'sha256': sha256,
+                    'alt_text': alt_text,
+                    'uploaded_at': now_iso,
+                    'uploaded_by': actor,
+                }
+
+                with STATE_LOCK:
+                    current = SUPPLIER_OFFERS.get(offer_id)
+                    if not current:
+                        try:
+                            os.remove(stored_path)
+                        except Exception:
+                            pass
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Offer disappeared during upload'}).encode('utf-8'))
+                        return
+                    media_list = current.get('media') if isinstance(current.get('media'), list) else []
+                    if any(m.get('sha256') == sha256 for m in media_list if isinstance(m, dict)):
+                        try:
+                            os.remove(stored_path)
+                        except Exception:
+                            pass
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'Identical media already attached to this offer',
+                            'sha256': sha256,
+                        }).encode('utf-8'))
+                        return
+                    media_list = list(media_list) + [media_item]
+                    current['media'] = media_list
+                    if media_type == 'image' and not current.get('image_url'):
+                        current['image_url'] = public_url
+                    current['updated_at'] = now_iso
+                    current['updated_date'] = now_iso
+                    current['updated_by'] = actor
+                    SUPPLIER_OFFERS[offer_id] = current
+                    persisted_snapshot = dict(current)
+
+                _persist_supplier_offer(offer_id, persisted_snapshot)
+
+                try:
+                    record_transaction(
+                        customer_id=None,
+                        tx_type='supplier_offer_media_upload',
+                        amount=0.0,
+                        description=f"Supplier offer media upload: {offer_id} ({media_type})",
+                        metadata={
+                            'offer_id': offer_id,
+                            'supplier_id': persisted_snapshot.get('supplier_id'),
+                            'media_id': media_id,
+                            'media_type': media_type,
+                            'mime_type': mime_type,
+                            'size_bytes': size_bytes,
+                            'sha256': sha256,
+                            'uploaded_by': actor,
+                        },
+                    )
+                except Exception:
+                    pass
+                if audit:
+                    try:
+                        audit.log(actor, 'upload_media', 'supplier_offer', offer_id, {
+                            'media_id': media_id,
+                            'media_type': media_type,
+                            'sha256': sha256,
+                        })
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'media': media_item,
+                    'offer_id': offer_id,
+                    'media_count': len(persisted_snapshot.get('media') or []),
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to upload media', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier: remove a single media item from an offer
+        if path == '/api/supplier/offers/media/delete':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                payload = json.loads(body or '{}')
+                offer_id = str(payload.get('offer_id') or payload.get('id') or '').strip()
+                media_id = str(payload.get('media_id') or '').strip()
+                if not offer_id or not media_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing offer_id or media_id'}).encode('utf-8'))
+                    return
+
+                user = get_session_user(session) or {}
+                role = (user.get('role') or session.get('role') or '').lower()
+                actor = (session or {}).get('username') if session else 'unknown'
+
+                removed_item = None
+                with STATE_LOCK:
+                    offer = SUPPLIER_OFFERS.get(offer_id)
+                    if not offer:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Offer not found'}).encode('utf-8'))
+                        return
+                    if role == 'supplier' and offer.get('supplier_id') != (session or {}).get('username'):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    media_list = offer.get('media') if isinstance(offer.get('media'), list) else []
+                    new_list = []
+                    for item in media_list:
+                        if isinstance(item, dict) and item.get('id') == media_id:
+                            removed_item = item
+                            continue
+                        new_list.append(item)
+                    if removed_item is None:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Media not found on this offer'}).encode('utf-8'))
+                        return
+                    offer['media'] = new_list
+                    if offer.get('image_url') == removed_item.get('url'):
+                        next_image = next(
+                            (m.get('url') for m in new_list if isinstance(m, dict) and m.get('type') == 'image'),
+                            None,
+                        )
+                        offer['image_url'] = next_image
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    offer['updated_at'] = now_iso
+                    offer['updated_date'] = now_iso
+                    offer['updated_by'] = actor
+                    SUPPLIER_OFFERS[offer_id] = offer
+                    persisted_snapshot = dict(offer)
+
+                # Best-effort disk cleanup. URL pattern is /media-files/<rel>.
+                try:
+                    rel = (removed_item or {}).get('url') or ''
+                    if rel.startswith('/media-files/'):
+                        rel_path = rel[len('/media-files/'):].lstrip('/')
+                        disk_path = os.path.normpath(os.path.join(MEDIA_STORAGE_DIR, rel_path))
+                        if os.path.abspath(disk_path).startswith(os.path.abspath(MEDIA_STORAGE_DIR)) and os.path.isfile(disk_path):
+                            os.remove(disk_path)
+                except Exception:
+                    pass
+
+                _persist_supplier_offer(offer_id, persisted_snapshot)
+
+                try:
+                    record_transaction(
+                        customer_id=None,
+                        tx_type='supplier_offer_media_delete',
+                        amount=0.0,
+                        description=f"Supplier offer media delete: {offer_id}",
+                        metadata={
+                            'offer_id': offer_id,
+                            'supplier_id': persisted_snapshot.get('supplier_id'),
+                            'media_id': media_id,
+                            'sha256': (removed_item or {}).get('sha256'),
+                            'deleted_by': actor,
+                        },
+                    )
+                except Exception:
+                    pass
+                if audit:
+                    try:
+                        audit.log(actor, 'delete_media', 'supplier_offer', offer_id, {
+                            'media_id': media_id,
+                        })
+                    except Exception:
+                        pass
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'offer_id': offer_id,
+                    'media_id': media_id,
+                    'media_count': len(persisted_snapshot.get('media') or []),
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to delete media', 'details': str(e)}).encode('utf-8'))
             return
 
         # Supplier: update order status
