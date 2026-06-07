@@ -370,35 +370,53 @@ def _create_notification_service_for_provider(
     return create_notification_service(use_mock=False, email_provider=provider)
 
 
-def _prepare_otp_client_response(response_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str], Optional[str]]:
+def _prepare_otp_client_response(
+    response_data: Dict[str, Any]
+) -> Tuple[Dict[str, Any], Optional[str], Dict[str, Any]]:
     """
     Remove sensitive OTP internals from API responses.
 
     Returns:
-        (sanitized_response, otp_code_for_internal_delivery, email_for_internal_delivery)
+        (sanitized_response, otp_code, delivery_context)
+
+    ``delivery_context`` is a dict with the keys ``email``, ``phone``, and
+    ``delivery_channel`` so callers can route the OTP code to the right
+    channel without re-reading the verification record.
     """
     sanitized = dict(response_data)
     otp_code: Optional[str] = None
-    delivery_email: Optional[str] = None
+    delivery_context: Dict[str, Any] = {
+        'email': None,
+        'phone': None,
+        'delivery_channel': 'email',
+    }
 
     data = sanitized.get('data')
     if isinstance(data, dict):
         safe_data = dict(data)
         otp_code = safe_data.pop('otp_code', None)
-        delivery_email = safe_data.pop('email', None)
+        delivery_context['email'] = safe_data.pop('email', None)
+        delivery_context['phone'] = safe_data.pop('phone', None)
+        delivery_context['delivery_channel'] = (
+            safe_data.get('delivery_channel') or 'email'
+        )
         sanitized['data'] = safe_data
 
         if safe_data.get('verification_id'):
             sanitized['verification_id'] = safe_data.get('verification_id')
         if safe_data.get('masked_email'):
             sanitized['masked_email'] = safe_data.get('masked_email')
+        if safe_data.get('masked_phone'):
+            sanitized['masked_phone'] = safe_data.get('masked_phone')
+        if safe_data.get('delivery_channel'):
+            sanitized['delivery_channel'] = safe_data.get('delivery_channel')
         if safe_data.get('expires_in_seconds') is not None:
             sanitized['expires_in_seconds'] = safe_data.get('expires_in_seconds')
 
     if EXPOSE_DEMO_OTP and otp_code:
         sanitized['demo_otp_code'] = otp_code
 
-    return sanitized, otp_code, delivery_email
+    return sanitized, otp_code, delivery_context
 
 
 def _send_otp_email(
@@ -481,6 +499,126 @@ def _send_otp_email(
     return False, "; ".join(errors) if errors else "Unable to send OTP notification"
 
 
+def _send_otp_sms(
+    phone: str,
+    otp_code: str,
+    expiry_seconds: int,
+    purpose: str,
+    ip_address: Optional[str] = None
+) -> Tuple[bool, Optional[str]]:
+    """Send OTP via the configured SMS provider.
+
+    Mirrors ``_send_otp_email`` for the SMS channel. The notification
+    service already raises clear failures when the SMS provider is not
+    configured, so callers can surface a useful error to the user.
+    """
+    try:
+        from services.notification_service import (
+            NotificationRequest,
+            NotificationChannel,
+            NotificationPriority,
+            should_use_mock_notifications,
+            create_notification_service,
+        )
+    except Exception as exc:
+        return False, f"Notification service unavailable: {exc}"
+
+    expiry_minutes = max(1, int(expiry_seconds // 60))
+    sms_body = (
+        f"Your PHINS verification code is {otp_code}. "
+        f"It expires in {expiry_minutes} minute(s)."
+    )
+
+    try:
+        service = create_notification_service(
+            use_mock=should_use_mock_notifications()
+        )
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.SMS,
+            recipient=phone,
+            content=sms_body,
+            priority=NotificationPriority.HIGH,
+            ip_address=ip_address,
+            metadata={'purpose': purpose, 'kind': 'otp'},
+        ))
+        if bool(result.success):
+            return True, None
+        return False, result.error_message or "Unknown SMS send failure"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _send_otp_via_channel(
+    delivery_channel: str,
+    otp_code: str,
+    expiry_seconds: int,
+    purpose: str,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    ip_address: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Dispatch OTP delivery to email, SMS, or both based on channel.
+
+    For ``'both'`` we treat the request as successful if at least one
+    channel delivers, while still surfacing the failed channel's error
+    so operators can fix it.
+    """
+    channel = (delivery_channel or 'email').strip().lower()
+    if channel not in ('email', 'sms', 'both'):
+        channel = 'email'
+
+    email_ok = sms_ok = False
+    email_error = sms_error = None
+
+    if channel in ('email', 'both'):
+        if not email:
+            email_error = "Email address is required for email OTP delivery."
+        else:
+            email_ok, email_error = _send_otp_email(
+                email=email,
+                otp_code=otp_code,
+                expiry_seconds=expiry_seconds,
+                purpose=purpose,
+                ip_address=ip_address,
+            )
+
+    if channel in ('sms', 'both'):
+        if not phone:
+            sms_error = "Phone number is required for SMS OTP delivery."
+        else:
+            sms_ok, sms_error = _send_otp_sms(
+                phone=phone,
+                otp_code=otp_code,
+                expiry_seconds=expiry_seconds,
+                purpose=purpose,
+                ip_address=ip_address,
+            )
+
+    if channel == 'email':
+        return email_ok, email_error
+    if channel == 'sms':
+        return sms_ok, sms_error
+
+    if email_ok or sms_ok:
+        # At least one channel succeeded; report the failed channel's
+        # error so the operator can still fix the broken provider.
+        if email_ok and sms_ok:
+            return True, None
+        failed_error = sms_error if email_ok else email_error
+        return True, (
+            f"Verification code delivered via "
+            f"{'email' if email_ok else 'sms'}; the other channel failed: "
+            f"{failed_error or 'unknown error'}"
+        )
+
+    combined = "; ".join(
+        f"{name}: {err}"
+        for name, err in (("email", email_error), ("sms", sms_error))
+        if err
+    )
+    return False, combined or "Unable to deliver verification code"
+
+
 def _session_user_id(session: Optional[Dict[str, Any]]) -> Optional[str]:
     """Resolve canonical user identifier from session."""
     if not session:
@@ -538,14 +676,26 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     service = get_otp_security_service()
     
     email = body_data.get('email')
+    phone = (body_data.get('phone') or '').strip() or None
+    delivery_channel = (body_data.get('delivery_channel') or 'email').strip().lower()
+    if delivery_channel not in ('email', 'sms', 'both'):
+        delivery_channel = 'email'
     purpose = body_data.get('purpose', 'login')
     user_type = body_data.get('user_type', 'customer')
     user_id = body_data.get('user_id', email)  # Use email as user_id if not provided
     device_fingerprint = body_data.get('device_fingerprint')
-    
+
+    # Email is required as the user identifier. Phone is required only
+    # when SMS delivery is requested.
     if not email:
         return 400, {"success": False, "error": "Email is required"}
-    
+    if delivery_channel in ('sms', 'both') and not phone:
+        return 400, {
+            "success": False,
+            "error": "Phone number is required for SMS verification.",
+            "error_code": "MISSING_PHONE",
+        }
+
     # Convert purpose string to enum
     try:
         purpose_enum = OTPPurpose(purpose)
@@ -559,10 +709,12 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
         purpose=purpose_enum,
         ip_address=client_ip,
         user_agent=user_agent,
-        device_fingerprint=device_fingerprint
+        device_fingerprint=device_fingerprint,
+        phone=phone,
+        delivery_channel=delivery_channel,
     )
     
-    response_data, otp_code, _delivery_email = _prepare_otp_client_response(result.to_dict())
+    response_data, otp_code, delivery_context = _prepare_otp_client_response(result.to_dict())
 
     if result.success:
         expiry_seconds = int(response_data.get('expires_in_seconds', 300) or 300)
@@ -570,12 +722,14 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
         notification_error = None
 
         if otp_code:
-            notification_sent, notification_error = _send_otp_email(
-                email=email,
+            notification_sent, notification_error = _send_otp_via_channel(
+                delivery_channel=delivery_context.get('delivery_channel') or delivery_channel,
                 otp_code=otp_code,
                 expiry_seconds=expiry_seconds,
                 purpose=purpose,
-                ip_address=client_ip
+                email=email,
+                phone=phone,
+                ip_address=client_ip,
             )
         response_data['notification_sent'] = notification_sent
 
@@ -641,17 +795,23 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
         ip_address=client_ip,
         user_agent=user_agent
     )
-    response_data, otp_code, delivery_email = _prepare_otp_client_response(result.to_dict())
+    response_data, otp_code, delivery_context = _prepare_otp_client_response(result.to_dict())
 
     if result.success:
         expiry_seconds = int(response_data.get('expires_in_seconds', 300) or 300)
-        if otp_code and delivery_email:
-            sent, send_error = _send_otp_email(
-                email=delivery_email,
+        delivery_channel = delivery_context.get('delivery_channel') or 'email'
+        delivery_email = delivery_context.get('email')
+        delivery_phone = delivery_context.get('phone')
+
+        if otp_code:
+            sent, send_error = _send_otp_via_channel(
+                delivery_channel=delivery_channel,
                 otp_code=otp_code,
                 expiry_seconds=expiry_seconds,
                 purpose='otp_resend',
-                ip_address=client_ip
+                email=delivery_email,
+                phone=delivery_phone,
+                ip_address=client_ip,
             )
             response_data['notification_sent'] = sent
             if not sent:

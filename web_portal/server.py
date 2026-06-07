@@ -31385,10 +31385,26 @@ For claims or questions, please contact:
                 data = json.loads(body)
                 username = sanitize_input(data.get('username', ''), 254).lower()
                 email = sanitize_input(data.get('email', ''), 254).lower()
+                # Optional SMS delivery: caller can ask for the OTP to be
+                # sent via SMS (requires phone) or via email + SMS.
+                requested_channel = str(
+                    data.get('delivery_channel') or 'email'
+                ).strip().lower()
+                if requested_channel not in ('email', 'sms', 'both'):
+                    requested_channel = 'email'
+                requested_phone = sanitize_input(data.get('phone', ''), 32).strip()
 
                 if not username or not email:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Username and email are required'}).encode('utf-8'))
+                    return
+
+                if requested_channel in ('sms', 'both') and not requested_phone:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'A phone number is required for SMS verification.',
+                        'error_code': 'MISSING_PHONE',
+                    }).encode('utf-8'))
                     return
 
                 user = USERS.get(username)
@@ -31418,12 +31434,24 @@ For claims or questions, please contact:
                     return
 
                 customer_id = user.get('customer_id')
+                customer = None
                 if customer_id:
                     customer = CUSTOMERS.get(customer_id)
                     if customer and customer.get('email', '').lower() != email:
                         self._set_json_headers(200)
                         self.wfile.write(json.dumps(_decoy_reset_response()).encode('utf-8'))
                         return
+
+                # If the caller asked for SMS but didn't supply a phone,
+                # fall back to the customer's stored phone. If neither is
+                # available, drop back to email-only delivery so we don't
+                # block the reset.
+                effective_phone = requested_phone or (
+                    str((customer or {}).get('phone') or '').strip()
+                )
+                effective_channel = requested_channel
+                if effective_channel in ('sms', 'both') and not effective_phone:
+                    effective_channel = 'email'
 
                 try:
                     from services.otp_security_service import get_otp_security_service, OTPPurpose
@@ -31435,6 +31463,8 @@ For claims or questions, please contact:
                         purpose=OTPPurpose.PASSWORD_RESET,
                         ip_address=client_ip,
                         user_agent=self.headers.get('User-Agent', ''),
+                        phone=effective_phone or None,
+                        delivery_channel=effective_channel,
                     )
 
                     if not otp_result.success:
@@ -31454,14 +31484,16 @@ For claims or questions, please contact:
                         try:
                             if api_extensions_enabled:
                                 try:
-                                    from web_portal.api_extensions import _send_otp_email
+                                    from web_portal.api_extensions import _send_otp_via_channel
                                 except ImportError:
-                                    from api_extensions import _send_otp_email
-                                sent, send_err = _send_otp_email(
-                                    email=email,
+                                    from api_extensions import _send_otp_via_channel
+                                sent, send_err = _send_otp_via_channel(
+                                    delivery_channel=effective_channel,
                                     otp_code=otp_code,
                                     expiry_seconds=expiry_seconds,
                                     purpose='password_reset',
+                                    email=email,
+                                    phone=effective_phone or None,
                                     ip_address=client_ip,
                                 )
                                 notification_sent = sent
@@ -31496,7 +31528,7 @@ For claims or questions, please contact:
                         except Exception as mail_exc:
                             notification_error = str(mail_exc)
                             try:
-                                print(f"[PASSWORD-RESET] OTP email delivery error: {mail_exc}")
+                                print(f"[PASSWORD-RESET] OTP delivery error: {mail_exc}")
                             except Exception:
                                 pass
 
@@ -31504,7 +31536,7 @@ For claims or questions, please contact:
 
                     if not notification_sent and notification_error:
                         try:
-                            print(f"[PASSWORD-RESET] Verification code email not delivered to {email}: {notification_error}")
+                            print(f"[PASSWORD-RESET] Verification code not delivered to {email} via {effective_channel}: {notification_error}")
                         except Exception:
                             pass
 
@@ -31514,11 +31546,14 @@ For claims or questions, please contact:
                         'verification_id': verification_id,
                         'requires_otp': True,
                         'notification_sent': notification_sent,
+                        'delivery_channel': effective_channel,
                     }
                     if not notification_sent and notification_error:
                         response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
                     if otp_result.data and otp_result.data.get('masked_email'):
                         response_data['masked_email'] = otp_result.data['masked_email']
+                    if otp_result.data and otp_result.data.get('masked_phone'):
+                        response_data['masked_phone'] = otp_result.data['masked_phone']
                     if otp_result.data and otp_result.data.get('expires_in_seconds'):
                         response_data['expires_in_seconds'] = otp_result.data['expires_in_seconds']
 

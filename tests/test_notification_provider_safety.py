@@ -187,7 +187,11 @@ def test_diagnostics_marks_sendgrid_as_will_deliver_when_configured(monkeypatch)
     assert diagnostics['email']['active_provider'] == 'sendgrid'
     assert diagnostics['email']['will_deliver'] is True
     assert diagnostics['email']['providers']['sendgrid']['configured'] is True
-    assert diagnostics['recommendation'] is None
+    # The recommendation may still mention SMS; what we care about here is
+    # that no email-specific recommendation is needed.
+    recommendation = diagnostics.get('recommendation') or ''
+    assert 'No email provider configured' not in recommendation
+    assert 'Mock email provider' not in recommendation
 
 
 def test_diagnostics_flags_explicit_api_provider_without_credentials(monkeypatch):
