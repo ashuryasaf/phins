@@ -733,6 +733,11 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
             )
         response_data['notification_sent'] = notification_sent
 
+        if notification_sent and notification_error:
+            # Partial delivery (e.g. one leg of a 'both' request failed): still
+            # surface the error so operators and users know a channel is broken.
+            response_data['notification_error'] = notification_error
+
         if not notification_sent:
             response_data['notification_error'] = notification_error or 'Unable to send OTP notification'
             if _apply_registration_demo_otp_fallback(
@@ -814,6 +819,10 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
                 ip_address=client_ip,
             )
             response_data['notification_sent'] = sent
+            if sent and send_error:
+                # Partial delivery (e.g. one leg of a 'both' request failed):
+                # still surface the error so the broken channel is visible.
+                response_data['notification_error'] = send_error
             if not sent:
                 response_data['notification_error'] = send_error or 'Unable to resend OTP notification'
                 resend_purpose = None
