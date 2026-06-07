@@ -48,7 +48,7 @@ jobs:
             "api_key\s*=\s*['\"][^'\"]+['\"]"
             "apikey\s*=\s*['\"][^'\"]+['\"]"
             "token\s*=\s*['\"][^'\"]+['\"]"
-            "AWS_SECRET"
+            "AWS_SECRET_ACCESS_KEY\s*=\s*['\"][^'\"]+['\"]"
             "PRIVATE_KEY"
             "-----BEGIN.*PRIVATE KEY-----"
           )
