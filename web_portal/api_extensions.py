@@ -685,6 +685,19 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     user_id = body_data.get('user_id', email)  # Use email as user_id if not provided
     device_fingerprint = body_data.get('device_fingerprint')
 
+    # Password-reset OTPs must be requested through the dedicated
+    # /api/request-password-reset route, which binds SMS delivery to the
+    # account's registered phone. This generic endpoint trusts a
+    # caller-supplied phone, so honouring 'password_reset' here would let an
+    # attacker who knows a victim's username/email redirect the reset code to
+    # their own device and take over the account.
+    if str(purpose).strip().lower() == 'password_reset':
+        return 400, {
+            "success": False,
+            "error": "Password reset codes must be requested via /api/request-password-reset.",
+            "error_code": "UNSUPPORTED_PURPOSE",
+        }
+
     # Email is required as the user identifier. Phone is required only
     # when SMS delivery is requested.
     if not email:
