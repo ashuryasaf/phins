@@ -190,6 +190,21 @@ def test_diagnostics_marks_sendgrid_as_will_deliver_when_configured(monkeypatch)
     assert diagnostics['recommendation'] is None
 
 
+def test_diagnostics_flags_explicit_api_provider_without_credentials(monkeypatch):
+    # EMAIL_PROVIDER=sendgrid but no SENDGRID_API_KEY: the send path fails, so
+    # diagnostics must not imply delivery will succeed.
+    monkeypatch.setenv('EMAIL_PROVIDER', 'sendgrid')
+    monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'sendgrid')
+
+    assert get_active_email_provider_type() == 'noop'
+
+    diagnostics = get_notification_provider_diagnostics()
+    assert diagnostics['email']['active_provider'] == 'noop'
+    assert diagnostics['email']['will_deliver'] is False
+    assert diagnostics['email']['providers']['sendgrid']['configured'] is False
+    assert 'No email provider configured' in (diagnostics['recommendation'] or '')
+
+
 def test_active_email_and_sms_provider_helpers_report_noop_when_unconfigured():
     monkeypatch_host = NotificationConfig.SMTP_HOST
     try:

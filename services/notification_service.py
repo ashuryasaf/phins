@@ -3697,12 +3697,40 @@ def reset_notification_service():
     _notification_service_instances.clear()
 
 
+def _email_api_provider_has_credentials(provider_type: str) -> bool:
+    """Check whether a selected API email provider has usable credentials."""
+    if provider_type == 'sendgrid':
+        return bool(_env_or_default('SENDGRID_API_KEY', NotificationConfig.SENDGRID_API_KEY))
+    if provider_type == 'mailgun':
+        return bool(
+            _env_or_default('MAILGUN_API_KEY', NotificationConfig.MAILGUN_API_KEY)
+            and _env_or_default('MAILGUN_DOMAIN', NotificationConfig.MAILGUN_DOMAIN)
+        )
+    if provider_type == 'resend':
+        return bool(_env_or_default('RESEND_API_KEY', NotificationConfig.RESEND_API_KEY))
+    if provider_type == 'active_notifications':
+        return bool(
+            _env_or_default('ACTIVE_NOTIFICATIONS_API_KEY', NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY)
+            or _env_or_default('PINGRAM_API_KEY')
+            or _env_or_default('NOTIFICATIONAPI_API_KEY')
+        )
+    if provider_type == 'ses':
+        return _aws_identity_configured()
+    return True
+
+
 def get_active_email_provider_type() -> str:
     """Return the canonical name of the email provider that would be used for delivery."""
     if should_use_mock_notifications():
         return 'mock'
     provider_type = _select_email_provider_type()
-    if provider_type == 'smtp' and _smtp_looks_unconfigured():
+    if provider_type == 'smtp':
+        if _smtp_looks_unconfigured():
+            return 'noop'
+        return provider_type
+    # An explicitly selected API provider without credentials cannot deliver;
+    # report 'noop' so diagnostics don't imply delivery will succeed.
+    if not _email_api_provider_has_credentials(provider_type):
         return 'noop'
     return provider_type
 
