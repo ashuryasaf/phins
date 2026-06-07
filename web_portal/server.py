@@ -32480,7 +32480,9 @@ For claims or questions, please contact:
                         allowed_media_prefix = f"/media-files/supplier-offers/{offer_id}/"
                         existing_media_list = [
                             m for m in raw_media
-                            if isinstance(m, dict) and str(m.get('url') or '').strip().startswith(allowed_media_prefix)
+                            if isinstance(m, dict)
+                            and str(m.get('url') or '').strip().startswith(allowed_media_prefix)
+                            and '..' not in str(m.get('url') or '').strip().split('/')
                         ]
                     else:
                         existing_media_list = (existing or {}).get('media') or []

@@ -1254,6 +1254,7 @@
           currentOfferMedia = [...currentOfferMedia, result.media];
           renderOfferMediaGallery();
           setOfferMediaStatus('Uploaded. Customers can now find this offer through visual cues in the Health Wallet AI search.', false);
+          await loadOffers();
         }
         if (fileInput) fileInput.value = '';
         if (altInput) altInput.value = '';
@@ -1276,6 +1277,7 @@
         currentOfferMedia = currentOfferMedia.filter(m => m.id !== mediaId);
         renderOfferMediaGallery();
         setOfferMediaStatus('Media removed.', false);
+        await loadOffers();
       } catch (e) {
         setOfferMediaStatus('Failed to remove media: ' + (e.message || e), true);
       }
