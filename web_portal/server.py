@@ -31292,6 +31292,7 @@ For claims or questions, please contact:
                         expected_email=email,
                         expected_purpose=OTPPurpose.PASSWORD_RESET,
                         ip_address=client_ip,
+                        expected_user_type='customer',
                     )
                     if not consume_result.success:
                         self._set_json_headers(401)
