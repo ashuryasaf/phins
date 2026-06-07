@@ -698,16 +698,24 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
             "error_code": "UNSUPPORTED_PURPOSE",
         }
 
-    # Email is required as the user identifier. Phone is required only
-    # when SMS delivery is requested.
-    if not email:
-        return 400, {"success": False, "error": "Email is required"}
-    if delivery_channel in ('sms', 'both') and not phone:
+    # SMS / 'both' delivery is refused here for the same reason: this generic
+    # endpoint identifies the subject solely by a caller-supplied email and
+    # cannot prove the caller controls the supplied phone. Honouring a
+    # caller-supplied phone would let an attacker who knows a victim's email
+    # have that account's OTP delivered to their own device and satisfy any
+    # downstream step that trusts the verification. SMS-bound codes must go
+    # through a flow that targets the account's registered phone (for example
+    # /api/request-password-reset), so restrict this endpoint to email.
+    if delivery_channel in ('sms', 'both'):
         return 400, {
             "success": False,
-            "error": "Phone number is required for SMS verification.",
-            "error_code": "MISSING_PHONE",
+            "error": "SMS verification is not available on this endpoint; codes are delivered via email.",
+            "error_code": "UNSUPPORTED_CHANNEL",
         }
+
+    # Email is required as the user identifier.
+    if not email:
+        return 400, {"success": False, "error": "Email is required"}
 
     # Convert purpose string to enum
     try:
