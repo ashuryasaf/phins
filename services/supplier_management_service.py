@@ -618,6 +618,54 @@ class SupplierManagementService:
         }
     
     # =========================================================================
+    # SUPPLIER PASSWORD RESET
+    # =========================================================================
+
+    def find_supplier_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """
+        Find a supplier by contact email.
+        Returns the supplier dict or None. Does NOT reveal whether the email
+        belongs to a customer — only checks the supplier store.
+        """
+        email_lower = email.lower()
+        for supplier in self.suppliers.values():
+            if supplier.get('contact_email', '').lower() == email_lower:
+                return supplier
+        return None
+
+    def reset_supplier_password(self, email: str, new_password: str) -> Dict[str, Any]:
+        """
+        Reset a supplier's password by email.
+
+        This method ONLY touches the supplier record — it will never modify
+        a customer/user record even if the email is shared.
+
+        Args:
+            email: The supplier's registered contact email.
+            new_password: The new password (already validated by caller).
+
+        Returns:
+            Result dict with success status.
+
+        Raises:
+            ValueError: If no supplier is found for the email.
+        """
+        supplier = self.find_supplier_by_email(email)
+        if not supplier:
+            raise ValueError("No supplier account found for this email")
+
+        password_hash, salt = self.hash_password(new_password)
+        supplier['password_hash'] = password_hash
+        supplier['password_salt'] = salt
+        supplier['updated_date'] = datetime.now(timezone.utc).isoformat()
+
+        return {
+            'success': True,
+            'supplier_id': supplier['id'],
+            'message': 'Supplier password has been reset successfully'
+        }
+
+    # =========================================================================
     # OFFER MANAGEMENT
     # =========================================================================
     

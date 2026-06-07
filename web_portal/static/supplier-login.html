@@ -100,6 +100,56 @@
       color: var(--primary);
       font-weight: 500;
     }
+    .forgot-link {
+      text-align: right;
+      margin-top: -12px;
+      margin-bottom: 16px;
+    }
+    .forgot-link a {
+      color: var(--primary);
+      font-size: 0.85rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .forgot-link a:hover {
+      text-decoration: underline;
+    }
+    .reset-form {
+      display: none;
+    }
+    .reset-form.active {
+      display: block;
+    }
+    .step-indicator {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 20px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .step-indicator .step {
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+    .step-indicator .step.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 16px;
+      font-size: 0.85rem;
+      color: var(--primary);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
     .status-info {
       margin-top: 24px;
       padding: 16px;
@@ -153,8 +203,84 @@
           <input type="password" id="password" name="password" required placeholder="Enter your password" autocomplete="current-password">
         </div>
 
+        <div class="forgot-link">
+          <a onclick="showForgotPassword()">Forgot Password?</a>
+        </div>
+
         <button type="submit" class="btn-login" id="login-btn">Sign In</button>
       </form>
+
+      <!-- Forgot Password: Step 1 - Enter Email -->
+      <div id="reset-step1" class="reset-form">
+        <a class="back-link" onclick="showLoginForm()">&larr; Back to Login</a>
+        <div class="login-header">
+          <div class="icon">🔑</div>
+          <h2>Reset Password</h2>
+          <p>Enter your supplier account email</p>
+        </div>
+        <div class="step-indicator">
+          <span class="step active">1. Email</span>
+          <span class="step">2. Verify</span>
+          <span class="step">3. New Password</span>
+        </div>
+        <form onsubmit="return handleRequestReset(event)">
+          <div class="form-group">
+            <label for="reset-email">Supplier Email Address</label>
+            <input type="email" id="reset-email" required placeholder="your@company.com" autocomplete="email">
+          </div>
+          <button type="submit" class="btn-login" id="reset-request-btn">Send Verification Code</button>
+        </form>
+      </div>
+
+      <!-- Forgot Password: Step 2 - Enter OTP -->
+      <div id="reset-step2" class="reset-form">
+        <a class="back-link" onclick="showResetStep1()">&larr; Back</a>
+        <div class="login-header">
+          <div class="icon">📧</div>
+          <h2>Verify Code</h2>
+          <p id="otp-message">Enter the code sent to your email</p>
+        </div>
+        <div class="step-indicator">
+          <span class="step">1. Email</span>
+          <span class="step active">2. Verify</span>
+          <span class="step">3. New Password</span>
+        </div>
+        <form onsubmit="return handleVerifyOTP(event)">
+          <div class="form-group">
+            <label for="otp-code">Verification Code</label>
+            <input type="text" id="otp-code" required placeholder="Enter 6-digit code" maxlength="6" autocomplete="one-time-code" pattern="[0-9]{6}">
+          </div>
+          <button type="submit" class="btn-login" id="verify-otp-btn">Verify Code</button>
+        </form>
+        <div style="text-align: center; margin-top: 12px;">
+          <a onclick="handleResendOTP()" style="color: var(--primary); font-size: 0.85rem; cursor: pointer;">Resend Code</a>
+        </div>
+      </div>
+
+      <!-- Forgot Password: Step 3 - New Password -->
+      <div id="reset-step3" class="reset-form">
+        <div class="login-header">
+          <div class="icon">🔒</div>
+          <h2>Set New Password</h2>
+          <p>Choose a strong password for your supplier account</p>
+        </div>
+        <div class="step-indicator">
+          <span class="step">1. Email</span>
+          <span class="step">2. Verify</span>
+          <span class="step active">3. New Password</span>
+        </div>
+        <form onsubmit="return handleResetPassword(event)">
+          <div class="form-group">
+            <label for="new-password">New Password</label>
+            <input type="password" id="new-password" required placeholder="Minimum 8 characters" minlength="8" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label for="confirm-password">Confirm Password</label>
+            <input type="password" id="confirm-password" required placeholder="Re-enter new password" minlength="8" autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn-login" id="reset-password-btn">Reset Password</button>
+        </form>
+      </div>
 
       <div class="register-link">
         <p>Don't have an account?</p>
@@ -179,6 +305,12 @@
   </main>
 
   <script>
+    let resetState = {
+      email: '',
+      verificationId: '',
+      otpCode: ''
+    };
+
     function showAlert(message, type = 'error') {
       const container = document.getElementById('alert-container');
       container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
@@ -186,6 +318,43 @@
 
     function clearAlert() {
       document.getElementById('alert-container').innerHTML = '';
+    }
+
+    function showLoginForm() {
+      clearAlert();
+      document.getElementById('login-form').style.display = 'block';
+      document.getElementById('reset-step1').classList.remove('active');
+      document.getElementById('reset-step2').classList.remove('active');
+      document.getElementById('reset-step3').classList.remove('active');
+    }
+
+    function showForgotPassword() {
+      clearAlert();
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('reset-step1').classList.add('active');
+      document.getElementById('reset-step2').classList.remove('active');
+      document.getElementById('reset-step3').classList.remove('active');
+    }
+
+    function showResetStep1() {
+      clearAlert();
+      document.getElementById('reset-step1').classList.add('active');
+      document.getElementById('reset-step2').classList.remove('active');
+      document.getElementById('reset-step3').classList.remove('active');
+    }
+
+    function showResetStep2() {
+      clearAlert();
+      document.getElementById('reset-step1').classList.remove('active');
+      document.getElementById('reset-step2').classList.add('active');
+      document.getElementById('reset-step3').classList.remove('active');
+    }
+
+    function showResetStep3() {
+      clearAlert();
+      document.getElementById('reset-step1').classList.remove('active');
+      document.getElementById('reset-step2').classList.remove('active');
+      document.getElementById('reset-step3').classList.add('active');
     }
 
     async function handleLogin(event) {
@@ -217,7 +386,6 @@
           throw new Error(data.error || 'Login failed');
         }
 
-        // Store token and redirect
         localStorage.setItem('phins_token', data.token);
         showAlert('Login successful! Redirecting...', 'success');
         
@@ -229,6 +397,189 @@
         showAlert(error.message);
         btn.disabled = false;
         btn.textContent = 'Sign In';
+      }
+
+      return false;
+    }
+
+    async function handleRequestReset(event) {
+      event.preventDefault();
+      clearAlert();
+
+      const email = document.getElementById('reset-email').value.trim();
+      const btn = document.getElementById('reset-request-btn');
+
+      if (!email) {
+        showAlert('Please enter your supplier email address');
+        return false;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const response = await fetch('/api/supplier/request-password-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Request failed');
+        }
+
+        resetState.email = email;
+        resetState.verificationId = data.verification_id;
+
+        if (data.masked_email) {
+          document.getElementById('otp-message').textContent = 
+            `Enter the verification code sent to ${data.masked_email}`;
+        }
+
+        showAlert('Verification code sent to your email', 'success');
+        setTimeout(() => {
+          showResetStep2();
+        }, 500);
+
+      } catch (error) {
+        showAlert(error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send Verification Code';
+      }
+
+      return false;
+    }
+
+    async function handleVerifyOTP(event) {
+      event.preventDefault();
+      clearAlert();
+
+      const otpCode = document.getElementById('otp-code').value.trim();
+      const btn = document.getElementById('verify-otp-btn');
+
+      if (!otpCode || otpCode.length !== 6) {
+        showAlert('Please enter the 6-digit verification code');
+        return false;
+      }
+
+      resetState.otpCode = otpCode;
+
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+
+      try {
+        const response = await fetch('/api/security/otp/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            verification_id: resetState.verificationId,
+            otp_code: otpCode
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Verification failed');
+        }
+
+        showAlert('Code verified successfully', 'success');
+        setTimeout(() => {
+          showResetStep3();
+        }, 500);
+
+      } catch (error) {
+        showAlert(error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Verify Code';
+      }
+
+      return false;
+    }
+
+    async function handleResendOTP() {
+      clearAlert();
+
+      try {
+        const response = await fetch('/api/security/otp/resend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            verification_id: resetState.verificationId
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Resend failed');
+        }
+
+        if (data.verification_id) {
+          resetState.verificationId = data.verification_id;
+        }
+
+        showAlert('A new verification code has been sent', 'success');
+      } catch (error) {
+        showAlert(error.message);
+      }
+    }
+
+    async function handleResetPassword(event) {
+      event.preventDefault();
+      clearAlert();
+
+      const newPassword = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+      const btn = document.getElementById('reset-password-btn');
+
+      if (!newPassword || newPassword.length < 8) {
+        showAlert('Password must be at least 8 characters');
+        return false;
+      }
+
+      if (newPassword !== confirmPassword) {
+        showAlert('Passwords do not match');
+        return false;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Resetting...';
+
+      try {
+        const response = await fetch('/api/supplier/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: resetState.email,
+            new_password: newPassword,
+            verification_id: resetState.verificationId,
+            otp_code: resetState.otpCode
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Password reset failed');
+        }
+
+        showAlert('Password reset successful! You can now log in with your new password.', 'success');
+        resetState = { email: '', verificationId: '', otpCode: '' };
+
+        setTimeout(() => {
+          showLoginForm();
+        }, 2000);
+
+      } catch (error) {
+        showAlert(error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Reset Password';
       }
 
       return false;
