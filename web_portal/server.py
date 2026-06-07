@@ -32989,7 +32989,14 @@ For claims or questions, please contact:
                         self._set_json_headers(403)
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
-                    media_list = offer.get('media') if isinstance(offer.get('media'), list) else []
+                    media_list = offer.get('media')
+                    if isinstance(media_list, str):
+                        try:
+                            media_list = json.loads(media_list)
+                        except Exception:
+                            media_list = []
+                    if not isinstance(media_list, list):
+                        media_list = []
                     new_list = []
                     for item in media_list:
                         if isinstance(item, dict) and item.get('id') == media_id:

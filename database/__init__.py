@@ -271,6 +271,8 @@ def upgrade_schema(engine=None):
         ('claims', 'paid_amount', 'FLOAT', None),
         # Supplier invitation code reference
         ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
+        # Supplier offer media gallery (JSON list of media items)
+        ('supplier_offers', 'media', 'TEXT', None),
     ]
     
     with engine.connect() as conn:
