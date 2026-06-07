@@ -3859,20 +3859,37 @@ def _provider_diagnostics_recommendation(
     sms_status: Dict[str, Any]
 ) -> Optional[str]:
     """Produce an operator-friendly hint when delivery would not actually happen."""
+    hints = []
     email_active = email_status.get('active_provider')
     if email_active == 'noop':
-        return (
+        hints.append(
             "No email provider configured. Verification codes will NOT be delivered. "
             "Set SENDGRID_API_KEY, MAILGUN_API_KEY+MAILGUN_DOMAIN, RESEND_API_KEY, "
             "ACTIVE_NOTIFICATIONS_API_KEY, AWS credentials for SES, or a real "
             "SMTP_HOST + SMTP_USERNAME/SMTP_PASSWORD."
         )
-    if email_active == 'mock':
-        return (
+    elif email_active == 'mock':
+        hints.append(
             "Mock email provider is active because PHINS_TEST_MODE or "
             "PHINS_USE_MOCK_NOTIFICATIONS is set. Disable these in production."
         )
-    return None
+
+    sms_active = sms_status.get('active_provider')
+    if sms_active == 'noop':
+        hints.append(
+            "No SMS provider configured. Verification codes will NOT be delivered via SMS. "
+            "Set TWILIO_ACCOUNT_SID+TWILIO_AUTH_TOKEN+TWILIO_FROM_NUMBER, AWS credentials "
+            "for SNS, VONAGE_API_KEY+VONAGE_API_SECRET, or MESSAGEBIRD_API_KEY."
+        )
+    elif sms_active == 'mock':
+        hints.append(
+            "Mock SMS provider is active because PHINS_TEST_MODE or "
+            "PHINS_USE_MOCK_NOTIFICATIONS is set. Disable these in production."
+        )
+
+    if not hints:
+        return None
+    return " ".join(hints)
 
 
 # ============================================================================
