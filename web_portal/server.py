@@ -32486,6 +32486,11 @@ For claims or questions, please contact:
                         ]
                     else:
                         existing_media_list = (existing or {}).get('media') or []
+                        if isinstance(existing_media_list, str):
+                            try:
+                                existing_media_list = json.loads(existing_media_list)
+                            except Exception:
+                                existing_media_list = []
                         if not isinstance(existing_media_list, list):
                             existing_media_list = []
                     explicit_image_url = str(payload.get('image_url') or '').strip()
@@ -32857,7 +32862,14 @@ For claims or questions, please contact:
                         self._set_json_headers(404)
                         self.wfile.write(json.dumps({'error': 'Offer disappeared during upload'}).encode('utf-8'))
                         return
-                    media_list = current.get('media') if isinstance(current.get('media'), list) else []
+                    media_list = current.get('media')
+                    if isinstance(media_list, str):
+                        try:
+                            media_list = json.loads(media_list)
+                        except Exception:
+                            media_list = []
+                    if not isinstance(media_list, list):
+                        media_list = []
                     if any(m.get('sha256') == sha256 for m in media_list if isinstance(m, dict)):
                         try:
                             os.remove(stored_path)
