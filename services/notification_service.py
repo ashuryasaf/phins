@@ -3733,6 +3733,7 @@ def get_notification_service(use_mock: Optional[bool] = None) -> NotificationSer
 def reset_notification_service():
     """Reset cached notification service instances (mainly for testing)."""
     _notification_service_instances.clear()
+    _aws_credentials_resolvable.cache_clear()
 
 
 def _email_api_provider_has_credentials(provider_type: str) -> bool:
