@@ -31392,7 +31392,6 @@ For claims or questions, please contact:
                 ).strip().lower()
                 if requested_channel not in ('email', 'sms', 'both'):
                     requested_channel = 'email'
-                requested_phone = sanitize_input(data.get('phone', ''), 32).strip()
 
                 if not username or not email:
                     self._set_json_headers(400)
@@ -31434,13 +31433,13 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps(_decoy_reset_response()).encode('utf-8'))
                         return
 
-                # If the caller asked for SMS but didn't supply a phone,
-                # fall back to the customer's stored phone. If neither is
-                # available, drop back to email-only delivery so we don't
-                # block the reset.
-                effective_phone = requested_phone or (
-                    str((customer or {}).get('phone') or '').strip()
-                )
+                # SMS delivery must always target the account's registered
+                # phone number, never a caller-supplied one. Otherwise an
+                # attacker who knows the victim's username and email could
+                # redirect the reset code to their own device. If no phone is
+                # on file, drop back to email-only delivery so we don't block
+                # the reset.
+                effective_phone = str((customer or {}).get('phone') or '').strip()
                 effective_channel = requested_channel
                 if effective_channel in ('sms', 'both') and not effective_phone:
                     effective_channel = 'email'
