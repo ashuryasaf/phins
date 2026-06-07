@@ -3802,6 +3802,10 @@ def get_active_sms_provider_type() -> str:
             NotificationConfig.TWILIO_ACCOUNT_SID and NotificationConfig.TWILIO_AUTH_TOKEN
         ):
             return 'noop'
+        # The send path uses TWILIO_FROM_NUMBER as the 'from_' sender, so without
+        # it Twilio rejects the message at runtime.
+        if not NotificationConfig.TWILIO_FROM_NUMBER:
+            return 'noop'
         # Twilio delivery needs the optional 'twilio' SDK at send time.
         if not _module_available('twilio'):
             return 'noop'
@@ -3853,7 +3857,7 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
                 )
             },
             'ses': {
-                'configured': _aws_identity_configured()
+                'configured': _aws_identity_configured() and _module_available('boto3')
             },
             'mailgun': {
                 'configured': bool(
