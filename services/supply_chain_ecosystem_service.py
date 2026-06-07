@@ -2291,7 +2291,8 @@ class SupplyChainEcosystemService:
         if not isinstance(existing_media, list):
             existing_media = []
 
-        if "media" in data:
+        media_provided = "media" in data
+        if media_provided:
             incoming_media = data.get("media")
             if isinstance(incoming_media, str):
                 try:
@@ -2346,7 +2347,13 @@ class SupplyChainEcosystemService:
                 (m.get("url") for m in media_list if isinstance(m, dict) and m.get("type") == "image"),
                 None,
             )
-            image_url = first_image or (existing or {}).get("image_url")
+            # When the caller explicitly replaces the gallery, the primary image
+            # must reflect the new media. Falling back to the prior image_url here
+            # would leave it pointing at files no longer present in `media`.
+            if media_provided:
+                image_url = first_image
+            else:
+                image_url = first_image or (existing or {}).get("image_url")
 
         offer = {
             "id": offer_id,

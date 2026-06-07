@@ -32488,11 +32488,16 @@ For claims or questions, please contact:
                         existing_media_list = (existing or {}).get('media') or []
                         if not isinstance(existing_media_list, list):
                             existing_media_list = []
-                    image_url_value = (
-                        str(payload.get('image_url') or '').strip()
-                        or next((m.get('url') for m in existing_media_list if isinstance(m, dict) and m.get('type') == 'image'), None)
-                        or (existing or {}).get('image_url')
-                    )
+                    explicit_image_url = str(payload.get('image_url') or '').strip()
+                    first_gallery_image = next((m.get('url') for m in existing_media_list if isinstance(m, dict) and m.get('type') == 'image'), None)
+                    if explicit_image_url:
+                        image_url_value = explicit_image_url
+                    elif 'media' in payload:
+                        # An explicit gallery replacement defines the primary image;
+                        # do not fall back to a stale image_url no longer in `media`.
+                        image_url_value = first_gallery_image
+                    else:
+                        image_url_value = first_gallery_image or (existing or {}).get('image_url')
                     offer_row = {
                         'id': offer_id,
                         'supplier_id': supplier_id,
@@ -32877,8 +32882,16 @@ For claims or questions, please contact:
                         return
                     media_list = list(media_list) + [media_item]
                     current['media'] = media_list
-                    if media_type == 'image' and not current.get('image_url'):
-                        current['image_url'] = public_url
+                    if media_type == 'image':
+                        # Promote the new image to hero when there is no primary
+                        # image, or when the existing image_url is stale (no longer
+                        # present in the gallery), keeping image_url and media in sync.
+                        gallery_image_urls = {
+                            m.get('url') for m in media_list
+                            if isinstance(m, dict) and m.get('type') == 'image'
+                        }
+                        if current.get('image_url') not in gallery_image_urls:
+                            current['image_url'] = public_url
                     current['updated_at'] = now_iso
                     current['updated_date'] = now_iso
                     current['updated_by'] = actor
