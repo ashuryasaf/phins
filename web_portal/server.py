@@ -32355,10 +32355,11 @@ For claims or questions, please contact:
                     )
 
                     if not otp_result.success:
-                        self._set_json_headers(429)
-                        self.wfile.write(json.dumps({
-                            'error': otp_result.message or 'Too many requests. Please try again later.'
-                        }).encode('utf-8'))
+                        # Return the decoy response (HTTP 200) rather than a 429
+                        # so callers cannot distinguish "no supplier account" from
+                        # "supplier exists but OTP issuance was rate limited".
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps(_supplier_decoy_response()).encode('utf-8'))
                         return
 
                     otp_code = otp_result.data.get('otp_code') if otp_result.data else None
