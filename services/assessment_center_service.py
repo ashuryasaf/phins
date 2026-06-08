@@ -398,7 +398,9 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
 
     Supported keys (all optional; an unset key imposes no constraint):
 
-    * ``date_from`` / ``date_to`` - inclusive window on the fact ``captured_at``.
+    * ``date_from`` / ``date_to`` - inclusive window on the policy business
+      date (``start_date`` / ``last_update`` from external rows, selectable via
+      ``date_field``), falling back to the fact ``captured_at`` when absent.
     * ``fact_type`` - exact fact-type match.
     * ``source`` - exact source match (e.g. ``mislaka``, ``document``).
     * ``min_confidence`` - minimum confidence threshold.
@@ -463,12 +465,23 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
     date_from = _parse_filter_date(filters.get("date_from"))
     date_to = _parse_filter_date(filters.get("date_to"))
     if date_from or date_to:
-        captured = _parse_filter_date(fact.captured_at)
-        if captured is None:
+        # Prefer the policy business date carried by external (e.g. Mislaka)
+        # rows so date-window reporting matches the source's report filters;
+        # fall back to the fact ingestion time only when no business date is
+        # present. ``date_field`` mirrors Mislaka's ReportFilters.
+        date_field = str(filters.get("date_field") or "start_date").strip()
+        fact_date = None
+        for key in (date_field, "start_date", "last_update"):
+            fact_date = _parse_filter_date(lookup.get(key))
+            if fact_date is not None:
+                break
+        if fact_date is None:
+            fact_date = _parse_filter_date(fact.captured_at)
+        if fact_date is None:
             return False
-        if date_from and captured < date_from:
+        if date_from and fact_date < date_from:
             return False
-        if date_to and captured > date_to:
+        if date_to and fact_date > date_to:
             return False
 
     return True
