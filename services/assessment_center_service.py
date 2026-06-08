@@ -370,6 +370,123 @@ _RISK_KEYWORDS = (
 )
 
 
+# ── Adjustable reporting filters ────────────────────────────────────────────
+
+def _parse_filter_date(value: Any) -> Optional[datetime]:
+    """Parse a filter date string into a ``datetime`` (date precision)."""
+    if not value:
+        return None
+    raw = str(value).strip()
+    candidate = raw.replace("Z", "").split("T")[0].split(" ")[0]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(candidate, fmt)
+        except (ValueError, TypeError):
+            continue
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if len(digits) == 8:
+        for fmt in ("%Y%m%d", "%d%m%Y"):
+            try:
+                return datetime.strptime(digits, fmt)
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
+    """Adjustable-reporting predicate over a single fact.
+
+    Supported keys (all optional; an unset key imposes no constraint):
+
+    * ``date_from`` / ``date_to`` - inclusive window on the policy business
+      date (``start_date`` / ``last_update`` from external rows, selectable via
+      ``date_field``), falling back to the fact ``captured_at`` when absent.
+    * ``fact_type`` - exact fact-type match.
+    * ``source`` - exact source match (e.g. ``mislaka``, ``document``).
+    * ``min_confidence`` - minimum confidence threshold.
+    * ``policy_number`` - matches the fact value or its metadata policy number.
+    * ``provider`` / ``product`` / ``status`` - substring match against the
+      fact value or affiliation metadata.
+
+    Filtering only ever *removes* facts; it never alters or fabricates them.
+    """
+    if not filters:
+        return True
+
+    meta = fact.metadata if isinstance(fact.metadata, dict) else {}
+    # External clearinghouse facts (e.g. Mislaka) carry the full source row
+    # under metadata["row"]; flatten it so filters can match its fields too.
+    row = meta.get("row") if isinstance(meta.get("row"), dict) else {}
+    lookup = {**row, **{k: v for k, v in meta.items() if k != "row"}}
+    value_str = "" if fact.value is None else str(fact.value).lower()
+
+    ft = filters.get("fact_type")
+    if ft and str(ft).strip().lower() != str(fact.fact_type).strip().lower():
+        return False
+
+    src = filters.get("source")
+    if src and str(src).strip().lower() != str(fact.source).strip().lower():
+        return False
+
+    min_conf = filters.get("min_confidence")
+    if min_conf not in (None, ""):
+        try:
+            if float(fact.confidence) < float(min_conf):
+                return False
+        except (TypeError, ValueError):
+            pass
+
+    pol = filters.get("policy_number")
+    if pol:
+        want = str(pol).strip().lower()
+        candidates = {value_str}
+        for key in ("policy_number", "policy_id"):
+            if lookup.get(key):
+                candidates.add(str(lookup.get(key)).lower())
+        if want not in candidates:
+            return False
+
+    for fkey, mkeys in (
+        ("provider", ("affiliation_provider", "company_name", "provider")),
+        ("product", ("affiliation_product", "product_type", "product_type_name")),
+        ("status", ("affiliation_status", "status", "status_name")),
+    ):
+        want = filters.get(fkey)
+        if not want:
+            continue
+        want = str(want).strip().lower()
+        haystacks = [value_str]
+        for mk in mkeys:
+            if lookup.get(mk):
+                haystacks.append(str(lookup.get(mk)).lower())
+        if not any(want in h for h in haystacks):
+            return False
+
+    date_from = _parse_filter_date(filters.get("date_from"))
+    date_to = _parse_filter_date(filters.get("date_to"))
+    if date_from or date_to:
+        # Prefer the policy business date carried by external (e.g. Mislaka)
+        # rows so date-window reporting matches the source's report filters;
+        # fall back to the fact ingestion time only when no business date is
+        # present. ``date_field`` mirrors Mislaka's ReportFilters.
+        date_field = str(filters.get("date_field") or "start_date").strip()
+        fact_date = None
+        for key in (date_field, "start_date", "last_update"):
+            fact_date = _parse_filter_date(lookup.get(key))
+            if fact_date is not None:
+                break
+        if fact_date is None:
+            fact_date = _parse_filter_date(fact.captured_at)
+        if fact_date is None:
+            return False
+        if date_from and fact_date < date_from:
+            return False
+        if date_to and fact_date > date_to:
+            return False
+
+    return True
+
+
 # ── Data classes ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -939,6 +1056,8 @@ class AssessmentCenterService:
         self,
         customer_id: str,
         document_ids: Optional[Iterable[str]] = None,
+        *,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Return a hierarchical 'describe data with data' view.
 
@@ -958,6 +1077,8 @@ class AssessmentCenterService:
         ids_set = {str(d) for d in document_ids} if document_ids else None
         if ids_set is not None:
             facts = [f for f in facts if (f.source_document_id or "") in ids_set]
+        if filters:
+            facts = [f for f in facts if _fact_matches_filters(f, filters)]
 
         # Build a lookup of document metadata so we can label each entry with
         # the originating document_type (id / medical / receipt / financial).
@@ -1033,6 +1154,7 @@ class AssessmentCenterService:
             ],
             "sections": ordered_sections,
             "filtered_to_documents": sorted(ids_set) if ids_set else None,
+            "filters_applied": {k: v for k, v in (filters or {}).items() if v not in (None, "")} or None,
         }
 
     def run_analysis(
@@ -1062,6 +1184,7 @@ class AssessmentCenterService:
         analysis = (analysis_type or "customer_360").lower()
         options = dict(options or {})
         ids = list(document_ids) if document_ids else None
+        report_filters = self._extract_report_filters(options)
 
         if analysis in ("customer_360", "profile"):
             profile = self.build_customer_360(customer_id)
@@ -1101,18 +1224,24 @@ class AssessmentCenterService:
                 "download": self._bi_to_rows(charts, risk),
             }
         if analysis in ("describe_data", "describe"):
-            description = self.describe_data_with_data(customer_id, ids)
-            return {
+            description = self.describe_data_with_data(
+                customer_id, ids, filters=report_filters,
+            )
+            payload = {
                 "analysis_type": "describe_data",
                 "customer_id": customer_id,
                 "title": "Describe data with data",
                 "description": description,
                 "download": self._description_to_rows(description),
             }
+            self._attach_ai_narrative(payload, customer_id, options)
+            return payload
         if analysis in ("cross_document", "cross_doc", "compare"):
-            description = self.describe_data_with_data(customer_id, ids)
+            description = self.describe_data_with_data(
+                customer_id, ids, filters=report_filters,
+            )
             risk = self.compute_risk_indicators(customer_id)
-            return {
+            payload = {
                 "analysis_type": "cross_document",
                 "customer_id": customer_id,
                 "title": "Cross-document review",
@@ -1120,7 +1249,81 @@ class AssessmentCenterService:
                 "risk": risk,
                 "download": self._description_to_rows(description),
             }
+            self._attach_ai_narrative(payload, customer_id, options)
+            return payload
         raise ValueError(f"Unknown analysis_type: {analysis_type!r}")
+
+    # ── Adjustable reporting + AI narrative helpers ────────────────────────
+
+    @staticmethod
+    def _extract_report_filters(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Pull adjustable-reporting filters out of an analysis options dict.
+
+        Accepts either a nested ``options["filters"]`` dict or recognised
+        top-level keys, so callers can pass filters whichever way is natural.
+        """
+        recognised = (
+            "date_from", "date_to", "date_field", "fact_type", "source",
+            "min_confidence", "policy_number", "provider", "product", "status",
+            "product_type", "productType",
+        )
+        filters: Dict[str, Any] = {}
+        nested = options.get("filters")
+        if isinstance(nested, dict):
+            for key in recognised:
+                if nested.get(key) not in (None, ""):
+                    filters[key] = nested[key]
+        for key in recognised:
+            if options.get(key) not in (None, ""):
+                filters[key] = options[key]
+        # ``product`` and Mislaka's ``product_type``/``productType`` are aliases
+        # so a single shared filters object narrows product on both paths.
+        if filters.get("product") in (None, ""):
+            for alias in ("product_type", "productType"):
+                if filters.get(alias) not in (None, ""):
+                    filters["product"] = filters[alias]
+                    break
+        return filters or None
+
+    @staticmethod
+    def _ai_narrative_requested(options: Dict[str, Any]) -> bool:
+        """Whether to attach the advisory AI narrative for this analysis.
+
+        Opt-in: enabled when the caller passes ``ai_narrative``/``ai`` in
+        options, or when the platform feature flag
+        ``PHINS_ASSESSMENT_AI_ENABLED`` is set. Off by default so existing
+        callers and response shapes are unaffected.
+        """
+        for key in ("ai_narrative", "ai", "include_ai_narrative"):
+            val = options.get(key)
+            if isinstance(val, bool) and val:
+                return True
+            if isinstance(val, str) and val.strip().lower() in ("1", "true", "yes", "on"):
+                return True
+        return str(os.environ.get("PHINS_ASSESSMENT_AI_ENABLED", "")).strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+
+    def _attach_ai_narrative(
+        self,
+        payload: Dict[str, Any],
+        customer_id: str,
+        options: Dict[str, Any],
+    ) -> None:
+        """Additively attach an advisory ``ai_narrative`` block when requested.
+
+        Failures are swallowed so the advisory layer can never break the
+        authoritative analysis response.
+        """
+        if not self._ai_narrative_requested(options):
+            return
+        try:
+            from services.assessment_ai_service import get_assessment_ai_service
+            payload["ai_narrative"] = get_assessment_ai_service().generate_narrative(
+                payload, customer_id=customer_id, options=options,
+            )
+        except Exception as exc:  # noqa: BLE001 - advisory must never break analysis
+            logger.warning("AI narrative attach failed for %s: %s", customer_id, exc)
 
     # ── Download row builders ──────────────────────────────────────────────
 
