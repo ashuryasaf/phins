@@ -29813,9 +29813,14 @@ For claims or questions, please contact:
                     return
 
                 # Adjustable reporting: callers may narrow the report by policy
-                # number, product, status, provider, or a date window. These
-                # only filter the real clearinghouse facts - nothing is added.
-                report_filters = ReportFilters.from_dict(data.get('filters') if isinstance(data.get('filters'), dict) else data)
+                # number, product, status, provider, or a date window via a
+                # nested "filters" object. These only filter the real
+                # clearinghouse facts - nothing is added. (We read filters only
+                # from data["filters"] so the top-level product_type used for
+                # the query is never mistaken for a report filter.)
+                report_filters = ReportFilters.from_dict(
+                    data.get('filters') if isinstance(data.get('filters'), dict) else None
+                )
 
                 report_text, metadata, _ = build_mislaka_report_text(
                     result, include_aggregates=True, filters=report_filters,

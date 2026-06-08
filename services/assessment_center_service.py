@@ -412,6 +412,10 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
         return True
 
     meta = fact.metadata if isinstance(fact.metadata, dict) else {}
+    # External clearinghouse facts (e.g. Mislaka) carry the full source row
+    # under metadata["row"]; flatten it so filters can match its fields too.
+    row = meta.get("row") if isinstance(meta.get("row"), dict) else {}
+    lookup = {**row, **{k: v for k, v in meta.items() if k != "row"}}
     value_str = "" if fact.value is None else str(fact.value).lower()
 
     ft = filters.get("fact_type")
@@ -435,15 +439,15 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
         want = str(pol).strip().lower()
         candidates = {value_str}
         for key in ("policy_number", "policy_id"):
-            if meta.get(key):
-                candidates.add(str(meta.get(key)).lower())
+            if lookup.get(key):
+                candidates.add(str(lookup.get(key)).lower())
         if want not in candidates:
             return False
 
     for fkey, mkeys in (
         ("provider", ("affiliation_provider", "company_name", "provider")),
-        ("product", ("affiliation_product", "product_type")),
-        ("status", ("affiliation_status", "status")),
+        ("product", ("affiliation_product", "product_type", "product_type_name")),
+        ("status", ("affiliation_status", "status", "status_name")),
     ):
         want = filters.get(fkey)
         if not want:
@@ -451,8 +455,8 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
         want = str(want).strip().lower()
         haystacks = [value_str]
         for mk in mkeys:
-            if meta.get(mk):
-                haystacks.append(str(meta.get(mk)).lower())
+            if lookup.get(mk):
+                haystacks.append(str(lookup.get(mk)).lower())
         if not any(want in h for h in haystacks):
             return False
 
