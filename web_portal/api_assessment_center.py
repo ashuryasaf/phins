@@ -949,6 +949,7 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 get_mislaka_service,
                 MislakaProductType,
             )
+            from services.mislaka_affiliations import ReportFilters
             from services.mislaka_report_generator import link_to_assessment_center
 
             mislaka = get_mislaka_service()
@@ -958,10 +959,20 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             except ValueError:
                 product_type = MislakaProductType.ALL
             result = mislaka.get_person_policies(id_number, product_type)
-            payload = link_to_assessment_center(result, customer_id=cust or id_number)
+            # Adjustable reporting: optional filters narrow which real policy
+            # rows are ingested as facts (policy number, status, provider, dates).
+            report_filters = ReportFilters.from_dict(
+                body.get("filters") if isinstance(body.get("filters"), dict) else None
+            )
+            payload = link_to_assessment_center(
+                result, customer_id=cust or id_number, filters=report_filters,
+            )
             return 200, {
                 "linked": True,
                 "policies_received": len(result.policies),
+                "policies_linked": payload.get("summary", {}).get("fact_count_added")
+                if isinstance(payload, dict) else None,
+                "filters_applied": report_filters.to_dict(),
                 "assessment": payload,
             }
 

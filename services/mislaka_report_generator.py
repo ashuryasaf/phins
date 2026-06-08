@@ -1,7 +1,8 @@
 """
 Mislaka Report Generator
 ========================
-Builds a fact projection (and optional downloadable PDF) for Mislaka data.
+Builds an **affiliation-structured** fact projection (and optional downloadable
+PDF) for Mislaka data.
 
 The Mislaka clearinghouse already returns *authoritative* policy rows. The
 platform therefore treats every record as a fact and never re-aggregates the
@@ -9,14 +10,23 @@ clearinghouse response on top of itself. Statistical reviews, risk scoring and
 chart synthesis live in the Assessment Center
 (:mod:`services.assessment_center_service`).
 
-This module is responsible for three things:
+This module is responsible for:
 
 1. Normalising the Mislaka response into PHINS' canonical schema so the rest of
    the platform sees the same shape regardless of provider.
-2. Emitting a flat list of facts that can be ingested by the Assessment Center.
-3. Rendering an optional, audit-grade PDF that simply lists the facts. The
-   renderer no longer prints aggregate totals so dashboards do not present
-   numbers that look like derived analysis.
+2. Decoding every record's raw Mislaka codes into named **affiliations**
+   (product / status / provider / interface) via
+   :mod:`services.mislaka_affiliations`, so reports are organised A-Z by
+   affiliation rather than by opaque numeric codes.
+3. Emitting a flat list of affiliation-enriched facts the Assessment Center can
+   ingest.
+4. Rendering an optional, audit-grade report (text + PDF) that lists the facts
+   grouped by affiliation. The renderer never prints derived statistics.
+
+Adjustable reporting: every public builder accepts an optional ``filters``
+argument (:class:`services.mislaka_affiliations.ReportFilters`) so callers can
+narrow the *real* fact set by policy number, product, status, provider, or a
+date window. Filtering only ever removes records - nothing is fabricated.
 """
 
 from __future__ import annotations
@@ -27,10 +37,25 @@ import json
 import os
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from services.mislaka_affiliations import (
+    ReportFilters,
+    apply_filters,
+    build_affiliation_projection,
+    decode_affiliations,
+)
 from services.mislaka_api_service import MislakaQueryResult
-from services.pension_data_agent import get_pension_agent
+
+FiltersLike = Union[ReportFilters, Dict[str, Any], None]
+
+
+def _coerce_filters(filters: FiltersLike) -> ReportFilters:
+    if isinstance(filters, ReportFilters):
+        return filters
+    if isinstance(filters, dict):
+        return ReportFilters.from_dict(filters)
+    return ReportFilters()
 
 
 def _safe_decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
@@ -105,15 +130,26 @@ def normalize_mislaka_result(
     result: MislakaQueryResult,
     *,
     include_aggregates: bool = False,
+    filters: FiltersLike = None,
 ) -> Dict[str, Any]:
     """Normalize Mislaka API result into PensionDataAgent-like structure.
+
+    Every account is enriched with its decoded ``affiliations`` block (product
+    / status / provider / interface) so downstream renderers can organise data
+    by named affiliation instead of raw code.
 
     Aggregate totals (count, balance, coverage, premium) are *not* included by
     default because the Mislaka response is treated as a fact set rather than a
     statistical sample. Pass ``include_aggregates=True`` only when the caller
     needs raw sums for legacy compatibility - downstream analysis should rely
     on the Assessment Center instead.
+
+    ``filters`` narrows the account list to the records matching an adjustable
+    report window (policy number, product, status, provider, dates).
     """
+    report_filters = _coerce_filters(filters)
+    selected_policies = apply_filters(list(result.policies), report_filters)
+
     accounts: List[Dict[str, Any]] = []
     providers = set()
 
@@ -121,22 +157,24 @@ def normalize_mislaka_result(
     total_coverage = Decimal("0")
     total_premium = Decimal("0")
 
-    for policy in result.policies:
+    for policy in selected_policies:
         accumulated = _safe_decimal(policy.accumulated_value)
         coverage = _safe_decimal(policy.cover_amount)
         premium = _safe_decimal(policy.premium_monthly)
         mgmt_fee = _safe_decimal(policy.management_fee_percent)
+        affiliations = decode_affiliations(policy)
 
         account = {
             "source": "mislaka_api",
             "policy_id": policy.policy_id,
             "policy_number": policy.policy_number,
             "product_type": policy.product_type,
-            "product_type_name": policy.product_type,
+            "product_type_name": affiliations["product"]["name"],
             "provider": policy.company_name,
             "provider_code": policy.company_code,
             "start_date": policy.start_date,
             "status": policy.status,
+            "status_name": affiliations["status"]["name"],
             "total_balance": accumulated,
             "savings_balance": accumulated,
             "coverage_amount": coverage,
@@ -146,6 +184,7 @@ def normalize_mislaka_result(
             "investment_track": policy.investment_track,
             "beneficiaries": policy.beneficiaries,
             "last_update": policy.last_update,
+            "affiliations": affiliations,
         }
         accounts.append(account)
 
@@ -173,6 +212,8 @@ def normalize_mislaka_result(
         "contributions": [],
         "severance": [],
         "employers": [],
+        "filters_applied": report_filters.to_dict(),
+        "source_account_count": len(result.policies),
     }
 
     if include_aggregates:
@@ -193,14 +234,26 @@ def normalize_mislaka_result(
     return base
 
 
-def mislaka_facts(result: MislakaQueryResult) -> List[Dict[str, Any]]:
-    """Convert a Mislaka result into Assessment-Center fact rows.
+def mislaka_facts(
+    result: MislakaQueryResult,
+    *,
+    filters: FiltersLike = None,
+) -> List[Dict[str, Any]]:
+    """Convert a Mislaka result into affiliation-enriched fact rows.
 
     Each row is a self-contained fact: the assessment center is in charge of
-    aggregation, the renderer never sums on its own.
+    aggregation, the renderer never sums on its own. Each row also carries its
+    decoded affiliation labels (product / status / provider) so the Assessment
+    Center stores facts that already speak in named affiliations.
+
+    ``filters`` narrows the rows to an adjustable report window.
     """
+    report_filters = _coerce_filters(filters)
+    selected = apply_filters(list(result.policies), report_filters)
+
     rows: List[Dict[str, Any]] = []
-    for policy in result.policies:
+    for policy in selected:
+        affiliations = decode_affiliations(policy)
         rows.append({
             "policy_id": policy.policy_id,
             "policy_number": policy.policy_number,
@@ -216,6 +269,10 @@ def mislaka_facts(result: MislakaQueryResult) -> List[Dict[str, Any]]:
             "investment_track": policy.investment_track,
             "beneficiaries": list(policy.beneficiaries or []),
             "last_update": policy.last_update,
+            "affiliation_product": affiliations["product"]["name"],
+            "affiliation_status": affiliations["status"]["name"],
+            "affiliation_provider": affiliations["provider"]["name"],
+            "affiliations": affiliations,
         })
     return rows
 
@@ -224,17 +281,19 @@ def link_to_assessment_center(
     result: MislakaQueryResult,
     *,
     customer_id: Optional[str] = None,
+    filters: FiltersLike = None,
 ) -> Dict[str, Any]:
-    """Push the raw Mislaka rows into the Assessment Center as facts.
+    """Push the Mislaka rows into the Assessment Center as facts.
 
     Returns the Assessment Center's ingestion summary, which already contains
-    the per-fact provenance the dashboards need to render data integrity.
+    the per-fact provenance the dashboards need to render data integrity. The
+    rows pushed are affiliation-enriched and honour any adjustable ``filters``.
     """
     from services.assessment_center_service import get_assessment_center
 
     center = get_assessment_center()
     cust = (customer_id or result.person.id_number or "anonymous").strip() or "anonymous"
-    rows = mislaka_facts(result)
+    rows = mislaka_facts(result, filters=filters)
     assessment = center.ingest_external_facts(
         customer_id=cust,
         source="mislaka",
@@ -244,45 +303,132 @@ def link_to_assessment_center(
     return assessment.to_dict()
 
 
+def _format_amount(value: Any) -> str:
+    dec = _safe_decimal(value)
+    if dec == dec.to_integral_value():
+        return f"{int(dec):,}"
+    return f"{dec:,.2f}"
+
+
+def _render_affiliation_text(
+    result: MislakaQueryResult,
+    projection: Dict[str, Any],
+    *,
+    include_aggregates: bool,
+) -> str:
+    """Deterministically render the affiliation-structured report text (A-Z).
+
+    The layout walks the data from A to Z: client header, then policies grouped
+    by their named affiliations (provider -> product -> status), then the
+    affiliation membership index. No statistics are derived; only the
+    clearinghouse facts are listed.
+    """
+    rows: List[Dict[str, Any]] = projection["rows"]
+    client_name = " ".join([result.person.first_name, result.person.last_name]).strip()
+
+    lines: List[str] = []
+    lines.append("MISLAKA AFFILIATION REPORT")
+    lines.append("=" * 60)
+    lines.append(f"Client: {client_name or 'N/A'}")
+    lines.append(f"ID Number: {result.person.id_number or 'N/A'}")
+    lines.append(f"Request ID: {result.request_id or 'N/A'}")
+    lines.append(f"Source records: {projection['source_policy_count']}")
+    lines.append(f"Records in report: {projection['policy_count']}")
+    if projection.get("filters_active"):
+        lines.append("Filters applied:")
+        for key, val in sorted(projection.get("filters", {}).items()):
+            lines.append(f"  - {key}: {val}")
+    lines.append("")
+
+    if not rows:
+        lines.append("No records match the selected affiliations / filters.")
+        return "\n".join(lines)
+
+    lines.append("POLICIES BY AFFILIATION")
+    lines.append("-" * 60)
+    for idx, row in enumerate(rows, start=1):
+        aff = row["affiliations"]
+        lines.append(f"[{idx}] Policy {row.get('policy_number') or row.get('policy_id') or 'N/A'}")
+        lines.append(f"    Provider affiliation : {aff['provider']['name']}"
+                    + ("" if aff['provider']['decoded'] else "  (code only)"))
+        lines.append(f"    Product affiliation  : {aff['product']['name']}"
+                    + ("" if aff['product']['decoded'] else "  (code only)"))
+        lines.append(f"    Status affiliation   : {aff['status']['name']}"
+                    + ("" if aff['status']['decoded'] else "  (code only)"))
+        if str(aff['interface']['code']):
+            lines.append(f"    Interface affiliation: {aff['interface']['name']}")
+        lines.append(f"    Start date           : {row.get('start_date') or 'N/A'}")
+        lines.append(f"    Last update          : {row.get('last_update') or 'N/A'}")
+        lines.append(f"    Monthly premium      : {_format_amount(row.get('premium_monthly'))}")
+        lines.append(f"    Cover amount         : {_format_amount(row.get('cover_amount'))}")
+        lines.append(f"    Accumulated value    : {_format_amount(row.get('accumulated_value'))}")
+        if row.get("investment_track"):
+            lines.append(f"    Investment track     : {row.get('investment_track')}")
+        lines.append("")
+
+    lines.append("AFFILIATION INDEX")
+    lines.append("-" * 60)
+    for dimension, title in (("by_provider", "By provider"),
+                            ("by_product", "By product"),
+                            ("by_status", "By status")):
+        lines.append(f"{title}:")
+        for grp in projection["groups"].get(dimension, []):
+            lines.append(f"  - {grp['affiliation']}: {grp['policy_count']} policy(ies)")
+        lines.append("")
+
+    if include_aggregates:
+        total_premium = sum(_safe_decimal(r.get("premium_monthly")) for r in rows)
+        total_cover = sum(_safe_decimal(r.get("cover_amount")) for r in rows)
+        total_accum = sum(_safe_decimal(r.get("accumulated_value")) for r in rows)
+        lines.append("RAW TOTALS (legacy, filtered set)")
+        lines.append("-" * 60)
+        lines.append(f"  Total monthly premium : {_format_amount(total_premium)}")
+        lines.append(f"  Total cover amount    : {_format_amount(total_cover)}")
+        lines.append(f"  Total accumulated     : {_format_amount(total_accum)}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def build_mislaka_report_text(
     result: MislakaQueryResult,
     *,
     include_aggregates: bool = False,
+    filters: FiltersLike = None,
 ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
-    """Generate the report text and metadata from a Mislaka result.
+    """Generate the affiliation-structured report text and metadata.
 
-    By default the rendered text presents only factual line items; aggregate
-    statistics are produced by the Assessment Center to keep responsibilities
-    separate. Set ``include_aggregates=True`` for legacy callers that still
-    expect totals in the printout.
+    The report is rebuilt A-Z around named affiliations (provider / product /
+    status) decoded from the authoritative Mislaka schema. By default the
+    rendered text presents only factual line items; pass
+    ``include_aggregates=True`` for legacy callers that still expect raw totals.
+
+    ``filters`` narrows the report to an adjustable window (policy number,
+    product, status, provider, date range). The integrity checksum is computed
+    over the *filtered* projection so the checksum always matches what the
+    report shows.
     """
-    data = normalize_mislaka_result(result, include_aggregates=include_aggregates)
-    agent = get_pension_agent()
-    report_text = agent.generate_report_text(data)
+    report_filters = _coerce_filters(filters)
+    projection = build_affiliation_projection(list(result.policies), filters=report_filters)
+    data = normalize_mislaka_result(
+        result, include_aggregates=include_aggregates, filters=report_filters,
+    )
+    data["affiliation_projection"] = projection
 
-    if result.raw_response:
-        hash_payload = result.raw_response
-        hash_source = "raw_response"
-    else:
-        hash_payload = {
-            "request_id": result.request_id,
-            "timestamp": result.timestamp,
-            "person": {
-                "id_number": result.person.id_number,
-                "first_name": result.person.first_name,
-                "last_name": result.person.last_name,
-            },
-            "policies": [vars(p) for p in result.policies],
-        }
-        hash_source = "normalized"
+    report_text = _render_affiliation_text(
+        result, projection, include_aggregates=include_aggregates,
+    )
 
     metadata = {
         "request_id": result.request_id,
         "report_generated_at": datetime.utcnow().isoformat() + "Z",
-        "policy_count": len(result.policies),
-        "data_hash": _compute_hash(hash_payload),
-        "data_hash_source": hash_source,
+        "policy_count": projection["policy_count"],
+        "source_policy_count": projection["source_policy_count"],
+        "data_hash": projection["integrity"]["sha256"],
+        "data_hash_source": "affiliation_projection",
         "client_id_number": result.person.id_number,
+        "filters_applied": report_filters.to_dict(),
+        "affiliation_groups": projection["groups"],
     }
 
     return report_text, metadata, data

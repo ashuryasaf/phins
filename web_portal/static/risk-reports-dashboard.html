@@ -2658,21 +2658,24 @@
         
         const report = await response.json();
         currentReport = report;
-        
-        // Create mock analysis for display
-        const mockAnalysis = {
-          risk_score: report.metadata?.risk_score || 50,
+
+        // Build the display view strictly from the stored report metadata.
+        // No fabricated defaults: missing fields are shown as null/empty so the
+        // dashboard never presents an invented risk score or confidence.
+        const meta = report.metadata || {};
+        const reportView = {
+          risk_score: (meta.risk_score ?? null),
           data_classification: report.report_type,
           language_name: report.language,
-          confidence: report.metadata?.confidence || 0.8,
-          key_metrics: report.metadata?.key_metrics || { total_records: '—' },
-          processing_time_ms: report.metadata?.processing_time_ms || 0,
-          extracted_factors: report.metadata?.extracted_factors || [],
-          patterns_found: report.metadata?.patterns_found || [],
-          anomalies: report.metadata?.anomalies || []
+          confidence: (meta.confidence ?? null),
+          key_metrics: meta.key_metrics || {},
+          processing_time_ms: (meta.processing_time_ms ?? null),
+          extracted_factors: meta.extracted_factors || [],
+          patterns_found: meta.patterns_found || [],
+          anomalies: meta.anomalies || []
         };
-        
-        displayResults(mockAnalysis, report);
+
+        displayResults(reportView, report);
         
         resultsSection.classList.add('active');
         resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -3071,25 +3074,32 @@
     }
     
     function renderStandardStats(analysis) {
-      // Standard statistical analysis (non-pension data)
-      const riskScore = analysis.risk_score || 50;
-      const riskLevel = riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high');
-      const riskColor = riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)');
-      const riskLabel = riskScore < 30 ? 'Low Risk' : (riskScore < 60 ? 'Medium Risk' : 'High Risk');
-      
+      // Standard statistical analysis (non-pension data).
+      // Risk score and confidence are shown only when present in the stored
+      // report - never fabricated. Missing values render as "N/A".
+      const hasRisk = analysis.risk_score !== null && analysis.risk_score !== undefined && !Number.isNaN(Number(analysis.risk_score));
+      const riskScore = hasRisk ? Number(analysis.risk_score) : null;
+      const riskLevel = !hasRisk ? 'unknown' : (riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high'));
+      const riskColor = !hasRisk ? 'var(--muted, #888)' : (riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)'));
+      const riskLabel = !hasRisk ? 'Not scored' : (riskScore < 30 ? 'Low Risk' : (riskScore < 60 ? 'Medium Risk' : 'High Risk'));
+      const riskDisplay = hasRisk ? riskScore.toFixed(0) : 'N/A';
+
       const metrics = analysis.key_metrics || {};
       const numericCols = metrics.numeric_columns || 0;
       const categoricalCols = metrics.categorical_columns || 0;
-      const dataCompleteness = metrics.data_completeness || 100;
+      const dataCompleteness = (metrics.data_completeness ?? null);
+      const dataCompletenessDisplay = (dataCompleteness === null) ? 'N/A' : `${dataCompleteness}%`;
       const correlationCount = metrics.correlation_count || 0;
       const topCorrelation = metrics.top_correlation;
       const patternCount = analysis.patterns_found?.length || 0;
       const anomalyCount = analysis.anomalies?.length || 0;
-      
+      const hasConfidence = analysis.confidence !== null && analysis.confidence !== undefined && !Number.isNaN(Number(analysis.confidence));
+      const confidenceDisplay = hasConfidence ? `${(Number(analysis.confidence) * 100).toFixed(0)}%` : 'N/A';
+
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card risk-${riskLevel} fade-in">
           <h5>Risk Assessment</h5>
-          <div class="value" style="color: ${riskColor}; font-size: 2rem;">${riskScore.toFixed(0)}</div>
+          <div class="value" style="color: ${riskColor}; font-size: 2rem;">${riskDisplay}</div>
           <small>${riskLabel}</small>
         </div>
         <div class="stat-card fade-in">
@@ -3102,7 +3112,7 @@
         </div>
         <div class="stat-card fade-in">
           <h5>AI Confidence</h5>
-          <div class="value">${((analysis.confidence || 0.8) * 100).toFixed(0)}%</div>
+          <div class="value">${confidenceDisplay}</div>
           <small>Analysis accuracy</small>
         </div>
         <div class="stat-card fade-in">
@@ -3112,7 +3122,7 @@
         </div>
         <div class="stat-card fade-in">
           <h5>Data Quality</h5>
-          <div class="value" style="color: ${dataCompleteness > 90 ? 'var(--success)' : dataCompleteness > 70 ? 'var(--warning)' : 'var(--danger)'}">${dataCompleteness}%</div>
+          <div class="value" style="color: ${dataCompleteness === null ? 'var(--muted, #888)' : dataCompleteness > 90 ? 'var(--success)' : dataCompleteness > 70 ? 'var(--warning)' : 'var(--danger)'}">${dataCompletenessDisplay}</div>
           <small>Completeness</small>
         </div>
         <div class="stat-card fade-in">

@@ -29782,6 +29782,7 @@ For claims or questions, please contact:
                     build_mislaka_report_text,
                     render_mislaka_report_pdf,
                 )
+                from services.mislaka_affiliations import ReportFilters
 
                 mislaka = get_mislaka_service()
                 if not mislaka.is_configured():
@@ -29811,7 +29812,14 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                report_text, metadata, _ = build_mislaka_report_text(result, include_aggregates=True)
+                # Adjustable reporting: callers may narrow the report by policy
+                # number, product, status, provider, or a date window. These
+                # only filter the real clearinghouse facts - nothing is added.
+                report_filters = ReportFilters.from_dict(data.get('filters') if isinstance(data.get('filters'), dict) else data)
+
+                report_text, metadata, _ = build_mislaka_report_text(
+                    result, include_aggregates=True, filters=report_filters,
+                )
 
                 filename = f'mislaka_report_{id_number[-4:]}.pdf'
                 try:
