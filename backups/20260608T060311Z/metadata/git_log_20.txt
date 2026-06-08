@@ -1,0 +1,20 @@
+1d92653 Merge pull request #358 from ashuryasaf/cursor/fix-notification-silent-mock-fallback-276e
+a22dee5 Fix SMS diagnostics for missing twilio SDK and dedupe __all__
+b9cb8cb Fix SNS diagnostics to require boto3 like send path
+c0d5627 Fix notification diagnostics: require Twilio from-number and boto3 for SES
+8ef781d Align api_extensions AWS detection with notification service for SES OTP fallback
+ae360bf Clear AWS credential cache on notification service reset
+8bc8cef Fix notification diagnostics: detect IAM roles, missing SDKs, and config-only credentials
+78a9515 Fix notification diagnostics: detect IAM roles, missing SDKs, and config-only credentials
+421f665 Narrow AWS secret regex in credential scan workflow
+a6e9502 Include SMS provider failures in notification diagnostics recommendation
+7714b9e Fix email diagnostics false delivery readiness for unconfigured API providers
+9e16e79 Surface real failure when notification provider credentials are missing
+00a126b Merge pull request #357 from ashuryasaf/cursor/supplier-forgot-password-notifications-1105
+1c39dfb fix: enforce customer user_type on /api/reset-password OTP consume
+79118d4 Fix supplier password reset enumeration via rate-limit status difference
+7393514 Fully revoke supplier sessions on password reset
+6ee0ea9 fix: bind supplier password reset OTP to supplier user_type
+f102e08 feat: add supplier forgot password flow with OTP and notifications
+2f296d1 Merge pull request #356 from ashuryasaf/cursor/supplier-offer-media-ai-search-c5d4
+fde1f6d Fix supplier offer media delete parsing and add media column migration
