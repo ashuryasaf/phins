@@ -118,6 +118,44 @@ def test_pitch_dashboard_surfaces_legal_center():
     assert "/legal/cap-table.html" in pd
 
 
+def test_pitch_dashboard_investor_meeting_section():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # Meir Uzan investor meeting section + nav links
+    assert 'id="investor-meeting-section"' in pd
+    assert "Mr. Meir Uzan" in pd
+    assert "11 June 2026" in pd and "Herzliya" in pd
+    # tested business-plan assumptions and 1 Jan 2027 sales start
+    assert "1 Jan 2027" in pd
+    # build budget reconciles to the round size
+    assert "6,000,000" in pd and "Pre-launch build budget" in pd
+    # deal structure / valuation comparison present
+    assert "Deal structures &amp; valuation" in pd
+    for structure in ("Priced equity", "Investment cap (SAFE)", "Credit line", "CLA", "Active co-founder + investor"):
+        assert structure in pd, f"missing deal structure: {structure}"
+    # links to the standalone business plan doc
+    assert "/internal/phins-investor-business-plan.html" in pd
+
+
+def test_pitch_dashboard_meeting_diary():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # adjustable admin meeting diary pinned to the IL pitch dashboard
+    assert 'id="il-meeting-diary"' in pd
+    assert 'id="diary-tbody"' in pd
+    assert "phins.il.meeting.diary" in pd  # localStorage persistence key
+    assert "diary-add-btn" in pd and "diary-reset-btn" in pd
+
+
+def test_investor_business_plan_doc():
+    bp = _read(STATIC / "internal" / "phins-investor-business-plan.html")
+    # standard fintech angel/investor business-plan sections
+    for section in ("Founder", "Problem", "Solution", "Market &amp; TAM", "Business model",
+                    "Use of funds", "Milestone execution gates", "Financial projection",
+                    "The ask &amp; deal structures"):
+        assert section in bp, f"business plan missing section: {section}"
+    # integrity: round + valuation basis stated
+    assert "6,000,000" in bp and "24,000,000" in bp
+
+
 def test_il_pitch_links_data_room():
     il = _read(STATIC / "israel-capital-markets-pitch.html")
     assert "/corporate-legal-dashboard.html" in il
