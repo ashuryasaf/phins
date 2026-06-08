@@ -407,6 +407,8 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
     * ``policy_number`` - matches the fact value or its metadata policy number.
     * ``provider`` / ``product`` / ``status`` - substring match against the
       fact value or affiliation metadata.
+    * ``company_code`` - exact (case-insensitive) match against the Mislaka
+      insurer code, mirroring ``ReportFilters.company_code``.
 
     Filtering only ever *removes* facts; it never alters or fabricates them.
     """
@@ -460,6 +462,16 @@ def _fact_matches_filters(fact: "Fact", filters: Dict[str, Any]) -> bool:
             if lookup.get(mk):
                 haystacks.append(str(lookup.get(mk)).lower())
         if not any(want in h for h in haystacks):
+            return False
+
+    company_code = filters.get("company_code")
+    if company_code:
+        want = str(company_code).strip().lower()
+        candidates = set()
+        for key in ("company_code", "provider_code"):
+            if lookup.get(key) not in (None, ""):
+                candidates.add(str(lookup.get(key)).strip().lower())
+        if want not in candidates:
             return False
 
     date_from = _parse_filter_date(filters.get("date_from"))
@@ -739,7 +751,11 @@ class AssessmentCenterService:
                 source=source,
                 metadata={"row": row},
             ))
-        self._store_facts(customer_id, facts)
+        # This bundle is authoritative for ``(customer_id, source)`` - it has
+        # just replaced ``self._external[bundle_key]`` - so the fact store must
+        # reflect exactly these rows rather than appending to a stale superset
+        # left by an earlier (e.g. unfiltered) link.
+        self._store_facts(customer_id, facts, replace_source=source)
         return AssessmentResult(
             customer_id=customer_id,
             document_id=None,
@@ -1266,6 +1282,7 @@ class AssessmentCenterService:
             "date_from", "date_to", "date_field", "fact_type", "source",
             "min_confidence", "policy_number", "provider", "product", "status",
             "product_type", "productType",
+            "company_code", "companyCode", "provider_code",
         )
         filters: Dict[str, Any] = {}
         nested = options.get("filters")
@@ -1282,6 +1299,13 @@ class AssessmentCenterService:
             for alias in ("product_type", "productType"):
                 if filters.get(alias) not in (None, ""):
                     filters["product"] = filters[alias]
+                    break
+        # ``company_code`` and Mislaka's ``companyCode``/``provider_code`` are
+        # aliases so a shared filters object narrows insurer code on both paths.
+        if filters.get("company_code") in (None, ""):
+            for alias in ("companyCode", "provider_code"):
+                if filters.get(alias) not in (None, ""):
+                    filters["company_code"] = filters[alias]
                     break
         return filters or None
 
@@ -2131,11 +2155,25 @@ class AssessmentCenterService:
 
     # ── Persistence ──────────────────────────────────────────────────────
 
-    def _store_facts(self, customer_id: str, facts: List[Fact]) -> None:
-        if not customer_id or not facts:
+    def _store_facts(
+        self,
+        customer_id: str,
+        facts: List[Fact],
+        *,
+        replace_source: Optional[str] = None,
+    ) -> None:
+        if not customer_id:
+            return
+        if not facts and replace_source is None:
             return
         with self._lock:
             existing = self._facts.setdefault(customer_id, [])
+            # When re-ingesting an authoritative external bundle (e.g. a
+            # filtered Mislaka link), drop the source's prior facts first so
+            # the store mirrors the new ingest instead of accumulating a
+            # superset of previously linked policies.
+            if replace_source is not None:
+                existing[:] = [f for f in existing if f.source != replace_source]
             seen = {(f.fact_type, f.label, _hashable(f.value)) for f in existing}
             for f in facts:
                 key = (f.fact_type, f.label, _hashable(f.value))
