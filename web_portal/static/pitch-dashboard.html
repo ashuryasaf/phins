@@ -6632,7 +6632,7 @@
     (function () {
       var tbody = document.getElementById("diary-tbody");
       if (!tbody) return;
-      var STORAGE_KEY = "phins.il.meeting.diary.v1";
+      var STORAGE_ID = "phins.il.meeting.diary.v1";
       var statusEl = document.getElementById("diary-status");
       var COLUMNS = ["date", "time", "counterparty", "location", "purpose", "status"];
 
@@ -6651,7 +6651,7 @@
 
       function load() {
         try {
-          var raw = localStorage.getItem(STORAGE_KEY);
+          var raw = localStorage.getItem(STORAGE_ID);
           if (raw) {
             var parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) return parsed;
@@ -6662,7 +6662,7 @@
 
       function save(rows) {
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+          localStorage.setItem(STORAGE_ID, JSON.stringify(rows));
           setStatus("Saved to this browser · " + rows.length + " meeting(s).", false);
         } catch (e) {
           setStatus("Could not save to this browser (storage unavailable).", true);
