@@ -152,7 +152,7 @@ class ReportFilters:
 
         return cls(
             policy_number=pick("policy_number", "policyNumber", "policy_no"),
-            product_type=pick("product_type", "productType"),
+            product_type=pick("product_type", "productType", "product"),
             status=pick("status"),
             company_code=pick("company_code", "companyCode", "provider_code"),
             provider=pick("provider", "company_name", "companyName"),

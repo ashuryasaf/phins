@@ -1265,6 +1265,7 @@ class AssessmentCenterService:
         recognised = (
             "date_from", "date_to", "date_field", "fact_type", "source",
             "min_confidence", "policy_number", "provider", "product", "status",
+            "product_type", "productType",
         )
         filters: Dict[str, Any] = {}
         nested = options.get("filters")
@@ -1275,6 +1276,13 @@ class AssessmentCenterService:
         for key in recognised:
             if options.get(key) not in (None, ""):
                 filters[key] = options[key]
+        # ``product`` and Mislaka's ``product_type``/``productType`` are aliases
+        # so a single shared filters object narrows product on both paths.
+        if filters.get("product") in (None, ""):
+            for alias in ("product_type", "productType"):
+                if filters.get(alias) not in (None, ""):
+                    filters["product"] = filters[alias]
+                    break
         return filters or None
 
     @staticmethod
