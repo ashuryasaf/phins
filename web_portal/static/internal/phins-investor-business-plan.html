@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>PHINS — Fintech Business Plan (Angel / Investor)</title>
+<style>
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+  @bottom-left { content: "PHINS — Business Plan — Confidential"; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+}
+html { font-size: 10.5pt; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1a1f2c;
+  line-height: 1.5;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #fff;
+}
+h1 { font-size: 22pt; color: #0b2545; border-bottom: 3px solid #0b2545; padding-bottom: 8px; margin-top: 0; }
+h2 { font-size: 15pt; color: #0b2545; margin-top: 28px; border-bottom: 1px solid #d4dae6; padding-bottom: 4px; page-break-after: avoid; }
+h3 { font-size: 12.5pt; color: #13315c; margin-top: 18px; page-break-after: avoid; }
+p { margin: 8px 0; text-align: justify; }
+ul, ol { margin: 6px 0 10px 22px; padding: 0; }
+li { margin: 3px 0; }
+hr { border: none; border-top: 1px solid #d4dae6; margin: 18px 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid #d4dae6; padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #0b2545; color: #fff; font-weight: 600; }
+tr:nth-child(even) td { background: #f6f8fc; }
+td.num, th.num { text-align: right; }
+strong { color: #0b2545; }
+.confidential { text-align: center; font-size: 9pt; color: #8a3324; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
+.cover { border: 1px solid #d4dae6; background: #f6f8fc; padding: 14px 18px; border-radius: 6px; margin: 14px 0 22px 0; font-size: 10pt; }
+.cover strong { color: #0b2545; }
+.callout { border-left: 3px solid #15803d; background: #f1faf4; padding: 8px 14px; margin: 12px 0; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px 0; }
+.toolbar a, .toolbar button { font-family: inherit; font-size: 9.5pt; border: 1px solid #0b2545; background: #0b2545; color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; text-decoration: none; }
+.toolbar a.secondary { background: #fff; color: #0b2545; }
+@media print { .toolbar { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <a class="secondary" href="/pitch-dashboard.html#investor-meeting-section">← Back to Investor Meeting</a>
+</div>
+<div class="confidential">Confidential — For the Recipient Only</div>
+<h1>PHINS — Business Plan</h1>
+<div class="cover">
+  <strong>Company:</strong> PHINS — Personal Health Insurance &amp; Savings (digital-first severity disability &amp; long-term-care platform)<br/>
+  <strong>Prepared for:</strong> Angel / seed investor diligence — introduced for Mr. Meir Uzan<br/>
+  <strong>Stage:</strong> Built platform (64+ deployed modules), pre-revenue · Israel launch planned for 1 January 2027<br/>
+  <strong>The ask:</strong> ₪6,000,000 seed / build round on ₪24,000,000 pre-money (₪30,000,000 post)<br/>
+  <strong>Currency:</strong> ₪ (ILS) · FX assumption 1 USD = ₪3.70<br/>
+  <strong>Owner:</strong> Asaf (Founder, PHINS)
+</div>
+
+<h2>1. Founder</h2>
+<p>
+  PHINS is founder-led by <strong>Asaf</strong>, who built the platform end-to-end: underwriting, claims, billing, reinsurance
+  scaffolding, an actuarial pricing engine, a community-foundation layer, and an append-only, hash-chained ledger for
+  data integrity. The product is live at <strong>www.phins.ai</strong>. An IAA-recognised executive actuary (Israel · Canada · USA)
+  validated the pricing model on 26 May 2026 and is joining on a hybrid consulting → Chief Actuary → earned co-founder path.
+  This plan accompanies the introduction to <strong>Mr. Meir Uzan</strong> as a prospective investor and active co-founder.
+</p>
+
+<h2>2. Problem</h2>
+<ul>
+  <li>Severe-disability and long-term-care (LTC) cover is <strong>under-served and hard to buy</strong>: legacy carriers run manual underwriting, fragmented data, and slow claims.</li>
+  <li>Ageing populations and rising disability prevalence increase demand faster than incumbents can serve it.</li>
+  <li>Buyers distrust opaque claims decisions; carriers struggle with fraud and severity validation.</li>
+  <li>Israel specifically has high private LTC interest and a home-care orientation, but no clean digital-first severity product.</li>
+</ul>
+
+<h2>3. Solution</h2>
+<p>
+  PHINS is an <strong>AI-native insurance platform</strong> purpose-built for severe disability and LTC. It unifies underwriting,
+  claims adjudication, billing, reinsurance, care navigation, and analytics in one digital-first operating system, with a
+  transparent, auditable ledger so every balance and decision is reproducible.
+</p>
+<ul>
+  <li><strong>AI underwriting</strong> — automated risk scoring from structured and unstructured medical data.</li>
+  <li><strong>Claims intelligence</strong> — fraud / severity validation with multi-year look-back rules.</li>
+  <li><strong>Objective severity trigger</strong> — permanent 3+ ADL standard keeps the claims promise tight and reinsurable.</li>
+  <li><strong>Data integrity</strong> — append-only, hash-chained ledger; AI / BI may recommend but never post.</li>
+</ul>
+
+<h2>4. Market &amp; TAM (Israel launch)</h2>
+<table>
+  <thead><tr><th>Layer</th><th>Definition</th><th class="num">Annual premium pool</th></tr></thead>
+  <tbody>
+    <tr><td><strong>TAM</strong></td><td>~4.5M working-age adults × ₪3,600 (illustrative full-penetration ceiling)</td><td class="num">₪16.2B</td></tr>
+    <tr><td><strong>SAM</strong></td><td>~5% open to a digital severity / LTC top-up</td><td class="num">₪810M</td></tr>
+    <tr><td><strong>SOM (3-yr)</strong></td><td>28,000 active policies at EoY 2029 (run-rate GWP)</td><td class="num">₪100.8M</td></tr>
+  </tbody>
+</table>
+<p>Israel is the strongest first narrative; the same platform is pre-modelled for the USA, Canada, Europe, Portugal, Japan, and the Middle East as later markets.</p>
+
+<h2>5. Business model</h2>
+<p>
+  PHINS operates as a <strong>digital MGA / platform</strong>, earning a <strong>blended 25% take rate</strong> (MGA commission + technology fee)
+  on gross written premium. Underwriting reserves and claims sit with the risk carrier / reinsurer, so they are <em>not</em> booked as
+  PHINS revenue — this keeps the model conservative and capital-light. Additional revenue lines: SaaS platform fees, data services,
+  and a PHINS-for-Actuaries B2B vertical.
+</p>
+
+<h2>6. Tested assumptions</h2>
+<table>
+  <tbody>
+    <tr><td>Sales start</td><td>1 Jan 2027 (≈12-month build phase before)</td></tr>
+    <tr><td>Average annual premium</td><td>₪3,600 (₪300 / mo)</td></tr>
+    <tr><td>PHINS take rate on GWP</td><td>25%</td></tr>
+    <tr><td>Active policies — EoY 2027 / 28 / 29</td><td>4,000 / 12,000 / 28,000</td></tr>
+    <tr><td>Avg in-force during year</td><td>2,000 / 8,000 / 20,000</td></tr>
+    <tr><td>Blended CAC (incl. advertising)</td><td>≈ ₪650 / policy</td></tr>
+    <tr><td>Annual churn</td><td>8%</td></tr>
+  </tbody>
+</table>
+
+<h2>7. Use of funds — ₪6.0M build budget (to 1 Jan 2027)</h2>
+<table>
+  <thead><tr><th>Category</th><th class="num">₪</th><th class="num">Share</th></tr></thead>
+  <tbody>
+    <tr><td>Platform development &amp; engineering</td><td class="num">1,950,000</td><td class="num">32.5%</td></tr>
+    <tr><td>Cloud, AI infrastructure &amp; tooling</td><td class="num">470,000</td><td class="num">7.8%</td></tr>
+    <tr><td>Legal, regulatory &amp; licensing</td><td class="num">880,000</td><td class="num">14.7%</td></tr>
+    <tr><td>Actuarial, pricing &amp; reinsurance structuring</td><td class="num">520,000</td><td class="num">8.7%</td></tr>
+    <tr><td>QA, security &amp; compliance audits</td><td class="num">430,000</td><td class="num">7.2%</td></tr>
+    <tr><td>Marketing, brand &amp; advertising (pre-launch)</td><td class="num">650,000</td><td class="num">10.8%</td></tr>
+    <tr><td>G&amp;A, finance &amp; operations</td><td class="num">400,000</td><td class="num">6.7%</td></tr>
+    <tr><td>Contingency</td><td class="num">700,000</td><td class="num">11.7%</td></tr>
+    <tr><td><strong>Total</strong></td><td class="num"><strong>6,000,000</strong></td><td class="num"><strong>100%</strong></td></tr>
+  </tbody>
+</table>
+
+<h2>8. Milestone execution gates (Israel)</h2>
+<ol>
+  <li><strong>Gate 0 · Q3 2026</strong> — funding closed; co-founder &amp; Chief Actuary onboarded.</li>
+  <li><strong>Gate 1 · Q3 2026</strong> — legal terms: policy wording, IP, reinsurance term sheet, carrier / MGA structure.</li>
+  <li><strong>Gate 2 · Q4 2026</strong> — platform launch set complete; Appointed-Actuary pricing &amp; reserve sign-off.</li>
+  <li><strong>Gate 3 · Q4 2026</strong> — QA, security audit / penetration test, ledger &amp; data-integrity validation.</li>
+  <li><strong>Gate 4 · Q4 2026</strong> — regulatory (Capital Market, Insurance &amp; Savings Authority) &amp; distribution agreements.</li>
+  <li><strong>Gate 5 · 1 Jan 2027</strong> — commercial launch; sales begin.</li>
+  <li><strong>Gate 6 · Q2 2027</strong> — first 1,000 policies; unit economics validated.</li>
+  <li><strong>Gate 7 · Q4 2027</strong> — 4,000 policies; Series A readiness.</li>
+</ol>
+
+<h2>9. Financial projection (Israel, ₪)</h2>
+<table>
+  <thead><tr><th>Line item</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
+  <tbody>
+    <tr><td>Active policies (EoY)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td></tr>
+    <tr><td>Avg in-force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td></tr>
+    <tr><td>GWP (earned)</td><td class="num">7,200,000</td><td class="num">28,800,000</td><td class="num">72,000,000</td></tr>
+    <tr><td><strong>PHINS net revenue (25%)</strong></td><td class="num"><strong>1,800,000</strong></td><td class="num"><strong>7,200,000</strong></td><td class="num"><strong>18,000,000</strong></td></tr>
+    <tr><td>Operating cost</td><td class="num">(5,400,000)</td><td class="num">(9,000,000)</td><td class="num">(14,400,000)</td></tr>
+    <tr><td><strong>EBITDA</strong></td><td class="num"><strong>(3,600,000)</strong></td><td class="num"><strong>(1,800,000)</strong></td><td class="num"><strong>3,600,000</strong></td></tr>
+    <tr><td>EBITDA margin</td><td class="num">−200%</td><td class="num">−25%</td><td class="num">+20%</td></tr>
+  </tbody>
+</table>
+<p>Cumulative capital to EBITDA-positive ≈ <strong>₪11.4M</strong> (₪6.0M build + ₪3.6M + ₪1.8M burn). Plan: ₪6.0M seed now; Series A in 2027 for scale-up.</p>
+
+<h2>10. The ask &amp; deal structures</h2>
+<p>₪6,000,000 on a ₪24M pre-money (₪30M post). Five comparable structures, all priced / converting on the same ₪24M basis:</p>
+<table>
+  <thead><tr><th>Structure</th><th class="num">Capital (₪)</th><th>Investor stake</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Priced equity (preferred)</td><td class="num">6,000,000</td><td>20.0%</td><td>1× non-participating liquidation pref.</td></tr>
+    <tr><td>Investment cap (SAFE)</td><td class="num">6,000,000</td><td>≈20% on conversion</td><td>₪24M cap, 20% discount; fast close.</td></tr>
+    <tr><td>Credit line / venture debt</td><td class="num">6,000,000</td><td>≈1.6% (warrants)</td><td>~10% interest, milestone draws, senior secured.</td></tr>
+    <tr><td>CLA (convertible loan)</td><td class="num">6,000,000</td><td>≈20–22% on conversion</td><td>₪24M cap, 7% PIK, 24-month maturity.</td></tr>
+    <tr><td><strong>Active co-founder + investor ★</strong></td><td class="num"><strong>3,000,000 cash</strong></td><td><strong>≈16%</strong></td><td>10% for cash + 6% vested founders' equity (4-yr vest, 1-yr cliff); board seat.</td></tr>
+  </tbody>
+</table>
+<div class="callout">
+  <strong>Recommended:</strong> active co-founder + investor — ₪3.0M cash for 10% plus a 6% founders' equity grant for a full-time
+  Chairman / co-operator role. Lower cash than a pure round, but it brings Israeli carrier &amp; reinsurance relationships,
+  regulator familiarity, and governance — the highest-alignment outcome. Pure-investor structures above are clean fallbacks.
+</div>
+
+<h2>11. Team &amp; governance</h2>
+<ul>
+  <li><strong>Founder / CEO</strong> — Asaf (product, platform, technology).</li>
+  <li><strong>Chief Actuary</strong> — incoming (IAA-recognised, IL · CA · US); validated pricing 26 May 2026.</li>
+  <li><strong>Active co-founder / Chairman</strong> — target: Mr. Meir Uzan (Israeli insurance industry, CEO / chairman experience).</li>
+  <li>Board seat and standard good-leaver / bad-leaver, vesting, IP-assignment and non-compete terms on all equity.</li>
+</ul>
+
+<h2>12. Risks &amp; mitigations</h2>
+<table>
+  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>Regulatory timeline (IL licensing)</td><td>Gate 4 checkpoint; experienced co-founder &amp; Appointed Actuary; capital released against gates.</td></tr>
+    <tr><td>Distribution / CAC overrun</td><td>Gate 6 unit-economics validation before scale-up spend.</td></tr>
+    <tr><td>Claims severity / fraud</td><td>Objective 3+ ADL trigger; claims-intelligence engine; reinsurance cession.</td></tr>
+    <tr><td>Key-person concentration</td><td>Vesting, documentation, ledger-based reproducibility of platform state.</td></tr>
+  </tbody>
+</table>
+
+<h2>13. Next steps</h2>
+<ol>
+  <li>Mutual NDA.</li>
+  <li>Select structure (active co-founder preferred) and issue a term sheet.</li>
+  <li>Confirmatory diligence: platform demo, pricing model, ledger / data-integrity review.</li>
+  <li>Close seed / build round; begin Gate 0 execution.</li>
+</ol>
+
+<hr/>
+<p style="font-size:8.5pt;color:#5a6b86;">
+  <strong>Data integrity notice.</strong> All figures are forward-looking planning assumptions in ₪ (ILS) at a fixed FX of
+  1 USD = ₪3.70, not commitments or guidance. The build budget reconciles exactly to the ₪6.0M round; the income model derives
+  every line from the tested-assumptions table (₪3,600 average premium, 25% take rate, stated in-force counts); and all deal
+  structures price or convert on a single ₪24M pre-money / ₪30M post-money basis. PHINS is modelled as a digital MGA / platform
+  earning a take rate on premium, so claims reserves are not booked as PHINS revenue.
+</p>
+</body>
+</html>
