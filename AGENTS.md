@@ -8,23 +8,30 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~44k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~2910 lines)
-  and domain-specific API modules (`api_bi_analytics.py`,
-  `api_delivery_bidding.py`)
-- service-layer logic in `services/` (64 modules)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~49.6k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3260 lines)
+  and domain-specific API modules:
+  - `web_portal/api_assessment_center.py` (~1400 lines) — Customer 360 /
+    Assessment Center upload + fact-mining routes
+  - `web_portal/api_bi_analytics.py` — BI/analytics
+  - `web_portal/api_delivery_bidding.py` — delivery bidding
+- service-layer logic in `services/` (78 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (85 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (114 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
 - `web_portal/server.py` defaults to `USE_DATABASE=true`
 - pytest config in root `conftest.py` sets `USE_DATABASE=false`,
-  `USE_SQLITE=true`, `PHINS_TEST_MODE=true`, and starts an embedded server on
-  `127.0.0.1:8000`
+  `USE_SQLITE=true`, `PHINS_TEST_MODE=true`, and starts an embedded
+  `ThreadingHTTPServer` on `127.0.0.1`. Port resolution: honors `TEST_PORT`
+  if set, then tries `8000` (so legacy tests that hard-code
+  `http://localhost:8000` keep working), then falls back to a kernel-assigned
+  free port. The actual bound port is republished to `TEST_PORT` and
+  `TEST_BASE_URL`.
 - a separate `tests/conftest.py` only adds `sys.path` and sets
   `PHINS_TEST_MODE`; the embedded server and env defaults live in the
   **root** `conftest.py`
@@ -39,6 +46,8 @@ Preferred file-by-task:
 | API route/response change | `web_portal/server.py`, then `web_portal/api_extensions.py` |
 | BI/analytics API | `web_portal/api_bi_analytics.py`, `services/bi_analytics_service.py` |
 | Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
+| Assessment Center / Customer 360 | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
+| Wallet / marketplace settlement | `database/repositories/marketplace_repository.py`, `database/marketplace_models.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -66,21 +75,25 @@ Preferred file-by-task:
 |- web_portal/
 |  |- server.py
 |  |- api_extensions.py
+|  |- api_assessment_center.py         # Customer 360 / fact ingestion
 |  |- api_bi_analytics.py
 |  |- api_delivery_bidding.py
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
-|- services/                            # 64 service modules
+|- services/                            # 78 service modules
 |- database/
 |  |- config.py
 |  |- manager.py
 |  |- models.py
+|  |- marketplace_models.py            # wallet / settlement / outbox models
 |  |- data_access.py
 |  |- seeds.py
 |  |- notification_models.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 13 *_repository.py + base.py
+|  |- dynamic_customers.json           # in-memory/demo seed data
+|  |- invitation_codes.json
+|  |- repositories/                     # 14 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -94,12 +107,13 @@ Preferred file-by-task:
 |  `- migrate_passwords.py
 |- scheduler/
 |  `- runner.py
-|- scripts/                             # operational utilities
-|- tests/                               # 85 test files
+|- scripts/                             # operational utilities (entrypoint.sh, run_monthly_auto_pay.py, ...)
+|- tests/                               # 114 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
 |  |- health_marketplace_implementation_spec.md
+|  |- INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md
 |  `- uml/
 `- .github/workflows/                   # CI (visual_test, security_scan)
 ```
@@ -146,7 +160,7 @@ Database patterns:
 - `database/config.py` resolves `DATABASE_URL` first, then SQLite settings such
   as `USE_SQLITE` and `SQLITE_PATH`.
 
-`DatabaseManager` repositories (as properties):
+`DatabaseManager` repositories (as properties, 33 total):
 
 - Core: `customers`, `policies`, `claims`, `underwriting`, `billing`
 - Auth/audit: `users`, `sessions`, `audit`, `tokens`
@@ -154,6 +168,12 @@ Database patterns:
 - Documents: `documents`, `processing_jobs`
 - Supply chain: `suppliers`, `supplier_invitations`, `supplier_offers`,
   `supplier_orders`, `supplier_documents`, `supply_chain_ledger`
+- Wallet / payments: `wallet_accounts`, `wallet_holds`, `wallet_ledger`,
+  `payment_intents`, `refunds`, `journal`
+- Marketplace settlement: `supplier_settlement_runs`,
+  `supplier_settlement_items`, `external_payers`, `marketplace_claims`,
+  `remittances`, `payer_receivables`
+- Operational: `idempotency`, `outbox`
 
 Common ID prefixes:
 
@@ -174,8 +194,8 @@ When changing or adding an API endpoint:
 
 1. Inspect the surrounding route in `web_portal/server.py` first.
 2. Check whether the endpoint belongs in `server.py`,
-   `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`, or
-   `web_portal/api_delivery_bidding.py`.
+   `web_portal/api_extensions.py`, `web_portal/api_assessment_center.py`,
+   `web_portal/api_bi_analytics.py`, or `web_portal/api_delivery_bidding.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -194,6 +214,11 @@ Watch-outs:
 - `api_extensions.py` covers foundations, OTP/CAPTCHA, contribution payments,
   community messaging, wallet, admin foundation routes, backup/persistence,
   and invitation handling.
+- `api_assessment_center.py` owns `/api/assessment-center/*` (uploads, fact
+  mining, customer profile, risk indicators, charts, export/import, Mislaka
+  linking). Auth model: `customer` sessions are scoped to their own
+  `customer_id`; admin / underwriter / actuary / analyst / claims roles can
+  read/write any customer.
 
 ## 6) Database Task Playbook
 
@@ -214,15 +239,17 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 18 repository properties (see §4 for the full list).
-- Repository modules (13 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 33 repository properties (see §4 for the full list).
+- Repository modules (14 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
   `token_repository.py`, `document_repository.py`, `supplier_repository.py`
   (bundles supplier, invitation, offer, order, document, and supply-chain
-  ledger repositories).
+  ledger repositories), and `marketplace_repository.py` (bundles wallet,
+  payments, journal, settlement, external-payer, marketplace-claim,
+  remittance, payer-receivable, idempotency, and outbox repositories).
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -299,15 +326,23 @@ bash RUN_ALL_TESTS.sh
 Important test harness facts:
 
 - **Root `conftest.py`** starts an embedded `ThreadingHTTPServer` on
-  `127.0.0.1:8000` with `PortalHandler`; sets env defaults
-  (`USE_DATABASE=false`, `USE_SQLITE=true`, `PHINS_TEST_MODE=true`,
-  `TEST_BASE_URL=http://localhost:8000`)
+  `127.0.0.1` with `PortalHandler`; sets env defaults (`USE_DATABASE=false`,
+  `USE_SQLITE=true`, `PHINS_TEST_MODE=true`, `SQLITE_PATH=<tmp>/phins_test.db`).
+  Port is chosen via `_pick_test_port()`: `TEST_PORT` env > `8000` >
+  kernel-assigned. `TEST_PORT` and `TEST_BASE_URL` are republished to the
+  bound port, so tests should read them rather than hard-coding `8000`.
 - **`tests/conftest.py`** only adds `sys.path` and sets `PHINS_TEST_MODE`; it
-  does **not** start the server
-- Tests reset in-memory portal state between cases (clears `POLICIES`,
-  `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
-- Options wheel service and document processing service are also reset per test
-- 85 test files under `tests/`, 11 root-level `test_*.py` files
+  does **not** start the server.
+- `pytest_runtest_setup` resets in-memory portal state between cases:
+  clears the dict stores (`POLICIES`, `CLAIMS`, `CUSTOMERS`,
+  `UNDERWRITING_APPLICATIONS`, `SESSIONS`, `BILLING`, `HEALTH_WALLETS`,
+  `MEDICAL_PURCHASES`, `INVESTMENT_ACCOUNTS`, `CUSTOMER_ALLOCATIONS`,
+  `TRANSACTION_LEDGER`, `RATE_LIMIT`, `FAILED_LOGINS`, `BLOCKED_IPS`,
+  `SUSPICIOUS_PATTERNS`) plus the per-port init tracker, and calls
+  `reset_*` on options wheel, document processing, assessment center,
+  accounting engine, firewall, and intrusion detector. `USERS` is **not**
+  cleared.
+- 114 test files under `tests/`, 11 root-level `test_*.py` files.
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -324,10 +359,15 @@ referenced files, commands, paths, and ports still exist.
   tests because pytest starts a real embedded `PortalHandler` server.
 - `supplier_repository.py` bundles multiple repository classes (suppliers,
   invitations, offers, orders, documents, supply-chain ledger); changes there
-  can have a wide blast radius.
+  can have a wide blast radius. The same applies to
+  `marketplace_repository.py`, which bundles wallet / payment / settlement /
+  outbox repositories.
 - The two `conftest.py` files (root vs `tests/`) serve different purposes;
   putting server setup in `tests/conftest.py` will not apply to root-level
   test files.
+- Hard-coding `http://localhost:8000` in new tests is fragile — the embedded
+  server may bind a different port under parallel pytest or when 8000 is
+  busy. Read `TEST_BASE_URL` / `TEST_PORT` instead.
 
 ## 10) Security and Reliability
 
@@ -364,4 +404,4 @@ If you update this file again:
 
 ---
 
-Last updated: May 5, 2026
+Last updated: June 8, 2026
