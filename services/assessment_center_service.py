@@ -1263,8 +1263,8 @@ class AssessmentCenterService:
         top-level keys, so callers can pass filters whichever way is natural.
         """
         recognised = (
-            "date_from", "date_to", "fact_type", "source", "min_confidence",
-            "policy_number", "provider", "product", "status",
+            "date_from", "date_to", "date_field", "fact_type", "source",
+            "min_confidence", "policy_number", "provider", "product", "status",
         )
         filters: Dict[str, Any] = {}
         nested = options.get("filters")
