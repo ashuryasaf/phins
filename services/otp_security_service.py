@@ -163,6 +163,11 @@ class OTPVerification:
     is_new_device: bool = False
     is_new_location: bool = False
     risk_score: float = 0.0
+    # Delivery channel for the OTP. 'email' (default), 'sms', or 'both'.
+    # When 'sms' or 'both' is requested, the phone field carries the
+    # destination number in E.164 format.
+    delivery_channel: str = 'email'
+    phone: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(minutes=5))
     verified_at: Optional[datetime] = None
@@ -180,6 +185,8 @@ class OTPVerification:
             'is_new_device': self.is_new_device,
             'is_new_location': self.is_new_location,
             'risk_score': self.risk_score,
+            'delivery_channel': self.delivery_channel,
+            'phone': self.phone,
             'created_at': self.created_at.isoformat(),
             'expires_at': self.expires_at.isoformat(),
             'verified_at': self.verified_at.isoformat() if self.verified_at else None
@@ -283,6 +290,17 @@ def mask_email(email: str) -> str:
     else:
         masked = local[0] + '*' * (len(local) - 2) + local[-1]
     return f"{masked}@{domain}"
+
+
+def _mask_phone(phone: Optional[str]) -> str:
+    """Mask phone for display (keeps country code + last two digits)."""
+    if not phone:
+        return '***'
+    digits = re.sub(r'\D', '', phone)
+    if len(digits) <= 4:
+        return '***'
+    plus = '+' if str(phone).strip().startswith('+') else ''
+    return f"{plus}{digits[:2]}{'*' * (len(digits) - 4)}{digits[-2:]}"
 
 
 # ============================================================================
@@ -641,15 +659,34 @@ class OTPSecurityService:
         purpose: OTPPurpose,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        device_fingerprint: Optional[str] = None
+        device_fingerprint: Optional[str] = None,
+        phone: Optional[str] = None,
+        delivery_channel: str = 'email'
     ) -> SecurityResult:
-        """Create OTP verification request"""
+        """Create OTP verification request.
+
+        ``delivery_channel`` selects how the code will reach the user
+        (``'email'``, ``'sms'``, or ``'both'``). When SMS delivery is
+        requested, ``phone`` must be a non-empty E.164-style number.
+        """
         # Check rate limits
         if ip_address and not self._check_rate_limit(ip_address, "otp_request"):
             return SecurityResult(
                 success=False,
                 error_code="RATE_LIMITED",
                 message="Too many OTP requests. Please try again later."
+            )
+
+        normalized_channel = (delivery_channel or 'email').strip().lower()
+        if normalized_channel not in ('email', 'sms', 'both'):
+            normalized_channel = 'email'
+
+        normalized_phone = (phone or '').strip() or None
+        if normalized_channel in ('sms', 'both') and not normalized_phone:
+            return SecurityResult(
+                success=False,
+                error_code="MISSING_PHONE",
+                message="A phone number is required for SMS verification."
             )
         
         # Check if device is trusted
@@ -687,6 +724,8 @@ class OTPSecurityService:
             device_fingerprint=device_fingerprint,
             is_new_device=is_new_device,
             risk_score=risk_score,
+            delivery_channel=normalized_channel,
+            phone=normalized_phone,
             expires_at=datetime.now(timezone.utc) + timedelta(
                 seconds=OTPSecurityConfig.OTP_EXPIRY_SECONDS
             )
@@ -720,11 +759,14 @@ class OTPSecurityService:
             verification_id=verification.verification_id,
             data={
                 "verification_id": verification.verification_id,
-                "otp_code": otp_code,  # In production, send via email/SMS
+                "otp_code": otp_code,  # delivered via email/SMS by the caller
                 "masked_email": mask_email(email),
                 "expires_in_seconds": OTPSecurityConfig.OTP_EXPIRY_SECONDS,
                 "is_new_device": is_new_device,
-                "risk_level": "high" if risk_score > 0.7 else ("medium" if risk_score > 0.4 else "low")
+                "risk_level": "high" if risk_score > 0.7 else ("medium" if risk_score > 0.4 else "low"),
+                "delivery_channel": normalized_channel,
+                "phone": normalized_phone,
+                "masked_phone": _mask_phone(normalized_phone) if normalized_phone else None,
             }
         )
 
@@ -808,7 +850,10 @@ class OTPSecurityService:
                 "masked_email": mask_email(verification.email),
                 "otp_code": otp_code,
                 "expires_in_seconds": OTPSecurityConfig.OTP_EXPIRY_SECONDS,
-                "purpose": verification.purpose.value
+                "purpose": verification.purpose.value,
+                "delivery_channel": verification.delivery_channel,
+                "phone": verification.phone,
+                "masked_phone": _mask_phone(verification.phone) if verification.phone else None,
             }
         )
     

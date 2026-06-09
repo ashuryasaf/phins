@@ -31385,6 +31385,13 @@ For claims or questions, please contact:
                 data = json.loads(body)
                 username = sanitize_input(data.get('username', ''), 254).lower()
                 email = sanitize_input(data.get('email', ''), 254).lower()
+                # Optional SMS delivery: caller can ask for the OTP to be
+                # sent via SMS (requires phone) or via email + SMS.
+                requested_channel = str(
+                    data.get('delivery_channel') or 'email'
+                ).strip().lower()
+                if requested_channel not in ('email', 'sms', 'both'):
+                    requested_channel = 'email'
 
                 if not username or not email:
                     self._set_json_headers(400)
@@ -31397,20 +31404,40 @@ For claims or questions, please contact:
                     if user:
                         username = email
 
-                from services.otp_security_service import mask_email as _mask_email
+                from services.otp_security_service import mask_email as _mask_email, _mask_phone
 
                 def _decoy_reset_response():
-                    """Structurally identical to a real response to prevent user enumeration."""
+                    """Structurally identical to a real response to prevent user enumeration.
+
+                    Mirrors the channel-specific wording and ``delivery_channel`` /
+                    ``masked_phone`` fields of the real SMS-capable response so callers
+                    cannot distinguish a non-existent account from one with a phone on
+                    file. The fabricated masked phone is derived deterministically from
+                    the supplied identifiers so repeated requests stay consistent like a
+                    real account.
+                    """
                     decoy_id = f"OTP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}"
-                    return {
+                    if requested_channel == 'sms':
+                        decoy_message = 'If the account exists, a verification code has been sent to the registered phone number.'
+                    elif requested_channel == 'both':
+                        decoy_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
+                    else:
+                        decoy_message = 'If the account exists, a verification code has been sent to the registered email.'
+                    decoy = {
                         'success': True,
-                        'message': 'If the account exists, a verification code has been sent to the registered email.',
+                        'message': decoy_message,
                         'verification_id': decoy_id,
                         'requires_otp': True,
                         'notification_sent': True,
                         'masked_email': _mask_email(email),
+                        'delivery_channel': requested_channel,
                         'expires_in_seconds': 300,
                     }
+                    if requested_channel in ('sms', 'both'):
+                        _seed = hashlib.sha256(f"{username}|{email}".encode('utf-8')).hexdigest()
+                        _fake_digits = ''.join(str(int(c, 16) % 10) for c in _seed[:11])
+                        decoy['masked_phone'] = _mask_phone(f"+{_fake_digits}")
+                    return decoy
 
                 if not user:
                     self._set_json_headers(200)
@@ -31418,12 +31445,24 @@ For claims or questions, please contact:
                     return
 
                 customer_id = user.get('customer_id')
+                customer = None
                 if customer_id:
                     customer = CUSTOMERS.get(customer_id)
                     if customer and customer.get('email', '').lower() != email:
                         self._set_json_headers(200)
                         self.wfile.write(json.dumps(_decoy_reset_response()).encode('utf-8'))
                         return
+
+                # SMS delivery must always target the account's registered
+                # phone number, never a caller-supplied one. Otherwise an
+                # attacker who knows the victim's username and email could
+                # redirect the reset code to their own device. If no phone is
+                # on file, drop back to email-only delivery so we don't block
+                # the reset.
+                effective_phone = str((customer or {}).get('phone') or '').strip()
+                effective_channel = requested_channel
+                if effective_channel in ('sms', 'both') and not effective_phone:
+                    effective_channel = 'email'
 
                 try:
                     from services.otp_security_service import get_otp_security_service, OTPPurpose
@@ -31435,6 +31474,8 @@ For claims or questions, please contact:
                         purpose=OTPPurpose.PASSWORD_RESET,
                         ip_address=client_ip,
                         user_agent=self.headers.get('User-Agent', ''),
+                        phone=effective_phone or None,
+                        delivery_channel=effective_channel,
                     )
 
                     if not otp_result.success:
@@ -31454,19 +31495,24 @@ For claims or questions, please contact:
                         try:
                             if api_extensions_enabled:
                                 try:
-                                    from web_portal.api_extensions import _send_otp_email
+                                    from web_portal.api_extensions import _send_otp_via_channel
                                 except ImportError:
-                                    from api_extensions import _send_otp_email
-                                sent, send_err = _send_otp_email(
-                                    email=email,
+                                    from api_extensions import _send_otp_via_channel
+                                sent, send_err = _send_otp_via_channel(
+                                    delivery_channel=effective_channel,
                                     otp_code=otp_code,
                                     expiry_seconds=expiry_seconds,
                                     purpose='password_reset',
+                                    email=email,
+                                    phone=effective_phone or None,
                                     ip_address=client_ip,
                                 )
                                 notification_sent = sent
-                                if not sent:
-                                    notification_error = send_err
+                                # ``_send_otp_via_channel`` may return an error
+                                # string even when it reports success (e.g. one
+                                # leg of a 'both' delivery failed). Capture it so
+                                # partial failures are still surfaced below.
+                                notification_error = send_err
                             else:
                                 try:
                                     from services.notification_service import (
@@ -31476,27 +31522,60 @@ For claims or questions, please contact:
                                         get_notification_service,
                                     )
                                     ns = get_notification_service()
-                                    nr = ns.send(NotificationRequest(
-                                        channel=NotificationChannel.EMAIL,
-                                        recipient=email,
-                                        template_id='otp_email',
-                                        template_vars={
-                                            'code': otp_code,
-                                            'expiry_minutes': max(1, int(expiry_seconds // 60)),
-                                        },
-                                        priority=NotificationPriority.HIGH,
-                                        ip_address=client_ip,
-                                        metadata={'purpose': 'password_reset'},
-                                    ))
-                                    notification_sent = bool(nr.success)
-                                    if not nr.success:
-                                        notification_error = nr.error_message
+                                    expiry_minutes = max(1, int(expiry_seconds // 60))
+                                    email_ok = sms_ok = False
+                                    email_err = sms_err = None
+                                    if effective_channel in ('email', 'both'):
+                                        nr = ns.send(NotificationRequest(
+                                            channel=NotificationChannel.EMAIL,
+                                            recipient=email,
+                                            template_id='otp_email',
+                                            template_vars={
+                                                'code': otp_code,
+                                                'expiry_minutes': expiry_minutes,
+                                            },
+                                            priority=NotificationPriority.HIGH,
+                                            ip_address=client_ip,
+                                            metadata={'purpose': 'password_reset'},
+                                        ))
+                                        email_ok = bool(nr.success)
+                                        if not email_ok:
+                                            email_err = nr.error_message
+                                    if effective_channel in ('sms', 'both') and effective_phone:
+                                        sr = ns.send(NotificationRequest(
+                                            channel=NotificationChannel.SMS,
+                                            recipient=effective_phone,
+                                            content=(
+                                                f"Your PHINS verification code is {otp_code}. "
+                                                f"It expires in {expiry_minutes} minute(s)."
+                                            ),
+                                            priority=NotificationPriority.HIGH,
+                                            ip_address=client_ip,
+                                            metadata={'purpose': 'password_reset', 'kind': 'otp'},
+                                        ))
+                                        sms_ok = bool(sr.success)
+                                        if not sms_ok:
+                                            sms_err = sr.error_message
+                                    if effective_channel == 'sms':
+                                        notification_sent = sms_ok
+                                        notification_error = sms_err
+                                    elif effective_channel == 'both':
+                                        notification_sent = email_ok or sms_ok
+                                        if not notification_sent:
+                                            notification_error = '; '.join(
+                                                e for e in (email_err, sms_err) if e
+                                            ) or None
+                                        elif not (email_ok and sms_ok):
+                                            notification_error = sms_err if email_ok else email_err
+                                    else:
+                                        notification_sent = email_ok
+                                        notification_error = email_err
                                 except Exception as ns_exc:
                                     notification_error = str(ns_exc)
                         except Exception as mail_exc:
                             notification_error = str(mail_exc)
                             try:
-                                print(f"[PASSWORD-RESET] OTP email delivery error: {mail_exc}")
+                                print(f"[PASSWORD-RESET] OTP delivery error: {mail_exc}")
                             except Exception:
                                 pass
 
@@ -31504,21 +31583,36 @@ For claims or questions, please contact:
 
                     if not notification_sent and notification_error:
                         try:
-                            print(f"[PASSWORD-RESET] Verification code email not delivered to {email}: {notification_error}")
+                            print(f"[PASSWORD-RESET] Verification code not delivered to {email} via {effective_channel}: {notification_error}")
                         except Exception:
                             pass
 
+                    if effective_channel == 'sms':
+                        reset_message = 'If the account exists, a verification code has been sent to the registered phone number.'
+                    elif effective_channel == 'both':
+                        reset_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
+                    else:
+                        reset_message = 'If the account exists, a verification code has been sent to the registered email.'
+
                     response_data = {
                         'success': True,
-                        'message': 'If the account exists, a verification code has been sent to the registered email.',
+                        'message': reset_message,
                         'verification_id': verification_id,
                         'requires_otp': True,
                         'notification_sent': notification_sent,
+                        'delivery_channel': effective_channel,
                     }
-                    if not notification_sent and notification_error:
-                        response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
+                    if notification_error:
+                        if notification_sent:
+                            # Partial delivery (e.g. SMS leg of 'both' failed):
+                            # surface the descriptive error so operators can act.
+                            response_data['notification_error'] = notification_error
+                        else:
+                            response_data['notification_error'] = 'Verification code could not be delivered. Please try again or use the resend option.'
                     if otp_result.data and otp_result.data.get('masked_email'):
                         response_data['masked_email'] = otp_result.data['masked_email']
+                    if otp_result.data and otp_result.data.get('masked_phone'):
+                        response_data['masked_phone'] = otp_result.data['masked_phone']
                     if otp_result.data and otp_result.data.get('expires_in_seconds'):
                         response_data['expires_in_seconds'] = otp_result.data['expires_in_seconds']
 
