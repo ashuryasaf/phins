@@ -1873,8 +1873,75 @@
           <a href="/legal/term-sheet.html" class="exec-dl-btn">📝 Term Sheet</a>
           <a href="/legal/cap-table.html" class="exec-dl-btn">📊 Cap Table</a>
           <a href="/legal/founder-agreement.html" class="exec-dl-btn">🤝 Founder Agreement</a>
-          <span style="font-size:7.8pt;opacity:0.8;">All figures are planning assumptions · ₪ (ILS) · FX 1 USD = ₪3.70 · do not share before the meeting</span>
+          <span style="font-size:7.8pt;opacity:0.8;" id="inv-fx-note">All figures are planning assumptions · base ₪ (ILS) · live FX loading… · do not share before the meeting</span>
         </div>
+      </div>
+
+      <!-- Investor Deal & Valuation Configurator (adjustable; live FX) -->
+      <div class="exec-chart-panel" id="investor-configurator" style="margin-top:18px;border:2px solid var(--blue-mid);background:linear-gradient(180deg,#f5f9ff 0%,#ffffff 100%);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">🎛️ Deal &amp; Valuation Configurator <span style="font-size:8pt;font-weight:700;color:#15803d;background:#dcfce7;border-radius:20px;padding:2px 9px;vertical-align:middle;">adjustable · live FX</span></h3>
+            <p class="ecp-sub" style="margin-top:4px;">Adjust currency, valuation and position; every figure, table and chart in this section recomputes from a single ₪ (ILS) base, so the numbers always reconcile. Currency uses a live exchange rate (Alpha Vantage forex) with an editable override.</p>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:7.5pt;color:var(--text-soft);">Display currency</span>
+            <button type="button" class="exec-dl-btn inv-cur-btn" data-cur="ILS">₪ ILS</button>
+            <button type="button" class="exec-dl-btn inv-cur-btn" data-cur="USD">$ USD</button>
+            <button type="button" class="exec-dl-btn inv-cur-btn" data-cur="EUR">€ EUR</button>
+          </div>
+        </div>
+
+        <!-- Live FX strip -->
+        <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#0f274d;color:#fff;border-radius:10px;padding:10px 14px;">
+          <span style="font-size:8.5pt;font-weight:800;letter-spacing:0.04em;">💱 Live FX</span>
+          <span id="inv-fx-badge" style="font-size:8pt;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.16);">loading…</span>
+          <label style="font-size:8pt;opacity:0.9;">1 USD = ₪
+            <input id="inv-fx-rate" type="number" step="0.0001" min="0.0001" style="width:88px;border-radius:8px;border:1px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.12);color:#fff;padding:4px 7px;font-family:inherit;font-size:8.5pt;">
+          </label>
+          <label style="font-size:8pt;opacity:0.9;">1 USD = €
+            <input id="inv-fx-eur" type="number" step="0.0001" min="0.0001" style="width:80px;border-radius:8px;border:1px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.12);color:#fff;padding:4px 7px;font-family:inherit;font-size:8.5pt;">
+          </label>
+          <button type="button" id="inv-fx-refresh" class="exec-dl-btn" style="background:rgba(255,255,255,0.16);color:#fff;border-color:rgba(255,255,255,0.4);">↻ Refresh live</button>
+          <span id="inv-fx-source" style="font-size:7.5pt;opacity:0.8;"></span>
+        </div>
+
+        <!-- Adjustable valuation + position inputs -->
+        <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+          <div class="control-group">
+            <label for="inv-round" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Round size (₪)</label>
+            <input id="inv-round" type="number" min="0" step="100000" value="6000000" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="inv-premoney" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Pre-money valuation (₪)</label>
+            <input id="inv-premoney" type="number" min="0" step="1000000" value="24000000" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group">
+            <label for="inv-position" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Position</label>
+            <select id="inv-position" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+              <option value="investor">Investor (capital only)</option>
+              <option value="cofounder">Active co-founder (operator)</option>
+              <option value="combined" selected>Combined (co-founder + investor) ★</option>
+            </select>
+          </div>
+          <div class="control-group inv-cf-only">
+            <label for="inv-cocash" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Co-founder cash (₪)</label>
+            <input id="inv-cocash" type="number" min="0" step="250000" value="3000000" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+          <div class="control-group inv-cf-only">
+            <label for="inv-founder-eq" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Founders' equity grant (%)</label>
+            <input id="inv-founder-eq" type="number" min="0" max="40" step="0.5" value="6" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+          </div>
+        </div>
+
+        <!-- Live KPI strip -->
+        <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;" id="inv-kpi-strip">
+          <div class="stat-box" style="border-radius:12px;padding:12px 10px;"><div class="stat-val" id="inv-kpi-post" style="font-size:14pt;">—</div><div class="stat-lbl">Post-money valuation</div></div>
+          <div class="stat-box" style="border-radius:12px;padding:12px 10px;"><div class="stat-val" id="inv-kpi-capital" style="font-size:14pt;">—</div><div class="stat-lbl">Capital in (selected)</div></div>
+          <div class="stat-box" style="border-radius:12px;padding:12px 10px;"><div class="stat-val" id="inv-kpi-stake" style="font-size:14pt;color:var(--green-1);">—</div><div class="stat-lbl" id="inv-kpi-stake-lbl">Investor stake</div></div>
+          <div class="stat-box" style="border-radius:12px;padding:12px 10px;"><div class="stat-val" id="inv-kpi-dilution" style="font-size:14pt;">—</div><div class="stat-lbl">Founder dilution</div></div>
+        </div>
+        <p style="font-size:7.5pt;color:var(--text-soft);margin-top:8px;" id="inv-cfg-note">Inputs are entered in ₪ (the canonical base); all outputs convert to the selected display currency at the live rate. Settings persist in this browser.</p>
       </div>
 
       <!-- Context + Target profile -->
@@ -1922,15 +1989,15 @@
               <tbody>
                 <tr style="background:#e8f5e9;"><td style="padding:5px 8px;font-weight:700;">Sales start date</td><td style="padding:5px 8px;text-align:right;">1 Jan 2027</td></tr>
                 <tr><td style="padding:5px 8px;">Build phase</td><td style="padding:5px 8px;text-align:right;">~12 months (to 31 Dec 2026)</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Reporting currency</td><td style="padding:5px 8px;text-align:right;">₪ (ILS) · FX 1 USD = ₪3.70</td></tr>
-                <tr><td style="padding:5px 8px;">Average annual premium</td><td style="padding:5px 8px;text-align:right;">₪3,600 (₪300 / mo)</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Reporting currency</td><td style="padding:5px 8px;text-align:right;" id="inv-assum-currency">₪ (ILS) · live FX</td></tr>
+                <tr><td style="padding:5px 8px;">Average annual premium</td><td style="padding:5px 8px;text-align:right;"><span class="inv-money" data-ils="3600"></span> (<span class="inv-money" data-ils="300"></span> / mo)</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">PHINS take rate on GWP (MGA + platform)</td><td style="padding:5px 8px;text-align:right;">25%</td></tr>
                 <tr><td style="padding:5px 8px;">Active policies — EoY 2027 / 28 / 29</td><td style="padding:5px 8px;text-align:right;">4,000 / 12,000 / 28,000</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">2,000 / 8,000 / 20,000</td></tr>
-                <tr><td style="padding:5px 8px;">Blended CAC (incl. advertising)</td><td style="padding:5px 8px;text-align:right;">≈ ₪650 / policy</td></tr>
+                <tr><td style="padding:5px 8px;">Blended CAC (incl. advertising)</td><td style="padding:5px 8px;text-align:right;">≈ <span class="inv-money" data-ils="650"></span> / policy</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Annual policy churn</td><td style="padding:5px 8px;text-align:right;">8%</td></tr>
-                <tr><td style="padding:5px 8px;">Seed / build round (the ask)</td><td style="padding:5px 8px;text-align:right;font-weight:700;">₪6,000,000</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Pre-money valuation</td><td style="padding:5px 8px;text-align:right;font-weight:700;">₪24,000,000</td></tr>
+                <tr><td style="padding:5px 8px;">Seed / build round (the ask)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" id="inv-assum-round">—</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Pre-money valuation</td><td style="padding:5px 8px;text-align:right;font-weight:700;" id="inv-assum-pre">—</td></tr>
               </tbody>
             </table>
           </div>
@@ -1944,31 +2011,31 @@
       <!-- Pre-launch build budget + cost composition donut -->
       <div class="exec-chart-panel" style="margin-top:24px;">
         <h3>Pre-launch build budget — 12 months to 1 Jan 2027</h3>
-        <p class="ecp-sub">Use of the ₪6.0M seed / build round across the period before sales begin: legal terms, platform development, QA, regulatory, and funding. Totals reconcile exactly to the round size.</p>
+        <p class="ecp-sub">Use of the seed / build round across the period before sales begin: legal terms, platform development, QA, regulatory, and funding. Amounts scale with the round size set in the configurator and always reconcile exactly to it; the proportional split (donut) is fixed.</p>
         <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:18px;align-items:start;">
           <div style="overflow-x:auto;">
             <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
                 <tr style="background:#0d47a1;color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Cost category</th>
-                  <th style="padding:6px 8px;text-align:right;font-weight:700;">Budget (₪)</th>
+                  <th style="padding:6px 8px;text-align:right;font-weight:700;">Budget (<span class="inv-cur-sym">₪</span>)</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">Share</th>
                 </tr>
               </thead>
               <tbody>
-                <tr style="background:#eef4ff;"><td style="padding:5px 8px;font-weight:700;">Platform development &amp; engineering</td><td style="padding:5px 8px;text-align:right;">1,950,000</td><td style="padding:5px 8px;text-align:right;">32.5%</td></tr>
-                <tr><td style="padding:5px 8px;">Cloud, AI infrastructure &amp; tooling</td><td style="padding:5px 8px;text-align:right;">470,000</td><td style="padding:5px 8px;text-align:right;">7.8%</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Legal, regulatory &amp; licensing (policy terms, IP)</td><td style="padding:5px 8px;text-align:right;">880,000</td><td style="padding:5px 8px;text-align:right;">14.7%</td></tr>
-                <tr><td style="padding:5px 8px;">Actuarial, pricing &amp; reinsurance structuring</td><td style="padding:5px 8px;text-align:right;">520,000</td><td style="padding:5px 8px;text-align:right;">8.7%</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">QA, security &amp; compliance audits</td><td style="padding:5px 8px;text-align:right;">430,000</td><td style="padding:5px 8px;text-align:right;">7.2%</td></tr>
-                <tr><td style="padding:5px 8px;">Marketing, brand &amp; advertising (pre-launch)</td><td style="padding:5px 8px;text-align:right;">650,000</td><td style="padding:5px 8px;text-align:right;">10.8%</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">G&amp;A, finance &amp; operations</td><td style="padding:5px 8px;text-align:right;">400,000</td><td style="padding:5px 8px;text-align:right;">6.7%</td></tr>
-                <tr><td style="padding:5px 8px;">Contingency (≈11.7%)</td><td style="padding:5px 8px;text-align:right;">700,000</td><td style="padding:5px 8px;text-align:right;">11.7%</td></tr>
+                <tr style="background:#eef4ff;"><td style="padding:5px 8px;font-weight:700;">Platform development &amp; engineering</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="1950000"></td><td style="padding:5px 8px;text-align:right;">32.5%</td></tr>
+                <tr><td style="padding:5px 8px;">Cloud, AI infrastructure &amp; tooling</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="470000"></td><td style="padding:5px 8px;text-align:right;">7.8%</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Legal, regulatory &amp; licensing (policy terms, IP)</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="880000"></td><td style="padding:5px 8px;text-align:right;">14.7%</td></tr>
+                <tr><td style="padding:5px 8px;">Actuarial, pricing &amp; reinsurance structuring</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="520000"></td><td style="padding:5px 8px;text-align:right;">8.7%</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">QA, security &amp; compliance audits</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="430000"></td><td style="padding:5px 8px;text-align:right;">7.2%</td></tr>
+                <tr><td style="padding:5px 8px;">Marketing, brand &amp; advertising (pre-launch)</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="650000"></td><td style="padding:5px 8px;text-align:right;">10.8%</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;">G&amp;A, finance &amp; operations</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="400000"></td><td style="padding:5px 8px;text-align:right;">6.7%</td></tr>
+                <tr><td style="padding:5px 8px;">Contingency (≈11.7%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="700000"></td><td style="padding:5px 8px;text-align:right;">11.7%</td></tr>
               </tbody>
               <tfoot>
                 <tr style="background:#e6eefa;font-weight:800;color:#0d47a1;">
                   <td style="padding:6px 8px;">Total build budget</td>
-                  <td style="padding:6px 8px;text-align:right;">6,000,000</td>
+                  <td style="padding:6px 8px;text-align:right;" class="inv-money inv-scale" data-ils="6000000"></td>
                   <td style="padding:6px 8px;text-align:right;">100%</td>
                 </tr>
               </tfoot>
@@ -1984,7 +2051,7 @@
               <circle cx="85" cy="85" r="60" fill="none" stroke="#2e7d32" stroke-width="22" stroke-dasharray="40.84 336.15" stroke-dashoffset="-267.03" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#f59e0b" stroke-width="22" stroke-dasharray="25.13 351.86" stroke-dashoffset="-307.87" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#78909c" stroke-width="22" stroke-dasharray="43.98 333.01" stroke-dashoffset="-333.00" transform="rotate(-90 85 85)"/>
-              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1">₪6.0M</text>
+              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1" id="inv-build-total">₪6.0M</text>
               <text x="85" y="96" text-anchor="middle" font-size="7.5" fill="#64748b">Build budget</text>
             </svg>
             <div class="exec-donut-legend">
@@ -2043,13 +2110,13 @@
       <!-- Income / P&L model + revenue chart -->
       <div class="exec-chart-panel" style="margin-top:24px;">
         <h3>Income model — Israel, first three years (sales from 1 Jan 2027)</h3>
-        <p class="ecp-sub">PHINS net revenue = 25% blended take rate on earned gross written premium (GWP). EBITDA = net revenue − operating cost. All values ₪.</p>
+        <p class="ecp-sub">PHINS net revenue = 25% blended take rate on earned gross written premium (GWP). EBITDA = net revenue − operating cost. Values display in the selected currency (base ₪).</p>
         <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:18px;align-items:start;">
           <div style="overflow-x:auto;">
             <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
                 <tr style="background:#0d47a1;color:#fff;">
-                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Line item (₪)</th>
+                  <th style="padding:6px 8px;text-align:left;font-weight:700;">Line item (<span class="inv-cur-sym">₪</span>)</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2027</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2028</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2029</th>
@@ -2058,52 +2125,52 @@
               <tbody>
                 <tr><td style="padding:5px 8px;">Active policies (EoY)</td><td style="padding:5px 8px;text-align:right;">4,000</td><td style="padding:5px 8px;text-align:right;">12,000</td><td style="padding:5px 8px;text-align:right;">28,000</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:5px 8px;">Avg in-force during year</td><td style="padding:5px 8px;text-align:right;">2,000</td><td style="padding:5px 8px;text-align:right;">8,000</td><td style="padding:5px 8px;text-align:right;">20,000</td></tr>
-                <tr><td style="padding:5px 8px;">Gross written premium (earned)</td><td style="padding:5px 8px;text-align:right;">7,200,000</td><td style="padding:5px 8px;text-align:right;">28,800,000</td><td style="padding:5px 8px;text-align:right;">72,000,000</td></tr>
-                <tr style="background:#eef9f0;"><td style="padding:5px 8px;font-weight:700;">PHINS net revenue (25%)</td><td style="padding:5px 8px;text-align:right;font-weight:700;">1,800,000</td><td style="padding:5px 8px;text-align:right;font-weight:700;">7,200,000</td><td style="padding:5px 8px;text-align:right;font-weight:700;">18,000,000</td></tr>
-                <tr><td style="padding:5px 8px;">Operating cost (team, infra, marketing, G&amp;A)</td><td style="padding:5px 8px;text-align:right;">(5,400,000)</td><td style="padding:5px 8px;text-align:right;">(9,000,000)</td><td style="padding:5px 8px;text-align:right;">(14,400,000)</td></tr>
-                <tr style="background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;">EBITDA</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);">(3,600,000)</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);">(1,800,000)</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);">3,600,000</td></tr>
+                <tr><td style="padding:5px 8px;">Gross written premium (earned)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="7200000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="28800000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="72000000"></td></tr>
+                <tr style="background:#eef9f0;"><td style="padding:5px 8px;font-weight:700;">PHINS net revenue (25%)</td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="1800000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="7200000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;" class="inv-money" data-ils="18000000"></td></tr>
+                <tr><td style="padding:5px 8px;">Operating cost (team, infra, marketing, G&amp;A)</td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-5400000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-9000000"></td><td style="padding:5px 8px;text-align:right;" class="inv-money" data-ils="-14400000"></td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;">EBITDA</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-3600000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--red-1);" class="inv-money" data-ils="-1800000"></td><td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--green-1);" class="inv-money" data-ils="3600000"></td></tr>
                 <tr><td style="padding:5px 8px;">EBITDA margin</td><td style="padding:5px 8px;text-align:right;">−200%</td><td style="padding:5px 8px;text-align:right;">−25%</td><td style="padding:5px 8px;text-align:right;">+20%</td></tr>
               </tbody>
             </table>
             <p style="font-size:7.8pt;color:var(--text-soft);margin-top:8px;">
-              Cumulative capital to EBITDA-positive ≈ <strong>₪11.4M</strong> (₪6.0M build + ₪3.6M 2027 burn + ₪1.8M 2028 burn). Plan: ₪6.0M seed now, Series A in 2027 to fund scale-up.
+              Cumulative capital to EBITDA-positive ≈ <strong id="inv-cum-total"></strong> (<span class="inv-money inv-scale" data-ils="6000000"></span> build + <span class="inv-money" data-ils="3600000"></span> 2027 burn + <span class="inv-money" data-ils="1800000"></span> 2028 burn). Plan: <span class="inv-money inv-scale" data-ils="6000000"></span> seed now, Series A in 2027 to fund scale-up.
             </p>
           </div>
           <div>
-            <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:8px;">PHINS net revenue (₪M)</div>
+            <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin-bottom:8px;">PHINS net revenue (<span class="inv-cur-sym">₪</span>M)</div>
             <div class="exec-bar-group">
               <div class="exec-bar-item">
                 <span class="ebi-label">2027</span>
                 <div class="ebi-track"><div class="ebi-fill ai" style="width:10%;"></div></div>
-                <span class="ebi-val">1.8</span>
+                <span class="ebi-val inv-moneyM" data-ils="1800000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2028</span>
                 <div class="ebi-track"><div class="ebi-fill data" style="width:40%;"></div></div>
-                <span class="ebi-val">7.2</span>
+                <span class="ebi-val inv-moneyM" data-ils="7200000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2029</span>
                 <div class="ebi-track"><div class="ebi-fill cloud" style="width:100%;"></div></div>
-                <span class="ebi-val">18.0</span>
+                <span class="ebi-val inv-moneyM" data-ils="18000000"></span>
               </div>
             </div>
-            <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin:14px 0 8px;">Gross written premium (₪M)</div>
+            <div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--blue-dark);margin:14px 0 8px;">Gross written premium (<span class="inv-cur-sym">₪</span>M)</div>
             <div class="exec-bar-group">
               <div class="exec-bar-item">
                 <span class="ebi-label">2027</span>
                 <div class="ebi-track"><div class="ebi-fill block" style="width:10%;"></div></div>
-                <span class="ebi-val">7.2</span>
+                <span class="ebi-val inv-moneyM" data-ils="7200000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2028</span>
                 <div class="ebi-track"><div class="ebi-fill block" style="width:40%;"></div></div>
-                <span class="ebi-val">28.8</span>
+                <span class="ebi-val inv-moneyM" data-ils="28800000"></span>
               </div>
               <div class="exec-bar-item">
                 <span class="ebi-label">2029</span>
                 <div class="ebi-track"><div class="ebi-fill block" style="width:100%;"></div></div>
-                <span class="ebi-val">72.0</span>
+                <span class="ebi-val inv-moneyM" data-ils="72000000"></span>
               </div>
             </div>
           </div>
@@ -2112,14 +2179,14 @@
 
       <!-- Deal structures & valuation comparison -->
       <div class="exec-chart-panel" style="margin-top:24px;">
-        <h3>Deal structures &amp; valuation — ₪6.0M on ₪24M pre-money (₪30M post)</h3>
-        <p class="ecp-sub">Five ways Mr. Uzan can engage, on a common valuation basis so stakes stay comparable. The active co-founder structure is the recommended outcome; the others are investor-only fallbacks.</p>
+        <h3>Deal structures &amp; valuation — <span id="inv-deal-h-round">—</span> on <span id="inv-deal-h-pre">—</span> pre-money (<span id="inv-deal-h-post">—</span> post)</h3>
+        <p class="ecp-sub">Five ways Mr. Uzan can engage, computed live from the configurator on a common valuation basis so stakes stay comparable. The row matching the selected position is highlighted; figures recompute as you adjust round, pre-money, cash, and equity.</p>
         <div style="overflow-x:auto;">
           <table style="width:100%;min-width:980px;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
               <tr style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;">
                 <th style="padding:8px;text-align:left;font-weight:700;">Structure</th>
-                <th style="padding:8px;text-align:center;font-weight:700;">Capital (₪)</th>
+                <th style="padding:8px;text-align:center;font-weight:700;">Capital (<span class="inv-cur-sym">₪</span>)</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Valuation basis</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Investor stake</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Founder dilution</th>
@@ -2127,65 +2194,71 @@
                 <th style="padding:8px;text-align:left;font-weight:700;">Best fit</th>
               </tr>
             </thead>
-            <tbody>
-              <tr>
-                <td style="padding:6px 8px;font-weight:700;">Priced equity (preferred)</td>
-                <td style="padding:6px 8px;text-align:center;">6,000,000</td>
-                <td style="padding:6px 8px;text-align:center;">₪24M pre / ₪30M post</td>
-                <td style="padding:6px 8px;text-align:center;">20.0%</td>
-                <td style="padding:6px 8px;text-align:center;">20.0%</td>
-                <td style="padding:6px 8px;text-align:center;">1× non-participating pref</td>
-                <td style="padding:6px 8px;">Clean, board-grade investor wanting defined ownership now.</td>
-              </tr>
-              <tr style="background:#f8fafc;">
-                <td style="padding:6px 8px;font-weight:700;">Investment cap (SAFE)</td>
-                <td style="padding:6px 8px;text-align:center;">6,000,000</td>
-                <td style="padding:6px 8px;text-align:center;">₪24M cap · 20% discount</td>
-                <td style="padding:6px 8px;text-align:center;">≈20% on conversion</td>
-                <td style="padding:6px 8px;text-align:center;">deferred to round</td>
-                <td style="padding:6px 8px;text-align:center;">cap + discount</td>
-                <td style="padding:6px 8px;">Fast close; defers price to the next priced round.</td>
-              </tr>
-              <tr>
-                <td style="padding:6px 8px;font-weight:700;">Credit line / venture debt</td>
-                <td style="padding:6px 8px;text-align:center;">6,000,000</td>
-                <td style="padding:6px 8px;text-align:center;">~10% interest · milestone draws</td>
-                <td style="padding:6px 8px;text-align:center;">~1.6% (warrants)</td>
-                <td style="padding:6px 8px;text-align:center;">minimal</td>
-                <td style="padding:6px 8px;text-align:center;">senior secured + repayment</td>
-                <td style="padding:6px 8px;">Lowest dilution; needs cash flow to service debt.</td>
-              </tr>
-              <tr style="background:#f8fafc;">
-                <td style="padding:6px 8px;font-weight:700;">CLA (convertible loan)</td>
-                <td style="padding:6px 8px;text-align:center;">6,000,000</td>
-                <td style="padding:6px 8px;text-align:center;">₪24M cap · 7% PIK · 24-mo</td>
-                <td style="padding:6px 8px;text-align:center;">≈20–22% on conversion</td>
-                <td style="padding:6px 8px;text-align:center;">deferred to round</td>
-                <td style="padding:6px 8px;text-align:center;">repayable loan + cap</td>
-                <td style="padding:6px 8px;">Hybrid: debt protection with equity upside.</td>
-              </tr>
-              <tr style="background:#eef9f0;">
-                <td style="padding:6px 8px;font-weight:800;color:#15803d;">Active co-founder + investor ★</td>
-                <td style="padding:6px 8px;text-align:center;font-weight:700;">3,000,000 cash</td>
-                <td style="padding:6px 8px;text-align:center;">₪30M post + founders' equity</td>
-                <td style="padding:6px 8px;text-align:center;font-weight:700;">≈16% (10% cash + 6% vested)</td>
-                <td style="padding:6px 8px;text-align:center;">16%</td>
-                <td style="padding:6px 8px;text-align:center;">board seat · 4-yr vest / 1-yr cliff</td>
-                <td style="padding:6px 8px;"><strong>Recommended.</strong> Capital + operating role; aligns IL insurance relationships &amp; reinsurance access.</td>
-              </tr>
-            </tbody>
+            <tbody id="inv-deal-body"><!-- computed by configurator --></tbody>
           </table>
         </div>
         <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:7.8pt;">
           <div style="background:#eef9f0;border-radius:8px;padding:10px;border:1px solid #c8e6c9;">
             <div style="font-weight:800;color:#15803d;margin-bottom:4px;">Primary ask — active co-founder + investor</div>
-            <div>₪3.0M cash for 10% (at ₪30M post) plus a 6% founders' equity grant (4-year vest, 1-year cliff) for a full-time Chairman / co-operator role. Lower cash than a pure round, but adds Israeli carrier &amp; reinsurance relationships, regulator familiarity, and governance — the highest-alignment outcome.</div>
+            <div id="inv-callout-primary">—</div>
           </div>
           <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
             <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Fallback — investor only</div>
-            <div>If he prefers a pure-investor role: priced equity (20% for ₪6.0M) is cleanest; SAFE / CLA at a ₪24M cap close fastest; a credit line minimises dilution but must be serviced. All convert / price on the same ₪24M basis to keep negotiations consistent.</div>
+            <div id="inv-callout-fallback">—</div>
           </div>
         </div>
+      </div>
+
+      <!-- NDA & signature (ledger-anchored) -->
+      <div class="exec-chart-panel" id="investor-nda" style="margin-top:24px;border:2px solid #6a1b9a;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">🔏 Mutual NDA &amp; signature <span style="font-size:8pt;font-weight:700;color:#6a1b9a;background:#f3e8ff;border-radius:20px;padding:2px 9px;vertical-align:middle;">ledger-anchored</span></h3>
+            <p class="ecp-sub" style="margin-top:4px;">A short mutual NDA covering this discussion. Signing captures the signer, date/time, and a SHA-256 hash of the NDA <em>plus the configured deal terms above</em>, and anchors it append-only to the PHINS hash-chained ledger (tamper-evident). For the full standalone instrument, open the NDA document.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="/legal/nda.html" class="exec-dl-btn" target="_blank" rel="noopener">📄 Full NDA document</a>
+            <a href="/legal/term-sheet.html" class="exec-dl-btn">📝 Term Sheet</a>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;background:#faf7ff;border:1px solid #e2d3f7;border-radius:10px;padding:12px 14px;font-size:8.5pt;line-height:1.55;">
+          <strong>Mutual Non-Disclosure Acknowledgement (summary).</strong> The parties — <strong>PHINS</strong> and the
+          <strong>Recipient</strong> named below — agree to keep confidential all non-public business, financial, technical
+          and valuation information exchanged in connection with a potential investment and/or co-founder role, to use it
+          solely to evaluate that opportunity, and not to disclose it to third parties, for a period of 3 years. This summary
+          is anchored together with the agreed deal terms shown below; it supplements, and does not replace, the full NDA.
+          <div id="inv-nda-terms" style="margin-top:8px;padding:8px 10px;background:#fff;border:1px dashed #c9b6e6;border-radius:8px;font-size:8pt;color:var(--text-sub);"></div>
+        </div>
+
+        <div style="margin-top:14px;display:grid;grid-template-columns:1.05fr 1fr;gap:16px;align-items:start;" id="inv-sign-area">
+          <div>
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <button type="button" class="exec-dl-btn" id="inv-sig-draw-btn" aria-pressed="true">✏️ Draw</button>
+              <button type="button" class="exec-dl-btn" id="inv-sig-type-btn" aria-pressed="false">⌨️ Type</button>
+              <button type="button" class="exec-dl-btn" id="inv-sig-clear-btn">↺ Clear</button>
+            </div>
+            <div id="inv-sig-draw-wrap" style="border:1px solid var(--border);border-radius:10px;background:#fff;padding:6px;">
+              <canvas id="inv-sig-pad" width="520" height="120" style="width:100%;height:120px;touch-action:none;cursor:crosshair;"></canvas>
+            </div>
+            <div id="inv-sig-type-wrap" style="display:none;">
+              <input id="inv-sig-typed" placeholder="Type full name to sign" style="width:100%;border-radius:10px;border:1px solid var(--border);padding:10px 12px;font-family:'Brush Script MT',cursive;font-size:15pt;">
+            </div>
+          </div>
+          <div>
+            <div class="control-group" style="margin-bottom:8px;"><label style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Signer full name</label><input id="inv-sig-name" placeholder="Full legal name" style="width:100%;border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;"></div>
+            <div class="control-group" style="margin-bottom:8px;"><label style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Title / capacity (optional)</label><input id="inv-sig-title" placeholder="e.g. Investor / Co-founder" style="width:100%;border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;"></div>
+            <div class="control-group" style="margin-bottom:10px;"><label style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Signing as</label>
+              <select id="inv-sig-role" style="width:100%;border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;">
+                <option value="Recipient (Investor / Co-founder)">Recipient (Investor / Co-founder)</option>
+                <option value="PHINS (Founder)">PHINS (Founder)</option>
+              </select>
+            </div>
+            <button type="button" class="exec-dl-btn" id="inv-sig-commit" style="background:#6a1b9a;color:#fff;border-color:#6a1b9a;font-weight:700;">🔏 Sign &amp; anchor NDA</button>
+            <div id="inv-sig-result" style="margin-top:10px;font-size:8pt;"></div>
+          </div>
+        </div>
+        <div id="inv-sig-integrity" style="margin-top:12px;font-size:7.5pt;color:var(--text-soft);background:#f0f4fa;border:1px solid #dbe4f0;border-radius:10px;padding:10px 12px;"></div>
       </div>
 
       <!-- Adjustable admin meeting diary -->
@@ -6760,6 +6833,387 @@
       }
 
       render();
+    })();
+  </script>
+
+  <!-- Investor Deal & Valuation Configurator + ledger-anchored NDA signature -->
+  <script>
+    (function () {
+      var cfgPanel = document.getElementById("investor-configurator");
+      if (!cfgPanel) return;
+
+      var CFG_STORE_ID = "phins.investor.cfg.v1";
+      var BASE_ROUND = 6000000; // canonical ILS base the build-budget shares derive from
+      var SYM = { ILS: "₪", USD: "$", EUR: "€" };
+
+      var cfg = {
+        currency: "ILS",
+        round: 6000000,
+        preMoney: 24000000,
+        position: "combined",
+        coCash: 3000000,
+        founderEq: 6,
+        usdIls: 3.70,
+        usdEur: 0.92,
+        fxSource: "loading"
+      };
+      try {
+        var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
+        if (saved && typeof saved === "object") Object.assign(cfg, saved);
+      } catch (e) {}
+
+      // ---- helpers ----
+      function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+      function rateFromILS(cur) {
+        // All display currencies derive from the two USD legs so they stay consistent.
+        if (cur === "ILS") return 1;
+        if (cur === "USD") return 1 / cfg.usdIls;
+        if (cur === "EUR") return cfg.usdEur / cfg.usdIls;
+        return 1;
+      }
+      function fmtMoney(ils, cur) {
+        cur = cur || cfg.currency;
+        var v = ils * rateFromILS(cur);
+        var neg = v < 0;
+        var s = SYM[cur] + Math.round(Math.abs(v)).toLocaleString("en-US");
+        return neg ? "(" + s + ")" : s;
+      }
+      function fmtM(ils, cur) {
+        cur = cur || cfg.currency;
+        var v = ils * rateFromILS(cur) / 1e6;
+        return SYM[cur] + v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      }
+      function fmtShort(ils, cur) {
+        cur = cur || cfg.currency;
+        var v = ils * rateFromILS(cur);
+        var abs = Math.abs(v);
+        var out;
+        if (abs >= 1e6) out = (v / 1e6).toLocaleString("en-US", { maximumFractionDigits: 2 }) + "M";
+        else if (abs >= 1e3) out = (v / 1e3).toLocaleString("en-US", { maximumFractionDigits: 0 }) + "K";
+        else out = Math.round(v).toString();
+        return SYM[cur] + out;
+      }
+      function pct(frac) { return (frac * 100).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "%"; }
+      function persist() { try { localStorage.setItem(CFG_STORE_ID, JSON.stringify(cfg)); } catch (e) {} }
+
+      // ---- DOM refs ----
+      function $(id) { return document.getElementById(id); }
+      var elFxRate = $("inv-fx-rate"), elFxEur = $("inv-fx-eur"), elFxBadge = $("inv-fx-badge"),
+          elFxSource = $("inv-fx-source"), elFxNote = $("inv-fx-note"),
+          elRound = $("inv-round"), elPre = $("inv-premoney"), elPos = $("inv-position"),
+          elCoCash = $("inv-cocash"), elFounderEq = $("inv-founder-eq");
+
+      function syncInputsFromCfg() {
+        elFxRate.value = cfg.usdIls; elFxEur.value = cfg.usdEur;
+        elRound.value = cfg.round; elPre.value = cfg.preMoney;
+        elPos.value = cfg.position; elCoCash.value = cfg.coCash; elFounderEq.value = cfg.founderEq;
+        document.querySelectorAll(".inv-cf-only").forEach(function (n) {
+          n.style.display = (cfg.position === "investor") ? "none" : "";
+        });
+        document.querySelectorAll(".inv-cur-btn").forEach(function (b) {
+          var on = b.getAttribute("data-cur") === cfg.currency;
+          b.style.background = on ? "var(--blue-mid)" : "";
+          b.style.color = on ? "#fff" : "";
+          b.style.borderColor = on ? "var(--blue-mid)" : "";
+        });
+      }
+
+      // ---- deal math (single source of truth) ----
+      function model() {
+        var R = cfg.round, P = cfg.preMoney, post = P + R;
+        var eqStake = post > 0 ? R / post : 0;
+        var warrantStake = post > 0 ? (0.10 * R) / post : 0; // 10% warrant coverage on facility
+        var convAmt = R * 1.14;                               // ~7% PIK over ~24 months
+        var claStake = (P + convAmt) > 0 ? convAmt / (P + convAmt) : 0;
+        var cashStake = post > 0 ? cfg.coCash / post : 0;
+        var founderFrac = cfg.founderEq / 100;
+        var combinedStake = cashStake + founderFrac;
+        return { R: R, P: P, post: post, eqStake: eqStake, warrantStake: warrantStake,
+                 claStake: claStake, cashStake: cashStake, founderFrac: founderFrac, combinedStake: combinedStake };
+      }
+
+      function selected(m) {
+        if (cfg.position === "investor") return { capital: m.R, stake: m.eqStake, lbl: "Investor stake", row: 0 };
+        if (cfg.position === "cofounder") return { capital: 0, stake: m.founderFrac, lbl: "Co-founder equity", row: 4 };
+        return { capital: cfg.coCash, stake: m.combinedStake, lbl: "Combined stake", row: 4 };
+      }
+
+      function renderDealTable(m, sel) {
+        var body = $("inv-deal-body");
+        if (!body) return;
+        var rows = [
+          { name: "Priced equity (preferred)", cap: fmtMoney(m.R), basis: fmtShort(m.P) + " pre / " + fmtShort(m.post) + " post",
+            stake: pct(m.eqStake), dil: pct(m.eqStake), prot: "1× non-participating pref",
+            fit: "Clean, board-grade investor wanting defined ownership now.", hi: cfg.position === "investor" },
+          { name: "Investment cap (SAFE)", cap: fmtMoney(m.R), basis: fmtShort(m.P) + " cap · 20% discount",
+            stake: "≈" + pct(m.eqStake) + " on conversion", dil: "deferred", prot: "cap + discount",
+            fit: "Fast close; defers price to the next priced round.", hi: false },
+          { name: "Credit line / venture debt", cap: fmtMoney(m.R), basis: "~10% interest · milestone draws",
+            stake: "≈" + pct(m.warrantStake) + " (warrants)", dil: "minimal", prot: "senior secured + repayment",
+            fit: "Lowest dilution; needs cash flow to service debt.", hi: false },
+          { name: "CLA (convertible loan)", cap: fmtMoney(m.R), basis: fmtShort(m.P) + " cap · 7% PIK · 24-mo",
+            stake: "≈" + pct(m.claStake) + " on conversion", dil: "deferred", prot: "repayable loan + cap",
+            fit: "Hybrid: debt protection with equity upside.", hi: false },
+          { name: "Active co-founder + investor ★", cap: fmtMoney(cfg.coCash) + " cash", basis: fmtShort(m.post) + " post + founders' equity",
+            stake: "≈" + pct(m.combinedStake) + " (" + pct(m.cashStake) + " cash + " + cfg.founderEq + "% vested)",
+            dil: pct(m.combinedStake), prot: "board seat · 4-yr vest / 1-yr cliff",
+            fit: "Capital + operating role; aligns IL insurance relationships & reinsurance access.", hi: cfg.position !== "investor" }
+        ];
+        var html = "";
+        rows.forEach(function (r) {
+          var bg = r.hi ? "#eef9f0" : "";
+          var nameStyle = r.hi ? "font-weight:800;color:#15803d;" : "font-weight:700;";
+          html += '<tr style="' + (bg ? "background:" + bg + ";" : "") + '">' +
+            '<td style="padding:6px 8px;' + nameStyle + '">' + r.name + (r.hi ? ' ◄ selected' : '') + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;font-weight:700;">' + r.cap + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;">' + r.basis + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;font-weight:700;">' + r.stake + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;">' + r.dil + '</td>' +
+            '<td style="padding:6px 8px;text-align:center;">' + r.prot + '</td>' +
+            '<td style="padding:6px 8px;">' + r.fit + '</td></tr>';
+        });
+        body.innerHTML = html;
+      }
+
+      function recompute() {
+        var m = model();
+        var sel = selected(m);
+
+        // currency symbols
+        document.querySelectorAll(".inv-cur-sym").forEach(function (n) { n.textContent = SYM[cfg.currency]; });
+
+        // generic money spans (data-ils; inv-scale scales with round)
+        document.querySelectorAll(".inv-money").forEach(function (n) {
+          var ils = num(n.getAttribute("data-ils"), 0);
+          if (n.classList.contains("inv-scale")) ils = ils * (cfg.round / BASE_ROUND);
+          n.textContent = fmtMoney(ils);
+        });
+        document.querySelectorAll(".inv-moneyM").forEach(function (n) {
+          n.textContent = fmtM(num(n.getAttribute("data-ils"), 0));
+        });
+
+        // assumptions + build label + cumulative
+        var ac = $("inv-assum-currency");
+        if (ac) ac.textContent = SYM[cfg.currency] + " (" + cfg.currency + ") · 1 USD = ₪" + cfg.usdIls.toFixed(4) + " / €" + cfg.usdEur.toFixed(4);
+        if ($("inv-assum-round")) $("inv-assum-round").textContent = fmtMoney(cfg.round);
+        if ($("inv-assum-pre")) $("inv-assum-pre").textContent = fmtMoney(cfg.preMoney);
+        if ($("inv-build-total")) $("inv-build-total").textContent = fmtShort(cfg.round);
+        if ($("inv-cum-total")) $("inv-cum-total").textContent = fmtShort(cfg.round + 5400000);
+
+        // deal header + table + callouts
+        if ($("inv-deal-h-round")) $("inv-deal-h-round").textContent = fmtMoney(cfg.round);
+        if ($("inv-deal-h-pre")) $("inv-deal-h-pre").textContent = fmtMoney(cfg.preMoney);
+        if ($("inv-deal-h-post")) $("inv-deal-h-post").textContent = fmtMoney(m.post);
+        renderDealTable(m, sel);
+        var cp = $("inv-callout-primary");
+        if (cp) cp.innerHTML = fmtMoney(cfg.coCash) + " cash for " + pct(m.cashStake) + " (at " + fmtMoney(m.post) +
+          " post) plus a " + cfg.founderEq + "% founders' equity grant (4-year vest, 1-year cliff) for a full-time Chairman / co-operator role — <strong>≈ " +
+          pct(m.combinedStake) + " combined</strong>. Lower cash than a pure round, but adds Israeli carrier & reinsurance relationships, regulator familiarity, and governance.";
+        var cf = $("inv-callout-fallback");
+        if (cf) cf.innerHTML = "Pure-investor route: priced equity (<strong>" + pct(m.eqStake) + " for " + fmtMoney(cfg.round) +
+          "</strong>) is cleanest; SAFE / CLA at a " + fmtMoney(cfg.preMoney) + " cap close fastest; a credit line minimises dilution but must be serviced. All price / convert on the same " +
+          fmtMoney(cfg.preMoney) + " pre-money basis.";
+
+        // KPI strip
+        if ($("inv-kpi-post")) $("inv-kpi-post").textContent = fmtShort(m.post);
+        if ($("inv-kpi-capital")) $("inv-kpi-capital").textContent = fmtShort(sel.capital);
+        if ($("inv-kpi-stake")) $("inv-kpi-stake").textContent = pct(sel.stake);
+        if ($("inv-kpi-stake-lbl")) $("inv-kpi-stake-lbl").textContent = sel.lbl;
+        if ($("inv-kpi-dilution")) $("inv-kpi-dilution").textContent = pct(sel.stake);
+
+        // NDA agreed-terms summary (binds the signature hash to the configured deal)
+        var nt = $("inv-nda-terms");
+        if (nt) nt.innerHTML = "<strong>Agreed terms for this acknowledgement</strong> — Position: <strong>" +
+          ({investor:"Investor (capital only)",cofounder:"Active co-founder",combined:"Combined (co-founder + investor)"}[cfg.position]) +
+          "</strong> · Round: " + fmtMoney(cfg.round) + " · Pre-money: " + fmtMoney(cfg.preMoney) + " · Post-money: " + fmtMoney(m.post) +
+          " · Indicative stake: " + pct(sel.stake) + " · Display currency: " + cfg.currency + " (1 USD = ₪" + cfg.usdIls.toFixed(4) + ").";
+
+        refreshSigIntegrity();
+        persist();
+      }
+
+      // ---- FX fetch ----
+      function applyFxBadge() {
+        var live = cfg.fxSource === "alpha_vantage";
+        var partial = cfg.fxSource === "partial";
+        var label = live ? "LIVE" : (partial ? "PARTIAL (live + fallback)" : (cfg.fxSource === "manual" ? "MANUAL OVERRIDE" : "FALLBACK"));
+        if (elFxBadge) {
+          elFxBadge.textContent = label;
+          elFxBadge.style.background = live ? "rgba(34,197,94,0.35)" : (partial ? "rgba(245,158,11,0.35)" : "rgba(255,255,255,0.16)");
+        }
+        if (elFxNote) elFxNote.textContent = "All figures are planning assumptions · base ₪ (ILS) · 1 USD = ₪" +
+          cfg.usdIls.toFixed(4) + " (" + label + ") · do not share before the meeting";
+      }
+      function fetchFx(force) {
+        if (elFxSource) elFxSource.textContent = "fetching…";
+        fetch("/api/fx/rates" + (force ? "?refresh=1" : ""))
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d && d.usd_ils) {
+              cfg.usdIls = num(d.usd_ils, cfg.usdIls);
+              cfg.usdEur = num(d.usd_eur, cfg.usdEur);
+              cfg.fxSource = d.source || "fallback";
+              if (elFxSource) elFxSource.textContent = "source: " + (d.provider || "?") + " · as of " + (d.as_of || "?") +
+                (d.live ? " · ILS " + (d.live.USD_ILS ? "live" : "fallback") + ", EUR " + (d.live.USD_EUR ? "live" : "fallback") : "");
+            } else if (elFxSource) { elFxSource.textContent = "using fallback rate"; }
+            syncInputsFromCfg(); applyFxBadge(); recompute();
+          })
+          .catch(function () {
+            cfg.fxSource = "fallback";
+            if (elFxSource) elFxSource.textContent = "offline — using fallback rate";
+            applyFxBadge(); recompute();
+          });
+      }
+
+      // ---- wiring ----
+      document.querySelectorAll(".inv-cur-btn").forEach(function (b) {
+        b.addEventListener("click", function () { cfg.currency = b.getAttribute("data-cur"); syncInputsFromCfg(); recompute(); });
+      });
+      elFxRate.addEventListener("input", function () { cfg.usdIls = num(elFxRate.value, cfg.usdIls) || cfg.usdIls; cfg.fxSource = "manual"; applyFxBadge(); recompute(); });
+      elFxEur.addEventListener("input", function () { cfg.usdEur = num(elFxEur.value, cfg.usdEur) || cfg.usdEur; cfg.fxSource = "manual"; applyFxBadge(); recompute(); });
+      $("inv-fx-refresh").addEventListener("click", function () { fetchFx(true); });
+      elRound.addEventListener("input", function () { cfg.round = Math.max(0, num(elRound.value, cfg.round)); recompute(); });
+      elPre.addEventListener("input", function () { cfg.preMoney = Math.max(0, num(elPre.value, cfg.preMoney)); recompute(); });
+      elPos.addEventListener("change", function () { cfg.position = elPos.value; syncInputsFromCfg(); recompute(); });
+      elCoCash.addEventListener("input", function () { cfg.coCash = Math.max(0, num(elCoCash.value, cfg.coCash)); recompute(); });
+      elFounderEq.addEventListener("input", function () { cfg.founderEq = Math.max(0, num(elFounderEq.value, cfg.founderEq)); recompute(); });
+
+      // =====================================================================
+      // NDA signature (ledger-anchored via /api/legal-docs/sign)
+      // =====================================================================
+      var NDA_VERSION = "v1";
+      var DOCID_STORE_ID = "phins.investor.nda.docid";
+      var SIG_STORE_ID = "phins.investor.nda.sig";
+      var ndaDocId = null;
+      try {
+        ndaDocId = localStorage.getItem(DOCID_STORE_ID);
+        if (!ndaDocId) {
+          ndaDocId = "INV-NDA-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" +
+            Math.random().toString(36).slice(2, 8).toUpperCase();
+          localStorage.setItem(DOCID_STORE_ID, ndaDocId);
+        }
+      } catch (e) { ndaDocId = "INV-NDA-LOCAL"; }
+
+      function stableStringify(obj) {
+        if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+        if (Array.isArray(obj)) return "[" + obj.map(stableStringify).join(",") + "]";
+        var keys = Object.keys(obj).sort();
+        return "{" + keys.map(function (k) { return JSON.stringify(k) + ":" + stableStringify(obj[k]); }).join(",") + "}";
+      }
+      function sha256Hex(str) {
+        if (window.crypto && window.crypto.subtle) {
+          return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function (buf) {
+            return Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+          });
+        }
+        var h1 = 0x811c9dc5, h2 = 0xc2b2ae35, out = "";
+        for (var i = 0; i < str.length; i++) { var c = str.charCodeAt(i); h1 = (h1 ^ c) >>> 0; h1 = (h1 * 0x01000193) >>> 0; h2 = (h2 ^ ((c << 3) | (c >> 1))) >>> 0; h2 = (h2 * 0x85ebca6b) >>> 0; }
+        for (var j = 0; j < 8; j++) { h1 = (h1 * 0x01000193 + j) >>> 0; out += (h1 >>> 0).toString(16).padStart(8, "0"); }
+        return Promise.resolve(out.slice(0, 64));
+      }
+
+      function ndaContent() {
+        var m = model(), sel = selected(m);
+        return {
+          docType: "investor-nda-acknowledgement",
+          docInstanceId: ndaDocId,
+          ndaVersion: NDA_VERSION,
+          deal: {
+            position: cfg.position, currency: cfg.currency,
+            roundIls: cfg.round, preMoneyIls: cfg.preMoney, postMoneyIls: m.post,
+            coCashIls: cfg.coCash, founderEqPct: cfg.founderEq,
+            selectedStakePct: Math.round(sel.stake * 10000) / 100,
+            fxUsdIls: cfg.usdIls, fxUsdEur: cfg.usdEur, fxSource: cfg.fxSource
+          }
+        };
+      }
+
+      var sigMode = "draw", sigInk = false, sigDrawing = false;
+      var canvas = $("inv-sig-pad"), pad = canvas ? canvas.getContext("2d") : null;
+      function sigPos(e) {
+        var r = canvas.getBoundingClientRect();
+        var cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+        var cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+        return { x: cx * (canvas.width / r.width), y: cy * (canvas.height / r.height) };
+      }
+      if (canvas) {
+        canvas.addEventListener("mousedown", function (e) { sigDrawing = true; var p = sigPos(e); pad.beginPath(); pad.moveTo(p.x, p.y); e.preventDefault(); });
+        canvas.addEventListener("mousemove", function (e) { if (!sigDrawing) return; var p = sigPos(e); pad.lineWidth = 2.2; pad.lineCap = "round"; pad.strokeStyle = "#0d2a5c"; pad.lineTo(p.x, p.y); pad.stroke(); sigInk = true; e.preventDefault(); });
+        window.addEventListener("mouseup", function () { sigDrawing = false; });
+        canvas.addEventListener("touchstart", function (e) { sigDrawing = true; var p = sigPos(e); pad.beginPath(); pad.moveTo(p.x, p.y); e.preventDefault(); }, { passive: false });
+        canvas.addEventListener("touchmove", function (e) { if (!sigDrawing) return; var p = sigPos(e); pad.lineWidth = 2.2; pad.lineCap = "round"; pad.strokeStyle = "#0d2a5c"; pad.lineTo(p.x, p.y); pad.stroke(); sigInk = true; e.preventDefault(); }, { passive: false });
+        canvas.addEventListener("touchend", function () { sigDrawing = false; });
+      }
+      $("inv-sig-draw-btn").addEventListener("click", function () { sigMode = "draw"; this.setAttribute("aria-pressed", "true"); $("inv-sig-type-btn").setAttribute("aria-pressed", "false"); $("inv-sig-draw-wrap").style.display = ""; $("inv-sig-type-wrap").style.display = "none"; });
+      $("inv-sig-type-btn").addEventListener("click", function () { sigMode = "type"; this.setAttribute("aria-pressed", "true"); $("inv-sig-draw-btn").setAttribute("aria-pressed", "false"); $("inv-sig-draw-wrap").style.display = "none"; $("inv-sig-type-wrap").style.display = ""; });
+      $("inv-sig-clear-btn").addEventListener("click", function () { if (pad) pad.clearRect(0, 0, canvas.width, canvas.height); sigInk = false; var t = $("inv-sig-typed"); if (t) t.value = ""; });
+
+      function setSigResult(html, kind) {
+        var r = $("inv-sig-result");
+        if (r) { r.innerHTML = html; r.style.color = kind === "err" ? "var(--red-1)" : (kind === "ok" ? "var(--green-1)" : "var(--text-sub)"); }
+      }
+
+      $("inv-sig-commit").addEventListener("click", function () {
+        var name = ($("inv-sig-name").value || "").trim();
+        var title = ($("inv-sig-title").value || "").trim();
+        var role = $("inv-sig-role").value;
+        var typed = ($("inv-sig-typed").value || "").trim();
+        if (!name) { setSigResult("Enter the signer name before signing.", "err"); return; }
+        if (sigMode === "draw" && !sigInk) { setSigResult("Draw a signature, or switch to Type.", "err"); return; }
+        if (sigMode === "type" && !typed) { setSigResult("Type the signature, or switch to Draw.", "err"); return; }
+        var content = ndaContent();
+        var signedAt = new Date().toISOString();
+        setSigResult("Hashing &amp; anchoring…", "");
+        sha256Hex(stableStringify(content)).then(function (hash) {
+          var body = {
+            docType: content.docType, docInstanceId: content.docInstanceId, context: cfg.position,
+            role: role, signerName: name, signerTitle: title, signedAt: signedAt,
+            documentHash: hash, signatureMethod: sigMode, content: content
+          };
+          fetch("/api/legal-docs/sign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); })
+            .then(function (res) {
+              var sigMark = sigMode === "draw" ? '<img alt="signature" src="' + canvas.toDataURL("image/png") + '" style="max-height:48px;border:1px solid var(--border);border-radius:6px;background:#fff;">' : '<span style="font-family:\'Brush Script MT\',cursive;font-size:16pt;">' + typed.replace(/</g, "&lt;") + "</span>";
+              if (res.ok && res.data && res.data.entry_hash) {
+                var rec = { name: name, title: title, role: role, signedAt: signedAt, hash: hash, method: sigMode, sig: sigMode === "draw" ? canvas.toDataURL("image/png") : typed, receipt: res.data };
+                try { localStorage.setItem(SIG_STORE_ID, JSON.stringify(rec)); } catch (e) {}
+                setSigResult('<div>' + sigMark + '</div><div style="font-weight:700;margin-top:4px;">' + name.replace(/</g, "&lt;") + (title ? " · " + title.replace(/</g, "&lt;") : "") + '</div>' +
+                  '<div>Signed ' + new Date(signedAt).toLocaleString() + '</div>' +
+                  '<div style="color:var(--green-1);font-weight:700;margin-top:4px;">✔ Anchored to PHINS ledger — seq #' + res.data.sequence_no + ' · entry ' + String(res.data.entry_hash).slice(0, 20) + '…</div>', "ok");
+              } else {
+                setSigResult("Anchor error: " + ((res.data && res.data.error) || "unknown") + ". Signature not recorded.", "err");
+              }
+              refreshSigIntegrity();
+            })
+            .catch(function () { setSigResult("Offline — could not anchor. Try again when connected.", "err"); });
+        });
+      });
+
+      function refreshSigIntegrity() {
+        var box = $("inv-sig-integrity");
+        if (!box) return;
+        sha256Hex(stableStringify(ndaContent())).then(function (live) {
+          var rec = null;
+          try { rec = JSON.parse(localStorage.getItem(SIG_STORE_ID) || "null"); } catch (e) {}
+          var status;
+          if (rec && rec.hash) {
+            var match = rec.hash === live;
+            status = match
+              ? '<span style="color:var(--green-1);font-weight:700;">✔ Signed terms match the current configuration.</span>'
+              : '<span style="color:var(--red-1);font-weight:700;">⚠ Configuration changed since signing — re-sign to anchor the new terms.</span>';
+          } else { status = "Unsigned — the hash below is provisional and freezes when signed."; }
+          box.innerHTML = "<strong>Data integrity</strong> — NDA instance <code>" + ndaDocId + "</code>. " + status +
+            "<br>Current terms SHA-256: <code>" + live + "</code>" +
+            (rec && rec.hash ? "<br>Signed terms SHA-256: <code>" + rec.hash + "</code>" : "") +
+            "<br>Signature + agreed deal terms are anchored append-only to the PHINS hash-chained ledger (tamper-evident). AI/automation may recommend but never sign.";
+        });
+      }
+
+      // ---- init ----
+      syncInputsFromCfg();
+      applyFxBadge();
+      recompute();
+      fetchFx(false);
     })();
   </script>
 </body>

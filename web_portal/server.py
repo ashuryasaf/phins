@@ -7716,6 +7716,103 @@ try:
 except Exception:
     _market_data = None
 
+# ---------------------------------------------------------------------------
+# Investor FX rates (live via Alpha Vantage forex, cached, fallback-safe)
+# ---------------------------------------------------------------------------
+# Powers the investor documents (pitch-dashboard deal/valuation configurator):
+# convert figures between USD ($), ILS (₪) and EUR (€) using a correct, live
+# exchange rate. Data integrity is preserved because every display currency is
+# derived deterministically from a single USD base snapshot (no triangulation
+# drift), and the response is always tagged with its source ("alpha_vantage"
+# vs "fallback"/"partial") and an as_of timestamp so the UI can show whether
+# the rate is live or a labelled default.
+_FX_LOCK = threading.Lock()
+_FX_CACHE = {'data': None, 'fetched_at': 0.0}
+_FX_TTL_SECONDS = 3600.0  # 1h: forex moves slowly and this protects the free-tier quota
+# Conservative, clearly-labelled static fallback (USD base) used only when live
+# data is unavailable. Cross rates are always derived from these two USD legs.
+_FX_FALLBACK = {'USD_ILS': 3.70, 'USD_EUR': 0.92}
+
+
+def get_investor_fx_rates(force_refresh=False):
+    """Return USD/ILS/EUR rates for the investor documents.
+
+    Always succeeds (never raises) so the investor pages degrade gracefully:
+    on any failure it returns the labelled static fallback. Result is cached
+    for _FX_TTL_SECONDS to respect the Alpha Vantage free-tier quota.
+    """
+    now = time.time()
+    with _FX_LOCK:
+        cached = _FX_CACHE['data']
+        if cached and not force_refresh and (now - _FX_CACHE['fetched_at']) < _FX_TTL_SECONDS:
+            return cached
+
+    usd_ils = None
+    usd_eur = None
+    ils_live = False
+    eur_live = False
+    as_of = None
+    if alpha_vantage_enabled and _av_svc is not None:
+        try:
+            r1 = _av_svc.get_forex_rate('USD', 'ILS')
+            r2 = _av_svc.get_forex_rate('USD', 'EUR')
+            if r1 and r1.get('exchange_rate'):
+                usd_ils = float(r1['exchange_rate'])
+                as_of = r1.get('last_refreshed') or as_of
+                ils_live = usd_ils > 0
+            if r2 and r2.get('exchange_rate'):
+                usd_eur = float(r2['exchange_rate'])
+                as_of = r2.get('last_refreshed') or as_of
+                eur_live = usd_eur > 0
+        except Exception as e:  # never let a market-data error reach investors
+            print(f"[FX] live rate fetch failed: {e}")
+
+    # Fall back per-leg so a single missing leg doesn't void the whole response.
+    if not usd_ils or usd_ils <= 0:
+        usd_ils = _FX_FALLBACK['USD_ILS']
+        ils_live = False
+    if not usd_eur or usd_eur <= 0:
+        usd_eur = _FX_FALLBACK['USD_EUR']
+        eur_live = False
+
+    # Label the snapshot by how many legs are live, so the UI can show whether
+    # the displayed rate is fully live, partially live, or a static default.
+    if ils_live and eur_live:
+        source = 'alpha_vantage'
+    elif ils_live or eur_live:
+        source = 'partial'
+    else:
+        source = 'fallback'
+
+    # Round the two USD legs ONCE, then derive every pairwise rate from the
+    # rounded legs, so the reported scalars and the rates matrix tie out exactly
+    # (no rounding drift between what's displayed and what's used to convert).
+    usd_ils = round(usd_ils, 6)
+    usd_eur = round(usd_eur, 6)
+    rates = {
+        'USD': {'USD': 1.0, 'ILS': usd_ils, 'EUR': usd_eur},
+        'ILS': {'USD': 1.0 / usd_ils, 'ILS': 1.0, 'EUR': usd_eur / usd_ils},
+        'EUR': {'USD': 1.0 / usd_eur, 'ILS': usd_ils / usd_eur, 'EUR': 1.0},
+    }
+    payload = {
+        'base': 'USD',
+        'rates': rates,
+        'usd_ils': usd_ils,
+        'usd_eur': usd_eur,
+        'live': {'USD_ILS': ils_live, 'USD_EUR': eur_live},
+        'source': source,
+        'provider': 'alpha_vantage' if source in ('alpha_vantage', 'partial') else 'static_fallback',
+        'as_of': as_of or datetime.now(timezone.utc).isoformat(),
+        'fetched_at': datetime.now(timezone.utc).isoformat(),
+        'symbols': ['USD', 'ILS', 'EUR'],
+        'note': ('Live FX via Alpha Vantage forex; labelled static fallback used when '
+                 'unavailable. Cross-rates derived from USD legs for consistency.'),
+    }
+    with _FX_LOCK:
+        _FX_CACHE['data'] = payload
+        _FX_CACHE['fetched_at'] = now
+    return payload
+
 # Test mode (makes API/security behavior deterministic for CI)
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
@@ -12728,6 +12825,34 @@ For claims or questions, please contact:
                 'total': len(items),
                 'doc_id': doc_id,
             }, default=str).encode('utf-8'))
+            return
+
+        # Investor FX rates (read-only, public): live USD/ILS/EUR via Alpha
+        # Vantage forex with a labelled static fallback. Used by the investor
+        # documents to show correct currency values ($ / ₪ / €). Always 200 so
+        # the investor pages degrade gracefully; the payload self-describes its
+        # source ("alpha_vantage" / "partial" / "fallback").
+        if path == '/api/fx/rates':
+            force = (qs.get('refresh', ['0'])[0] or '').strip().lower() in ('1', 'true', 'yes')
+            try:
+                payload = get_investor_fx_rates(force_refresh=force)
+            except Exception as e:
+                payload = {
+                    'base': 'USD',
+                    'rates': {
+                        'USD': {'USD': 1.0, 'ILS': _FX_FALLBACK['USD_ILS'], 'EUR': _FX_FALLBACK['USD_EUR']},
+                        'ILS': {'USD': 1.0 / _FX_FALLBACK['USD_ILS'], 'ILS': 1.0, 'EUR': _FX_FALLBACK['USD_EUR'] / _FX_FALLBACK['USD_ILS']},
+                        'EUR': {'USD': 1.0 / _FX_FALLBACK['USD_EUR'], 'ILS': _FX_FALLBACK['USD_ILS'] / _FX_FALLBACK['USD_EUR'], 'EUR': 1.0},
+                    },
+                    'usd_ils': _FX_FALLBACK['USD_ILS'], 'usd_eur': _FX_FALLBACK['USD_EUR'],
+                    'source': 'fallback', 'provider': 'static_fallback',
+                    'as_of': datetime.now(timezone.utc).isoformat(),
+                    'fetched_at': datetime.now(timezone.utc).isoformat(),
+                    'symbols': ['USD', 'ILS', 'EUR'],
+                    'error': str(e),
+                }
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
         # Session validation

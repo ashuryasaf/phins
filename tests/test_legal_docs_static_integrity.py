@@ -126,14 +126,41 @@ def test_pitch_dashboard_investor_meeting_section():
     assert "11 June 2026" in pd and "Herzliya" in pd
     # tested business-plan assumptions and 1 Jan 2027 sales start
     assert "1 Jan 2027" in pd
-    # build budget reconciles to the round size
-    assert "6,000,000" in pd and "Pre-launch build budget" in pd
+    # build budget reconciles to the round size (figures are computed live from
+    # the canonical ILS base, so assert the base value + the section heading)
+    assert 'value="6000000"' in pd and "Pre-launch build budget" in pd
     # deal structure / valuation comparison present
     assert "Deal structures &amp; valuation" in pd
     for structure in ("Priced equity", "Investment cap (SAFE)", "Credit line", "CLA", "Active co-founder + investor"):
         assert structure in pd, f"missing deal structure: {structure}"
     # links to the standalone business plan doc
     assert "/internal/phins-investor-business-plan.html" in pd
+
+
+def test_pitch_dashboard_deal_configurator():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # adjustable deal & valuation configurator
+    assert 'id="investor-configurator"' in pd
+    assert 'id="inv-deal-body"' in pd  # deal table computed live
+    assert 'id="inv-round"' in pd and 'id="inv-premoney"' in pd
+    assert 'id="inv-position"' in pd
+    # currency selector ($ / ₪ / €) driven by live FX
+    for cur in ('data-cur="ILS"', 'data-cur="USD"', 'data-cur="EUR"'):
+        assert cur in pd, f"missing currency button {cur}"
+    assert 'id="inv-fx-rate"' in pd
+    assert "/api/fx/rates" in pd  # live FX source (Alpha Vantage)
+    # canonical base + scaling cells so figures reconcile
+    assert 'class="inv-money inv-scale"' in pd
+
+
+def test_pitch_dashboard_nda_signature():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # NDA + ledger-anchored signature
+    assert 'id="investor-nda"' in pd
+    assert 'id="inv-sig-pad"' in pd  # draw-to-sign canvas
+    assert 'id="inv-sig-commit"' in pd
+    assert "/api/legal-docs/sign" in pd  # anchors to the platform ledger
+    assert "/legal/nda.html" in pd  # links to the full NDA instrument
 
 
 def test_pitch_dashboard_meeting_diary():
