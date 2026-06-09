@@ -1,0 +1,20 @@
+5bf72d6 Merge pull request #363 from ashuryasaf/cursor/meir-uzan-investor-meeting-plan-0442
+79bde7d Rename diary storage constant to avoid gitleaks false positive
+0e2d066 Add Meir Uzan investor meeting plan, business plan & adjustable meeting diary
+0504878 Merge pull request #362 from ashuryasaf/cursor/hermes-assessment-affiliations-6861
+018163b Fix product filter key mismatch between Mislaka and Assessment Center
+dfcdd60 Fix date_field filter never extracted in assessment center reports
+8778477 Fix Assessment Center date filters to use policy business date
+2d4a311 fix(assessment): scope Mislaka report filters to nested filters object; match affiliation fields inside external fact rows
+cca81c1 feat(assessment): rebuild Mislaka report around affiliations + additive AI narrative
+1d92653 Merge pull request #358 from ashuryasaf/cursor/fix-notification-silent-mock-fallback-276e
+a22dee5 Fix SMS diagnostics for missing twilio SDK and dedupe __all__
+b9cb8cb Fix SNS diagnostics to require boto3 like send path
+c0d5627 Fix notification diagnostics: require Twilio from-number and boto3 for SES
+8ef781d Align api_extensions AWS detection with notification service for SES OTP fallback
+ae360bf Clear AWS credential cache on notification service reset
+8bc8cef Fix notification diagnostics: detect IAM roles, missing SDKs, and config-only credentials
+78a9515 Fix notification diagnostics: detect IAM roles, missing SDKs, and config-only credentials
+421f665 Narrow AWS secret regex in credential scan workflow
+a6e9502 Include SMS provider failures in notification diagnostics recommendation
+7714b9e Fix email diagnostics false delivery readiness for unconfigured API providers
