@@ -6842,7 +6842,7 @@
       var cfgPanel = document.getElementById("investor-configurator");
       if (!cfgPanel) return;
 
-      var CFG_KEY = "phins.investor.cfg.v1";
+      var CFG_STORE_ID = "phins.investor.cfg.v1";
       var BASE_ROUND = 6000000; // canonical ILS base the build-budget shares derive from
       var SYM = { ILS: "₪", USD: "$", EUR: "€" };
 
@@ -6858,7 +6858,7 @@
         fxSource: "loading"
       };
       try {
-        var saved = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
+        var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
         if (saved && typeof saved === "object") Object.assign(cfg, saved);
       } catch (e) {}
 
@@ -6894,7 +6894,7 @@
         return SYM[cur] + out;
       }
       function pct(frac) { return (frac * 100).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "%"; }
-      function persist() { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) {} }
+      function persist() { try { localStorage.setItem(CFG_STORE_ID, JSON.stringify(cfg)); } catch (e) {} }
 
       // ---- DOM refs ----
       function $(id) { return document.getElementById(id); }
@@ -7082,15 +7082,15 @@
       // NDA signature (ledger-anchored via /api/legal-docs/sign)
       // =====================================================================
       var NDA_VERSION = "v1";
-      var DOCID_KEY = "phins.investor.nda.docid";
-      var SIG_KEY = "phins.investor.nda.sig";
+      var DOCID_STORE_ID = "phins.investor.nda.docid";
+      var SIG_STORE_ID = "phins.investor.nda.sig";
       var ndaDocId = null;
       try {
-        ndaDocId = localStorage.getItem(DOCID_KEY);
+        ndaDocId = localStorage.getItem(DOCID_STORE_ID);
         if (!ndaDocId) {
           ndaDocId = "INV-NDA-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" +
             Math.random().toString(36).slice(2, 8).toUpperCase();
-          localStorage.setItem(DOCID_KEY, ndaDocId);
+          localStorage.setItem(DOCID_STORE_ID, ndaDocId);
         }
       } catch (e) { ndaDocId = "INV-NDA-LOCAL"; }
 
@@ -7176,7 +7176,7 @@
               var sigMark = sigMode === "draw" ? '<img alt="signature" src="' + canvas.toDataURL("image/png") + '" style="max-height:48px;border:1px solid var(--border);border-radius:6px;background:#fff;">' : '<span style="font-family:\'Brush Script MT\',cursive;font-size:16pt;">' + typed.replace(/</g, "&lt;") + "</span>";
               if (res.ok && res.data && res.data.entry_hash) {
                 var rec = { name: name, title: title, role: role, signedAt: signedAt, hash: hash, method: sigMode, sig: sigMode === "draw" ? canvas.toDataURL("image/png") : typed, receipt: res.data };
-                try { localStorage.setItem(SIG_KEY, JSON.stringify(rec)); } catch (e) {}
+                try { localStorage.setItem(SIG_STORE_ID, JSON.stringify(rec)); } catch (e) {}
                 setSigResult('<div>' + sigMark + '</div><div style="font-weight:700;margin-top:4px;">' + name.replace(/</g, "&lt;") + (title ? " · " + title.replace(/</g, "&lt;") : "") + '</div>' +
                   '<div>Signed ' + new Date(signedAt).toLocaleString() + '</div>' +
                   '<div style="color:var(--green-1);font-weight:700;margin-top:4px;">✔ Anchored to PHINS ledger — seq #' + res.data.sequence_no + ' · entry ' + String(res.data.entry_hash).slice(0, 20) + '…</div>', "ok");
@@ -7194,7 +7194,7 @@
         if (!box) return;
         sha256Hex(stableStringify(ndaContent())).then(function (live) {
           var rec = null;
-          try { rec = JSON.parse(localStorage.getItem(SIG_KEY) || "null"); } catch (e) {}
+          try { rec = JSON.parse(localStorage.getItem(SIG_STORE_ID) || "null"); } catch (e) {}
           var status;
           if (rec && rec.hash) {
             var match = rec.hash === live;
