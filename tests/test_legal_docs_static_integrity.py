@@ -153,6 +153,18 @@ def test_pitch_dashboard_deal_configurator():
     assert 'class="inv-money inv-scale"' in pd
 
 
+def test_pitch_dashboard_valuation_basis():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # valuation is versatile: manual / income multiple / actuarial simulation
+    assert 'id="inv-valbasis"' in pd
+    assert 'id="inv-val-multiple"' in pd
+    assert 'id="inv-val-actuarial"' in pd
+    assert 'id="inv-sim-run"' in pd
+    assert "/api/investor/valuation-sim" in pd  # actuarial appraisal simulation
+    # links out to the platform actuarial engine
+    assert "/actuary-dashboard.html" in pd
+
+
 def test_pitch_dashboard_nda_signature():
     pd = _read(STATIC / "pitch-dashboard.html")
     # NDA + ledger-anchored signature

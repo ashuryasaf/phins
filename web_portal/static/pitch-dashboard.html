@@ -1913,7 +1913,15 @@
             <input id="inv-round" type="number" min="0" step="100000" value="6000000" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
           </div>
           <div class="control-group">
-            <label for="inv-premoney" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Pre-money valuation (₪)</label>
+            <label for="inv-valbasis" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Valuation basis</label>
+            <select id="inv-valbasis" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+              <option value="manual">Manual (enter)</option>
+              <option value="multiple">Income multiple</option>
+              <option value="actuarial">Actuarial simulation</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="inv-premoney" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Pre-money valuation (₪) <span id="inv-premoney-basis" style="font-weight:600;color:var(--text-soft);"></span></label>
             <input id="inv-premoney" type="number" min="0" step="1000000" value="24000000" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
           </div>
           <div class="control-group">
@@ -1932,6 +1940,48 @@
             <label for="inv-founder-eq" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Founders' equity grant (%)</label>
             <input id="inv-founder-eq" type="number" min="0" max="40" step="0.5" value="6" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
           </div>
+        </div>
+
+        <!-- Valuation method panels (shown per basis) -->
+        <div id="inv-val-multiple" style="display:none;margin-top:12px;background:#f0f7ff;border:1px solid #bbdefb;border-radius:10px;padding:12px 14px;">
+          <div style="font-size:8pt;font-weight:800;color:var(--blue-dark);margin-bottom:8px;">Income multiple — pre-money = multiple × 2029 metric</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+            <div class="control-group">
+              <label for="inv-mult-metric" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Metric (2029)</label>
+              <select id="inv-mult-metric" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+                <option value="net_revenue">PHINS net revenue (₪18.0M)</option>
+                <option value="ebitda">EBITDA (₪3.6M)</option>
+                <option value="gwp">Gross written premium (₪72.0M)</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label for="inv-mult-x" style="font-size:7.5pt;font-weight:700;color:var(--blue-dark);">Multiple (×)</label>
+              <input id="inv-mult-x" type="number" min="0" step="0.5" value="1.3" style="border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-family:inherit;font-size:9pt;width:100%;">
+            </div>
+            <div style="align-self:end;font-size:8pt;color:var(--text-sub);">Pre-money = <strong id="inv-mult-out">—</strong></div>
+          </div>
+        </div>
+
+        <div id="inv-val-actuarial" style="display:none;margin-top:12px;background:#f3edff;border:1px solid #d9c8ff;border-radius:10px;padding:12px 14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:8pt;font-weight:800;color:#5a2ca0;">🧮 Actuarial valuation simulation <span style="font-weight:600;color:var(--text-soft);">— PV of projected profits + terminal exit value, Monte-Carlo, risk-adjusted</span></div>
+            <a href="/actuary-dashboard.html" target="_blank" rel="noopener" class="exec-dl-btn" style="font-size:7.5pt;">↗ Platform actuarial engine</a>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:10px;">
+            <div class="control-group"><label for="inv-sim-wacc" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Discount / WACC (%)</label><input id="inv-sim-wacc" type="number" min="5" max="90" step="1" value="35" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"></div>
+            <div class="control-group"><label for="inv-sim-exitm" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Exit multiple (×)</label><input id="inv-sim-exitm" type="number" min="0.5" max="30" step="0.5" value="4" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"></div>
+            <div class="control-group"><label for="inv-sim-metric" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Exit metric</label>
+              <select id="inv-sim-metric" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"><option value="net_revenue">2029 net revenue</option><option value="ebitda">2029 EBITDA</option></select>
+            </div>
+            <div class="control-group"><label for="inv-sim-prudence" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Prudence margin (%)</label><input id="inv-sim-prudence" type="number" min="0" max="60" step="1" value="15" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"></div>
+            <div class="control-group"><label for="inv-sim-pctile" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Percentile</label>
+              <select id="inv-sim-pctile" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"><option value="25">P25 (conservative)</option><option value="50" selected>P50 (central)</option><option value="75">P75 (upside)</option></select>
+            </div>
+            <div class="control-group"><label for="inv-sim-runs" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Monte-Carlo runs</label><input id="inv-sim-runs" type="number" min="100" max="50000" step="500" value="5000" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"></div>
+            <div class="control-group"><label for="inv-sim-seed" style="font-size:7.2pt;font-weight:700;color:#5a2ca0;">Seed (reproducible)</label><input id="inv-sim-seed" type="number" min="0" step="1" value="20270101" style="border-radius:10px;border:1px solid var(--border);padding:8px 10px;font-family:inherit;font-size:9pt;width:100%;"></div>
+            <div class="control-group" style="align-self:end;"><button type="button" id="inv-sim-run" class="exec-dl-btn" style="background:#6a1b9a;color:#fff;border-color:#6a1b9a;font-weight:700;width:100%;">▶ Run simulation</button></div>
+          </div>
+          <div id="inv-sim-result" style="margin-top:10px;font-size:8pt;color:var(--text-sub);">Run the simulation to derive the pre-money from the actuarial appraisal distribution. Deterministic for a given seed — reproducible bit-for-bit.</div>
         </div>
 
         <!-- Live KPI strip -->
@@ -6855,8 +6905,15 @@
         founderEq: 6,
         usdIls: 3.70,
         usdEur: 0.92,
-        fxSource: "loading"
+        fxSource: "loading",
+        valBasis: "manual",          // manual | multiple | actuarial
+        multMetric: "net_revenue",
+        multX: 1.3,
+        valProvenance: null          // set when basis is multiple/actuarial
       };
+      // 2029 base metrics (ILS) used by the income-multiple basis — these are the
+      // exact figures shown in the income table, so the valuation reconciles.
+      var METRIC_2029 = { net_revenue: 18000000, ebitda: 3600000, gwp: 72000000 };
       try {
         var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
         if (saved && typeof saved === "object") Object.assign(cfg, saved);
@@ -6901,12 +6958,36 @@
       var elFxRate = $("inv-fx-rate"), elFxEur = $("inv-fx-eur"), elFxBadge = $("inv-fx-badge"),
           elFxSource = $("inv-fx-source"), elFxNote = $("inv-fx-note"),
           elRound = $("inv-round"), elPre = $("inv-premoney"), elPos = $("inv-position"),
-          elCoCash = $("inv-cocash"), elFounderEq = $("inv-founder-eq");
+          elCoCash = $("inv-cocash"), elFounderEq = $("inv-founder-eq"),
+          elValBasis = $("inv-valbasis"), elMultMetric = $("inv-mult-metric"), elMultX = $("inv-mult-x");
+
+      function basisLabel() {
+        if (cfg.valBasis === "multiple") {
+          var mlabel = { net_revenue: "net rev", ebitda: "EBITDA", gwp: "GWP" }[cfg.multMetric] || cfg.multMetric;
+          return "(income multiple · " + cfg.multX + "× 2029 " + mlabel + ")";
+        }
+        if (cfg.valBasis === "actuarial" && cfg.valProvenance) {
+          return "(actuarial sim · P" + cfg.valProvenance.percentile + " · seed " + cfg.valProvenance.seed + ")";
+        }
+        if (cfg.valBasis === "actuarial") return "(actuarial sim — run to compute)";
+        return "(manual)";
+      }
 
       function syncInputsFromCfg() {
         elFxRate.value = cfg.usdIls; elFxEur.value = cfg.usdEur;
         elRound.value = cfg.round; elPre.value = cfg.preMoney;
         elPos.value = cfg.position; elCoCash.value = cfg.coCash; elFounderEq.value = cfg.founderEq;
+        if (elValBasis) elValBasis.value = cfg.valBasis;
+        if (elMultMetric) elMultMetric.value = cfg.multMetric;
+        if (elMultX) elMultX.value = cfg.multX;
+        // Pre-money is editable only when basis is manual; otherwise it reflects
+        // the derived value (the user can switch to Manual to override — optional).
+        elPre.readOnly = (cfg.valBasis !== "manual");
+        elPre.style.background = (cfg.valBasis !== "manual") ? "#eef1f6" : "";
+        var bl = $("inv-premoney-basis"); if (bl) bl.textContent = basisLabel();
+        var mp = $("inv-val-multiple"); if (mp) mp.style.display = (cfg.valBasis === "multiple") ? "" : "none";
+        var ap = $("inv-val-actuarial"); if (ap) ap.style.display = (cfg.valBasis === "actuarial") ? "" : "none";
+        var mo = $("inv-mult-out"); if (mo) mo.textContent = fmtMoney(METRIC_2029[cfg.multMetric] * cfg.multX);
         document.querySelectorAll(".inv-cf-only").forEach(function (n) {
           n.style.display = (cfg.position === "investor") ? "none" : "";
         });
@@ -7021,11 +7102,15 @@
         if ($("inv-kpi-stake-lbl")) $("inv-kpi-stake-lbl").textContent = sel.lbl;
         if ($("inv-kpi-dilution")) $("inv-kpi-dilution").textContent = pct(sel.stake);
 
+        // basis labels on the pre-money field, deal header and assumptions row
+        var bl = $("inv-premoney-basis"); if (bl) bl.textContent = basisLabel();
+        if ($("inv-assum-pre")) $("inv-assum-pre").textContent = fmtMoney(cfg.preMoney) + " " + basisLabel();
+
         // NDA agreed-terms summary (binds the signature hash to the configured deal)
         var nt = $("inv-nda-terms");
         if (nt) nt.innerHTML = "<strong>Agreed terms for this acknowledgement</strong> — Position: <strong>" +
           ({investor:"Investor (capital only)",cofounder:"Active co-founder",combined:"Combined (co-founder + investor)"}[cfg.position]) +
-          "</strong> · Round: " + fmtMoney(cfg.round) + " · Pre-money: " + fmtMoney(cfg.preMoney) + " · Post-money: " + fmtMoney(m.post) +
+          "</strong> · Round: " + fmtMoney(cfg.round) + " · Pre-money: " + fmtMoney(cfg.preMoney) + " " + basisLabel() + " · Post-money: " + fmtMoney(m.post) +
           " · Indicative stake: " + pct(sel.stake) + " · Display currency: " + cfg.currency + " (1 USD = ₪" + cfg.usdIls.toFixed(4) + ").";
 
         refreshSigIntegrity();
@@ -7073,10 +7158,67 @@
       elFxEur.addEventListener("input", function () { cfg.usdEur = num(elFxEur.value, cfg.usdEur) || cfg.usdEur; cfg.fxSource = "manual"; applyFxBadge(); recompute(); });
       $("inv-fx-refresh").addEventListener("click", function () { fetchFx(true); });
       elRound.addEventListener("input", function () { cfg.round = Math.max(0, num(elRound.value, cfg.round)); recompute(); });
-      elPre.addEventListener("input", function () { cfg.preMoney = Math.max(0, num(elPre.value, cfg.preMoney)); recompute(); });
+      elPre.addEventListener("input", function () {
+        if (cfg.valBasis !== "manual") return; // derived bases own the value
+        cfg.preMoney = Math.max(0, num(elPre.value, cfg.preMoney)); recompute();
+      });
       elPos.addEventListener("change", function () { cfg.position = elPos.value; syncInputsFromCfg(); recompute(); });
       elCoCash.addEventListener("input", function () { cfg.coCash = Math.max(0, num(elCoCash.value, cfg.coCash)); recompute(); });
       elFounderEq.addEventListener("input", function () { cfg.founderEq = Math.max(0, num(elFounderEq.value, cfg.founderEq)); recompute(); });
+
+      // ---- valuation basis (manual | income multiple | actuarial simulation) ----
+      function applyMultiple() {
+        cfg.preMoney = Math.round(METRIC_2029[cfg.multMetric] * cfg.multX);
+        cfg.valProvenance = { basis: "multiple", metric: cfg.multMetric, multiple: cfg.multX };
+      }
+      if (elValBasis) elValBasis.addEventListener("change", function () {
+        cfg.valBasis = elValBasis.value;
+        if (cfg.valBasis === "multiple") applyMultiple();
+        else if (cfg.valBasis === "manual") cfg.valProvenance = null;
+        // actuarial: keep current preMoney until the user runs the simulation
+        syncInputsFromCfg(); recompute();
+      });
+      if (elMultMetric) elMultMetric.addEventListener("change", function () { cfg.multMetric = elMultMetric.value; if (cfg.valBasis === "multiple") applyMultiple(); syncInputsFromCfg(); recompute(); });
+      if (elMultX) elMultX.addEventListener("input", function () { cfg.multX = Math.max(0, num(elMultX.value, cfg.multX)); if (cfg.valBasis === "multiple") applyMultiple(); syncInputsFromCfg(); recompute(); });
+
+      var simRunBtn = $("inv-sim-run");
+      if (simRunBtn) simRunBtn.addEventListener("click", function () {
+        var q = {
+          wacc: num($("inv-sim-wacc").value, 35) / 100,
+          exit_multiple: num($("inv-sim-exitm").value, 4),
+          prudence: num($("inv-sim-prudence").value, 15) / 100,
+          exit_metric: $("inv-sim-metric").value,
+          percentile: num($("inv-sim-pctile").value, 50),
+          runs: Math.round(num($("inv-sim-runs").value, 5000)),
+          seed: Math.round(num($("inv-sim-seed").value, 20270101))
+        };
+        var url = "/api/investor/valuation-sim?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
+        var resEl = $("inv-sim-result");
+        if (resEl) resEl.textContent = "Running actuarial appraisal simulation…";
+        fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+          if (!d || !d.pre_money) { if (resEl) resEl.textContent = "Simulation unavailable — keeping current pre-money."; return; }
+          cfg.preMoney = d.pre_money;
+          cfg.valProvenance = { basis: "actuarial", percentile: q.percentile, seed: d.seed, runs: d.runs,
+            wacc: q.wacc, exit_multiple: q.exit_multiple, prudence: q.prudence, exit_metric: q.exit_metric,
+            central: d.central, distribution: d.distribution, content_hash: d.content_hash };
+          if (resEl) {
+            var dist = d.distribution || {};
+            var maxv = Math.max(dist.p90 || 1, 1);
+            function bar(label, v) {
+              var w = Math.max(2, Math.round((v / maxv) * 100));
+              return '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;"><span style="width:30px;color:var(--text-soft);">' + label +
+                '</span><span style="display:inline-block;height:9px;width:' + w + '%;background:#6a1b9a;border-radius:3px;"></span><span style="font-weight:700;">' + fmtMoney(v) + '</span></div>';
+            }
+            resEl.innerHTML =
+              '<div style="font-weight:800;color:#5a2ca0;">Pre-money set to P' + q.percentile + ' = ' + fmtMoney(d.pre_money) + '</div>' +
+              '<div style="margin:4px 0;">Central (deterministic): ' + fmtMoney(d.central) + ' · Mean: ' + fmtMoney(d.mean) + ' · ' + d.runs + ' runs · seed ' + d.seed + '</div>' +
+              bar("P10", dist.p10) + bar("P25", dist.p25) + bar("P50", dist.p50) + bar("P75", dist.p75) + bar("P90", dist.p90) +
+              '<div style="margin-top:6px;color:var(--text-soft);">' + (d.method || "") + ' Scope: ' + (d.scope || "") +
+              ' Reproducible — content hash <code>' + String(d.content_hash || "").slice(0, 24) + '…</code></div>';
+          }
+          syncInputsFromCfg(); recompute();
+        }).catch(function () { if (resEl) resEl.textContent = "Offline — could not run the simulation."; });
+      });
 
       // =====================================================================
       // NDA signature (ledger-anchored via /api/legal-docs/sign)
@@ -7123,7 +7265,8 @@
             roundIls: cfg.round, preMoneyIls: cfg.preMoney, postMoneyIls: m.post,
             coCashIls: cfg.coCash, founderEqPct: cfg.founderEq,
             selectedStakePct: Math.round(sel.stake * 10000) / 100,
-            fxUsdIls: cfg.usdIls, fxUsdEur: cfg.usdEur, fxSource: cfg.fxSource
+            fxUsdIls: cfg.usdIls, fxUsdEur: cfg.usdEur, fxSource: cfg.fxSource,
+            valuationBasis: cfg.valBasis, valuationProvenance: cfg.valProvenance || null
           }
         };
       }
