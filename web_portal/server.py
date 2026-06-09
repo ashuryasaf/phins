@@ -31404,20 +31404,40 @@ For claims or questions, please contact:
                     if user:
                         username = email
 
-                from services.otp_security_service import mask_email as _mask_email
+                from services.otp_security_service import mask_email as _mask_email, _mask_phone
 
                 def _decoy_reset_response():
-                    """Structurally identical to a real response to prevent user enumeration."""
+                    """Structurally identical to a real response to prevent user enumeration.
+
+                    Mirrors the channel-specific wording and ``delivery_channel`` /
+                    ``masked_phone`` fields of the real SMS-capable response so callers
+                    cannot distinguish a non-existent account from one with a phone on
+                    file. The fabricated masked phone is derived deterministically from
+                    the supplied identifiers so repeated requests stay consistent like a
+                    real account.
+                    """
                     decoy_id = f"OTP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}"
-                    return {
+                    if requested_channel == 'sms':
+                        decoy_message = 'If the account exists, a verification code has been sent to the registered phone number.'
+                    elif requested_channel == 'both':
+                        decoy_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
+                    else:
+                        decoy_message = 'If the account exists, a verification code has been sent to the registered email.'
+                    decoy = {
                         'success': True,
-                        'message': 'If the account exists, a verification code has been sent to the registered email.',
+                        'message': decoy_message,
                         'verification_id': decoy_id,
                         'requires_otp': True,
                         'notification_sent': True,
                         'masked_email': _mask_email(email),
+                        'delivery_channel': requested_channel,
                         'expires_in_seconds': 300,
                     }
+                    if requested_channel in ('sms', 'both'):
+                        _seed = hashlib.sha256(f"{username}|{email}".encode('utf-8')).hexdigest()
+                        _fake_digits = ''.join(str(int(c, 16) % 10) for c in _seed[:11])
+                        decoy['masked_phone'] = _mask_phone(f"+{_fake_digits}")
+                    return decoy
 
                 if not user:
                     self._set_json_headers(200)
