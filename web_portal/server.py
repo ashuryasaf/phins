@@ -31567,9 +31567,16 @@ For claims or questions, please contact:
                         except Exception:
                             pass
 
+                    if effective_channel == 'sms':
+                        reset_message = 'If the account exists, a verification code has been sent to the registered phone number.'
+                    elif effective_channel == 'both':
+                        reset_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
+                    else:
+                        reset_message = 'If the account exists, a verification code has been sent to the registered email.'
+
                     response_data = {
                         'success': True,
-                        'message': 'If the account exists, a verification code has been sent to the registered email.',
+                        'message': reset_message,
                         'verification_id': verification_id,
                         'requires_otp': True,
                         'notification_sent': notification_sent,
