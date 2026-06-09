@@ -7813,6 +7813,156 @@ def get_investor_fx_rates(force_refresh=False):
         _FX_CACHE['fetched_at'] = now
     return payload
 
+
+# ---------------------------------------------------------------------------
+# Investor valuation simulation (actuarial appraisal, Monte-Carlo, deterministic)
+# ---------------------------------------------------------------------------
+# Makes the pitch-dashboard pre-money valuation OPTIONALLY derivable from an
+# actuarial-style appraisal simulation instead of a hand-entered number, while
+# keeping data integrity flawless:
+#   * scope = the SAME Israel income model shown in the investor section
+#     (in-force counts, ₪3,600 average premium, 25% take rate, opex path), so
+#     the valuation always reconciles with the figures on the page,
+#   * methodology mirrors the platform's actuarial valuation engine
+#     (services/actuarial_valuation.py): present value of projected profits plus
+#     a terminal exit value, less a prudence/risk margin,
+#   * fully DETERMINISTIC for a given (seed, params) so any party can reproduce
+#     the exact distribution and percentile bit-for-bit (a content hash is
+#     returned for verification),
+#   * read-only and always 200 so the counterparty-facing page never fails.
+# The platform's broader actuarial engine values the full in-force book
+# separately (admin/actuary only); this endpoint is the seed-stage, IL-scoped
+# appraisal used for the funding round.
+_INV_VAL_BASE = {
+    'currency': 'ILS',
+    'years': [2027, 2028, 2029],
+    'in_force': [2000.0, 8000.0, 20000.0],   # avg policies in force during year
+    'premium': 3600.0,                        # average annual premium (₪)
+    'take_rate': 0.25,                        # PHINS blended take rate on GWP
+    'opex': [5400000.0, 9000000.0, 14400000.0],
+}
+
+
+def _inv_percentile(sorted_vals, p):
+    """Linear-interpolation percentile over a pre-sorted list (p in 0..100)."""
+    if not sorted_vals:
+        return 0.0
+    if p <= 0:
+        return sorted_vals[0]
+    if p >= 100:
+        return sorted_vals[-1]
+    k = (len(sorted_vals) - 1) * (p / 100.0)
+    lo = int(k)
+    hi = lo + 1 if lo + 1 < len(sorted_vals) else lo
+    frac = k - lo
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * frac
+
+
+def _inv_appraisal_pre_money(in_force, premium, take, opex, wacc, exit_multiple,
+                             exit_metric, prudence):
+    """Risk-adjusted appraisal pre-money (₪) from the IL income-model drivers.
+
+    PV (to end-2026) of each year's EBITDA plus a terminal exit value
+    (exit_multiple × the chosen 2029 metric), all discounted at ``wacc`` and
+    haircut by the ``prudence`` margin. Mirrors the PVFP-plus-terminal logic in
+    services/actuarial_valuation.py at IL-launch scope.
+    """
+    net_rev = [in_force[i] * premium * take for i in range(len(in_force))]
+    ebitda = [net_rev[i] - opex[i] for i in range(len(net_rev))]
+    n = len(ebitda)
+    pv_ebitda = sum(ebitda[i] / ((1.0 + wacc) ** (i + 1)) for i in range(n))
+    exit_base = net_rev[-1] if exit_metric == 'net_revenue' else ebitda[-1]
+    terminal = exit_multiple * exit_base
+    pv_terminal = terminal / ((1.0 + wacc) ** n)
+    pm = (pv_ebitda + pv_terminal) * (1.0 - prudence)
+    return max(0.0, pm)
+
+
+def compute_investor_valuation_sim(params):
+    """Deterministic Monte-Carlo actuarial appraisal of the IL seed pre-money.
+
+    ``params`` (all optional): runs, seed, wacc, exit_multiple, prudence,
+    exit_metric ('net_revenue'|'ebitda'), percentile. Returns the chosen
+    percentile as ``pre_money`` plus the full distribution, the deterministic
+    central case, the echoed assumptions, and a content hash for verification.
+    """
+    def _f(name, default):
+        try:
+            return float(params.get(name, default))
+        except (TypeError, ValueError):
+            return float(default)
+
+    runs = int(max(100, min(_f('runs', 5000), 50000)))
+    seed = int(_f('seed', 20270101))
+    wacc = min(max(_f('wacc', 0.35), 0.05), 0.90)
+    exit_multiple = min(max(_f('exit_multiple', 4.0), 0.5), 30.0)
+    prudence = min(max(_f('prudence', 0.15), 0.0), 0.6)
+    exit_metric = params.get('exit_metric', 'net_revenue')
+    if exit_metric not in ('net_revenue', 'ebitda'):
+        exit_metric = 'net_revenue'
+    percentile = min(max(_f('percentile', 50.0), 1.0), 99.0)
+
+    b = _INV_VAL_BASE
+    central = _inv_appraisal_pre_money(
+        b['in_force'], b['premium'], b['take_rate'], b['opex'],
+        wacc, exit_multiple, exit_metric, prudence,
+    )
+
+    rng = random.Random(seed)
+
+    def clip(x, lo, hi):
+        return max(lo, min(hi, x))
+
+    vals = []
+    for _ in range(runs):
+        prem_m = clip(rng.gauss(1.0, 0.10), 0.5, 1.6)
+        take_m = clip(rng.gauss(1.0, 0.08), 0.5, 1.5)
+        grow_m = clip(rng.gauss(1.0, 0.20), 0.3, 2.2)
+        opex_m = clip(rng.gauss(1.0, 0.10), 0.6, 1.7)
+        em = clip(rng.gauss(exit_multiple, 0.25 * exit_multiple), 0.5, 30.0)
+        wc = clip(rng.gauss(wacc, 0.15 * wacc), 0.05, 0.90)
+        in_force = [x * grow_m for x in b['in_force']]
+        opex = [x * opex_m for x in b['opex']]
+        vals.append(_inv_appraisal_pre_money(
+            in_force, b['premium'] * prem_m, b['take_rate'] * take_m, opex,
+            wc, em, exit_metric, prudence,
+        ))
+    vals.sort()
+    dist = {('p%d' % p): round(_inv_percentile(vals, p)) for p in (10, 25, 50, 75, 90)}
+    mean_v = sum(vals) / len(vals)
+    chosen = _inv_percentile(vals, percentile)
+
+    assumptions = {
+        'wacc': round(wacc, 6), 'exit_multiple': round(exit_multiple, 4),
+        'prudence': round(prudence, 6), 'exit_metric': exit_metric,
+        'premium': b['premium'], 'take_rate': b['take_rate'],
+        'in_force': b['in_force'], 'opex': b['opex'],
+    }
+    out = {
+        'pre_money': round(chosen),
+        'percentile': percentile,
+        'central': round(central),
+        'mean': round(mean_v),
+        'distribution': dist,
+        'runs': runs,
+        'seed': seed,
+        'currency': 'ILS',
+        'assumptions': assumptions,
+        'method': ('Risk-adjusted actuarial appraisal: PV of projected EBITDA + terminal '
+                   'exit value (exit multiple × 2029 ' + exit_metric.replace('_', ' ') +
+                   '), less prudence margin; Monte-Carlo over plan drivers.'),
+        'scope': 'Israel seed-stage launch plan (reconciles to the income model on the page).',
+        'deterministic': True,
+    }
+    out['content_hash'] = hashlib.sha256(json.dumps({
+        'in': {'runs': runs, 'seed': seed, 'wacc': out['assumptions']['wacc'],
+               'exit_multiple': out['assumptions']['exit_multiple'],
+               'prudence': out['assumptions']['prudence'], 'exit_metric': exit_metric,
+               'percentile': percentile},
+        'out': {'pre_money': out['pre_money'], 'central': out['central'], 'dist': dist},
+    }, sort_keys=True).encode('utf-8')).hexdigest()
+    return out
+
 # Test mode (makes API/security behavior deterministic for CI)
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
@@ -12853,6 +13003,22 @@ For claims or questions, please contact:
                 }
             self._set_json_headers(200)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # Investor valuation simulation (read-only, public): deterministic
+        # actuarial appraisal Monte-Carlo of the IL seed pre-money, scoped to the
+        # income model on the pitch dashboard so it always reconciles. Lets the
+        # configurator's valuation OPTIONALLY be based on an actuarial simulation
+        # instead of a hand-entered number. Always 200; reproducible by seed.
+        if path == '/api/investor/valuation-sim':
+            sim_params = {k: (v[0] if isinstance(v, list) else v) for k, v in qs.items()}
+            try:
+                result = compute_investor_valuation_sim(sim_params)
+            except Exception as e:  # never fail the investor page
+                result = {'error': str(e), 'pre_money': 24000000, 'currency': 'ILS',
+                          'central': 24000000, 'distribution': {}, 'deterministic': True}
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             return
 
         # Session validation
