@@ -7,13 +7,18 @@ Use this when the production deployment logs report something like::
     ⚠️  [INTEGRITY] Startup validation: 1 issue(s) detected
        ✗ Ledger chain invalid: 361 broken links, 1168 sequence gaps, 0 duplicates
 
-The web_portal boot path already repairs the *in-memory* chain after
-``hydrate_from_db()``, so the running server is unaffected. But the rows in
-``platform_ledger_entries`` still carry the divergent ``previous_hash`` /
-``entry_hash`` / ``sequence_no`` values that were written during older
-deployments. This script reconciles the DB rows to match the canonical
-recomputed chain so a future BI/actuarial run that queries the DB
-directly sees a fully consistent history.
+The web_portal boot path repairs the *in-memory* chain after
+``hydrate_from_db()`` and, by default (``PHINS_LEDGER_DB_AUTOREPAIR`` unset
+or truthy), also reconciles the divergent ``platform_ledger_entries`` rows
+automatically via ``PlatformEventLedgerService.persist_chain_to_db()`` —
+so on current deployments the warning self-heals after one restart.
+
+This script remains the manual workflow for operators who run with
+``PHINS_LEDGER_DB_AUTOREPAIR=false`` (forensic mode, DB rows untouched at
+boot) or who want a dry-run preview and explicit backup before reconciling
+the DB rows to match the canonical recomputed chain so a future
+BI/actuarial run that queries the DB directly sees a fully consistent
+history.
 
 Safety:
   * Dry-run by default — pass ``--apply`` to actually mutate rows.
