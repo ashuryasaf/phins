@@ -277,6 +277,177 @@ def test_ensure_hash_chain_repairs_divergent_hydrated_chain(sqlite_ledger):
         previous_hash = entry["entry_hash"]
 
 
+def _tamper_db_rows(break_at_index=4, shift_from_index=5, shift_by=100):
+    """Reproduce the production drift pattern directly in the DB layer:
+    rewrite one row's hashes to bogus values and shift later sequence_nos."""
+    from database.manager import DatabaseManager
+    from database.models import PlatformLedgerEntry
+
+    import json as _json
+
+    with DatabaseManager() as db:
+        session = db._ensure_session()
+        rows = (
+            session.query(PlatformLedgerEntry)
+            .order_by(PlatformLedgerEntry.sequence_no.asc())
+            .all()
+        )
+        bad_prev = "0" * 64
+        bad_hash = "f" * 64
+        target = rows[break_at_index]
+        target.previous_hash = bad_prev
+        target.entry_hash = bad_hash
+        try:
+            payload_obj = _json.loads(target.payload) if target.payload else {}
+        except Exception:
+            payload_obj = {}
+        if isinstance(payload_obj, dict):
+            payload_obj["previous_hash"] = bad_prev
+            payload_obj["entry_hash"] = bad_hash
+            target.payload = _json.dumps(payload_obj, sort_keys=True, default=str)
+
+        for r in rows[shift_from_index:]:
+            new_seq = r.sequence_no + shift_by
+            r.sequence_no = new_seq
+            try:
+                payload_obj = _json.loads(r.payload) if r.payload else {}
+            except Exception:
+                payload_obj = {}
+            if isinstance(payload_obj, dict):
+                payload_obj["sequence_no"] = new_seq
+                r.payload = _json.dumps(payload_obj, sort_keys=True, default=str)
+        db.commit()
+
+
+def test_persist_chain_to_db_reconciles_divergent_db_rows(sqlite_ledger, tmp_path):
+    """After hydrate + ensure_hash_chain, persist_chain_to_db must write the
+    repaired chain back to SQL so the NEXT restart hydrates a valid chain and
+    the startup divergence warning does not recur."""
+    from services.platform_event_ledger_service import reconcile_ledger_entries
+
+    first_memory = {}
+    first_service = _make_service(first_memory)
+    _seed_sample_ledger(first_service, n_entries=10)
+    _tamper_db_rows()
+
+    restart_memory = {}
+    restart_service = _make_service(restart_memory)
+    assert restart_service.hydrate_from_db() == 10
+    pre = reconcile_ledger_entries(restart_memory.values())
+    assert not pre["chain_valid"]
+
+    restart_service.ensure_hash_chain()
+    backup_path = str(tmp_path / "chain_backup.json")
+    summary = restart_service.persist_chain_to_db(backup_path=backup_path)
+
+    assert summary["applied"], f"write-back refused: {summary['reason']}"
+    assert summary["rows_updated"] >= 1
+    assert summary["rows_inserted"] == 0
+    assert summary["backup_path"] == backup_path
+    assert Path(backup_path).exists()
+
+    # Next "restart": a brand-new memory ledger hydrated from the reconciled
+    # DB must validate cleanly with no repair pass at all.
+    next_memory = {}
+    next_service = _make_service(next_memory)
+    assert next_service.hydrate_from_db() == 10
+    post = reconcile_ledger_entries(next_memory.values())
+    assert post["chain_valid"], (
+        f"DB still divergent after write-back: "
+        f"broken={len(post['broken_links'])}, gaps={len(post['sequence_gaps'])}"
+    )
+    for entry_id, entry in restart_memory.items():
+        assert next_memory[entry_id]["entry_hash"] == entry["entry_hash"]
+        assert next_memory[entry_id]["sequence_no"] == entry["sequence_no"]
+
+
+def test_persist_chain_to_db_refuses_invalid_memory_chain(sqlite_ledger):
+    """The write-back must never overwrite DB rows from a memory ledger that
+    does not itself validate — a corrupted memory chain is not canonical."""
+    from database.manager import DatabaseManager
+
+    memory = {}
+    service = _make_service(memory)
+    seeded = _seed_sample_ledger(service, n_entries=5)
+    db_hashes_before = {e["id"]: e["entry_hash"] for e in seeded}
+
+    # Corrupt one in-memory entry so reconcile fails.
+    memory[seeded[2]["id"]]["entry_hash"] = "deadbeef" * 8
+
+    summary = service.persist_chain_to_db()
+    assert not summary["applied"]
+    assert "invalid" in summary["reason"]
+
+    with DatabaseManager() as db:
+        for entry_id, expected_hash in db_hashes_before.items():
+            row = db.platform_ledger.get_by_id(entry_id)
+            assert row is not None
+            assert row.entry_hash == expected_hash, "DB row mutated despite refusal"
+
+
+def test_persist_chain_to_db_inserts_memory_only_entries(sqlite_ledger):
+    """Memory entries whose DB insert was lost (e.g. transient persistence
+    failure) must be re-inserted so the persisted chain has no holes."""
+    from database.manager import DatabaseManager
+    from services.platform_event_ledger_service import reconcile_ledger_entries
+
+    memory = {}
+    service = _make_service(memory)
+    seeded = _seed_sample_ledger(service, n_entries=3)
+    missing_id = seeded[1]["id"]
+
+    with DatabaseManager() as db:
+        assert db.platform_ledger.delete(missing_id)
+
+    summary = service.persist_chain_to_db()
+    assert summary["applied"]
+    assert summary["rows_inserted"] == 1
+    assert summary["rows_updated"] == 0
+
+    next_memory = {}
+    next_service = _make_service(next_memory)
+    assert next_service.hydrate_from_db() == 3
+    post = reconcile_ledger_entries(next_memory.values())
+    assert post["chain_valid"]
+    assert next_memory[missing_id]["entry_hash"] == memory[missing_id]["entry_hash"]
+
+
+def test_persist_chain_to_db_noop_when_already_consistent(sqlite_ledger, tmp_path):
+    """On healthy deploys the write-back must not touch rows or emit backups —
+    the boot path calls it on every start once auto-repair is enabled."""
+    memory = {}
+    service = _make_service(memory)
+    _seed_sample_ledger(service, n_entries=4)
+
+    backup_path = str(tmp_path / "should_not_exist.json")
+    summary = service.persist_chain_to_db(backup_path=backup_path)
+
+    assert not summary["applied"]
+    assert summary["reason"] == "db chain already consistent"
+    assert summary["rows_unchanged"] == 4
+    assert not Path(backup_path).exists()
+
+
+def test_ensure_hash_chain_repaired_count_is_accurate(sqlite_ledger):
+    """repaired_entries must equal the number of entries whose chain fields
+    actually changed (previously the comparison ran after mutation, leaving
+    dead conditions and an under-counted startup log line)."""
+    memory = {}
+    service = _make_service(memory)
+    _seed_sample_ledger(service, n_entries=10)
+    _tamper_db_rows(break_at_index=5, shift_from_index=5, shift_by=100)
+
+    restart_memory = {}
+    restart_service = _make_service(restart_memory)
+    assert restart_service.hydrate_from_db() == 10
+
+    summary = restart_service.ensure_hash_chain()
+    assert summary["chain_valid"]
+    # Rows 1-5 were untouched and head the chain, so exactly the 5 shifted
+    # rows need re-sequencing/re-hashing.
+    assert summary["repaired_entries"] == 5
+
+
 def test_ensure_hash_chain_is_idempotent_on_valid_chain(sqlite_ledger):
     """Running ensure_hash_chain() on an already-valid chain must not mutate
     any entry — important because the boot path now invokes it conditionally

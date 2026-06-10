@@ -4399,6 +4399,34 @@ def mark_ledger_dirty():
         _persistence_dirty = True
 
 
+def verify_persistence_writable() -> bool:
+    """Probe the ledger persistence path at startup.
+
+    A mounted-but-unwritable volume (wrong permissions, read-only remount)
+    otherwise only surfaces 60 seconds later as a periodic-save error, and
+    every subsequent restart logs "No persistence file found ... starting
+    fresh" with no hint as to why. Probing at boot gives operators an
+    immediate, loud diagnostic.
+    """
+    if not PERSISTENCE_ENABLED:
+        return True
+    probe_file = LEDGER_PERSISTENCE_FILE + '.probe'
+    try:
+        with open(probe_file, 'w') as fh:
+            fh.write('ok')
+        os.remove(probe_file)
+        return True
+    except OSError as exc:
+        print(
+            f"⚠️  [PERSISTENCE] Persistence path "
+            f"{os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.'} is not "
+            f"writable ({exc}); ledger snapshots will fail and data will "
+            f"restart fresh on every deploy — fix the volume mount or "
+            f"permissions, or set LEDGER_PERSISTENCE_FILE"
+        )
+        return False
+
+
 def save_ledger_data(_periodic: bool = False):
     """Save all ledger data to persistent storage.
 
@@ -48309,7 +48337,22 @@ For claims or questions, please contact:
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
 
 
-def _repair_hydrated_ledger_chain(*, verbose: bool = True) -> None:
+def _ledger_db_autorepair_enabled() -> bool:
+    """Whether the boot path may write the repaired chain back to SQL.
+
+    Defaults ON so the recurring "N broken links, M sequence gaps" startup
+    divergence self-heals instead of compounding with every deploy. Set
+    PHINS_LEDGER_DB_AUTOREPAIR=false to keep DB rows untouched and fall back
+    to the operator-run scripts/repair_platform_ledger_chain.py workflow.
+    """
+    return str(
+        os.environ.get('PHINS_LEDGER_DB_AUTOREPAIR', 'true')
+    ).lower() in ('1', 'true', 'yes', 'y', 'on')
+
+
+def _repair_hydrated_ledger_chain(
+    *, verbose: bool = True, persist_to_db: bool = False
+) -> None:
     """Post-hydration in-memory chain repair shared by all boot paths.
 
     Parameters
@@ -48318,11 +48361,18 @@ def _repair_hydrated_ledger_chain(*, verbose: bool = True) -> None:
         When *True* (long-running server), emit detailed pre-repair
         diagnostics and mark persistence dirty on success.  One-shot
         commands pass *False* for terser output.
+    persist_to_db : bool
+        When *True* and PHINS_LEDGER_DB_AUTOREPAIR is enabled (default),
+        reconcile the divergent ``platform_ledger_entries`` rows with the
+        validated in-memory chain so the divergence does not recur on the
+        next restart. Original chain fields are snapshotted to a backup
+        file beside the ledger persistence file before any row changes.
     """
     try:
         from services.platform_event_ledger_service import (
             reconcile_ledger_entries,
         )
+        chain_healthy = True
         pre = reconcile_ledger_entries(TRANSACTION_LEDGER.values())
         if not pre.get('chain_valid'):
             if verbose:
@@ -48340,12 +48390,12 @@ def _repair_hydrated_ledger_chain(*, verbose: bool = True) -> None:
             post = reconcile_ledger_entries(
                 TRANSACTION_LEDGER.values()
             )
-            if post.get('chain_valid'):
+            chain_healthy = bool(post.get('chain_valid'))
+            if chain_healthy:
                 if verbose:
                     print(
                         f"   ✓ Repaired in-memory ledger chain "
-                        f"({repaired} entries re-sequenced); "
-                        f"DB rows retained as forensic history"
+                        f"({repaired} entries re-sequenced)"
                     )
                     try:
                         mark_ledger_dirty()
@@ -48361,6 +48411,50 @@ def _repair_hydrated_ledger_chain(*, verbose: bool = True) -> None:
                     f"   ⚠️  Post-repair ledger chain still "
                     f"reports {len(post.get('broken_links', []))} "
                     f"broken links — operator review required"
+                )
+
+        # Reconcile DB rows with the validated chain so the divergence does
+        # not recur (and compound) on every container restart. Runs even when
+        # the in-memory chain was already valid, because a clean JSON snapshot
+        # can mask rows that are still divergent in SQL.
+        if persist_to_db and chain_healthy and USE_DATABASE and database_enabled:
+            if _ledger_db_autorepair_enabled():
+                backup_path = os.path.join(
+                    os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.',
+                    f"phins_ledger_chain_backup_"
+                    f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json",
+                )
+                db_summary = platform_event_ledger.persist_chain_to_db(
+                    backup_path=backup_path
+                )
+                if db_summary.get('applied'):
+                    backup_note = (
+                        f"; originals backed up to {db_summary['backup_path']}"
+                        if db_summary.get('backup_path') else ""
+                    )
+                    print(
+                        f"   ✓ Reconciled DB ledger chain "
+                        f"({db_summary.get('rows_updated', 0)} rows updated, "
+                        f"{db_summary.get('rows_inserted', 0)} rows inserted"
+                        f"{backup_note})"
+                    )
+                elif db_summary.get('reason') not in (
+                    'db chain already consistent', 'database disabled'
+                ):
+                    print(
+                        f"   ⚠️  DB ledger chain reconcile skipped: "
+                        f"{db_summary.get('reason')}"
+                    )
+            else:
+                # Autorepair disabled: reconciliation is skipped regardless of
+                # the in-memory chain state. Always surface the manual hint —
+                # a valid JSON-hydrated memory chain can still mask rows that
+                # remain divergent in SQL for direct (BI/actuarial) consumers.
+                print(
+                    "   ℹ️  DB rows retained as forensic history "
+                    "(PHINS_LEDGER_DB_AUTOREPAIR=false); run "
+                    "scripts/repair_platform_ledger_chain.py --apply "
+                    "to reconcile manually"
                 )
     except Exception as _repair_exc:
         print(
@@ -48410,32 +48504,39 @@ def run_server(port: int = PORT) -> None:
 
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
+    verify_persistence_writable()
     _ledger_loaded = load_ledger_data()
     if _ledger_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:
         print("ℹ️  Starting with fresh ledger data")
 
-    # When the JSON persistence file is missing (fresh container, no Railway
-    # volume) but the SQL ledger already has rows from a prior run, hydrate
-    # the in-memory ledger from the DB BEFORE any sample/seed entries are
-    # appended. Without this, append_event() observes an empty memory ledger
-    # and a non-empty DB and assigns sequence numbers starting at
-    # latest_db.sequence_no + 1, while the DB still holds the original rows
-    # for the same IDs — producing the "1 broken link, N sequence gaps"
-    # startup integrity warning and a permanent memory↔DB chain divergence.
-    if not _ledger_loaded and USE_DATABASE and database_enabled:
+    # Hydrate the in-memory ledger from the DB BEFORE any sample/seed entries
+    # are appended. Without this, append_event() observes a memory ledger that
+    # is missing rows the DB already holds and assigns sequence numbers
+    # starting at latest_db.sequence_no + 1, while the DB still holds the
+    # original rows for the same IDs — producing the "1 broken link,
+    # N sequence gaps" startup integrity warning and a permanent memory↔DB
+    # chain divergence. This runs even when the JSON persistence file loaded:
+    # a stale snapshot (e.g. crash before the periodic save) would otherwise
+    # silently drop DB-only entries from memory. Entries already in memory
+    # always take precedence; hydration only fills the gaps.
+    if USE_DATABASE and database_enabled:
         try:
             hydrated = platform_event_ledger.hydrate_from_db()
             if hydrated:
-                print(f"📒 Hydrated {hydrated} ledger entries from database "
-                      f"(prevents sequence/hash divergence after restart)")
+                if _ledger_loaded:
+                    print(f"📒 Backfilled {hydrated} DB-only ledger entries "
+                          f"missing from the JSON snapshot")
+                else:
+                    print(f"📒 Hydrated {hydrated} ledger entries from database "
+                          f"(prevents sequence/hash divergence after restart)")
 
-                # Repair in-memory chain if hydrated rows carry drift.
-                # DB rows are deliberately NOT mutated — they remain the
-                # immutable historical record and can be reconciled offline
-                # via scripts/repair_platform_ledger_chain.py (operator-run).
-                _repair_hydrated_ledger_chain(verbose=True)
+            # Repair the in-memory chain if hydrated rows carry drift, then
+            # reconcile the divergent DB rows (gated by
+            # PHINS_LEDGER_DB_AUTOREPAIR, default on) so the same warning
+            # does not recur — and compound — on every restart.
+            _repair_hydrated_ledger_chain(verbose=True, persist_to_db=True)
         except Exception as _hyd_exc:
             print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
 
@@ -49931,12 +50032,14 @@ def bootstrap_runtime_state_for_command() -> None:
     else:
         print("ℹ️  Starting with fresh ledger data")
 
-    if not _cmd_loaded and USE_DATABASE and database_enabled:
+    if USE_DATABASE and database_enabled:
         try:
             hydrated = platform_event_ledger.hydrate_from_db()
             if hydrated:
                 print(f"📒 Hydrated {hydrated} ledger entries from database")
-                _repair_hydrated_ledger_chain(verbose=False)
+            # One-shot commands never mutate DB chain rows (persist_to_db
+            # stays False); the long-running server owns DB reconciliation.
+            _repair_hydrated_ledger_chain(verbose=False)
         except Exception as _hyd_exc:
             print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
 

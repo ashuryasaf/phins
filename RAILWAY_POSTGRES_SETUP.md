@@ -136,6 +136,24 @@ Or if issues are detected:
    ✗ Ledger chain invalid: 2 broken links, 0 sequence gaps, 0 duplicates
 ```
 
+### Ledger Chain Self-Healing
+When boot-time hydration detects a divergent platform ledger chain (e.g.
+`⚠️ Hydrated ledger chain is divergent (421 broken links, 3466 sequence gaps, ...)`),
+the server repairs the in-memory chain and — by default — reconciles the
+divergent `platform_ledger_entries` rows back to the canonical recomputed
+chain, so the warning does not recur (and compound) on the next restart.
+Original chain fields are snapshotted to a timestamped
+`phins_ledger_chain_backup_*.json` file beside the ledger persistence file
+before any row is changed. Look for:
+```
+   ✓ Repaired in-memory ledger chain (3487 entries re-sequenced)
+   ✓ Reconciled DB ledger chain (3487 rows updated, 0 rows inserted; originals backed up to /data/phins_ledger_chain_backup_....json)
+```
+
+Set `PHINS_LEDGER_DB_AUTOREPAIR=false` to keep DB rows untouched (forensic
+mode); reconcile manually with
+`python scripts/repair_platform_ledger_chain.py --apply` instead.
+
 ### DB-Authoritative Loading
 When PostgreSQL is active, the JSON persistence file only stores in-memory-only
 data (wallets, NFTs, allocations, transactions). Core entities (customers, policies,
