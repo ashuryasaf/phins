@@ -478,13 +478,17 @@ svg { display: block; width: 100%; height: auto; }
     var start = planStartDate();
     var buildMonths = 0, probe = new Date(start);
     while (probe < PLAN.launch && buildMonths < 60) { buildMonths++; probe.setMonth(probe.getMonth() + 1); }
+    // If the plan/meeting date is already at or after launch there is no
+    // pre-launch window, so deploy the build budget up-front in the first month.
+    if (buildMonths === 0) buildMonths = 1;
     var months = [], cash = cfg.round, minCash = cash, minIdx = -1;
     for (var i = 0; i < HORIZON; i++) {
       var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
       var buildSpend = 0, opex = 0, gwp = 0, netRev = 0, pol = 0;
-      if (d < PLAN.launch) {
-        buildSpend = buildMonths > 0 ? cfg.round / buildMonths : 0;
-      } else {
+      if (i < buildMonths) {
+        buildSpend = cfg.round / buildMonths;
+      }
+      if (d >= PLAN.launch) {
         var yi = Math.min(Math.max(d.getFullYear() - 2027, 0), 2);
         // average in-force during the month (midpoint of the linear ramp;
         // policiesAt returns 0 for any pre-launch month)
@@ -866,7 +870,7 @@ svg { display: block; width: 100%; height: auto; }
       { label: "6× (growth)", mult: 6, color: "#6d28d9" },
       { label: "10× (multi-market)", mult: 10, color: "#15803d" }
     ];
-    var capital = sel.capital > 0 ? sel.capital : m.R;
+    var capital = sel.capital;
     var stake = sel.stake > 0 ? sel.stake : m.eqStake;
     var scen = mults.map(function (s) {
       var exitVal = rev29 * s.mult;
