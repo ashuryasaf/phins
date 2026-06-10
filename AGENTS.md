@@ -8,23 +8,25 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~44k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~2910 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`)
-- service-layer logic in `services/` (64 modules)
+- service-layer logic in `services/` (80 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (85 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (120 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
 - `web_portal/server.py` defaults to `USE_DATABASE=true`
 - pytest config in root `conftest.py` sets `USE_DATABASE=false`,
   `USE_SQLITE=true`, `PHINS_TEST_MODE=true`, and starts an embedded server on
-  `127.0.0.1:8000`
+  `127.0.0.1`; the port prefers `8000` but honors a `TEST_PORT` override and
+  falls back to a free kernel-assigned port (read `TEST_BASE_URL`/`TEST_PORT`
+  instead of hardcoding `http://localhost:8000`)
 - a separate `tests/conftest.py` only adds `sys.path` and sets
   `PHINS_TEST_MODE`; the embedded server and env defaults live in the
   **root** `conftest.py`
@@ -70,7 +72,7 @@ Preferred file-by-task:
 |  |- api_delivery_bidding.py
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
-|- services/                            # 64 service modules
+|- services/                            # 80 service modules
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -80,7 +82,7 @@ Preferred file-by-task:
 |  |- notification_models.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 13 *_repository.py + base.py
+|  |- repositories/                     # 14 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -95,11 +97,13 @@ Preferred file-by-task:
 |- scheduler/
 |  `- runner.py
 |- scripts/                             # operational utilities
-|- tests/                               # 85 test files
+|  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
+|- tests/                               # 120 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
 |  |- health_marketplace_implementation_spec.md
+|  |- INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md
 |  `- uml/
 `- .github/workflows/                   # CI (visual_test, security_scan)
 ```
@@ -154,6 +158,10 @@ Database patterns:
 - Documents: `documents`, `processing_jobs`
 - Supply chain: `suppliers`, `supplier_invitations`, `supplier_offers`,
   `supplier_orders`, `supplier_documents`, `supply_chain_ledger`
+- Marketplace/payments: `wallet_accounts`, `wallet_holds`, `wallet_ledger`,
+  `payment_intents`, `refunds`, `journal`, `supplier_settlement_runs`,
+  `supplier_settlement_items`, `external_payers`, `marketplace_claims`,
+  `remittances`, `payer_receivables`, `idempotency`, `outbox`
 
 Common ID prefixes:
 
@@ -193,7 +201,7 @@ Watch-outs:
 - Some routes have parallel in-memory and database-backed logic paths.
 - `api_extensions.py` covers foundations, OTP/CAPTCHA, contribution payments,
   community messaging, wallet, admin foundation routes, backup/persistence,
-  and invitation handling.
+  invitation handling, and media/video processing jobs and webhooks.
 
 ## 6) Database Task Playbook
 
@@ -214,15 +222,18 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 18 repository properties (see §4 for the full list).
-- Repository modules (13 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 33 repository properties (see §4 for the full list).
+- Repository modules (14 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
   `token_repository.py`, `document_repository.py`, `supplier_repository.py`
   (bundles supplier, invitation, offer, order, document, and supply-chain
-  ledger repositories).
+  ledger repositories), and `marketplace_repository.py` (bundles wallet,
+  payment-intent, refund, journal, settlement, external-payer,
+  marketplace-claim, remittance, receivable, idempotency, and outbox
+  repositories).
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -237,8 +248,10 @@ When working on deployment or environment configuration:
    - `Dockerfile`
    - `app.json`, `vercel.json`
 3. Confirm how the app starts in production before changing commands or ports.
-4. Keep startup behavior compatible with `python3 web_portal/server.py` unless
-   the task explicitly changes the entrypoint.
+4. All manifests dispatch through `scripts/entrypoint.sh`
+   (`serve` runs `python3 web_portal/server.py`; other modes: `cron`,
+   `db-init`, `shell`, `exec`). Keep startup behavior compatible with it
+   unless the task explicitly changes the entrypoint.
 5. Document any environment-variable or operator-facing changes.
 
 Railway-specific docs (6 files):
@@ -255,8 +268,9 @@ Environment variables commonly used:
 - **Database:** `USE_DATABASE`, `DATABASE_URL`, `DATABASE_PUBLIC_URL`,
   `USE_SQLITE`, `SQLITE_PATH`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
   `DB_PASSWORD`
-- **Server:** `PORT`, `HOST`, `BASE_URL`
-- **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`
+- **Server:** `PORT`, `HOST`, `BASE_URL`, `PHINS_ENVIRONMENT`,
+  `POPULATE_DEMO_DATA`
+- **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`, `TEST_PORT`
 - **Ledger:** `ENABLE_LEDGER_PERSISTENCE`, `LEDGER_PERSISTENCE_VERBOSE`,
   `LEDGER_PERSISTENCE_LOG_INTERVAL`
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
@@ -274,8 +288,12 @@ Operational notes:
 - `web_portal/server.py` defaults `PORT` to `8000`
 - when `PORT` is provided, `HOST` is set to `0.0.0.0`; otherwise local runs use
   `127.0.0.1`
-- `Dockerfile` uses `python:3.12-slim`, healthcheck hits `/api/health`
+- `Dockerfile` is multi-stage on `python:3.12-slim`, healthcheck hits
+  `/api/health`, entrypoint is `./scripts/entrypoint.sh serve`
 - `render.yaml` includes a cron service `phins-monthly-auto-pay`
+  (`./scripts/entrypoint.sh cron`)
+- `entrypoint.sh db-init` refuses to seed demo data when
+  `PHINS_ENVIRONMENT=production` (forces `POPULATE_DEMO_DATA=false`)
 
 ## 8) Testing Playbook
 
@@ -299,15 +317,18 @@ bash RUN_ALL_TESTS.sh
 Important test harness facts:
 
 - **Root `conftest.py`** starts an embedded `ThreadingHTTPServer` on
-  `127.0.0.1:8000` with `PortalHandler`; sets env defaults
-  (`USE_DATABASE=false`, `USE_SQLITE=true`, `PHINS_TEST_MODE=true`,
-  `TEST_BASE_URL=http://localhost:8000`)
+  `127.0.0.1` with `PortalHandler`; sets env defaults
+  (`USE_DATABASE=false`, `USE_SQLITE=true`, `PHINS_TEST_MODE=true`)
+- Port selection: honors a `TEST_PORT` env override, prefers `8000`, and
+  falls back to a free kernel-assigned port if `8000` is busy; the bound
+  port is published via `TEST_PORT` and `TEST_BASE_URL`, so tests should
+  read `TEST_BASE_URL` rather than hardcoding `http://localhost:8000`
 - **`tests/conftest.py`** only adds `sys.path` and sets `PHINS_TEST_MODE`; it
   does **not** start the server
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 85 test files under `tests/`, 11 root-level `test_*.py` files
+- 120 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -322,9 +343,12 @@ referenced files, commands, paths, and ports still exist.
   of the API extension modules; verify actual wiring rather than assuming.
 - Handler initialization, port assumptions, or shared module state can break many
   tests because pytest starts a real embedded `PortalHandler` server.
-- `supplier_repository.py` bundles multiple repository classes (suppliers,
-  invitations, offers, orders, documents, supply-chain ledger); changes there
-  can have a wide blast radius.
+- `supplier_repository.py` and `marketplace_repository.py` each bundle many
+  repository classes (suppliers/invitations/offers/orders/documents/ledger,
+  and wallet/payments/journal/settlements/claims/outbox respectively);
+  changes there can have a wide blast radius.
+- Hardcoding `http://localhost:8000` in tests breaks parallel or busy-port
+  runs; read `TEST_BASE_URL` instead.
 - The two `conftest.py` files (root vs `tests/`) serve different purposes;
   putting server setup in `tests/conftest.py` will not apply to root-level
   test files.
@@ -364,4 +388,4 @@ If you update this file again:
 
 ---
 
-Last updated: May 5, 2026
+Last updated: June 10, 2026
