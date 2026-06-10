@@ -406,12 +406,13 @@ svg { display: block; width: 100%; height: auto; }
   ];
   var UOF_COLORS = ["#1d4ed8","#0ea5e9","#6d28d9","#0f766e","#b45309","#dc2626","#475569","#94a3b8"];
   // 5-year forecast horizon: from the plan/meeting month through 31 Dec of the
-  // final plan year (minimum a full 60-month window).
-  var HORIZON = (function () {
-    var s = new Date();
+  // final plan year. Derived from the same month-start the model loops over so
+  // the forecast ends exactly at Dec of FINAL_YEAR without overshooting.
+  function HORIZON() {
+    var s = planStartDate();
     var m = (FINAL_YEAR - s.getFullYear()) * 12 + (11 - s.getMonth()) + 1;
-    return Math.max(m, 60);
-  })();
+    return Math.max(m, 1);
+  }
 
   // ============================================================
   // Helpers
@@ -491,7 +492,8 @@ svg { display: block; width: 100%; height: auto; }
     // pre-launch window, so deploy the build budget up-front in the first month.
     if (buildMonths === 0) buildMonths = 1;
     var months = [], cash = cfg.round, minCash = cash, minIdx = -1;
-    for (var i = 0; i < HORIZON; i++) {
+    var horizon = HORIZON();
+    for (var i = 0; i < horizon; i++) {
       var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
       var buildSpend = 0, opex = 0, gwp = 0, netRev = 0, pol = 0;
       if (i < buildMonths) {
@@ -637,10 +639,11 @@ svg { display: block; width: 100%; height: auto; }
 
   function ganttChart(mm) {
     var start = mm.start;
+    var horizon = HORIZON();
     function mIdx(date) {
       return (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth());
     }
-    function clip(v) { return Math.max(0, Math.min(HORIZON, v)); }
+    function clip(v) { return Math.max(0, Math.min(horizon, v)); }
     var rows = [
       { n: "Gate 0–1 · Seed close, co-founder & legal terms", s: new Date(2026, 5, 1), e: new Date(2026, 8, 30), c: "#1d4ed8" },
       { n: "Gate 2 · Platform launch set + actuarial sign-off", s: new Date(2026, 5, 1), e: new Date(2026, 11, 31), c: "#0ea5e9" },
@@ -653,25 +656,25 @@ svg { display: block; width: 100%; height: auto; }
       { n: "Scale to 28,000 · EBITDA-positive (2029)", s: new Date(2029, 0, 1), e: new Date(2029, 11, 31), c: "#0b2545" },
       { n: "Multi-market expansion preparation", s: new Date(2029, 0, 1), e: new Date(2030, 5, 30), c: "#94a3b8" },
       { n: "Scale to 55,000 policies (2030)", s: new Date(2030, 0, 1), e: new Date(2030, 11, 31), c: "#b45309" },
-      { n: "Scale to 100,000 · multi-market readiness (2031)", s: new Date(2031, 0, 1), e: new Date(start.getFullYear(), start.getMonth() + HORIZON, 0), c: "#15803d" }
+      { n: "Scale to 100,000 · multi-market readiness (2031)", s: new Date(2031, 0, 1), e: new Date(start.getFullYear(), start.getMonth() + horizon, 0), c: "#15803d" }
     ];
     var W = 560, rowH = 22, padL = 218, padT = 26, padB = 20;
     var H = padT + rows.length * rowH + padB;
-    var span = W - padL - 8, mw = span / HORIZON;
+    var span = W - padL - 8, mw = span / horizon;
     var out = svgOpen(W, H);
     // month grid (every 6 months) + adaptive labels for the 5-year horizon
-    var gLblStep = HORIZON > 48 ? 12 : 6;
-    for (var i = 0; i <= HORIZON; i += 6) {
+    var gLblStep = horizon > 48 ? 12 : 6;
+    for (var i = 0; i <= horizon; i += 6) {
       var gx = padL + i * mw;
       out += '<line x1="' + gx + '" y1="' + (padT - 8) + '" x2="' + gx + '" y2="' + (H - padB + 4) + '" stroke="#e2e8f0" stroke-width="1"/>';
-      if (i < HORIZON && i % gLblStep === 0) {
+      if (i < horizon && i % gLblStep === 0) {
         var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
         out += txt(gx + 2, padT - 12, monthLabel(d), 7.4, "#64748b");
       }
     }
     // launch line
     var li = mIdx(PLAN.launch);
-    if (li >= 0 && li <= HORIZON) {
+    if (li >= 0 && li <= horizon) {
       var lx = padL + li * mw;
       out += '<line x1="' + lx + '" y1="' + (padT - 8) + '" x2="' + lx + '" y2="' + (H - padB + 4) + '" stroke="#15803d" stroke-width="1.4" stroke-dasharray="5 3"/>';
     }
@@ -688,8 +691,8 @@ svg { display: block; width: 100%; height: auto; }
       }
     });
     out += txt(2, H - 5, "Horizon: " + monthLabel(start) + " → " +
-      monthLabel(new Date(start.getFullYear(), start.getMonth() + HORIZON - 1, 1)) +
-      " (5-year forecast · " + HORIZON + " months from the meeting / plan date)", 7.6, "#64748b");
+      monthLabel(new Date(start.getFullYear(), start.getMonth() + horizon - 1, 1)) +
+      " (5-year forecast · " + horizon + " months from the meeting / plan date)", 7.6, "#64748b");
     return out + "</svg>";
   }
 
@@ -951,8 +954,8 @@ svg { display: block; width: 100%; height: auto; }
       "</strong> (" + fmtShort(cfg.round) + " seed / build" +
       (mm.seriesANeed > 0 ? " + " + fmtShort(mm.seriesANeed) + " scale-up burn bridged by the 2027 Series A" : ", no further capital required on this configuration") + ").";
 
-    $("bp-gantt-title").textContent = "5-year execution Gantt (" + HORIZON + " months) — " + monthLabel(mm.start) + " → " +
-      monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON - 1, 1));
+    $("bp-gantt-title").textContent = "5-year execution Gantt (" + HORIZON() + " months) — " + monthLabel(mm.start) + " → " +
+      monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
     $("bp-chart-gantt").innerHTML = ganttChart(mm);
     $("bp-chart-policies").innerHTML = policiesChart(mm);
 
