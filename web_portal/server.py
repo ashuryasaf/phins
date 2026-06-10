@@ -48445,7 +48445,11 @@ def _repair_hydrated_ledger_chain(
                         f"   ⚠️  DB ledger chain reconcile skipped: "
                         f"{db_summary.get('reason')}"
                     )
-            elif not pre.get('chain_valid'):
+            else:
+                # Autorepair disabled: reconciliation is skipped regardless of
+                # the in-memory chain state. Always surface the manual hint —
+                # a valid JSON-hydrated memory chain can still mask rows that
+                # remain divergent in SQL for direct (BI/actuarial) consumers.
                 print(
                     "   ℹ️  DB rows retained as forensic history "
                     "(PHINS_LEDGER_DB_AUTOREPAIR=false); run "

@@ -28,15 +28,23 @@ class PlatformLedgerRepository(BaseRepository[PlatformLedgerEntry]):
         except Exception:
             return None
 
-    def get_all_by_sequence(self, limit: int = 10000) -> List[PlatformLedgerEntry]:
-        """Return entries ordered by sequence_no ascending, suitable for full hydration."""
+    def get_all_by_sequence(self, limit: Optional[int] = None) -> List[PlatformLedgerEntry]:
+        """Return entries ordered by sequence_no ascending, suitable for full hydration.
+
+        ``limit=None`` (the default) returns every row. A positive ``limit``
+        caps the scan, but capping is unsafe for full-chain hydration or
+        reconciliation: once the table grows past the cap the omitted rows are
+        mis-classified as missing (re-inserted on PK conflict, or left out of
+        memory so appends advance from a stale ``sequence_no``).
+        """
         try:
-            return (
+            query = (
                 self.session.query(PlatformLedgerEntry)
                 .order_by(PlatformLedgerEntry.sequence_no.asc())
-                .limit(limit)
-                .all()
             )
+            if limit is not None and limit > 0:
+                query = query.limit(limit)
+            return query.all()
         except Exception:
             return []
 

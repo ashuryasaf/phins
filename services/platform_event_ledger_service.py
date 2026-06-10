@@ -339,7 +339,7 @@ class PlatformEventLedgerService:
     def persist_chain_to_db(
         self,
         backup_path: Optional[str] = None,
-        limit: int = 100000,
+        limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Write the validated in-memory chain back to ``platform_ledger_entries``.
 
@@ -517,7 +517,7 @@ class PlatformEventLedgerService:
             summary["reason"] = str(exc)
             return summary
 
-    def hydrate_from_db(self, limit: int = 10000) -> int:
+    def hydrate_from_db(self, limit: Optional[int] = None) -> int:
         """Load existing platform_ledger rows from SQL into the in-memory ledger.
 
         Used after a fresh container start when the JSON persistence file is
