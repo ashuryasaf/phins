@@ -120,7 +120,7 @@ svg { display: block; width: 100%; height: auto; }
     <div class="kpi"><div class="v" id="bp-kpi-pre">—</div><div class="l">Pre-money</div></div>
     <div class="kpi"><div class="v" id="bp-kpi-post">—</div><div class="l">Post-money</div></div>
     <div class="kpi"><div class="v" id="bp-kpi-stake">—</div><div class="l" id="bp-kpi-stake-lbl">Investor stake</div></div>
-    <div class="kpi"><div class="v" id="bp-kpi-rev29">—</div><div class="l">2029 net revenue</div></div>
+    <div class="kpi"><div class="v" id="bp-kpi-rev29">—</div><div class="l">2031 net revenue</div></div>
     <div class="kpi"><div class="v" id="bp-kpi-moic">—</div><div class="l">Base-case investor MOIC</div></div>
   </div>
 </div>
@@ -166,6 +166,7 @@ svg { display: block; width: 100%; height: auto; }
     <tr><td><strong>TAM</strong></td><td>~4.5M working-age adults × <span class="bp-money" data-ils="3600">₪3,600</span> (illustrative full-penetration ceiling)</td><td class="num"><span class="bp-moneyB" data-ils="16200000000">₪16.2B</span></td></tr>
     <tr><td><strong>SAM</strong></td><td>~5% open to a digital severity / LTC top-up</td><td class="num"><span class="bp-moneyM" data-ils="810000000">₪810M</span></td></tr>
     <tr><td><strong>SOM (3-yr)</strong></td><td>28,000 active policies at EoY 2029 (run-rate GWP)</td><td class="num"><span class="bp-moneyM" data-ils="100800000">₪100.8M</span></td></tr>
+    <tr><td><strong>SOM (5-yr)</strong></td><td>100,000 active policies at EoY 2031 (run-rate GWP) — high-growth default</td><td class="num"><span class="bp-moneyM" data-ils="360000000">₪360M</span></td></tr>
   </tbody>
 </table>
 <p>Israel is the strongest first narrative; the same platform is pre-modelled for the USA, Canada, Europe, Portugal, Japan, and the Middle East as later markets — the unicorn path is the multiple of one platform across many regulated markets.</p>
@@ -182,10 +183,11 @@ svg { display: block; width: 100%; height: auto; }
 <table>
   <tbody>
     <tr><td>Sales start</td><td>1 Jan 2027 (build phase before)</td></tr>
+    <tr><td>Forecast horizon</td><td>5 years (2027–2031) · high-growth default</td></tr>
     <tr><td>Average annual premium</td><td><span class="bp-money" data-ils="3600">₪3,600</span> (<span class="bp-money" data-ils="300">₪300</span> / mo)</td></tr>
     <tr><td>PHINS take rate on GWP</td><td>25%</td></tr>
-    <tr><td>Active policies — EoY 2027 / 28 / 29</td><td>4,000 / 12,000 / 28,000</td></tr>
-    <tr><td>Avg in-force during year</td><td>2,000 / 8,000 / 20,000</td></tr>
+    <tr><td>Active policies — EoY 2027 / 28 / 29 / 30 / 31</td><td>4,000 / 12,000 / 28,000 / 55,000 / 100,000</td></tr>
+    <tr><td>Avg in-force during year</td><td>2,000 / 8,000 / 20,000 / 41,500 / 77,500</td></tr>
     <tr><td>Blended CAC (incl. advertising)</td><td>≈ <span class="bp-money" data-ils="650">₪650</span> / policy</td></tr>
     <tr><td>Annual churn</td><td>8%</td></tr>
     <tr><td>Seed / build round (the ask)</td><td id="bp-assum-round">—</td></tr>
@@ -220,7 +222,7 @@ svg { display: block; width: 100%; height: auto; }
 </div>
 <div class="callout" id="bp-runway-callout">—</div>
 
-<h2><span class="secno">8.</span>Milestone execution gates (Israel) &amp; 42-month plan</h2>
+<h2><span class="secno">8.</span>Milestone execution gates (Israel) &amp; 5-year growth plan</h2>
 <ol>
   <li><strong>Gate 0 · Q3 2026</strong> — funding closed; co-founder &amp; Chief Actuary onboarded.</li>
   <li><strong>Gate 1 · Q3 2026</strong> — legal terms: policy wording, IP, reinsurance term sheet, carrier / MGA structure.</li>
@@ -230,34 +232,36 @@ svg { display: block; width: 100%; height: auto; }
   <li><strong>Gate 5 · 1 Jan 2027</strong> — commercial launch; sales begin.</li>
   <li><strong>Gate 6 · Q2 2027</strong> — first 1,000 policies; unit economics validated.</li>
   <li><strong>Gate 7 · Q4 2027</strong> — 4,000 policies; Series A readiness.</li>
+  <li><strong>Gate 8 · 2028–2029</strong> — scale to 12,000 → 28,000 policies; EBITDA-positive (2029).</li>
+  <li><strong>Gate 9 · 2030–2031</strong> — high-growth scale-up to 55,000 → 100,000 policies; multi-market readiness.</li>
 </ol>
 <div class="chart-card">
-  <div class="ct" id="bp-gantt-title">42-month execution Gantt</div>
-  <div class="cs" id="bp-gantt-sub">Horizon starts at the meeting / plan date and spans 42 months; bars use the adjusted forecast data.</div>
+  <div class="ct" id="bp-gantt-title">5-year execution Gantt</div>
+  <div class="cs" id="bp-gantt-sub">Horizon starts at the meeting / plan date and spans the full 5-year forecast (through Dec 2031); bars use the adjusted forecast data.</div>
   <div id="bp-chart-gantt"></div>
 </div>
 <div class="chart-card">
-  <div class="ct">Active-policy growth across the 42-month horizon</div>
-  <div class="cs">Monthly in-force trajectory interpolated from the EoY plan points (4,000 / 12,000 / 28,000).</div>
+  <div class="ct">Active-policy growth across the 5-year horizon</div>
+  <div class="cs">Monthly in-force trajectory interpolated from the EoY plan points (4,000 / 12,000 / 28,000 / 55,000 / 100,000).</div>
   <div id="bp-chart-policies"></div>
 </div>
 
-<h2><span class="secno">9.</span>Financial projection (Israel, <span class="bp-cur-sym">₪</span>)</h2>
+<h2><span class="secno">9.</span>Financial projection (Israel, 5-year, <span class="bp-cur-sym">₪</span>)</h2>
 <table>
-  <thead><tr><th>Line item</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
+  <thead><tr><th>Line item</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr></thead>
   <tbody>
-    <tr><td>Active policies (EoY)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td></tr>
-    <tr><td>Avg in-force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td></tr>
-    <tr><td>GWP (earned)</td><td class="num bp-money" data-ils="7200000">7,200,000</td><td class="num bp-money" data-ils="28800000">28,800,000</td><td class="num bp-money" data-ils="72000000">72,000,000</td></tr>
-    <tr><td><strong>PHINS net revenue (25%)</strong></td><td class="num bp-money" data-ils="1800000"><strong>1,800,000</strong></td><td class="num bp-money" data-ils="7200000"><strong>7,200,000</strong></td><td class="num bp-money" data-ils="18000000"><strong>18,000,000</strong></td></tr>
-    <tr><td>Operating cost</td><td class="num bp-money" data-ils="-5400000">(5,400,000)</td><td class="num bp-money" data-ils="-9000000">(9,000,000)</td><td class="num bp-money" data-ils="-14400000">(14,400,000)</td></tr>
-    <tr><td><strong>EBITDA</strong></td><td class="num bp-money" data-ils="-3600000"><strong>(3,600,000)</strong></td><td class="num bp-money" data-ils="-1800000"><strong>(1,800,000)</strong></td><td class="num bp-money" data-ils="3600000"><strong>3,600,000</strong></td></tr>
-    <tr><td>EBITDA margin</td><td class="num">−200%</td><td class="num">−25%</td><td class="num">+20%</td></tr>
+    <tr><td>Active policies (EoY)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td><td class="num">55,000</td><td class="num">100,000</td></tr>
+    <tr><td>Avg in-force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td><td class="num">41,500</td><td class="num">77,500</td></tr>
+    <tr><td>GWP (earned)</td><td class="num bp-money" data-ils="7200000">7,200,000</td><td class="num bp-money" data-ils="28800000">28,800,000</td><td class="num bp-money" data-ils="72000000">72,000,000</td><td class="num bp-money" data-ils="149400000">149,400,000</td><td class="num bp-money" data-ils="279000000">279,000,000</td></tr>
+    <tr><td><strong>PHINS net revenue (25%)</strong></td><td class="num bp-money" data-ils="1800000"><strong>1,800,000</strong></td><td class="num bp-money" data-ils="7200000"><strong>7,200,000</strong></td><td class="num bp-money" data-ils="18000000"><strong>18,000,000</strong></td><td class="num bp-money" data-ils="37350000"><strong>37,350,000</strong></td><td class="num bp-money" data-ils="69750000"><strong>69,750,000</strong></td></tr>
+    <tr><td>Operating cost</td><td class="num bp-money" data-ils="-5400000">(5,400,000)</td><td class="num bp-money" data-ils="-9000000">(9,000,000)</td><td class="num bp-money" data-ils="-14400000">(14,400,000)</td><td class="num bp-money" data-ils="-24000000">(24,000,000)</td><td class="num bp-money" data-ils="-38000000">(38,000,000)</td></tr>
+    <tr><td><strong>EBITDA</strong></td><td class="num bp-money" data-ils="-3600000"><strong>(3,600,000)</strong></td><td class="num bp-money" data-ils="-1800000"><strong>(1,800,000)</strong></td><td class="num bp-money" data-ils="3600000"><strong>3,600,000</strong></td><td class="num bp-money" data-ils="13350000"><strong>13,350,000</strong></td><td class="num bp-money" data-ils="31750000"><strong>31,750,000</strong></td></tr>
+    <tr><td>EBITDA margin</td><td class="num">−200%</td><td class="num">−25%</td><td class="num">+20%</td><td class="num">+36%</td><td class="num">+46%</td></tr>
   </tbody>
 </table>
 <div class="chart-card">
-  <div class="ct">GWP, PHINS net revenue and EBITDA — 2027–2029</div>
-  <div class="cs">All bars convert with the selected display currency; EBITDA turns positive in 2029.</div>
+  <div class="ct">GWP, PHINS net revenue and EBITDA — 2027–2031</div>
+  <div class="cs">All bars convert with the selected display currency; EBITDA turns positive in 2029 and compounds with operating leverage through 2031.</div>
   <div id="bp-chart-pnl"></div>
 </div>
 <p id="bp-cum-capital">Cumulative capital to EBITDA-positive ≈ <strong>₪11.4M</strong>. Plan: seed now; Series A in 2027 for scale-up.</p>
@@ -271,16 +275,16 @@ svg { display: block; width: 100%; height: auto; }
   proves the product is reinsurable at plan volumes.
 </p>
 <table id="bp-carrier-table">
-  <thead><tr><th>Carrier-level line (<span class="bp-cur-sym">₪</span>)</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
+  <thead><tr><th>Carrier-level line (<span class="bp-cur-sym">₪</span>)</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr></thead>
   <tbody><!-- rendered by script --></tbody>
 </table>
 <div class="chart-card">
-  <div class="ct">Premiums vs expected claims vs reinsurance — 2027–2029</div>
+  <div class="ct">Premiums vs expected claims vs reinsurance — 2027–2031</div>
   <div class="cs">Grouped by year: GWP, expected claims (risk premium), ceded reinsurance premium and PHINS net revenue.</div>
   <div id="bp-chart-carrier"></div>
 </div>
 
-<h3>Quarterly forecast — 42 months from the plan date</h3>
+<h3>Quarterly forecast — 5-year horizon from the plan date</h3>
 <table id="bp-q-table">
   <thead><tr>
     <th>Quarter</th><th class="num">Policies (EoQ)</th><th class="num">GWP</th><th class="num">PHINS net rev</th>
@@ -300,8 +304,8 @@ svg { display: block; width: 100%; height: auto; }
   <strong>The unicorn math.</strong> <span id="bp-unicorn-text">—</span>
 </div>
 <div class="chart-card">
-  <div class="ct">Investor return scenarios (exit on 2029 net-revenue multiples)</div>
-  <div class="cs" id="bp-moic-sub">MOIC on the selected position at 3× / 4× / 6× / 10× 2029 net revenue; 4× matches the actuarial valuation-simulation default.</div>
+  <div class="ct">Investor return scenarios (exit on 2031 net-revenue multiples)</div>
+  <div class="cs" id="bp-moic-sub">MOIC on the selected position at 3× / 4× / 6× / 10× 2031 net revenue (5-year plan exit); 4× matches the actuarial valuation-simulation default exit multiple.</div>
   <div id="bp-chart-moic"></div>
 </div>
 
@@ -337,8 +341,9 @@ svg { display: block; width: 100%; height: auto; }
   $ / € equivalents convert at a live exchange rate (Alpha Vantage forex, with a labelled static fallback ≈ 1 USD = ₪3.70) and
   every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance.
   This document reads the same configuration as the Deal &amp; Valuation Configurator, so the build budget reconciles exactly to the
-  configured round; the income model derives every line from the tested-assumptions table (₪3,600 average premium, 25% take rate,
-  stated in-force counts); carrier-level claims and reinsurance lines use the PHINS actuarial portfolio-simulation defaults
+  configured round; the five-year (2027–2031) high-growth income model derives every line from the tested-assumptions table
+  (₪3,600 average premium, 25% take rate, stated in-force counts); carrier-level claims and reinsurance lines use the PHINS
+  actuarial portfolio-simulation defaults
   (15% expense loading, 10% profit margin, 35% hedge share, 1.12× pricing load); and all deal structures price or convert on the
   single configured pre-money / post-money basis. PHINS is modelled as a digital MGA / platform earning a take rate on premium,
   so claims reserves are not booked as PHINS revenue.
@@ -366,15 +371,19 @@ svg { display: block; width: 100%; height: auto; }
     }
   } catch (e) {}
 
-  // Plan constants — identical to the pitch-dashboard income model.
+  // Plan constants — 5-year high-growth default. 2027–2029 are identical to
+  // the pitch-dashboard income model; 2030–2031 extend the trajectory with
+  // operating leverage (avg in-force = midpoint of the EoY ramp).
   var PLAN = {
     premium: 3600, monthlyPremium: 300, takeRate: 0.25,
-    years: [2027, 2028, 2029],
-    eoyPolicies: [4000, 12000, 28000],
-    avgInForce: [2000, 8000, 20000],
-    opex: [5400000, 9000000, 14400000],
+    years: [2027, 2028, 2029, 2030, 2031],
+    eoyPolicies: [4000, 12000, 28000, 55000, 100000],
+    avgInForce: [2000, 8000, 20000, 41500, 77500],
+    opex: [5400000, 9000000, 14400000, 24000000, 38000000],
     launch: new Date(2027, 0, 1)
   };
+  var LAST_YI = PLAN.years.length - 1;
+  var FINAL_YEAR = PLAN.years[LAST_YI];
   // Carrier-level / portfolio-simulation alignment (actuarial engine defaults).
   var ACT = {
     expenseLoading: 0.15, profitMargin: 0.10,
@@ -396,7 +405,14 @@ svg { display: block; width: 100%; height: auto; }
     // + Contingency (remainder)
   ];
   var UOF_COLORS = ["#1d4ed8","#0ea5e9","#6d28d9","#0f766e","#b45309","#dc2626","#475569","#94a3b8"];
-  var HORIZON = 42; // months
+  // 5-year forecast horizon: from the plan/meeting month through 31 Dec of the
+  // final plan year. Derived from the same month-start the model loops over so
+  // the forecast ends exactly at Dec of FINAL_YEAR without overshooting.
+  function HORIZON() {
+    var s = planStartDate();
+    var m = (FINAL_YEAR - s.getFullYear()) * 12 + (11 - s.getMonth()) + 1;
+    return Math.max(m, 1);
+  }
 
   // ============================================================
   // Helpers
@@ -453,7 +469,7 @@ svg { display: block; width: 100%; height: auto; }
   }
 
   // ============================================================
-  // 42-month model from the plan/meeting date
+  // 5-year monthly model from the plan/meeting date
   // ============================================================
   function planStartDate() {
     var d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
@@ -463,9 +479,9 @@ svg { display: block; width: 100%; height: auto; }
     if (d < PLAN.launch) return 0;
     var y = d.getFullYear(), mi = d.getMonth();
     var yi = y - 2027;
-    if (yi > 2) return PLAN.eoyPolicies[2];
+    if (yi > LAST_YI) return PLAN.eoyPolicies[LAST_YI];
     var start = yi <= 0 ? 0 : PLAN.eoyPolicies[yi - 1];
-    var end = PLAN.eoyPolicies[Math.min(yi, 2)];
+    var end = PLAN.eoyPolicies[Math.min(yi, LAST_YI)];
     return start + (end - start) * ((mi + 1) / 12);
   }
   function monthlyModel() {
@@ -476,14 +492,15 @@ svg { display: block; width: 100%; height: auto; }
     // pre-launch window, so deploy the build budget up-front in the first month.
     if (buildMonths === 0) buildMonths = 1;
     var months = [], cash = cfg.round, minCash = cash, minIdx = -1;
-    for (var i = 0; i < HORIZON; i++) {
+    var horizon = HORIZON();
+    for (var i = 0; i < horizon; i++) {
       var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
       var buildSpend = 0, opex = 0, gwp = 0, netRev = 0, pol = 0;
       if (i < buildMonths) {
         buildSpend = cfg.round / buildMonths;
       }
       if (d >= PLAN.launch) {
-        var yi = Math.min(Math.max(d.getFullYear() - 2027, 0), 2);
+        var yi = Math.min(Math.max(d.getFullYear() - 2027, 0), LAST_YI);
         // average in-force during the month (midpoint of the linear ramp;
         // policiesAt returns 0 for any pre-launch month)
         var startPol = policiesAt(new Date(d.getFullYear(), d.getMonth(), 0));
@@ -601,9 +618,10 @@ svg { display: block; width: 100%; height: auto; }
         break;
       }
     }
-    // x labels (every 6 months)
+    // x labels (adaptive density for the 5-year horizon)
+    var lblStep = months.length > 48 ? 12 : 6;
     months.forEach(function (m, i) {
-      if (i % 6 === 0) out += txt(padL + i * iw + iw / 2, H - padB + 13, monthLabel(m.d), 7.6, "#64748b", "middle");
+      if (i % lblStep === 0) out += txt(padL + i * iw + iw / 2, H - padB + 13, monthLabel(m.d), 7.6, "#64748b", "middle");
     });
     // axes labels
     out += txt(4, padT + 8, fmtShort(maxBar), 7.6, "#64748b");
@@ -621,10 +639,11 @@ svg { display: block; width: 100%; height: auto; }
 
   function ganttChart(mm) {
     var start = mm.start;
+    var horizon = HORIZON();
     function mIdx(date) {
       return (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth());
     }
-    function clip(v) { return Math.max(0, Math.min(HORIZON, v)); }
+    function clip(v) { return Math.max(0, Math.min(horizon, v)); }
     var rows = [
       { n: "Gate 0–1 · Seed close, co-founder & legal terms", s: new Date(2026, 5, 1), e: new Date(2026, 8, 30), c: "#1d4ed8" },
       { n: "Gate 2 · Platform launch set + actuarial sign-off", s: new Date(2026, 5, 1), e: new Date(2026, 11, 31), c: "#0ea5e9" },
@@ -635,24 +654,27 @@ svg { display: block; width: 100%; height: auto; }
       { n: "Gate 7 · 4,000 policies · Series A readiness", s: new Date(2027, 6, 1), e: new Date(2027, 11, 31), c: "#dc2626" },
       { n: "Scale to 12,000 policies (2028)", s: new Date(2028, 0, 1), e: new Date(2028, 11, 31), c: "#475569" },
       { n: "Scale to 28,000 · EBITDA-positive (2029)", s: new Date(2029, 0, 1), e: new Date(2029, 11, 31), c: "#0b2545" },
-      { n: "Multi-market expansion preparation", s: new Date(2029, 0, 1), e: new Date(start.getFullYear(), start.getMonth() + HORIZON, 0), c: "#94a3b8" }
+      { n: "Multi-market expansion preparation", s: new Date(2029, 0, 1), e: new Date(2030, 5, 30), c: "#94a3b8" },
+      { n: "Scale to 55,000 policies (2030)", s: new Date(2030, 0, 1), e: new Date(2030, 11, 31), c: "#b45309" },
+      { n: "Scale to 100,000 · multi-market readiness (2031)", s: new Date(2031, 0, 1), e: new Date(start.getFullYear(), start.getMonth() + horizon, 0), c: "#15803d" }
     ];
     var W = 560, rowH = 22, padL = 218, padT = 26, padB = 20;
     var H = padT + rows.length * rowH + padB;
-    var span = W - padL - 8, mw = span / HORIZON;
+    var span = W - padL - 8, mw = span / horizon;
     var out = svgOpen(W, H);
-    // month grid + labels every 6 months, year shading
-    for (var i = 0; i <= HORIZON; i += 6) {
+    // month grid (every 6 months) + adaptive labels for the 5-year horizon
+    var gLblStep = horizon > 48 ? 12 : 6;
+    for (var i = 0; i <= horizon; i += 6) {
       var gx = padL + i * mw;
       out += '<line x1="' + gx + '" y1="' + (padT - 8) + '" x2="' + gx + '" y2="' + (H - padB + 4) + '" stroke="#e2e8f0" stroke-width="1"/>';
-      if (i < HORIZON) {
+      if (i < horizon && i % gLblStep === 0) {
         var d = new Date(start.getFullYear(), start.getMonth() + i, 1);
         out += txt(gx + 2, padT - 12, monthLabel(d), 7.4, "#64748b");
       }
     }
     // launch line
     var li = mIdx(PLAN.launch);
-    if (li >= 0 && li <= HORIZON) {
+    if (li >= 0 && li <= horizon) {
       var lx = padL + li * mw;
       out += '<line x1="' + lx + '" y1="' + (padT - 8) + '" x2="' + lx + '" y2="' + (H - padB + 4) + '" stroke="#15803d" stroke-width="1.4" stroke-dasharray="5 3"/>';
     }
@@ -669,7 +691,8 @@ svg { display: block; width: 100%; height: auto; }
       }
     });
     out += txt(2, H - 5, "Horizon: " + monthLabel(start) + " → " +
-      monthLabel(new Date(start.getFullYear(), start.getMonth() + HORIZON - 1, 1)) + " (" + HORIZON + " months from the meeting / plan date)", 7.6, "#64748b");
+      monthLabel(new Date(start.getFullYear(), start.getMonth() + horizon - 1, 1)) +
+      " (5-year forecast · " + horizon + " months from the meeting / plan date)", 7.6, "#64748b");
     return out + "</svg>";
   }
 
@@ -689,8 +712,9 @@ svg { display: block; width: 100%; height: auto; }
     out += '<path d="' + area + '" fill="#1d4ed8" opacity="0.12"/>';
     var pts = months.map(function (m, i) { return (padL + i * iw).toFixed(1) + "," + y(m.policies).toFixed(1); }).join(" ");
     out += '<polyline points="' + pts + '" fill="none" stroke="#1d4ed8" stroke-width="2.4"/>';
+    var pLblStep = months.length > 48 ? 12 : 6;
     months.forEach(function (m, i) {
-      if (i % 6 === 0) out += txt(padL + i * iw, H - padB + 13, monthLabel(m.d), 7.4, "#64748b", "middle");
+      if (i % pLblStep === 0) out += txt(padL + i * iw, H - padB + 13, monthLabel(m.d), 7.4, "#64748b", "middle");
     });
     // EoY markers
     months.forEach(function (m, i) {
@@ -785,7 +809,7 @@ svg { display: block; width: 100%; height: auto; }
   }
 
   function renderCarrier() {
-    var ys = [0, 1, 2].map(carrierYear);
+    var ys = PLAN.years.map(function (_, i) { return carrierYear(i); });
     function row(label, key, strong, paren) {
       var cells = ys.map(function (c) {
         var v = c[key];
@@ -857,7 +881,7 @@ svg { display: block; width: 100%; height: auto; }
   }
 
   function renderUnicorn(m, sel) {
-    var rev29 = PLAN.avgInForce[2] * PLAN.premium * PLAN.takeRate; // 18M
+    var revFinal = PLAN.avgInForce[LAST_YI] * PLAN.premium * PLAN.takeRate; // 2031 net revenue
     var mults = [
       { label: "3× (conservative)", mult: 3, color: "#94a3b8" },
       { label: "4× (actuarial base)", mult: 4, color: "#1d4ed8" },
@@ -867,13 +891,14 @@ svg { display: block; width: 100%; height: auto; }
     var capital = sel.capital;
     var stake = sel.stake > 0 ? sel.stake : m.eqStake;
     var scen = mults.map(function (s) {
-      var exitVal = rev29 * s.mult;
+      var exitVal = revFinal * s.mult;
       return { label: s.label, color: s.color, exitVal: exitVal, moic: capital > 0 ? (exitVal * stake) / capital : 0 };
     });
     $("bp-chart-moic").innerHTML = moicChart(scen);
     var base = scen[1], multi = scen[3];
     $("bp-unicorn-text").innerHTML =
-      "Israel alone takes 2029 net revenue to " + fmtShort(rev29) + " — at the actuarial-simulation base exit multiple (4×) the equity is worth " +
+      "The five-year high-growth plan takes " + FINAL_YEAR + " net revenue to " + fmtShort(revFinal) +
+      " — at the actuarial-simulation base exit multiple (4×) the equity is worth " +
       fmtShort(base.exitVal) + ", a <strong>" + base.moic.toFixed(1) + "× return</strong> on the selected position. The same platform is pre-modelled " +
       "for the USA, Canada, Europe, Japan and the Middle East; replicating the Israeli book across two to three of those markets puts PHINS on a " +
       "<strong>" + fmtShort(1000000000) + "+ valuation trajectory</strong> — at a 10× multi-market re-rating this seed position returns ≈ <strong>" +
@@ -899,7 +924,7 @@ svg { display: block; width: 100%; height: auto; }
     $("bp-kpi-post").textContent = fmtShort(m.post);
     $("bp-kpi-stake").textContent = pct(sel.stake);
     $("bp-kpi-stake-lbl").textContent = sel.lbl;
-    $("bp-kpi-rev29").textContent = fmtShort(PLAN.avgInForce[2] * PLAN.premium * PLAN.takeRate);
+    $("bp-kpi-rev29").textContent = fmtShort(PLAN.avgInForce[LAST_YI] * PLAN.premium * PLAN.takeRate);
     $("bp-cover-ask").textContent = fmtMoney(cfg.round) + " seed / build round on " + fmtMoney(cfg.preMoney) +
       " pre-money (" + fmtMoney(m.post) + " post)";
     var basisNote = cfg.valBasis === "actuarial" && cfg.valProvenance ? " (actuarial sim · P" + cfg.valProvenance.percentile + ")" :
@@ -929,8 +954,8 @@ svg { display: block; width: 100%; height: auto; }
       "</strong> (" + fmtShort(cfg.round) + " seed / build" +
       (mm.seriesANeed > 0 ? " + " + fmtShort(mm.seriesANeed) + " scale-up burn bridged by the 2027 Series A" : ", no further capital required on this configuration") + ").";
 
-    $("bp-gantt-title").textContent = HORIZON + "-month execution Gantt — " + monthLabel(mm.start) + " → " +
-      monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON - 1, 1));
+    $("bp-gantt-title").textContent = "5-year execution Gantt (" + HORIZON() + " months) — " + monthLabel(mm.start) + " → " +
+      monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
     $("bp-chart-gantt").innerHTML = ganttChart(mm);
     $("bp-chart-policies").innerHTML = policiesChart(mm);
 
