@@ -210,8 +210,9 @@ def test_investor_business_plan_meeting_adjustments():
     assert "phins.investor.cfg.v1" in bp
     assert 'id="bp-uof-table"' in bp
     assert 'id="bp-chart-burn"' in bp
-    # 42-month gantt + forecast charts/tables
-    assert 'id="bp-chart-gantt"' in bp and "42" in bp
+    # 5-year (2027-2031) gantt + forecast charts/tables
+    assert 'id="bp-chart-gantt"' in bp and "5-year" in bp
+    assert "2031" in bp and "100,000" in bp and "55,000" in bp
     assert 'id="bp-chart-policies"' in bp and 'id="bp-chart-pnl"' in bp
     # premiums / claims / reinsurance forecast on the portfolio-simulation basis
     assert 'id="bp-carrier-table"' in bp and 'id="bp-chart-carrier"' in bp
