@@ -243,8 +243,11 @@ class BillingCreditService:
         # Transaction history
         self._credit_transactions: List[Dict[str, Any]] = []
         
-        # Thread safety
-        self._lock = threading.Lock()
+        # Thread safety (RLock: withdraw_credit / transfer_to_wallet /
+        # apply_to_bill acquire the lock and then call
+        # get_customer_credit_balance, which acquires it again from the same
+        # thread — a plain Lock deadlocks the request thread forever)
+        self._lock = threading.RLock()
         
         logger.info("Billing credit service initialized")
     
