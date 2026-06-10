@@ -187,12 +187,42 @@ def test_pitch_dashboard_meeting_diary():
 def test_investor_business_plan_doc():
     bp = _read(STATIC / "internal" / "phins-investor-business-plan.html")
     # standard fintech angel/investor business-plan sections
-    for section in ("Founder", "Problem", "Solution", "Market &amp; TAM", "Business model",
+    # ("Problem" was renamed to "The Need" per investor-meeting adjustments)
+    for section in ("Founder", "The Need", "Solution", "Market &amp; TAM", "Business model",
                     "Use of funds", "Milestone execution gates", "Financial projection",
                     "The ask &amp; deal structures"):
         assert section in bp, f"business plan missing section: {section}"
-    # integrity: round + valuation basis stated
+    # integrity: round + valuation basis stated (static fallback before JS sync)
     assert "6,000,000" in bp and "24,000,000" in bp
+
+
+def test_investor_business_plan_meeting_adjustments():
+    bp = _read(STATIC / "internal" / "phins-investor-business-plan.html")
+    # founder identity
+    assert "Asaf Ashury, Adv. &amp; Insurance Broker" in bp
+    assert "who has developed" in bp
+    # removed texts
+    assert "Prepared for:" not in bp
+    assert "64+ deployed modules" not in bp
+    assert "AI-native" not in bp and "AI-enhanced" in bp
+    assert ">2. Problem<" not in bp
+    # adjustable use-of-funds + burn pace synced to the deal configurator
+    assert "phins.investor.cfg.v1" in bp
+    assert 'id="bp-uof-table"' in bp
+    assert 'id="bp-chart-burn"' in bp
+    # 42-month gantt + forecast charts/tables
+    assert 'id="bp-chart-gantt"' in bp and "42" in bp
+    assert 'id="bp-chart-policies"' in bp and 'id="bp-chart-pnl"' in bp
+    # premiums / claims / reinsurance forecast on the portfolio-simulation basis
+    assert 'id="bp-carrier-table"' in bp and 'id="bp-chart-carrier"' in bp
+    assert "/actuary-dashboard.html" in bp
+    assert 'id="bp-q-table"' in bp
+    # live FX + deal table synced from the configurator
+    assert "/api/fx/rates" in bp and 'id="bp-deal-body"' in bp
+    # the shared assistant widget (Admin AI Mic) must not be injected:
+    # the opt-out marker keeps _inject_ui_clarity_script from adding it
+    assert "ui-clarity.js" in bp
+    assert "Admin AI Mic" not in bp
 
 
 def test_il_pitch_links_data_room():
