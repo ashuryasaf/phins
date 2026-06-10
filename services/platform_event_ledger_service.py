@@ -302,15 +302,23 @@ class PlatformEventLedgerService:
             normalized.setdefault("entity_type", normalized.get("entity_type") or "transaction")
             normalized.setdefault("entity_id", normalized.get("entity_id") or normalized.get("id"))
             normalized.setdefault("ledger_type", normalized.get("ledger_type") or "event")
+            # Capture pre-repair values BEFORE mutating so needs_update reflects
+            # real drift (previously these comparisons ran after assignment and
+            # three of the four conditions were dead code, under-counting
+            # repaired entries in the startup log).
+            original_sequence = normalized.get("sequence_no")
+            original_previous = normalized.get("previous_hash")
+            original_hash = normalized.get("entry_hash")
+            original_version = normalized.get("ledger_version")
             normalized["sequence_no"] = sequence_no
             normalized["previous_hash"] = previous_hash
             normalized["ledger_version"] = LEDGER_VERSION
             expected_hash = compute_entry_hash(normalized, previous_hash)
             needs_update = (
-                normalized.get("sequence_no") != sequence_no
-                or normalized.get("previous_hash") != previous_hash
-                or normalized.get("entry_hash") != expected_hash
-                or normalized.get("ledger_version") != LEDGER_VERSION
+                original_sequence != sequence_no
+                or original_previous != previous_hash
+                or original_hash != expected_hash
+                or original_version != LEDGER_VERSION
             )
 
             normalized["entry_hash"] = expected_hash
@@ -327,6 +335,187 @@ class PlatformEventLedgerService:
 
     def get_integrity_summary(self) -> Dict[str, Any]:
         return reconcile_ledger_entries(self.transaction_ledger.values())
+
+    def persist_chain_to_db(
+        self,
+        backup_path: Optional[str] = None,
+        limit: int = 100000,
+    ) -> Dict[str, Any]:
+        """Write the validated in-memory chain back to ``platform_ledger_entries``.
+
+        After ``hydrate_from_db()`` + ``ensure_hash_chain()`` the in-memory
+        ledger holds the canonical recomputed chain, but the SQL rows still
+        carry the divergent ``sequence_no`` / ``previous_hash`` / ``entry_hash``
+        values written by older deployments. Leaving them in place means:
+
+        * every container restart re-reports the same "N broken links,
+          M sequence gaps" startup warning, and
+        * new appends chain off the repaired memory hashes, so the DB-side
+          divergence compounds with every deploy generation, and
+        * any consumer that reads the DB directly (BI/actuarial) sees a
+          permanently broken chain.
+
+        This method reconciles the DB rows with the in-memory chain in a
+        single transaction:
+
+        * rows whose chain fields diverge are updated (payload refreshed to
+          the full in-memory entry so future hydration recomputes the exact
+          same hashes),
+        * memory entries missing from the DB (e.g. a failed ``_persist_entry``
+          write) are inserted so the persisted chain has no holes,
+        * untouched rows are left as-is.
+
+        Safety:
+
+        * Refuses to run unless the in-memory chain validates cleanly.
+        * When ``backup_path`` is provided, the original chain fields of every
+          row about to change are snapshotted to JSON before mutating
+          (best-effort; failure to write the backup is logged, not fatal,
+          because the overwritten values are precisely the divergent ones).
+        * All mutations commit atomically; on failure the session rolls back
+          and the DB is left untouched.
+        """
+        summary: Dict[str, Any] = {
+            "applied": False,
+            "rows_updated": 0,
+            "rows_inserted": 0,
+            "rows_unchanged": 0,
+            "rows_orphaned": 0,
+            "backup_path": None,
+            "reason": "",
+        }
+
+        if not self._database_enabled():
+            summary["reason"] = "database disabled"
+            return summary
+
+        if not self.transaction_ledger:
+            summary["reason"] = "in-memory ledger empty"
+            return summary
+
+        integrity = reconcile_ledger_entries(self.transaction_ledger.values())
+        if not integrity.get("chain_valid"):
+            summary["reason"] = (
+                "in-memory chain invalid; refusing to persist "
+                f"({len(integrity.get('broken_links', []))} broken links, "
+                f"{len(integrity.get('sequence_gaps', []))} sequence gaps)"
+            )
+            return summary
+
+        try:
+            from database.models import PlatformLedgerEntry
+
+            db_factory = self._get_db_manager_factory()
+            with db_factory() as db:
+                rows = db.platform_ledger.get_all_by_sequence(limit=limit) or []
+                id_to_row = {row.id: row for row in rows if row is not None}
+                memory_ids = set(self.transaction_ledger.keys())
+                summary["rows_orphaned"] = sum(
+                    1 for row_id in id_to_row if row_id not in memory_ids
+                )
+
+                updates = []
+                inserts = []
+                for entry in sort_ledger_entries(self.transaction_ledger.values()):
+                    entry_id = str(entry.get("id") or "")
+                    if not entry_id:
+                        continue
+                    row = id_to_row.get(entry_id)
+                    if row is None:
+                        inserts.append(entry)
+                        continue
+                    if (
+                        row.sequence_no != entry.get("sequence_no")
+                        or (row.previous_hash or "") != str(entry.get("previous_hash") or "")
+                        or (row.entry_hash or "") != str(entry.get("entry_hash") or "")
+                    ):
+                        updates.append((row, entry))
+                    else:
+                        summary["rows_unchanged"] += 1
+
+                if not updates and not inserts:
+                    summary["reason"] = "db chain already consistent"
+                    return summary
+
+                if backup_path and updates:
+                    try:
+                        snapshot = [
+                            {
+                                "id": row.id,
+                                "sequence_no": row.sequence_no,
+                                "previous_hash": row.previous_hash,
+                                "entry_hash": row.entry_hash,
+                            }
+                            for row, _ in updates
+                        ]
+                        with open(backup_path, "w", encoding="utf-8") as fh:
+                            json.dump(
+                                {
+                                    "backed_up_at": datetime.utcnow().isoformat(),
+                                    "rows": snapshot,
+                                },
+                                fh,
+                                indent=2,
+                                default=str,
+                            )
+                        summary["backup_path"] = backup_path
+                    except OSError as backup_exc:
+                        logger.warning(
+                            "Ledger chain backup write failed (%s); proceeding — "
+                            "overwritten values are the divergent ones",
+                            backup_exc,
+                        )
+
+                session = db.platform_ledger.session
+                for row, entry in updates:
+                    row.sequence_no = entry["sequence_no"]
+                    row.previous_hash = entry.get("previous_hash") or ""
+                    row.entry_hash = entry["entry_hash"]
+                    row.payload = json.dumps(entry, sort_keys=True, default=str)
+
+                for entry in inserts:
+                    timestamp_value = entry.get("timestamp")
+                    if isinstance(timestamp_value, str):
+                        try:
+                            timestamp_value = datetime.fromisoformat(timestamp_value)
+                        except ValueError:
+                            timestamp_value = None
+                    session.add(
+                        PlatformLedgerEntry(
+                            id=entry["id"],
+                            sequence_no=entry["sequence_no"],
+                            timestamp=timestamp_value or datetime.utcnow(),
+                            ledger_type=entry.get("ledger_type") or "event",
+                            event_type=entry.get("event_type") or entry.get("type") or "event",
+                            entity_type=entry.get("entity_type"),
+                            entity_id=entry.get("entity_id"),
+                            customer_id=entry.get("customer_id"),
+                            actor=entry.get("actor"),
+                            amount=_safe_float(entry.get("amount", 0.0)),
+                            currency=entry.get("currency") or "USD",
+                            status=entry.get("status") or "recorded",
+                            source_system=entry.get("source_system") or "web_portal",
+                            previous_hash=entry.get("previous_hash") or "",
+                            entry_hash=entry.get("entry_hash"),
+                            payload=json.dumps(entry, sort_keys=True, default=str),
+                        )
+                    )
+
+                try:
+                    db.commit()
+                except Exception as commit_exc:
+                    db.rollback()
+                    summary["reason"] = f"commit failed, rolled back: {commit_exc}"
+                    return summary
+
+                summary["applied"] = True
+                summary["rows_updated"] = len(updates)
+                summary["rows_inserted"] = len(inserts)
+                return summary
+        except Exception as exc:
+            logger.warning("Platform ledger DB chain reconcile failed: %s", exc)
+            summary["reason"] = str(exc)
+            return summary
 
     def hydrate_from_db(self, limit: int = 10000) -> int:
         """Load existing platform_ledger rows from SQL into the in-memory ledger.
