@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="robots" content="noindex,nofollow"/>
-<title>PHINS — Fintech Business Plan (Angel / Investor)</title>
+<title data-i18n="page.title">PHINS — Fintech Business Plan (Angel / Investor)</title>
 <!--
   This is a counterparty-facing print document.
   Marker: ui-clarity.js — keep this token in the file so the server-side
@@ -81,6 +81,30 @@ strong { color: var(--navy); }
 .toolbar .fxnote { font-size: 7.8pt; color: #5a6b86; }
 svg { display: block; width: 100%; height: auto; }
 .fine { font-size: 8.5pt; color: #5a6b86; }
+
+/* ============================================================
+   Hebrew / RTL mode — activated when cfg.currency === "ILS".
+   The html[dir="rtl"] root flip is the single source of truth;
+   every override below scopes to that selector so toggling
+   currency back to USD / EUR fully restores the original layout.
+   ============================================================ */
+html[dir="rtl"] body {
+  font-family: "Segoe UI", "Arial Hebrew", "David", "Frank Ruehl", "Times New Roman", Arial, sans-serif;
+  direction: rtl;
+}
+html[dir="rtl"] p { text-align: justify; }
+html[dir="rtl"] th, html[dir="rtl"] td { text-align: right; }
+html[dir="rtl"] td.num, html[dir="rtl"] th.num { text-align: left; }
+html[dir="rtl"] h2 .secno { margin-right: 0; margin-left: 6px; }
+html[dir="rtl"] ul, html[dir="rtl"] ol { margin: 6px 22px 10px 0; }
+html[dir="rtl"] .hero .tagline { text-align: right; }
+html[dir="rtl"] .callout { border-left: none; border-right: 3px solid var(--green); border-radius: 8px 0 0 8px; }
+html[dir="rtl"] .callout.unicorn { border-right-color: var(--accent); }
+/* SVG charts contain mixed Latin numerics and Hebrew labels: keep them LTR
+   so the numeric axes and currency-symbol prefixes render correctly. */
+html[dir="rtl"] svg { direction: ltr; }
+html[dir="rtl"] .confidential { letter-spacing: 0; }
+
 @media print {
   .toolbar { display: none; }
   body { padding: 0; }
@@ -91,139 +115,139 @@ svg { display: block; width: 100%; height: auto; }
 </head>
 <body>
 <div class="toolbar">
-  <button type="button" onclick="window.print()">🖨️ Print / Save as PDF</button>
-  <a class="secondary" href="/pitch-dashboard.html#investor-meeting-section">← Back to Investor Meeting</a>
+  <button type="button" onclick="window.print()" data-i18n="tb.print">🖨️ Print / Save as PDF</button>
+  <a class="secondary" href="/pitch-dashboard.html#investor-meeting-section" data-i18n="tb.back">← Back to Investor Meeting</a>
   <span style="flex:1;"></span>
-  <span style="font-size:7.8pt;color:#5a6b86;">Display currency</span>
+  <span style="font-size:7.8pt;color:#5a6b86;" data-i18n="tb.cur">Display currency</span>
   <button type="button" class="cur-btn" data-cur="ILS">₪ ILS</button>
   <button type="button" class="cur-btn" data-cur="USD">$ USD</button>
   <button type="button" class="cur-btn" data-cur="EUR">€ EUR</button>
   <span class="fxnote" id="bp-fx-note"></span>
 </div>
-<div class="confidential">Confidential — For the Recipient Only</div>
+<div class="confidential" data-i18n="confidential.banner">Confidential — For the Recipient Only</div>
 
 <div class="hero">
   <div class="badges">
-    <span class="badge">🔒 Confidential</span>
-    <span class="badge">🦄 Category-defining insurtech</span>
+    <span class="badge" data-i18n="badge.confidential">🔒 Confidential</span>
+    <span class="badge" data-i18n="badge.category">🦄 Category-defining insurtech</span>
     <span class="badge" id="bp-hero-date">Plan as of —</span>
-    <span class="badge" id="bp-hero-sync">⚙ Synced to Deal Configurator</span>
+    <span class="badge" id="bp-hero-sync" data-i18n="badge.synced">⚙ Synced to Deal Configurator</span>
   </div>
-  <h1>PHINS — Business Plan</h1>
-  <p class="tagline">
+  <h1 data-i18n="hero.h1">PHINS — Business Plan</h1>
+  <p class="tagline" data-i18n="hero.tagline">
     The operating system for severe-disability &amp; long-term-care insurance — one AI-enhanced platform that underwrites,
     adjudicates, bills, reinsures and proves every figure on an append-only, hash-chained ledger. Developed once, deployable
     across Israel, the USA, Canada, Europe and beyond.
   </p>
   <div class="kpis">
-    <div class="kpi"><div class="v" id="bp-kpi-ask">—</div><div class="l">The ask (seed / build)</div></div>
-    <div class="kpi"><div class="v" id="bp-kpi-pre">—</div><div class="l">Pre-money</div></div>
-    <div class="kpi"><div class="v" id="bp-kpi-post">—</div><div class="l">Post-money</div></div>
+    <div class="kpi"><div class="v" id="bp-kpi-ask">—</div><div class="l" data-i18n="kpi.ask">The ask (seed / build)</div></div>
+    <div class="kpi"><div class="v" id="bp-kpi-pre">—</div><div class="l" data-i18n="kpi.pre">Pre-money</div></div>
+    <div class="kpi"><div class="v" id="bp-kpi-post">—</div><div class="l" data-i18n="kpi.post">Post-money</div></div>
     <div class="kpi"><div class="v" id="bp-kpi-stake">—</div><div class="l" id="bp-kpi-stake-lbl">Investor stake</div></div>
-    <div class="kpi"><div class="v" id="bp-kpi-rev29">—</div><div class="l">2031 net revenue</div></div>
-    <div class="kpi"><div class="v" id="bp-kpi-moic">—</div><div class="l">Base-case investor MOIC</div></div>
+    <div class="kpi"><div class="v" id="bp-kpi-rev29">—</div><div class="l" data-i18n="kpi.rev31">2031 net revenue</div></div>
+    <div class="kpi"><div class="v" id="bp-kpi-moic">—</div><div class="l" data-i18n="kpi.moic">Base-case investor MOIC</div></div>
   </div>
 </div>
 
-<div class="cover">
-  <strong>Company:</strong> PHINS — Personal Health Insurance &amp; Savings (digital-first severity disability &amp; long-term-care platform)<br/>
-  <strong>Stage:</strong> Developed platform, pre-revenue · Israel launch planned for 1 January 2027<br/>
-  <strong>The ask:</strong> <span id="bp-cover-ask">₪6,000,000 seed / build round on ₪24,000,000 pre-money (₪30,000,000 post)</span>
+<div class="cover" id="bp-cover">
+  <strong data-i18n="cover.company.lbl">Company:</strong> <span data-i18n="cover.company.val">PHINS — Personal Health Insurance &amp; Savings (digital-first severity disability &amp; long-term-care platform)</span><br/>
+  <strong data-i18n="cover.stage.lbl">Stage:</strong> <span data-i18n="cover.stage.val">Developed platform, pre-revenue · Israel launch planned for 1 January 2027</span><br/>
+  <strong data-i18n="cover.ask.lbl">The ask:</strong> <span id="bp-cover-ask">₪6,000,000 seed / build round on ₪24,000,000 pre-money (₪30,000,000 post)</span>
 </div>
 
-<h2><span class="secno">1.</span>Founder</h2>
-<p>
+<h2><span class="secno">1.</span><span data-i18n="sec.1.title">Founder</span></h2>
+<p data-i18n="sec.1.body">
   PHINS is founder-led by <strong>Asaf Ashury, Adv. &amp; Insurance Broker</strong>, who has developed the platform end-to-end:
   underwriting, claims, billing, reinsurance scaffolding, an actuarial pricing engine, a community-foundation layer, and an
   append-only, hash-chained ledger for data integrity. The product is live at <strong>www.phins.ai</strong>.
 </p>
 
-<h2><span class="secno">2.</span>The Need</h2>
-<ul>
+<h2><span class="secno">2.</span><span data-i18n="sec.2.title">The Need</span></h2>
+<ul data-i18n-list="sec.2.bullets">
   <li>Severe-disability and long-term-care (LTC) cover is <strong>under-served and hard to buy</strong>: legacy carriers run manual underwriting, fragmented data, and slow claims.</li>
   <li>Ageing populations and rising disability prevalence increase demand faster than incumbents can serve it.</li>
   <li>Buyers distrust opaque claims decisions; carriers struggle with fraud and severity validation.</li>
   <li>Israel specifically has high private LTC interest and a home-care orientation, but no clean digital-first severity product.</li>
 </ul>
 
-<h2><span class="secno">3.</span>Solution</h2>
-<p>
+<h2><span class="secno">3.</span><span data-i18n="sec.3.title">Solution</span></h2>
+<p data-i18n="sec.3.body">
   PHINS is an <strong>AI-enhanced insurance platform</strong> engineered specifically for severe disability and LTC. It unifies underwriting,
   claims adjudication, billing, reinsurance, care navigation, and analytics in one digital-first operating system, with a
   transparent, auditable ledger so every balance and decision is reproducible.
 </p>
-<ul>
+<ul data-i18n-list="sec.3.bullets">
   <li><strong>AI underwriting</strong> — automated risk scoring from structured and unstructured medical data.</li>
   <li><strong>Claims intelligence</strong> — fraud / severity validation with multi-year look-back rules.</li>
   <li><strong>Objective severity trigger</strong> — permanent 3+ ADL standard keeps the claims promise tight and reinsurable.</li>
   <li><strong>Data integrity</strong> — append-only, hash-chained ledger; AI / BI may recommend but never post.</li>
 </ul>
 
-<h2><span class="secno">4.</span>Market &amp; TAM (Israel launch)</h2>
+<h2><span class="secno">4.</span><span data-i18n="sec.4.title">Market &amp; TAM (Israel launch)</span></h2>
 <table>
-  <thead><tr><th>Layer</th><th>Definition</th><th class="num">Annual premium pool</th></tr></thead>
+  <thead><tr><th data-i18n="tam.h.layer">Layer</th><th data-i18n="tam.h.def">Definition</th><th class="num" data-i18n="tam.h.pool">Annual premium pool</th></tr></thead>
   <tbody>
-    <tr><td><strong>TAM</strong></td><td>~4.5M working-age adults × <span class="bp-money" data-ils="3600">₪3,600</span> (illustrative full-penetration ceiling)</td><td class="num"><span class="bp-moneyB" data-ils="16200000000">₪16.2B</span></td></tr>
-    <tr><td><strong>SAM</strong></td><td>~5% open to a digital severity / LTC top-up</td><td class="num"><span class="bp-moneyM" data-ils="810000000">₪810M</span></td></tr>
-    <tr><td><strong>SOM (3-yr)</strong></td><td>28,000 active policies at EoY 2029 (run-rate GWP)</td><td class="num"><span class="bp-moneyM" data-ils="100800000">₪100.8M</span></td></tr>
-    <tr><td><strong>SOM (5-yr)</strong></td><td>100,000 active policies at EoY 2031 (run-rate GWP) — high-growth default</td><td class="num"><span class="bp-moneyM" data-ils="360000000">₪360M</span></td></tr>
+    <tr><td><strong data-i18n="tam.tam.lbl">TAM</strong></td><td data-i18n="tam.tam.def">~4.5M working-age adults × <span class="bp-money" data-ils="3600">₪3,600</span> (illustrative full-penetration ceiling)</td><td class="num"><span class="bp-moneyB" data-ils="16200000000">₪16.2B</span></td></tr>
+    <tr><td><strong data-i18n="tam.sam.lbl">SAM</strong></td><td data-i18n="tam.sam.def">~5% open to a digital severity / LTC top-up</td><td class="num"><span class="bp-moneyM" data-ils="810000000">₪810M</span></td></tr>
+    <tr><td><strong data-i18n="tam.som3.lbl">SOM (3-yr)</strong></td><td data-i18n="tam.som3.def">28,000 active policies at EoY 2029 (run-rate GWP)</td><td class="num"><span class="bp-moneyM" data-ils="100800000">₪100.8M</span></td></tr>
+    <tr><td><strong data-i18n="tam.som5.lbl">SOM (5-yr)</strong></td><td data-i18n="tam.som5.def">100,000 active policies at EoY 2031 (run-rate GWP) — high-growth default</td><td class="num"><span class="bp-moneyM" data-ils="360000000">₪360M</span></td></tr>
   </tbody>
 </table>
-<p>Israel is the strongest first narrative; the same platform is pre-modelled for the USA, Canada, Europe, Portugal, Japan, and the Middle East as later markets — the unicorn path is the multiple of one platform across many regulated markets.</p>
+<p data-i18n="sec.4.note">Israel is the strongest first narrative; the same platform is pre-modelled for the USA, Canada, Europe, Portugal, Japan, and the Middle East as later markets — the unicorn path is the multiple of one platform across many regulated markets.</p>
 
-<h2><span class="secno">5.</span>Business model</h2>
-<p>
+<h2><span class="secno">5.</span><span data-i18n="sec.5.title">Business model</span></h2>
+<p data-i18n="sec.5.body">
   PHINS operates as a <strong>digital MGA / platform</strong>, earning a <strong>blended 25% take rate</strong> (MGA commission + technology fee)
   on gross written premium. Underwriting reserves and claims sit with the risk carrier / reinsurer, so they are <em>not</em> booked as
   PHINS revenue — this keeps the model conservative and capital-light. Additional revenue lines: SaaS platform fees, data services,
   and a PHINS-for-Actuaries B2B vertical.
 </p>
 
-<h2><span class="secno">6.</span>Tested assumptions</h2>
-<table>
+<h2><span class="secno">6.</span><span data-i18n="sec.6.title">Tested assumptions</span></h2>
+<table id="bp-assum-table">
   <tbody>
-    <tr><td>Sales start</td><td>1 Jan 2027 (build phase before)</td></tr>
-    <tr><td>Forecast horizon</td><td>5 years (2027–2031) · high-growth default</td></tr>
-    <tr><td>Average annual premium</td><td><span class="bp-money" data-ils="3600">₪3,600</span> (<span class="bp-money" data-ils="300">₪300</span> / mo)</td></tr>
-    <tr><td>PHINS take rate on GWP</td><td>25%</td></tr>
-    <tr><td>Active policies — EoY 2027 / 28 / 29 / 30 / 31</td><td>4,000 / 12,000 / 28,000 / 55,000 / 100,000</td></tr>
-    <tr><td>Avg in-force during year</td><td>2,000 / 8,000 / 20,000 / 41,500 / 77,500</td></tr>
-    <tr><td>Blended CAC (incl. advertising)</td><td>≈ <span class="bp-money" data-ils="650">₪650</span> / policy</td></tr>
-    <tr><td>Annual churn</td><td>8%</td></tr>
-    <tr><td>Seed / build round (the ask)</td><td id="bp-assum-round">—</td></tr>
-    <tr><td>Pre-money valuation</td><td id="bp-assum-pre">—</td></tr>
-    <tr><td>Carrier-level technical basis</td><td>Expense loading 15% · profit margin 10% · expected claims = risk premium (PHINS actuarial engine defaults)</td></tr>
-    <tr><td>Reinsurance basis</td><td>35% hedge share of expected claims · 1.12× technical pricing load · 1% broker + 0.25% platform fees (portfolio-simulation defaults)</td></tr>
+    <tr><td data-i18n="assum.start.lbl">Sales start</td><td data-i18n="assum.start.val">1 Jan 2027 (build phase before)</td></tr>
+    <tr><td data-i18n="assum.horizon.lbl">Forecast horizon</td><td data-i18n="assum.horizon.val">5 years (2027–2031) · high-growth default</td></tr>
+    <tr><td data-i18n="assum.avg.lbl">Average annual premium</td><td data-i18n="assum.avg.val"><span class="bp-money" data-ils="3600">₪3,600</span> (<span class="bp-money" data-ils="300">₪300</span> / mo)</td></tr>
+    <tr><td data-i18n="assum.take.lbl">PHINS take rate on GWP</td><td data-i18n="assum.take.val">25%</td></tr>
+    <tr><td data-i18n="assum.eoy.lbl">Active policies — EoY 2027 / 28 / 29 / 30 / 31</td><td data-i18n="assum.eoy.val">4,000 / 12,000 / 28,000 / 55,000 / 100,000</td></tr>
+    <tr><td data-i18n="assum.avgif.lbl">Avg in-force during year</td><td data-i18n="assum.avgif.val">2,000 / 8,000 / 20,000 / 41,500 / 77,500</td></tr>
+    <tr><td data-i18n="assum.cac.lbl">Blended CAC (incl. advertising)</td><td data-i18n="assum.cac.val">≈ <span class="bp-money" data-ils="650">₪650</span> / policy</td></tr>
+    <tr><td data-i18n="assum.churn.lbl">Annual churn</td><td data-i18n="assum.churn.val">8%</td></tr>
+    <tr><td data-i18n="assum.round.lbl">Seed / build round (the ask)</td><td id="bp-assum-round">—</td></tr>
+    <tr><td data-i18n="assum.pre.lbl">Pre-money valuation</td><td id="bp-assum-pre">—</td></tr>
+    <tr><td data-i18n="assum.carrier.lbl">Carrier-level technical basis</td><td data-i18n="assum.carrier.val">Expense loading 15% · profit margin 10% · expected claims = risk premium (PHINS actuarial engine defaults)</td></tr>
+    <tr><td data-i18n="assum.reins.lbl">Reinsurance basis</td><td data-i18n="assum.reins.val">35% hedge share of expected claims · 1.12× technical pricing load · 1% broker + 0.25% platform fees (portfolio-simulation defaults)</td></tr>
   </tbody>
 </table>
 
-<h2 id="bp-uof-title"><span class="secno">7.</span>Use of funds — <span id="bp-uof-round">₪6.0M</span> build budget (to 1 Jan 2027)</h2>
+<h2 id="bp-uof-title"><span class="secno">7.</span><span data-i18n="sec.7.title.pre">Use of funds — </span><span id="bp-uof-round">₪6.0M</span><span data-i18n="sec.7.title.post"> build budget (to 1 Jan 2027)</span></h2>
 <p class="fine" style="margin-top:-2px;">
-  <span class="sync-pill">adjustable · synced</span>&nbsp; This budget is <strong>derived live from the round size</strong> set in the
+  <span class="sync-pill" data-i18n="uof.sync.pill">adjustable · synced</span>&nbsp;<span data-i18n="uof.sync.note">  This budget is <strong>derived live from the round size</strong> set in the
   <a href="/pitch-dashboard.html#investor-configurator">Deal &amp; Valuation Configurator</a>. Change the investment value (or any
   adjustable factor — currency, FX, valuation basis) and every line, share, chart and the burn pace below recompute so the
-  budget always reconciles exactly to the round.
+  budget always reconciles exactly to the round.</span>
 </p>
 <table id="bp-uof-table">
-  <thead><tr><th>Category</th><th class="num" id="bp-uof-cur-h">₪</th><th class="num">Share</th></tr></thead>
+  <thead><tr><th data-i18n="uof.h.cat">Category</th><th class="num" id="bp-uof-cur-h">₪</th><th class="num" data-i18n="uof.h.share">Share</th></tr></thead>
   <tbody><!-- rendered by script --></tbody>
 </table>
 <div class="chart-grid">
   <div class="chart-card">
-    <div class="ct">Build-budget allocation</div>
-    <div class="cs">Shares are fixed; absolute amounts scale with the configured round.</div>
+    <div class="ct" data-i18n="ct.uof">Build-budget allocation</div>
+    <div class="cs" data-i18n="cs.uof">Shares are fixed; absolute amounts scale with the configured round.</div>
     <div id="bp-chart-uof"></div>
   </div>
   <div class="chart-card">
-    <div class="ct">Burn pace — build phase &amp; operating ramp</div>
-    <div class="cs" id="bp-burn-sub">Monthly net cash flow (bars) and cash balance (line); burn is offset post-launch by expected platform cash flow from premiums net of carrier-level claims &amp; reinsurance economics.</div>
+    <div class="ct" data-i18n="ct.burn">Burn pace — build phase &amp; operating ramp</div>
+    <div class="cs" id="bp-burn-sub" data-i18n="cs.burn">Monthly net cash flow (bars) and cash balance (line); burn is offset post-launch by expected platform cash flow from premiums net of carrier-level claims &amp; reinsurance economics.</div>
     <div id="bp-chart-burn"></div>
   </div>
 </div>
 <div class="callout" id="bp-runway-callout">—</div>
 
-<h2><span class="secno">8.</span>Milestone execution gates (Israel) &amp; 5-year growth plan</h2>
-<ol>
+<h2><span class="secno">8.</span><span data-i18n="sec.8.title">Milestone execution gates (Israel) &amp; 5-year growth plan</span></h2>
+<ol data-i18n-list="sec.8.gates">
   <li><strong>Gate 0 · Q3 2026</strong> — funding closed; co-founder &amp; Chief Actuary onboarded.</li>
   <li><strong>Gate 1 · Q3 2026</strong> — legal terms: policy wording, IP, reinsurance term sheet, carrier / MGA structure.</li>
   <li><strong>Gate 2 · Q4 2026</strong> — platform launch set complete; Appointed-Actuary pricing &amp; reserve sign-off.</li>
@@ -237,37 +261,37 @@ svg { display: block; width: 100%; height: auto; }
 </ol>
 <div class="chart-card">
   <div class="ct" id="bp-gantt-title">5-year execution Gantt</div>
-  <div class="cs" id="bp-gantt-sub">Horizon starts at the meeting / plan date and spans the full 5-year forecast (through Dec 2031); bars use the adjusted forecast data.</div>
+  <div class="cs" id="bp-gantt-sub" data-i18n="cs.gantt">Horizon starts at the meeting / plan date and spans the full 5-year forecast (through Dec 2031); bars use the adjusted forecast data.</div>
   <div id="bp-chart-gantt"></div>
 </div>
 <div class="chart-card">
-  <div class="ct">Active-policy growth across the 5-year horizon</div>
-  <div class="cs">Monthly in-force trajectory interpolated from the EoY plan points (4,000 / 12,000 / 28,000 / 55,000 / 100,000).</div>
+  <div class="ct" data-i18n="ct.policies">Active-policy growth across the 5-year horizon</div>
+  <div class="cs" data-i18n="cs.policies">Monthly in-force trajectory interpolated from the EoY plan points (4,000 / 12,000 / 28,000 / 55,000 / 100,000).</div>
   <div id="bp-chart-policies"></div>
 </div>
 
-<h2><span class="secno">9.</span>Financial projection (Israel, 5-year, <span class="bp-cur-sym">₪</span>)</h2>
+<h2><span class="secno">9.</span><span data-i18n="sec.9.title">Financial projection (Israel, 5-year, <span class="bp-cur-sym">₪</span>)</span></h2>
 <table>
-  <thead><tr><th>Line item</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr></thead>
+  <thead><tr><th data-i18n="pnl.h.line">Line item</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr></thead>
   <tbody>
-    <tr><td>Active policies (EoY)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td><td class="num">55,000</td><td class="num">100,000</td></tr>
-    <tr><td>Avg in-force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td><td class="num">41,500</td><td class="num">77,500</td></tr>
-    <tr><td>GWP (earned)</td><td class="num bp-money" data-ils="7200000">7,200,000</td><td class="num bp-money" data-ils="28800000">28,800,000</td><td class="num bp-money" data-ils="72000000">72,000,000</td><td class="num bp-money" data-ils="149400000">149,400,000</td><td class="num bp-money" data-ils="279000000">279,000,000</td></tr>
-    <tr><td><strong>PHINS net revenue (25%)</strong></td><td class="num bp-money" data-ils="1800000"><strong>1,800,000</strong></td><td class="num bp-money" data-ils="7200000"><strong>7,200,000</strong></td><td class="num bp-money" data-ils="18000000"><strong>18,000,000</strong></td><td class="num bp-money" data-ils="37350000"><strong>37,350,000</strong></td><td class="num bp-money" data-ils="69750000"><strong>69,750,000</strong></td></tr>
-    <tr><td>Operating cost</td><td class="num bp-money" data-ils="-5400000">(5,400,000)</td><td class="num bp-money" data-ils="-9000000">(9,000,000)</td><td class="num bp-money" data-ils="-14400000">(14,400,000)</td><td class="num bp-money" data-ils="-24000000">(24,000,000)</td><td class="num bp-money" data-ils="-38000000">(38,000,000)</td></tr>
-    <tr><td><strong>EBITDA</strong></td><td class="num bp-money" data-ils="-3600000"><strong>(3,600,000)</strong></td><td class="num bp-money" data-ils="-1800000"><strong>(1,800,000)</strong></td><td class="num bp-money" data-ils="3600000"><strong>3,600,000</strong></td><td class="num bp-money" data-ils="13350000"><strong>13,350,000</strong></td><td class="num bp-money" data-ils="31750000"><strong>31,750,000</strong></td></tr>
-    <tr><td>EBITDA margin</td><td class="num">−200%</td><td class="num">−25%</td><td class="num">+20%</td><td class="num">+36%</td><td class="num">+46%</td></tr>
+    <tr><td data-i18n="pnl.policies">Active policies (EoY)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td><td class="num">55,000</td><td class="num">100,000</td></tr>
+    <tr><td data-i18n="pnl.avgif">Avg in-force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td><td class="num">41,500</td><td class="num">77,500</td></tr>
+    <tr><td data-i18n="pnl.gwp">GWP (earned)</td><td class="num bp-money" data-ils="7200000">7,200,000</td><td class="num bp-money" data-ils="28800000">28,800,000</td><td class="num bp-money" data-ils="72000000">72,000,000</td><td class="num bp-money" data-ils="149400000">149,400,000</td><td class="num bp-money" data-ils="279000000">279,000,000</td></tr>
+    <tr><td><strong data-i18n="pnl.net">PHINS net revenue (25%)</strong></td><td class="num bp-money" data-ils="1800000"><strong>1,800,000</strong></td><td class="num bp-money" data-ils="7200000"><strong>7,200,000</strong></td><td class="num bp-money" data-ils="18000000"><strong>18,000,000</strong></td><td class="num bp-money" data-ils="37350000"><strong>37,350,000</strong></td><td class="num bp-money" data-ils="69750000"><strong>69,750,000</strong></td></tr>
+    <tr><td data-i18n="pnl.opex">Operating cost</td><td class="num bp-money" data-ils="-5400000">(5,400,000)</td><td class="num bp-money" data-ils="-9000000">(9,000,000)</td><td class="num bp-money" data-ils="-14400000">(14,400,000)</td><td class="num bp-money" data-ils="-24000000">(24,000,000)</td><td class="num bp-money" data-ils="-38000000">(38,000,000)</td></tr>
+    <tr><td><strong data-i18n="pnl.ebitda">EBITDA</strong></td><td class="num bp-money" data-ils="-3600000"><strong>(3,600,000)</strong></td><td class="num bp-money" data-ils="-1800000"><strong>(1,800,000)</strong></td><td class="num bp-money" data-ils="3600000"><strong>3,600,000</strong></td><td class="num bp-money" data-ils="13350000"><strong>13,350,000</strong></td><td class="num bp-money" data-ils="31750000"><strong>31,750,000</strong></td></tr>
+    <tr><td data-i18n="pnl.margin">EBITDA margin</td><td class="num">−200%</td><td class="num">−25%</td><td class="num">+20%</td><td class="num">+36%</td><td class="num">+46%</td></tr>
   </tbody>
 </table>
 <div class="chart-card">
-  <div class="ct">GWP, PHINS net revenue and EBITDA — 2027–2031</div>
-  <div class="cs">All bars convert with the selected display currency; EBITDA turns positive in 2029 and compounds with operating leverage through 2031.</div>
+  <div class="ct" data-i18n="ct.pnl">GWP, PHINS net revenue and EBITDA — 2027–2031</div>
+  <div class="cs" data-i18n="cs.pnl">All bars convert with the selected display currency; EBITDA turns positive in 2029 and compounds with operating leverage through 2031.</div>
   <div id="bp-chart-pnl"></div>
 </div>
 <p id="bp-cum-capital">Cumulative capital to EBITDA-positive ≈ <strong>₪11.4M</strong>. Plan: seed now; Series A in 2027 for scale-up.</p>
 
-<h3>Carrier-level cash flow — premiums, claims &amp; reinsurance (portfolio-simulation basis)</h3>
-<p class="fine">
+<h3 data-i18n="carrier.h3">Carrier-level cash flow — premiums, claims &amp; reinsurance (portfolio-simulation basis)</h3>
+<p class="fine" data-i18n="carrier.note">
   Forecast aligned with the <a href="/actuary-dashboard.html" target="_blank" rel="noopener">PHINS actuarial portfolio simulation</a>:
   gross premium decomposes into risk premium (= expected claims), a 15% expense loading and a 10% profit margin; the reinsurance
   program cedes a 35% hedge share of expected claims at a 1.12× technical pricing load plus 1% broker and 0.25% platform fees.
@@ -275,60 +299,60 @@ svg { display: block; width: 100%; height: auto; }
   proves the product is reinsurable at plan volumes.
 </p>
 <table id="bp-carrier-table">
-  <thead><tr><th>Carrier-level line (<span class="bp-cur-sym">₪</span>)</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr></thead>
+  <thead><tr><th><span data-i18n="carrier.h.line">Carrier-level line</span> (<span class="bp-cur-sym">₪</span>)</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr></thead>
   <tbody><!-- rendered by script --></tbody>
 </table>
 <div class="chart-card">
-  <div class="ct">Premiums vs expected claims vs reinsurance — 2027–2031</div>
-  <div class="cs">Grouped by year: GWP, expected claims (risk premium), ceded reinsurance premium and PHINS net revenue.</div>
+  <div class="ct" data-i18n="ct.carrier">Premiums vs expected claims vs reinsurance — 2027–2031</div>
+  <div class="cs" data-i18n="cs.carrier">Grouped by year: GWP, expected claims (risk premium), ceded reinsurance premium and PHINS net revenue.</div>
   <div id="bp-chart-carrier"></div>
 </div>
 
-<h3>Quarterly forecast — 5-year horizon from the plan date</h3>
+<h3 data-i18n="q.h3">Quarterly forecast — 5-year horizon from the plan date</h3>
 <table id="bp-q-table">
   <thead><tr>
-    <th>Quarter</th><th class="num">Policies (EoQ)</th><th class="num">GWP</th><th class="num">PHINS net rev</th>
-    <th class="num">Build + opex</th><th class="num">Net CF</th><th class="num">Cash (EoQ)</th>
+    <th data-i18n="q.h.q">Quarter</th><th class="num" data-i18n="q.h.pol">Policies (EoQ)</th><th class="num" data-i18n="q.h.gwp">GWP</th><th class="num" data-i18n="q.h.net">PHINS net rev</th>
+    <th class="num" data-i18n="q.h.spend">Build + opex</th><th class="num" data-i18n="q.h.cf">Net CF</th><th class="num" data-i18n="q.h.cash">Cash (EoQ)</th>
   </tr></thead>
   <tbody><!-- rendered by script --></tbody>
 </table>
 
-<h2><span class="secno">10.</span>The ask &amp; deal structures</h2>
+<h2><span class="secno">10.</span><span data-i18n="sec.10.title">The ask &amp; deal structures</span></h2>
 <p id="bp-deal-intro">—</p>
 <table>
-  <thead><tr><th>Structure</th><th class="num">Capital (<span class="bp-cur-sym">₪</span>)</th><th>Investor stake</th><th>Notes</th></tr></thead>
+  <thead><tr><th data-i18n="deal.h.structure">Structure</th><th class="num"><span data-i18n="deal.h.capital">Capital</span> (<span class="bp-cur-sym">₪</span>)</th><th data-i18n="deal.h.stake">Investor stake</th><th data-i18n="deal.h.notes">Notes</th></tr></thead>
   <tbody id="bp-deal-body"><!-- rendered by script --></tbody>
 </table>
 <div class="callout" id="bp-deal-callout">—</div>
 <div class="callout unicorn">
-  <strong>The unicorn math.</strong> <span id="bp-unicorn-text">—</span>
+  <strong data-i18n="unicorn.label">The unicorn math.</strong> <span id="bp-unicorn-text">—</span>
 </div>
 <div class="chart-card">
-  <div class="ct">Investor return scenarios (exit on 2031 net-revenue multiples)</div>
-  <div class="cs" id="bp-moic-sub">MOIC on the selected position at 3× / 4× / 6× / 10× 2031 net revenue (5-year plan exit); 4× matches the actuarial valuation-simulation default exit multiple.</div>
+  <div class="ct" data-i18n="ct.moic">Investor return scenarios (exit on 2031 net-revenue multiples)</div>
+  <div class="cs" id="bp-moic-sub" data-i18n="cs.moic">MOIC on the selected position at 3× / 4× / 6× / 10× 2031 net revenue (5-year plan exit); 4× matches the actuarial valuation-simulation default exit multiple.</div>
   <div id="bp-chart-moic"></div>
 </div>
 
-<h2><span class="secno">11.</span>Team &amp; governance</h2>
-<ul>
+<h2><span class="secno">11.</span><span data-i18n="sec.11.title">Team &amp; governance</span></h2>
+<ul data-i18n-list="sec.11.bullets">
   <li><strong>Founder / CEO</strong> — Asaf Ashury (product, platform, technology).</li>
   <li><strong>Chief Actuary</strong> —</li>
   <li><strong>Active co-founder / Chairman</strong></li>
 </ul>
 
-<h2><span class="secno">12.</span>Risks &amp; mitigations</h2>
+<h2><span class="secno">12.</span><span data-i18n="sec.12.title">Risks &amp; mitigations</span></h2>
 <table>
-  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <thead><tr><th data-i18n="risk.h.risk">Risk</th><th data-i18n="risk.h.mit">Mitigation</th></tr></thead>
   <tbody>
-    <tr><td>Regulatory timeline (IL licensing)</td><td>Gate 4 checkpoint; experienced co-founder &amp; Appointed Actuary; capital released against gates.</td></tr>
-    <tr><td>Distribution / CAC overrun</td><td>Gate 6 unit-economics validation before scale-up spend.</td></tr>
-    <tr><td>Claims severity / fraud</td><td>Objective 3+ ADL trigger; claims-intelligence engine; reinsurance cession (35% hedge share at plan basis).</td></tr>
-    <tr><td>Key-person concentration</td><td>Vesting, documentation, ledger-based reproducibility of platform state.</td></tr>
+    <tr><td data-i18n="risk.r1">Regulatory timeline (IL licensing)</td><td data-i18n="risk.m1">Gate 4 checkpoint; experienced co-founder &amp; Appointed Actuary; capital released against gates.</td></tr>
+    <tr><td data-i18n="risk.r2">Distribution / CAC overrun</td><td data-i18n="risk.m2">Gate 6 unit-economics validation before scale-up spend.</td></tr>
+    <tr><td data-i18n="risk.r3">Claims severity / fraud</td><td data-i18n="risk.m3">Objective 3+ ADL trigger; claims-intelligence engine; reinsurance cession (35% hedge share at plan basis).</td></tr>
+    <tr><td data-i18n="risk.r4">Key-person concentration</td><td data-i18n="risk.m4">Vesting, documentation, ledger-based reproducibility of platform state.</td></tr>
   </tbody>
 </table>
 
-<h2><span class="secno">13.</span>Next steps</h2>
-<ol>
+<h2><span class="secno">13.</span><span data-i18n="sec.13.title">Next steps</span></h2>
+<ol data-i18n-list="sec.13.steps">
   <li>Mutual NDA.</li>
   <li>Select structure (active co-founder preferred) and issue a term sheet.</li>
   <li>Confirmatory diligence: platform demo, pricing model, ledger / data-integrity review.</li>
@@ -336,7 +360,7 @@ svg { display: block; width: 100%; height: auto; }
 </ol>
 
 <hr/>
-<p class="fine" id="bp-integrity-note">
+<p class="fine" id="bp-integrity-note" data-i18n="integrity.note">
   <strong>Data integrity notice.</strong> All figures are forward-looking planning assumptions in ₪ (ILS), the canonical base;
   $ / € equivalents convert at a live exchange rate (Alpha Vantage forex, with a labelled static fallback ≈ 1 USD = ₪3.70) and
   every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance.
@@ -371,6 +395,263 @@ svg { display: block; width: 100%; height: auto; }
     }
   } catch (e) {}
 
+  // ============================================================
+  // i18n — professional Hebrew translation that activates the
+  // moment the investor selects ₪ ILS. USD / EUR keep the original
+  // English copy. Every numeric figure flows through the same
+  // calculation pipeline, so toggling locale is text-only and
+  // preserves flawless data integrity.
+  // ============================================================
+  var I18N_HE = {
+    "page.title": "פיינס — תוכנית עסקית בפינטק (אנג׳ל / משקיע)",
+
+    "tb.print": "🖨️ הדפסה / שמירה כ-PDF",
+    "tb.back": "→ חזרה לפגישת המשקיעים",
+    "tb.cur": "מטבע תצוגה",
+
+    "confidential.banner": "סודי — לעיני הנמען בלבד",
+
+    "badge.confidential": "🔒 סודי",
+    "badge.category": "🦄 אינשורטק מגדיר קטגוריה",
+    "badge.synced": "⚙ מסונכרן עם מחולל העסקה",
+
+    "hero.h1": "פיינס — תוכנית עסקית",
+    "hero.tagline":
+      "מערכת ההפעלה לביטוח נכות סיעודית ולטיפול ארוך-טווח — פלטפורמת בינה מלאכותית אחת המבצעת חיתום, בירור תביעות, גבייה והערכות לביטוח-משנה, ומאמתת כל ספרה ביומן בלתי-משתנה משורשר-גיבוב. נבנתה פעם אחת, ניתנת לפריסה בישראל, בארה״ב, בקנדה, באירופה ומעבר לכך.",
+
+    "kpi.ask": "הגיוס המבוקש (סיד / בנייה)",
+    "kpi.pre": "שווי לפני הכסף",
+    "kpi.post": "שווי לאחר הכסף",
+    "kpi.stake.investor": "אחזקת המשקיע",
+    "kpi.stake.cofounder": "אחזקת שותף-מייסד",
+    "kpi.stake.combined": "אחזקה משולבת",
+    "kpi.rev31": "הכנסות נטו 2031",
+    "kpi.moic": "MOIC משקיע — מקרה בסיס",
+
+    "cover.company.lbl": "החברה:",
+    "cover.company.val": "פיינס — ביטוח בריאות וחיסכון אישי (פלטפורמת נכות סיעודית וטיפול ארוך-טווח בגישה דיגיטלית)",
+    "cover.stage.lbl": "שלב:",
+    "cover.stage.val": "פלטפורמה מפותחת, טרם הכנסות · השקה בישראל מתוכננת ל-1 בינואר 2027",
+    "cover.ask.lbl": "הגיוס המבוקש:",
+
+    "sec.1.title": "המייסד",
+    "sec.1.body":
+      "פיינס מובלת על-ידי מייסדה <strong>עו״ד אסף אשורי, סוכן ביטוח מורשה</strong>, אשר פיתח את הפלטפורמה מקצה לקצה: חיתום, תביעות, גבייה, מסגרת ביטוח-משנה, מנוע תמחור אקטוארי, שכבת קהילה ומוסדות-קהילה, ויומן בלתי-משתנה משורשר-גיבוב לשמירה על שלמות הנתונים. המוצר פעיל באתר <strong>www.phins.ai</strong>.",
+
+    "sec.2.title": "הצורך",
+    "sec.2.bullets": [
+      "כיסויי נכות סיעודית וטיפול ארוך-טווח (LTC) הם <strong>תת-מטופלים וקשים לרכישה</strong>: חברות מבוססות מבצעות חיתום ידני, פועלות מול נתונים מפוצלים ומטפלות בתביעות לאט.",
+      "הזדקנות האוכלוסייה ועלייה בשכיחות נכויות מגדילות את הביקוש מהר יותר מקצב יכולת השירות של חברות הביטוח.",
+      "הציבור אינו סומך על החלטות תביעות אטומות; חברות הביטוח מתקשות באימות הונאה ובקביעת חומרת המקרה.",
+      "בישראל בפרט קיים עניין ציבורי גבוה ב-LTC פרטי וטיית עדפה לטיפול ביתי, אך אין מוצר נכות חמורה דיגיטלי-תחילה ראוי."
+    ],
+
+    "sec.3.title": "הפתרון",
+    "sec.3.body":
+      "פיינס היא <strong>פלטפורמת ביטוח מבוססת בינה מלאכותית</strong>, מהונדסת מהיסוד לנכות חמורה ול-LTC. היא מאחדת חיתום, בירור תביעות, גבייה, ביטוח-משנה, ניווט טיפולי ואנליטיקה למערכת הפעלה דיגיטלית אחת, על-גבי יומן שקוף ובר-ביקורת — כך שכל יתרה וכל החלטה ניתנות לשחזור מלא.",
+    "sec.3.bullets": [
+      "<strong>חיתום מבוסס בינה מלאכותית</strong> — דירוג סיכון אוטומטי מנתונים רפואיים מובנים ובלתי מובנים.",
+      "<strong>אינטליגנציית תביעות</strong> — אימות הונאה וחומרה עם כללי הסתכלות אחורה רב-שנתיים.",
+      "<strong>סף חומרה אובייקטיבי</strong> — תקן 3+ ADL קבוע משמר התחייבות תביעות הדוקה ובת-ביטוח-משנה.",
+      "<strong>שלמות נתונים</strong> — יומן בלתי-משתנה משורשר-גיבוב; ה-AI ויחידת ה-BI ממליצים בלבד, אינם רושמים."
+    ],
+
+    "sec.4.title": "שוק ו-TAM (השקה בישראל)",
+    "tam.h.layer": "שכבה",
+    "tam.h.def": "הגדרה",
+    "tam.h.pool": "מאגר פרמיה שנתי",
+    "tam.tam.lbl": "TAM",
+    "tam.tam.def": "כ-4.5 מ׳ בני-גיל-עבודה × <span class=\"bp-money\" data-ils=\"3600\">₪3,600</span> (תקרה תיאורטית בחדירה מלאה)",
+    "tam.sam.lbl": "SAM",
+    "tam.sam.def": "~5% פתוחים לכיסוי דיגיטלי משלים לנכות חמורה / LTC",
+    "tam.som3.lbl": "SOM (3 שנים)",
+    "tam.som3.def": "28,000 פוליסות פעילות בסוף 2029 (GWP שיעור-ריצה)",
+    "tam.som5.lbl": "SOM (5 שנים)",
+    "tam.som5.def": "100,000 פוליסות פעילות בסוף 2031 (GWP שיעור-ריצה) — ברירת-מחדל לצמיחה גבוהה",
+    "sec.4.note": "ישראל היא הסיפור הראשון החזק ביותר; אותה פלטפורמה ממודלת מראש לארה״ב, קנדה, אירופה, פורטוגל, יפן והמזרח-התיכון כשווקי-המשך — נתיב היוניקורן הוא ההכפלה של פלטפורמה אחת במספר שווקים מפוקחים.",
+
+    "sec.5.title": "מודל עסקי",
+    "sec.5.body":
+      "פיינס פועלת כ-<strong>סוכנות ביטוח דיגיטלית (MGA) / פלטפורמה</strong>, ומפיקה <strong>שיעור-לקיחה משוקלל של 25%</strong> (עמלת MGA + דמי טכנולוגיה) על פרמיה מורווחת ברוטו. עתודות והפסדי תביעות יושבים אצל חברת הביטוח / מבטח-המשנה ולכן <em>אינם</em> נרשמים כהכנסות פיינס — שמירה זו על שמרנות שומרת את המודל קל-הון. ערוצי הכנסה נוספים: דמי שימוש בפלטפורמה (SaaS), שירותי נתונים, וערוץ B2B של פיינס לאקטוארים.",
+
+    "sec.6.title": "הנחות תחת בחינה",
+    "assum.start.lbl": "תחילת מכירות",
+    "assum.start.val": "1 בינואר 2027 (שלב בנייה לפניו)",
+    "assum.horizon.lbl": "אופק תחזית",
+    "assum.horizon.val": "5 שנים (2027–2031) · ברירת-מחדל לצמיחה גבוהה",
+    "assum.avg.lbl": "פרמיה שנתית ממוצעת",
+    "assum.avg.val": "<span class=\"bp-money\" data-ils=\"3600\">₪3,600</span> (<span class=\"bp-money\" data-ils=\"300\">₪300</span> / חודש)",
+    "assum.take.lbl": "שיעור-לקיחה של פיינס על GWP",
+    "assum.take.val": "25%",
+    "assum.eoy.lbl": "פוליסות פעילות — סוף שנה 2027 / 28 / 29 / 30 / 31",
+    "assum.eoy.val": "4,000 / 12,000 / 28,000 / 55,000 / 100,000",
+    "assum.avgif.lbl": "תיק פעיל ממוצע במהלך השנה",
+    "assum.avgif.val": "2,000 / 8,000 / 20,000 / 41,500 / 77,500",
+    "assum.cac.lbl": "CAC משוקלל (כולל פרסום)",
+    "assum.cac.val": "≈ <span class=\"bp-money\" data-ils=\"650\">₪650</span> / פוליסה",
+    "assum.churn.lbl": "נטישה שנתית",
+    "assum.churn.val": "8%",
+    "assum.round.lbl": "סבב סיד / בנייה (הגיוס)",
+    "assum.pre.lbl": "שווי לפני הכסף",
+    "assum.carrier.lbl": "בסיס טכני ברמת חברת הביטוח",
+    "assum.carrier.val": "טעינת הוצאות 15% · שולי רווח 10% · תביעות צפויות = פרמיית סיכון (ברירות-המחדל של המנוע האקטוארי של פיינס)",
+    "assum.reins.lbl": "בסיס ביטוח-משנה",
+    "assum.reins.val": "35% חלק-גידור על תביעות צפויות · טעינה טכנית פי 1.12 · 1% עמלת ברוקר + 0.25% עמלת פלטפורמה (ברירות-מחדל מתוך סימולציית התיק)",
+
+    "sec.7.title.pre": "שימוש בכספים — תקציב בנייה של ",
+    "sec.7.title.post": " (עד 1 בינואר 2027)",
+    "uof.sync.pill": "ניתן להתאמה · מסונכרן",
+    "uof.sync.note":
+      "תקציב זה <strong>נגזר חי מגודל הסבב</strong> שנקבע ב-<a href=\"/pitch-dashboard.html#investor-configurator\">מחולל העסקה והשווי</a>. כל שינוי בערך ההשקעה (או בכל גורם אחר — מטבע, שערי חליפין, בסיס הערכת שווי) מחשב מחדש כל שורה, חלק יחסי, גרף וקצב שריפה, כך שהתקציב מסתנכרן תמיד באופן מדויק עם הסבב.",
+    "uof.h.cat": "קטגוריה",
+    "uof.h.share": "חלק",
+
+    "ct.uof": "הקצאת תקציב הבנייה",
+    "cs.uof": "החלקים היחסיים קבועים; הסכומים המוחלטים מתעדכנים יחד עם הסבב המוגדר.",
+    "ct.burn": "קצב שריפה — שלב הבנייה והעלייה התפעולית",
+    "cs.burn": "תזרים מזומנים נטו חודשי (עמודות) ויתרת מזומנים (קו); השריפה מתקזזת לאחר ההשקה ע״י תזרים פלטפורמה צפוי מפרמיות, בניכוי תביעות ברמת חברת הביטוח וכלכלת ביטוח-משנה.",
+
+    "sec.8.title": "אבני-דרך לביצוע (ישראל) ותוכנית צמיחה ל-5 שנים",
+    "sec.8.gates": [
+      "<strong>שער 0 · רבעון 3 2026</strong> — סגירת מימון; הצטרפות שותף-מייסד ואקטואר ראשי.",
+      "<strong>שער 1 · רבעון 3 2026</strong> — תנאים משפטיים: ניסוח פוליסה, IP, מסמך-תנאי ביטוח-משנה, מבנה חברת ביטוח / MGA.",
+      "<strong>שער 2 · רבעון 4 2026</strong> — סט השקת הפלטפורמה הושלם; אישור תמחור ועתודות ע״י האקטואר הממונה.",
+      "<strong>שער 3 · רבעון 4 2026</strong> — QA, ביקורת אבטחה / בדיקות חדירה, אימות יומן ושלמות נתונים.",
+      "<strong>שער 4 · רבעון 4 2026</strong> — רישוי רגולטורי (רשות שוק ההון, ביטוח וחיסכון) והסכמי הפצה.",
+      "<strong>שער 5 · 1 בינואר 2027</strong> — השקה מסחרית; תחילת מכירות.",
+      "<strong>שער 6 · רבעון 2 2027</strong> — 1,000 פוליסות ראשונות; אימות יחידות כלכליות.",
+      "<strong>שער 7 · רבעון 4 2027</strong> — 4,000 פוליסות; היערכות לסבב Series A.",
+      "<strong>שער 8 · 2028–2029</strong> — הרחבה ל-12,000 → 28,000 פוליסות; EBITDA חיובי (2029).",
+      "<strong>שער 9 · 2030–2031</strong> — האצה לצמיחה גבוהה — 55,000 → 100,000 פוליסות; היערכות רב-שווקית."
+    ],
+    "cs.gantt": "האופק מתחיל בתאריך הפגישה / התוכנית ומתפרש על כל 5 שנות התחזית (עד דצמבר 2031); העמודות משתמשות בנתוני התחזית המעודכנים.",
+    "ct.policies": "צמיחת פוליסות פעילות לאורך אופק 5 השנים",
+    "cs.policies": "מסלול תיק פעיל חודשי באינטרפולציה לנקודות סוף-שנה (4,000 / 12,000 / 28,000 / 55,000 / 100,000).",
+
+    "sec.9.title": "תחזית פיננסית (ישראל, 5 שנים, <span class=\"bp-cur-sym\">₪</span>)",
+    "pnl.h.line": "סעיף",
+    "pnl.policies": "פוליסות פעילות (סוף שנה)",
+    "pnl.avgif": "תיק פעיל ממוצע",
+    "pnl.gwp": "GWP (מורווח)",
+    "pnl.net": "הכנסות נטו לפיינס (25%)",
+    "pnl.opex": "עלות תפעולית",
+    "pnl.ebitda": "EBITDA",
+    "pnl.margin": "שיעור EBITDA",
+    "ct.pnl": "GWP, הכנסות נטו לפיינס ו-EBITDA — 2027–2031",
+    "cs.pnl": "כל העמודות מומרות במטבע התצוגה הנבחר; ה-EBITDA הופך חיובי ב-2029 וצובר תאוצה הודות למינוף תפעולי עד 2031.",
+
+    "carrier.h3": "תזרים ברמת חברת הביטוח — פרמיות, תביעות וביטוח-משנה (על בסיס סימולציית תיק)",
+    "carrier.note":
+      "התחזית מסונכרנת עם <a href=\"/actuary-dashboard.html\" target=\"_blank\" rel=\"noopener\">סימולציית התיק האקטוארי של פיינס</a>: הפרמיה ברוטו מתפרקת לפרמיית סיכון (= תביעות צפויות), טעינת הוצאות של 15% ושולי רווח של 10%; תוכנית ביטוח-המשנה מעבירה לחיתום-משנה 35% מהתביעות הצפויות בטעינה טכנית של פי 1.12 בתוספת 1% עמלת ברוקר ו-0.25% דמי פלטפורמה. תביעות ועתודות יושבות אצל חברת הביטוח / מבטח-המשנה — פיינס רושמת רק את שיעור-הלקיחה שלה — אך מבט זה מכמת את קצב השריפה ומוכיח שהמוצר ניתן לביטוח-משנה בהיקפי התוכנית.",
+    "carrier.h.line": "סעיף ברמת חברת הביטוח",
+    "ct.carrier": "פרמיות מול תביעות צפויות מול ביטוח-משנה — 2027–2031",
+    "cs.carrier": "מקובץ לפי שנה: GWP, תביעות צפויות (פרמיית סיכון), פרמיית ביטוח-משנה מועברת והכנסות נטו לפיינס.",
+
+    "q.h3": "תחזית רבעונית — אופק 5 שנים ממועד התוכנית",
+    "q.h.q": "רבעון",
+    "q.h.pol": "פוליסות (סוף רבעון)",
+    "q.h.gwp": "GWP",
+    "q.h.net": "הכנסות נטו פיינס",
+    "q.h.spend": "בנייה + עלויות תפעול",
+    "q.h.cf": "תזרים נטו",
+    "q.h.cash": "מזומן (סוף רבעון)",
+
+    "sec.10.title": "הגיוס ומבני העסקה",
+    "deal.h.structure": "מבנה",
+    "deal.h.capital": "הון",
+    "deal.h.stake": "אחזקת המשקיע",
+    "deal.h.notes": "הערות",
+    "ct.moic": "תרחישי תשואה למשקיע (יציאה במכפלות הכנסה נטו 2031)",
+    "cs.moic": "MOIC על האחזקה הנבחרת במכפלות פי 3 / 4 / 6 / 10 על הכנסה נטו של 2031 (יציאה בתום תוכנית 5 השנים); פי 4 תואם את מכפלת היציאה המוגדרת כברירת-מחדל בסימולציית הערכת השווי האקטוארית.",
+    "unicorn.label": "חישוב היוניקורן.",
+
+    "sec.11.title": "צוות וממשל תאגידי",
+    "sec.11.bullets": [
+      "<strong>מייסד / מנכ״ל</strong> — אסף אשורי (מוצר, פלטפורמה, טכנולוגיה).",
+      "<strong>אקטואר ראשי</strong> —",
+      "<strong>שותף-מייסד פעיל / יו״ר</strong>"
+    ],
+
+    "sec.12.title": "סיכונים והפחתות",
+    "risk.h.risk": "סיכון",
+    "risk.h.mit": "הפחתה",
+    "risk.r1": "לוח-זמנים רגולטורי (רישוי בישראל)",
+    "risk.m1": "נקודת-ביקורת בשער 4; שותף-מייסד מנוסה ואקטואר ממונה; הון משוחרר כנגד שערים.",
+    "risk.r2": "חריגה בהפצה / CAC",
+    "risk.m2": "אימות יחידות-כלכלה בשער 6 לפני הוצאת כסף להגדלת היקף.",
+    "risk.r3": "חומרת תביעות / הונאה",
+    "risk.m3": "סף 3+ ADL אובייקטיבי; מנוע אינטליגנציית תביעות; הסבת ביטוח-משנה (35% חלק-גידור על-פי בסיס התוכנית).",
+    "risk.r4": "ריכוז סביב אנשי-מפתח",
+    "risk.m4": "הבשלה (Vesting), תיעוד מלא ושחזור מצב פלטפורמה מבוסס יומן.",
+
+    "sec.13.title": "השלבים הבאים",
+    "sec.13.steps": [
+      "NDA הדדי.",
+      "בחירת מבנה (מועדף: שותף-מייסד פעיל) והנפקת מסמך-תנאי-עיקרי (term sheet).",
+      "בדיקת נאותות מאשרת: הדגמת פלטפורמה, מודל תמחור, סקירת יומן ושלמות נתונים.",
+      "סגירת סבב סיד / בנייה; תחילת ביצוע שער 0."
+    ],
+
+    "integrity.note":
+      "<strong>הצהרת שלמות נתונים.</strong> כל הנתונים הם הנחות תכנון צופות-פני-עתיד ב-₪ (שקל), המהווה את הבסיס הקנוני; הערכים ב-$ / € מתקבלים בשער חליפין חי (Alpha Vantage forex, עם ערך-מילוט סטטי מתויג של כ-1 USD = ₪3.70) וכל מטבע תצוגה נגזר ממצב USD יחיד, כך שהמספרים נשמרים עקביים. אלה אינם התחייבויות או הנחיה. מסמך זה קורא את אותה תצורה כמו מחולל העסקה והערכת השווי, ולכן תקציב הבנייה מסתנכרן באופן מדויק עם הסבב המוגדר; מודל ההכנסות בצמיחה גבוהה ל-5 שנים (2027–2031) נגזר באופן מלא מטבלת ההנחות שנבחנו (פרמיה ממוצעת של ₪3,600, שיעור-לקיחה של 25%, מספרי תיק פעיל מוצהרים); סעיפי תביעות וביטוח-משנה ברמת חברת הביטוח משתמשים בברירות-המחדל של סימולציית התיק האקטוארי של פיינס (טעינת הוצאות 15%, שולי רווח 10%, חלק-גידור 35%, טעינת תמחור פי 1.12); וכל מבני העסקה מתמחרים או מומרים על אותו בסיס לפני-הכסף / אחרי-הכסף מוגדר. פיינס מודלת כפלטפורמה / MGA דיגיטלי המפיקה שיעור-לקיחה על פרמיה, ועל כן עתודות תביעות אינן נרשמות כהכנסות פיינס."
+  };
+
+  function isHe() { return cfg.currency === "ILS"; }
+  function tr(en, key) {
+    if (isHe() && key && I18N_HE[key] !== undefined) return I18N_HE[key];
+    return en;
+  }
+
+  // ============================================================
+  // Static-text translator — runs on every render. Snapshots the
+  // original English content the first time it runs so toggling
+  // back from ILS to USD / EUR restores the original copy verbatim.
+  // ============================================================
+  var ORIG_TEXT = null;
+  function snapshotOriginals() {
+    if (ORIG_TEXT) return;
+    ORIG_TEXT = {};
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      ORIG_TEXT[el.getAttribute("data-i18n") + "::" + nodeKey(el)] = el.innerHTML;
+    });
+    document.querySelectorAll("[data-i18n-list]").forEach(function (el) {
+      ORIG_TEXT["__list__::" + el.getAttribute("data-i18n-list")] = el.innerHTML;
+    });
+  }
+  var _nodeSeq = 0;
+  function nodeKey(el) {
+    if (!el.__bpKey) { el.__bpKey = "n" + (++_nodeSeq); }
+    return el.__bpKey;
+  }
+
+  function applyStaticI18n() {
+    snapshotOriginals();
+    var he = isHe();
+    document.documentElement.lang = he ? "he" : "en";
+    document.documentElement.dir = he ? "rtl" : "ltr";
+
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      var key = el.getAttribute("data-i18n");
+      var orig = ORIG_TEXT[key + "::" + nodeKey(el)];
+      if (he && I18N_HE[key] !== undefined) {
+        el.innerHTML = I18N_HE[key];
+      } else if (orig !== undefined) {
+        el.innerHTML = orig;
+      }
+    });
+    document.querySelectorAll("[data-i18n-list]").forEach(function (el) {
+      var key = el.getAttribute("data-i18n-list");
+      if (he && Array.isArray(I18N_HE[key])) {
+        el.innerHTML = I18N_HE[key].map(function (s) { return "<li>" + s + "</li>"; }).join("");
+      } else {
+        var orig = ORIG_TEXT["__list__::" + key];
+        if (orig !== undefined) el.innerHTML = orig;
+      }
+    });
+
+    document.title = he ? I18N_HE["page.title"] : "PHINS — Fintech Business Plan (Angel / Investor)";
+  }
+
   // Plan constants — 5-year high-growth default. 2027–2029 are identical to
   // the pitch-dashboard income model; 2030–2031 extend the trajectory with
   // operating leverage (avg in-force = midpoint of the EoY ramp).
@@ -395,19 +676,18 @@ svg { display: block; width: 100%; height: auto; }
   // Build-budget shares — derived from the canonical ₪6.0M plan; contingency
   // absorbs rounding so the table always reconciles exactly to the round.
   var UOF = [
-    { name: "Platform development & engineering", share: 0.325 },
-    { name: "Cloud, AI infrastructure & tooling", share: 0.078333 },
-    { name: "Legal, regulatory & licensing", share: 0.146667 },
-    { name: "Actuarial, pricing & reinsurance structuring", share: 0.086667 },
-    { name: "QA, security & compliance audits", share: 0.071667 },
-    { name: "Marketing, brand & advertising (pre-launch)", share: 0.108333 },
-    { name: "G&A, finance & operations", share: 0.066667 }
+    { key: "uof.row.platform", en: "Platform development & engineering", he: "פיתוח הפלטפורמה והנדסה", share: 0.325 },
+    { key: "uof.row.cloud", en: "Cloud, AI infrastructure & tooling", he: "ענן, תשתית בינה מלאכותית וכלי-עבודה", share: 0.078333 },
+    { key: "uof.row.legal", en: "Legal, regulatory & licensing", he: "משפט, רגולציה ורישוי", share: 0.146667 },
+    { key: "uof.row.actuarial", en: "Actuarial, pricing & reinsurance structuring", he: "אקטואריה, תמחור ובניית ביטוח-משנה", share: 0.086667 },
+    { key: "uof.row.qa", en: "QA, security & compliance audits", he: "QA, אבטחה וביקורות ציות", share: 0.071667 },
+    { key: "uof.row.mkt", en: "Marketing, brand & advertising (pre-launch)", he: "שיווק, מותג ופרסום (טרום-השקה)", share: 0.108333 },
+    { key: "uof.row.ga", en: "G&A, finance & operations", he: "הנהלה, מימון ותפעול", share: 0.066667 }
     // + Contingency (remainder)
   ];
+  var UOF_CONTINGENCY = { en: "Contingency", he: "רזרבת בלת״ם" };
   var UOF_COLORS = ["#1d4ed8","#0ea5e9","#6d28d9","#0f766e","#b45309","#dc2626","#475569","#94a3b8"];
-  // 5-year forecast horizon: from the plan/meeting month through 31 Dec of the
-  // final plan year. Derived from the same month-start the model loops over so
-  // the forecast ends exactly at Dec of FINAL_YEAR without overshooting.
+
   function HORIZON() {
     var s = planStartDate();
     var m = (FINAL_YEAR - s.getFullYear()) * 12 + (11 - s.getMonth()) + 1;
@@ -424,6 +704,9 @@ svg { display: block; width: 100%; height: auto; }
     if (cur === "EUR") return cfg.usdEur / cfg.usdIls;
     return 1;
   }
+  // Money formatting is currency-symbol + Western digits — Hebrew financial
+  // copy uses Western numerals (so 12,345 stays 12,345), so the Hebrew layer
+  // does not need to touch the numeric pipeline. This preserves data integrity.
   function fmtMoney(ils, cur) {
     cur = cur || cfg.currency;
     var v = ils * rateFromILS(cur), neg = v < 0;
@@ -444,6 +727,10 @@ svg { display: block; width: 100%; height: auto; }
   }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
   function monthLabel(d) {
+    if (isHe()) {
+      var HE_MONTHS = ["ינו׳","פבר׳","מרץ","אפר׳","מאי","יוני","יולי","אוג׳","ספט׳","אוק׳","נוב׳","דצמ׳"];
+      return HE_MONTHS[d.getMonth()] + " " + String(d.getFullYear()).slice(2);
+    }
     return d.toLocaleString("en-US", { month: "short" }) + " " + String(d.getFullYear()).slice(2);
   }
 
@@ -463,9 +750,9 @@ svg { display: block; width: 100%; height: auto; }
              combinedStake: cashStake + founderFrac };
   }
   function selectedPosition(m) {
-    if (cfg.position === "investor") return { capital: m.R, stake: m.eqStake, lbl: "Investor stake" };
-    if (cfg.position === "cofounder") return { capital: 0, stake: m.founderFrac, lbl: "Co-founder equity" };
-    return { capital: cfg.coCash, stake: m.combinedStake, lbl: "Combined stake" };
+    if (cfg.position === "investor")  return { capital: m.R, stake: m.eqStake, lbl: tr("Investor stake", "kpi.stake.investor") };
+    if (cfg.position === "cofounder") return { capital: 0, stake: m.founderFrac, lbl: tr("Co-founder equity", "kpi.stake.cofounder") };
+    return { capital: cfg.coCash, stake: m.combinedStake, lbl: tr("Combined stake", "kpi.stake.combined") };
   }
 
   // ============================================================
@@ -475,7 +762,6 @@ svg { display: block; width: 100%; height: auto; }
     var d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
   }
   function policiesAt(d) {
-    // Monthly in-force interpolation across the EoY plan points.
     if (d < PLAN.launch) return 0;
     var y = d.getFullYear(), mi = d.getMonth();
     var yi = y - 2027;
@@ -488,8 +774,6 @@ svg { display: block; width: 100%; height: auto; }
     var start = planStartDate();
     var buildMonths = 0, probe = new Date(start);
     while (probe < PLAN.launch && buildMonths < 60) { buildMonths++; probe.setMonth(probe.getMonth() + 1); }
-    // If the plan/meeting date is already at or after launch there is no
-    // pre-launch window, so deploy the build budget up-front in the first month.
     if (buildMonths === 0) buildMonths = 1;
     var months = [], cash = cfg.round, minCash = cash, minIdx = -1;
     var horizon = HORIZON();
@@ -501,8 +785,6 @@ svg { display: block; width: 100%; height: auto; }
       }
       if (d >= PLAN.launch) {
         var yi = Math.min(Math.max(d.getFullYear() - 2027, 0), LAST_YI);
-        // average in-force during the month (midpoint of the linear ramp;
-        // policiesAt returns 0 for any pre-launch month)
         var startPol = policiesAt(new Date(d.getFullYear(), d.getMonth(), 0));
         pol = policiesAt(d);
         var avgPol = (startPol + pol) / 2;
@@ -563,7 +845,7 @@ svg { display: block; width: 100%; height: auto; }
       a0 = a1;
     });
     out += txt(cx, cy - 4, fmtShort(total), 15, "#0b2545", "middle", 800);
-    out += txt(cx, cy + 14, "build budget", 8.5, "#5a6b86", "middle");
+    out += txt(cx, cy + 14, tr("build budget", "chart.build.budget"), 8.5, "#5a6b86", "middle");
     var ly = 26;
     items.forEach(function (it, i) {
       out += '<rect x="232" y="' + (ly - 9) + '" width="10" height="10" rx="2" fill="' + UOF_COLORS[i % UOF_COLORS.length] + '"/>';
@@ -588,7 +870,6 @@ svg { display: block; width: 100%; height: auto; }
     function yBar(v) { return padT + (maxBar - v) / barSpan * (H - padT - padB); }
     function yCash(v) { return padT + (maxCash - v) / cashSpan * (H - padT - padB); }
     var out = svgOpen(W, H);
-    // zero lines
     out += '<line x1="' + padL + '" y1="' + yBar(0) + '" x2="' + (W - padR) + '" y2="' + yBar(0) + '" stroke="#cbd5e1" stroke-width="1"/>';
     months.forEach(function (m, i) {
       var x = padL + i * iw + 1;
@@ -597,45 +878,50 @@ svg { display: block; width: 100%; height: auto; }
       var color = m.d < PLAN.launch ? "#b45309" : (m.net >= 0 ? "#15803d" : "#dc2626");
       out += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(iw - 2, 1.4) + '" height="' + Math.max(h, 0.5) + '" fill="' + color + '" opacity="0.82"/>';
     });
-    // cash line
     var pts = months.map(function (m, i) {
       return (padL + i * iw + iw / 2).toFixed(1) + "," + yCash(m.cash).toFixed(1);
     }).join(" ");
     out += '<polyline points="' + pts + '" fill="none" stroke="#1d4ed8" stroke-width="2.4"/>';
     out += '<line x1="' + padL + '" y1="' + yCash(0) + '" x2="' + (W - padR) + '" y2="' + yCash(0) + '" stroke="#1d4ed8" stroke-width="0.8" stroke-dasharray="4 4" opacity="0.6"/>';
-    // min-cash marker
     if (mm.minIdx >= 0) {
       var mx = padL + mm.minIdx * iw + iw / 2, my = yCash(mm.minCash);
       out += '<circle cx="' + mx + '" cy="' + my + '" r="3.6" fill="#1d4ed8"/>';
-      out += txt(Math.min(mx + 6, W - padR - 4), my - 6, "min cash " + fmtShort(mm.minCash), 8.2, "#1d4ed8", mx > W - 150 ? "end" : "start", 700);
+      out += txt(Math.min(mx + 6, W - padR - 4), my - 6, tr("min cash ", "chart.min.cash") + fmtShort(mm.minCash), 8.2, "#1d4ed8", mx > W - 150 ? "end" : "start", 700);
     }
-    // launch marker
     for (var i = 0; i < months.length; i++) {
       if (months[i].d.getTime() === PLAN.launch.getTime()) {
         var lx = padL + i * iw;
         out += '<line x1="' + lx + '" y1="' + padT + '" x2="' + lx + '" y2="' + (H - padB) + '" stroke="#0f766e" stroke-width="1.2" stroke-dasharray="5 3"/>';
-        out += txt(lx + 4, padT + 9, "launch 1 Jan 27", 8, "#0f766e", "start", 700);
+        out += txt(lx + 4, padT + 9, tr("launch 1 Jan 27", "chart.launch.lbl"), 8, "#0f766e", "start", 700);
         break;
       }
     }
-    // x labels (adaptive density for the 5-year horizon)
     var lblStep = months.length > 48 ? 12 : 6;
     months.forEach(function (m, i) {
       if (i % lblStep === 0) out += txt(padL + i * iw + iw / 2, H - padB + 13, monthLabel(m.d), 7.6, "#64748b", "middle");
     });
-    // axes labels
     out += txt(4, padT + 8, fmtShort(maxBar), 7.6, "#64748b");
     out += txt(4, yBar(0) + 3, "0", 7.6, "#64748b");
     out += txt(4, H - padB, fmtShort(minBar), 7.6, "#64748b");
     out += txt(W - 2, padT + 8, fmtShort(maxCash), 7.6, "#1d4ed8", "end");
     out += txt(W - 2, yCash(0) + 3, "0", 7.6, "#1d4ed8", "end");
-    // legend
-    out += '<rect x="' + padL + '" y="' + (H - 12) + '" width="9" height="9" fill="#b45309"/>' + txt(padL + 13, H - 4, "build burn", 7.8, "#475569");
-    out += '<rect x="' + (padL + 78) + '" y="' + (H - 12) + '" width="9" height="9" fill="#dc2626"/>' + txt(padL + 91, H - 4, "operating burn", 7.8, "#475569");
-    out += '<rect x="' + (padL + 178) + '" y="' + (H - 12) + '" width="9" height="9" fill="#15803d"/>' + txt(padL + 191, H - 4, "positive CF", 7.8, "#475569");
-    out += '<line x1="' + (padL + 262) + '" y1="' + (H - 7) + '" x2="' + (padL + 284) + '" y2="' + (H - 7) + '" stroke="#1d4ed8" stroke-width="2.4"/>' + txt(padL + 288, H - 4, "cash balance (right)", 7.8, "#475569");
+    out += '<rect x="' + padL + '" y="' + (H - 12) + '" width="9" height="9" fill="#b45309"/>' + txt(padL + 13, H - 4, tr("build burn", "leg.build.burn"), 7.8, "#475569");
+    out += '<rect x="' + (padL + 78) + '" y="' + (H - 12) + '" width="9" height="9" fill="#dc2626"/>' + txt(padL + 91, H - 4, tr("operating burn", "leg.op.burn"), 7.8, "#475569");
+    out += '<rect x="' + (padL + 178) + '" y="' + (H - 12) + '" width="9" height="9" fill="#15803d"/>' + txt(padL + 191, H - 4, tr("positive CF", "leg.pos.cf"), 7.8, "#475569");
+    out += '<line x1="' + (padL + 262) + '" y1="' + (H - 7) + '" x2="' + (padL + 284) + '" y2="' + (H - 7) + '" stroke="#1d4ed8" stroke-width="2.4"/>' + txt(padL + 288, H - 4, tr("cash balance (right)", "leg.cash.balance"), 7.8, "#475569");
     return out + "</svg>";
   }
+
+  // i18n strings for chart legends / labels added inline above. Below we
+  // also need He versions for the dynamic strings used in the burn chart
+  // and elsewhere — kept here to keep the dictionary in one place.
+  I18N_HE["chart.build.budget"] = "תקציב בנייה";
+  I18N_HE["chart.min.cash"] = "מינ׳ מזומן ";
+  I18N_HE["chart.launch.lbl"] = "השקה 1 בינו׳ 27";
+  I18N_HE["leg.build.burn"] = "שריפת בנייה";
+  I18N_HE["leg.op.burn"] = "שריפה תפעולית";
+  I18N_HE["leg.pos.cf"] = "תזרים חיובי";
+  I18N_HE["leg.cash.balance"] = "יתרת מזומן (ימין)";
 
   function ganttChart(mm) {
     var start = mm.start;
@@ -645,24 +931,23 @@ svg { display: block; width: 100%; height: auto; }
     }
     function clip(v) { return Math.max(0, Math.min(horizon, v)); }
     var rows = [
-      { n: "Gate 0–1 · Seed close, co-founder & legal terms", s: new Date(2026, 5, 1), e: new Date(2026, 8, 30), c: "#1d4ed8" },
-      { n: "Gate 2 · Platform launch set + actuarial sign-off", s: new Date(2026, 5, 1), e: new Date(2026, 11, 31), c: "#0ea5e9" },
-      { n: "Gate 3 · QA, security & ledger validation", s: new Date(2026, 8, 1), e: new Date(2026, 11, 31), c: "#6d28d9" },
-      { n: "Gate 4 · Regulatory & distribution agreements", s: new Date(2026, 8, 1), e: new Date(2026, 11, 31), c: "#0f766e" },
-      { n: "Gate 5 · Commercial launch (milestone)", s: PLAN.launch, e: PLAN.launch, c: "#15803d", milestone: true },
-      { n: "Gate 6 · First 1,000 policies · unit economics", s: new Date(2027, 0, 1), e: new Date(2027, 5, 30), c: "#b45309" },
-      { n: "Gate 7 · 4,000 policies · Series A readiness", s: new Date(2027, 6, 1), e: new Date(2027, 11, 31), c: "#dc2626" },
-      { n: "Scale to 12,000 policies (2028)", s: new Date(2028, 0, 1), e: new Date(2028, 11, 31), c: "#475569" },
-      { n: "Scale to 28,000 · EBITDA-positive (2029)", s: new Date(2029, 0, 1), e: new Date(2029, 11, 31), c: "#0b2545" },
-      { n: "Multi-market expansion preparation", s: new Date(2029, 0, 1), e: new Date(2030, 5, 30), c: "#94a3b8" },
-      { n: "Scale to 55,000 policies (2030)", s: new Date(2030, 0, 1), e: new Date(2030, 11, 31), c: "#b45309" },
-      { n: "Scale to 100,000 · multi-market readiness (2031)", s: new Date(2031, 0, 1), e: new Date(start.getFullYear(), start.getMonth() + horizon, 0), c: "#15803d" }
+      { n: tr("Gate 0–1 · Seed close, co-founder & legal terms", "gantt.r1"), s: new Date(2026, 5, 1), e: new Date(2026, 8, 30), c: "#1d4ed8" },
+      { n: tr("Gate 2 · Platform launch set + actuarial sign-off", "gantt.r2"), s: new Date(2026, 5, 1), e: new Date(2026, 11, 31), c: "#0ea5e9" },
+      { n: tr("Gate 3 · QA, security & ledger validation", "gantt.r3"), s: new Date(2026, 8, 1), e: new Date(2026, 11, 31), c: "#6d28d9" },
+      { n: tr("Gate 4 · Regulatory & distribution agreements", "gantt.r4"), s: new Date(2026, 8, 1), e: new Date(2026, 11, 31), c: "#0f766e" },
+      { n: tr("Gate 5 · Commercial launch (milestone)", "gantt.r5"), s: PLAN.launch, e: PLAN.launch, c: "#15803d", milestone: true },
+      { n: tr("Gate 6 · First 1,000 policies · unit economics", "gantt.r6"), s: new Date(2027, 0, 1), e: new Date(2027, 5, 30), c: "#b45309" },
+      { n: tr("Gate 7 · 4,000 policies · Series A readiness", "gantt.r7"), s: new Date(2027, 6, 1), e: new Date(2027, 11, 31), c: "#dc2626" },
+      { n: tr("Scale to 12,000 policies (2028)", "gantt.r8"), s: new Date(2028, 0, 1), e: new Date(2028, 11, 31), c: "#475569" },
+      { n: tr("Scale to 28,000 · EBITDA-positive (2029)", "gantt.r9"), s: new Date(2029, 0, 1), e: new Date(2029, 11, 31), c: "#0b2545" },
+      { n: tr("Multi-market expansion preparation", "gantt.r10"), s: new Date(2029, 0, 1), e: new Date(2030, 5, 30), c: "#94a3b8" },
+      { n: tr("Scale to 55,000 policies (2030)", "gantt.r11"), s: new Date(2030, 0, 1), e: new Date(2030, 11, 31), c: "#b45309" },
+      { n: tr("Scale to 100,000 · multi-market readiness (2031)", "gantt.r12"), s: new Date(2031, 0, 1), e: new Date(start.getFullYear(), start.getMonth() + horizon, 0), c: "#15803d" }
     ];
     var W = 560, rowH = 22, padL = 218, padT = 26, padB = 20;
     var H = padT + rows.length * rowH + padB;
     var span = W - padL - 8, mw = span / horizon;
     var out = svgOpen(W, H);
-    // month grid (every 6 months) + adaptive labels for the 5-year horizon
     var gLblStep = horizon > 48 ? 12 : 6;
     for (var i = 0; i <= horizon; i += 6) {
       var gx = padL + i * mw;
@@ -672,7 +957,6 @@ svg { display: block; width: 100%; height: auto; }
         out += txt(gx + 2, padT - 12, monthLabel(d), 7.4, "#64748b");
       }
     }
-    // launch line
     var li = mIdx(PLAN.launch);
     if (li >= 0 && li <= horizon) {
       var lx = padL + li * mw;
@@ -690,9 +974,14 @@ svg { display: block; width: 100%; height: auto; }
         out += '<rect x="' + (padL + s * mw) + '" y="' + (y + 2) + '" width="' + Math.max((e - s) * mw - 1.5, 2) + '" height="13" rx="4" fill="' + r.c + '" opacity="0.88"/>';
       }
     });
-    out += txt(2, H - 5, "Horizon: " + monthLabel(start) + " → " +
-      monthLabel(new Date(start.getFullYear(), start.getMonth() + horizon - 1, 1)) +
-      " (5-year forecast · " + horizon + " months from the meeting / plan date)", 7.6, "#64748b");
+    var horizonNote = isHe()
+      ? "אופק: " + monthLabel(start) + " ← " +
+        monthLabel(new Date(start.getFullYear(), start.getMonth() + horizon - 1, 1)) +
+        " (תחזית ל-5 שנים · " + horizon + " חודשים ממועד הפגישה / התוכנית)"
+      : "Horizon: " + monthLabel(start) + " → " +
+        monthLabel(new Date(start.getFullYear(), start.getMonth() + horizon - 1, 1)) +
+        " (5-year forecast · " + horizon + " months from the meeting / plan date)";
+    out += txt(2, H - 5, horizonNote, 7.6, "#64748b");
     return out + "</svg>";
   }
 
@@ -716,7 +1005,6 @@ svg { display: block; width: 100%; height: auto; }
     months.forEach(function (m, i) {
       if (i % pLblStep === 0) out += txt(padL + i * iw, H - padB + 13, monthLabel(m.d), 7.4, "#64748b", "middle");
     });
-    // EoY markers
     months.forEach(function (m, i) {
       if (m.d.getMonth() === 11 && m.d.getFullYear() >= 2027) {
         out += '<circle cx="' + (padL + i * iw) + '" cy="' + y(m.policies) + '" r="3.4" fill="#0b2545"/>';
@@ -727,7 +1015,6 @@ svg { display: block; width: 100%; height: auto; }
   }
 
   function groupBarChart(years, series, opts) {
-    // series: [{name, color, values[]}]
     var W = 560, H = 230, padL = 56, padR = 10, padT = 14, padB = 40;
     var all = [];
     series.forEach(function (s) { all = all.concat(s.values); });
@@ -779,34 +1066,39 @@ svg { display: block; width: 100%; height: auto; }
     scenarios.forEach(function (s, i) {
       var x = padL + i * gw + (gw - bw) / 2;
       out += '<rect x="' + x + '" y="' + y(s.moic) + '" width="' + bw + '" height="' + (y(0) - y(s.moic)) + '" rx="5" fill="' + s.color + '" opacity="0.92"/>';
-      out += txt(x + bw / 2, y(s.moic) - 5, s.moic.toFixed(1) + "x MOIC", 8.6, "#0b2545", "middle", 800);
+      out += txt(x + bw / 2, y(s.moic) - 5, s.moic.toFixed(1) + "x " + tr("MOIC", "chart.moic"), 8.6, "#0b2545", "middle", 800);
       out += txt(padL + i * gw + gw / 2, H - padB + 13, s.label, 8, "#334155", "middle", 700);
-      out += txt(padL + i * gw + gw / 2, H - padB + 24, "equity value " + fmtShort(s.exitVal), 7.2, "#64748b", "middle");
+      out += txt(padL + i * gw + gw / 2, H - padB + 24, tr("equity value ", "chart.eq.value") + fmtShort(s.exitVal), 7.2, "#64748b", "middle");
     });
     return out + "</svg>";
   }
+  I18N_HE["chart.moic"] = "MOIC";
+  I18N_HE["chart.eq.value"] = "שווי הון ";
 
   // ============================================================
   // Renderers
   // ============================================================
   function renderUseOfFunds() {
     var total = cfg.round;
-    var rows = UOF.map(function (u) { return { name: u.name, value: Math.round(total * u.share) }; });
+    var rows = UOF.map(function (u) {
+      return { name: isHe() ? u.he : u.en, value: Math.round(total * u.share) };
+    });
     var allocated = rows.reduce(function (a, r) { return a + r.value; }, 0);
-    rows.push({ name: "Contingency", value: Math.max(0, Math.round(total - allocated)) });
+    rows.push({ name: isHe() ? UOF_CONTINGENCY.he : UOF_CONTINGENCY.en, value: Math.max(0, Math.round(total - allocated)) });
     var tbody = $("bp-uof-table").querySelector("tbody");
     var html = "";
     rows.forEach(function (r) {
       html += "<tr><td>" + esc(r.name) + '</td><td class="num">' + fmtMoney(r.value) +
               '</td><td class="num">' + pct(total > 0 ? r.value / total : 0) + "</td></tr>";
     });
-    html += '<tr><td><strong>Total</strong></td><td class="num"><strong>' + fmtMoney(total) +
+    html += '<tr><td><strong>' + tr("Total", "tbl.total") + '</strong></td><td class="num"><strong>' + fmtMoney(total) +
             '</strong></td><td class="num"><strong>100%</strong></td></tr>';
     tbody.innerHTML = html;
     $("bp-uof-cur-h").textContent = SYM[cfg.currency];
     $("bp-uof-round").textContent = fmtShort(total);
     $("bp-chart-uof").innerHTML = donutChart(rows, total);
   }
+  I18N_HE["tbl.total"] = "סה״כ";
 
   function renderCarrier() {
     var ys = PLAN.years.map(function (_, i) { return carrierYear(i); });
@@ -820,23 +1112,38 @@ svg { display: block; width: 100%; height: auto; }
     }
     var tbody = $("bp-carrier-table").querySelector("tbody");
     tbody.innerHTML =
-      row("Gross written premium (earned)", "gwp", true) +
-      row("Expected claims (risk premium, 75% of GWP)", "claims", false, true) +
-      row("Ceded to reinsurers (35% hedge share)", "ceded") +
-      row("Reinsurance premium (1.12× load + fees)", "reinsPremium", false, true) +
-      row("Expected reinsurance recoveries", "recoveries") +
-      row("Net retained expected claims", "retained", false, true) +
-      row("Net cost of reinsurance protection", "netReinsCost", false, true) +
-      row("Expense loading (15%)", "expense") +
-      row("Carrier profit margin (10%)", "profit") +
-      row("PHINS net revenue (25% take rate)", "phinsRev", true);
+      row(tr("Gross written premium (earned)", "carrier.r.gwp"), "gwp", true) +
+      row(tr("Expected claims (risk premium, 75% of GWP)", "carrier.r.claims"), "claims", false, true) +
+      row(tr("Ceded to reinsurers (35% hedge share)", "carrier.r.ceded"), "ceded") +
+      row(tr("Reinsurance premium (1.12× load + fees)", "carrier.r.reinsPremium"), "reinsPremium", false, true) +
+      row(tr("Expected reinsurance recoveries", "carrier.r.recoveries"), "recoveries") +
+      row(tr("Net retained expected claims", "carrier.r.retained"), "retained", false, true) +
+      row(tr("Net cost of reinsurance protection", "carrier.r.netReinsCost"), "netReinsCost", false, true) +
+      row(tr("Expense loading (15%)", "carrier.r.expense"), "expense") +
+      row(tr("Carrier profit margin (10%)", "carrier.r.profit"), "profit") +
+      row(tr("PHINS net revenue (25% take rate)", "carrier.r.phinsRev"), "phinsRev", true);
     $("bp-chart-carrier").innerHTML = groupBarChart(PLAN.years, [
-      { name: "GWP", color: "#0b2545", values: ys.map(function (c) { return c.gwp; }) },
-      { name: "Expected claims", color: "#dc2626", values: ys.map(function (c) { return c.claims; }) },
-      { name: "Reinsurance premium", color: "#6d28d9", values: ys.map(function (c) { return c.reinsPremium; }) },
-      { name: "PHINS net revenue", color: "#15803d", values: ys.map(function (c) { return c.phinsRev; }) }
+      { name: tr("GWP", "ser.gwp"), color: "#0b2545", values: ys.map(function (c) { return c.gwp; }) },
+      { name: tr("Expected claims", "ser.claims"), color: "#dc2626", values: ys.map(function (c) { return c.claims; }) },
+      { name: tr("Reinsurance premium", "ser.reins"), color: "#6d28d9", values: ys.map(function (c) { return c.reinsPremium; }) },
+      { name: tr("PHINS net revenue", "ser.phins"), color: "#15803d", values: ys.map(function (c) { return c.phinsRev; }) }
     ]);
   }
+  I18N_HE["carrier.r.gwp"] = "פרמיה ברוטו (מורווחת)";
+  I18N_HE["carrier.r.claims"] = "תביעות צפויות (פרמיית סיכון, 75% מ-GWP)";
+  I18N_HE["carrier.r.ceded"] = "מועבר למבטחי-משנה (35% חלק-גידור)";
+  I18N_HE["carrier.r.reinsPremium"] = "פרמיית ביטוח-משנה (טעינה פי 1.12 + עמלות)";
+  I18N_HE["carrier.r.recoveries"] = "החזרי ביטוח-משנה צפויים";
+  I18N_HE["carrier.r.retained"] = "תביעות צפויות שנותרו על שייר";
+  I18N_HE["carrier.r.netReinsCost"] = "עלות נטו של הגנת ביטוח-משנה";
+  I18N_HE["carrier.r.expense"] = "טעינת הוצאות (15%)";
+  I18N_HE["carrier.r.profit"] = "שולי רווח של חברת הביטוח (10%)";
+  I18N_HE["carrier.r.phinsRev"] = "הכנסות נטו פיינס (שיעור-לקיחה 25%)";
+  I18N_HE["ser.gwp"] = "GWP";
+  I18N_HE["ser.claims"] = "תביעות צפויות";
+  I18N_HE["ser.reins"] = "פרמיית ביטוח-משנה";
+  I18N_HE["ser.phins"] = "הכנסות נטו פיינס";
+  I18N_HE["ser.ebitda"] = "EBITDA";
 
   function renderQuarterly(mm) {
     var tbody = $("bp-q-table").querySelector("tbody");
@@ -858,10 +1165,22 @@ svg { display: block; width: 100%; height: auto; }
   }
 
   function renderDeal(m, sel) {
-    $("bp-deal-intro").innerHTML = fmtMoney(cfg.round) + " on a " + fmtShort(cfg.preMoney) + " pre-money (" +
-      fmtShort(m.post) + " post). Five comparable structures, all priced / converting on the same " +
-      fmtShort(cfg.preMoney) + " basis — synced live from the Deal & Valuation Configurator:";
-    var rows = [
+    var introHe = isHe()
+      ? fmtMoney(cfg.round) + " על בסיס שווי לפני הכסף של " + fmtShort(cfg.preMoney) + " (" +
+        fmtShort(m.post) + " לאחר הכסף). חמישה מבנים השוואתיים — כולם מתומחרים או מומרים על אותו בסיס של " +
+        fmtShort(cfg.preMoney) + ", ומסונכרנים חי ממחולל העסקה והערכת השווי:"
+      : fmtMoney(cfg.round) + " on a " + fmtShort(cfg.preMoney) + " pre-money (" +
+        fmtShort(m.post) + " post). Five comparable structures, all priced / converting on the same " +
+        fmtShort(cfg.preMoney) + " basis — synced live from the Deal & Valuation Configurator:";
+    $("bp-deal-intro").innerHTML = introHe;
+    var rows = isHe() ? [
+      { name: "אקוויטי מתומחר (מועדפת)", cap: fmtMoney(m.R), stake: pct(m.eqStake), notes: "העדפת חיסול לא-משתתפת ×1.", hi: cfg.position === "investor" },
+      { name: "תקרת השקעה (SAFE)", cap: fmtMoney(m.R), stake: "≈" + pct(m.eqStake) + " בהמרה", notes: fmtShort(m.P) + " תקרה, 20% הנחה; סגירה מהירה.", hi: false },
+      { name: "מסגרת אשראי / חוב מסחרי", cap: fmtMoney(m.R), stake: "≈" + pct(m.warrantStake) + " (כתבי-אופציה)", notes: "ריבית ~10%, משיכות לפי אבני-דרך, חוב בכיר מובטח.", hi: false },
+      { name: "הלוואה להמרה (CLA)", cap: fmtMoney(m.R), stake: "≈" + pct(m.claStake) + " בהמרה", notes: fmtShort(m.P) + " תקרה, 7% PIK, פירעון 24 חודשים.", hi: false },
+      { name: "שותף-מייסד פעיל + משקיע ★", cap: fmtMoney(cfg.coCash) + " מזומן", stake: "≈" + pct(m.combinedStake),
+        notes: pct(m.cashStake) + " כנגד מזומן + " + cfg.founderEq + "% הון מייסדים מבושל (4 שנים, צוק שנה); מושב דירקטוריון.", hi: cfg.position !== "investor" }
+    ] : [
       { name: "Priced equity (preferred)", cap: fmtMoney(m.R), stake: pct(m.eqStake), notes: "1× non-participating liquidation pref.", hi: cfg.position === "investor" },
       { name: "Investment cap (SAFE)", cap: fmtMoney(m.R), stake: "≈" + pct(m.eqStake) + " on conversion", notes: fmtShort(m.P) + " cap, 20% discount; fast close.", hi: false },
       { name: "Credit line / venture debt", cap: fmtMoney(m.R), stake: "≈" + pct(m.warrantStake) + " (warrants)", notes: "~10% interest, milestone draws, senior secured.", hi: false },
@@ -869,20 +1188,33 @@ svg { display: block; width: 100%; height: auto; }
       { name: "Active co-founder + investor ★", cap: fmtMoney(cfg.coCash) + " cash", stake: "≈" + pct(m.combinedStake),
         notes: pct(m.cashStake) + " for cash + " + cfg.founderEq + "% vested founders' equity (4-yr vest, 1-yr cliff); board seat.", hi: cfg.position !== "investor" }
     ];
+    var selectedTag = isHe() ? " ► נבחר" : " ◄ selected";
     $("bp-deal-body").innerHTML = rows.map(function (r) {
       var st = r.hi ? ' style="background:#eef9f0;"' : "";
-      var nm = r.hi ? '<strong style="color:#15803d;">' + esc(r.name) + " ◄ selected</strong>" : "<strong>" + esc(r.name) + "</strong>";
+      var nm = r.hi ? '<strong style="color:#15803d;">' + esc(r.name) + selectedTag + "</strong>" : "<strong>" + esc(r.name) + "</strong>";
       return "<tr" + st + "><td>" + nm + '</td><td class="num">' + r.cap + "</td><td>" + r.stake + "</td><td>" + esc(r.notes) + "</td></tr>";
     }).join("");
-    $("bp-deal-callout").innerHTML = "<strong>Recommended:</strong> active co-founder + investor — " + fmtMoney(cfg.coCash) +
-      " cash for " + pct(m.cashStake) + " plus a " + cfg.founderEq + "% founders' equity grant for a full-time Chairman / co-operator role" +
-      " (≈ " + pct(m.combinedStake) + " combined). Lower cash than a pure round, but it brings Israeli carrier & reinsurance relationships," +
-      " regulator familiarity, and governance — the highest-alignment outcome. Pure-investor structures above are clean fallbacks.";
+    if (isHe()) {
+      $("bp-deal-callout").innerHTML = "<strong>מומלץ:</strong> שותף-מייסד פעיל + משקיע — " + fmtMoney(cfg.coCash) +
+        " מזומן עבור " + pct(m.cashStake) + " ועוד הענקת הון מייסדים של " + cfg.founderEq + "% עבור תפקיד יו״ר / שותף-תפעולי במשרה מלאה" +
+        " (≈ " + pct(m.combinedStake) + " אחזקה משולבת). פחות מזומן מסבב טהור, אך מוסיף גישה לחברות ביטוח ומבטחי-משנה ישראלים," +
+        " היכרות עם הרגולציה וממשל תאגידי — תוצאת ההלימה הגבוהה ביותר. מבני המשקיע הטהור שלמעלה הם חלופות נקיות.";
+    } else {
+      $("bp-deal-callout").innerHTML = "<strong>Recommended:</strong> active co-founder + investor — " + fmtMoney(cfg.coCash) +
+        " cash for " + pct(m.cashStake) + " plus a " + cfg.founderEq + "% founders' equity grant for a full-time Chairman / co-operator role" +
+        " (≈ " + pct(m.combinedStake) + " combined). Lower cash than a pure round, but it brings Israeli carrier & reinsurance relationships," +
+        " regulator familiarity, and governance — the highest-alignment outcome. Pure-investor structures above are clean fallbacks.";
+    }
   }
 
   function renderUnicorn(m, sel) {
     var revFinal = PLAN.avgInForce[LAST_YI] * PLAN.premium * PLAN.takeRate; // 2031 net revenue
-    var mults = [
+    var mults = isHe() ? [
+      { label: "פי 3 (שמרני)", mult: 3, color: "#94a3b8" },
+      { label: "פי 4 (בסיס אקטוארי)", mult: 4, color: "#1d4ed8" },
+      { label: "פי 6 (צמיחה)", mult: 6, color: "#6d28d9" },
+      { label: "פי 10 (רב-שווקי)", mult: 10, color: "#15803d" }
+    ] : [
       { label: "3× (conservative)", mult: 3, color: "#94a3b8" },
       { label: "4× (actuarial base)", mult: 4, color: "#1d4ed8" },
       { label: "6× (growth)", mult: 6, color: "#6d28d9" },
@@ -896,73 +1228,118 @@ svg { display: block; width: 100%; height: auto; }
     });
     $("bp-chart-moic").innerHTML = moicChart(scen);
     var base = scen[1], multi = scen[3];
-    $("bp-unicorn-text").innerHTML =
-      "The five-year high-growth plan takes " + FINAL_YEAR + " net revenue to " + fmtShort(revFinal) +
-      " — at the actuarial-simulation base exit multiple (4×) the equity is worth " +
-      fmtShort(base.exitVal) + ", a <strong>" + base.moic.toFixed(1) + "× return</strong> on the selected position. The same platform is pre-modelled " +
-      "for the USA, Canada, Europe, Japan and the Middle East; replicating the Israeli book across two to three of those markets puts PHINS on a " +
-      "<strong>" + fmtShort(1000000000) + "+ valuation trajectory</strong> — at a 10× multi-market re-rating this seed position returns ≈ <strong>" +
-      multi.moic.toFixed(1) + "×</strong>. One platform, many regulated markets: that is the unicorn path.";
+    if (isHe()) {
+      $("bp-unicorn-text").innerHTML =
+        "התוכנית בצמיחה גבוהה ל-5 שנים מביאה את הכנסות " + FINAL_YEAR + " לכ-" + fmtShort(revFinal) +
+        " — במכפלת היציאה לבסיס סימולציית האקטואריה (פי 4) האקוויטי שווה " +
+        fmtShort(base.exitVal) + ", <strong>תשואה של פי " + base.moic.toFixed(1) + "</strong> על האחזקה הנבחרת. אותה פלטפורמה ממודלת מראש " +
+        "לארה״ב, קנדה, אירופה, יפן והמזרח-התיכון; שכפול הספר הישראלי לשניים-שלושה מאותם שווקים מציב את פיינס על " +
+        "<strong>מסלול שווי של " + fmtShort(1000000000) + "+</strong> — בתמחור מחדש רב-שווקי של פי 10, מיקום הסיד הזה מחזיר ≈ <strong>פי " +
+        multi.moic.toFixed(1) + "</strong>. פלטפורמה אחת, שווקים מפוקחים רבים: זהו נתיב היוניקורן.";
+    } else {
+      $("bp-unicorn-text").innerHTML =
+        "The five-year high-growth plan takes " + FINAL_YEAR + " net revenue to " + fmtShort(revFinal) +
+        " — at the actuarial-simulation base exit multiple (4×) the equity is worth " +
+        fmtShort(base.exitVal) + ", a <strong>" + base.moic.toFixed(1) + "× return</strong> on the selected position. The same platform is pre-modelled " +
+        "for the USA, Canada, Europe, Japan and the Middle East; replicating the Israeli book across two to three of those markets puts PHINS on a " +
+        "<strong>" + fmtShort(1000000000) + "+ valuation trajectory</strong> — at a 10× multi-market re-rating this seed position returns ≈ <strong>" +
+        multi.moic.toFixed(1) + "×</strong>. One platform, many regulated markets: that is the unicorn path.";
+    }
     $("bp-kpi-moic").textContent = base.moic.toFixed(1) + "x";
   }
 
   function renderAll() {
+    // Static-text translator must run before any per-render content fills
+    // hero/cover/kpi labels, so the Hebrew labels (e.g. "שווי לפני הכסף")
+    // are in place before the numeric values are written in.
+    applyStaticI18n();
+
     var m = dealModel(), sel = selectedPosition(m), mm = monthlyModel();
 
-    // toolbar / fx
     document.querySelectorAll(".cur-btn").forEach(function (b) {
       b.classList.toggle("on", b.getAttribute("data-cur") === cfg.currency);
     });
+    var fxState = cfg.fxSource === "alpha_vantage" ? (isHe() ? "חי" : "LIVE")
+                : cfg.fxSource === "manual" ? (isHe() ? "ידני" : "MANUAL")
+                : (isHe() ? "מילוט" : "FALLBACK");
     $("bp-fx-note").textContent = "1 USD = ₪" + Number(cfg.usdIls).toFixed(4) + " / €" + Number(cfg.usdEur).toFixed(4) +
-      " (" + (cfg.fxSource === "alpha_vantage" ? "LIVE" : cfg.fxSource === "manual" ? "MANUAL" : "FALLBACK") + ")";
+      " (" + fxState + ")";
 
-    // hero + cover
     var today = new Date();
-    $("bp-hero-date").textContent = "Plan as of " + today.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    if (isHe()) {
+      var HE_MONTHS_FULL = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+      $("bp-hero-date").textContent = "תוכנית נכון ל-" + today.getDate() + " ב" + HE_MONTHS_FULL[today.getMonth()] + " " + today.getFullYear();
+    } else {
+      $("bp-hero-date").textContent = "Plan as of " + today.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    }
     $("bp-kpi-ask").textContent = fmtShort(cfg.round);
     $("bp-kpi-pre").textContent = fmtShort(cfg.preMoney);
     $("bp-kpi-post").textContent = fmtShort(m.post);
     $("bp-kpi-stake").textContent = pct(sel.stake);
     $("bp-kpi-stake-lbl").textContent = sel.lbl;
     $("bp-kpi-rev29").textContent = fmtShort(PLAN.avgInForce[LAST_YI] * PLAN.premium * PLAN.takeRate);
-    $("bp-cover-ask").textContent = fmtMoney(cfg.round) + " seed / build round on " + fmtMoney(cfg.preMoney) +
-      " pre-money (" + fmtMoney(m.post) + " post)";
-    var basisNote = cfg.valBasis === "actuarial" && cfg.valProvenance ? " (actuarial sim · P" + cfg.valProvenance.percentile + ")" :
-                    cfg.valBasis === "multiple" ? " (income multiple)" : "";
+    if (isHe()) {
+      $("bp-cover-ask").textContent = fmtMoney(cfg.round) + " סבב סיד / בנייה על " + fmtMoney(cfg.preMoney) +
+        " לפני הכסף (" + fmtMoney(m.post) + " לאחר הכסף)";
+    } else {
+      $("bp-cover-ask").textContent = fmtMoney(cfg.round) + " seed / build round on " + fmtMoney(cfg.preMoney) +
+        " pre-money (" + fmtMoney(m.post) + " post)";
+    }
+    var basisNoteHe = cfg.valBasis === "actuarial" && cfg.valProvenance ? " (סימולציה אקטוארית · P" + cfg.valProvenance.percentile + ")" :
+                      cfg.valBasis === "multiple" ? " (מכפיל הכנסות)" : "";
+    var basisNoteEn = cfg.valBasis === "actuarial" && cfg.valProvenance ? " (actuarial sim · P" + cfg.valProvenance.percentile + ")" :
+                      cfg.valBasis === "multiple" ? " (income multiple)" : "";
     $("bp-assum-round").textContent = fmtMoney(cfg.round);
-    $("bp-assum-pre").textContent = fmtMoney(cfg.preMoney) + basisNote;
+    $("bp-assum-pre").textContent = fmtMoney(cfg.preMoney) + (isHe() ? basisNoteHe : basisNoteEn);
 
-    // generic money spans
     document.querySelectorAll(".bp-cur-sym").forEach(function (n) { n.textContent = SYM[cfg.currency]; });
     document.querySelectorAll(".bp-money").forEach(function (n) { n.textContent = fmtMoney(num(n.getAttribute("data-ils"), 0)); });
     document.querySelectorAll(".bp-moneyM").forEach(function (n) { n.textContent = fmtShort(num(n.getAttribute("data-ils"), 0)); });
     document.querySelectorAll(".bp-moneyB").forEach(function (n) { n.textContent = fmtShort(num(n.getAttribute("data-ils"), 0)); });
 
-    // sections
     renderUseOfFunds();
     $("bp-chart-burn").innerHTML = burnChart(mm);
     var totalCapital = cfg.round + mm.seriesANeed;
-    $("bp-runway-callout").innerHTML = "<strong>Burn pace & runway (adjusted live).</strong> The " + fmtShort(cfg.round) +
-      " build budget is deployed across <strong>" + mm.buildMonths + " build months</strong> (" +
-      fmtShort(mm.buildMonths > 0 ? cfg.round / mm.buildMonths : 0) + "/mo) to the 1 Jan 2027 launch; from launch, burn is offset by the expected platform cash flow " +
-      "from premiums (25% take on GWP) net of plan opex, with carrier-level claims and reinsurance carried by the risk carrier on the portfolio-simulation basis. " +
-      "Minimum cash point: <strong>" + fmtShort(mm.minCash) + "</strong>" +
-      (mm.seriesANeed > 0
-        ? " — bridged by a 2027 Series A of ≈ <strong>" + fmtShort(mm.seriesANeed) + "</strong> (total external capital to EBITDA-positive ≈ " + fmtShort(totalCapital) + ")."
-        : " — the configured round fully funds the plan to EBITDA-positive with no Series A required.");
-    $("bp-cum-capital").innerHTML = "Cumulative external capital to EBITDA-positive ≈ <strong>" + fmtShort(totalCapital) +
-      "</strong> (" + fmtShort(cfg.round) + " seed / build" +
-      (mm.seriesANeed > 0 ? " + " + fmtShort(mm.seriesANeed) + " scale-up burn bridged by the 2027 Series A" : ", no further capital required on this configuration") + ").";
+    if (isHe()) {
+      $("bp-runway-callout").innerHTML = "<strong>קצב שריפה ו-runway (מעודכן חי).</strong> תקציב הבנייה של " + fmtShort(cfg.round) +
+        " נפרס על-פני <strong>" + mm.buildMonths + " חודשי בנייה</strong> (" +
+        fmtShort(mm.buildMonths > 0 ? cfg.round / mm.buildMonths : 0) + " / חודש) עד ההשקה ב-1 בינואר 2027; מן ההשקה ואילך השריפה מתקזזת בתזרים פלטפורמה צפוי " +
+        "מפרמיות (שיעור-לקיחה 25% על GWP) בניכוי עלויות תפעול, כשתביעות וביטוח-המשנה ברמת חברת הביטוח נישאים על-ידי חברת הביטוח על-בסיס סימולציית התיק. " +
+        "נקודת מינ׳ מזומן: <strong>" + fmtShort(mm.minCash) + "</strong>" +
+        (mm.seriesANeed > 0
+          ? " — נגשרת בסבב Series A ב-2027 בגובה כ-<strong>" + fmtShort(mm.seriesANeed) + "</strong> (סך הון חיצוני עד EBITDA חיובי ≈ " + fmtShort(totalCapital) + ")."
+          : " — הסבב המוגדר מממן את התוכנית עד EBITDA חיובי, ללא צורך ב-Series A.");
+      $("bp-cum-capital").innerHTML = "סך ההון החיצוני עד EBITDA חיובי ≈ <strong>" + fmtShort(totalCapital) +
+        "</strong> (" + fmtShort(cfg.round) + " סיד / בנייה" +
+        (mm.seriesANeed > 0 ? " + " + fmtShort(mm.seriesANeed) + " שריפת האצה הנגשרת ב-Series A 2027" : ", ללא הון נוסף נדרש בתצורה הנוכחית") + ").";
+    } else {
+      $("bp-runway-callout").innerHTML = "<strong>Burn pace & runway (adjusted live).</strong> The " + fmtShort(cfg.round) +
+        " build budget is deployed across <strong>" + mm.buildMonths + " build months</strong> (" +
+        fmtShort(mm.buildMonths > 0 ? cfg.round / mm.buildMonths : 0) + "/mo) to the 1 Jan 2027 launch; from launch, burn is offset by the expected platform cash flow " +
+        "from premiums (25% take on GWP) net of plan opex, with carrier-level claims and reinsurance carried by the risk carrier on the portfolio-simulation basis. " +
+        "Minimum cash point: <strong>" + fmtShort(mm.minCash) + "</strong>" +
+        (mm.seriesANeed > 0
+          ? " — bridged by a 2027 Series A of ≈ <strong>" + fmtShort(mm.seriesANeed) + "</strong> (total external capital to EBITDA-positive ≈ " + fmtShort(totalCapital) + ")."
+          : " — the configured round fully funds the plan to EBITDA-positive with no Series A required.");
+      $("bp-cum-capital").innerHTML = "Cumulative external capital to EBITDA-positive ≈ <strong>" + fmtShort(totalCapital) +
+        "</strong> (" + fmtShort(cfg.round) + " seed / build" +
+        (mm.seriesANeed > 0 ? " + " + fmtShort(mm.seriesANeed) + " scale-up burn bridged by the 2027 Series A" : ", no further capital required on this configuration") + ").";
+    }
 
-    $("bp-gantt-title").textContent = "5-year execution Gantt (" + HORIZON() + " months) — " + monthLabel(mm.start) + " → " +
-      monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
+    if (isHe()) {
+      $("bp-gantt-title").textContent = "גאנט ביצוע ל-5 שנים (" + HORIZON() + " חודשים) — " + monthLabel(mm.start) + " ← " +
+        monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
+    } else {
+      $("bp-gantt-title").textContent = "5-year execution Gantt (" + HORIZON() + " months) — " + monthLabel(mm.start) + " → " +
+        monthLabel(new Date(mm.start.getFullYear(), mm.start.getMonth() + HORIZON() - 1, 1));
+    }
     $("bp-chart-gantt").innerHTML = ganttChart(mm);
     $("bp-chart-policies").innerHTML = policiesChart(mm);
 
     $("bp-chart-pnl").innerHTML = groupBarChart(PLAN.years, [
-      { name: "GWP", color: "#0b2545", values: PLAN.avgInForce.map(function (p) { return p * PLAN.premium; }) },
-      { name: "PHINS net revenue", color: "#1d4ed8", values: PLAN.avgInForce.map(function (p) { return p * PLAN.premium * PLAN.takeRate; }) },
-      { name: "EBITDA", color: "#15803d", values: PLAN.avgInForce.map(function (p, i) { return p * PLAN.premium * PLAN.takeRate - PLAN.opex[i]; }) }
+      { name: tr("GWP", "ser.gwp"), color: "#0b2545", values: PLAN.avgInForce.map(function (p) { return p * PLAN.premium; }) },
+      { name: tr("PHINS net revenue", "ser.phins"), color: "#1d4ed8", values: PLAN.avgInForce.map(function (p) { return p * PLAN.premium * PLAN.takeRate; }) },
+      { name: tr("EBITDA", "ser.ebitda"), color: "#15803d", values: PLAN.avgInForce.map(function (p, i) { return p * PLAN.premium * PLAN.takeRate - PLAN.opex[i]; }) }
     ]);
 
     renderCarrier();
@@ -971,14 +1348,12 @@ svg { display: block; width: 100%; height: auto; }
     renderUnicorn(m, sel);
   }
 
-  // currency toggle (view-only; does not change the stored configurator base)
   document.querySelectorAll(".cur-btn").forEach(function (b) {
     b.addEventListener("click", function () { cfg.currency = b.getAttribute("data-cur"); renderAll(); });
   });
 
   renderAll();
 
-  // refresh FX (graceful fallback)
   fetch("/api/fx/rates").then(function (r) { return r.json(); }).then(function (d) {
     if (d && d.usd_ils) {
       cfg.usdIls = num(d.usd_ils, cfg.usdIls);
