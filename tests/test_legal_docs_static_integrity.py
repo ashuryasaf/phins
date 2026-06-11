@@ -226,6 +226,44 @@ def test_investor_business_plan_meeting_adjustments():
     assert "Admin AI Mic" not in bp
 
 
+def test_investor_business_plan_hebrew_locale_for_ils():
+    """When the investor selects ₪ ILS in the business plan, the document
+    must switch to professional Hebrew (RTL). The English baseline is the
+    on-page fallback so USD / EUR keep rendering in English unchanged."""
+    bp = _read(STATIC / "internal" / "phins-investor-business-plan.html")
+    # i18n scaffolding is wired
+    assert "I18N_HE" in bp
+    assert "applyStaticI18n" in bp
+    assert 'data-i18n="page.title"' in bp
+    assert 'data-i18n="hero.h1"' in bp
+    assert 'data-i18n="integrity.note"' in bp
+    # RTL/Hebrew typography CSS is present
+    assert 'html[dir="rtl"]' in bp
+    # locale flips when ILS is selected — the dictionary carries professional
+    # Hebrew translations of the high-impact sections
+    he_section_titles = [
+        "פיינס — תוכנית עסקית",       # hero h1
+        "המייסד",                      # section 1
+        "הצורך",                        # section 2
+        "הפתרון",                       # section 3
+        "מודל עסקי",                    # section 5
+        "הנחות תחת בחינה",              # section 6
+        "שימוש בכספים",                  # section 7
+        "תחזית פיננסית",                # section 9
+        "מבני העסקה",                   # section 10
+        "צוות וממשל תאגידי",            # section 11
+        "סיכונים והפחתות",              # section 12
+        "השלבים הבאים",                 # section 13
+    ]
+    for he in he_section_titles:
+        assert he in bp, f"missing Hebrew title: {he}"
+    # data-integrity notice is fully translated and preserves the ₪3,600 /
+    # 25% take-rate anchor values so numeric integrity is flawless across
+    # both locales
+    assert "הצהרת שלמות נתונים" in bp
+    assert "₪3,600" in bp and "25%" in bp
+
+
 def test_il_pitch_links_data_room():
     il = _read(STATIC / "israel-capital-markets-pitch.html")
     assert "/corporate-legal-dashboard.html" in il
