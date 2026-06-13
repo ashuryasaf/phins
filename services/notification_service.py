@@ -3810,6 +3810,99 @@ def should_use_mock_notifications() -> bool:
     )
 
 
+_SMS_PROVIDER_TYPES = {'twilio', 'sns', 'vonage', 'messagebird', 'telesign'}
+
+
+def _sms_provider_is_configured(provider_type: str) -> bool:
+    """Return True when the given SMS provider can actually deliver a message.
+
+    Credential resolution mirrors each provider's ``send`` path
+    (``_first_non_empty_env(...) or NotificationConfig.*``) so diagnostics and
+    auto-selection agree with what runtime delivery can use. Providers that
+    require an optional SDK (Twilio, AWS SNS) only count as configured when
+    that SDK is importable, because the send path hard-fails without it.
+    """
+    provider_type = (provider_type or '').strip().lower()
+    if provider_type == 'telesign':
+        return bool(
+            (
+                _first_non_empty_env('TELESIGN_CUSTOMER_ID')
+                or NotificationConfig.TELESIGN_CUSTOMER_ID
+            )
+            and (
+                _first_non_empty_env('TELESIGN_API_KEY')
+                or NotificationConfig.TELESIGN_API_KEY
+            )
+        )
+    if provider_type == 'twilio':
+        return bool(
+            (_first_non_empty_env('TWILIO_ACCOUNT_SID') or NotificationConfig.TWILIO_ACCOUNT_SID)
+            and (_first_non_empty_env('TWILIO_AUTH_TOKEN') or NotificationConfig.TWILIO_AUTH_TOKEN)
+            # The send path uses TWILIO_FROM_NUMBER as the 'from_' sender, so
+            # without it Twilio rejects the message at runtime.
+            and (_first_non_empty_env('TWILIO_FROM_NUMBER') or NotificationConfig.TWILIO_FROM_NUMBER)
+            and _module_available('twilio')
+        )
+    if provider_type == 'vonage':
+        return bool(
+            (_first_non_empty_env('VONAGE_API_KEY') or NotificationConfig.VONAGE_API_KEY)
+            and (_first_non_empty_env('VONAGE_API_SECRET') or NotificationConfig.VONAGE_API_SECRET)
+        )
+    if provider_type == 'messagebird':
+        return bool(
+            _first_non_empty_env('MESSAGEBIRD_API_KEY') or NotificationConfig.MESSAGEBIRD_API_KEY
+        )
+    if provider_type == 'sns':
+        return _aws_identity_configured() and _module_available('boto3')
+    return False
+
+
+def _detect_configured_sms_provider() -> Optional[str]:
+    """Return the best SMS provider that is actually deliverable, if any.
+
+    Telesign is preferred first because it authenticates with a simple
+    Customer ID + API key over HTTPS (no optional SDK), which matches the
+    Railway deployment where Telesign credentials are provided. The remaining
+    providers follow so any fully-configured channel is used rather than
+    silently failing on an unconfigured default.
+    """
+    for provider_type in ('telesign', 'twilio', 'messagebird', 'vonage', 'sns'):
+        if _sms_provider_is_configured(provider_type):
+            return provider_type
+    return None
+
+
+def _select_sms_provider_type() -> str:
+    """Select an SMS provider with safe auto-detection.
+
+    Mirrors ``_select_email_provider_type``: honour an explicitly configured
+    ``SMS_PROVIDER`` when it can deliver, but fall back to any other fully
+    configured provider when it cannot. This fixes the common production
+    misconfiguration where Telesign credentials are present (e.g. on Railway)
+    but ``SMS_PROVIDER`` is left at the ``twilio`` default, which would
+    otherwise make SMS verification codes silently fail to deliver.
+    """
+    configured = (NotificationConfig.SMS_PROVIDER or 'twilio').strip().lower()
+    if configured not in _SMS_PROVIDER_TYPES:
+        logger.warning("Unknown SMS_PROVIDER '%s'; falling back to twilio", configured)
+        configured = 'twilio'
+
+    if _sms_provider_is_configured(configured):
+        return configured
+
+    detected = _detect_configured_sms_provider()
+    if detected and detected != configured:
+        logger.warning(
+            "SMS_PROVIDER='%s' cannot deliver (missing credentials/SDK); "
+            "auto-selecting configured provider '%s' for SMS delivery.",
+            configured,
+            detected,
+        )
+        return detected
+
+    return configured
+
+
 def create_notification_service(
     use_mock: bool = True,
     email_provider: Optional[EmailProvider] = None,
@@ -3840,6 +3933,12 @@ def create_notification_service(
         - 'vonage': Vonage (formerly Nexmo) SMS API
         - 'messagebird': MessageBird SMS API
         - 'telesign': Telesign Engage / Messaging API
+
+    When the configured SMS_PROVIDER cannot deliver (missing credentials or
+    an uninstalled optional SDK) but another provider is fully configured,
+    that provider is auto-selected (Telesign first). This prevents verification
+    codes from silently failing when, for example, Telesign credentials are set
+    on Railway but SMS_PROVIDER was left at the 'twilio' default.
     """
     if use_mock:
         email = MockEmailProvider()
@@ -3866,7 +3965,14 @@ def create_notification_service(
         if sms_provider:
             sms = sms_provider
         else:
-            provider_type = (NotificationConfig.SMS_PROVIDER or 'twilio').lower()
+            configured_provider = (NotificationConfig.SMS_PROVIDER or 'twilio').lower()
+            provider_type = _select_sms_provider_type()
+            if provider_type != configured_provider:
+                logger.info(
+                    "Auto-selected SMS provider '%s' (configured '%s')",
+                    provider_type,
+                    configured_provider,
+                )
             if provider_type == 'sns':
                 sms = AWSSNSProvider()
             elif provider_type == 'vonage':
@@ -3960,50 +4066,21 @@ def get_active_email_provider_type() -> str:
 
 
 def get_active_sms_provider_type() -> str:
-    """Return the SMS provider that would be used for delivery, or 'mock'/'noop'."""
+    """Return the SMS provider that would be used for delivery, or 'mock'/'noop'.
+
+    Honours the same auto-selection as ``create_notification_service`` so the
+    reported provider matches what actually sends: when the configured
+    ``SMS_PROVIDER`` cannot deliver but another provider (e.g. Telesign) is
+    fully configured, that provider is reported instead of ``noop``.
+    """
     if should_use_mock_notifications():
         return 'mock'
-    provider_type = (NotificationConfig.SMS_PROVIDER or 'twilio').lower()
-    if provider_type not in {'twilio', 'sns', 'vonage', 'messagebird', 'telesign'}:
+    provider_type = _select_sms_provider_type()
+    if provider_type not in _SMS_PROVIDER_TYPES:
         provider_type = 'twilio'
-    if provider_type == 'twilio':
-        if not (
-            NotificationConfig.TWILIO_ACCOUNT_SID and NotificationConfig.TWILIO_AUTH_TOKEN
-        ):
-            return 'noop'
-        # The send path uses TWILIO_FROM_NUMBER as the 'from_' sender, so without
-        # it Twilio rejects the message at runtime.
-        if not NotificationConfig.TWILIO_FROM_NUMBER:
-            return 'noop'
-        # Twilio delivery needs the optional 'twilio' SDK at send time.
-        if not _module_available('twilio'):
-            return 'noop'
-    if provider_type == 'vonage' and not (
-        NotificationConfig.VONAGE_API_KEY and NotificationConfig.VONAGE_API_SECRET
-    ):
-        return 'noop'
-    if provider_type == 'messagebird' and not NotificationConfig.MESSAGEBIRD_API_KEY:
-        return 'noop'
-    if provider_type == 'telesign':
-        # Telesign needs Customer ID + API key (Basic Auth); no SDK
-        # required because we use stdlib urllib for the REST call.
-        customer_id = (
-            _first_non_empty_env('TELESIGN_CUSTOMER_ID')
-            or NotificationConfig.TELESIGN_CUSTOMER_ID
-        )
-        api_key = (
-            _first_non_empty_env('TELESIGN_API_KEY')
-            or NotificationConfig.TELESIGN_API_KEY
-        )
-        if not customer_id or not api_key:
-            return 'noop'
-    if provider_type == 'sns':
-        if not _aws_identity_configured():
-            return 'noop'
-        # SNS delivery needs boto3 at send time.
-        if not _module_available('boto3'):
-            return 'noop'
-    return provider_type
+    if _sms_provider_is_configured(provider_type):
+        return provider_type
+    return 'noop'
 
 
 def get_notification_provider_diagnostics() -> Dict[str, Any]:
@@ -4065,10 +4142,18 @@ def get_notification_provider_diagnostics() -> Dict[str, Any]:
         },
     }
 
+    sms_configured_provider = (NotificationConfig.SMS_PROVIDER or 'twilio').lower()
     sms_status = {
-        'configured_provider': (NotificationConfig.SMS_PROVIDER or 'twilio').lower(),
+        'configured_provider': sms_configured_provider,
         'active_provider': sms_active,
         'will_deliver': sms_active not in ('mock', 'noop'),
+        # True when delivery falls back to a different (deliverable) provider
+        # than the one named by SMS_PROVIDER — e.g. Telesign creds present but
+        # SMS_PROVIDER left at the 'twilio' default.
+        'auto_selected': (
+            sms_active not in ('mock', 'noop')
+            and sms_active != sms_configured_provider
+        ),
         'providers': {
             'twilio': {
                 'configured': bool(
@@ -4186,6 +4271,13 @@ def _provider_diagnostics_recommendation(
         hints.append(
             "Mock SMS provider is active because PHINS_TEST_MODE or "
             "PHINS_USE_MOCK_NOTIFICATIONS is set. Disable these in production."
+        )
+    elif sms_status.get('auto_selected'):
+        configured = sms_status.get('configured_provider')
+        hints.append(
+            f"SMS_PROVIDER='{configured}' is not deliverable, so SMS codes are "
+            f"being auto-sent via the configured '{sms_active}' provider. Set "
+            f"SMS_PROVIDER={sms_active} to make this explicit."
         )
 
     if not hints:
