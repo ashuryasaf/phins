@@ -409,3 +409,76 @@ class TestPasswordResetNotificationReporting:
         new_hash = portal.USERS[username]["hash"]
         assert new_hash != old_hash
         assert portal.verify_password("TrackedReset1!", new_hash, portal.USERS[username]["salt"])
+
+
+# ---------- Channel fallback when email is unconfigured (Railway/Telesign) ----------
+
+class TestPasswordResetEmailToSmsFallback:
+    """When SMTP is unconfigured but Telesign SMS is, an 'email' request for an
+    account with a registered phone must fall back to SMS instead of failing.
+    """
+
+    def setup_method(self):
+        portal.USERS.clear()
+        portal.CUSTOMERS.clear()
+        portal.SESSIONS.clear()
+        _teardown_otp()
+        self._orig_deliverability = portal._password_reset_provider_deliverability
+
+    def teardown_method(self):
+        portal._password_reset_provider_deliverability = self._orig_deliverability
+
+    def _setup_user_with_phone(self):
+        pwd_hash = portal.hash_password("OldPass123")
+        portal.USERS["phoneuser"] = {
+            "hash": pwd_hash["hash"],
+            "salt": pwd_hash["salt"],
+            "role": "customer",
+            "customer_id": "CUST_PHONE_001",
+        }
+        portal.CUSTOMERS["CUST_PHONE_001"] = {
+            "id": "CUST_PHONE_001",
+            "name": "Phone User",
+            "email": "phone@example.com",
+            "phone": "+15551230000",
+        }
+        return "phoneuser", "phone@example.com"
+
+    def test_email_request_falls_back_to_sms_when_email_unconfigured(self):
+        # Simulate: email provider NoOp, SMS provider deliverable (Telesign).
+        portal._password_reset_provider_deliverability = lambda: (False, True)
+        # Warm up the port: the first request after conftest resets the
+        # per-port init tracker triggers _ensure_test_port_state, which wipes
+        # CUSTOMERS. Issue a throwaway request first so the customer we seed
+        # below survives until the assertion request.
+        _post("/api/request-password-reset", {
+            "username": "warmup", "email": "warmup@example.com",
+            "delivery_channel": "email",
+        })
+        username, email = self._setup_user_with_phone()
+
+        status, body = _post("/api/request-password-reset", {
+            "username": username, "email": email, "delivery_channel": "email",
+        })
+        assert status == 200
+        assert body.get("success") is True
+        # The reset was routed to SMS (account's registered phone).
+        assert body.get("delivery_channel") == "sms"
+        assert body.get("masked_phone")
+        # Mock SMS provider succeeds in test mode, so delivery is reported sent.
+        assert body.get("notification_sent") is True
+
+    def test_decoy_mirrors_sms_fallback_to_avoid_enumeration(self):
+        # A non-existent account must return the same channel shape a real
+        # phone-bearing account would, so existence cannot be inferred.
+        portal._password_reset_provider_deliverability = lambda: (False, True)
+
+        status, body = _post("/api/request-password-reset", {
+            "username": "ghost", "email": "ghost@nowhere.com",
+            "delivery_channel": "email",
+        })
+        assert status == 200
+        assert body.get("success") is True
+        assert body.get("delivery_channel") == "sms"
+        assert body.get("masked_phone")
+        assert body.get("notification_sent") is True

@@ -10573,6 +10573,61 @@ def notify_customer_tax_year_report_available(
     }
 
 
+def _password_reset_provider_deliverability() -> Tuple[bool, bool]:
+    """Return (email_deliverable, sms_deliverable) for the current deployment.
+
+    Reflects whether the active email/SMS providers can actually send (not a
+    NoOp/unconfigured stub). Used to route the password-reset OTP onto a
+    channel that will actually deliver — e.g. when SMTP is unconfigured but
+    Telesign SMS is available on Railway. Failures default to ``True`` so a
+    transient diagnostics issue never blocks a reset attempt.
+    """
+    try:
+        from services.notification_service import (
+            get_active_email_provider_type,
+            get_active_sms_provider_type,
+        )
+        email_deliverable = get_active_email_provider_type() != 'noop'
+        sms_deliverable = get_active_sms_provider_type() != 'noop'
+        return email_deliverable, sms_deliverable
+    except Exception:
+        return True, True
+
+
+def _resolve_password_reset_channel(
+    requested_channel: str,
+    has_phone: bool,
+    email_deliverable: bool,
+    sms_deliverable: bool,
+) -> str:
+    """Pick the delivery channel most likely to actually reach the account.
+
+    SMS in the password-reset flow is always bound to the account's registered
+    phone, so switching email -> SMS (or vice versa) still targets the account
+    owner and introduces no cross-account exposure. The goal is purely to avoid
+    failing a reset because the requested channel's provider is unconfigured
+    while a working alternative exists.
+    """
+    channel = (requested_channel or 'email').strip().lower()
+    if channel not in ('email', 'sms', 'both'):
+        channel = 'email'
+
+    # SMS legs require a registered phone; drop to email when none is on file.
+    if channel in ('sms', 'both') and not has_phone:
+        channel = 'email'
+
+    sms_ok = sms_deliverable and has_phone
+
+    # If the resolved channel's provider can't deliver, switch to the other
+    # channel when that one can.
+    if channel == 'email' and not email_deliverable and sms_ok:
+        channel = 'sms'
+    elif channel == 'sms' and not sms_ok and email_deliverable:
+        channel = 'email'
+
+    return channel
+
+
 def _notify_password_reset_requested(
     username: str,
     email: str,
@@ -31434,6 +31489,12 @@ For claims or questions, please contact:
 
                 from services.otp_security_service import mask_email as _mask_email, _mask_phone
 
+                # Resolve which channels can actually deliver in this deployment
+                # so a reset is routed onto a working provider (e.g. Telesign SMS
+                # when SMTP is unconfigured). Computed once and shared by the
+                # decoy so non-existent accounts mirror the real channel choice.
+                email_deliverable, sms_provider_deliverable = _password_reset_provider_deliverability()
+
                 def _decoy_reset_response():
                     """Structurally identical to a real response to prevent user enumeration.
 
@@ -31442,12 +31503,19 @@ For claims or questions, please contact:
                     cannot distinguish a non-existent account from one with a phone on
                     file. The fabricated masked phone is derived deterministically from
                     the supplied identifiers so repeated requests stay consistent like a
-                    real account.
+                    real account. The decoy assumes the common "phone on file" case so
+                    its channel matches a real account that can fall back to SMS.
                     """
                     decoy_id = f"OTP_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}"
-                    if requested_channel == 'sms':
+                    decoy_channel = _resolve_password_reset_channel(
+                        requested_channel,
+                        has_phone=True,
+                        email_deliverable=email_deliverable,
+                        sms_deliverable=sms_provider_deliverable,
+                    )
+                    if decoy_channel == 'sms':
                         decoy_message = 'If the account exists, a verification code has been sent to the registered phone number.'
-                    elif requested_channel == 'both':
+                    elif decoy_channel == 'both':
                         decoy_message = 'If the account exists, a verification code has been sent to the registered email and phone number.'
                     else:
                         decoy_message = 'If the account exists, a verification code has been sent to the registered email.'
@@ -31458,11 +31526,15 @@ For claims or questions, please contact:
                         'requires_otp': True,
                         'notification_sent': True,
                         'masked_email': _mask_email(email),
-                        'delivery_channel': requested_channel,
+                        'delivery_channel': decoy_channel,
                         'expires_in_seconds': 300,
                     }
-                    if requested_channel in ('sms', 'both'):
-                        _seed = hashlib.sha256(f"{username}|{email}".encode('utf-8')).hexdigest()
+                    if decoy_channel in ('sms', 'both'):
+                        # Import locally: ``hashlib`` is assigned later inside the
+                        # enclosing do_POST scope, which makes the module-level
+                        # name a (still-unbound) free variable here.
+                        import hashlib as _hashlib_decoy
+                        _seed = _hashlib_decoy.sha256(f"{username}|{email}".encode('utf-8')).hexdigest()
                         _fake_digits = ''.join(str(int(c, 16) % 10) for c in _seed[:11])
                         decoy['masked_phone'] = _mask_phone(f"+{_fake_digits}")
                     return decoy
@@ -31487,10 +31559,19 @@ For claims or questions, please contact:
                 # redirect the reset code to their own device. If no phone is
                 # on file, drop back to email-only delivery so we don't block
                 # the reset.
+                #
+                # The resolver also routes email -> SMS (and vice versa) when the
+                # requested channel's provider is unconfigured but the other is
+                # available, so a reset still reaches the account owner instead of
+                # failing with "Delivery issue detected" (e.g. SMTP unconfigured
+                # but Telesign SMS configured on Railway).
                 effective_phone = str((customer or {}).get('phone') or '').strip()
-                effective_channel = requested_channel
-                if effective_channel in ('sms', 'both') and not effective_phone:
-                    effective_channel = 'email'
+                effective_channel = _resolve_password_reset_channel(
+                    requested_channel,
+                    has_phone=bool(effective_phone),
+                    email_deliverable=email_deliverable,
+                    sms_deliverable=sms_provider_deliverable,
+                )
 
                 try:
                     from services.otp_security_service import get_otp_security_service, OTPPurpose
