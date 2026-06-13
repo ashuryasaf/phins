@@ -19,6 +19,7 @@ import pytest
 from services.notification_service import (
     NotificationConfig,
     TelesignSMSProvider,
+    TwilioSMSProvider,
     create_notification_service,
     get_active_sms_provider_type,
     get_notification_provider_diagnostics,
@@ -252,3 +253,60 @@ def test_diagnostics_recommends_telesign_creds_when_selected_but_missing(monkeyp
     assert 'TELESIGN_CUSTOMER_ID' in recommendation
     assert 'TELESIGN_API_KEY' in recommendation
     assert 'my.telesign.com' in recommendation
+
+
+def _clear_twilio(monkeypatch):
+    """Ensure Twilio looks unconfigured regardless of the host environment."""
+    monkeypatch.setattr(NotificationConfig, 'TWILIO_ACCOUNT_SID', '')
+    monkeypatch.setattr(NotificationConfig, 'TWILIO_AUTH_TOKEN', '')
+    monkeypatch.setattr(NotificationConfig, 'TWILIO_FROM_NUMBER', '')
+    for name in ('TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER'):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_sms_auto_selects_telesign_when_provider_left_at_twilio_default(monkeypatch):
+    """Telesign creds present on Railway but SMS_PROVIDER left at 'twilio'.
+
+    The configured provider (twilio) cannot deliver, so the fully-configured
+    Telesign provider should be auto-selected instead of silently failing.
+    """
+    monkeypatch.setattr(NotificationConfig, 'SMS_PROVIDER', 'twilio')
+    _clear_twilio(monkeypatch)
+    monkeypatch.setattr(NotificationConfig, 'TELESIGN_CUSTOMER_ID', 'CUST-AUTO')
+    monkeypatch.setattr(NotificationConfig, 'TELESIGN_API_KEY', 'apikey-auto')
+
+    assert get_active_sms_provider_type() == 'telesign'
+
+    service = create_notification_service(use_mock=False)
+    assert isinstance(service._sms_provider, TelesignSMSProvider)
+
+
+def test_diagnostics_flags_auto_selected_telesign(monkeypatch):
+    monkeypatch.setattr(NotificationConfig, 'SMS_PROVIDER', 'twilio')
+    _clear_twilio(monkeypatch)
+    monkeypatch.setattr(NotificationConfig, 'TELESIGN_CUSTOMER_ID', 'CUST-AUTO2')
+    monkeypatch.setattr(NotificationConfig, 'TELESIGN_API_KEY', 'apikey-auto2')
+
+    diagnostics = get_notification_provider_diagnostics()
+    sms = diagnostics['sms']
+    assert sms['configured_provider'] == 'twilio'
+    assert sms['active_provider'] == 'telesign'
+    assert sms['will_deliver'] is True
+    assert sms['auto_selected'] is True
+
+    recommendation = diagnostics.get('recommendation') or ''
+    assert "SMS_PROVIDER='twilio'" in recommendation
+    assert 'SMS_PROVIDER=telesign' in recommendation
+
+
+def test_sms_stays_noop_when_no_provider_configured(monkeypatch):
+    """No SMS provider configured at all -> still 'noop' (no false fallback)."""
+    monkeypatch.setattr(NotificationConfig, 'SMS_PROVIDER', 'twilio')
+    _clear_twilio(monkeypatch)
+    # Telesign creds already cleared by the autouse fixture.
+
+    assert get_active_sms_provider_type() == 'noop'
+
+    diagnostics = get_notification_provider_diagnostics()
+    assert diagnostics['sms']['will_deliver'] is False
+    assert diagnostics['sms']['auto_selected'] is False
