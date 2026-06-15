@@ -17,7 +17,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (120 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (121 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -77,6 +77,7 @@ Preferred file-by-task:
 |  |- config.py
 |  |- manager.py
 |  |- models.py
+|  |- marketplace_models.py
 |  |- data_access.py
 |  |- seeds.py
 |  |- notification_models.py
@@ -98,7 +99,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 120 test files
+|- tests/                               # 121 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -280,6 +281,13 @@ Environment variables commonly used:
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`
+- **SMS/OTP:** `SMS_PROVIDER` (`twilio` or `telesign`), `TWILIO_ACCOUNT_SID`,
+  `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TELESIGN_CUSTOMER_ID`,
+  `TELESIGN_API_KEY`, `TELESIGN_BASE_URL`, `TELESIGN_SEND_PATH`,
+  `TELESIGN_MESSAGE_TYPE`, `TELESIGN_SENDER_ID`,
+  `SMS_RATE_LIMIT_PER_MINUTE`, `SMS_RATE_LIMIT_PER_HOUR`,
+  `SMS_RATE_LIMIT_PER_DAY` (password-reset/OTP auto-falls back to the
+  configured SMS provider when email delivery is unconfigured)
 - **Integrations:** `PLAID_*`, `STRIPE_*`, `ACH_*`, `ALPACA_*`, `COINBASE_*`,
   `IB_*`, `WEBHOOK_BASE_URL`, `ALPHA_VANTAGE_API_KEY`
 
@@ -328,7 +336,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 120 test files under `tests/`, 11 root-level `test_*.py` files
+- 121 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -388,4 +396,4 @@ If you update this file again:
 
 ---
 
-Last updated: June 10, 2026
+Last updated: June 15, 2026
