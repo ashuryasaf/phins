@@ -2,10 +2,11 @@
 """
 Generate downloadable PDF reports for PHINS investor / pitch documents.
 =======================================================================
-Converts the served investor markdown documents under
-``web_portal/static/investor-docs/`` into clean, print-ready PDFs in the same
-directory, so the pitch dashboard can offer "⬇ PDF" downloads (e.g. for the
-Israel pitch and the AI/BI optimization review).
+Converts served investor markdown documents (under
+``web_portal/static/investor-docs/`` and the Business Plan at the static root)
+into clean, print-ready PDFs alongside their markdown sources, so the pitch
+dashboard can offer "⬇ PDF" downloads (e.g. for the Israel pitch, the AI/BI
+optimization review, and the executive Business Plan).
 
 Design / data-integrity notes:
 - **Deterministic, content-faithful rendering.** PDFs are generated *from* the
@@ -41,23 +42,35 @@ from reportlab.platypus import (
     Spacer, Table, TableStyle,
 )
 
-INVESTOR_DOCS_DIR = os.path.join(
+STATIC_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    'web_portal', 'static', 'investor-docs',
+    'web_portal', 'static',
 )
+# Kept for backwards compatibility / readers that import this constant.
+INVESTOR_DOCS_DIR = os.path.join(STATIC_DIR, 'investor-docs')
 
-# (markdown filename, output pdf filename, document title)
+# (markdown path, output pdf path, document title) — paths are relative to
+# ``STATIC_DIR`` so a document can live in the investor-docs library or, like
+# the executive Business Plan, directly at the served static root.
 DOCUMENTS = [
-    ('israel-pitch-executive-summary.md', 'israel-pitch-executive-summary.pdf',
+    ('investor-docs/israel-pitch-executive-summary.md',
+     'investor-docs/israel-pitch-executive-summary.pdf',
      'PHINS — Israel (IL) Pitch: Executive Summary'),
-    ('ai-bi-optimization-review.md', 'ai-bi-optimization-review.pdf',
+    ('investor-docs/ai-bi-optimization-review.md',
+     'investor-docs/ai-bi-optimization-review.pdf',
      'PHINS — AI & BI Optimization Review'),
-    ('ai-bi-implementation-summary.md', 'ai-bi-implementation-summary.pdf',
+    ('investor-docs/ai-bi-implementation-summary.md',
+     'investor-docs/ai-bi-implementation-summary.pdf',
      'PHINS — AI & BI Optimization: Implementation Summary'),
-    ('platform-data-architecture.md', 'platform-data-architecture.pdf',
+    ('investor-docs/platform-data-architecture.md',
+     'investor-docs/platform-data-architecture.pdf',
      'PHINS — Platform Data Architecture'),
-    ('health-marketplace-architecture.md', 'health-marketplace-architecture.pdf',
+    ('investor-docs/health-marketplace-architecture.md',
+     'investor-docs/health-marketplace-architecture.pdf',
      'PHINS — Global Health Marketplace Architecture'),
+    ('PHINS_Business_Plan_Executive.md',
+     'PHINS_Business_Plan_Executive.pdf',
+     'PHINS — Business Plan (Executive) 2026–2029'),
 ]
 
 PHINS_BLUE = colors.HexColor('#0d47a1')
@@ -297,7 +310,7 @@ def main(argv=None) -> int:
     if args.check:
         missing = [
             pdf for _, pdf, _ in DOCUMENTS
-            if not os.path.isfile(os.path.join(INVESTOR_DOCS_DIR, pdf))
+            if not os.path.isfile(os.path.join(STATIC_DIR, pdf))
         ]
         if missing:
             print('Missing PDFs:', ', '.join(missing))
@@ -308,8 +321,8 @@ def main(argv=None) -> int:
     styles = _styles()
     generated = []
     for md_name, pdf_name, title in DOCUMENTS:
-        md_path = os.path.join(INVESTOR_DOCS_DIR, md_name)
-        pdf_path = os.path.join(INVESTOR_DOCS_DIR, pdf_name)
+        md_path = os.path.join(STATIC_DIR, md_name)
+        pdf_path = os.path.join(STATIC_DIR, pdf_name)
         if not os.path.isfile(md_path):
             print(f"  ! skip (source missing): {md_name}")
             continue
@@ -317,7 +330,7 @@ def main(argv=None) -> int:
         size_kb = os.path.getsize(pdf_path) / 1024
         generated.append(pdf_name)
         print(f"  ✓ {pdf_name} ({size_kb:.0f} KB)")
-    print(f"Generated {len(generated)} investor PDF(s) in {INVESTOR_DOCS_DIR}")
+    print(f"Generated {len(generated)} investor PDF(s) under {STATIC_DIR}")
     return 0
 
 

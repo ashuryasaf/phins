@@ -12784,6 +12784,16 @@ For claims or questions, please contact:
             self.send_header('Content-Type', 'application/javascript; charset=utf-8')
         elif path.endswith('.css'):
             self.send_header('Content-Type', 'text/css; charset=utf-8')
+        elif path.endswith('.pdf'):
+            # Serve PDFs with their real type so "Open" links render inline in
+            # the browser's viewer instead of downloading a blank tab; an
+            # explicit download= attribute on the link still forces a download.
+            self.send_header('Content-Type', 'application/pdf')
+        elif path.endswith('.md'):
+            # Markdown sources (e.g. investor docs) render as readable text in
+            # the browser instead of being served as an opaque octet-stream,
+            # which presented as a blank page.
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
 
