@@ -144,6 +144,9 @@
     this.tables.forEach(function (t) {
       self.tableData[t.key] = (t.default || []).map(function (r) { return Object.assign({}, r); });
     });
+    // Pre-fill the investor name from the shared Deal & Valuation Configurator
+    // BEFORE restoring any saved/anchored instance, so saved values always win.
+    this.applySharedInvestorDefaults();
     // instance id (restore if same doc opened before, else mint)
     this.loadOrMint();
     // A shared link must not be editable or signable until the registry fetch
@@ -154,6 +157,22 @@
     this.recompute();
     this.refreshIntegrity();
     if (this._needsRegistryHydration) this.loadFromRegistry();
+  };
+
+  // Reflect the investor named in the pitch-dashboard Deal & Valuation
+  // Configurator (shared localStorage key) onto any investor document that has
+  // an `investorName` field. Only fills the field while it is still at its empty
+  // default, so a previously saved or ledger-anchored value is never overwritten.
+  LegalDoc.prototype.applySharedInvestorDefaults = function () {
+    try {
+      if (!this.fields.some(function (f) { return f.key === 'investorName'; })) return;
+      if ((('' + (this.values.investorName || '')).trim())) return;
+      var raw = localStorage.getItem('phins.investor.cfg.v1');
+      if (!raw) return;
+      var shared = JSON.parse(raw);
+      var name = shared && typeof shared === 'object' ? ('' + (shared.investorName || '')).trim() : '';
+      if (name) this.values.investorName = name;
+    } catch (e) {}
   };
 
   LegalDoc.prototype.loadOrMint = function () {
