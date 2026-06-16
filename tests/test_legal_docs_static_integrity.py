@@ -153,6 +153,49 @@ def test_pitch_dashboard_deal_configurator():
     assert 'class="inv-money inv-scale"' in pd
 
 
+def test_pitch_dashboard_investor_name_adjustable():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # editable investor-name input in the configurator, defaulting to Meir Uzan
+    assert 'id="inv-investor-name-input"' in pd
+    assert 'value="Mr. Meir Uzan"' in pd
+    # every mention is driven by a dynamic span (full + courteous short form)
+    assert 'class="inv-investor-name"' in pd
+    assert 'class="inv-investor-name-short"' in pd
+    # the configurator JS recomputes the name spans and persists it in the
+    # shared config the investor documents read
+    assert "investorName" in pd
+    assert ".inv-investor-name" in pd and ".inv-investor-name-short" in pd
+
+
+def test_pitch_dashboard_currency_is_live_not_fixed():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    # the section must NOT advertise a hard-coded/constant FX anymore
+    assert "fixed FX of 1" not in pd
+    assert "₪3.70" not in pd
+    # instead it states a live exchange rate, filled dynamically from /api/fx/rates
+    assert "live exchange rate" in pd
+    assert 'id="inv-integrity-fx"' in pd
+
+
+def test_investor_business_plan_no_constant_fx():
+    bp = _read(STATIC / "internal" / "phins-investor-business-plan.html")
+    # the integrity notes must not pin a constant FX value; live rate is shown
+    # in the FX strip and a labelled fallback is described without a number
+    assert "₪3.70" not in bp
+    assert "1 USD = ₪3.70" not in bp
+    assert "/api/fx/rates" in bp
+
+
+def test_term_sheet_prefills_shared_investor_name():
+    js = _read(STATIC / "legal" / "legal-docs.js")
+    # legal documents pre-fill the investor name from the shared configurator
+    assert "applySharedInvestorDefaults" in js
+    assert "phins.investor.cfg.v1" in js
+    assert "investorName" in js
+    ts = _read(STATIC / "legal" / "term-sheet.html")
+    assert 'key: "investorName"' in ts
+
+
 def test_pitch_dashboard_valuation_basis():
     pd = _read(STATIC / "pitch-dashboard.html")
     # valuation is versatile: manual / income multiple / actuarial simulation

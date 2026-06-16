@@ -362,7 +362,7 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
 <hr/>
 <p class="fine" id="bp-integrity-note" data-i18n="integrity.note">
   <strong>Data integrity notice.</strong> All figures are forward-looking planning assumptions in ₪ (ILS), the canonical base;
-  $ / € equivalents convert at a live exchange rate (Alpha Vantage forex, with a labelled static fallback ≈ 1 USD = ₪3.70) and
+  $ / € equivalents convert at a live exchange rate (Alpha Vantage forex, with a labelled static fallback used only when live data is unavailable) and
   every display currency derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance.
   This document reads the same configuration as the Deal &amp; Valuation Configurator, so the build budget reconciles exactly to the
   configured round; the five-year (2027–2031) high-growth income model derives every line from the tested-assumptions table
@@ -593,7 +593,7 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
     ],
 
     "integrity.note":
-      "<strong>הצהרת שלמות נתונים.</strong> כל הנתונים הם הנחות תכנון צופות-פני-עתיד ב-₪ (שקל), המהווה את הבסיס הקנוני; הערכים ב-$ / € מתקבלים בשער חליפין חי (Alpha Vantage forex, עם ערך-מילוט סטטי מתויג של כ-1 USD = ₪3.70) וכל מטבע תצוגה נגזר ממצב USD יחיד, כך שהמספרים נשמרים עקביים. אלה אינם התחייבויות או הנחיה. מסמך זה קורא את אותה תצורה כמו מחולל העסקה והערכת השווי, ולכן תקציב הבנייה מסתנכרן באופן מדויק עם הסבב המוגדר; מודל ההכנסות בצמיחה גבוהה ל-5 שנים (2027–2031) נגזר באופן מלא מטבלת ההנחות שנבחנו (פרמיה ממוצעת של ₪3,600, שיעור-לקיחה של 25%, מספרי תיק פעיל מוצהרים); סעיפי תביעות וביטוח-משנה ברמת חברת הביטוח משתמשים בברירות-המחדל של סימולציית התיק האקטוארי של פיינס (טעינת הוצאות 15%, שולי רווח 10%, חלק-גידור 35%, טעינת תמחור פי 1.12); וכל מבני העסקה מתמחרים או מומרים על אותו בסיס לפני-הכסף / אחרי-הכסף מוגדר. פיינס מודלת כפלטפורמה / MGA דיגיטלי המפיקה שיעור-לקיחה על פרמיה, ועל כן עתודות תביעות אינן נרשמות כהכנסות פיינס."
+      "<strong>הצהרת שלמות נתונים.</strong> כל הנתונים הם הנחות תכנון צופות-פני-עתיד ב-₪ (שקל), המהווה את הבסיס הקנוני; הערכים ב-$ / € מתקבלים בשער חליפין חי (Alpha Vantage forex, עם ערך-מילוט סטטי מתויג בשימוש רק כאשר נתונים חיים אינם זמינים) וכל מטבע תצוגה נגזר ממצב USD יחיד, כך שהמספרים נשמרים עקביים. אלה אינם התחייבויות או הנחיה. מסמך זה קורא את אותה תצורה כמו מחולל העסקה והערכת השווי, ולכן תקציב הבנייה מסתנכרן באופן מדויק עם הסבב המוגדר; מודל ההכנסות בצמיחה גבוהה ל-5 שנים (2027–2031) נגזר באופן מלא מטבלת ההנחות שנבחנו (פרמיה ממוצעת של ₪3,600, שיעור-לקיחה של 25%, מספרי תיק פעיל מוצהרים); סעיפי תביעות וביטוח-משנה ברמת חברת הביטוח משתמשים בברירות-המחדל של סימולציית התיק האקטוארי של פיינס (טעינת הוצאות 15%, שולי רווח 10%, חלק-גידור 35%, טעינת תמחור פי 1.12); וכל מבני העסקה מתמחרים או מומרים על אותו בסיס לפני-הכסף / אחרי-הכסף מוגדר. פיינס מודלת כפלטפורמה / MGA דיגיטלי המפיקה שיעור-לקיחה על פרמיה, ועל כן עתודות תביעות אינן נרשמות כהכנסות פיינס."
   };
 
   function isHe() { return cfg.currency === "ILS"; }
