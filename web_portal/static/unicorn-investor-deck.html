@@ -312,7 +312,7 @@
         <div class="hero-stat"><div class="v" data-calc="hero_rev">—</div><div class="l">2031 net revenue (modeled)</div></div>
         <div class="hero-stat"><div class="v" data-calc="hero_val">—</div><div class="l">2031 implied valuation</div></div>
         <div class="hero-stat"><div class="v" data-calc="hero_round">—</div><div class="l">Series A round (the ask)</div></div>
-        <div class="hero-stat"><div class="v" data-calc="hero_take">—</div><div class="l">Blended take on premium</div></div>
+        <div class="hero-stat"><div class="v" data-calc="hero_take">—</div><div class="l">MGA take on premium</div></div>
         <div class="hero-stat"><div class="v">3</div><div class="l">Revenue engines</div></div>
       </div>
     </div>
@@ -1011,6 +1011,9 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // deal math
       var post = state.pre + state.round;
       var own = post > 0 ? state.round / post : 0;
+      // a newly created ESOP pool dilutes all post-money holders pro-rata
+      var esopFrac = Math.max(0, Math.min(1, (state.esop || 0) / 100));
+      own = own * (1 - esopFrac);
 
       // unicorn metrics (2031 index = 4)
       var i31 = 4;
