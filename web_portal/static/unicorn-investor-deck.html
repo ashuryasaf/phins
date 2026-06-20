@@ -1221,6 +1221,10 @@ derived from the same engine. Cite any market statistic; mark planning estimates
     function fxSource(txt) { var b = document.getElementById("fx-source"); if (b) b.textContent = txt; }
 
     function loadFx(force) {
+      if (!force && state.fxSource === "manual") {
+        fxBadge("manual ✎"); applyFxInputs(); render();
+        return;
+      }
       fxBadge("loading…");
       fetch("/api/fx/rates" + (force ? "?refresh=1" : ""))
         .then(function (r) { return r.json(); })
