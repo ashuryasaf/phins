@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Unicorn InsurTech Investor Deck | AgentOS for Insurance + Protection Marketplace</title>
+  <meta name="description" content="PHINS institutional investor deck: an AI-powered global InsurTech platform — AgentOS for insurance, an AI underwriting and claims moat, and a protection marketplace. Adjustable for any investor; every figure reconciles from a single canonical base.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue-dark: #0d47a1;
+      --blue-mid: #1565c0;
+      --blue-light: #1976d2;
+      --accent-1: #42a5f5;
+      --accent-2: #64b5f6;
+      --green-1: #15803d;
+      --green-2: #2e7d32;
+      --amber-1: #f59e0b;
+      --red-1: #c62828;
+      --violet-1: #6a1b9a;
+      --violet-2: #7c3aed;
+      --gradient-hdr: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      --gradient-unicorn: linear-gradient(135deg, #3d1e6d 0%, #5a2ca0 45%, #7c3aed 100%);
+      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      --text-main: #1a202c;
+      --text-sub: #4a5568;
+      --text-soft: #64748b;
+      --border: #dbe4f0;
+      --bg-light: #f8fafc;
+      --bg-page: #eef3fb;
+      --bg-card: #ffffff;
+      --bg-dark-card: #0f274d;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.14);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+
+    /* ── Header ── */
+    .site-header {
+      background: var(--gradient-hdr);
+      color: #fff;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 2px 12px rgba(13, 71, 161, 0.28);
+      position: sticky;
+      top: 0;
+      z-index: 60;
+    }
+    .logo-row { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: var(--gradient-logo);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    }
+    .logo-text { font-size: 20pt; font-weight: 900; letter-spacing: 0.06em; }
+    .logo-tagline { font-size: 8pt; opacity: 0.85; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 1px; }
+    .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .back-link {
+      color: rgba(255, 255, 255, 0.92); text-decoration: none; font-size: 9pt;
+      border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 20px; padding: 6px 14px;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .back-link:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+
+    /* ── Section nav ── */
+    .deck-nav {
+      position: sticky; top: 70px; z-index: 55;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    }
+    .deck-nav-inner {
+      max-width: 1280px; margin: 0 auto; padding: 8px 20px;
+      display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin;
+    }
+    .deck-nav-inner a {
+      flex: 0 0 auto; text-decoration: none; font-size: 8.4pt; font-weight: 600;
+      color: var(--text-sub); padding: 6px 11px; border-radius: 8px; white-space: nowrap;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .deck-nav-inner a:hover { background: var(--bg-light); color: var(--blue-dark); }
+
+    /* ── Hero ── */
+    .hero {
+      background: radial-gradient(circle at top right, rgba(124, 58, 237, 0.30), transparent 42%), var(--bg-dark-card);
+      color: #fff; padding: 46px 32px 38px;
+    }
+    .hero-inner { max-width: 1280px; margin: 0 auto; }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; padding: 5px 13px; border-radius: 999px;
+      background: rgba(124, 58, 237, 0.22); border: 1px solid rgba(124, 58, 237, 0.5);
+      font-size: 8.5pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px;
+    }
+    .hero h1 { font-size: 30pt; font-weight: 900; line-height: 1.12; margin-bottom: 14px; max-width: 980px; }
+    .hero h1 .grad {
+      background: linear-gradient(120deg, #64b5f6, #b388ff);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero p.lede { font-size: 11.5pt; max-width: 880px; opacity: 0.94; }
+    .hero-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 22px; }
+    .hero-badge {
+      font-size: 8.5pt; font-weight: 600; padding: 6px 12px; border-radius: 999px;
+      background: rgba(255, 255, 255, 0.10); border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+    .hero-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-top: 26px; }
+    .hero-stat { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px; padding: 14px 16px; }
+    .hero-stat .v { font-size: 18pt; font-weight: 900; line-height: 1; }
+    .hero-stat .l { font-size: 8.2pt; opacity: 0.82; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── Layout ── */
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 30px 24px 60px; }
+    section.slide { margin-bottom: 30px; scroll-margin-top: 130px; }
+    .slide-label {
+      display: inline-flex; align-items: center; gap: 7px; font-size: 8pt; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-1);
+      background: #f3e8ff; border-radius: 999px; padding: 4px 12px; margin-bottom: 10px;
+    }
+    .slide-title { font-size: 19pt; font-weight: 850; line-height: 1.2; margin-bottom: 8px; color: var(--text-main); }
+    .slide-copy { font-size: 10.5pt; color: var(--text-sub); max-width: 920px; }
+
+    .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; box-shadow: var(--shadow); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    @media (max-width: 880px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } .hero h1 { font-size: 22pt; } }
+
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+    .card h3 { font-size: 12.5pt; margin-bottom: 8px; }
+    .card p { font-size: 9.6pt; color: var(--text-sub); }
+    .card .kpi { font-size: 17pt; font-weight: 900; color: var(--blue-dark); margin: 4px 0 8px; }
+    .icon-chip { font-size: 22px; margin-bottom: 8px; display: block; }
+
+    ul.tick { list-style: none; margin-top: 10px; }
+    ul.tick li { position: relative; padding-left: 24px; margin-bottom: 9px; font-size: 9.8pt; color: var(--text-sub); }
+    ul.tick li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--green-1); font-weight: 800; }
+    ul.arrow li::before { content: "→"; color: var(--blue-mid); }
+    ul.warn li::before { content: "▲"; color: var(--amber-1); font-size: 8pt; top: 2px; }
+
+    table.tbl { width: 100%; border-collapse: collapse; font-size: 8.6pt; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    table.tbl th { background: var(--blue-dark); color: #fff; padding: 8px 9px; text-align: left; font-weight: 700; }
+    table.tbl td { padding: 7px 9px; border-top: 1px solid var(--border); }
+    table.tbl tr:nth-child(even) td { background: #f8fafc; }
+    table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .scroll-x { overflow-x: auto; }
+
+    .tag { display: inline-block; font-size: 7.4pt; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; vertical-align: middle; }
+    .tag-reported { background: #e3f2fd; color: #0d47a1; }
+    .tag-modeled { background: #f3e8ff; color: #6a1b9a; }
+    .tag-adj { background: #dcfce7; color: #15803d; }
+
+    /* ── Configurator ── */
+    .cfg { border: 2px solid var(--violet-2); background: linear-gradient(180deg, #faf7ff 0%, #ffffff 100%); }
+    .cfg .fx-strip {
+      margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      background: var(--bg-dark-card); color: #fff; border-radius: 10px; padding: 10px 14px;
+    }
+    .cfg input, .cfg select {
+      border-radius: 10px; border: 1px solid var(--border); padding: 9px 11px;
+      font-family: inherit; font-size: 9pt; width: 100%; background: #fff;
+    }
+    .cfg label.field { font-size: 7.6pt; font-weight: 700; color: var(--blue-dark); display: block; margin-bottom: 4px; }
+    .cfg .fx-strip input { width: 86px; background: rgba(255,255,255,0.12); color: #fff; border-color: rgba(255,255,255,0.4); }
+    .ctrl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; margin-top: 14px; }
+    .btn {
+      font-family: inherit; font-size: 8.5pt; font-weight: 700; cursor: pointer;
+      border: 1px solid var(--border); background: #fff; color: var(--text-main);
+      border-radius: 999px; padding: 7px 14px; transition: all 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+    .btn.primary { background: var(--violet-1); color: #fff; border-color: var(--violet-1); }
+    .btn.on { background: var(--blue-mid); color: #fff; border-color: var(--blue-mid); }
+    .kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
+    .kpi-box { background: var(--bg-light); border: 1px solid var(--border); border-radius: 12px; padding: 13px 12px; text-align: center; }
+    .kpi-box .v { font-size: 15pt; font-weight: 900; color: var(--blue-dark); line-height: 1; }
+    .kpi-box .l { font-size: 7.8pt; color: var(--text-soft); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    /* ── Bars ── */
+    .bar-row { display: grid; grid-template-columns: 52px 1fr 92px; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .bar-row .yr { font-size: 8.4pt; font-weight: 700; color: var(--text-sub); }
+    .bar-track { background: #eef2f9; border-radius: 8px; height: 22px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 8px; background: linear-gradient(90deg, #1565c0, #42a5f5); transition: width 0.4s ease; min-width: 2px; }
+    .bar-fill.rev { background: linear-gradient(90deg, #15803d, #4ade80); }
+    .bar-fill.gwp { background: linear-gradient(90deg, #6a1b9a, #b388ff); }
+    .bar-row .bv { font-size: 8.4pt; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* ── Flywheel / steps ── */
+    .flywheel { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .fw-node { background: linear-gradient(180deg, #f5f9ff, #fff); border: 1px solid #bbdefb; border-radius: 14px; padding: 14px; position: relative; }
+    .fw-node .n { font-size: 8pt; font-weight: 800; color: var(--blue-mid); }
+    .fw-node h4 { font-size: 10.5pt; margin: 4px 0 6px; }
+    .fw-node p { font-size: 8.8pt; color: var(--text-sub); }
+
+    .funnel { display: flex; flex-direction: column; gap: 8px; }
+    .funnel-row { display: flex; align-items: center; gap: 12px; }
+    .funnel-bar { height: 38px; border-radius: 10px; display: flex; align-items: center; padding: 0 14px; color: #fff; font-weight: 800; font-size: 9.5pt; box-shadow: var(--shadow); }
+
+    .note {
+      background: #f0f4fa; border: 1px solid var(--border); border-left: 4px solid var(--blue-mid);
+      border-radius: 10px; padding: 14px 16px; font-size: 8.8pt; color: var(--text-sub); line-height: 1.6;
+    }
+    .integrity {
+      background: linear-gradient(180deg, #f3fbf6, #ecf8f1); border: 1px solid #bfe6cf; border-left: 4px solid var(--green-1);
+      border-radius: 12px; padding: 16px 18px; font-size: 9pt; color: #1e4634; line-height: 1.65;
+    }
+    .pill-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 8.2pt; color: var(--text-soft); margin-top: 10px; }
+
+    code.prompt {
+      display: block; white-space: pre-wrap; background: #0f1b30; color: #d6e4ff;
+      border-radius: 12px; padding: 16px 18px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 8.6pt; line-height: 1.55; overflow-x: auto; border: 1px solid #1e3358;
+    }
+    .copy-btn { float: right; }
+
+    .timeline { position: relative; padding-left: 26px; }
+    .timeline::before { content: ""; position: absolute; left: 8px; top: 4px; bottom: 4px; width: 2px; background: linear-gradient(180deg, #1565c0, #7c3aed); }
+    .tl-item { position: relative; margin-bottom: 16px; }
+    .tl-item::before { content: ""; position: absolute; left: -22px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 3px solid var(--blue-mid); }
+    .tl-item.done::before { background: var(--green-1); border-color: var(--green-1); }
+    .tl-item.target::before { background: var(--violet-2); border-color: var(--violet-2); }
+    .tl-item h4 { font-size: 10.5pt; }
+    .tl-item p { font-size: 9pt; color: var(--text-sub); }
+
+    footer.deck-footer { background: var(--bg-dark-card); color: #fff; padding: 28px 24px; text-align: center; font-size: 8.5pt; opacity: 0.95; }
+    footer.deck-footer a { color: #90caf9; }
+
+    @media print {
+      .deck-nav, .site-header, .no-print { display: none !important; }
+      section.slide { page-break-inside: avoid; }
+      body { background: #fff; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">AI InsurTech · AgentOS · Protection Marketplace</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn no-print" id="print-btn">🖨️ Print / PDF</button>
+      <a class="back-link" href="/pitch-dashboard.html">← Pitch dashboard</a>
+      <a class="back-link" href="/pitch-dashboard.html#investor-meeting-section">Investor meeting</a>
+    </div>
+  </header>
+
+  <!-- Section navigation -->
+  <nav class="deck-nav no-print">
+    <div class="deck-nav-inner">
+      <a href="#configurator">Configurator</a>
+      <a href="#vision">Vision</a>
+      <a href="#problem">Problem</a>
+      <a href="#solution">Solution</a>
+      <a href="#market">Market</a>
+      <a href="#product">Product</a>
+      <a href="#ai">AI Architecture</a>
+      <a href="#agentos">AgentOS</a>
+      <a href="#marketplace">Marketplace</a>
+      <a href="#model">Business Model</a>
+      <a href="#moat">Advantages</a>
+      <a href="#flywheel">Flywheel</a>
+      <a href="#gtm">Go-To-Market</a>
+      <a href="#financials">Financials</a>
+      <a href="#capital">Capital</a>
+      <a href="#comparables">Comparables</a>
+      <a href="#team">Team</a>
+      <a href="#risks">Risks</a>
+      <a href="#unicorn">Unicorn Path</a>
+      <a href="#exit">Exit</a>
+      <a href="#remarks">Remarks &amp; Prompts</a>
+    </div>
+  </nav>
+
+  <!-- ── HERO ── -->
+  <div class="hero" id="top">
+    <div class="hero-inner">
+      <span class="hero-eyebrow">🦄 Series A · Institutional Venture · Confidential</span>
+      <h1>PHINS is building <span class="grad">AgentOS for Insurance</span> — the AI operating system and protection marketplace for the global disability &amp; longevity economy.</h1>
+      <p class="lede">
+        We start where the pain is largest and the math is cleanest — a capital-light MGA selling a severe-disability &amp;
+        long-term-care severity layer — and we compound it into a platform: an <strong>AI underwriting &amp; claims moat</strong>,
+        an <strong>AgentOS</strong> that turns every insurance agent into a 10× operator, and a <strong>marketplace</strong> connecting
+        clients, agents, doctors, reinsurers and care providers. One ledger. One data flywheel. A path to $1B+.
+      </p>
+      <div class="hero-badges">
+        <span class="hero-badge">Capital-light MGA model</span>
+        <span class="hero-badge">AI underwriting + claims</span>
+        <span class="hero-badge">AgentOS SaaS</span>
+        <span class="hero-badge">Protection marketplace</span>
+        <span class="hero-badge">Hash-chained data integrity</span>
+        <span class="hero-badge">Multi-market by design</span>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><div class="v" data-calc="hero_rev">—</div><div class="l">2031 net revenue (modeled)</div></div>
+        <div class="hero-stat"><div class="v" data-calc="hero_val">—</div><div class="l">2031 implied valuation</div></div>
+        <div class="hero-stat"><div class="v" data-calc="hero_round">—</div><div class="l">Series A round (the ask)</div></div>
+        <div class="hero-stat"><div class="v" data-calc="hero_take">—</div><div class="l">MGA take on premium</div></div>
+        <div class="hero-stat"><div class="v">3</div><div class="l">Revenue engines</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- ── CONFIGURATOR ── -->
+    <section class="slide" id="configurator">
+      <div class="panel cfg">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div class="slide-label">🎛️ Adjustable engine</div>
+            <h2 class="slide-title" style="margin-bottom:4px;">Investor &amp; Scenario Configurator <span class="tag tag-adj">adjustable · live FX</span></h2>
+            <p class="slide-copy">Tune the deck for <strong>any investor or any factor</strong>. Currency, the round, valuation, global scale, pricing and take rates all flow from a <strong>single canonical USD base</strong>, so every table, chart, KPI and the unicorn path recompute and always reconcile. Settings persist in your browser.</p>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:7.6pt;color:var(--text-soft);">Display currency</span>
+            <button type="button" class="btn cur-btn on" data-cur="USD">$ USD</button>
+            <button type="button" class="btn cur-btn" data-cur="EUR">€ EUR</button>
+            <button type="button" class="btn cur-btn" data-cur="ILS">₪ ILS</button>
+          </div>
+        </div>
+
+        <div class="fx-strip">
+          <span style="font-size:8.5pt;font-weight:800;">💱 Live FX</span>
+          <span id="fx-badge" style="font-size:8pt;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.16);">loading…</span>
+          <label style="font-size:8pt;opacity:0.9;">1 USD = €
+            <input id="fx-eur" type="number" step="0.0001" min="0.0001">
+          </label>
+          <label style="font-size:8pt;opacity:0.9;">1 USD = ₪
+            <input id="fx-ils" type="number" step="0.0001" min="0.0001">
+          </label>
+          <button type="button" class="btn no-print" id="fx-refresh" style="background:rgba(255,255,255,0.16);color:#fff;border-color:rgba(255,255,255,0.4);">↻ Refresh</button>
+          <span id="fx-source" style="font-size:7.5pt;opacity:0.8;"></span>
+        </div>
+
+        <div class="ctrl-grid">
+          <div style="grid-column:1 / -1;">
+            <label class="field" for="c-investor">Investor / audience name <span style="font-weight:600;color:var(--text-soft);">— shown across the deck</span></label>
+            <input id="c-investor" type="text" value="Institutional Partner" placeholder="e.g. Sequoia Capital / a16z" autocomplete="off">
+          </div>
+          <div><label class="field" for="c-round">Series A round (USD)</label><input id="c-round" type="number" min="0" step="500000" value="15000000"></div>
+          <div><label class="field" for="c-pre">Pre-money valuation (USD)</label><input id="c-pre" type="number" min="0" step="1000000" value="60000000"></div>
+          <div><label class="field" for="c-esop">New ESOP pool (%)</label><input id="c-esop" type="number" min="0" max="30" step="0.5" value="10"></div>
+          <div>
+            <label class="field" for="c-scale">Global scale scenario</label>
+            <select id="c-scale">
+              <option value="0.5">Conservative (×0.5)</option>
+              <option value="0.75">Base–low (×0.75)</option>
+              <option value="1" selected>Base plan (×1.0)</option>
+              <option value="1.5">Upside (×1.5)</option>
+              <option value="2">Aggressive (×2.0)</option>
+            </select>
+          </div>
+          <div><label class="field" for="c-prem">Avg annual premium (USD)</label><input id="c-prem" type="number" min="0" step="50" value="1000"></div>
+          <div><label class="field" for="c-take">MGA take on GWP (%)</label><input id="c-take" type="number" min="0" max="60" step="1" value="25"></div>
+          <div><label class="field" for="c-seat">AgentOS seat price (USD/yr)</label><input id="c-seat" type="number" min="0" step="100" value="3000"></div>
+          <div><label class="field" for="c-mtake">Marketplace take on GMV (%)</label><input id="c-mtake" type="number" min="0" max="30" step="0.5" value="6"></div>
+          <div><label class="field" for="c-mult">Exit revenue multiple (×)</label><input id="c-mult" type="number" min="1" max="25" step="0.5" value="6"></div>
+        </div>
+
+        <div class="kpi-strip">
+          <div class="kpi-box"><div class="v" data-calc="kpi_post">—</div><div class="l">Post-money</div></div>
+          <div class="kpi-box"><div class="v" data-calc="kpi_own" style="color:var(--green-1);">—</div><div class="l" data-calc="kpi_own_lbl">Investor ownership</div></div>
+          <div class="kpi-box"><div class="v" data-calc="kpi_rev31">—</div><div class="l">2031 net revenue</div></div>
+          <div class="kpi-box"><div class="v" data-calc="kpi_ebitda31">—</div><div class="l">2031 EBITDA</div></div>
+          <div class="kpi-box"><div class="v" data-calc="kpi_val31" style="color:var(--violet-1);">—</div><div class="l">2031 implied valuation</div></div>
+          <div class="kpi-box"><div class="v" data-calc="kpi_moic" style="color:var(--violet-1);">—</div><div class="l">Gross MOIC on this round</div></div>
+        </div>
+        <div class="pill-legend">
+          <span><span class="tag tag-reported">reported</span> third-party / public data, source-cited &amp; fixed</span>
+          <span><span class="tag tag-modeled">modeled</span> PHINS planning output derived from the base</span>
+          <span><span class="tag tag-adj">adjustable</span> driven by the controls above</span>
+        </div>
+        <p style="font-size:7.6pt;color:var(--text-soft);margin-top:10px;" data-calc="cfg_note">Inputs are entered in USD (the canonical base); all outputs convert to the selected display currency at the live rate.</p>
+      </div>
+    </section>
+
+    <!-- ── VISION ── -->
+    <section class="slide" id="vision">
+      <div class="slide-label">01 · Vision</div>
+      <h2 class="slide-title">Protection should be instant, intelligent, and abundant — not a paper promise people fight to collect.</h2>
+      <p class="slide-copy">The world is getting older and living longer, but the systems that protect people against severe disability and the cost of long-term care are analog, adversarial, and underfunded. PHINS exists to make protection a software product: priced by AI, paid by code, and orchestrated across everyone who delivers care.</p>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">🌍</span><h3>The category we are creating</h3><p><strong>AgentOS for Insurance + a Protection Marketplace.</strong> Not another point product — the operating layer that distribution, underwriting, claims and care run on.</p></div>
+        <div class="card"><span class="icon-chip">⚡</span><h3>The standard we set</h3><p>Quote in seconds, underwrite with auditable AI, settle eligible claims by code, and route care — all from one hash-chained system of record.</p></div>
+        <div class="card"><span class="icon-chip">🦄</span><h3>The outcome</h3><p>A capital-light, multi-market platform with three compounding revenue engines and a data flywheel — the shape of a $1B+ company.</p></div>
+      </div>
+    </section>
+
+    <!-- ── PROBLEM ── -->
+    <section class="slide" id="problem">
+      <div class="slide-label">02 · Problem</div>
+      <h2 class="slide-title">A trillion-dollar protection gap, served by software built before the smartphone.</h2>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:12.5pt;margin-bottom:8px;">Why people are unprotected</h3>
+          <ul class="tick">
+            <li><strong>Aging + longevity shock.</strong> Populations are aging fast while public long-term-care budgets strain — the private gap widens every year.</li>
+            <li><strong>Severe disability is mispriced or excluded.</strong> Generic disability wording is hard to price, so carriers retreat or overcharge.</li>
+            <li><strong>Claims are adversarial.</strong> The moment of need is the moment of friction — slow, manual, opaque adjudication.</li>
+            <li><strong>Agents are stuck in software from the 1990s.</strong> Quoting, compliance and servicing are manual, fragmenting the customer relationship.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:12.5pt;margin-bottom:8px;">Why incumbents can't fix it</h3>
+          <ul class="warn">
+            <li><strong>Legacy core systems</strong> bolt AI onto decades-old infrastructure; data is trapped and unauditable.</li>
+            <li><strong>Channel conflict</strong> — carriers fear disintermediating their own agents, so they under-invest in agent software.</li>
+            <li><strong>Capital intensity</strong> — balance-sheet carriers can't move at software speed or margin.</li>
+            <li><strong>No data flywheel</strong> — underwriting, claims and care data sit in separate silos and never compound.</li>
+          </ul>
+          <div class="note" style="margin-top:12px;">The protection gap is not a demand problem. It is a <strong>software, pricing and trust</strong> problem — exactly the kind that an AI-native platform with flawless data integrity is built to solve.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SOLUTION ── -->
+    <section class="slide" id="solution">
+      <div class="slide-label">03 · Solution</div>
+      <h2 class="slide-title">One AI-native platform: distribute, underwrite, pay, and orchestrate care — on a single ledger.</h2>
+      <p class="slide-copy">PHINS sells a focused, reinsurable product (permanent severe-disability / LTC severity layer) as a capital-light MGA, then compounds the same platform into SaaS and marketplace revenue.</p>
+      <div class="grid-4" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">📝</span><h3>Distribute</h3><p>Digital quote-to-bind for clients and an AgentOS cockpit for agents.</p></div>
+        <div class="card"><span class="icon-chip">🧠</span><h3>Underwrite</h3><p>Auditable AI underwriting with per-segment thresholds and a model registry.</p></div>
+        <div class="card"><span class="icon-chip">⚙️</span><h3>Pay</h3><p>AI claims intelligence; eligible benefits settled by code, anchored to the ledger.</p></div>
+        <div class="card"><span class="icon-chip">🤝</span><h3>Orchestrate</h3><p>Marketplace routing across doctors, care providers, reinsurers and payers.</p></div>
+      </div>
+      <div class="integrity" style="margin-top:16px;">
+        <strong>The wedge → platform thesis.</strong> The MGA product is the beachhead that proves pricing, generates proprietary data, and funds the build. The <em>headline</em> is the platform: AgentOS + Marketplace. That is what turns a $50–100M insurance outcome into a unicorn-scale software narrative.
+      </div>
+    </section>
+
+    <!-- ── MARKET ── -->
+    <section class="slide" id="market">
+      <div class="slide-label">04 · Market Opportunity</div>
+      <h2 class="slide-title">Massive global disability &amp; longevity market — entered TAM → SAM → SOM with discipline.</h2>
+      <p class="slide-copy">We size the opportunity top-down for credibility and bottom-up for honesty. <span class="tag tag-reported">reported</span> figures are external planning estimates; <span class="tag tag-modeled">modeled</span> SOM is generated by the configurator so it always reconciles with our financials.</p>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card" style="border-top:4px solid var(--blue-dark);">
+          <div style="font-size:8pt;font-weight:800;letter-spacing:0.08em;color:var(--blue-dark);">TAM <span class="tag tag-reported">reported estimate</span></div>
+          <div class="kpi">$1.4T+</div>
+          <p>Global disability, long-term-care &amp; longevity protection (premium-equivalent), the fastest-growing slice of a ~$7T global insurance market. Illustrative planning estimate.</p>
+        </div>
+        <div class="card" style="border-top:4px solid var(--blue-mid);">
+          <div style="font-size:8pt;font-weight:800;letter-spacing:0.08em;color:var(--blue-mid);">SAM <span class="tag tag-reported">reported estimate</span></div>
+          <div class="kpi">$140B</div>
+          <p>Digitally-addressable severity, disability &amp; embedded protection across PHINS priority markets (IL, USA, Canada, EU gateways, GCC, AU). Illustrative planning estimate.</p>
+        </div>
+        <div class="card" style="border-top:4px solid var(--violet-1);">
+          <div style="font-size:8pt;font-weight:800;letter-spacing:0.08em;color:var(--violet-1);">SOM 2031 <span class="tag tag-modeled">modeled</span></div>
+          <div class="kpi" data-calc="som_2031">—</div>
+          <p>PHINS-intermediated volume by 2031 (GWP + marketplace GMV) at the selected scale scenario — derived from the engine, not asserted.</p>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <h3 style="font-size:12pt;margin-bottom:6px;">Disciplined market sequencing</h3>
+        <p class="slide-copy" style="margin-bottom:10px;">Same product thesis as the country-level decks — start where demand, product familiarity and operating logic line up, then expand on capital-light rails.</p>
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Wave</th><th>Markets</th><th>Why now</th><th>Entry model</th></tr></thead>
+            <tbody>
+              <tr><td>1 — Launch</td><td>🇮🇱 Israel</td><td>Home-care intensity, known LTC behavior, clean digital upgrade story</td><td>MGA + carrier/reinsurer</td></tr>
+              <tr><td>2 — Scale</td><td>🇺🇸 USA · 🇨🇦 Canada</td><td>Largest private premium pool; strong group/affinity disability flow</td><td>MGA + AgentOS SaaS</td></tr>
+              <tr><td>3 — Expand</td><td>🇵🇹 EU gateways · 🇦🇪 GCC · 🇦🇺 AU</td><td>Solvency II passporting; visible cession structure; large disabled pools</td><td>AgentOS + Marketplace + embedded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── PRODUCT ── -->
+    <section class="slide" id="product">
+      <div class="slide-label">05 · Product</div>
+      <h2 class="slide-title">A platform that is already built — not a slideware promise.</h2>
+      <p class="slide-copy">PHINS is a deployed, multi-module platform spanning policy, underwriting, billing, claims, reinsurance, foundations, a health marketplace, and multi-market regulatory adapters — all on an append-only, hash-chained ledger.</p>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">🔁</span><h3>Full insurance lifecycle</h3><p>Policy → underwriting → billing → claim → reinsurance, each step audit-logged and reproducible.</p></div>
+        <div class="card"><span class="icon-chip">🧩</span><h3>64+ deployed modules</h3><p>Composable services for distribution, risk, finance, care and compliance.</p></div>
+        <div class="card"><span class="icon-chip">🔗</span><h3>Hash-chained ledger</h3><p>Every balance &amp; decision reproducible from append-only state. AI/BI may recommend but never post.</p></div>
+        <div class="card"><span class="icon-chip">🌐</span><h3>Multi-market adapters</h3><p>26 country/regulator pitch packs &amp; localization rails already modeled.</p></div>
+        <div class="card"><span class="icon-chip">🏦</span><h3>Wallets &amp; settlement</h3><p>Marketplace wallets, holds, settlement runs, payer recovery and remittances.</p></div>
+        <div class="card"><span class="icon-chip">🛡️</span><h3>Security by design</h3><p>Vault, auth tokens, firewall, intrusion detection, request sanitization, file scanning.</p></div>
+      </div>
+    </section>
+
+    <!-- ── AI ARCHITECTURE ── -->
+    <section class="slide" id="ai">
+      <div class="slide-label">06 · AI Architecture</div>
+      <h2 class="slide-title">Two AI moats: underwriting intelligence and claims intelligence — both auditable.</h2>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">🧠 AI underwriting moat</h3>
+          <ul class="tick">
+            <li><strong>Per-segment thresholds</strong> tuned to severity (permanent 3+ ADL), not generic morbidity.</li>
+            <li><strong>Model registry</strong> versions every model; decisions are explainable and replayable.</li>
+            <li><strong>Proprietary data</strong> from each bound policy sharpens pricing competitors can't see.</li>
+            <li><strong>Reinsurance-ready artifacts</strong> — objective adjudication evidence improves treaty terms.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">⚙️ AI claims intelligence moat</h3>
+          <ul class="tick">
+            <li><strong>Triage &amp; routing</strong> shorten non-permanent claim pathways and reduce false positives.</li>
+            <li><strong>Code-based settlement</strong> of eligible benefits — fast, consistent, anchored to the ledger.</li>
+            <li><strong>Care navigation</strong> routes home-care first, improving loss economics and outcomes.</li>
+            <li><strong>Fraud &amp; integrity</strong> checks run against tamper-evident, hash-chained records.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note" style="margin-top:14px;"><strong>Governance:</strong> AI and BI layers are advisory by contract — they recommend, score and explain, but financial postings are made only through ledger-governed transactions. This is what lets us promise <em>flawless data integrity</em> to regulators, reinsurers and investors simultaneously.</div>
+    </section>
+
+    <!-- ── AGENTOS ── -->
+    <section class="slide" id="agentos">
+      <div class="slide-label">07 · AgentOS</div>
+      <h2 class="slide-title">AgentOS turns every insurance agent into a 10× operator — and into our distribution flywheel.</h2>
+      <p class="slide-copy">Instead of fighting agents, we arm them. AgentOS is the SaaS cockpit agents run their whole book on — and the reason PHINS scales distribution without a balance sheet.</p>
+      <div class="grid-4" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">⚡</span><h3>Instant quoting</h3><p>AI quote-to-bind across products and carriers from one screen.</p></div>
+        <div class="card"><span class="icon-chip">📋</span><h3>Compliance autopilot</h3><p>Suitability, disclosures and audit trail generated automatically.</p></div>
+        <div class="card"><span class="icon-chip">🤖</span><h3>Agent copilots</h3><p>AI drafting, servicing, renewals and next-best-action on the book.</p></div>
+        <div class="card"><span class="icon-chip">💼</span><h3>Book analytics</h3><p>Retention, cross-sell and commission intelligence in real time.</p></div>
+      </div>
+      <div class="integrity" style="margin-top:16px;"><strong>Why this is the unicorn unlock:</strong> AgentOS converts a services business into recurring software revenue (high gross margin, net-revenue retention, and a land-and-expand motion), and each agent brings clients whose data feeds the underwriting and claims moats.</div>
+    </section>
+
+    <!-- ── MARKETPLACE ── -->
+    <section class="slide" id="marketplace">
+      <div class="slide-label">08 · Marketplace Model</div>
+      <h2 class="slide-title">A protection marketplace connecting clients, agents, doctors, reinsurers &amp; care providers.</h2>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">Five-sided network</h3>
+          <ul class="arrow">
+            <li><strong>Clients</strong> get protection + a path to care.</li>
+            <li><strong>Agents</strong> get AgentOS + a marketplace of products.</li>
+            <li><strong>Doctors / care providers</strong> get verified demand &amp; ledger-clean settlement.</li>
+            <li><strong>Reinsurers</strong> get clean, objective risk &amp; better treaty data.</li>
+            <li><strong>Payers</strong> get recovery, remittance &amp; auditable claims.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">How it monetizes</h3>
+          <ul class="tick">
+            <li><strong>Take rate on marketplace GMV</strong> (care, services, embedded products).</li>
+            <li><strong>Wallet &amp; settlement</strong> — holds, settlement runs, payer recovery, remittances.</li>
+            <li><strong>Data &amp; BI products</strong> for carriers and reinsurers (governed, privacy-safe).</li>
+          </ul>
+          <div class="note" style="margin-top:12px;">Marketplace + AgentOS create <strong>network effects</strong>: more agents → more clients → more care demand → better provider supply &amp; reinsurance terms → cheaper, faster protection → more agents.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── BUSINESS MODEL ── -->
+    <section class="slide" id="model">
+      <div class="slide-label">09 · Business Model</div>
+      <h2 class="slide-title">Three compounding, capital-light revenue engines.</h2>
+      <p class="slide-copy">Every number below recomputes from the configurator. <span class="tag tag-modeled">modeled</span> in the selected currency &amp; scale scenario.</p>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card" style="border-top:4px solid var(--blue-mid);"><span class="icon-chip">🛡️</span><h3>1. MGA insurance take</h3><div class="kpi" data-calc="eng_ins">—</div><p>2031 net revenue = GWP × take rate. Risk sits with carriers/reinsurers — capital-light.</p></div>
+        <div class="card" style="border-top:4px solid var(--green-1);"><span class="icon-chip">💻</span><h3>2. AgentOS SaaS</h3><div class="kpi" data-calc="eng_saas">—</div><p>2031 recurring = seats × seat price. High-margin, expanding software revenue.</p></div>
+        <div class="card" style="border-top:4px solid var(--violet-1);"><span class="icon-chip">🤝</span><h3>3. Marketplace take</h3><div class="kpi" data-calc="eng_mkt">—</div><p>2031 = GMV × marketplace take. Network-effect revenue with no underwriting risk.</p></div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <h3 style="font-size:12pt;margin-bottom:8px;">Revenue mix to 2031 <span class="tag tag-modeled">modeled</span></h3>
+        <div id="mix-bars"></div>
+      </div>
+    </section>
+
+    <!-- ── COMPETITIVE ADVANTAGES ── -->
+    <section class="slide" id="moat">
+      <div class="slide-label">10 · Competitive Advantages</div>
+      <h2 class="slide-title">Why PHINS wins — and keeps winning.</h2>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">📊</span><h3>Data flywheel</h3><p>Underwriting + claims + care data compound on one ledger; rivals see only their silo.</p></div>
+        <div class="card"><span class="icon-chip">🔗</span><h3>Integrity moat</h3><p>Hash-chained, reproducible state — a trust advantage with regulators &amp; reinsurers.</p></div>
+        <div class="card"><span class="icon-chip">🤝</span><h3>Agent love, not conflict</h3><p>We empower agents instead of disintermediating them — durable distribution.</p></div>
+        <div class="card"><span class="icon-chip">💸</span><h3>Capital-light economics</h3><p>MGA + SaaS + marketplace margins without carrier balance-sheet drag.</p></div>
+        <div class="card"><span class="icon-chip">🌍</span><h3>Multi-market rails</h3><p>Regulatory adapters &amp; country packs make expansion a configuration, not a rebuild.</p></div>
+        <div class="card"><span class="icon-chip">🧠</span><h3>Severity focus</h3><p>A reinsurable, explainable risk niche others mis-price or avoid.</p></div>
+      </div>
+    </section>
+
+    <!-- ── FLYWHEEL ── -->
+    <section class="slide" id="flywheel">
+      <div class="slide-label">11 · Growth Flywheel</div>
+      <h2 class="slide-title">Distribution → data → pricing → trust → distribution.</h2>
+      <div class="flywheel" style="margin-top:16px;">
+        <div class="fw-node"><div class="n">①</div><h4>AgentOS adds agents</h4><p>Agents run their book on PHINS, bringing their clients onto the platform.</p></div>
+        <div class="fw-node"><div class="n">②</div><h4>Clients generate data</h4><p>Each policy &amp; claim enriches proprietary underwriting and claims datasets.</p></div>
+        <div class="fw-node"><div class="n">③</div><h4>AI prices sharper</h4><p>Better pricing &amp; faster claims improve loss ratios and treaty terms.</p></div>
+        <div class="fw-node"><div class="n">④</div><h4>Marketplace deepens</h4><p>Care &amp; provider supply grows; GMV and embedded products expand.</p></div>
+        <div class="fw-node"><div class="n">⑤</div><h4>Cheaper, faster cover</h4><p>Better economics → better prices → more agents &amp; clients. Repeat.</p></div>
+      </div>
+    </section>
+
+    <!-- ── GO TO MARKET ── -->
+    <section class="slide" id="gtm">
+      <div class="slide-label">12 · Go-To-Market</div>
+      <h2 class="slide-title">Land with the MGA, expand with AgentOS &amp; the marketplace.</h2>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">Motion</h3>
+          <ul class="arrow">
+            <li><strong>Land:</strong> launch the severity MGA in Israel; prove pricing, claims &amp; unit economics.</li>
+            <li><strong>Attach:</strong> onboard agents to AgentOS; convert services into SaaS seats.</li>
+            <li><strong>Expand:</strong> open the marketplace; add care, embedded products &amp; new markets.</li>
+            <li><strong>Compound:</strong> sell BI/data products to carriers &amp; reinsurers.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">Unit economics targets <span class="tag tag-adj">adjustable</span></h3>
+          <div class="scroll-x">
+            <table class="tbl">
+              <tbody>
+                <tr><td>Blended CAC / policy</td><td class="num" data-calc="ue_cac">—</td></tr>
+                <tr><td>Avg annual premium</td><td class="num" data-calc="ue_prem">—</td></tr>
+                <tr><td>MGA take per policy / yr</td><td class="num" data-calc="ue_take">—</td></tr>
+                <tr><td>Annual churn</td><td class="num">8%</td></tr>
+                <tr><td>Est. LTV / CAC (insurance only)</td><td class="num" data-calc="ue_ltvcac">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:7.6pt;color:var(--text-soft);margin-top:8px;">LTV approximated as MGA take ÷ churn (gross, pre-opex), for directional comparison only.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── FINANCIALS ── -->
+    <section class="slide" id="financials">
+      <div class="slide-label">13 · Financial Projections</div>
+      <h2 class="slide-title">Five-year model — every line reconciles to the configurator.</h2>
+      <p class="slide-copy"><span class="tag tag-modeled">modeled</span> in <span data-calc="cur_name">USD</span> at the <span data-calc="scale_name">base</span> scenario. Insurance is capital-light: claims reserves sit with risk carriers/reinsurers and are not booked as PHINS revenue.</p>
+      <div class="panel" style="margin-top:16px;">
+        <div class="scroll-x">
+          <table class="tbl" id="fin-table">
+            <thead>
+              <tr><th>Line (<span data-calc="cur_sym">$</span>)</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th><th class="num">2030</th><th class="num">2031</th></tr>
+            </thead>
+            <tbody id="fin-body"><!-- built by JS --></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:11.5pt;margin-bottom:10px;">Total net revenue (<span data-calc="cur_sym">$</span>)</h3>
+          <div id="rev-bars"></div>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:11.5pt;margin-bottom:10px;">Gross written premium intermediated (<span data-calc="cur_sym">$</span>)</h3>
+          <div id="gwp-bars"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── CAPITAL ── -->
+    <section class="slide" id="capital">
+      <div class="slide-label">14 · Capital Requirements</div>
+      <h2 class="slide-title">A capital-light raise that buys the path to profitability and the platform expansion.</h2>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">The ask &amp; structure</h3>
+          <div class="scroll-x">
+            <table class="tbl">
+              <tbody>
+                <tr><td>Series A round</td><td class="num" data-calc="cap_round">—</td></tr>
+                <tr><td>Pre-money</td><td class="num" data-calc="cap_pre">—</td></tr>
+                <tr><td>Post-money</td><td class="num" data-calc="cap_post">—</td></tr>
+                <tr><td>Investor ownership</td><td class="num" data-calc="cap_own">—</td></tr>
+                <tr><td>New ESOP pool</td><td class="num" data-calc="cap_esop">—</td></tr>
+                <tr><td>Cumulative burn to EBITDA+</td><td class="num" data-calc="cap_burn">—</td></tr>
+                <tr><td>Runway to profitability</td><td class="num">EBITDA-positive by 2030 (base)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:12.5pt;">Use of funds</h3>
+          <div id="uof-bars"></div>
+          <p style="font-size:7.6pt;color:var(--text-soft);margin-top:8px;">Allocation scales with the round and always reconciles to it.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── COMPARABLES ── -->
+    <section class="slide" id="comparables">
+      <div class="slide-label">15 · Comparables</div>
+      <h2 class="slide-title">Global InsurTech precedents that fundraised &amp; reached billions.</h2>
+      <p class="slide-copy"><span class="tag tag-reported">reported</span> Third-party / public data, shown in source currency &amp; not modeled. These establish the category's fundability and exit potential; PHINS combines the best of each (Lemonade's AI, Next's SMB distribution, WeFox's carrier+marketplace, Bolttech's embedded marketplace).</p>
+      <div class="panel" style="margin-top:16px;">
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Company</th><th>Country</th><th>Focus</th><th>Peak / recent valuation</th><th>Capital raised</th><th>Source</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Lemonade</strong></td><td>USA</td><td>Home, Renters, Auto, Life</td><td>Multi-billion public company</td><td>$480M+ pre-IPO</td><td><a href="https://en.wikipedia.org/wiki/Lemonade,_Inc." target="_blank" rel="noopener">Wikipedia</a></td></tr>
+              <tr><td><strong>Next Insurance</strong></td><td>USA / Israel</td><td>Small-business insurance</td><td>~$4B</td><td>Hundreds of millions</td><td><a href="https://insurtechdigital.com/articles/top-10-insurtech-unicorns-2022" target="_blank" rel="noopener">InsurTech Digital</a></td></tr>
+              <tr><td><strong>Wefox</strong></td><td>Germany</td><td>Insurance marketplace + carrier</td><td>Up to $4.5B</td><td>$1B+ raised</td><td><a href="https://www.axios.com/2022/07/12/insure-tech-startup-wefox-now-valued-at-45-billion" target="_blank" rel="noopener">Axios</a></td></tr>
+              <tr><td><strong>bolttech</strong></td><td>Singapore</td><td>Embedded insurance marketplace</td><td>$2.1B</td><td>$690M+ raised</td><td><a href="https://finovate.com/insuretech-company-bolttech-raises-147-million-at-a-2-1-billion-valuation/" target="_blank" rel="noopener">Finovate</a></td></tr>
+              <tr><td><strong>Ethos</strong></td><td>USA</td><td>Life insurance</td><td>$2.7B (pre-IPO)</td><td>$400M+ raised</td><td><a href="https://insurtechdigital.com/articles/top-10-insurtech-unicorns-2022" target="_blank" rel="noopener">InsurTech Digital</a></td></tr>
+              <tr><td><strong>Hippo</strong></td><td>USA / Israel founders</td><td>Home insurance</td><td>$1B+ unicorn (pre-IPO)</td><td>$800M+ raised</td><td><a href="https://en.wikipedia.org/wiki/Hippo_(company)" target="_blank" rel="noopener">Wikipedia</a></td></tr>
+              <tr><td><strong>Alan</strong></td><td>France</td><td>Health insurance</td><td>~$2.7B</td><td>$550M+ raised</td><td><a href="https://insurtechdigital.com/articles/top-10-insurtech-unicorns-2022" target="_blank" rel="noopener">InsurTech Digital</a></td></tr>
+              <tr><td><strong>ManyPets</strong></td><td>UK</td><td>Pet insurance</td><td>~$2B</td><td>Nearly $500M raised</td><td><a href="https://insurtechdigital.com/articles/top-10-insurtech-unicorns-2022" target="_blank" rel="noopener">InsurTech Digital</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:7.6pt;color:var(--text-soft);margin-top:10px;">Figures are as reported by the cited public sources at the time of reporting and may not reflect current private valuations. Provided for category context only; not a representation about PHINS.</p>
+      </div>
+    </section>
+
+    <!-- ── TEAM ── -->
+    <section class="slide" id="team">
+      <div class="slide-label">16 · Team</div>
+      <h2 class="slide-title">Operators who have already built the platform — adding insurance &amp; capital firepower.</h2>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">👨‍💻</span><h3>Founding / platform</h3><p>Shipped a 64+ module, ledger-governed insurance platform end-to-end.</p></div>
+        <div class="card"><span class="icon-chip">📐</span><h3>Chief Actuary (incoming)</h3><p>IAA-recognised executive actuary validated pricing &amp; agreed to join.</p></div>
+        <div class="card"><span class="icon-chip">🤝</span><h3>Insurance operator + capital</h3><p>Senior insurance entrepreneur (CEO/chairman) engaged as investor / active co-founder.</p></div>
+      </div>
+      <div class="note" style="margin-top:14px;">This round funds key hires across AI/ML, distribution (AgentOS), marketplace operations, and multi-market compliance. Specific names &amp; bios are provided under NDA.</div>
+    </section>
+
+    <!-- ── RISKS ── -->
+    <section class="slide" id="risks">
+      <div class="slide-label">17 · Risks &amp; Mitigations</div>
+      <h2 class="slide-title">We name the risks — and show the controls.</h2>
+      <div class="panel" style="margin-top:16px;">
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Regulatory / licensing</strong> across markets</td><td>MGA model with licensed carrier partners; country regulatory adapters; staged market gates.</td></tr>
+              <tr><td><strong>Underwriting / pricing</strong> mispricing</td><td>Strict permanent 3+ ADL severity trigger; appointed-actuary sign-off; reinsurance treaties.</td></tr>
+              <tr><td><strong>Claims volatility</strong></td><td>Quota-share / stop-loss reinsurance; AI triage; capital-light reserves stay off-balance-sheet.</td></tr>
+              <tr><td><strong>Distribution dependence</strong></td><td>AgentOS owns the agent relationship; multi-channel (direct, group, affinity, embedded).</td></tr>
+              <tr><td><strong>Data / model integrity</strong></td><td>Hash-chained ledger; AI advisory-only; model registry; reproducible decisions.</td></tr>
+              <tr><td><strong>Capital / runway</strong></td><td>Capital-light burn; staged milestone gates; clear path to EBITDA-positive (base 2030).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── UNICORN PATH ── -->
+    <section class="slide" id="unicorn">
+      <div class="slide-label">18 · Unicorn Path</div>
+      <h2 class="slide-title">From severity MGA to $1B+ platform.</h2>
+      <p class="slide-copy">The valuation path applies the selected exit revenue multiple to each year's modeled net revenue. <span class="tag tag-modeled">modeled</span> — adjust the multiple &amp; scale in the configurator.</p>
+      <div class="panel" style="margin-top:16px;">
+        <div id="val-bars"></div>
+        <div class="note" style="margin-top:12px;" data-calc="unicorn_note">—</div>
+      </div>
+      <div class="timeline" style="margin-top:20px;">
+        <div class="tl-item done"><h4>Now — Platform built &amp; validated</h4><p>64+ modules live; actuary validated; insurance operator engaged.</p></div>
+        <div class="tl-item target"><h4>Series A (this round)</h4><p>Launch MGA, ship AgentOS, open marketplace; prove unit economics.</p></div>
+        <div class="tl-item"><h4>2028–2029 — Multi-market &amp; SaaS scale</h4><p>USA/Canada/EU; AgentOS net-revenue retention; marketplace GMV ramps.</p></div>
+        <div class="tl-item"><h4>2030 — EBITDA-positive (base)</h4><p>Operating leverage; data flywheel compounds pricing &amp; treaty terms.</p></div>
+        <div class="tl-item target"><h4>2031 — $1B+ trajectory</h4><p data-calc="unicorn_2031">—</p></div>
+      </div>
+    </section>
+
+    <!-- ── EXIT ── -->
+    <section class="slide" id="exit">
+      <div class="slide-label">19 · Exit Scenarios</div>
+      <h2 class="slide-title">Multiple credible exits — IPO or strategic.</h2>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">📈</span><h3>IPO</h3><p>Follow Lemonade / Hippo / Ethos public paths once net revenue and retention support public-market multiples.</p></div>
+        <div class="card"><span class="icon-chip">🏛️</span><h3>Strategic acquisition</h3><p>Global carriers &amp; reinsurers acquire AI underwriting, claims &amp; AgentOS distribution.</p></div>
+        <div class="card"><span class="icon-chip">🔗</span><h3>Platform consolidation</h3><p>Marketplace + AgentOS make PHINS a natural consolidator/target in InsurTech roll-ups.</p></div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Scenario</th><th class="num">Exit multiple</th><th class="num">On 2031 revenue</th><th class="num">Implied EV</th><th class="num">Gross MOIC (this round)</th></tr></thead>
+            <tbody id="exit-body"><!-- built by JS --></tbody>
+          </table>
+        </div>
+        <p style="font-size:7.6pt;color:var(--text-soft);margin-top:8px;">Illustrative; applies fixed sensitivity multiples to the modeled 2031 net revenue at the selected scale. Not a forecast of returns.</p>
+      </div>
+    </section>
+
+    <!-- ── REMARKS & PROMPTS ── -->
+    <section class="slide" id="remarks">
+      <div class="slide-label">20 · Strategic Remarks &amp; PHINS Prompt Library</div>
+      <h2 class="slide-title">How to keep making this a unicorn-level deck — remarks &amp; reusable AI prompts.</h2>
+      <div class="panel" style="margin-top:16px;">
+        <h3 style="font-size:12.5pt;">Headline strategic remark</h3>
+        <div class="integrity" style="margin-top:10px;">
+          The single highest-value move for PHINS is <strong>not another insurance product</strong>. It is positioning PHINS as
+          <strong>"AgentOS for Insurance + a Disability/Longevity Protection Marketplace,"</strong> with the MGA/disability product as the
+          <em>first use case</em>. That reframes the story from a $50–100M insurance outcome toward a potential unicorn-scale narrative.
+          The foundations already exist in the platform — make them the <strong>headline</strong> of the deck, not a footnote.
+        </div>
+        <h3 style="font-size:12.5pt;margin-top:18px;">Remarks to apply on every revision</h3>
+        <ul class="tick">
+          <li><strong>Lead with the platform, prove with the MGA.</strong> Software multiples, insurance credibility.</li>
+          <li><strong>Sell three revenue engines</strong> (MGA take, AgentOS SaaS, marketplace take) and the flywheel that links them.</li>
+          <li><strong>Make data integrity a feature</strong>, not fine print — it is a trust moat with regulators &amp; reinsurers.</li>
+          <li><strong>Keep reported vs. modeled separate.</strong> Cite external facts; derive PHINS numbers from one base so they always reconcile.</li>
+          <li><strong>Stay adjustable.</strong> Any investor can re-tune currency, scale, take rates &amp; the round in the configurator above.</li>
+          <li><strong>Benchmark to fundable precedents</strong> — Lemonade, Next, WeFox, Bolttech — without overclaiming.</li>
+        </ul>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <h3 style="font-size:12.5pt;">Reusable prompt library <span class="tag tag-adj">for PHINS agents &amp; AI tools</span></h3>
+        <p class="slide-copy" style="margin-bottom:12px;">Drop these into PHINS's AI tooling (or any LLM) to regenerate, localize, or stress-test the deck while preserving data integrity. Each is self-contained.</p>
+
+        <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:14px 0 6px;">A · Master deck generator</p>
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Act as a partner at Sequoia Capital and Andreessen Horowitz evaluating PHINS for a Series A.
+Transform PHINS from an insurance business into a global AI-powered InsurTech platform.
+Headline the company as "AgentOS for Insurance + a Disability/Longevity Protection Marketplace,"
+with the disability/LTC MGA as the first use case (the wedge), not the whole story.
+Focus on: (1) massive global disability & longevity market; (2) AI underwriting moat;
+(3) AI claims intelligence moat; (4) AgentOS for agents; (5) five-sided marketplace
+(clients, agents, doctors, reinsurers, care providers); (6) SaaS revenue; (7) network
+effects & data flywheel; (8) international scalability; (9) capital-light MGA model;
+(10) path to $1B+.
+Produce these sections: Vision, Problem, Solution, Market Opportunity, Product, AI
+Architecture, AgentOS, Marketplace Model, Business Model, Competitive Advantages, Growth
+Flywheel, Go-To-Market, Financial Projections, Capital Requirements, Team, Risks &
+Mitigations, Unicorn Path, Exit Scenarios.
+Style: Lemonade, Next Insurance, WeFox and Bolttech investor presentations. Audience:
+institutional VCs. Keep every financial figure derived from ONE canonical base so the
+numbers reconcile; clearly separate REPORTED (cited, external) facts from MODELED (PHINS
+planning) outputs; never invent sourced statistics.</code>
+
+        <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:18px 0 6px;">B · Investor-specific re-tune</p>
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Re-tune the PHINS deck for {INVESTOR_NAME}, a {STAGE} fund focused on {THESIS}
+(e.g. fintech, AI infra, healthcare, embedded insurance) in {GEOGRAPHY}.
+Adjust emphasis, comparables and the ask to that thesis. Set: round = {ROUND},
+pre-money = {PRE_MONEY}, currency = {CCY}, global scale scenario = {SCALE},
+MGA take = {TAKE}%, AgentOS seat price = {SEAT}, marketplace take = {MTAKE}%,
+exit revenue multiple = {MULTIPLE}x. Recompute all KPIs, the 5-year model, use of
+funds, the unicorn valuation path and gross MOIC from these inputs. Keep reported vs.
+modeled separation intact and flag any figure that would not reconcile.</code>
+
+        <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:18px 0 6px;">C · Data-integrity audit</p>
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Audit this PHINS deck for data integrity. Verify that every modeled figure derives from
+the single canonical base (premium, take rate, scale, seats, GMV) and reconciles across
+KPIs, the 5-year P&L, revenue mix, use of funds, the unicorn path and exit table. List
+any number that is asserted without a source or cannot be reproduced from the base. Confirm
+that all external/comparable figures are tagged REPORTED with a citation and shown in source
+currency, and that no public statistic is presented as PHINS revenue. Output a pass/fail
+checklist plus exact fixes.</code>
+
+        <p style="font-size:8.6pt;font-weight:800;color:var(--blue-dark);margin:18px 0 6px;">D · Market localization</p>
+        <code class="prompt"><button type="button" class="btn copy-btn no-print" data-copy>📋 Copy</button>Localize the PHINS deck for {MARKET}. Replace currency, regulator, distribution channels
+and the severity/LTC product framing with market-appropriate equivalents. Keep the
+platform headline (AgentOS + Marketplace) and the three revenue engines constant. Provide
+a market-entry model (MGA / carrier partner / embedded), a milestone gate plan, and a SOM
+derived from the same engine. Cite any market statistic; mark planning estimates clearly.</code>
+
+        <div class="note" style="margin-top:14px;">Tip: the configurator at the top already implements prompts B's variables interactively — share this page with an investor and adjust live in the meeting.</div>
+      </div>
+    </section>
+
+    <!-- ── DATA INTEGRITY ── -->
+    <section class="slide" id="integrity">
+      <div class="integrity">
+        <strong>Data integrity notice.</strong> All financials are forward-looking planning assumptions in USD (the canonical base);
+        € / ₪ equivalents convert at a live exchange rate (<span data-calc="integrity_fx">live FX — loading…</span>) derived from a single
+        USD snapshot, so figures stay consistent. They are not commitments or guidance. Every <span class="tag tag-modeled">modeled</span>
+        number — KPIs, the five-year model, revenue mix, use of funds, the unicorn valuation path, gross MOIC and the exit table — is computed
+        from one set of base assumptions (premium, take rate, scale scenario, AgentOS seats &amp; price, marketplace GMV &amp; take), so the deck always
+        reconciles. <span class="tag tag-reported">reported</span> comparables and market estimates are third-party / public data shown in source
+        currency and are never added to PHINS revenue. PHINS is modeled as a capital-light MGA / platform, so insurance claims reserves sit with
+        risk carriers / reinsurers and are not booked as PHINS revenue. Confidential — do not distribute without authorization.
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="deck-footer">
+    <div>PHINS — AI InsurTech · AgentOS · Protection Marketplace &nbsp;·&nbsp; <a href="/pitch-dashboard.html">Pitch dashboard</a> · <a href="/pitch-dashboard.html#investor-documents-section">Due-diligence library</a></div>
+    <div style="margin-top:8px;opacity:0.7;">Confidential investor materials. Figures are planning assumptions, not guidance.</div>
+  </footer>
+
+  <script>
+  (function () {
+    "use strict";
+
+    // ─────────────────────────────────────────────────────────────
+    // CANONICAL BASE MODEL (USD, scale multiplier = 1.0)
+    // Everything in the deck derives from this single source of truth.
+    // ─────────────────────────────────────────────────────────────
+    var YEARS = [2027, 2028, 2029, 2030, 2031];
+
+    var BASE = {
+      // Insurance (MGA) — avg policies in-force during the year
+      policiesAvg: [2000, 14000, 60000, 200000, 480000],
+      // AgentOS — avg paying seats during the year
+      seatsAvg:    [150, 900, 3500, 9000, 18000],
+      // Marketplace GMV (USD) at scale 1.0
+      gmv:         [3.0e6, 22e6, 110e6, 380e6, 900e6],
+      // Operating cost split (USD) at scale 1.0
+      opexFixed:   [3.0e6, 5.0e6, 9.0e6, 16e6, 26e6],
+      opexVar:     [6.0e6, 13e6, 28e6, 60e6, 120e6],
+      // Use-of-funds proportions (must sum to 1.0)
+      uof: [
+        { label: "AI / engineering & platform", share: 0.34, color: "#1565c0" },
+        { label: "AgentOS & distribution",       share: 0.22, color: "#15803d" },
+        { label: "Marketplace & care ops",        share: 0.14, color: "#6a1b9a" },
+        { label: "Actuarial, reinsurance & risk", share: 0.10, color: "#00838f" },
+        { label: "Regulatory & multi-market",     share: 0.09, color: "#e65100" },
+        { label: "G&A, finance & runway buffer",  share: 0.11, color: "#78909c" }
+      ],
+      cacUSD: 650 // blended CAC per policy (adjustable proxy)
+    };
+
+    var SCALE_NAMES = { "0.5": "conservative", "0.75": "base–low", "1": "base", "1.5": "upside", "2": "aggressive" };
+
+    // ─────────────────────────────────────────────────────────────
+    // STATE (persisted)
+    // ─────────────────────────────────────────────────────────────
+    var LS_KEY = "phins_unicorn_deck_v1";
+    var state = {
+      cur: "USD",
+      fxEur: 0.92,
+      fxIls: 3.7,
+      fxSource: "default",
+      investor: "Institutional Partner",
+      round: 15000000,
+      pre: 60000000,
+      esop: 10,
+      scale: 1,
+      prem: 1000,
+      take: 25,
+      seat: 3000,
+      mtake: 6,
+      mult: 6
+    };
+    try {
+      var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      Object.keys(saved).forEach(function (k) { if (k in state) state[k] = saved[k]; });
+    } catch (e) {}
+    function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+
+    // ─────────────────────────────────────────────────────────────
+    // FORMATTING
+    // ─────────────────────────────────────────────────────────────
+    var CUR_SYM = { USD: "$", EUR: "€", ILS: "₪" };
+    function rate() { return state.cur === "USD" ? 1 : (state.cur === "EUR" ? state.fxEur : state.fxIls); }
+    function conv(usd) { return usd * rate(); }
+
+    function fmtAbbrev(usd) {
+      var v = conv(usd);
+      var sym = CUR_SYM[state.cur];
+      var neg = v < 0; v = Math.abs(v);
+      var out;
+      if (v >= 1e9) out = (v / 1e9).toFixed(2).replace(/\.00$/, "") + "B";
+      else if (v >= 1e6) out = (v / 1e6).toFixed(2).replace(/\.00$/, "") + "M";
+      else if (v >= 1e3) out = (v / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+      else out = v.toFixed(0);
+      return (neg ? "−" : "") + sym + out;
+    }
+    function fmtFull(usd) {
+      var v = conv(usd);
+      var sym = CUR_SYM[state.cur];
+      var neg = v < 0; v = Math.abs(v);
+      return (neg ? "−" : "") + sym + Math.round(v).toLocaleString("en-US");
+    }
+    function fmtPct(x, dp) { return (x * 100).toFixed(dp == null ? 1 : dp) + "%"; }
+
+    // ─────────────────────────────────────────────────────────────
+    // COMPUTE — derive everything from BASE + state
+    // ─────────────────────────────────────────────────────────────
+    function compute() {
+      var m = state.scale;
+      var prem = state.prem;
+      var tk = state.take / 100;
+      var seat = state.seat;
+      var mtk = state.mtake / 100;
+
+      var policies = BASE.policiesAvg.map(function (p) { return p * m; });
+      var seats = BASE.seatsAvg.map(function (s) { return s * m; });
+      var gmv = BASE.gmv.map(function (g) { return g * m; });
+
+      var gwp = policies.map(function (p) { return p * prem; });
+      var insRev = gwp.map(function (g) { return g * tk; });
+      var saasRev = seats.map(function (s) { return s * seat; });
+      var mktRev = gmv.map(function (g) { return g * mtk; });
+      var totalRev = YEARS.map(function (_, i) { return insRev[i] + saasRev[i] + mktRev[i]; });
+
+      var opex = YEARS.map(function (_, i) { return BASE.opexFixed[i] + BASE.opexVar[i] * m; });
+      var ebitda = YEARS.map(function (_, i) { return totalRev[i] - opex[i]; });
+
+      // cumulative burn to EBITDA-positive (sum of negative EBITDA)
+      var burn = 0;
+      ebitda.forEach(function (e) { if (e < 0) burn += -e; });
+
+      // valuation path: exit multiple × net revenue each year
+      var valPath = totalRev.map(function (r) { return r * state.mult; });
+
+      // deal math
+      var post = state.pre + state.round;
+      var own = post > 0 ? state.round / post : 0;
+      // a newly created ESOP pool dilutes all post-money holders pro-rata
+      var esopFrac = Math.max(0, Math.min(1, (state.esop || 0) / 100));
+      own = own * (1 - esopFrac);
+
+      // unicorn metrics (2031 index = 4)
+      var i31 = 4;
+      var val31 = valPath[i31];
+      var moic = state.round > 0 ? (own * val31) / state.round : 0;
+
+      return {
+        policies: policies, seats: seats, gmv: gmv, gwp: gwp,
+        insRev: insRev, saasRev: saasRev, mktRev: mktRev,
+        totalRev: totalRev, opex: opex, ebitda: ebitda,
+        burn: burn, valPath: valPath, post: post, own: own,
+        val31: val31, moic: moic
+      };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // RENDER HELPERS
+    // ─────────────────────────────────────────────────────────────
+    function setCalc(key, val) {
+      var els = document.querySelectorAll('[data-calc="' + key + '"]');
+      for (var i = 0; i < els.length; i++) els[i].textContent = val;
+    }
+    function setCalcHTML(key, html) {
+      var els = document.querySelectorAll('[data-calc="' + key + '"]');
+      for (var i = 0; i < els.length; i++) els[i].innerHTML = html;
+    }
+
+    function barChart(containerId, values, cls, max) {
+      var el = document.getElementById(containerId);
+      if (!el) return;
+      var mx = max != null ? max : Math.max.apply(null, values.map(Math.abs));
+      if (mx <= 0) mx = 1;
+      var html = "";
+      for (var i = 0; i < values.length; i++) {
+        var w = Math.max(2, Math.round(Math.abs(values[i]) / mx * 100));
+        html += '<div class="bar-row"><span class="yr">' + YEARS[i] + '</span>' +
+          '<div class="bar-track"><div class="bar-fill ' + (cls || "") + '" style="width:' + w + '%;"></div></div>' +
+          '<span class="bv">' + fmtAbbrev(values[i]) + '</span></div>';
+      }
+      el.innerHTML = html;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // RENDER
+    // ─────────────────────────────────────────────────────────────
+    function render() {
+      var c = compute();
+      var i31 = 4;
+      var sym = CUR_SYM[state.cur];
+
+      // currency labels
+      setCalc("cur_sym", sym);
+      setCalc("cur_name", state.cur);
+      setCalc("scale_name", SCALE_NAMES[String(state.scale)] || "custom");
+
+      // hero
+      setCalc("hero_rev", fmtAbbrev(c.totalRev[i31]));
+      setCalc("hero_val", fmtAbbrev(c.val31));
+      setCalc("hero_round", fmtAbbrev(state.round));
+      setCalc("hero_take", state.take + "%");
+
+      // configurator KPIs
+      setCalc("kpi_post", fmtAbbrev(c.post));
+      setCalc("kpi_own", fmtPct(c.own));
+      setCalc("kpi_own_lbl", state.investor + " ownership");
+      setCalc("kpi_rev31", fmtAbbrev(c.totalRev[i31]));
+      setCalc("kpi_ebitda31", fmtAbbrev(c.ebitda[i31]));
+      setCalc("kpi_val31", fmtAbbrev(c.val31));
+      setCalc("kpi_moic", c.moic.toFixed(1) + "×");
+      setCalc("cfg_note", "Showing in " + state.cur + " · scale " + (SCALE_NAMES[String(state.scale)] || "custom") +
+        " · " + state.take + "% MGA take · " + state.mtake + "% marketplace take · " + state.mult + "× exit multiple. Inputs are in USD (canonical base); outputs convert at the live rate.");
+
+      // market SOM 2031 = GWP + GMV intermediated
+      setCalc("som_2031", fmtAbbrev(c.gwp[i31] + c.gmv[i31]));
+
+      // business model engines (2031)
+      setCalc("eng_ins", fmtAbbrev(c.insRev[i31]));
+      setCalc("eng_saas", fmtAbbrev(c.saasRev[i31]));
+      setCalc("eng_mkt", fmtAbbrev(c.mktRev[i31]));
+
+      // revenue mix bars (2031 split)
+      (function () {
+        var el = document.getElementById("mix-bars");
+        if (!el) return;
+        var parts = [
+          { l: "MGA insurance take", v: c.insRev[i31], cls: "" },
+          { l: "AgentOS SaaS", v: c.saasRev[i31], cls: "rev" },
+          { l: "Marketplace take", v: c.mktRev[i31], cls: "gwp" }
+        ];
+        var mx = Math.max(c.insRev[i31], c.saasRev[i31], c.mktRev[i31], 1);
+        var tot = c.totalRev[i31] || 1;
+        var html = "";
+        parts.forEach(function (p) {
+          var w = Math.max(2, Math.round(p.v / mx * 100));
+          html += '<div class="bar-row" style="grid-template-columns:150px 1fr 120px;">' +
+            '<span class="yr">' + p.l + '</span>' +
+            '<div class="bar-track"><div class="bar-fill ' + p.cls + '" style="width:' + w + '%;"></div></div>' +
+            '<span class="bv">' + fmtAbbrev(p.v) + ' · ' + fmtPct(p.v / tot, 0) + '</span></div>';
+        });
+        el.innerHTML = html;
+      })();
+
+      // unit economics
+      setCalc("ue_cac", fmtFull(BASE.cacUSD));
+      setCalc("ue_prem", fmtFull(state.prem));
+      var takePerPolicy = state.prem * (state.take / 100);
+      setCalc("ue_take", fmtFull(takePerPolicy));
+      var ltv = takePerPolicy / 0.08; // churn 8%
+      setCalc("ue_ltvcac", (ltv / BASE.cacUSD).toFixed(1) + "×");
+
+      // financial table
+      (function () {
+        var body = document.getElementById("fin-body");
+        if (!body) return;
+        function row(label, arr, opts) {
+          opts = opts || {};
+          var tds = arr.map(function (v) {
+            var color = "";
+            if (opts.signed) color = v < 0 ? ' style="color:var(--red-1);font-weight:700;"' : ' style="color:var(--green-1);font-weight:700;"';
+            else if (opts.bold) color = ' style="font-weight:700;"';
+            return '<td class="num"' + color + '>' + (opts.raw ? v : fmtAbbrev(v)) + '</td>';
+          }).join("");
+          return '<tr><td' + (opts.bold ? ' style="font-weight:700;"' : '') + '>' + label + '</td>' + tds + '</tr>';
+        }
+        var html = "";
+        html += row("Avg policies in-force", c.policies.map(function (v) { return Math.round(v).toLocaleString("en-US"); }), { raw: true });
+        html += row("AgentOS paying seats", c.seats.map(function (v) { return Math.round(v).toLocaleString("en-US"); }), { raw: true });
+        html += row("Gross written premium", c.gwp);
+        html += row("Marketplace GMV", c.gmv);
+        html += row("— MGA insurance take", c.insRev);
+        html += row("— AgentOS SaaS", c.saasRev);
+        html += row("— Marketplace take", c.mktRev);
+        html += row("Total net revenue", c.totalRev, { bold: true });
+        html += row("Operating cost", c.opex.map(function (v) { return -v; }));
+        html += row("EBITDA", c.ebitda, { signed: true });
+        body.innerHTML = html;
+      })();
+
+      barChart("rev-bars", c.totalRev, "rev");
+      barChart("gwp-bars", c.gwp, "gwp");
+      barChart("val-bars", c.valPath, "gwp");
+
+      // capital section
+      setCalc("cap_round", fmtAbbrev(state.round));
+      setCalc("cap_pre", fmtAbbrev(state.pre));
+      setCalc("cap_post", fmtAbbrev(c.post));
+      setCalc("cap_own", fmtPct(c.own));
+      setCalc("cap_esop", state.esop + "%");
+      setCalc("cap_burn", fmtAbbrev(c.burn));
+
+      // use of funds bars (scale to round)
+      (function () {
+        var el = document.getElementById("uof-bars");
+        if (!el) return;
+        var html = "";
+        BASE.uof.forEach(function (u) {
+          var amt = state.round * u.share;
+          var w = Math.round(u.share * 100);
+          html += '<div class="bar-row" style="grid-template-columns:170px 1fr 110px;">' +
+            '<span class="yr">' + u.label + '</span>' +
+            '<div class="bar-track"><div class="bar-fill" style="width:' + w + '%;background:' + u.color + ';"></div></div>' +
+            '<span class="bv">' + fmtAbbrev(amt) + ' · ' + w + '%</span></div>';
+        });
+        el.innerHTML = html;
+      })();
+
+      // unicorn note
+      var crosses = c.val31 >= 1e9;
+      setCalcHTML("unicorn_note", "At the selected settings, the modeled 2031 implied valuation is <strong>" + fmtAbbrev(c.val31) +
+        "</strong> (" + state.mult + "× the modeled 2031 net revenue of " + fmtAbbrev(c.totalRev[i31]) + "). " +
+        (crosses ? "This <strong>crosses the $1B unicorn threshold</strong>." : "Increase the scale scenario, take rates or exit multiple to cross the $1B unicorn threshold."));
+      setCalc("unicorn_2031", "Modeled 2031 net revenue " + fmtAbbrev(c.totalRev[i31]) + " → implied valuation " + fmtAbbrev(c.val31) + " at " + state.mult + "× (" + (crosses ? "unicorn" : "approaching unicorn") + ").");
+
+      // exit table
+      (function () {
+        var body = document.getElementById("exit-body");
+        if (!body) return;
+        var mults = [
+          { name: "Conservative", x: Math.max(1, state.mult - 2) },
+          { name: "Base", x: state.mult },
+          { name: "Upside", x: state.mult + 3 }
+        ];
+        var html = "";
+        mults.forEach(function (s) {
+          var ev = c.totalRev[i31] * s.x;
+          var moic = state.round > 0 ? (c.own * ev) / state.round : 0;
+          html += "<tr><td>" + s.name + "</td><td class='num'>" + s.x + "×</td><td class='num'>" + fmtAbbrev(c.totalRev[i31]) +
+            "</td><td class='num'>" + fmtAbbrev(ev) + "</td><td class='num' style='font-weight:700;color:var(--violet-1);'>" + moic.toFixed(1) + "×</td></tr>";
+        });
+        body.innerHTML = html;
+      })();
+
+      // integrity FX line
+      var fxTxt = "1 USD = €" + state.fxEur.toFixed(4) + " · ₪" + state.fxIls.toFixed(4) + " (" + state.fxSource + ")";
+      setCalc("integrity_fx", fxTxt);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FX
+    // ─────────────────────────────────────────────────────────────
+    function applyFxInputs() {
+      var e = document.getElementById("fx-eur");
+      var s = document.getElementById("fx-ils");
+      if (e) e.value = state.fxEur;
+      if (s) s.value = state.fxIls;
+    }
+    function fxBadge(txt) { var b = document.getElementById("fx-badge"); if (b) b.textContent = txt; }
+    function fxSource(txt) { var b = document.getElementById("fx-source"); if (b) b.textContent = txt; }
+
+    function loadFx(force) {
+      if (!force && state.fxSource === "manual") {
+        fxBadge("manual ✎"); applyFxInputs(); render();
+        return;
+      }
+      fxBadge("loading…");
+      fetch("/api/fx/rates" + (force ? "?refresh=1" : ""))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var usdEur = (d.rates && d.rates.USD && d.rates.USD.EUR) || d.usd_eur;
+          var usdIls = (d.rates && d.rates.USD && d.rates.USD.ILS) || d.usd_ils;
+          if (usdEur) state.fxEur = Number(usdEur);
+          if (usdIls) state.fxIls = Number(usdIls);
+          state.fxSource = d.source === "alpha_vantage" ? "live" : (d.source || "fallback");
+          fxBadge(state.fxSource === "live" ? "live ✓" : (state.fxSource + " ⚠"));
+          fxSource(d.as_of ? ("as of " + String(d.as_of).slice(0, 10)) : "");
+          applyFxInputs(); persist(); render();
+        })
+        .catch(function () {
+          state.fxSource = "fallback";
+          fxBadge("fallback ⚠"); applyFxInputs(); render();
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // WIRING
+    // ─────────────────────────────────────────────────────────────
+    function bindNum(id, key) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.value = state[key];
+      el.addEventListener("input", function () {
+        var v = parseFloat(el.value);
+        state[key] = isNaN(v) ? 0 : v;
+        persist(); render();
+      });
+    }
+    function bindSel(id, key, numeric) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.value = state[key];
+      el.addEventListener("change", function () {
+        state[key] = numeric ? parseFloat(el.value) : el.value;
+        persist(); render();
+      });
+    }
+
+    function init() {
+      // currency buttons
+      var curBtns = document.querySelectorAll(".cur-btn");
+      function syncCurBtns() {
+        for (var i = 0; i < curBtns.length; i++) {
+          curBtns[i].classList.toggle("on", curBtns[i].getAttribute("data-cur") === state.cur);
+        }
+      }
+      for (var i = 0; i < curBtns.length; i++) {
+        curBtns[i].addEventListener("click", function () {
+          state.cur = this.getAttribute("data-cur");
+          syncCurBtns(); persist(); render();
+        });
+      }
+      syncCurBtns();
+
+      // investor name
+      var inv = document.getElementById("c-investor");
+      if (inv) {
+        inv.value = state.investor;
+        inv.addEventListener("input", function () { state.investor = inv.value || "Investor"; persist(); render(); });
+      }
+
+      bindNum("c-round", "round");
+      bindNum("c-pre", "pre");
+      bindNum("c-esop", "esop");
+      bindSel("c-scale", "scale", true);
+      bindNum("c-prem", "prem");
+      bindNum("c-take", "take");
+      bindNum("c-seat", "seat");
+      bindNum("c-mtake", "mtake");
+      bindNum("c-mult", "mult");
+
+      // FX inputs
+      var fe = document.getElementById("fx-eur");
+      if (fe) fe.addEventListener("input", function () { var v = parseFloat(fe.value); if (v > 0) { state.fxEur = v; state.fxSource = "manual"; persist(); render(); } });
+      var fi = document.getElementById("fx-ils");
+      if (fi) fi.addEventListener("input", function () { var v = parseFloat(fi.value); if (v > 0) { state.fxIls = v; state.fxSource = "manual"; persist(); render(); } });
+      var fr = document.getElementById("fx-refresh");
+      if (fr) fr.addEventListener("click", function () { loadFx(true); });
+
+      // copy buttons
+      var copyBtns = document.querySelectorAll("[data-copy]");
+      for (var j = 0; j < copyBtns.length; j++) {
+        copyBtns[j].addEventListener("click", function () {
+          var code = this.parentNode;
+          var text = code.textContent.replace(/^📋 Copy/, "").trim();
+          var btn = this;
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(function () {
+              var orig = btn.textContent; btn.textContent = "✓ Copied";
+              setTimeout(function () { btn.textContent = orig; }, 1500);
+            });
+          }
+        });
+      }
+
+      var pb = document.getElementById("print-btn");
+      if (pb) pb.addEventListener("click", function () { window.print(); });
+
+      applyFxInputs();
+      render();
+      loadFx(false);
+    }
+
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+    else init();
+  })();
+  </script>
+</body>
+</html>
