@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Seed Super-Pitch (5 pages) | AgentOS for Insurance + Protection Marketplace</title>
+  <meta name="description" content="PHINS seed investor super-pitch: a focused 5-page deck. AgentOS for Insurance + a Disability/Longevity Protection Marketplace. English / Hebrew. Downloadable as PDF.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Heebo:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0f1b30;
+      --blue-dark: #0d47a1;
+      --blue-mid: #1565c0;
+      --blue-light: #1976d2;
+      --violet: #6a1b9a;
+      --violet-2: #7c3aed;
+      --green: #15803d;
+      --red: #c62828;
+      --amber: #f59e0b;
+      --text: #1a202c;
+      --sub: #475569;
+      --soft: #64748b;
+      --line: #e2e8f0;
+      --bg: #e9eef6;
+      --card: #ffffff;
+      --grad: linear-gradient(120deg,#64b5f6,#b388ff);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    body[dir="rtl"] { font-family: "Heebo", "Inter", sans-serif; }
+
+    /* Toolbar */
+    .bar { position: sticky; top: 0; z-index: 30; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; flex-wrap: wrap; }
+    .bar .brand { display: flex; align-items: center; gap: 9px; font-weight: 900; letter-spacing: 0.06em; }
+    .bar .brand .dot { width: 30px; height: 30px; border-radius: 8px; background: var(--grad); display: flex; align-items: center; justify-content: center; }
+    .bar .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .btn { font-family: inherit; font-size: 9pt; font-weight: 700; cursor: pointer; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); color: #fff; border-radius: 999px; padding: 7px 14px; transition: all .15s ease; }
+    .btn:hover { background: rgba(255,255,255,0.18); }
+    .btn.on { background: #fff; color: var(--ink); border-color: #fff; }
+    .btn.dl { background: var(--violet-2); border-color: var(--violet-2); }
+
+    .pages { max-width: 940px; margin: 22px auto; padding: 0 16px 50px; }
+    .page {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      box-shadow: 0 14px 36px rgba(15,23,42,0.10); padding: 40px 44px; margin-bottom: 24px;
+      min-height: 1180px; position: relative; display: flex; flex-direction: column;
+    }
+    .page-num { position: absolute; bottom: 18px; font-size: 8pt; color: var(--soft); letter-spacing: 0.08em; }
+    body:not([dir="rtl"]) .page-num { right: 44px; }
+    body[dir="rtl"] .page-num { left: 44px; }
+    .page-foot { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); font-size: 7.8pt; color: var(--soft); }
+
+    .eyebrow { display: inline-block; font-size: 8pt; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--violet); background: #f3e8ff; border-radius: 999px; padding: 5px 13px; }
+    h1 { font-size: 30pt; font-weight: 900; line-height: 1.1; letter-spacing: -0.01em; }
+    h1 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    h2 { font-size: 17pt; font-weight: 850; margin-bottom: 4px; }
+    .lead { font-size: 12pt; color: var(--sub); }
+    .kicker { font-size: 8.5pt; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--blue-mid); margin-bottom: 10px; }
+    p { font-size: 10.5pt; color: var(--sub); }
+    strong { color: var(--text); }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .metric { background: linear-gradient(180deg,#f7faff,#fff); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .metric .v { font-size: 19pt; font-weight: 900; color: var(--blue-dark); line-height: 1; }
+    .metric .l { font-size: 8pt; color: var(--soft); margin-top: 7px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .ask-band { background: linear-gradient(135deg,#0d47a1,#7c3aed); color: #fff; border-radius: 14px; padding: 18px 22px; font-size: 12pt; }
+    .ask-band strong { color: #fff; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    ul.clean { list-style: none; }
+    ul.clean li { position: relative; padding-inline-start: 22px; margin-bottom: 9px; font-size: 10pt; color: var(--sub); }
+    ul.clean li::before { content: "▸"; position: absolute; inset-inline-start: 0; color: var(--blue-mid); font-weight: 800; }
+
+    .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .tile { border: 1px solid var(--line); border-radius: 12px; padding: 15px; background: var(--card); }
+    .tile .ic { font-size: 20px; }
+    .tile h3 { font-size: 11pt; margin: 6px 0 5px; }
+    .tile p { font-size: 9pt; }
+    .tile.b { border-top: 3px solid var(--blue-mid); }
+    .tile.g { border-top: 3px solid var(--green); }
+    .tile.v { border-top: 3px solid var(--violet); }
+
+    .market { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    .market .box { border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .market .box .t { font-size: 8pt; font-weight: 800; letter-spacing: 0.06em; color: var(--blue-dark); }
+    .market .box .v { font-size: 17pt; font-weight: 900; margin: 4px 0; }
+    .market .box p { font-size: 8.4pt; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+    th { background: var(--blue-dark); color: #fff; padding: 8px 9px; text-align: start; font-weight: 700; }
+    td { padding: 7px 9px; border-top: 1px solid var(--line); }
+    tr:nth-child(even) td { background: #f8fafc; }
+    td.n, th.n { text-align: end; font-variant-numeric: tabular-nums; }
+    .pos { color: var(--green); font-weight: 700; }
+    .neg { color: var(--red); font-weight: 700; }
+
+    .engines { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    .engine { border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .engine .v { font-size: 16pt; font-weight: 900; color: var(--blue-dark); }
+    .engine .l { font-size: 9pt; font-weight: 700; }
+    .engine p { font-size: 8.2pt; }
+
+    .uof-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-bottom: 7px; }
+    .uof-row .bar { grid-column: 1 / -1; height: 9px; border-radius: 6px; background: #eef2f9; overflow: hidden; }
+    .uof-row .bar i { display: block; height: 100%; border-radius: 6px; }
+    .uof-row .lab { font-size: 9pt; color: var(--sub); }
+    .uof-row .amt { font-size: 9pt; font-weight: 700; }
+
+    .tag { display: inline-block; font-size: 7pt; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 999px; padding: 2px 7px; vertical-align: middle; }
+    .tag.r { background: #e3f2fd; color: #0d47a1; }
+    .tag.m { background: #f3e8ff; color: #6a1b9a; }
+
+    .note { background: #f0f4fa; border-inline-start: 3px solid var(--blue-mid); border-radius: 8px; padding: 10px 13px; font-size: 9pt; color: var(--sub); }
+    .cta { font-size: 13pt; font-weight: 800; color: var(--ink); }
+
+    .mt8 { margin-top: 8px; } .mt14 { margin-top: 14px; } .mt20 { margin-top: 20px; } .mt28 { margin-top: 28px; }
+
+    @media (max-width: 760px) {
+      .metrics, .market, .tiles, .engines { grid-template-columns: 1fr 1fr; }
+      .cols { grid-template-columns: 1fr; }
+      .page { padding: 26px 22px; min-height: 0; }
+      h1 { font-size: 21pt; }
+    }
+
+    @media print {
+      @page { size: A4; margin: 12mm; }
+      body { background: #fff; }
+      .bar, .no-print { display: none !important; }
+      .pages { margin: 0; padding: 0; max-width: none; }
+      .page { box-shadow: none; border: none; border-radius: 0; margin: 0; padding: 0 0 8mm; min-height: auto; page-break-after: always; }
+      .page:last-child { page-break-after: auto; }
+      .page-num { position: static; margin-top: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bar no-print">
+    <div class="brand"><span class="dot">🛡️</span><span>PHINS</span></div>
+    <div class="tools">
+      <span style="font-size:8pt;opacity:.8;" data-i18n="lang_label">Language</span>
+      <button type="button" class="btn lang-btn on" data-lang="en">EN</button>
+      <button type="button" class="btn lang-btn" data-lang="he">עברית</button>
+      <button type="button" class="btn dl" id="dl" data-i18n="dl">⬇ Download PDF</button>
+    </div>
+  </div>
+
+  <div class="pages">
+
+    <!-- ───────── PAGE 1 — COVER ───────── -->
+    <section class="page">
+      <span class="eyebrow" data-i18n="p1_eyebrow">Seed round · Unicorn super-pitch · Confidential</span>
+      <div class="mt28"></div>
+      <h1 data-i18n-html="p1_h1">PHINS — <span class="grad">AgentOS for Insurance + a Disability/Longevity Protection Marketplace</span></h1>
+      <p class="lead mt14" data-i18n="p1_tagline">The AI operating system for the global protection economy.</p>
+      <p class="lead mt8" data-i18n-html="p1_subline">The disability &amp; long-term-care MGA is the <strong>wedge</strong> — the platform is the company.</p>
+
+      <div class="metrics mt28">
+        <div class="metric"><div class="v">$228M</div><div class="l" data-i18n="p1_m1">2031 net revenue <span class="tag m">modeled</span></div></div>
+        <div class="metric"><div class="v">$1.4B</div><div class="l" data-i18n="p1_m2">2031 implied valuation <span class="tag m">modeled</span></div></div>
+        <div class="metric"><div class="v">$4M</div><div class="l" data-i18n="p1_m3">Seed round (the ask)</div></div>
+        <div class="metric"><div class="v">3</div><div class="l" data-i18n="p1_m4">Compounding revenue engines</div></div>
+      </div>
+
+      <div class="ask-band mt28" data-i18n-html="p1_ask">
+        Raising <strong>$4M seed</strong> to launch the MGA, ship AgentOS, and open the marketplace — a capital-light path to a $1B+ platform.
+      </div>
+
+      <div class="tiles mt28">
+        <div class="tile b"><span class="ic">🧠</span><h3 data-i18n="p1_t1">AI underwriting &amp; claims</h3><p data-i18n="p1_t1d">Two auditable AI moats on one ledger.</p></div>
+        <div class="tile g"><span class="ic">💻</span><h3 data-i18n="p1_t2">AgentOS</h3><p data-i18n="p1_t2d">Arms agents; owns distribution.</p></div>
+        <div class="tile v"><span class="ic">🤝</span><h3 data-i18n="p1_t3">Marketplace</h3><p data-i18n="p1_t3d">Five-sided network &amp; data flywheel.</p></div>
+      </div>
+
+      <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
+      <div class="page-num">PHINS · 1 / 5</div>
+    </section>
+
+    <!-- ───────── PAGE 2 — PROBLEM, WHY NOW, MARKET ───────── -->
+    <section class="page">
+      <div class="kicker" data-i18n="p2_kicker">Problem · Why now · Market</div>
+      <h2 data-i18n="p2_h">A trillion-dollar protection gap, served by pre-smartphone software.</h2>
+      <div class="cols mt20">
+        <div>
+          <h3 style="font-size:11pt;margin-bottom:8px;" data-i18n="p2_prob">The problem</h3>
+          <ul class="clean">
+            <li data-i18n="p2_p1">Aging &amp; longevity shock is widening a $1.4T+ protection gap.</li>
+            <li data-i18n="p2_p2">Severe disability is mispriced or excluded — carriers retreat.</li>
+            <li data-i18n="p2_p3">Claims are slow, manual and adversarial — friction at the worst moment.</li>
+            <li data-i18n="p2_p4">Agents run their book on software from the 1990s.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="font-size:11pt;margin-bottom:8px;" data-i18n="p2_why">Why now</h3>
+          <ul class="clean">
+            <li data-i18n="p2_w1">AI makes underwriting &amp; claims software-fast and auditable.</li>
+            <li data-i18n="p2_w2">Capital-light MGA rails — software margins; carriers hold the risk.</li>
+            <li data-i18n="p2_w3">Agents want a cockpit, not disintermediation.</li>
+            <li data-i18n="p2_w4">A platform built once expands market-by-market as configuration.</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 style="font-size:11pt;margin:24px 0 10px;" data-i18n="p2_market">Market <span class="tag r">reported estimates</span> &amp; <span class="tag m">modeled SOM</span></h3>
+      <div class="market">
+        <div class="box"><div class="t" data-i18n="p2_tam_t">TAM</div><div class="v">$1.4T+</div><p data-i18n="p2_tam">Global disability, LTC &amp; longevity protection (premium-equivalent).</p></div>
+        <div class="box"><div class="t" data-i18n="p2_sam_t">SAM</div><div class="v">$140B</div><p data-i18n="p2_sam">Digitally-addressable severity &amp; embedded protection in priority markets.</p></div>
+        <div class="box"><div class="t" data-i18n="p2_som_t">SOM 2031</div><div class="v">$1.38B</div><p data-i18n="p2_som">PHINS-intermediated volume (premium + marketplace GMV) — modeled.</p></div>
+      </div>
+
+      <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
+      <div class="page-num">PHINS · 2 / 5</div>
+    </section>
+
+    <!-- ───────── PAGE 3 — PLATFORM / MOATS ───────── -->
+    <section class="page">
+      <div class="kicker" data-i18n="p3_kicker">Solution · The platform</div>
+      <h2 data-i18n="p3_h">Three moats, one ledger — distribute, underwrite, pay, orchestrate.</h2>
+      <p class="mt8" data-i18n="p3_sub">PHINS sells a focused, reinsurable severity product as a capital-light MGA, then compounds the same platform into SaaS and marketplace revenue.</p>
+
+      <div class="tiles mt20">
+        <div class="tile b"><span class="ic">🧠</span><h3 data-i18n="p3_t1">AI underwriting moat</h3><p data-i18n="p3_t1d">Severity-tuned pricing, model registry, and proprietary data rivals can't see.</p></div>
+        <div class="tile b"><span class="ic">⚙️</span><h3 data-i18n="p3_t2">AI claims intelligence</h3><p data-i18n="p3_t2d">Triage, code-based settlement of eligible benefits, home-care-first navigation.</p></div>
+        <div class="tile v"><span class="ic">🤝</span><h3 data-i18n="p3_t3">AgentOS + 5-sided marketplace</h3><p data-i18n="p3_t3d">Arms agents; connects clients, agents, doctors, reinsurers &amp; care providers.</p></div>
+      </div>
+
+      <div class="note mt20" data-i18n-html="p3_fly">
+        <strong>Data flywheel:</strong> more agents → more clients → more data → sharper pricing &amp; faster claims → better treaty terms → cheaper, faster cover → more agents.
+      </div>
+
+      <div class="cols mt20">
+        <div class="note" data-i18n-html="p3_built"><strong>Already built:</strong> 64+ deployed modules, a hash-chained (tamper-evident) ledger, and multi-market regulatory adapters — not slideware.</div>
+        <div class="note" data-i18n-html="p3_gov"><strong>Trust by design:</strong> AI recommends; only ledger-governed transactions post. A moat with regulators and reinsurers.</div>
+      </div>
+
+      <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
+      <div class="page-num">PHINS · 3 / 5</div>
+    </section>
+
+    <!-- ───────── PAGE 4 — MODEL & NUMBERS ───────── -->
+    <section class="page">
+      <div class="kicker" data-i18n="p4_kicker">Business model · Trajectory</div>
+      <h2 data-i18n="p4_h">Three capital-light revenue engines on one platform.</h2>
+
+      <div class="engines mt20">
+        <div class="engine" style="border-top:3px solid var(--blue-mid);"><div class="l" data-i18n="p4_e1">MGA insurance take</div><div class="v">$120M</div><p data-i18n="p4_e1d">2031, on premium intermediated.</p></div>
+        <div class="engine" style="border-top:3px solid var(--green);"><div class="l" data-i18n="p4_e2">AgentOS SaaS</div><div class="v">$54M</div><p data-i18n="p4_e2d">2031, recurring high-margin seats.</p></div>
+        <div class="engine" style="border-top:3px solid var(--violet);"><div class="l" data-i18n="p4_e3">Marketplace take</div><div class="v">$54M</div><p data-i18n="p4_e3d">2031, on marketplace GMV.</p></div>
+      </div>
+
+      <h3 style="font-size:11pt;margin:22px 0 10px;" data-i18n="p4_traj">Five-year trajectory <span class="tag m">modeled · USD</span></h3>
+      <table>
+        <thead><tr><th data-i18n="p4_line">Line</th><th class="n">2027</th><th class="n">2028</th><th class="n">2029</th><th class="n">2030</th><th class="n">2031</th></tr></thead>
+        <tbody>
+          <tr><td data-i18n="p4_gwp">Premium intermediated (GWP)</td><td class="n">$2M</td><td class="n">$14M</td><td class="n">$60M</td><td class="n">$200M</td><td class="n">$480M</td></tr>
+          <tr><td data-i18n="p4_rev">Net revenue</td><td class="n">$1.1M</td><td class="n">$7.5M</td><td class="n">$32M</td><td class="n">$100M</td><td class="n">$228M</td></tr>
+          <tr><td data-i18n="p4_ebitda">EBITDA</td><td class="n neg">−$7.9M</td><td class="n neg">−$10.5M</td><td class="n neg">−$4.9M</td><td class="n pos">+$24M</td><td class="n pos">+$82M</td></tr>
+        </tbody>
+      </table>
+
+      <div class="cols mt20">
+        <div class="note" data-i18n-html="p4_unicorn"><strong>Unicorn path:</strong> 2031 net revenue $228M × a 6× revenue multiple ≈ <strong>$1.4B</strong>. EBITDA-positive from 2030.</div>
+        <div class="note" data-i18n-html="p4_light"><strong>Capital-light:</strong> claims reserves sit with carriers / reinsurers — not on PHINS — so we scale at software margins.</div>
+      </div>
+
+      <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
+      <div class="page-num">PHINS · 4 / 5</div>
+    </section>
+
+    <!-- ───────── PAGE 5 — ASK, USE OF FUNDS, PROOF, TEAM ───────── -->
+    <section class="page">
+      <div class="kicker" data-i18n="p5_kicker">The ask · Use of funds · Proof · Team</div>
+      <h2 data-i18n="p5_h">$4M seed to turn a built platform into a category.</h2>
+
+      <div class="cols mt20">
+        <div>
+          <h3 style="font-size:11pt;margin-bottom:8px;" data-i18n="p5_terms">Seed terms</h3>
+          <table>
+            <tbody>
+              <tr><td data-i18n="p5_round">Seed round</td><td class="n">$4M</td></tr>
+              <tr><td data-i18n="p5_pre">Pre-money</td><td class="n">$16M</td></tr>
+              <tr><td data-i18n="p5_post">Post-money</td><td class="n">$20M</td></tr>
+              <tr><td data-i18n="p5_own">Investor ownership</td><td class="n">20%</td></tr>
+              <tr><td data-i18n="p5_use">Funds buy</td><td class="n" data-i18n="p5_use_v">Launch + first markets</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3 style="font-size:11pt;margin-bottom:8px;" data-i18n="p5_uof">Use of funds</h3>
+          <div class="uof-row"><span class="lab" data-i18n="p5_u1">AI &amp; engineering</span><span class="amt">$1.36M · 34%</span><div class="bar"><i style="width:34%;background:#1565c0;"></i></div></div>
+          <div class="uof-row"><span class="lab" data-i18n="p5_u2">AgentOS &amp; distribution</span><span class="amt">$0.88M · 22%</span><div class="bar"><i style="width:22%;background:#15803d;"></i></div></div>
+          <div class="uof-row"><span class="lab" data-i18n="p5_u3">Marketplace &amp; care ops</span><span class="amt">$0.56M · 14%</span><div class="bar"><i style="width:14%;background:#6a1b9a;"></i></div></div>
+          <div class="uof-row"><span class="lab" data-i18n="p5_u4">Actuarial, reinsurance &amp; risk</span><span class="amt">$0.40M · 10%</span><div class="bar"><i style="width:10%;background:#00838f;"></i></div></div>
+          <div class="uof-row"><span class="lab" data-i18n="p5_u5">Regulatory &amp; multi-market</span><span class="amt">$0.36M · 9%</span><div class="bar"><i style="width:9%;background:#e65100;"></i></div></div>
+          <div class="uof-row"><span class="lab" data-i18n="p5_u6">G&amp;A &amp; runway</span><span class="amt">$0.44M · 11%</span><div class="bar"><i style="width:11%;background:#78909c;"></i></div></div>
+        </div>
+      </div>
+
+      <h3 style="font-size:11pt;margin:22px 0 8px;" data-i18n="p5_proof">InsurTech precedents <span class="tag r">reported</span></h3>
+      <table>
+        <thead><tr><th data-i18n="p5_co">Company</th><th data-i18n="p5_focus">Focus</th><th class="n" data-i18n="p5_val">Valuation</th><th class="n" data-i18n="p5_raised">Raised</th></tr></thead>
+        <tbody>
+          <tr><td>Lemonade</td><td data-i18n="p5_c1">AI insurer (public)</td><td class="n" data-i18n="p5_c1v">Multi-billion</td><td class="n">$480M+</td></tr>
+          <tr><td>Next Insurance</td><td data-i18n="p5_c2">SMB insurance</td><td class="n">~$4B</td><td class="n" data-i18n="p5_c2r">Hundreds of $M</td></tr>
+          <tr><td>Wefox</td><td data-i18n="p5_c3">Marketplace + carrier</td><td class="n">up to $4.5B</td><td class="n">$1B+</td></tr>
+          <tr><td>bolttech</td><td data-i18n="p5_c4">Embedded marketplace</td><td class="n">$2.1B</td><td class="n">$690M+</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="font-size:11pt;margin:22px 0 8px;" data-i18n="p5_team">Team</h3>
+      <ul class="clean">
+        <li data-i18n="p5_tm1">Platform founder — shipped a 64+ module, ledger-governed insurance platform.</li>
+        <li data-i18n="p5_tm2">Chief Actuary (incoming) — IAA-recognised; validated the pricing model.</li>
+        <li data-i18n="p5_tm3">Senior insurance operator (CEO / chairman) — engaged as investor / active co-founder.</li>
+      </ul>
+
+      <p class="cta mt20" data-i18n="p5_cta">Let's build the protection layer for the longevity economy.</p>
+
+      <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
+      <div class="page-num">PHINS · 5 / 5</div>
+    </section>
+
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    // Hebrew dictionary. English is captured from the DOM, so it never drifts.
+    var HE = {
+      lang_label: "שפה",
+      dl: "⬇ הורדת PDF",
+      foot: "הנחות תכנון מודליות — לא הנחיה. חסוי — אין להפיץ.",
+
+      // Page 1
+      p1_eyebrow: "סבב Seed · מצגת יוניקורן ממוקדת · חסוי",
+      p1_h1: 'PHINS — <span class="grad">AgentOS לענף הביטוח + שוק הגנה למוגבלות ואריכות-ימים</span>',
+      p1_tagline: "מערכת ההפעלה מבוססת ה-AI לכלכלת ההגנה הגלובלית.",
+      p1_subline: 'ביטוח המוגבלות והסיעוד (MGA) הוא <strong>נקודת הכניסה</strong> — הפלטפורמה היא החברה.',
+      p1_m1: 'הכנסה נטו 2031 <span class="tag m">מודלי</span>',
+      p1_m2: 'שווי נגזר 2031 <span class="tag m">מודלי</span>',
+      p1_m3: "סבב Seed (הבקשה)",
+      p1_m4: "מנועי הכנסה מצטברים",
+      p1_ask: "מגייסים <strong>4M$ ב-Seed</strong> כדי להשיק את ה-MGA, להוציא לשוק את AgentOS ולפתוח את ה-Marketplace — מסלול דל-הון לפלטפורמה בשווי 1B$+.",
+      p1_t1: "חיתום ותביעות מבוססי-AI",
+      p1_t1d: "שתי חפירות הגנה (Moats) של AI על ספר-חשבונות אחד.",
+      p1_t2: "AgentOS",
+      p1_t2d: "מצייד את הסוכנים; מחזיק בערוץ ההפצה.",
+      p1_t3: "Marketplace",
+      p1_t3d: "רשת חמש-צדדית וגלגל-תנופה של דאטה.",
+
+      // Page 2
+      p2_kicker: "הבעיה · למה עכשיו · השוק",
+      p2_h: "פער הגנה בסדר גודל של טריליון דולר, שמשורת בתוכנה מלפני עידן הסמארטפון.",
+      p2_prob: "הבעיה",
+      p2_p1: "הזדקנות ואריכות-ימים מרחיבות פער הגנה של מעל 1.4 טריליון $.",
+      p2_p2: "מוגבלות חמורה מתומחרת בחסר או מוחרגת — המבטחים נסוגים.",
+      p2_p3: "תביעות איטיות, ידניות ועוינות — חיכוך דווקא ברגע הקשה ביותר.",
+      p2_p4: "סוכנים מנהלים את תיק הלקוחות בתוכנה משנות ה-90.",
+      p2_why: "למה עכשיו",
+      p2_w1: "ה-AI הופך חיתום ותביעות למהירים וניתנים לביקורת כמו תוכנה.",
+      p2_w2: "מודל MGA דל-הון — מרווחי תוכנה; המבטחים נושאים בסיכון.",
+      p2_w3: "סוכנים רוצים כלי-עבודה, לא להיעקף.",
+      p2_w4: "פלטפורמה שנבנית פעם אחת מתרחבת משוק לשוק כקונפיגורציה.",
+      p2_market: 'השוק <span class="tag r">אומדנים מדווחים</span> ו-<span class="tag m">SOM מודלי</span>',
+      p2_tam_t: "TAM",
+      p2_tam: "הגנה גלובלית על מוגבלות, סיעוד ואריכות-ימים (שווה-ערך פרמיה).",
+      p2_sam_t: "SAM",
+      p2_sam: "בר-מענה דיגיטלי — הגנת חומרה ומשולבת בשווקי היעד.",
+      p2_som_t: "SOM 2031",
+      p2_som: "היקף מתווך ע\"י PHINS (פרמיה + GMV של ה-Marketplace) — מודלי.",
+
+      // Page 3
+      p3_kicker: "הפתרון · הפלטפורמה",
+      p3_h: "שלוש חפירות הגנה, ספר-חשבונות אחד — הפצה, חיתום, תשלום, תזמור.",
+      p3_sub: "PHINS מוכרת מוצר חומרה ממוקד ובר-ביטוח-משנה כ-MGA דל-הון, ואז ממנפת את אותה פלטפורמה להכנסות SaaS ו-Marketplace.",
+      p3_t1: "חפיר חיתום מבוסס-AI",
+      p3_t1d: "תמחור מותאם-חומרה, רישום מודלים, ודאטה ייחודית שהמתחרים לא רואים.",
+      p3_t2: "אינטליגנציית תביעות מבוססת-AI",
+      p3_t2d: "מיון, סילוק מבוסס-קוד של זכאויות, וניתוב לטיפול-בית תחילה.",
+      p3_t3: "AgentOS + שוק חמש-צדדי",
+      p3_t3d: "מצייד סוכנים; ומחבר לקוחות, סוכנים, רופאים, מבטחי-משנה ונותני-טיפול.",
+      p3_fly: "<strong>גלגל-תנופה של דאטה:</strong> יותר סוכנים → יותר לקוחות → יותר דאטה → תמחור חד יותר ותביעות מהירות → תנאי ביטוח-משנה טובים יותר → כיסוי זול ומהיר יותר → יותר סוכנים.",
+      p3_built: "<strong>כבר בנוי:</strong> 64+ מודולים פרוסים, ספר-חשבונות משורשר (חסין-זיוף), ומתאמים רגולטוריים רב-שוקיים — לא מצגת בלבד.",
+      p3_gov: "<strong>אמון מתוכנן:</strong> ה-AI ממליץ; רק טרנזקציות מנוהלות ספר-חשבונות נרשמות. חפיר מול רגולטורים ומבטחי-משנה.",
+
+      // Page 4
+      p4_kicker: "מודל עסקי · מסלול צמיחה",
+      p4_h: "שלושה מנועי הכנסה דלי-הון על פלטפורמה אחת.",
+      p4_e1: "עמלת ביטוח (MGA)",
+      p4_e1d: "2031, על פרמיה מתווכת.",
+      p4_e2: "AgentOS SaaS",
+      p4_e2d: "2031, מנויים חוזרים בעלי מרווח גבוה.",
+      p4_e3: "עמלת Marketplace",
+      p4_e3d: "2031, על מחזור ה-Marketplace (GMV).",
+      p4_traj: 'מסלול חמש-שנתי <span class="tag m">מודלי · USD</span>',
+      p4_line: "שורה",
+      p4_gwp: "פרמיה מתווכת (GWP)",
+      p4_rev: "הכנסה נטו",
+      p4_ebitda: "EBITDA",
+      p4_unicorn: "<strong>מסלול ליוניקורן:</strong> הכנסה נטו 2031 בסך 228M$ × מכפיל הכנסה של 6 ≈ <strong>1.4B$</strong>. רווחיות EBITDA מ-2030.",
+      p4_light: "<strong>דל-הון:</strong> עתודות התביעות מצויות אצל המבטחים / מבטחי-המשנה — לא אצל PHINS — ולכן הצמיחה במרווחי תוכנה.",
+
+      // Page 5
+      p5_kicker: "הבקשה · שימוש בכספים · הוכחה · צוות",
+      p5_h: "4M$ ב-Seed כדי להפוך פלטפורמה בנויה לקטגוריה.",
+      p5_terms: "תנאי ה-Seed",
+      p5_round: "סבב Seed",
+      p5_pre: "שווי לפני הכסף",
+      p5_post: "שווי אחרי הכסף",
+      p5_own: "אחזקת המשקיע",
+      p5_use: "הכספים מממנים",
+      p5_use_v: "השקה + שווקים ראשונים",
+      p5_uof: "שימוש בכספים",
+      p5_u1: "AI והנדסה",
+      p5_u2: "AgentOS והפצה",
+      p5_u3: "Marketplace ותפעול טיפול",
+      p5_u4: "אקטואריה, ביטוח-משנה וסיכון",
+      p5_u5: "רגולציה ורב-שוקיות",
+      p5_u6: "הנהלה וכלליות ומסלול הון",
+      p5_proof: 'תקדימי InsurTech <span class="tag r">מדווח</span>',
+      p5_co: "חברה",
+      p5_focus: "מיקוד",
+      p5_val: "שווי",
+      p5_raised: "גויס",
+      p5_c1: "מבטח-AI (ציבורי)",
+      p5_c1v: "מיליארדים",
+      p5_c2: "ביטוח לעסקים קטנים",
+      p5_c2r: "מאות מ׳ $",
+      p5_c3: "Marketplace + מבטח",
+      p5_c4: "Marketplace משולב",
+      p5_team: "הצוות",
+      p5_tm1: "מייסד הפלטפורמה — בנה פלטפורמת ביטוח של 64+ מודולים מבוססת ספר-חשבונות.",
+      p5_tm2: "אקטואר ראשי (מצטרף) — מוכר IAA; אימת את מודל התמחור.",
+      p5_tm3: "מפעיל ביטוח בכיר (מנכ\"ל / יו\"ר) — מעורב כמשקיע / שותף-מייסד פעיל.",
+      p5_cta: "בואו נבנה יחד את שכבת ההגנה לכלכלת אריכות-הימים."
+    };
+
+    var originals = {};
+    function captureOriginals() {
+      document.querySelectorAll("[data-i18n]").forEach(function (el) {
+        originals[el.getAttribute("data-i18n")] = { text: el.textContent };
+      });
+      document.querySelectorAll("[data-i18n-html]").forEach(function (el) {
+        originals[el.getAttribute("data-i18n-html")] = { html: el.innerHTML };
+      });
+    }
+
+    function applyLang(lang) {
+      var he = lang === "he";
+      document.documentElement.setAttribute("lang", he ? "he" : "en");
+      document.documentElement.setAttribute("dir", he ? "rtl" : "ltr");
+      document.body.setAttribute("dir", he ? "rtl" : "ltr");
+
+      document.querySelectorAll("[data-i18n]").forEach(function (el) {
+        var k = el.getAttribute("data-i18n");
+        if (he && HE[k] != null) {
+          // HE strings may contain inline markup (tags); render as HTML.
+          el.innerHTML = HE[k];
+        } else if (originals[k]) {
+          el.textContent = originals[k].text;
+        }
+      });
+      document.querySelectorAll("[data-i18n-html]").forEach(function (el) {
+        var k = el.getAttribute("data-i18n-html");
+        if (he && HE[k] != null) el.innerHTML = HE[k];
+        else if (originals[k]) el.innerHTML = originals[k].html;
+      });
+
+      document.querySelectorAll(".lang-btn").forEach(function (b) {
+        b.classList.toggle("on", b.getAttribute("data-lang") === lang);
+      });
+      try { localStorage.setItem("phins_seed_lang", lang); } catch (e) {}
+    }
+
+    function init() {
+      captureOriginals();
+      var saved = "en";
+      try { saved = localStorage.getItem("phins_seed_lang") || "en"; } catch (e) {}
+      applyLang(saved);
+
+      document.querySelectorAll(".lang-btn").forEach(function (b) {
+        b.addEventListener("click", function () { applyLang(b.getAttribute("data-lang")); });
+      });
+      var dl = document.getElementById("dl");
+      if (dl) dl.addEventListener("click", function () { window.print(); });
+    }
+
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+    else init();
+  })();
+  </script>
+</body>
+</html>
