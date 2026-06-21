@@ -1,0 +1,20 @@
+bfc74cb Merge pull request #386 from ashuryasaf/cursor/unicorn-investor-deck-e4ad
+e35036b Fix ESOP dilution in deal math and hero take-rate label
+2669603 Fix manual FX overrides being overwritten on page load
+9198071 Add adjustable unicorn InsurTech investor deck
+fa00751 Merge pull request #381 from ashuryasaf/cursor/business-plan-executive-pdf-3daf
+a4823d5 Add downloadable Business Plan (Executive) PDF to investor documents
+bfe810f Merge pull request #380 from ashuryasaf/cursor/adjustable-investor-name-live-fx-26bb
+f4cb9da Make investor name adjustable and currencies live on the investor meeting plan
+64edce8 Merge: route password-reset OTP to TeleSign SMS when email is unconfigured
+7efbb64 Route password-reset OTP to TeleSign SMS when email delivery is unconfigured
+aeb5055 Merge pull request #375 from ashuryasaf/cursor/fix-telesign-sms-delivery-3cfb
+eda9f7e Auto-select configured SMS provider (TeleSign) so password-reset codes deliver
+03cb667 Merge pull request #372 from ashuryasaf/cursor/hebrew-translation-investor-plan-0fab
+8207f16 Add missing Gantt Hebrew dictionary keys
+268cbbc feat(investor): full Hebrew translation of Open Fintech Business Plan when ₪ ILS is selected
+70279cb Merge pull request #370 from ashuryasaf/cursor/business-plan-5yr-forecast-eb9a
+54bebf9 fix(investor): cap forecast horizon at Dec of final plan year
+8b546af feat(investor): extend business plan to a 5-year high-growth forecast default
+4549b21 docs(investor): trim business plan cover, founder paragraph and team section
+2be8970 Merge pull request #368 from ashuryasaf/cursor/investor-business-plan-unicorn-eb9a
