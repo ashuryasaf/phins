@@ -127,7 +127,7 @@
     @media print {
       @page { size: A4; margin: 12mm; }
       body { background: #fff; }
-      .bar, .no-print { display: none !important; }
+      .no-print { display: none !important; }
       .pages { margin: 0; padding: 0; max-width: none; }
       .page { box-shadow: none; border: none; border-radius: 0; margin: 0; padding: 0 0 8mm; min-height: auto; page-break-after: always; }
       .page:last-child { page-break-after: auto; }
@@ -440,7 +440,7 @@
     var originals = {};
     function captureOriginals() {
       document.querySelectorAll("[data-i18n]").forEach(function (el) {
-        originals[el.getAttribute("data-i18n")] = { text: el.textContent };
+        originals[el.getAttribute("data-i18n")] = { html: el.innerHTML };
       });
       document.querySelectorAll("[data-i18n-html]").forEach(function (el) {
         originals[el.getAttribute("data-i18n-html")] = { html: el.innerHTML };
@@ -459,7 +459,7 @@
           // HE strings may contain inline markup (tags); render as HTML.
           el.innerHTML = HE[k];
         } else if (originals[k]) {
-          el.textContent = originals[k].text;
+          el.innerHTML = originals[k].html;
         }
       });
       document.querySelectorAll("[data-i18n-html]").forEach(function (el) {
