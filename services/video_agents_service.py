@@ -229,6 +229,11 @@ def _poll_job_background(job_id: str) -> None:
                 "message": "Missing provider or provider_job_id for polling.",
                 "progress_pct": 0,
             })
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'error': "Missing provider or provider_job_id for polling.",
+            })
             return
 
         try:
@@ -245,6 +250,11 @@ def _poll_job_background(job_id: str) -> None:
                 "status": "failed",
                 "message": f"Polling error: {exc}",
                 "progress_pct": 0,
+            })
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'error': f"Polling error: {exc}",
             })
             return
 
@@ -263,15 +273,26 @@ def _poll_job_background(job_id: str) -> None:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             })
             _job_store.update(job_id, updates)
+            _audit_video_event('video_job_completed', job_id, {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'has_download_url': bool(download_url),
+            })
             return
 
         if status == "failed":
+            error_msg = result.get("error", "Provider reported failure")
             updates.update({
                 "status": "failed",
                 "progress_pct": 0,
-                "error": result.get("error", "Provider reported failure"),
+                "error": error_msg,
             })
             _job_store.update(job_id, updates)
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'error': error_msg,
+            })
             return
 
         # Still processing — update state and continue
@@ -286,6 +307,12 @@ def _poll_job_background(job_id: str) -> None:
         "status": "failed",
         "message": "Polling timed out after 30 minutes.",
         "progress_pct": 0,
+    })
+    timed_out_job = _job_store.get(job_id) or {}
+    _audit_video_event('video_job_failed', job_id, {
+        'campaign_id': timed_out_job.get('campaign_id'),
+        'provider': timed_out_job.get('provider'),
+        'error': "Polling timed out after 30 minutes.",
     })
 
 
@@ -666,23 +693,38 @@ class VideoAgentsService:
             "message": result.get("message", ""),
         }
 
+        terminal_audit: Optional[tuple] = None
         if poll_status == "completed":
+            download_url = result.get("download_url", "")
             updates.update({
                 "status": "completed",
                 "progress_pct": 100,
-                "download_url": result.get("download_url", ""),
+                "download_url": download_url,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             })
+            terminal_audit = ('video_job_completed', {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'has_download_url': bool(download_url),
+            })
         elif poll_status == "failed":
+            error_msg = result.get("error", "Provider reported failure")
             updates.update({
                 "status": "failed",
                 "progress_pct": 0,
-                "error": result.get("error", "Provider reported failure"),
+                "error": error_msg,
+            })
+            terminal_audit = ('video_job_failed', {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'error': error_msg,
             })
         else:
             updates["status"] = "processing"
 
         _job_store.update(job_id, updates)
+        if terminal_audit is not None:
+            _audit_video_event(terminal_audit[0], job_id, terminal_audit[1])
         return _job_store.get(job_id)
 
     def cancel_job(self, job_id: str, cancelled_by: str = "admin") -> Optional[Dict[str, Any]]:
