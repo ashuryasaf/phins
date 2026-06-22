@@ -27,6 +27,7 @@ Completion modes:
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -39,6 +40,28 @@ try:
     MEDIA_GENERATION_AVAILABLE = True
 except ImportError:
     MEDIA_GENERATION_AVAILABLE = False
+
+logger = logging.getLogger('phins.video_agents')
+
+
+def _audit_video_event(action: str, job_id: Optional[str], details: Dict[str, Any]) -> None:
+    """Mirror a video-job lifecycle event into the durable audit store.
+
+    Best-effort and non-fatal. Gives the video-agents job lifecycle a durable
+    audit trail independent of the in-memory ``_job_store``. No-op without a
+    database.
+    """
+    try:
+        from services.ai_audit_bridge import record_ai_audit
+        record_ai_audit(
+            action=action,
+            entity_type='video_job',
+            entity_id=job_id,
+            details=details,
+            username='video_agents',
+        )
+    except Exception as exc:
+        logger.warning("video job audit mirror failed (non-fatal): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +513,15 @@ class VideoAgentsService:
                 "error": submission_error,
             })
 
-        return _job_store.get(job_id) or job
+        final_job = _job_store.get(job_id) or job
+        _audit_video_event('video_job_submitted', job_id, {
+            'campaign_id': final_job.get('campaign_id'),
+            'pipeline_type': final_job.get('pipeline_type'),
+            'provider': final_job.get('provider'),
+            'status': final_job.get('status'),
+            'submitted_by': final_job.get('submitted_by'),
+        })
+        return final_job
 
     def submit_batch(
         self,
@@ -842,7 +873,7 @@ class VideoAgentsService:
                     data.get("url") or data.get("video_url") or data.get("download_url") or ""
                 ).strip()
 
-            return _job_store.update(job_id, {
+            updated = _job_store.update(job_id, {
                 "status": "completed",
                 "progress_pct": 100,
                 "download_url": download_url,
@@ -850,18 +881,30 @@ class VideoAgentsService:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
             })
+            _audit_video_event('video_job_completed', job_id, {
+                'campaign_id': job.get('campaign_id'),
+                'provider': job.get('provider'),
+                'has_download_url': bool(download_url),
+            })
+            return updated
 
         if status_value in {"failed", "error", "cancelled", "aborted", "rejected"}:
             error_msg = str(
                 data.get("error_message") or data.get("message") or "Provider reported failure via webhook."
             )
-            return _job_store.update(job_id, {
+            updated = _job_store.update(job_id, {
                 "status": "failed",
                 "progress_pct": 0,
                 "error": error_msg,
                 "message": f"Failed via webhook: {error_msg}",
                 "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
             })
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': job.get('campaign_id'),
+                'provider': job.get('provider'),
+                'error': error_msg,
+            })
+            return updated
 
         # Still processing — update state
         return _job_store.update(job_id, {

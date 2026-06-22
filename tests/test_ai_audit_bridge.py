@@ -169,3 +169,43 @@ def test_audit_bot_trade_never_raises(monkeypatch):
                         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
     # Must not raise.
     engine._audit_bot_trade({'bot_id': 'BOT1'})
+
+
+# --------------------------------------------------------------------------
+# risk-report + video-agents audit parity
+# --------------------------------------------------------------------------
+
+def test_risk_report_audit_helper(monkeypatch):
+    import services.ai_risk_reports_service as rr
+    calls = []
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: calls.append(kwargs) or True)
+    rr._risk_report_audit('risk_report_generated', 'RPT-1', {'language': 'hebrew'})
+    assert calls[0]['action'] == 'risk_report_generated'
+    assert calls[0]['entity_type'] == 'risk_report'
+    assert calls[0]['entity_id'] == 'RPT-1'
+
+
+def test_risk_report_audit_never_raises(monkeypatch):
+    import services.ai_risk_reports_service as rr
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
+    rr._risk_report_audit('risk_report_generated', 'RPT-1', {})
+
+
+def test_video_audit_helper(monkeypatch):
+    import services.video_agents_service as va
+    calls = []
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: calls.append(kwargs) or True)
+    va._audit_video_event('video_job_submitted', 'JOB-1', {'provider': 'kling'})
+    assert calls[0]['action'] == 'video_job_submitted'
+    assert calls[0]['entity_type'] == 'video_job'
+    assert calls[0]['entity_id'] == 'JOB-1'
+
+
+def test_video_audit_never_raises(monkeypatch):
+    import services.video_agents_service as va
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
+    va._audit_video_event('video_job_submitted', 'JOB-1', {})
