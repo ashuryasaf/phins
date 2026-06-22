@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS — Seed Investor Deck | Fundraising Story</title>
-  <meta name="description" content="PHINS seed investor deck — the fundraising story: Purpose, Vision, Market, Technology, Team, Traction, Growth, Financial model. Adjustable configurator; currency follows language (Hebrew → ש&quot;ח). Downloadable PDF.">
+  <meta name="description" content="PHINS seed investor deck — the fundraising story: Purpose, Vision, Market, Technology, Team, Traction, Growth, Financial model. Adjustable configurator; currency follows language (Hebrew → ₪, English → $). Downloadable PDF.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Heebo:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
@@ -209,13 +209,13 @@
       <div class="cfg-head">
         <div>
           <h3 data-i18n="cfg_h">Adjustable configurator <span class="tag m">live FX · reconciling</span></h3>
-          <p class="sub" data-i18n="cfg_s">Tune the deck for any investor or factor. Every figure derives from one canonical USD base, so the whole report reconciles. Currency follows the language (Hebrew → ש"ח); you can override it.</p>
+          <p class="sub" data-i18n="cfg_s">Tune the deck for any investor or factor. Every figure derives from one canonical USD base, so the whole report reconciles. Currency follows the language (Hebrew → ₪, English → $); you can override it.</p>
         </div>
         <div class="cur-row">
           <span style="font-size:7.6pt;color:var(--soft);" data-i18n="cfg_cur">Currency</span>
           <button type="button" class="btn cur-btn on" data-cur="USD">$ USD</button>
           <button type="button" class="btn cur-btn" data-cur="EUR">€ EUR</button>
-          <button type="button" class="btn cur-btn" data-cur="ILS">₪ ש"ח</button>
+          <button type="button" class="btn cur-btn" data-cur="ILS">₪ ILS</button>
         </div>
       </div>
 
@@ -529,7 +529,7 @@
     // ── Formatting (currency follows state.cur; ILS symbol follows language) ──
     function rate() { return state.cur === "USD" ? 1 : (state.cur === "EUR" ? state.fxEur : state.fxIls); }
     function conv(usd) { return usd * rate(); }
-    function ilsSym() { return state.lang === "he" ? "ש\"ח" : "₪"; }
+    function ilsSym() { return "₪"; }
     function abbr(v) {
       if (v >= 1e12) return (v / 1e12).toFixed(2).replace(/\.?0+$/, "") + "T";
       if (v >= 1e9)  return (v / 1e9).toFixed(2).replace(/\.?0+$/, "") + "B";
@@ -734,7 +734,7 @@
       prepared: "הוכן עבור",
 
       cfg_h: 'קונפיגורטור מתכוונן <span class="tag m">FX חי · מתואם</span>',
-      cfg_s: 'כיוונון הדק לכל משקיע או פרמטר. כל מספר נגזר מבסיס USD קנוני אחד, כך שכל הדוח מתואם. המטבע נגזר מהשפה (עברית → ש"ח); ניתן לעקוף ידנית.',
+      cfg_s: 'כיוונון הדק לכל משקיע או פרמטר. כל מספר נגזר מבסיס USD קנוני אחד, כך שכל הדוח מתואם. המטבע נגזר מהשפה (עברית → ₪, אנגלית → $); ניתן לעקוף ידנית.',
       cfg_cur: "מטבע", cfg_fx: "💱 FX חי", cfg_refresh: "↻ רענון",
       cfg_investor: "הוכן עבור (משקיע / קהל)",
       cfg_round: "סבב Seed (USD)", cfg_pre: "שווי לפני הכסף (USD)", cfg_esop: "מאגר אופציות חדש (%)",
