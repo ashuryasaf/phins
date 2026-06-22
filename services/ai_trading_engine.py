@@ -10,6 +10,7 @@ Consumed by trading_platform_service.py — does NOT import other PHINS services
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 import threading
@@ -17,6 +18,31 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+
+logger = logging.getLogger('phins.ai_trading_engine')
+
+
+def _audit_bot_trade(trade_record: Dict[str, Any]) -> None:
+    """Mirror an executed bot trade into the durable audit store.
+
+    Best-effort and non-fatal: automated trading is a money-movement path, so
+    each execution gets audit parity with the rest of the platform. A failure
+    here must never break trade execution. No-op without a database.
+    """
+    try:
+        from services.ai_audit_bridge import record_ai_audit
+        order_result = trade_record.get('order_result') or {}
+        success = not (isinstance(order_result, dict) and order_result.get('error'))
+        record_ai_audit(
+            action='ai_bot_trade_executed',
+            entity_type='bot_trade',
+            entity_id=trade_record.get('bot_id'),
+            details=trade_record,
+            username='ai_trading_engine',
+            success=success,
+        )
+    except Exception as exc:  # never break the trade path
+        logger.warning("bot trade audit mirror failed (non-fatal): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1520,6 +1546,9 @@ class AutoPilotEngine:
                     self._bots[bot_id]["trades"].append(trade_record)
                     self._bots[bot_id]["trade_count"] += 1
                     self._bots[bot_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+                # Durable audit parity for this money-movement path.
+                _audit_bot_trade(trade_record)
 
                 if side == "buy":
                     open_count += 1

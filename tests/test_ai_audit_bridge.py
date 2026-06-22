@@ -135,3 +135,37 @@ def test_claims_bot_list_reports_and_retention_cap(monkeypatch):
     listed = bot.list_reports('CLM1')
     assert listed and all(r['claim_id'] == 'CLM1' for r in listed)
     assert bot.list_reports('NOPE') == []
+
+
+# --------------------------------------------------------------------------
+# trading-engine audit parity
+# --------------------------------------------------------------------------
+
+def test_audit_bot_trade_records_event(monkeypatch):
+    import services.ai_trading_engine as engine
+    calls = []
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: calls.append(kwargs) or True)
+    engine._audit_bot_trade({'bot_id': 'BOT1', 'symbol': 'AAPL', 'side': 'buy',
+                             'qty': 10, 'order_result': {'id': 'ord1'}})
+    assert len(calls) == 1
+    assert calls[0]['action'] == 'ai_bot_trade_executed'
+    assert calls[0]['entity_id'] == 'BOT1'
+    assert calls[0]['success'] is True
+
+
+def test_audit_bot_trade_marks_failed_order(monkeypatch):
+    import services.ai_trading_engine as engine
+    calls = []
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: calls.append(kwargs) or True)
+    engine._audit_bot_trade({'bot_id': 'BOT1', 'order_result': {'error': 'rejected'}})
+    assert calls[0]['success'] is False
+
+
+def test_audit_bot_trade_never_raises(monkeypatch):
+    import services.ai_trading_engine as engine
+    monkeypatch.setattr(bridge, 'record_ai_audit',
+                        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
+    # Must not raise.
+    engine._audit_bot_trade({'bot_id': 'BOT1'})
