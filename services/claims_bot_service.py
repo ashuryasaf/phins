@@ -22,9 +22,12 @@ from enum import Enum
 from typing import Dict, List, Any, Optional, Tuple
 import hashlib
 import json
+import logging
 import uuid
 import math
 import random
+
+logger = logging.getLogger('phins.claims_bot')
 
 
 # ============================================================================
@@ -265,6 +268,9 @@ class ClaimsBotService:
     
     # Contestability period (typically 2 years)
     CONTESTABILITY_PERIOD_YEARS = 2.0
+
+    # Maximum probability reports retained in memory (advisory artifacts).
+    MAX_RETAINED_REPORTS = 5000
     
     # Weights for probability calculation
     SCORE_WEIGHTS = {
@@ -320,12 +326,31 @@ class ClaimsBotService:
         return f"{prefix}-{timestamp}-{unique}"
     
     def _log_event(self, action: str, entity: str, entity_id: str, details: Dict = None):
-        """Log event to audit service"""
+        """Log event to the in-process audit service and the durable audit store.
+
+        Best-effort and non-fatal: a logging failure must never break claim
+        assessment. Failures are logged at warning level rather than silently
+        swallowed, so audit gaps are observable instead of invisible.
+        """
         if self._audit:
             try:
                 self._audit.log('claims_bot', action, entity, entity_id, details or {})
-            except:
-                pass
+            except Exception as exc:
+                logger.warning("claims_bot in-process audit log failed: %s", exc)
+        # Durable audit parity: mirror to the audit_logs table when a database
+        # is configured. No-op in pure in-memory/demo runtimes.
+        try:
+            from services.ai_audit_bridge import record_ai_audit
+            record_ai_audit(
+                action=f'claims_bot_{action}',
+                entity_type=entity,
+                entity_id=entity_id,
+                details=details or {},
+                username='claims_bot',
+                customer_id=(details or {}).get('customer_id'),
+            )
+        except Exception as exc:
+            logger.warning("claims_bot durable audit mirror failed: %s", exc)
         print(f"[CLAIMS-BOT] {action}: {entity}:{entity_id}")
     
     # =========================================================================
@@ -460,17 +485,39 @@ class ClaimsBotService:
             processing_time_seconds=(datetime.now() - start_time).total_seconds()
         )
         
-        # Store report
+        # Store report (bounded to avoid unbounded memory growth on a
+        # long-running server; oldest reports are evicted first).
         self.reports[report_id] = report
+        self._enforce_report_cap()
         
         self._log_event('probability_report_generated', 'claim', claim_id, {
             'report_id': report_id,
+            'customer_id': customer_id,
             'authenticity': authenticity_probability,
             'fraud_indicators': len(fraud_indicators),
             'hidden_conditions': len(hidden_conditions)
         })
         
         return report
+
+    def _enforce_report_cap(self) -> None:
+        """Keep at most ``MAX_RETAINED_REPORTS`` reports in memory.
+
+        Probability reports are advisory artifacts (the authoritative claim
+        state lives on the claim record), so evicting the oldest ones is safe
+        and prevents unbounded growth in long-lived processes.
+        """
+        try:
+            overflow = len(self.reports) - self.MAX_RETAINED_REPORTS
+            if overflow <= 0:
+                return
+            oldest = sorted(
+                self.reports.values(), key=lambda r: r.assessment_date
+            )[:overflow]
+            for report in oldest:
+                self.reports.pop(report.id, None)
+        except Exception as exc:
+            logger.warning("claims_bot report cap enforcement failed: %s", exc)
     
     # =========================================================================
     # Component Analysis Methods
@@ -1005,6 +1052,15 @@ class ClaimsBotService:
     def get_all_reports(self) -> List[Dict]:
         """Get all reports as dictionaries"""
         return [r.to_dict() for r in self.reports.values()]
+
+    def list_reports(self, claim_id: Optional[str] = None) -> List[Dict]:
+        """List stored reports (optionally filtered by claim), newest first."""
+        reports = sorted(
+            self.reports.values(), key=lambda r: r.assessment_date, reverse=True
+        )
+        if claim_id:
+            reports = [r for r in reports if r.claim_id == claim_id]
+        return [r.to_dict() for r in reports]
 
 
 # ============================================================================

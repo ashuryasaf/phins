@@ -50096,6 +50096,17 @@ def run_server(port: int = PORT) -> None:
     if not _ledger_loaded and USE_DATABASE and database_enabled:
         reconcile_fresh_start_with_db()
 
+    # Make the append-only AI decision log durable: mirror decisions/overrides
+    # into the audit_logs table so the compliance trail survives restarts.
+    # Best-effort and non-fatal -- never blocks serving traffic.
+    if USE_DATABASE and database_enabled:
+        try:
+            from services.ai_audit_bridge import wire_ai_decision_log
+            if wire_ai_decision_log():
+                print("🧾 AI decision log wired to durable audit store")
+        except Exception as _ai_audit_exc:
+            print(f"   ⚠️  AI decision log persistence wiring skipped: {_ai_audit_exc}")
+
     # Run post-load integrity validation before serving traffic
     validate_startup_integrity()
 
@@ -50150,6 +50161,13 @@ def bootstrap_runtime_state_for_command() -> None:
 
     if not _cmd_loaded and USE_DATABASE and database_enabled:
         reconcile_fresh_start_with_db()
+
+    if USE_DATABASE and database_enabled:
+        try:
+            from services.ai_audit_bridge import wire_ai_decision_log
+            wire_ai_decision_log()
+        except Exception:
+            pass
 
 
 def execute_monthly_auto_pay_cli(argv: Optional[List[str]] = None) -> int:
