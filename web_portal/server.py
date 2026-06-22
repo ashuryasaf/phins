@@ -14593,6 +14593,25 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(dashboard_data).encode('utf-8'))
             return
 
+        # ========== AI CAPABILITY DISCOVERY ==========
+        # One machine-readable catalog of AI features for both UI discovery and
+        # programmatic agents (action-parity foundation). Role-filtered.
+        if path == '/api/ai/capabilities':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                from services.ai_capabilities import help_text
+                user = get_session_user(session) or {}
+                payload = help_text(user.get('role'))
+                status_code = 200
+            except Exception as cap_exc:
+                status_code, payload = 500, {'error': str(cap_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # ========== CANONICAL BI ANALYTICS SERVICE ==========
         # Wires services/bi_analytics_service.py (via web_portal/api_bi_analytics.py),
         # which was previously implemented but never routed. This gives the BI
