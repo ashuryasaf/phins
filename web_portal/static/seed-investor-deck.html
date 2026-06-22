@@ -4,29 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS — Seed Investor Deck | Fundraising Story</title>
-  <meta name="description" content="PHINS seed investor deck — the fundraising story: Purpose, Vision, Market, Technology, Team, Traction, Growth, Financial model. AgentOS for Insurance + a Disability/Longevity Protection Marketplace. English / Hebrew. Downloadable PDF.">
+  <meta name="description" content="PHINS seed investor deck — the fundraising story: Purpose, Vision, Market, Technology, Team, Traction, Growth, Financial model. Adjustable configurator; currency follows language (Hebrew → ₪, English → $). Downloadable PDF.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Heebo:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --ink: #0b1730;
-      --ink-2: #13284d;
-      --blue-dark: #0d47a1;
-      --blue: #1565c0;
-      --blue-light: #1976d2;
-      --sky: #42a5f5;
-      --violet: #6a1b9a;
-      --violet-2: #7c3aed;
-      --green: #15803d;
-      --teal: #00838f;
-      --amber: #e65100;
-      --red: #c62828;
-      --text: #15233b;
-      --sub: #475569;
-      --soft: #6b7a90;
-      --line: #e6ecf5;
-      --bg: #e7edf6;
-      --card: #ffffff;
+      --ink: #0b1730; --ink-2: #13284d;
+      --blue-dark: #0d47a1; --blue: #1565c0; --blue-light: #1976d2; --sky: #42a5f5;
+      --violet: #6a1b9a; --violet-2: #7c3aed; --green: #15803d; --teal: #00838f; --amber: #e65100; --red: #c62828;
+      --text: #15233b; --sub: #475569; --soft: #6b7a90; --line: #e6ecf5; --bg: #e7edf6; --card: #ffffff;
       --grad-hero: linear-gradient(135deg,#0b1730 0%,#13284d 45%,#3a1d6e 100%);
       --grad-text: linear-gradient(120deg,#64b5f6,#b388ff);
       --grad-accent: linear-gradient(135deg,#1565c0,#7c3aed);
@@ -36,7 +22,6 @@
     body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body[dir="rtl"] { font-family: "Heebo", "Inter", sans-serif; }
 
-    /* Toolbar */
     .bar { position: sticky; top: 0; z-index: 30; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; flex-wrap: wrap; }
     .bar .brand { display: flex; align-items: center; gap: 9px; font-weight: 900; letter-spacing: 0.06em; }
     .bar .brand .dot { width: 30px; height: 30px; border-radius: 8px; background: var(--grad-text); display: flex; align-items: center; justify-content: center; }
@@ -46,19 +31,34 @@
     .btn.on { background: #fff; color: var(--ink); border-color: #fff; }
     .btn.dl { background: var(--violet-2); border-color: var(--violet-2); }
 
+    /* Configurator (screen only) */
+    .cfg { max-width: 960px; margin: 18px auto 0; padding: 0 16px; }
+    .cfg-inner { background: linear-gradient(180deg,#faf7ff,#fff); border: 2px solid var(--violet-2); border-radius: 16px; box-shadow: var(--shadow); padding: 18px 20px; }
+    .cfg h3 { font-size: 13pt; }
+    .cfg .sub { font-size: 8.6pt; color: var(--soft); margin-top: 3px; }
+    .cfg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .cur-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .cur-btn { font-size: 8.5pt; }
+    .cur-btn.on { background: var(--violet); color: #fff; border-color: var(--violet); }
+    .fx { margin-top: 12px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; background: var(--ink); color: #fff; border-radius: 10px; padding: 9px 13px; }
+    .fx input { width: 84px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.12); color: #fff; padding: 4px 7px; font-family: inherit; font-size: 8.5pt; }
+    .grid-ctrl { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 11px; margin-top: 13px; }
+    .grid-ctrl .f label { font-size: 7.4pt; font-weight: 700; color: var(--blue-dark); display: block; margin-bottom: 3px; }
+    .grid-ctrl .f input, .grid-ctrl .f select { width: 100%; border-radius: 9px; border: 1px solid var(--line); padding: 8px 10px; font-family: inherit; font-size: 9pt; background: #fff; }
+    .cfg-kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-top: 13px; }
+    .cfg-kpi { background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 10px; text-align: center; }
+    .cfg-kpi .v { font-size: 13pt; font-weight: 900; color: var(--blue-dark); }
+    .cfg-kpi .l { font-size: 7.2pt; color: var(--soft); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .cfg-note { font-size: 7.4pt; color: var(--soft); margin-top: 9px; }
+
     .pages { max-width: 960px; margin: 22px auto; padding: 0 16px 56px; }
-    .page {
-      background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-      box-shadow: var(--shadow); margin-bottom: 26px; overflow: hidden;
-      min-height: 1180px; position: relative; display: flex; flex-direction: column;
-    }
+    .page { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); margin-bottom: 26px; overflow: hidden; min-height: 1180px; position: relative; display: flex; flex-direction: column; }
     .page-body { padding: 38px 44px 30px; flex: 1; display: flex; flex-direction: column; }
     .page-num { position: absolute; bottom: 16px; font-size: 8pt; color: var(--soft); letter-spacing: 0.1em; font-weight: 600; }
     body:not([dir="rtl"]) .page-num { right: 44px; }
     body[dir="rtl"] .page-num { left: 44px; }
     .page-foot { margin-top: auto; padding-top: 16px; font-size: 7.6pt; color: var(--soft); }
 
-    /* Section header */
     .sec { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
     .sec-no { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; background: var(--grad-accent); color: #fff; font-weight: 900; font-size: 13pt; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(124,58,237,0.28); }
     .sec h2 { font-size: 18pt; font-weight: 850; line-height: 1.15; letter-spacing: -0.01em; }
@@ -70,14 +70,14 @@
     strong { color: var(--text); }
     .lead { font-size: 12pt; color: rgba(255,255,255,0.92); }
 
-    /* Hero (page 1) */
     .hero { background: var(--grad-hero); color: #fff; padding: 44px 44px 36px; position: relative; overflow: hidden; }
     .hero::after { content: ""; position: absolute; top: -40px; inset-inline-end: -40px; width: 280px; height: 280px; background: radial-gradient(circle, rgba(124,58,237,0.45), transparent 70%); }
     .hero .eyebrow { display: inline-block; font-size: 8pt; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: #fff; background: rgba(124,58,237,0.35); border: 1px solid rgba(179,136,255,0.5); border-radius: 999px; padding: 6px 14px; position: relative; z-index: 2; }
     .hero h1 { margin: 16px 0 12px; position: relative; z-index: 2; }
     .hero .tag { position: relative; z-index: 2; max-width: 720px; }
+    .hero .prep { position: relative; z-index: 2; font-size: 8.6pt; color: rgba(255,255,255,0.7); margin-top: 10px; letter-spacing: 0.04em; }
 
-    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 24px; }
     .metric { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); border-radius: 13px; padding: 14px; position: relative; z-index: 2; }
     .metric .v { font-size: 19pt; font-weight: 900; color: #fff; line-height: 1; }
     .metric .l { font-size: 7.8pt; color: rgba(255,255,255,0.78); margin-top: 7px; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -85,14 +85,12 @@
     .ask-band { background: linear-gradient(135deg,#0d47a1,#7c3aed); color: #fff; border-radius: 14px; padding: 16px 20px; font-size: 11.5pt; box-shadow: var(--shadow); }
     .ask-band strong { color: #fff; }
 
-    /* Story map */
     .storymap { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
     .storymap .chap { border: 1px solid var(--line); border-radius: 11px; padding: 11px 8px; text-align: center; background: linear-gradient(180deg,#f7faff,#fff); }
     .storymap .chap .n { font-size: 8pt; font-weight: 900; color: var(--violet); }
     .storymap .chap .t { font-size: 8.4pt; font-weight: 700; margin-top: 3px; color: var(--text); }
     .storymap .chap .ic { font-size: 15px; }
 
-    /* Generic blocks */
     .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
     .cols-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; }
     .cols-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
@@ -102,72 +100,57 @@
 
     .feat { border: 1px solid var(--line); border-radius: 13px; padding: 15px; background: var(--card); position: relative; }
     .feat::before { content: ""; position: absolute; top: 0; inset-inline-start: 0; width: 100%; height: 3px; border-radius: 13px 13px 0 0; background: var(--grad-accent); }
-    .feat .ic { font-size: 21px; }
-    .feat h3 { font-size: 11pt; margin: 7px 0 5px; }
-    .feat p { font-size: 8.8pt; }
+    .feat .ic { font-size: 21px; } .feat h3 { font-size: 11pt; margin: 7px 0 5px; } .feat p { font-size: 8.8pt; }
     .feat.b::before { background: linear-gradient(90deg,#1565c0,#42a5f5); }
     .feat.g::before { background: linear-gradient(90deg,#15803d,#4ade80); }
     .feat.v::before { background: linear-gradient(90deg,#6a1b9a,#b388ff); }
     .feat.t::before { background: linear-gradient(90deg,#00838f,#26c6da); }
 
-    /* Vision pillars */
     .vision-band { background: linear-gradient(135deg,#f3e8ff,#eef4ff); border: 1px solid #e2d3f7; border-radius: 14px; padding: 20px 22px; }
     .vision-band .big { font-size: 15pt; font-weight: 800; color: var(--ink-2); line-height: 1.35; }
 
-    /* Market funnel */
     .funnel { display: flex; flex-direction: column; gap: 10px; }
     .funnel .row { display: flex; align-items: center; gap: 12px; }
     .funnel .seg { height: 46px; border-radius: 11px; color: #fff; display: flex; align-items: center; padding: 0 16px; font-weight: 800; font-size: 10pt; box-shadow: var(--shadow); }
     .funnel .meta { font-size: 8.6pt; color: var(--sub); flex: 1; }
 
-    /* Stat tiles (traction) */
     .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
     .stat { border: 1px solid var(--line); border-radius: 13px; padding: 15px 13px; background: linear-gradient(180deg,#f7faff,#fff); text-align: center; }
     .stat .v { font-size: 21pt; font-weight: 900; background: var(--grad-accent); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
     .stat .l { font-size: 8.2pt; color: var(--soft); margin-top: 8px; }
 
-    /* People */
     .people { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; }
     .person { border: 1px solid var(--line); border-radius: 13px; padding: 15px; }
     .person .av { width: 40px; height: 40px; border-radius: 11px; background: var(--grad-accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 19px; }
-    .person h4 { font-size: 10.5pt; margin: 9px 0 4px; }
-    .person p { font-size: 8.6pt; }
+    .person h4 { font-size: 10.5pt; margin: 9px 0 4px; } .person p { font-size: 8.6pt; }
 
-    /* Flywheel */
     .fly { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; align-items: stretch; }
     .fly .node { border: 1px solid var(--line); border-radius: 12px; padding: 12px 10px; background: linear-gradient(180deg,#f5f9ff,#fff); position: relative; }
     .fly .node .n { width: 22px; height: 22px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; justify-content: center; }
-    .fly .node h4 { font-size: 9pt; margin: 7px 0 3px; }
-    .fly .node p { font-size: 7.8pt; }
+    .fly .node h4 { font-size: 9pt; margin: 7px 0 3px; } .fly .node p { font-size: 7.8pt; }
 
-    /* Timeline */
     .tl { position: relative; padding-inline-start: 22px; }
     .tl::before { content: ""; position: absolute; inset-inline-start: 6px; top: 4px; bottom: 4px; width: 2px; background: linear-gradient(180deg,#1565c0,#7c3aed); }
     .tl .it { position: relative; margin-bottom: 11px; }
     .tl .it::before { content: ""; position: absolute; inset-inline-start: -22px; top: 3px; width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 3px solid var(--blue); }
     .tl .it.done::before { background: var(--green); border-color: var(--green); }
     .tl .it.target::before { background: var(--violet-2); border-color: var(--violet-2); }
-    .tl .it h4 { font-size: 9.5pt; }
-    .tl .it p { font-size: 8.4pt; }
+    .tl .it h4 { font-size: 9.5pt; } .tl .it p { font-size: 8.4pt; }
 
-    /* Engines + tables */
     .engines { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
     .engine { border: 1px solid var(--line); border-radius: 13px; padding: 14px; position: relative; }
     .engine::before { content:""; position:absolute; top:0; inset-inline-start:0; width:100%; height:3px; border-radius:13px 13px 0 0; }
     .engine.b::before{background:linear-gradient(90deg,#1565c0,#42a5f5);} .engine.g::before{background:linear-gradient(90deg,#15803d,#4ade80);} .engine.v::before{background:linear-gradient(90deg,#6a1b9a,#b388ff);}
-    .engine .v { font-size: 16pt; font-weight: 900; color: var(--blue-dark); }
-    .engine .l { font-size: 9pt; font-weight: 700; }
-    .engine p { font-size: 8pt; }
+    .engine .v { font-size: 16pt; font-weight: 900; color: var(--blue-dark); } .engine .l { font-size: 9pt; font-weight: 700; } .engine p { font-size: 8pt; }
 
     table { width: 100%; border-collapse: collapse; font-size: 9pt; border-radius: 10px; overflow: hidden; }
     th { background: var(--ink-2); color: #fff; padding: 8px 9px; text-align: start; font-weight: 700; }
     td { padding: 7px 9px; border-top: 1px solid var(--line); }
     tr:nth-child(even) td { background: #f7fafd; }
     td.n, th.n { text-align: end; font-variant-numeric: tabular-nums; }
-    .pos { color: var(--green); font-weight: 700; }
-    .neg { color: var(--red); font-weight: 700; }
+    .pos { color: var(--green); font-weight: 700; } .neg { color: var(--red); font-weight: 700; }
 
-    .barv { display: grid; grid-template-columns: 46px 1fr 78px; align-items: center; gap: 10px; margin-bottom: 7px; }
+    .barv { display: grid; grid-template-columns: 46px 1fr 86px; align-items: center; gap: 10px; margin-bottom: 7px; }
     .barv .y { font-size: 8.4pt; font-weight: 700; color: var(--soft); }
     .barv .tr { height: 20px; border-radius: 7px; background: #eef2f9; overflow: hidden; }
     .barv .tr i { display: block; height: 100%; border-radius: 7px; background: linear-gradient(90deg,#1565c0,#42a5f5); }
@@ -180,29 +163,27 @@
     .uof-row .bar i { display: block; height: 100%; border-radius: 6px; }
 
     .tag { display: inline-block; font-size: 7pt; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 999px; padding: 2px 7px; vertical-align: middle; }
-    .tag.r { background: #e3f2fd; color: #0d47a1; }
-    .tag.m { background: #f3e8ff; color: #6a1b9a; }
-
+    .tag.r { background: #e3f2fd; color: #0d47a1; } .tag.m { background: #f3e8ff; color: #6a1b9a; }
     .note { background: #f2f6fc; border-inline-start: 3px solid var(--blue); border-radius: 8px; padding: 11px 14px; font-size: 9pt; color: var(--sub); }
+    .integrity { background: linear-gradient(180deg,#f3fbf6,#ecf8f1); border: 1px solid #bfe6cf; border-inline-start: 4px solid var(--green); border-radius: 10px; padding: 12px 15px; font-size: 8.4pt; color: #1e4634; line-height: 1.6; }
     .cta { font-size: 13.5pt; font-weight: 800; color: var(--ink-2); }
-
     .mt8{margin-top:8px;} .mt12{margin-top:12px;} .mt16{margin-top:16px;} .mt20{margin-top:20px;} .mt24{margin-top:24px;}
 
     @media (max-width: 800px) {
-      .metrics,.stats,.cols-4 { grid-template-columns: 1fr 1fr; }
+      .metrics,.stats,.cols-4,.cfg-kpis { grid-template-columns: 1fr 1fr; }
       .cols,.cols-3,.engines,.people,.storymap,.fly { grid-template-columns: 1fr 1fr; }
       .page-body,.hero { padding: 24px 20px; } .page { min-height: 0; } h1 { font-size: 22pt; }
     }
     @media print {
       @page { size: A4; margin: 11mm; }
       body { background: #fff; }
-      .bar, .no-print { display: none !important; }
+      .bar, .cfg, .no-print { display: none !important; }
       .pages { margin: 0; padding: 0; max-width: none; }
       .page { box-shadow: none; border: none; border-radius: 0; margin: 0; min-height: auto; page-break-after: always; }
       .page:last-child { page-break-after: auto; }
       .page-body, .hero { padding: 0 0 6mm; }
       .hero { color: #0b1730; background: none; }
-      .hero .eyebrow, .metric .v, .metric .l, .hero .tag, .hero h1 { color: inherit; }
+      .hero .eyebrow, .metric .v, .metric .l, .hero .tag, .hero h1, .hero .prep { color: inherit; }
       .hero::after { display: none; }
       .metric { background: #f5f8ff; border-color: var(--line); }
       .metric .v { color: var(--blue-dark); } .metric .l { color: var(--soft); }
@@ -217,7 +198,64 @@
       <span style="font-size:8pt;opacity:.8;" data-i18n="lang_label">Language</span>
       <button type="button" class="btn lang-btn on" data-lang="en">EN</button>
       <button type="button" class="btn lang-btn" data-lang="he">עברית</button>
+      <button type="button" class="btn" id="cfg-toggle" data-i18n="tb_adjust">⚙ Adjust</button>
       <button type="button" class="btn dl" id="dl" data-i18n="dl">⬇ Download PDF</button>
+    </div>
+  </div>
+
+  <!-- ───────── CONFIGURATOR (screen only) ───────── -->
+  <div class="cfg no-print" id="cfg-panel">
+    <div class="cfg-inner">
+      <div class="cfg-head">
+        <div>
+          <h3 data-i18n="cfg_h">Adjustable configurator <span class="tag m">live FX · reconciling</span></h3>
+          <p class="sub" data-i18n="cfg_s">Tune the deck for any investor or factor. Every figure derives from one canonical USD base, so the whole report reconciles. Currency follows the language (Hebrew → ₪, English → $); you can override it.</p>
+        </div>
+        <div class="cur-row">
+          <span style="font-size:7.6pt;color:var(--soft);" data-i18n="cfg_cur">Currency</span>
+          <button type="button" class="btn cur-btn on" data-cur="USD">$ USD</button>
+          <button type="button" class="btn cur-btn" data-cur="EUR">€ EUR</button>
+          <button type="button" class="btn cur-btn" data-cur="ILS">₪ ILS</button>
+        </div>
+      </div>
+
+      <div class="fx">
+        <span style="font-size:8.5pt;font-weight:800;" data-i18n="cfg_fx">💱 Live FX</span>
+        <span id="fx-badge" style="font-size:8pt;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.16);">…</span>
+        <label style="font-size:8pt;opacity:.9;">1 USD = €<input id="fx-eur" type="number" step="0.0001" min="0.0001"></label>
+        <label style="font-size:8pt;opacity:.9;">1 USD = ₪<input id="fx-ils" type="number" step="0.0001" min="0.0001"></label>
+        <button type="button" class="btn" id="fx-refresh" data-i18n="cfg_refresh" style="background:rgba(255,255,255,0.16);">↻ Refresh</button>
+        <span id="fx-source" style="font-size:7.4pt;opacity:.8;"></span>
+      </div>
+
+      <div class="grid-ctrl">
+        <div class="f" style="grid-column:1/-1;"><label data-i18n="cfg_investor">Prepared for (investor / audience)</label><input id="c-inv" type="text" value="Seed Investor" autocomplete="off"></div>
+        <div class="f"><label data-i18n="cfg_round">Seed round (USD)</label><input id="c-round" type="number" min="0" step="250000" value="4000000"></div>
+        <div class="f"><label data-i18n="cfg_pre">Pre-money (USD)</label><input id="c-pre" type="number" min="0" step="1000000" value="16000000"></div>
+        <div class="f"><label data-i18n="cfg_esop">New ESOP pool (%)</label><input id="c-esop" type="number" min="0" max="30" step="0.5" value="0"></div>
+        <div class="f"><label data-i18n="cfg_scale">Scale scenario</label>
+          <select id="c-scale">
+            <option value="0.5" data-i18n="sc_cons">Conservative (×0.5)</option>
+            <option value="0.75" data-i18n="sc_baselow">Base–low (×0.75)</option>
+            <option value="1" selected data-i18n="sc_base">Base plan (×1.0)</option>
+            <option value="1.5" data-i18n="sc_up">Upside (×1.5)</option>
+            <option value="2" data-i18n="sc_agg">Aggressive (×2.0)</option>
+          </select>
+        </div>
+        <div class="f"><label data-i18n="cfg_prem">Avg annual premium (USD)</label><input id="c-prem" type="number" min="0" step="50" value="1000"></div>
+        <div class="f"><label data-i18n="cfg_take">MGA take on GWP (%)</label><input id="c-take" type="number" min="0" max="60" step="1" value="25"></div>
+        <div class="f"><label data-i18n="cfg_seat">AgentOS seat price (USD/yr)</label><input id="c-seat" type="number" min="0" step="100" value="3000"></div>
+        <div class="f"><label data-i18n="cfg_mtake">Marketplace take on GMV (%)</label><input id="c-mtake" type="number" min="0" max="30" step="0.5" value="6"></div>
+        <div class="f"><label data-i18n="cfg_mult">Exit revenue multiple (×)</label><input id="c-mult" type="number" min="1" max="25" step="0.5" value="6"></div>
+      </div>
+
+      <div class="cfg-kpis">
+        <div class="cfg-kpi"><div class="v" data-calc="post">—</div><div class="l" data-i18n="k_post">Post-money</div></div>
+        <div class="cfg-kpi"><div class="v" data-calc="own" style="color:var(--green);">—</div><div class="l" data-i18n="k_own">Investor ownership</div></div>
+        <div class="cfg-kpi"><div class="v" data-calc="rev31">—</div><div class="l" data-i18n="k_rev">2031 net revenue</div></div>
+        <div class="cfg-kpi"><div class="v" data-calc="val31" style="color:var(--violet);">—</div><div class="l" data-i18n="k_val">2031 implied valuation</div></div>
+      </div>
+      <p class="cfg-note" data-i18n="cfg_note">Inputs are entered in USD (the canonical base); outputs convert to the selected currency at the live rate. Reported comparables stay in source currency (USD). Settings persist in this browser.</p>
     </div>
   </div>
 
@@ -229,16 +267,17 @@
         <span class="eyebrow" data-i18n="p1_eyebrow">Seed round · Fundraising story · Confidential</span>
         <h1 data-i18n-html="p1_h1">PHINS — <span class="grad">AgentOS for Insurance + a Disability/Longevity Protection Marketplace</span></h1>
         <p class="lead tag" data-i18n-html="p1_tag">The AI operating system for the global protection economy. The disability &amp; LTC MGA is the <strong style="color:#fff;">wedge</strong> — the platform is the company.</p>
-        <div class="metrics mt24">
-          <div class="metric"><div class="v">$228M</div><div class="l" data-i18n="p1_m1">2031 net revenue · modeled</div></div>
-          <div class="metric"><div class="v">$1.4B</div><div class="l" data-i18n="p1_m2">2031 implied valuation</div></div>
-          <div class="metric"><div class="v">$4M</div><div class="l" data-i18n="p1_m3">Seed round · for 20%</div></div>
+        <p class="prep"><span data-i18n="prepared">Prepared for</span> <strong style="color:#fff;" data-calc="inv">—</strong></p>
+        <div class="metrics">
+          <div class="metric"><div class="v" data-calc="rev31">—</div><div class="l" data-i18n="p1_m1">2031 net revenue · modeled</div></div>
+          <div class="metric"><div class="v" data-calc="val31">—</div><div class="l" data-i18n="p1_m2">2031 implied valuation</div></div>
+          <div class="metric"><div class="v" data-calc="round_own">—</div><div class="l" data-i18n="p1_m3">Seed round · for ownership</div></div>
           <div class="metric"><div class="v">2030</div><div class="l" data-i18n="p1_m4">EBITDA-positive</div></div>
         </div>
       </div>
       <div class="page-body">
-        <div class="sec"><span class="sec-no">★</span><div><h2 data-i18n="p1_purpose_h">Purpose of this raise</h2><p class="sub" data-i18n="p1_purpose_s">Why we are raising, and what the $4M unlocks.</p></div></div>
-        <div class="ask-band" data-i18n-html="p1_ask">We are raising a <strong>$4M seed</strong> to launch the MGA, ship AgentOS to agents, and open the protection marketplace — converting a built platform into a category, on a capital-light path to a $1B+ company.</div>
+        <div class="sec"><span class="sec-no">★</span><div><h2 data-i18n="p1_purpose_h">Purpose of this raise</h2><p class="sub" data-i18n="p1_purpose_s">Why we are raising, and what it unlocks.</p></div></div>
+        <div class="ask-band" data-i18n-html="p1_ask">We are raising a <strong><span data-calc="round">—</span> seed</strong> to launch the MGA, ship AgentOS to agents, and open the protection marketplace — converting a built platform into a category, on a capital-light path to a $1B+ company.</div>
         <p class="mt16" style="font-size:9.5pt;" data-i18n="p1_story_intro">The story, in seven chapters:</p>
         <div class="storymap mt8">
           <div class="chap"><div class="ic">🔭</div><div class="n">01</div><div class="t" data-i18n="chap_vision">Vision</div></div>
@@ -258,9 +297,7 @@
     <section class="page">
       <div class="page-body">
         <div class="sec"><span class="sec-no">01</span><div><h2 data-i18n="p2_v_h">Vision</h2><p class="sub" data-i18n="p2_v_s">What the world looks like when PHINS wins.</p></div></div>
-        <div class="vision-band">
-          <div class="big" data-i18n="p2_v_big">Protection becomes a software product — priced by AI, paid by code, and orchestrated across everyone who delivers care.</div>
-        </div>
+        <div class="vision-band"><div class="big" data-i18n="p2_v_big">Protection becomes a software product — priced by AI, paid by code, and orchestrated across everyone who delivers care.</div></div>
         <div class="cols-3 mt16">
           <div class="feat v"><span class="ic">🌍</span><h3 data-i18n="p2_v1">A new category</h3><p data-i18n="p2_v1d">AgentOS for Insurance + a protection marketplace — the layer distribution, underwriting, claims &amp; care run on.</p></div>
           <div class="feat v"><span class="ic">⚡</span><h3 data-i18n="p2_v2">A new standard</h3><p data-i18n="p2_v2d">Quote in seconds, underwrite with auditable AI, settle eligible claims by code.</p></div>
@@ -270,11 +307,11 @@
         <div class="sec mt24"><span class="sec-no">02</span><div><h2 data-i18n="p2_m_h">Market</h2><p class="sub" data-i18n="p2_m_s">A trillion-dollar gap, widening — and why now.</p></div></div>
         <div class="cols">
           <div class="funnel">
-            <div class="row"><div class="seg" style="width:100%;background:linear-gradient(135deg,#0d47a1,#1565c0);">TAM · $1.4T+</div></div>
-            <div class="meta" data-i18n="p2_tam">Global disability, LTC &amp; longevity protection (premium-equivalent). <span class="tag r">reported estimate</span></div>
-            <div class="row"><div class="seg" style="width:68%;background:linear-gradient(135deg,#1565c0,#42a5f5);">SAM · $140B</div></div>
-            <div class="meta" data-i18n="p2_sam">Digitally-addressable severity &amp; embedded protection in priority markets. <span class="tag r">reported estimate</span></div>
-            <div class="row"><div class="seg" style="width:40%;background:linear-gradient(135deg,#6a1b9a,#7c3aed);">SOM 2031 · $1.38B</div></div>
+            <div class="row"><div class="seg" style="width:100%;background:linear-gradient(135deg,#0d47a1,#1565c0);">TAM · <span data-calc="tam">—</span>+</div></div>
+            <div class="meta" data-i18n="p2_tam">Global disability, LTC &amp; longevity protection (premium-equivalent). <span class="tag r">planning estimate</span></div>
+            <div class="row"><div class="seg" style="width:68%;background:linear-gradient(135deg,#1565c0,#42a5f5);">SAM · <span data-calc="sam">—</span></div></div>
+            <div class="meta" data-i18n="p2_sam">Digitally-addressable severity &amp; embedded protection in priority markets. <span class="tag r">planning estimate</span></div>
+            <div class="row"><div class="seg" style="width:40%;background:linear-gradient(135deg,#6a1b9a,#7c3aed);">SOM 2031 · <span data-calc="som">—</span></div></div>
             <div class="meta" data-i18n="p2_som">PHINS-intermediated volume by 2031 (premium + marketplace GMV). <span class="tag m">modeled</span></div>
           </div>
           <div>
@@ -323,7 +360,6 @@
           <div class="person"><div class="av">📐</div><h4 data-i18n="p4_p2">Chief Actuary · incoming</h4><p data-i18n="p4_p2d">IAA-recognised executive actuary; validated pricing &amp; agreed to join.</p></div>
           <div class="person"><div class="av">🤝</div><h4 data-i18n="p4_p3">Insurance operator + capital</h4><p data-i18n="p4_p3d">Senior CEO / chairman engaged as investor / active co-founder.</p></div>
         </div>
-
         <div class="sec mt24"><span class="sec-no">05</span><div><h2 data-i18n="p4_tr_h">Traction</h2><p class="sub" data-i18n="p4_tr_s">Pre-launch, but de-risked: product built and pricing validated.</p></div></div>
         <div class="stats">
           <div class="stat"><div class="v">64+</div><div class="l" data-i18n="p4_st1">Modules deployed</div></div>
@@ -354,15 +390,14 @@
           <div class="node"><div class="n">4</div><h4 data-i18n="p5_f4">Marketplace deepens</h4><p data-i18n="p5_f4d">Care supply &amp; embedded products grow GMV.</p></div>
           <div class="node"><div class="n">5</div><h4 data-i18n="p5_f5">Cheaper cover</h4><p data-i18n="p5_f5d">Better economics → more agents &amp; clients. Repeat.</p></div>
         </div>
-
         <div class="cols mt24">
           <div>
             <h3 style="font-size:11pt;margin-bottom:8px;" data-i18n="p5_motion_h">Go-to-market motion</h3>
             <ul class="clean">
-              <li data-i18n="p5_g1"><strong>Land</strong> — launch the severity MGA in Israel; prove unit economics.</li>
-              <li data-i18n="p5_g2"><strong>Attach</strong> — onboard agents to AgentOS; services become SaaS seats.</li>
-              <li data-i18n="p5_g3"><strong>Expand</strong> — open the marketplace; add care, embedded products &amp; new markets.</li>
-              <li data-i18n="p5_g4"><strong>Compound</strong> — sell BI / data products to carriers &amp; reinsurers.</li>
+              <li data-i18n-html="p5_g1"><strong>Land</strong> — launch the severity MGA in Israel; prove unit economics.</li>
+              <li data-i18n-html="p5_g2"><strong>Attach</strong> — onboard agents to AgentOS; services become SaaS seats.</li>
+              <li data-i18n-html="p5_g3"><strong>Expand</strong> — open the marketplace; add care, embedded products &amp; new markets.</li>
+              <li data-i18n-html="p5_g4"><strong>Compound</strong> — sell BI / data products to carriers &amp; reinsurers.</li>
             </ul>
           </div>
           <div>
@@ -387,31 +422,27 @@
       <div class="page-body">
         <div class="sec"><span class="sec-no">07</span><div><h2 data-i18n="p6_h">Financial model</h2><p class="sub" data-i18n="p6_s">Three capital-light revenue engines; a clean path to profitability.</p></div></div>
         <div class="engines">
-          <div class="engine b"><div class="l" data-i18n="p6_e1">MGA insurance take</div><div class="v">$120M</div><p data-i18n="p6_e1d">2031, on premium intermediated.</p></div>
-          <div class="engine g"><div class="l" data-i18n="p6_e2">AgentOS SaaS</div><div class="v">$54M</div><p data-i18n="p6_e2d">2031, recurring high-margin seats.</p></div>
-          <div class="engine v"><div class="l" data-i18n="p6_e3">Marketplace take</div><div class="v">$54M</div><p data-i18n="p6_e3d">2031, on marketplace GMV.</p></div>
+          <div class="engine b"><div class="l" data-i18n="p6_e1">MGA insurance take</div><div class="v" data-calc="eng_ins">—</div><p data-i18n="p6_e1d">2031, on premium intermediated.</p></div>
+          <div class="engine g"><div class="l" data-i18n="p6_e2">AgentOS SaaS</div><div class="v" data-calc="eng_saas">—</div><p data-i18n="p6_e2d">2031, recurring high-margin seats.</p></div>
+          <div class="engine v"><div class="l" data-i18n="p6_e3">Marketplace take</div><div class="v" data-calc="eng_mkt">—</div><p data-i18n="p6_e3d">2031, on marketplace GMV.</p></div>
         </div>
         <div class="cols mt20">
           <div>
-            <h3 style="font-size:10.5pt;margin-bottom:10px;" data-i18n="p6_table_h">Five-year trajectory <span class="tag m">modeled · USD</span></h3>
+            <h3 style="font-size:10.5pt;margin-bottom:10px;"><span data-i18n="p6_table_h">Five-year trajectory</span> <span class="tag m" data-calc="cur_tag">modeled · USD</span></h3>
             <table>
               <thead><tr><th data-i18n="p6_line">Line</th><th class="n">'27</th><th class="n">'28</th><th class="n">'29</th><th class="n">'30</th><th class="n">'31</th></tr></thead>
               <tbody>
-                <tr><td data-i18n="p6_gwp">GWP intermediated</td><td class="n">$2M</td><td class="n">$14M</td><td class="n">$60M</td><td class="n">$200M</td><td class="n">$480M</td></tr>
-                <tr><td data-i18n="p6_rev">Net revenue</td><td class="n">$1.1M</td><td class="n">$7.5M</td><td class="n">$32M</td><td class="n">$100M</td><td class="n">$228M</td></tr>
-                <tr><td data-i18n="p6_ebitda">EBITDA</td><td class="n neg">−7.9</td><td class="n neg">−10.5</td><td class="n neg">−4.9</td><td class="n pos">+24</td><td class="n pos">+82</td></tr>
+                <tr><td data-i18n="p6_gwp">GWP intermediated</td><td class="n" data-calc="g0">—</td><td class="n" data-calc="g1">—</td><td class="n" data-calc="g2">—</td><td class="n" data-calc="g3">—</td><td class="n" data-calc="g4">—</td></tr>
+                <tr><td data-i18n="p6_rev">Net revenue</td><td class="n" data-calc="r0">—</td><td class="n" data-calc="r1">—</td><td class="n" data-calc="r2">—</td><td class="n" data-calc="r3">—</td><td class="n" data-calc="r4">—</td></tr>
+                <tr><td data-i18n="p6_ebitda">EBITDA</td><td class="n" data-calc="e0">—</td><td class="n" data-calc="e1">—</td><td class="n" data-calc="e2">—</td><td class="n" data-calc="e3">—</td><td class="n" data-calc="e4">—</td></tr>
               </tbody>
             </table>
             <div class="note mt12" data-i18n-html="p6_light"><strong>Capital-light:</strong> claims reserves sit with carriers / reinsurers — not on PHINS — so we scale at software margins.</div>
           </div>
           <div>
-            <h3 style="font-size:10.5pt;margin-bottom:10px;" data-i18n="p6_bars_h">Net revenue ramp (USD)</h3>
-            <div class="barv"><span class="y">2027</span><div class="tr"><i style="width:1%;"></i></div><span class="bv">$1.1M</span></div>
-            <div class="barv"><span class="y">2028</span><div class="tr"><i style="width:4%;"></i></div><span class="bv">$7.5M</span></div>
-            <div class="barv"><span class="y">2029</span><div class="tr"><i style="width:14%;"></i></div><span class="bv">$32M</span></div>
-            <div class="barv"><span class="y">2030</span><div class="tr"><i style="width:44%;"></i></div><span class="bv">$100M</span></div>
-            <div class="barv"><span class="y">2031</span><div class="tr"><i style="width:100%;"></i></div><span class="bv">$228M</span></div>
-            <div class="note mt12" data-i18n-html="p6_unicorn"><strong>Unicorn path:</strong> 2031 net revenue $228M × a 6× revenue multiple ≈ <strong>$1.4B</strong>. EBITDA-positive from 2030.</div>
+            <h3 style="font-size:10.5pt;margin-bottom:10px;" data-i18n="p6_bars_h">Net revenue ramp</h3>
+            <div id="ramp-bars"></div>
+            <div class="note mt12" data-i18n-html="p6_unicorn"><strong>Unicorn path:</strong> 2031 net revenue <span data-calc="rev31">—</span> × a <span data-calc="mult">—</span> revenue multiple ≈ <strong><span data-calc="val31">—</span></strong>. EBITDA-positive from 2030.</div>
           </div>
         </div>
         <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
@@ -422,32 +453,31 @@
     <!-- ───────── PAGE 7 — THE ASK ───────── -->
     <section class="page">
       <div class="page-body">
-        <div class="sec"><span class="sec-no">$</span><div><h2 data-i18n="p7_h">The ask</h2><p class="sub" data-i18n="p7_s">$4M seed to turn a built platform into a category.</p></div></div>
+        <div class="sec"><span class="sec-no">$</span><div><h2 data-i18n="p7_h">The ask</h2><p class="sub" data-i18n="p7_s">Seed capital to turn a built platform into a category.</p></div></div>
         <div class="cols">
           <div>
             <h3 style="font-size:10.5pt;margin-bottom:8px;" data-i18n="p7_terms">Seed terms</h3>
             <table>
               <tbody>
-                <tr><td data-i18n="p7_round">Seed round</td><td class="n">$4M</td></tr>
-                <tr><td data-i18n="p7_pre">Pre-money</td><td class="n">$16M</td></tr>
-                <tr><td data-i18n="p7_post">Post-money</td><td class="n">$20M</td></tr>
-                <tr><td data-i18n="p7_own">Investor ownership</td><td class="n">20%</td></tr>
+                <tr><td data-i18n="p7_round">Seed round</td><td class="n" data-calc="round">—</td></tr>
+                <tr><td data-i18n="p7_pre">Pre-money</td><td class="n" data-calc="pre">—</td></tr>
+                <tr><td data-i18n="p7_post">Post-money</td><td class="n" data-calc="post">—</td></tr>
+                <tr><td data-i18n="p7_own">Investor ownership</td><td class="n" data-calc="own">—</td></tr>
                 <tr><td data-i18n="p7_buy">Funds buy</td><td class="n" data-i18n="p7_buy_v">Launch + first markets</td></tr>
               </tbody>
             </table>
           </div>
           <div>
             <h3 style="font-size:10.5pt;margin-bottom:8px;" data-i18n="p7_uof">Use of funds</h3>
-            <div class="uof-row"><div class="top"><span data-i18n="p7_u1">AI &amp; engineering</span><span class="amt">$1.36M · 34%</span></div><div class="bar"><i style="width:34%;background:#1565c0;"></i></div></div>
-            <div class="uof-row"><div class="top"><span data-i18n="p7_u2">AgentOS &amp; distribution</span><span class="amt">$0.88M · 22%</span></div><div class="bar"><i style="width:22%;background:#15803d;"></i></div></div>
-            <div class="uof-row"><div class="top"><span data-i18n="p7_u3">Marketplace &amp; care ops</span><span class="amt">$0.56M · 14%</span></div><div class="bar"><i style="width:14%;background:#6a1b9a;"></i></div></div>
-            <div class="uof-row"><div class="top"><span data-i18n="p7_u4">Actuarial, reinsurance &amp; risk</span><span class="amt">$0.40M · 10%</span></div><div class="bar"><i style="width:10%;background:#00838f;"></i></div></div>
-            <div class="uof-row"><div class="top"><span data-i18n="p7_u5">Regulatory &amp; multi-market</span><span class="amt">$0.36M · 9%</span></div><div class="bar"><i style="width:9%;background:#e65100;"></i></div></div>
-            <div class="uof-row"><div class="top"><span data-i18n="p7_u6">G&amp;A &amp; runway</span><span class="amt">$0.44M · 11%</span></div><div class="bar"><i style="width:11%;background:#78909c;"></i></div></div>
+            <div class="uof-row"><div class="top"><span data-i18n="p7_u1">AI &amp; engineering</span><span class="amt"><span data-calc="uof0">—</span> · 34%</span></div><div class="bar"><i style="width:34%;background:#1565c0;"></i></div></div>
+            <div class="uof-row"><div class="top"><span data-i18n="p7_u2">AgentOS &amp; distribution</span><span class="amt"><span data-calc="uof1">—</span> · 22%</span></div><div class="bar"><i style="width:22%;background:#15803d;"></i></div></div>
+            <div class="uof-row"><div class="top"><span data-i18n="p7_u3">Marketplace &amp; care ops</span><span class="amt"><span data-calc="uof2">—</span> · 14%</span></div><div class="bar"><i style="width:14%;background:#6a1b9a;"></i></div></div>
+            <div class="uof-row"><div class="top"><span data-i18n="p7_u4">Actuarial, reinsurance &amp; risk</span><span class="amt"><span data-calc="uof3">—</span> · 10%</span></div><div class="bar"><i style="width:10%;background:#00838f;"></i></div></div>
+            <div class="uof-row"><div class="top"><span data-i18n="p7_u5">Regulatory &amp; multi-market</span><span class="amt"><span data-calc="uof4">—</span> · 9%</span></div><div class="bar"><i style="width:9%;background:#e65100;"></i></div></div>
+            <div class="uof-row"><div class="top"><span data-i18n="p7_u6">G&amp;A &amp; runway</span><span class="amt"><span data-calc="uof5">—</span> · 11%</span></div><div class="bar"><i style="width:11%;background:#78909c;"></i></div></div>
           </div>
         </div>
-
-        <h3 style="font-size:10.5pt;margin:22px 0 8px;" data-i18n="p7_proof">InsurTech precedents <span class="tag r">reported</span></h3>
+        <h3 style="font-size:10.5pt;margin:22px 0 8px;"><span data-i18n="p7_proof">InsurTech precedents</span> <span class="tag r">reported · USD</span></h3>
         <table>
           <thead><tr><th data-i18n="p7_co">Company</th><th data-i18n="p7_focus">Focus</th><th class="n" data-i18n="p7_val">Valuation</th><th class="n" data-i18n="p7_raised">Raised</th></tr></thead>
           <tbody>
@@ -457,8 +487,8 @@
             <tr><td>bolttech</td><td data-i18n="p7_c4">Embedded marketplace</td><td class="n">$2.1B</td><td class="n">$690M+</td></tr>
           </tbody>
         </table>
-
-        <p class="cta mt24" data-i18n="p7_cta">Let's build the protection layer for the longevity economy.</p>
+        <p class="cta mt20" data-i18n="p7_cta">Let's build the protection layer for the longevity economy.</p>
+        <div class="integrity mt16" data-i18n-html="p7_integrity"><strong>Data integrity:</strong> every PHINS figure derives from one canonical USD base (premium, take rate, scale, AgentOS seats &amp; price, marketplace GMV &amp; take); KPIs, the 5-year model, use of funds, the unicorn path and ownership all reconcile from it and convert to the selected currency at the live rate. Comparables are third-party reported data in source currency and are never added to PHINS revenue.</div>
         <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
         <div class="page-num">PHINS · 7 / 7</div>
       </div>
@@ -470,173 +500,136 @@
   (function () {
     "use strict";
 
-    var HE = {
-      lang_label: "שפה",
-      dl: "⬇ הורדת PDF",
-      foot: "הנחות תכנון מודליות — לא הנחיה. חסוי — אין להפיץ.",
-      chap_vision: "חזון", chap_market: "שוק", chap_tech: "טכנולוגיה", chap_team: "צוות",
-      chap_traction: "מומנטום", chap_growth: "צמיחה", chap_fin: "פיננסים",
-
-      // Page 1
-      p1_eyebrow: "סבב Seed · סיפור הגיוס · חסוי",
-      p1_h1: 'PHINS — <span class="grad">AgentOS לענף הביטוח + שוק הגנה למוגבלות ואריכות-ימים</span>',
-      p1_tag: 'מערכת ההפעלה מבוססת ה-AI לכלכלת ההגנה הגלובלית. ביטוח המוגבלות והסיעוד (MGA) הוא <strong style="color:#fff;">נקודת הכניסה</strong> — הפלטפורמה היא החברה.',
-      p1_m1: "הכנסה נטו 2031 · מודלי",
-      p1_m2: "שווי נגזר 2031",
-      p1_m3: "סבב Seed · עבור 20%",
-      p1_m4: "רווחיות EBITDA",
-      p1_purpose_h: "מטרת הגיוס",
-      p1_purpose_s: "למה אנחנו מגייסים, ומה ה-4M$ פותחים.",
-      p1_ask: "אנו מגייסים <strong>4M$ ב-Seed</strong> כדי להשיק את ה-MGA, להוציא את AgentOS לסוכנים ולפתוח את שוק ההגנה — והופכים פלטפורמה בנויה לקטגוריה, במסלול דל-הון לחברה בשווי 1B$+.",
-      p1_story_intro: "הסיפור, בשבעה פרקים:",
-
-      // Page 2
-      p2_v_h: "חזון",
-      p2_v_s: "איך נראה העולם כש-PHINS מנצחת.",
-      p2_v_big: "ההגנה הופכת למוצר תוכנה — מתומחרת ע\"י AI, משולמת ע\"י קוד, ומתוזמרת בין כל מי שמספק טיפול.",
-      p2_v1: "קטגוריה חדשה",
-      p2_v1d: "AgentOS לענף הביטוח + שוק הגנה — השכבה שעליה רצים הפצה, חיתום, תביעות וטיפול.",
-      p2_v2: "סטנדרט חדש",
-      p2_v2d: "הצעת מחיר בשניות, חיתום ב-AI בר-ביקורת, וסילוק זכאויות באמצעות קוד.",
-      p2_v3: "תוצאה חדשה",
-      p2_v3d: "פלטפורמה דלת-הון, רב-שוקית, עם שלושה מנועי הכנסה מצטברים.",
-      p2_m_h: "שוק",
-      p2_m_s: "פער בסדר גודל של טריליון דולר, שהולך וגדל — ולמה עכשיו.",
-      p2_tam: 'הגנה גלובלית על מוגבלות, סיעוד ואריכות-ימים (שווה-ערך פרמיה). <span class="tag r">אומדן מדווח</span>',
-      p2_sam: 'בר-מענה דיגיטלי — הגנת חומרה ומשולבת בשווקי היעד. <span class="tag r">אומדן מדווח</span>',
-      p2_som: 'היקף מתווך ע\"י PHINS עד 2031 (פרמיה + GMV של ה-Marketplace). <span class="tag m">מודלי</span>',
-      p2_why: "למה עכשיו",
-      p2_w1: "הזדקנות ואריכות-ימים מרחיבות את הפער בכל שנה.",
-      p2_w2: "ה-AI הופך חיתום ותביעות למהירים וניתנים לביקורת כמו תוכנה.",
-      p2_w3: "מודל MGA דל-הון — מרווחי תוכנה; המבטחים נושאים בסיכון.",
-      p2_w4: "סוכנים רוצים כלי-עבודה, לא להיעקף.",
-      p2_w5: "פלטפורמה שנבנית פעם אחת מתרחבת משוק לשוק כקונפיגורציה.",
-
-      // Page 3
-      p3_h: "טכנולוגיה",
-      p3_s: "שלוש חפירות הגנה על ספר-חשבונות אחד — הפצה, חיתום, תשלום, תזמור.",
-      p3_t1: "חיתום מבוסס-AI",
-      p3_t1d: "תמחור מותאם-חומרה, רישום מודלים, ודאטה ייחודית שהמתחרים לא רואים.",
-      p3_t2: "תביעות מבוססות-AI",
-      p3_t2d: "מיון, סילוק זכאויות מבוסס-קוד, וניתוב לטיפול-בית תחילה.",
-      p3_t3: "AgentOS",
-      p3_t3d: "כלי ה-SaaS שמצייד סוכנים ומחזיק בערוץ ההפצה.",
-      p3_t4: "Marketplace",
-      p3_t4d: "רשת חמש-צדדית: לקוחות, סוכנים, רופאים, מבטחי-משנה ונותני-טיפול.",
-      p3_fly: "<strong>גלגל-תנופה של דאטה:</strong> יותר סוכנים → יותר לקוחות → יותר דאטה → תמחור חד ותביעות מהירות → תנאי ביטוח-משנה טובים → כיסוי זול ומהיר יותר → יותר סוכנים.",
-      p3_a1: "ספר-חשבונות משורשר",
-      p3_a1d: "כל יתרה והחלטה ניתנות לשחזור ממצב append-only; ה-AI ממליץ, רק טרנזקציות נרשמות.",
-      p3_a2: "64+ מודולים, חיים",
-      p3_a2d: "מחזור חיים מלא: פוליסה → חיתום → חיוב → תביעה → ביטוח-משנה — לא מצגת.",
-      p3_a3: "רב-שוקי מתוכנן",
-      p3_a3d: "מתאמים רגולטוריים ו-26 ערכות מדינה הופכים שוק חדש לקונפיגורציה.",
-
-      // Page 4
-      p4_team_h: "צוות",
-      p4_team_s: "אנשים שכבר בנו את הפלטפורמה — בתוספת עוצמת ביטוח והון.",
-      p4_p1: "מייסד · פלטפורמה",
-      p4_p1d: "בנה מקצה-לקצה פלטפורמת ביטוח של 64+ מודולים מבוססת ספר-חשבונות.",
-      p4_p2: "אקטואר ראשי · מצטרף",
-      p4_p2d: "אקטואר בכיר מוכר IAA; אימת את התמחור והסכים להצטרף.",
-      p4_p3: "מפעיל ביטוח + הון",
-      p4_p3d: "מנכ\"ל / יו\"ר בכיר מעורב כמשקיע / שותף-מייסד פעיל.",
-      p4_tr_h: "מומנטום (Traction)",
-      p4_tr_s: "טרם השקה, אך עם סיכון מופחת: מוצר בנוי ותמחור מאומת.",
-      p4_st1: "מודולים פרוסים",
-      p4_st2: "ערכות מדינה / רגולטור",
-      p4_st3: "תמחור מאומת ע\"י אקטואר",
-      p4_st4: "מצב בר-שחזור בספר",
-      p4_tl1: "פלטפורמה בנויה ומאומתת",
-      p4_tl1d: "64+ מודולים חיים; מחזור ביטוח מלא על ספר-חשבונות משורשר.",
-      p4_tl2: "שער האמינות האקטוארי נעבר",
-      p4_tl2d: "אקטואר מוכר IAA אימת את מודל התמחור ומצטרף.",
-      p4_tl3: "מפעיל ביטוח מעורב",
-      p4_tl3d: "מנכ\"ל/יו\"ר בכיר בענף, כמשקיע / שותף-מייסד פעיל.",
-      p4_tl4: "הבא: Seed → השקה (2027)",
-      p4_tl4d: "הסבב מממן את השקת ה-MGA, פריסת AgentOS, והשווקים הראשונים.",
-
-      // Page 5
-      p5_h: "צמיחה",
-      p5_s: "כניסה עם ה-MGA, התרחבות עם AgentOS וה-Marketplace.",
-      p5_fly_h: "גלגל-התנופה של הצמיחה",
-      p5_f1: "סוכנים מצטרפים",
-      p5_f1d: "AgentOS מביא סוכנים ולקוחותיהם לפלטפורמה.",
-      p5_f2: "דאטה מצטברת",
-      p5_f2d: "כל פוליסה ותביעה מעשירות את הדאטה הייחודית.",
-      p5_f3: "AI מתמחר חד יותר",
-      p5_f3d: "תמחור טוב יותר ותביעות מהירות; תנאי ביטוח-משנה טובים.",
-      p5_f4: "ה-Marketplace מעמיק",
-      p5_f4d: "היצע טיפול ומוצרים משולבים מגדילים GMV.",
-      p5_f5: "כיסוי זול יותר",
-      p5_f5d: "כלכלה טובה יותר → יותר סוכנים ולקוחות. חוזר חלילה.",
-      p5_motion_h: "תנועת Go-to-market",
-      p5_g1: "<strong>כניסה</strong> — השקת ה-MGA לחומרה בישראל; הוכחת כלכלת יחידה.",
-      p5_g2: "<strong>צירוף</strong> — חיבור סוכנים ל-AgentOS; שירותים הופכים למנויי SaaS.",
-      p5_g3: "<strong>התרחבות</strong> — פתיחת ה-Marketplace; טיפול, מוצרים משולבים ושווקים חדשים.",
-      p5_g4: "<strong>הצברה</strong> — מכירת מוצרי BI / דאטה למבטחים ולמבטחי-משנה.",
-      p5_waves_h: "רצף שווקים",
-      p5_wave: "גל",
-      p5_markets: "שווקים",
-      p5_wv1: "1 · השקה",
-      p5_wv2: "2 · קנה-מידה",
-      p5_wv3: "3 · התרחבות",
-
-      // Page 6
-      p6_h: "מודל פיננסי",
-      p6_s: "שלושה מנועי הכנסה דלי-הון; מסלול נקי לרווחיות.",
-      p6_e1: "עמלת ביטוח (MGA)",
-      p6_e1d: "2031, על פרמיה מתווכת.",
-      p6_e2: "AgentOS SaaS",
-      p6_e2d: "2031, מנויים חוזרים בעלי מרווח גבוה.",
-      p6_e3: "עמלת Marketplace",
-      p6_e3d: "2031, על מחזור ה-Marketplace (GMV).",
-      p6_table_h: 'מסלול חמש-שנתי <span class="tag m">מודלי · USD</span>',
-      p6_line: "שורה",
-      p6_gwp: "פרמיה מתווכת (GWP)",
-      p6_rev: "הכנסה נטו",
-      p6_ebitda: "EBITDA",
-      p6_light: "<strong>דל-הון:</strong> עתודות התביעות אצל המבטחים / מבטחי-המשנה — לא אצל PHINS — ולכן צמיחה במרווחי תוכנה.",
-      p6_bars_h: "עליית הכנסה נטו (USD)",
-      p6_unicorn: "<strong>מסלול ליוניקורן:</strong> הכנסה נטו 2031 בסך 228M$ × מכפיל הכנסה של 6 ≈ <strong>1.4B$</strong>. רווחיות EBITDA מ-2030.",
-
-      // Page 7
-      p7_h: "הבקשה",
-      p7_s: "4M$ ב-Seed כדי להפוך פלטפורמה בנויה לקטגוריה.",
-      p7_terms: "תנאי ה-Seed",
-      p7_round: "סבב Seed",
-      p7_pre: "שווי לפני הכסף",
-      p7_post: "שווי אחרי הכסף",
-      p7_own: "אחזקת המשקיע",
-      p7_buy: "הכספים מממנים",
-      p7_buy_v: "השקה + שווקים ראשונים",
-      p7_uof: "שימוש בכספים",
-      p7_u1: "AI והנדסה",
-      p7_u2: "AgentOS והפצה",
-      p7_u3: "Marketplace ותפעול טיפול",
-      p7_u4: "אקטואריה, ביטוח-משנה וסיכון",
-      p7_u5: "רגולציה ורב-שוקיות",
-      p7_u6: "הנהלה וכלליות ומסלול הון",
-      p7_proof: 'תקדימי InsurTech <span class="tag r">מדווח</span>',
-      p7_co: "חברה",
-      p7_focus: "מיקוד",
-      p7_val: "שווי",
-      p7_raised: "גויס",
-      p7_c1: "מבטח-AI (ציבורי)",
-      p7_c1v: "מיליארדים",
-      p7_c2: "ביטוח לעסקים קטנים",
-      p7_c2r: "מאות מ׳ $",
-      p7_c3: "Marketplace + מבטח",
-      p7_c4: "Marketplace משולב",
-      p7_cta: "בואו נבנה יחד את שכבת ההגנה לכלכלת אריכות-הימים."
+    var YEARS = [2027, 2028, 2029, 2030, 2031];
+    // Canonical USD base — identical to the unicorn deck, so the two reconcile.
+    var BASE = {
+      policiesAvg: [2000, 14000, 60000, 200000, 480000],
+      seatsAvg:    [150, 900, 3500, 9000, 18000],
+      gmv:         [3.0e6, 22e6, 110e6, 380e6, 900e6],
+      opexFixed:   [3.0e6, 5.0e6, 9.0e6, 16e6, 26e6],
+      opexVar:     [6.0e6, 13e6, 28e6, 60e6, 120e6],
+      uofShares:   [0.34, 0.22, 0.14, 0.10, 0.09, 0.11],
+      tam: 1.4e12, sam: 140e9
     };
 
-    // Capture and restore innerHTML for both attribute types so inline tags
-    // (e.g. <span class="tag">) in the English source survive a HE→EN toggle.
+    var LS_KEY = "phins_seed_deck_v2";
+    var state = {
+      lang: "en", cur: "USD", curManual: false,
+      fxEur: 0.92, fxIls: 3.7, fxSource: "default",
+      investor: "Seed Investor",
+      round: 4000000, pre: 16000000, esop: 0,
+      scale: 1, prem: 1000, take: 25, seat: 3000, mtake: 6, mult: 6
+    };
+    try {
+      var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      Object.keys(saved).forEach(function (k) { if (k in state) state[k] = saved[k]; });
+      if (!("lang" in saved)) {
+        var legacyLang = localStorage.getItem("phins_seed_lang");
+        if (legacyLang === "he" || legacyLang === "en") state.lang = legacyLang;
+      }
+    } catch (e) {}
+    function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+
+    // ── Formatting (currency follows state.cur; ILS symbol follows language) ──
+    function rate() { return state.cur === "USD" ? 1 : (state.cur === "EUR" ? state.fxEur : state.fxIls); }
+    function conv(usd) { return usd * rate(); }
+    function ilsSym() { return "₪"; }
+    function abbr(v) {
+      if (v >= 1e12) return (v / 1e12).toFixed(2).replace(/\.?0+$/, "") + "T";
+      if (v >= 1e9)  return (v / 1e9).toFixed(2).replace(/\.?0+$/, "") + "B";
+      if (v >= 1e6)  return (v / 1e6).toFixed(2).replace(/\.?0+$/, "") + "M";
+      if (v >= 1e3)  return (v / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+      return v.toFixed(0);
+    }
+    function money(usd) {
+      var v = conv(usd); var neg = v < 0; v = Math.abs(v);
+      var s = abbr(v);
+      if (state.cur === "USD") return (neg ? "−" : "") + "$" + s;
+      if (state.cur === "EUR") return (neg ? "−" : "") + "€" + s;
+      return (neg ? "−" : "") + s + " " + ilsSym();
+    }
+    function moneySigned(usd) { return (usd >= 0 ? "+" : "") + money(usd); }
+    function pct(x, dp) { return (x * 100).toFixed(dp == null ? 1 : dp) + "%"; }
+
+    function compute() {
+      var m = state.scale, prem = state.prem, tk = state.take / 100, seat = state.seat, mtk = state.mtake / 100;
+      var policies = BASE.policiesAvg.map(function (p) { return p * m; });
+      var seats = BASE.seatsAvg.map(function (s) { return s * m; });
+      var gmv = BASE.gmv.map(function (g) { return g * m; });
+      var gwp = policies.map(function (p) { return p * prem; });
+      var insRev = gwp.map(function (g) { return g * tk; });
+      var saasRev = seats.map(function (s) { return s * seat; });
+      var mktRev = gmv.map(function (g) { return g * mtk; });
+      var totalRev = YEARS.map(function (_, i) { return insRev[i] + saasRev[i] + mktRev[i]; });
+      var opex = YEARS.map(function (_, i) { return BASE.opexFixed[i] + BASE.opexVar[i] * m; });
+      var ebitda = YEARS.map(function (_, i) { return totalRev[i] - opex[i]; });
+      var valPath = totalRev.map(function (r) { return r * state.mult; });
+      var post = state.pre + state.round;
+      var own = post > 0 ? state.round / post : 0;
+      var esopFrac = Math.max(0, Math.min(1, (state.esop || 0) / 100));
+      own = own * (1 - esopFrac);
+      var i31 = 4;
+      return {
+        gwp: gwp, insRev: insRev, saasRev: saasRev, mktRev: mktRev, totalRev: totalRev,
+        ebitda: ebitda, gmv: gmv, valPath: valPath, post: post, own: own,
+        val31: valPath[i31], rev31: totalRev[i31], som: gwp[i31] + gmv[i31]
+      };
+    }
+
+    function setCalc(key, txt) {
+      var els = document.querySelectorAll('[data-calc="' + key + '"]');
+      for (var i = 0; i < els.length; i++) els[i].textContent = txt;
+    }
+
+    function render() {
+      var c = compute(), i31 = 4;
+      setCalc("inv", state.investor);
+      setCalc("round", money(state.round));
+      setCalc("pre", money(state.pre));
+      setCalc("post", money(c.post));
+      setCalc("own", pct(c.own));
+      setCalc("round_own", money(state.round) + " · " + pct(c.own, 0));
+      setCalc("rev31", money(c.rev31));
+      setCalc("val31", money(c.val31));
+      setCalc("mult", state.mult + "×");
+      setCalc("eng_ins", money(c.insRev[i31]));
+      setCalc("eng_saas", money(c.saasRev[i31]));
+      setCalc("eng_mkt", money(c.mktRev[i31]));
+      setCalc("tam", money(BASE.tam));
+      setCalc("sam", money(BASE.sam));
+      setCalc("som", money(c.som));
+      var curName = state.cur === "ILS" ? ilsSym() : state.cur;
+      setCalc("cur_tag", (state.lang === "he" ? "מודלי · " : "modeled · ") + curName);
+
+      for (var i = 0; i < 5; i++) {
+        setCalc("g" + i, money(c.gwp[i]));
+        setCalc("r" + i, money(c.totalRev[i]));
+        var ec = document.querySelector('[data-calc="e' + i + '"]');
+        if (ec) { ec.textContent = moneySigned(c.ebitda[i]); ec.className = "n " + (c.ebitda[i] >= 0 ? "pos" : "neg"); }
+      }
+      for (var u = 0; u < BASE.uofShares.length; u++) setCalc("uof" + u, money(state.round * BASE.uofShares[u]));
+
+      // revenue ramp bars
+      var ramp = document.getElementById("ramp-bars");
+      if (ramp) {
+        var mx = Math.max.apply(null, c.totalRev) || 1, html = "";
+        for (var k = 0; k < 5; k++) {
+          var w = Math.max(1, Math.round(c.totalRev[k] / mx * 100));
+          html += '<div class="barv"><span class="y">' + YEARS[k] + '</span><div class="tr"><i style="width:' + w + '%;"></i></div><span class="bv">' + money(c.totalRev[k]) + '</span></div>';
+        }
+        ramp.innerHTML = html;
+      }
+      // FX note line
+      var fb = document.getElementById("fx-source");
+      if (fb && state.cur !== "USD") fb.setAttribute("data-live", "1");
+    }
+
+    // ── i18n ──
     var originals = {};
     function captureOriginals() {
       document.querySelectorAll("[data-i18n], [data-i18n-html]").forEach(function (el) {
         var k = el.getAttribute("data-i18n") || el.getAttribute("data-i18n-html");
-        originals[k] = el.innerHTML;
+        if (!(k in originals)) originals[k] = el.innerHTML;
       });
     }
     function applyLang(lang) {
@@ -649,22 +642,202 @@
         if (he && HE[k] != null) el.innerHTML = HE[k];
         else if (originals[k] != null) el.innerHTML = originals[k];
       });
-      document.querySelectorAll(".lang-btn").forEach(function (b) {
-        b.classList.toggle("on", b.getAttribute("data-lang") === lang);
-      });
-      try { localStorage.setItem("phins_seed_lang", lang); } catch (e) {}
+      document.querySelectorAll(".lang-btn").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-lang") === lang); });
     }
+    function syncCurBtns() {
+      document.querySelectorAll(".cur-btn").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-cur") === state.cur); });
+    }
+
+    // ── FX ──
+    function applyFxInputs() {
+      var e = document.getElementById("fx-eur"), s = document.getElementById("fx-ils");
+      if (e) e.value = state.fxEur;
+      if (s) s.value = state.fxIls;
+    }
+    function loadFx(force) {
+      var badge = document.getElementById("fx-badge");
+      if (!force && state.fxSource === "manual") {
+        if (badge) badge.textContent = "manual ✎";
+        applyFxInputs(); render();
+        return;
+      }
+      if (badge) badge.textContent = "…";
+      fetch("/api/fx/rates" + (force ? "?refresh=1" : "")).then(function (r) { return r.json(); }).then(function (d) {
+        var ue = (d.rates && d.rates.USD && d.rates.USD.EUR) || d.usd_eur;
+        var ui = (d.rates && d.rates.USD && d.rates.USD.ILS) || d.usd_ils;
+        if (ue) state.fxEur = Number(ue);
+        if (ui) state.fxIls = Number(ui);
+        state.fxSource = d.source === "alpha_vantage" ? "live" : (d.source || "fallback");
+        if (badge) badge.textContent = state.fxSource === "live" ? "live ✓" : (state.fxSource + " ⚠");
+        var src = document.getElementById("fx-source");
+        if (src) src.textContent = d.as_of ? ("as of " + String(d.as_of).slice(0, 10)) : "";
+        applyFxInputs(); persist(); render();
+      }).catch(function () {
+        state.fxSource = "fallback";
+        if (badge) badge.textContent = "fallback ⚠";
+        applyFxInputs(); render();
+      });
+    }
+
+    // ── wiring ──
+    function bindNum(id, key) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.value = state[key];
+      el.addEventListener("input", function () { var v = parseFloat(el.value); state[key] = isNaN(v) ? 0 : v; persist(); render(); });
+    }
+    function fullRefresh() { applyLang(state.lang); syncCurBtns(); render(); persist(); }
+
     function init() {
       captureOriginals();
-      var saved = "en";
-      try { saved = localStorage.getItem("phins_seed_lang") || "en"; } catch (e) {}
-      applyLang(saved);
+
+      // currency follows language on load unless manually overridden
+      if (!state.curManual) state.cur = state.lang === "he" ? "ILS" : "USD";
+
+      // language → currency link
       document.querySelectorAll(".lang-btn").forEach(function (b) {
-        b.addEventListener("click", function () { applyLang(b.getAttribute("data-lang")); });
+        b.addEventListener("click", function () {
+          state.lang = b.getAttribute("data-lang");
+          state.cur = state.lang === "he" ? "ILS" : "USD"; // currency follows language
+          state.curManual = false;
+          fullRefresh();
+        });
       });
+      // manual currency override
+      document.querySelectorAll(".cur-btn").forEach(function (b) {
+        b.addEventListener("click", function () { state.cur = b.getAttribute("data-cur"); state.curManual = true; syncCurBtns(); persist(); render(); });
+      });
+
+      var inv = document.getElementById("c-inv");
+      if (inv) { inv.value = state.investor; inv.addEventListener("input", function () { state.investor = inv.value || "Investor"; persist(); render(); }); }
+
+      bindNum("c-round", "round"); bindNum("c-pre", "pre"); bindNum("c-esop", "esop");
+      bindNum("c-prem", "prem"); bindNum("c-take", "take"); bindNum("c-seat", "seat");
+      bindNum("c-mtake", "mtake"); bindNum("c-mult", "mult");
+      var sc = document.getElementById("c-scale");
+      if (sc) { sc.value = state.scale; sc.addEventListener("change", function () { state.scale = parseFloat(sc.value); persist(); render(); }); }
+
+      var fe = document.getElementById("fx-eur");
+      if (fe) fe.addEventListener("input", function () { var v = parseFloat(fe.value); if (v > 0) { state.fxEur = v; state.fxSource = "manual"; persist(); render(); } });
+      var fi = document.getElementById("fx-ils");
+      if (fi) fi.addEventListener("input", function () { var v = parseFloat(fi.value); if (v > 0) { state.fxIls = v; state.fxSource = "manual"; persist(); render(); } });
+      var fr = document.getElementById("fx-refresh");
+      if (fr) fr.addEventListener("click", function () { loadFx(true); });
+
+      var tg = document.getElementById("cfg-toggle"), panel = document.getElementById("cfg-panel");
+      if (tg && panel) tg.addEventListener("click", function () { panel.style.display = (panel.style.display === "none" ? "" : "none"); });
+
       var dl = document.getElementById("dl");
       if (dl) dl.addEventListener("click", function () { window.print(); });
+
+      applyFxInputs();
+      applyLang(state.lang);
+      syncCurBtns();
+      render();
+      loadFx(false);
     }
+
+    // ── Hebrew dictionary ──
+    var HE = {
+      lang_label: "שפה", dl: "⬇ הורדת PDF", tb_adjust: "⚙ התאמה",
+      foot: "הנחות תכנון מודליות — לא הנחיה. חסוי — אין להפיץ.",
+      chap_vision: "חזון", chap_market: "שוק", chap_tech: "טכנולוגיה", chap_team: "צוות",
+      chap_traction: "מומנטום", chap_growth: "צמיחה", chap_fin: "פיננסים",
+      prepared: "הוכן עבור",
+
+      cfg_h: 'קונפיגורטור מתכוונן <span class="tag m">FX חי · מתואם</span>',
+      cfg_s: 'כיוונון הדק לכל משקיע או פרמטר. כל מספר נגזר מבסיס USD קנוני אחד, כך שכל הדוח מתואם. המטבע נגזר מהשפה (עברית → ₪, אנגלית → $); ניתן לעקוף ידנית.',
+      cfg_cur: "מטבע", cfg_fx: "💱 FX חי", cfg_refresh: "↻ רענון",
+      cfg_investor: "הוכן עבור (משקיע / קהל)",
+      cfg_round: "סבב Seed (USD)", cfg_pre: "שווי לפני הכסף (USD)", cfg_esop: "מאגר אופציות חדש (%)",
+      cfg_scale: "תרחיש קנה-מידה", cfg_prem: "פרמיה שנתית ממוצעת (USD)", cfg_take: "עמלת MGA מה-GWP (%)",
+      cfg_seat: "מחיר מושב AgentOS (USD/שנה)", cfg_mtake: "עמלת Marketplace מה-GMV (%)", cfg_mult: "מכפיל הכנסה ביציאה (×)",
+      sc_cons: "שמרני (×0.5)", sc_baselow: "בסיס-נמוך (×0.75)", sc_base: "תוכנית בסיס (×1.0)", sc_up: "אופטימי (×1.5)", sc_agg: "אגרסיבי (×2.0)",
+      k_post: "שווי אחרי הכסף", k_own: "אחזקת המשקיע", k_rev: "הכנסה נטו 2031", k_val: "שווי נגזר 2031",
+      cfg_note: 'הקלט מוזן ב-USD (הבסיס הקנוני); הפלט מומר למטבע הנבחר לפי השער החי. תקדימים מדווחים נשארים במטבע המקור (USD). ההגדרות נשמרות בדפדפן.',
+
+      p1_eyebrow: "סבב Seed · סיפור הגיוס · חסוי",
+      p1_h1: 'PHINS — <span class="grad">AgentOS לענף הביטוח + שוק הגנה למוגבלות ואריכות-ימים</span>',
+      p1_tag: 'מערכת ההפעלה מבוססת ה-AI לכלכלת ההגנה הגלובלית. ביטוח המוגבלות והסיעוד (MGA) הוא <strong style="color:#fff;">נקודת הכניסה</strong> — הפלטפורמה היא החברה.',
+      p1_m1: "הכנסה נטו 2031 · מודלי", p1_m2: "שווי נגזר 2031", p1_m3: "סבב Seed · עבור אחזקה", p1_m4: "רווחיות EBITDA",
+      p1_purpose_h: "מטרת הגיוס", p1_purpose_s: "למה אנחנו מגייסים, ומה זה פותח.",
+      p1_ask: 'אנו מגייסים <strong><span data-calc="round">—</span> ב-Seed</strong> כדי להשיק את ה-MGA, להוציא את AgentOS לסוכנים ולפתוח את שוק ההגנה — והופכים פלטפורמה בנויה לקטגוריה, במסלול דל-הון לחברה בשווי 1B$+.',
+      p1_story_intro: "הסיפור, בשבעה פרקים:",
+
+      p2_v_h: "חזון", p2_v_s: "איך נראה העולם כש-PHINS מנצחת.",
+      p2_v_big: 'ההגנה הופכת למוצר תוכנה — מתומחרת ע"י AI, משולמת ע"י קוד, ומתוזמרת בין כל מי שמספק טיפול.',
+      p2_v1: "קטגוריה חדשה", p2_v1d: "AgentOS לענף הביטוח + שוק הגנה — השכבה שעליה רצים הפצה, חיתום, תביעות וטיפול.",
+      p2_v2: "סטנדרט חדש", p2_v2d: "הצעת מחיר בשניות, חיתום ב-AI בר-ביקורת, וסילוק זכאויות באמצעות קוד.",
+      p2_v3: "תוצאה חדשה", p2_v3d: "פלטפורמה דלת-הון, רב-שוקית, עם שלושה מנועי הכנסה מצטברים.",
+      p2_m_h: "שוק", p2_m_s: "פער בסדר גודל של טריליון דולר, שהולך וגדל — ולמה עכשיו.",
+      p2_tam: 'הגנה גלובלית על מוגבלות, סיעוד ואריכות-ימים (שווה-ערך פרמיה). <span class="tag r">אומדן תכנון</span>',
+      p2_sam: 'בר-מענה דיגיטלי — הגנת חומרה ומשולבת בשווקי היעד. <span class="tag r">אומדן תכנון</span>',
+      p2_som: 'היקף מתווך ע"י PHINS עד 2031 (פרמיה + GMV של ה-Marketplace). <span class="tag m">מודלי</span>',
+      p2_why: "למה עכשיו",
+      p2_w1: "הזדקנות ואריכות-ימים מרחיבות את הפער בכל שנה.",
+      p2_w2: "ה-AI הופך חיתום ותביעות למהירים וניתנים לביקורת כמו תוכנה.",
+      p2_w3: "מודל MGA דל-הון — מרווחי תוכנה; המבטחים נושאים בסיכון.",
+      p2_w4: "סוכנים רוצים כלי-עבודה, לא להיעקף.",
+      p2_w5: "פלטפורמה שנבנית פעם אחת מתרחבת משוק לשוק כקונפיגורציה.",
+
+      p3_h: "טכנולוגיה", p3_s: "שלוש חפירות הגנה על ספר-חשבונות אחד — הפצה, חיתום, תשלום, תזמור.",
+      p3_t1: "חיתום מבוסס-AI", p3_t1d: "תמחור מותאם-חומרה, רישום מודלים, ודאטה ייחודית שהמתחרים לא רואים.",
+      p3_t2: "תביעות מבוססות-AI", p3_t2d: "מיון, סילוק זכאויות מבוסס-קוד, וניתוב לטיפול-בית תחילה.",
+      p3_t3: "AgentOS", p3_t3d: "כלי ה-SaaS שמצייד סוכנים ומחזיק בערוץ ההפצה.",
+      p3_t4: "Marketplace", p3_t4d: "רשת חמש-צדדית: לקוחות, סוכנים, רופאים, מבטחי-משנה ונותני-טיפול.",
+      p3_fly: "<strong>גלגל-תנופה של דאטה:</strong> יותר סוכנים → יותר לקוחות → יותר דאטה → תמחור חד ותביעות מהירות → תנאי ביטוח-משנה טובים → כיסוי זול ומהיר יותר → יותר סוכנים.",
+      p3_a1: "ספר-חשבונות משורשר", p3_a1d: "כל יתרה והחלטה ניתנות לשחזור ממצב append-only; ה-AI ממליץ, רק טרנזקציות נרשמות.",
+      p3_a2: "64+ מודולים, חיים", p3_a2d: "מחזור חיים מלא: פוליסה → חיתום → חיוב → תביעה → ביטוח-משנה — לא מצגת.",
+      p3_a3: "רב-שוקי מתוכנן", p3_a3d: "מתאמים רגולטוריים ו-26 ערכות מדינה הופכים שוק חדש לקונפיגורציה.",
+
+      p4_team_h: "צוות", p4_team_s: "אנשים שכבר בנו את הפלטפורמה — בתוספת עוצמת ביטוח והון.",
+      p4_p1: "מייסד · פלטפורמה", p4_p1d: "בנה מקצה-לקצה פלטפורמת ביטוח של 64+ מודולים מבוססת ספר-חשבונות.",
+      p4_p2: "אקטואר ראשי · מצטרף", p4_p2d: "אקטואר בכיר מוכר IAA; אימת את התמחור והסכים להצטרף.",
+      p4_p3: "מפעיל ביטוח + הון", p4_p3d: 'מנכ"ל / יו"ר בכיר מעורב כמשקיע / שותף-מייסד פעיל.',
+      p4_tr_h: "מומנטום (Traction)", p4_tr_s: "טרם השקה, אך עם סיכון מופחת: מוצר בנוי ותמחור מאומת.",
+      p4_st1: "מודולים פרוסים", p4_st2: "ערכות מדינה / רגולטור", p4_st3: "תמחור מאומת ע\"י אקטואר", p4_st4: "מצב בר-שחזור בספר",
+      p4_tl1: "פלטפורמה בנויה ומאומתת", p4_tl1d: "64+ מודולים חיים; מחזור ביטוח מלא על ספר-חשבונות משורשר.",
+      p4_tl2: "שער האמינות האקטוארי נעבר", p4_tl2d: "אקטואר מוכר IAA אימת את מודל התמחור ומצטרף.",
+      p4_tl3: "מפעיל ביטוח מעורב", p4_tl3d: 'מנכ"ל/יו"ר בכיר בענף, כמשקיע / שותף-מייסד פעיל.',
+      p4_tl4: "הבא: Seed → השקה (2027)", p4_tl4d: "הסבב מממן את השקת ה-MGA, פריסת AgentOS, והשווקים הראשונים.",
+
+      p5_h: "צמיחה", p5_s: "כניסה עם ה-MGA, התרחבות עם AgentOS וה-Marketplace.",
+      p5_fly_h: "גלגל-התנופה של הצמיחה",
+      p5_f1: "סוכנים מצטרפים", p5_f1d: "AgentOS מביא סוכנים ולקוחותיהם לפלטפורמה.",
+      p5_f2: "דאטה מצטברת", p5_f2d: "כל פוליסה ותביעה מעשירות את הדאטה הייחודית.",
+      p5_f3: "AI מתמחר חד יותר", p5_f3d: "תמחור טוב יותר ותביעות מהירות; תנאי ביטוח-משנה טובים.",
+      p5_f4: "ה-Marketplace מעמיק", p5_f4d: "היצע טיפול ומוצרים משולבים מגדילים GMV.",
+      p5_f5: "כיסוי זול יותר", p5_f5d: "כלכלה טובה יותר → יותר סוכנים ולקוחות. חוזר חלילה.",
+      p5_motion_h: "תנועת Go-to-market",
+      p5_g1: "<strong>כניסה</strong> — השקת ה-MGA לחומרה בישראל; הוכחת כלכלת יחידה.",
+      p5_g2: "<strong>צירוף</strong> — חיבור סוכנים ל-AgentOS; שירותים הופכים למנויי SaaS.",
+      p5_g3: "<strong>התרחבות</strong> — פתיחת ה-Marketplace; טיפול, מוצרים משולבים ושווקים חדשים.",
+      p5_g4: "<strong>הצברה</strong> — מכירת מוצרי BI / דאטה למבטחים ולמבטחי-משנה.",
+      p5_waves_h: "רצף שווקים", p5_wave: "גל", p5_markets: "שווקים",
+      p5_wv1: "1 · השקה", p5_wv2: "2 · קנה-מידה", p5_wv3: "3 · התרחבות",
+
+      p6_h: "מודל פיננסי", p6_s: "שלושה מנועי הכנסה דלי-הון; מסלול נקי לרווחיות.",
+      p6_e1: "עמלת ביטוח (MGA)", p6_e1d: "2031, על פרמיה מתווכת.",
+      p6_e2: "AgentOS SaaS", p6_e2d: "2031, מנויים חוזרים בעלי מרווח גבוה.",
+      p6_e3: "עמלת Marketplace", p6_e3d: "2031, על מחזור ה-Marketplace (GMV).",
+      p6_table_h: "מסלול חמש-שנתי", p6_line: "שורה", p6_gwp: "פרמיה מתווכת (GWP)", p6_rev: "הכנסה נטו", p6_ebitda: "EBITDA",
+      p6_light: "<strong>דל-הון:</strong> עתודות התביעות אצל המבטחים / מבטחי-המשנה — לא אצל PHINS — ולכן צמיחה במרווחי תוכנה.",
+      p6_bars_h: "עליית הכנסה נטו",
+      p6_unicorn: '<strong>מסלול ליוניקורן:</strong> הכנסה נטו 2031 <span data-calc="rev31">—</span> × מכפיל הכנסה של <span data-calc="mult">—</span> ≈ <strong><span data-calc="val31">—</span></strong>. רווחיות EBITDA מ-2030.',
+
+      p7_h: "הבקשה", p7_s: "הון Seed כדי להפוך פלטפורמה בנויה לקטגוריה.",
+      p7_terms: "תנאי ה-Seed", p7_round: "סבב Seed", p7_pre: "שווי לפני הכסף", p7_post: "שווי אחרי הכסף", p7_own: "אחזקת המשקיע",
+      p7_buy: "הכספים מממנים", p7_buy_v: "השקה + שווקים ראשונים",
+      p7_uof: "שימוש בכספים",
+      p7_u1: "AI והנדסה", p7_u2: "AgentOS והפצה", p7_u3: "Marketplace ותפעול טיפול",
+      p7_u4: "אקטואריה, ביטוח-משנה וסיכון", p7_u5: "רגולציה ורב-שוקיות", p7_u6: "הנהלה וכלליות ומסלול הון",
+      p7_proof: "תקדימי InsurTech", p7_co: "חברה", p7_focus: "מיקוד", p7_val: "שווי", p7_raised: "גויס",
+      p7_c1: "מבטח-AI (ציבורי)", p7_c1v: "מיליארדים", p7_c2: "ביטוח לעסקים קטנים", p7_c2r: "מאות מ׳ $",
+      p7_c3: "Marketplace + מבטח", p7_c4: "Marketplace משולב",
+      p7_cta: "בואו נבנה יחד את שכבת ההגנה לכלכלת אריכות-הימים.",
+      p7_integrity: '<strong>שלמות נתונים:</strong> כל מספר של PHINS נגזר מבסיס USD קנוני אחד (פרמיה, עמלה, קנה-מידה, מושבי AgentOS ומחירם, GMV ועמלת ה-Marketplace); ה-KPI, המודל החמש-שנתי, השימוש בכספים, מסלול היוניקורן והאחזקה — כולם מתואמים ממנו ומומרים למטבע הנבחר לפי השער החי. התקדימים הם נתונים מדווחים של צד שלישי במטבע המקור ואינם נספרים כהכנסת PHINS.'
+    };
+
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
   })();
