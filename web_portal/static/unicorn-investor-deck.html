@@ -239,11 +239,75 @@
     footer.deck-footer { background: var(--bg-dark-card); color: #fff; padding: 28px 24px; text-align: center; font-size: 8.5pt; opacity: 0.95; }
     footer.deck-footer a { color: #90caf9; }
 
-    @media print {
-      .deck-nav, .site-header, .no-print { display: none !important; }
-      section.slide { page-break-inside: avoid; }
-      body { background: #fff; }
+    /* ── Section dividers (numbered, report style) ── */
+    .sec-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 2px solid var(--border); }
+    .sec-num {
+      flex: 0 0 auto; min-width: 52px; height: 52px; border-radius: 12px;
+      background: var(--gradient-hdr); color: #fff; font-weight: 900; font-size: 18pt;
+      display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow);
     }
+    .sec-head .sec-meta { flex: 1 1 auto; }
+
+    /* ── Agenda / table of contents ── */
+    .agenda { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 28px; margin-top: 14px; }
+    @media (max-width: 880px) { .agenda { grid-template-columns: 1fr; } }
+    .agenda a {
+      display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text-main);
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card);
+      transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .agenda a:hover { border-color: var(--blue-light); transform: translateX(2px); box-shadow: var(--shadow); }
+    .agenda .ag-num { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; background: #eef3fb; color: var(--blue-dark); font-weight: 800; font-size: 9.5pt; display: flex; align-items: center; justify-content: center; }
+    .agenda .ag-title { font-size: 10pt; font-weight: 700; }
+    .agenda .ag-desc { font-size: 8.2pt; color: var(--text-soft); }
+
+    /* ── Executive summary highlights ── */
+    .hl-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
+    @media (max-width: 880px) { .hl-grid { grid-template-columns: repeat(2, 1fr); } }
+    .hl-box { background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--blue-mid); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+    .hl-box .hl-v { font-size: 20pt; font-weight: 900; color: var(--blue-dark); line-height: 1.05; }
+    .hl-box .hl-l { font-size: 8.6pt; color: var(--text-sub); margin-top: 6px; }
+
+    /* ── Closing / contact ── */
+    .closing { background: radial-gradient(circle at top left, rgba(124,58,237,0.28), transparent 46%), var(--bg-dark-card); color: #fff; border-radius: 18px; padding: 34px 30px; text-align: center; }
+    .closing h2 { font-size: 22pt; font-weight: 900; margin-bottom: 10px; }
+    .closing h2 .grad { background: linear-gradient(120deg, #64b5f6, #b388ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .closing p { font-size: 10.5pt; opacity: 0.92; max-width: 720px; margin: 0 auto 8px; }
+    .closing .contact-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 18px; }
+    .closing .contact-chip { font-size: 9pt; font-weight: 600; padding: 8px 16px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.22); }
+
+    .appendix-flag {
+      display: inline-flex; align-items: center; gap: 7px; font-size: 7.6pt; font-weight: 800;
+      letter-spacing: 0.08em; text-transform: uppercase; color: #8a6d00; background: #fff7e0;
+      border: 1px solid #f0d98a; border-radius: 999px; padding: 4px 12px; margin-bottom: 10px;
+    }
+
+    /* ── Print / PDF: clean, professional, one section per page ── */
+    @media print {
+      @page { margin: 14mm 12mm; }
+      .deck-nav, .site-header, .no-print { display: none !important; }
+      body { background: #fff; color: #000; }
+      a { text-decoration: none; color: inherit; }
+      .wrap { max-width: none; padding: 0; }
+
+      /* Cover page = hero */
+      .hero { padding: 40px 28px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      /* One slide per page for a deck-like PDF */
+      section.slide { page-break-inside: avoid; page-break-before: always; margin-bottom: 0; padding-top: 4px; }
+
+      /* Keep brand colors in print */
+      .sec-num, .panel, .card, .hl-box, .integrity, .note, .closing, table.tbl th,
+      .bar-fill, .kpi-box, .fw-node, .hero-stat, .tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      /* Hide live/interactive configurator chrome — keep the computed summary */
+      .cfg .fx-strip, .cfg .ctrl-grid, .cfg .cur-btn { display: none !important; }
+      .panel { box-shadow: none; }
+      .card, .hl-box { box-shadow: none; }
+
+      .print-only { display: block !important; }
+    }
+    .print-only { display: none; }
   </style>
 </head>
 <body>
@@ -265,6 +329,8 @@
   <!-- Section navigation -->
   <nav class="deck-nav no-print">
     <div class="deck-nav-inner">
+      <a href="#agenda">Contents</a>
+      <a href="#summary">Executive Summary</a>
       <a href="#configurator">Configurator</a>
       <a href="#thesis">Thesis</a>
       <a href="#vision">Vision</a>
@@ -286,7 +352,8 @@
       <a href="#risks">Risks</a>
       <a href="#unicorn">Unicorn Path</a>
       <a href="#exit">Exit</a>
-      <a href="#remarks">Remarks &amp; Prompts</a>
+      <a href="#contact">The Ask &amp; Contact</a>
+      <a href="#remarks">Appendix · Tools</a>
     </div>
   </nav>
 
@@ -317,10 +384,68 @@
         <div class="hero-stat"><div class="v" data-calc="hero_take">—</div><div class="l">MGA take on premium</div></div>
         <div class="hero-stat"><div class="v">3</div><div class="l">Revenue engines</div></div>
       </div>
+      <div class="print-only" style="margin-top:26px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.22);font-size:8.5pt;opacity:0.85;letter-spacing:0.04em;">
+        Series A Investor Presentation &nbsp;·&nbsp; Confidential — not for distribution &nbsp;·&nbsp; All figures are forward-looking planning assumptions, not guidance.
+      </div>
     </div>
   </div>
 
   <div class="wrap">
+
+    <!-- ── AGENDA / TABLE OF CONTENTS ── -->
+    <section class="slide" id="agenda">
+      <div class="sec-head">
+        <div class="sec-num">—</div>
+        <div class="sec-meta">
+          <div class="slide-label">Contents</div>
+          <h2 class="slide-title" style="margin-bottom:4px;">Presentation outline</h2>
+          <p class="slide-copy">A structured walk from thesis to exit. Reported figures are externally sourced and cited; modeled figures derive from a single canonical base via the configurator so the deck always reconciles.</p>
+        </div>
+      </div>
+      <div class="agenda">
+        <a href="#summary"><span class="ag-num">00</span><span><span class="ag-title">Executive Summary</span><br><span class="ag-desc">Company at a glance &amp; the ask</span></span></a>
+        <a href="#thesis"><span class="ag-num">01</span><span><span class="ag-title">Investment Thesis</span><br><span class="ag-desc">Ten reasons this is a platform, not a feature</span></span></a>
+        <a href="#vision"><span class="ag-num">02</span><span><span class="ag-title">Vision &amp; Problem</span><br><span class="ag-desc">The trillion-dollar protection gap</span></span></a>
+        <a href="#solution"><span class="ag-num">03</span><span><span class="ag-title">Solution &amp; Product</span><br><span class="ag-desc">One AI-native platform, already built</span></span></a>
+        <a href="#market"><span class="ag-num">04</span><span><span class="ag-title">Market Opportunity</span><br><span class="ag-desc">TAM → SAM → SOM with discipline</span></span></a>
+        <a href="#ai"><span class="ag-num">05</span><span><span class="ag-title">AI Architecture</span><br><span class="ag-desc">Underwriting &amp; claims moats</span></span></a>
+        <a href="#agentos"><span class="ag-num">06</span><span><span class="ag-title">AgentOS &amp; Marketplace</span><br><span class="ag-desc">SaaS cockpit + five-sided network</span></span></a>
+        <a href="#model"><span class="ag-num">07</span><span><span class="ag-title">Business Model</span><br><span class="ag-desc">Three compounding revenue engines</span></span></a>
+        <a href="#moat"><span class="ag-num">08</span><span><span class="ag-title">Advantages &amp; Flywheel</span><br><span class="ag-desc">Why PHINS keeps winning</span></span></a>
+        <a href="#gtm"><span class="ag-num">09</span><span><span class="ag-title">Go-To-Market</span><br><span class="ag-desc">Land with the MGA, expand with platform</span></span></a>
+        <a href="#financials"><span class="ag-num">10</span><span><span class="ag-title">Financial Projections</span><br><span class="ag-desc">Five-year model &amp; capital plan</span></span></a>
+        <a href="#comparables"><span class="ag-num">11</span><span><span class="ag-title">Comparables</span><br><span class="ag-desc">Fundable InsurTech precedents</span></span></a>
+        <a href="#team"><span class="ag-num">12</span><span><span class="ag-title">Team &amp; Risks</span><br><span class="ag-desc">Operators, controls &amp; mitigations</span></span></a>
+        <a href="#unicorn"><span class="ag-num">13</span><span><span class="ag-title">Unicorn Path &amp; Exit</span><br><span class="ag-desc">From severity MGA to $1B+</span></span></a>
+        <a href="#contact"><span class="ag-num">14</span><span><span class="ag-title">The Ask &amp; Contact</span><br><span class="ag-desc">Round structure &amp; next steps</span></span></a>
+      </div>
+    </section>
+
+    <!-- ── EXECUTIVE SUMMARY ── -->
+    <section class="slide" id="summary">
+      <div class="sec-head">
+        <div class="sec-num">00</div>
+        <div class="sec-meta">
+          <div class="slide-label">Executive Summary</div>
+          <h2 class="slide-title" style="margin-bottom:4px;">PHINS at a glance</h2>
+          <p class="slide-copy"><strong>AgentOS for Insurance + a Disability/Longevity Protection Marketplace.</strong> A capital-light, AI-native InsurTech platform with three compounding revenue engines on a single hash-chained ledger — using the disability/LTC MGA as the wedge to a unicorn-scale software company.</p>
+        </div>
+      </div>
+      <div class="hl-grid">
+        <div class="hl-box"><div class="hl-v" data-calc="hero_rev">—</div><div class="hl-l">2031 net revenue <span class="tag tag-modeled">modeled</span></div></div>
+        <div class="hl-box" style="border-top-color:var(--violet-1);"><div class="hl-v" data-calc="kpi_val31" style="color:var(--violet-1);">—</div><div class="hl-l">2031 implied valuation <span class="tag tag-modeled">modeled</span></div></div>
+        <div class="hl-box" style="border-top-color:var(--green-1);"><div class="hl-v" data-calc="hero_round" style="color:var(--green-1);">—</div><div class="hl-l">Series A round — the ask <span class="tag tag-adj">adjustable</span></div></div>
+        <div class="hl-box"><div class="hl-v">3</div><div class="hl-l">Capital-light revenue engines: MGA take · AgentOS SaaS · marketplace take</div></div>
+      </div>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><span class="icon-chip">🏗️</span><h3>Already built</h3><p>A deployed, ledger-governed platform spanning policy, underwriting, billing, claims, reinsurance and a health marketplace across 64+ modules.</p></div>
+        <div class="card"><span class="icon-chip">🧠</span><h3>Two AI moats</h3><p>Auditable AI underwriting and AI claims intelligence — proprietary data competitors cannot see, with reinsurance-ready evidence.</p></div>
+        <div class="card"><span class="icon-chip">🔗</span><h3>Flawless data integrity</h3><p>Append-only, hash-chained state. AI/BI recommend but never post — a trust moat with regulators and reinsurers.</p></div>
+      </div>
+      <div class="integrity" style="margin-top:16px;">
+        <strong>The ask.</strong> Raising <strong data-calc="hero_round">—</strong> (Series A) to launch the severity MGA, ship AgentOS, and open the protection marketplace — funding the path to EBITDA-positive (base 2030) and a modeled 2031 implied valuation of <strong data-calc="kpi_val31">—</strong>. Tune every assumption live in the configurator; all figures recompute from one canonical base.
+      </div>
+    </section>
 
     <!-- ── CONFIGURATOR ── -->
     <section class="slide" id="configurator">
@@ -331,7 +456,7 @@
             <h2 class="slide-title" style="margin-bottom:4px;">Investor &amp; Scenario Configurator <span class="tag tag-adj">adjustable · live FX</span></h2>
             <p class="slide-copy">Tune the deck for <strong>any investor or any factor</strong>. Currency, the round, valuation, global scale, pricing and take rates all flow from a <strong>single canonical USD base</strong>, so every table, chart, KPI and the unicorn path recompute and always reconcile. Settings persist in your browser.</p>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:7.6pt;color:var(--text-soft);">Display currency</span>
             <button type="button" class="btn cur-btn on" data-cur="USD">$ USD</button>
             <button type="button" class="btn cur-btn" data-cur="EUR">€ EUR</button>
@@ -819,10 +944,39 @@
       </div>
     </section>
 
-    <!-- ── REMARKS & PROMPTS ── -->
-    <section class="slide" id="remarks">
-      <div class="slide-label">20 · Strategic Remarks &amp; PHINS Prompt Library</div>
-      <h2 class="slide-title">How to keep making this a unicorn-level deck — remarks &amp; reusable AI prompts.</h2>
+    <!-- ── THE ASK & CONTACT ── -->
+    <section class="slide" id="contact">
+      <div class="sec-head">
+        <div class="sec-num">20</div>
+        <div class="sec-meta">
+          <div class="slide-label">The Ask &amp; Next Steps</div>
+          <h2 class="slide-title" style="margin-bottom:4px;">Partner with us to build the operating system for global protection.</h2>
+          <p class="slide-copy">A capital-light raise that funds the MGA launch, AgentOS, and the marketplace — with a clear path to profitability and a $1B+ trajectory.</p>
+        </div>
+      </div>
+      <div class="grid-4" style="margin-top:4px;">
+        <div class="hl-box" style="border-top-color:var(--green-1);"><div class="hl-v" data-calc="hero_round" style="color:var(--green-1);">—</div><div class="hl-l">Series A round (the ask)</div></div>
+        <div class="hl-box"><div class="hl-v" data-calc="cap_post">—</div><div class="hl-l">Post-money valuation</div></div>
+        <div class="hl-box"><div class="hl-v" data-calc="cap_own">—</div><div class="hl-l">Investor ownership</div></div>
+        <div class="hl-box" style="border-top-color:var(--violet-1);"><div class="hl-v" data-calc="kpi_moic" style="color:var(--violet-1);">—</div><div class="hl-l">Gross MOIC on this round</div></div>
+      </div>
+      <div class="closing" style="margin-top:18px;">
+        <h2>Let's make protection <span class="grad">instant, intelligent &amp; abundant</span>.</h2>
+        <p>We are raising our Series A to turn a validated, capital-light MGA into the AI operating system for the global protection economy. We would welcome a conversation about how PHINS fits your thesis.</p>
+        <div class="contact-row">
+          <span class="contact-chip">🌐 phins.ai</span>
+          <span class="contact-chip">📄 Due-diligence library available under NDA</span>
+          <span class="contact-chip">🤝 Series A · Institutional Venture</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── APPENDIX · INTERNAL AUTHORING TOOLS (web only, excluded from PDF) ── -->
+    <section class="slide no-print" id="remarks">
+      <div class="appendix-flag">🔧 Appendix · Internal authoring tools — web only, excluded from the investor PDF</div>
+      <div class="slide-label">Appendix · Strategic Remarks &amp; PHINS Prompt Library</div>
+      <h2 class="slide-title">Internal: how to keep refining this deck — remarks &amp; reusable AI prompts.</h2>
+      <div class="note" style="margin-top:12px;">This appendix is an internal working aid for the PHINS team. It is hidden when the deck is printed or exported to PDF, so investor-facing materials never include build instructions or prompts.</div>
       <div class="panel" style="margin-top:16px;">
         <h3 style="font-size:12.5pt;">Headline strategic remark</h3>
         <div class="integrity" style="margin-top:10px;">
