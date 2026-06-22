@@ -302,13 +302,18 @@ def _poll_job_background(job_id: str) -> None:
         ))
         _job_store.update(job_id, updates)
 
-    # Timeout
+    # Timeout — but a webhook may have reached a terminal state during the
+    # final sleep window, so do not overwrite an already-finished job.
+    timed_out_job = _job_store.get(job_id)
+    if timed_out_job is None:
+        return
+    if timed_out_job.get("status") in {"completed", "failed", "cancelled"}:
+        return
     _job_store.update(job_id, {
         "status": "failed",
         "message": "Polling timed out after 30 minutes.",
         "progress_pct": 0,
     })
-    timed_out_job = _job_store.get(job_id) or {}
     _audit_video_event('video_job_failed', job_id, {
         'campaign_id': timed_out_job.get('campaign_id'),
         'provider': timed_out_job.get('provider'),

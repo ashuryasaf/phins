@@ -14603,8 +14603,7 @@ For claims or questions, please contact:
                 return
             try:
                 from services.ai_capabilities import help_text
-                user = get_session_user(session) or {}
-                payload = help_text(user.get('role'))
+                payload = help_text(get_effective_role(session))
                 status_code = 200
             except Exception as cap_exc:
                 status_code, payload = 500, {'error': str(cap_exc)}
