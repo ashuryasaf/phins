@@ -523,6 +523,10 @@
     try {
       var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
       Object.keys(saved).forEach(function (k) { if (k in state) state[k] = saved[k]; });
+      if (!("lang" in saved)) {
+        var legacyLang = localStorage.getItem("phins_seed_lang");
+        if (legacyLang === "he" || legacyLang === "en") state.lang = legacyLang;
+      }
     } catch (e) {}
     function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
 
@@ -652,6 +656,11 @@
     }
     function loadFx(force) {
       var badge = document.getElementById("fx-badge");
+      if (!force && state.fxSource === "manual") {
+        if (badge) badge.textContent = "manual ✎";
+        applyFxInputs(); render();
+        return;
+      }
       if (badge) badge.textContent = "…";
       fetch("/api/fx/rates" + (force ? "?refresh=1" : "")).then(function (r) { return r.json(); }).then(function (d) {
         var ue = (d.rates && d.rates.USD && d.rates.USD.EUR) || d.usd_eur;
@@ -681,6 +690,9 @@
 
     function init() {
       captureOriginals();
+
+      // currency follows language on load unless manually overridden
+      if (!state.curManual) state.cur = state.lang === "he" ? "ILS" : "USD";
 
       // language → currency link
       document.querySelectorAll(".lang-btn").forEach(function (b) {
