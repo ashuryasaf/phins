@@ -869,6 +869,15 @@ class VideoAgentsService:
                 "message": f"Retry failed: {submission_error}",
                 "error": submission_error,
             })
+            # A retry that fails before polling never starts the background
+            # poller/webhook, so emit the durable terminal failure event here
+            # for parity with submit and polling/webhook failure paths.
+            final_job = _job_store.get(job_id) or job
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': final_job.get('campaign_id'),
+                'provider': final_job.get('provider'),
+                'error': submission_error,
+            })
 
         return _job_store.get(job_id)
 

@@ -333,24 +333,29 @@ class ClaimsBotService:
         swallowed, so audit gaps are observable instead of invisible.
         """
         if self._audit:
+            # An in-process AuditService already persists durably to the
+            # audit_logs table via its own _persist_event path, so mirroring
+            # again here would create duplicate rows for the same event.
             try:
                 self._audit.log('claims_bot', action, entity, entity_id, details or {})
             except Exception as exc:
                 logger.warning("claims_bot in-process audit log failed: %s", exc)
-        # Durable audit parity: mirror to the audit_logs table when a database
-        # is configured. No-op in pure in-memory/demo runtimes.
-        try:
-            from services.ai_audit_bridge import record_ai_audit
-            record_ai_audit(
-                action=f'claims_bot_{action}',
-                entity_type=entity,
-                entity_id=entity_id,
-                details=details or {},
-                username='claims_bot',
-                customer_id=(details or {}).get('customer_id'),
-            )
-        except Exception as exc:
-            logger.warning("claims_bot durable audit mirror failed: %s", exc)
+        else:
+            # Durable audit parity: with no in-process audit service wired,
+            # mirror to the audit_logs table when a database is configured.
+            # No-op in pure in-memory/demo runtimes.
+            try:
+                from services.ai_audit_bridge import record_ai_audit
+                record_ai_audit(
+                    action=f'claims_bot_{action}',
+                    entity_type=entity,
+                    entity_id=entity_id,
+                    details=details or {},
+                    username='claims_bot',
+                    customer_id=(details or {}).get('customer_id'),
+                )
+            except Exception as exc:
+                logger.warning("claims_bot durable audit mirror failed: %s", exc)
         print(f"[CLAIMS-BOT] {action}: {entity}:{entity_id}")
     
     # =========================================================================
