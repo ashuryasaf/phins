@@ -248,20 +248,63 @@ def _find_persisted_commission(source_event_id: str,
 
 
 def _rebuild_commission_ledger_from_state() -> None:
-    """Rebuild the in-memory hash chain from hydrated commission rows.
+    """Rebuild the in-memory hash chain from hydrated durable state.
 
-    The commission ledger is not itself a durable table; after a restart we
-    reconstruct an internally consistent accrual chain from the loaded
-    ``COMMISSIONS`` so the ledger view and integrity check reflect persisted
-    accrual history (and new accruals continue the chain).
+    The commission ledger is not itself a durable table; after a restart (or a
+    refresh-on-read full cache replace) we reconstruct an internally consistent
+    chain from the loaded invitations, affiliations and commissions so the
+    ledger view, KPI counts and integrity check reflect the full persisted event
+    history — both accruals and the invitation/affiliation lifecycle events that
+    are otherwise only appended in memory (and would be silently dropped on each
+    refresh). New events continue the chain.
     """
-    COMMISSION_LEDGER.clear()
-    for comm in sorted(COMMISSIONS.values(), key=lambda c: c.get("created_at", "")):
+    # Collect every reconstructable event with its timestamp; a stable sort by
+    # timestamp keeps each invitation's created event before its later
+    # approval/rejection event.
+    events: List[Dict[str, Any]] = []
+    for inv in INVITATIONS.values():
+        events.append({
+            "event_type": "agent.invitation.created",
+            "agent_id": inv.get("agent_id"),
+            "amount": 0.0,
+            "timestamp": inv.get("created_at") or _now_iso(),
+            "payload": {"code": inv.get("code"),
+                        "invitee_type": inv.get("invitee_type"),
+                        "proposed_rate": inv.get("proposed_rate")},
+        })
+        if inv.get("status") in ("approved", "sent", "accepted") and inv.get("approved_at"):
+            events.append({
+                "event_type": "agent.invitation.approved",
+                "agent_id": inv.get("agent_id"),
+                "amount": 0.0,
+                "timestamp": inv.get("approved_at"),
+                "payload": {"code": inv.get("code"),
+                            "commission_rate": inv.get("commission_rate"),
+                            "approved_by": inv.get("approved_by")},
+            })
+        elif inv.get("status") == "rejected":
+            events.append({
+                "event_type": "agent.invitation.rejected",
+                "agent_id": inv.get("agent_id"),
+                "amount": 0.0,
+                "timestamp": inv.get("approved_at") or inv.get("created_at") or _now_iso(),
+                "payload": {"code": inv.get("code"),
+                            "rejected_by": inv.get("approved_by")},
+            })
+    for aff in AFFILIATIONS.values():
+        events.append({
+            "event_type": "agent.affiliation.created",
+            "agent_id": aff.get("agent_id"),
+            "amount": 0.0,
+            "timestamp": aff.get("effective_from") or _now_iso(),
+            "payload": {"affiliation_id": aff.get("id"),
+                        "principal_type": aff.get("principal_type"),
+                        "principal_id": aff.get("principal_id"),
+                        "commission_rate": aff.get("commission_rate")},
+        })
+    for comm in COMMISSIONS.values():
         aff = AFFILIATIONS.get(comm.get("affiliation_id")) or {}
-        prev_hash = COMMISSION_LEDGER[-1]["entry_hash"] if COMMISSION_LEDGER else _GENESIS_HASH
-        seq = len(COMMISSION_LEDGER) + 1
-        body = {
-            "sequence_no": seq,
+        events.append({
             "event_type": "agent.commission.accrued",
             "agent_id": comm.get("agent_id"),
             "amount": round(float(comm.get("amount") or 0.0), 2),
@@ -275,6 +318,20 @@ def _rebuild_commission_ledger_from_state() -> None:
                 "rate": comm.get("rate"),
                 "source_event_id": comm.get("source_event_id"),
             },
+        })
+
+    events.sort(key=lambda e: e["timestamp"] or "")
+    COMMISSION_LEDGER.clear()
+    for ev in events:
+        prev_hash = COMMISSION_LEDGER[-1]["entry_hash"] if COMMISSION_LEDGER else _GENESIS_HASH
+        seq = len(COMMISSION_LEDGER) + 1
+        body = {
+            "sequence_no": seq,
+            "event_type": ev["event_type"],
+            "agent_id": ev["agent_id"],
+            "amount": ev["amount"],
+            "timestamp": ev["timestamp"],
+            "payload": ev["payload"],
         }
         entry_hash = hashlib.sha256((prev_hash + _canonical(body)).encode("utf-8")).hexdigest()
         COMMISSION_LEDGER.append({**body, "id": f"AGLEDGER-{seq:08d}",

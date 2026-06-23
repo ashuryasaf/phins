@@ -305,6 +305,37 @@ def test_db_mode_durability_survives_restart(monkeypatch):
     assert svc.income_summary(agent["id"])["accrued_total"] == 150.0
 
 
+def test_db_mode_hydration_preserves_lifecycle_events(monkeypatch):
+    """Invitation/affiliation lifecycle events must survive refresh-on-read.
+
+    Regression: a refresh-on-read full cache replace rebuilds the ledger from
+    durable state. The rebuild must reconstruct the non-accrual lifecycle events
+    (invitation created/approved, affiliation created) and not just accruals,
+    otherwise periodic hydration silently erases audit history.
+    """
+    from database import init_database
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    init_database()
+    svc.reset_agent_ecosystem()
+
+    agent = svc.create_agent("lifeagent", "Life Agent", default_rate=10, created_by="admin")
+    ok, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=20)
+    assert ok
+    svc.approve_invitation(inv["code"], 15, "admin")
+    ok, _ = svc.redeem_invitation(inv["code"], "customer", "CUST-LIFE-1")
+    assert ok
+
+    # Simulate a fresh instance / TTL-elapsed read: only the cache is wiped.
+    _wipe_inmemory_cache()
+    svc._hydrate_from_db(force=True)
+
+    event_types = {e["event_type"] for e in svc.COMMISSION_LEDGER}
+    assert "agent.invitation.created" in event_types
+    assert "agent.invitation.approved" in event_types
+    assert "agent.affiliation.created" in event_types
+    assert svc.verify_ledger_integrity() is True
+
+
 def test_db_mode_cross_instance_visibility(monkeypatch):
     from database import init_database
     from database.manager import DatabaseManager
