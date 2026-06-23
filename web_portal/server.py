@@ -14592,7 +14592,76 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps(dashboard_data).encode('utf-8'))
             return
-        
+
+        # ========== AI CAPABILITY DISCOVERY ==========
+        # One machine-readable catalog of AI features for both UI discovery and
+        # programmatic agents (action-parity foundation). Role-filtered.
+        if path == '/api/ai/capabilities':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                from services.ai_capabilities import help_text
+                payload = help_text(get_effective_role(session))
+                status_code = 200
+            except Exception as cap_exc:
+                status_code, payload = 500, {'error': str(cap_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # ========== CANONICAL BI ANALYTICS SERVICE ==========
+        # Wires services/bi_analytics_service.py (via web_portal/api_bi_analytics.py),
+        # which was previously implemented but never routed. This gives the BI
+        # service a single canonical aggregation path instead of leaving dead code.
+        if path in (
+            '/api/bi/executive-dashboard', '/api/bi/delivery-analytics',
+            '/api/bi/customer-analytics', '/api/bi/supplier-analytics',
+            '/api/bi/insights', '/api/bi/revenue-forecast',
+        ):
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_bi_analytics as _bi
+                except Exception:
+                    import api_bi_analytics as _bi  # fallback when run as a script
+                data_sources = {
+                    'customers': CUSTOMERS,
+                    'policies': POLICIES,
+                    'claims': CLAIMS,
+                    'billing': BILLING,
+                    'balance_sheet': PHINS_BALANCE_SHEET,
+                    'suppliers': SUPPLIERS,
+                    'supplier_orders': SUPPLIER_ORDERS,
+                    'health_wallets': HEALTH_WALLETS,
+                    'investment_accounts': INVESTMENT_ACCOUNTS,
+                    'transaction_ledger': TRANSACTION_LEDGER,
+                    'deliveries': {},
+                }
+                if path == '/api/bi/executive-dashboard':
+                    status_code, payload = _bi.handle_executive_dashboard(self, data_sources)
+                elif path == '/api/bi/delivery-analytics':
+                    status_code, payload = _bi.handle_delivery_analytics(self)
+                elif path == '/api/bi/customer-analytics':
+                    status_code, payload = _bi.handle_customer_analytics(self, data_sources)
+                elif path == '/api/bi/supplier-analytics':
+                    status_code, payload = _bi.handle_supplier_analytics(self, data_sources)
+                elif path == '/api/bi/insights':
+                    status_code, payload = _bi.handle_ai_insights(self, data_sources)
+                else:  # /api/bi/revenue-forecast
+                    forecast_params = {k: (v[0] if isinstance(v, list) and v else v)
+                                       for k, v in qs.items()}
+                    status_code, payload = _bi.handle_revenue_forecast(self, POLICIES, forecast_params)
+            except Exception as bi_exc:
+                status_code, payload = 500, {'error': str(bi_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # ========== AI BI ANALYTICS PLATFORM ==========
         # Comprehensive AI-powered analytics for unified business intelligence
         if path == '/api/ai-bi/analytics':
@@ -50096,6 +50165,17 @@ def run_server(port: int = PORT) -> None:
     if not _ledger_loaded and USE_DATABASE and database_enabled:
         reconcile_fresh_start_with_db()
 
+    # Make the append-only AI decision log durable: mirror decisions/overrides
+    # into the audit_logs table so the compliance trail survives restarts.
+    # Best-effort and non-fatal -- never blocks serving traffic.
+    if USE_DATABASE and database_enabled:
+        try:
+            from services.ai_audit_bridge import wire_ai_decision_log
+            if wire_ai_decision_log():
+                print("🧾 AI decision log wired to durable audit store")
+        except Exception as _ai_audit_exc:
+            print(f"   ⚠️  AI decision log persistence wiring skipped: {_ai_audit_exc}")
+
     # Run post-load integrity validation before serving traffic
     validate_startup_integrity()
 
@@ -50150,6 +50230,13 @@ def bootstrap_runtime_state_for_command() -> None:
 
     if not _cmd_loaded and USE_DATABASE and database_enabled:
         reconcile_fresh_start_with_db()
+
+    if USE_DATABASE and database_enabled:
+        try:
+            from services.ai_audit_bridge import wire_ai_decision_log
+            wire_ai_decision_log()
+        except Exception:
+            pass
 
 
 def execute_monthly_auto_pay_cli(argv: Optional[List[str]] = None) -> int:

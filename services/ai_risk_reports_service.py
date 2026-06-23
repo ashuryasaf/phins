@@ -19,6 +19,7 @@ import csv
 import copy
 import io
 import json
+import logging
 import os
 import re
 import hashlib
@@ -29,6 +30,28 @@ from enum import Enum
 from dataclasses import dataclass, field, asdict
 import random
 import base64
+
+logger = logging.getLogger('phins.ai_risk_reports')
+
+
+def _risk_report_audit(action: str, entity_id: Optional[str], details: Dict[str, Any]) -> None:
+    """Mirror a risk-report lifecycle event into the durable audit store.
+
+    Best-effort and non-fatal. The report artifacts themselves persist in the
+    service's JSON store; this adds a durable compliance trail of who/what was
+    produced, independent of that store. No-op without a database.
+    """
+    try:
+        from services.ai_audit_bridge import record_ai_audit
+        record_ai_audit(
+            action=action,
+            entity_type='risk_report',
+            entity_id=entity_id,
+            details=details,
+            username='ai_risk_reports',
+        )
+    except Exception as exc:
+        logger.warning("risk report audit mirror failed (non-fatal): %s", exc)
 
 
 class DataType(Enum):
@@ -567,6 +590,12 @@ class AIRiskReportsService:
             
             # Auto-save for persistence
             self.save_data()
+
+            _risk_report_audit('risk_report_document_uploaded', doc_id, {
+                'row_count': result.get('row_count'),
+                'column_count': result.get('column_count'),
+                'status': result.get('status'),
+            })
             
         except Exception as e:
             result['status'] = 'failed'
@@ -2897,6 +2926,12 @@ class AIRiskReportsService:
         
         # Auto-save for persistence
         self.save_data()
+
+        _risk_report_audit('risk_report_generated', report_id, {
+            'analysis_id': analysis_id,
+            'document_id': getattr(analysis, 'document_id', None),
+            'language': lang,
+        })
         
         return report
     
@@ -4721,6 +4756,16 @@ Factors Affecting Score:
 
         # Persist changes
         self.save_data()
+
+        _risk_report_audit('risk_report_revoked', None, {
+            'target_date': str(target_date),
+            'reports_removed': len(reports_to_remove),
+            'analyses_removed': analyses_removed,
+            'documents_removed': documents_removed,
+            'scope': scope,
+            'user_id': user_id,
+            'user_role': user_role,
+        })
 
         return {
             'success': True,

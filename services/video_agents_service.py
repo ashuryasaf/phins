@@ -27,6 +27,7 @@ Completion modes:
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -39,6 +40,28 @@ try:
     MEDIA_GENERATION_AVAILABLE = True
 except ImportError:
     MEDIA_GENERATION_AVAILABLE = False
+
+logger = logging.getLogger('phins.video_agents')
+
+
+def _audit_video_event(action: str, job_id: Optional[str], details: Dict[str, Any]) -> None:
+    """Mirror a video-job lifecycle event into the durable audit store.
+
+    Best-effort and non-fatal. Gives the video-agents job lifecycle a durable
+    audit trail independent of the in-memory ``_job_store``. No-op without a
+    database.
+    """
+    try:
+        from services.ai_audit_bridge import record_ai_audit
+        record_ai_audit(
+            action=action,
+            entity_type='video_job',
+            entity_id=job_id,
+            details=details,
+            username='video_agents',
+        )
+    except Exception as exc:
+        logger.warning("video job audit mirror failed (non-fatal): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +164,25 @@ class _JobStore:
             job["updated_at"] = datetime.now(timezone.utc).isoformat()
             return dict(job)
 
+    def mark_terminal(self, job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Atomically transition a job to a terminal state.
+
+        Returns the updated job only if this call performed the transition
+        (the job existed and was not already terminal); returns ``None`` if the
+        job is missing or already ``completed``/``failed``/``cancelled``. This
+        lets callers emit exactly one terminal audit event per job lifecycle
+        even when webhook and polling paths race.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            if job.get("status") in {"completed", "failed", "cancelled"}:
+                return None
+            job.update(updates)
+            job["updated_at"] = datetime.now(timezone.utc).isoformat()
+            return dict(job)
+
     def list_by_campaign(self, campaign_id: str) -> List[Dict[str, Any]]:
         with self._lock:
             ids = list(self._by_campaign.get(campaign_id, []))
@@ -201,11 +243,16 @@ def _poll_job_background(job_id: str) -> None:
         provider_state = job.get("provider_state") or {}
 
         if not provider or not provider_job_id:
-            _job_store.update(job_id, {
+            if _job_store.mark_terminal(job_id, {
                 "status": "failed",
                 "message": "Missing provider or provider_job_id for polling.",
                 "progress_pct": 0,
-            })
+            }) is not None:
+                _audit_video_event('video_job_failed', job_id, {
+                    'campaign_id': job.get('campaign_id'),
+                    'provider': provider,
+                    'error': "Missing provider or provider_job_id for polling.",
+                })
             return
 
         try:
@@ -218,11 +265,16 @@ def _poll_job_background(job_id: str) -> None:
                 provider_state=provider_state,
             )
         except Exception as exc:
-            _job_store.update(job_id, {
+            if _job_store.mark_terminal(job_id, {
                 "status": "failed",
                 "message": f"Polling error: {exc}",
                 "progress_pct": 0,
-            })
+            }) is not None:
+                _audit_video_event('video_job_failed', job_id, {
+                    'campaign_id': job.get('campaign_id'),
+                    'provider': provider,
+                    'error': f"Polling error: {exc}",
+                })
             return
 
         status = result.get("status", "processing")
@@ -239,16 +291,27 @@ def _poll_job_background(job_id: str) -> None:
                 "download_url": download_url,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             })
-            _job_store.update(job_id, updates)
+            if _job_store.mark_terminal(job_id, updates) is not None:
+                _audit_video_event('video_job_completed', job_id, {
+                    'campaign_id': job.get('campaign_id'),
+                    'provider': provider,
+                    'has_download_url': bool(download_url),
+                })
             return
 
         if status == "failed":
+            error_msg = result.get("error", "Provider reported failure")
             updates.update({
                 "status": "failed",
                 "progress_pct": 0,
-                "error": result.get("error", "Provider reported failure"),
+                "error": error_msg,
             })
-            _job_store.update(job_id, updates)
+            if _job_store.mark_terminal(job_id, updates) is not None:
+                _audit_video_event('video_job_failed', job_id, {
+                    'campaign_id': job.get('campaign_id'),
+                    'provider': provider,
+                    'error': error_msg,
+                })
             return
 
         # Still processing — update state and continue
@@ -258,12 +321,22 @@ def _poll_job_background(job_id: str) -> None:
         ))
         _job_store.update(job_id, updates)
 
-    # Timeout
-    _job_store.update(job_id, {
+    # Timeout — but a webhook may have reached a terminal state during the
+    # final sleep window, so atomically transition and only audit if this
+    # path is the one that finished the job.
+    timed_out_job = _job_store.get(job_id)
+    if timed_out_job is None:
+        return
+    if _job_store.mark_terminal(job_id, {
         "status": "failed",
         "message": "Polling timed out after 30 minutes.",
         "progress_pct": 0,
-    })
+    }) is not None:
+        _audit_video_event('video_job_failed', job_id, {
+            'campaign_id': timed_out_job.get('campaign_id'),
+            'provider': timed_out_job.get('provider'),
+            'error': "Polling timed out after 30 minutes.",
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +563,24 @@ class VideoAgentsService:
                 "error": submission_error,
             })
 
-        return _job_store.get(job_id) or job
+        final_job = _job_store.get(job_id) or job
+        _audit_video_event('video_job_submitted', job_id, {
+            'campaign_id': final_job.get('campaign_id'),
+            'pipeline_type': final_job.get('pipeline_type'),
+            'provider': final_job.get('provider'),
+            'status': final_job.get('status'),
+            'submitted_by': final_job.get('submitted_by'),
+        })
+        if submission_error:
+            # Terminal submission failure never starts the background poller,
+            # so emit the durable terminal failure event here for parity with
+            # polling/webhook/timeout failure paths.
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': final_job.get('campaign_id'),
+                'provider': final_job.get('provider'),
+                'error': submission_error,
+            })
+        return final_job
 
     def submit_batch(
         self,
@@ -635,23 +725,42 @@ class VideoAgentsService:
             "message": result.get("message", ""),
         }
 
+        terminal_audit: Optional[tuple] = None
         if poll_status == "completed":
+            download_url = result.get("download_url", "")
             updates.update({
                 "status": "completed",
                 "progress_pct": 100,
-                "download_url": result.get("download_url", ""),
+                "download_url": download_url,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             })
+            terminal_audit = ('video_job_completed', {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'has_download_url': bool(download_url),
+            })
         elif poll_status == "failed":
+            error_msg = result.get("error", "Provider reported failure")
             updates.update({
                 "status": "failed",
                 "progress_pct": 0,
-                "error": result.get("error", "Provider reported failure"),
+                "error": error_msg,
+            })
+            terminal_audit = ('video_job_failed', {
+                'campaign_id': job.get('campaign_id'),
+                'provider': provider,
+                'error': error_msg,
             })
         else:
             updates["status"] = "processing"
 
-        _job_store.update(job_id, updates)
+        if terminal_audit is not None:
+            # Atomically transition so a concurrent poll/webhook cannot emit a
+            # duplicate terminal audit for the same job.
+            if _job_store.mark_terminal(job_id, updates) is not None:
+                _audit_video_event(terminal_audit[0], job_id, terminal_audit[1])
+        else:
+            _job_store.update(job_id, updates)
         return _job_store.get(job_id)
 
     def cancel_job(self, job_id: str, cancelled_by: str = "admin") -> Optional[Dict[str, Any]]:
@@ -760,6 +869,15 @@ class VideoAgentsService:
                 "message": f"Retry failed: {submission_error}",
                 "error": submission_error,
             })
+            # A retry that fails before polling never starts the background
+            # poller/webhook, so emit the durable terminal failure event here
+            # for parity with submit and polling/webhook failure paths.
+            final_job = _job_store.get(job_id) or job
+            _audit_video_event('video_job_failed', job_id, {
+                'campaign_id': final_job.get('campaign_id'),
+                'provider': final_job.get('provider'),
+                'error': submission_error,
+            })
 
         return _job_store.get(job_id)
 
@@ -842,7 +960,7 @@ class VideoAgentsService:
                     data.get("url") or data.get("video_url") or data.get("download_url") or ""
                 ).strip()
 
-            return _job_store.update(job_id, {
+            updated = _job_store.mark_terminal(job_id, {
                 "status": "completed",
                 "progress_pct": 100,
                 "download_url": download_url,
@@ -850,18 +968,34 @@ class VideoAgentsService:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
             })
+            if updated is not None:
+                _audit_video_event('video_job_completed', job_id, {
+                    'campaign_id': job.get('campaign_id'),
+                    'provider': job.get('provider'),
+                    'has_download_url': bool(download_url),
+                })
+                return updated
+            return _job_store.get(job_id)
 
         if status_value in {"failed", "error", "cancelled", "aborted", "rejected"}:
             error_msg = str(
                 data.get("error_message") or data.get("message") or "Provider reported failure via webhook."
             )
-            return _job_store.update(job_id, {
+            updated = _job_store.mark_terminal(job_id, {
                 "status": "failed",
                 "progress_pct": 0,
                 "error": error_msg,
                 "message": f"Failed via webhook: {error_msg}",
                 "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
             })
+            if updated is not None:
+                _audit_video_event('video_job_failed', job_id, {
+                    'campaign_id': job.get('campaign_id'),
+                    'provider': job.get('provider'),
+                    'error': error_msg,
+                })
+                return updated
+            return _job_store.get(job_id)
 
         # Still processing — update state
         return _job_store.update(job_id, {

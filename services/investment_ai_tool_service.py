@@ -2194,16 +2194,53 @@ def dispatch_investment_ai(module: str, params: Dict[str, Any]) -> Dict[str, Any
         return {"error": f"Error executing module '{module}': {e}"}
 
 
+# Classification of dispatcher modules so an agent (or the capability catalog)
+# can prefer composing atomic *primitive* reads over the higher-level
+# *workflow* modules that bundle analysis + advice. Purely descriptive: it does
+# not change dispatch behavior.
+PRIMITIVE_MODULES = {
+    "live_quote",        # atomic real-time quote read
+    "live_history",      # atomic OHLCV history read
+    "news_sentiment",    # atomic news/sentiment read
+    "market_movers",     # atomic movers list read
+    "algo_trading_bots", # static educational content read
+}
+
+
+def module_kind(module: str) -> str:
+    """Return 'primitive' for atomic read modules, else 'workflow'."""
+    return "primitive" if module in PRIMITIVE_MODULES else "workflow"
+
+
+def list_primitive_tools() -> Dict[str, Any]:
+    """List the atomic, composable data primitives an agent can call directly.
+
+    These are read-only/atomic modules (no advice, no decision), suitable for
+    composition instead of going through the broad ``dispatch_investment_ai``
+    workflow router.
+    """
+    return {
+        module: dict(meta)
+        for module, meta in AVAILABLE_MODULES.items()
+        if module in PRIMITIVE_MODULES
+    }
+
+
 def get_modules_catalog() -> Dict[str, Any]:
     """Return the catalog of available AI modules."""
+    modules_with_kind = {
+        module: {**meta, "kind": module_kind(module)}
+        for module, meta in AVAILABLE_MODULES.items()
+    }
     return {
         "tool": "PHINS Investment AI",
         "version": "3.0.0",
         "live_data": LIVE_DATA_AVAILABLE,
         "data_provider": "Alpha Vantage" if LIVE_DATA_AVAILABLE else "Static",
-        "modules": AVAILABLE_MODULES,
+        "modules": modules_with_kind,
         "total_modules": len(AVAILABLE_MODULES),
+        "primitive_modules": sorted(PRIMITIVE_MODULES),
         "available_stocks": sorted(STOCK_DATABASE.keys()),
         "available_sectors": sorted(SECTOR_DATA.keys()),
-        "note": "Modules with requires_live=True use real-time Alpha Vantage data. All other modules use live data when available with static fallback.",
+        "note": "Modules with requires_live=True use real-time Alpha Vantage data. All other modules use live data when available with static fallback. 'kind'=primitive marks atomic, composable read tools.",
     }
