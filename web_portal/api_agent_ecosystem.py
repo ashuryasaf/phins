@@ -197,19 +197,21 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
 
         if path == "/api/admin/agent-invitations/redeem":
             code = body.get("code")
-            principal_type = body.get("principal_type")
+            principal_type = (body.get("principal_type") or "").lower()
             principal_id = body.get("principal_id")
             if not (code and principal_type and principal_id):
                 return 400, {"error": "code, principal_type and principal_id are required"}
             ok, result = svc.redeem_invitation(code, principal_type, principal_id)
             if ok:
-                # Surface "referred by" linkage on the in-memory principal record.
+                # Surface "referred by" linkage on the in-memory principal record
+                # and mirror it to the durable customers/suppliers tables.
                 src_key = "customers" if principal_type == "customer" else (
                     "suppliers" if principal_type == "supplier" else None)
                 if src_key:
                     rec = (data_sources.get(src_key) or {}).get(principal_id)
                     if isinstance(rec, dict):
                         rec["referring_agent_id"] = result["agent_id"]
+                svc.persist_referring_agent(principal_type, principal_id, result["agent_id"])
                 return 200, {"affiliation": result}
             return 400, {"error": result}
 

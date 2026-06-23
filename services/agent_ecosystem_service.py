@@ -175,12 +175,45 @@ def _persist(kind: str, record: Dict[str, Any]) -> None:
         pass
 
 
+def _rebuild_commission_ledger_from_state() -> None:
+    """Rebuild the in-memory hash chain from hydrated commission rows.
+
+    The commission ledger is not itself a durable table; after a restart we
+    reconstruct an internally consistent accrual chain from the loaded
+    ``COMMISSIONS`` so the ledger view and integrity check reflect persisted
+    accrual history (and new accruals continue the chain).
+    """
+    COMMISSION_LEDGER.clear()
+    for comm in sorted(COMMISSIONS.values(), key=lambda c: c.get("created_at", "")):
+        aff = AFFILIATIONS.get(comm.get("affiliation_id")) or {}
+        prev_hash = COMMISSION_LEDGER[-1]["entry_hash"] if COMMISSION_LEDGER else _GENESIS_HASH
+        seq = len(COMMISSION_LEDGER) + 1
+        body = {
+            "sequence_no": seq,
+            "event_type": "agent.commission.accrued",
+            "agent_id": comm.get("agent_id"),
+            "amount": round(float(comm.get("amount") or 0.0), 2),
+            "timestamp": comm.get("created_at") or _now_iso(),
+            "payload": {
+                "commission_id": comm.get("id"),
+                "affiliation_id": comm.get("affiliation_id"),
+                "principal_type": aff.get("principal_type"),
+                "principal_id": aff.get("principal_id"),
+                "base_amount": comm.get("base_amount"),
+                "rate": comm.get("rate"),
+                "source_event_id": comm.get("source_event_id"),
+            },
+        }
+        entry_hash = hashlib.sha256((prev_hash + _canonical(body)).encode("utf-8")).hexdigest()
+        COMMISSION_LEDGER.append({**body, "id": f"AGLEDGER-{seq:08d}",
+                                  "previous_hash": prev_hash, "entry_hash": entry_hash})
+
+
 def _hydrate_from_db() -> None:
     global _hydrated
     if _hydrated or not _db_enabled():
         _hydrated = True
         return
-    _hydrated = True
     try:
         with _db() as db:
             for a in db.agents.list_all():
@@ -198,6 +231,11 @@ def _hydrate_from_db() -> None:
                 d = c.to_dict()
                 COMMISSIONS[d["id"]] = d
                 _ACCRUED_KEYS.add((d["source_event_id"], d["affiliation_id"]))
+            _rebuild_commission_ledger_from_state()
+        # Only mark hydration complete once the load actually succeeded, so a
+        # transient DB error is retried on the next call instead of leaving the
+        # in-memory store permanently empty.
+        _hydrated = True
     except Exception:
         pass
 
@@ -369,10 +407,11 @@ def list_invitations(agent_id: Optional[str] = None,
 
 def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[bool, Any]:
     with _LOCK:
+        _hydrate_from_db()
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
-        if inv["status"] not in ("pending_approval", "approved"):
+        if inv["status"] != "pending_approval":
             return False, f"Cannot approve invitation in status '{inv['status']}'"
         inv["commission_rate"] = normalize_rate(commission_rate, inv.get("proposed_rate", 0.0))
         inv["status"] = "approved"
@@ -386,6 +425,7 @@ def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[boo
 
 def reject_invitation(code: str, admin: str, reason: str = "") -> Tuple[bool, Any]:
     with _LOCK:
+        _hydrate_from_db()
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
@@ -427,16 +467,20 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
     Hierarchy integrity: a principal may have at most ONE active affiliation.
     """
     with _LOCK:
+        _hydrate_from_db()
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invalid invitation code"
         if inv["status"] not in ("approved", "sent"):
             return False, "Invitation is not active"
+        if inv.get("expires_at") and inv["expires_at"] < _now_iso():
+            return False, "Invitation has expired"
         if inv.get("commission_rate") is None:
             return False, "Invitation has no admin-approved commission rate"
         if inv["used_count"] >= inv["max_uses"]:
             return False, "Invitation already used"
-        if (principal_type or "").lower() != inv["invitee_type"]:
+        principal_type = (principal_type or "").lower()
+        if principal_type != inv["invitee_type"]:
             return False, f"Invitation is for '{inv['invitee_type']}', not '{principal_type}'"
 
         key = (principal_type, principal_id)
@@ -489,6 +533,28 @@ def list_affiliations(agent_id: str) -> List[Dict[str, Any]]:
     with _LOCK:
         _hydrate_from_db()
         return [a for a in AFFILIATIONS.values() if a["agent_id"] == agent_id]
+
+
+def persist_referring_agent(principal_type: str, principal_id: str, agent_id: str) -> None:
+    """Best-effort durable write of the referring-agent FK on the principal.
+
+    The in-memory portal record is updated by the API layer; this mirrors the
+    "referred by" linkage to the durable ``customers``/``suppliers`` tables so
+    it survives outside the portal memory store. No-op when DB is disabled.
+    """
+    if not _db_enabled():
+        return
+    ptype = (principal_type or "").lower()
+    if ptype not in ("customer", "supplier"):
+        return
+    try:
+        with _db() as db:
+            repo = db.customers if ptype == "customer" else db.suppliers
+            if repo.get_by_id(principal_id) is not None:
+                repo.update(principal_id, referring_agent_id=agent_id)
+    except Exception:
+        # Durability is best-effort; the in-memory linkage remains authoritative.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -565,10 +631,11 @@ def recompute_commissions(policies: Dict[str, Any]) -> int:
 
     Returns the number of NEW commission rows created.
     """
-    created = 0
-    if not policies:
-        return 0
     with _LOCK:
+        _hydrate_from_db()
+        created = 0
+        if not policies:
+            return 0
         for policy in list(policies.values()):
             before = len(COMMISSIONS)
             accrue_for_policy(policy)
@@ -591,6 +658,7 @@ def list_commissions(agent_id: Optional[str] = None) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 def income_summary(agent_id: str) -> Dict[str, Any]:
     with _LOCK:
+        _hydrate_from_db()
         comms = [c for c in COMMISSIONS.values() if c["agent_id"] == agent_id]
         affs = [a for a in AFFILIATIONS.values() if a["agent_id"] == agent_id and a["status"] == "active"]
         invs = [i for i in INVITATIONS.values() if i["agent_id"] == agent_id]
