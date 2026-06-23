@@ -481,6 +481,9 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
             return False, "Invitation has no admin-approved commission rate"
         if inv["used_count"] >= inv["max_uses"]:
             return False, "Invitation already used"
+        agent = AGENTS.get(inv["agent_id"])
+        if not agent or agent.get("status") != "active":
+            return False, "Agent is not active"
         principal_type = (principal_type or "").lower()
         if principal_type != inv["invitee_type"]:
             return False, f"Invitation is for '{inv['invitee_type']}', not '{principal_type}'"
@@ -576,6 +579,9 @@ def accrue_commission(principal_type: str, principal_id: str, base_amount: float
         aff = get_active_affiliation(principal_type, principal_id)
         if not aff:
             return None
+        agent = AGENTS.get(aff["agent_id"])
+        if agent and agent.get("status") == "suspended":
+            return None  # suspended agents do not accrue new commissions
         if (aff.get("commission_basis") or "premium") != basis:
             return None  # event basis does not match the locked affiliation basis
         key = (source_event_id, aff["id"])
@@ -623,6 +629,9 @@ def accrue_for_policy(policy: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     pid = policy.get("id")
     if not customer_id or not pid:
         return None
+    status = (policy.get("status") or "").lower().replace(" ", "_")
+    if status and status not in ("active", "approved"):
+        return None  # only active/approved policies generate premium-basis commission
     premium = policy.get("annual_premium") or policy.get("premium") or 0
     try:
         premium = float(premium)
