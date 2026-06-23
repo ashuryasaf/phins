@@ -306,7 +306,6 @@
     [dir="rtl"] .timeline { padding-left: 0; padding-right: 26px; }
     [dir="rtl"] .timeline::before { left: auto; right: 8px; }
     [dir="rtl"] .tl-item::before { left: auto; right: -22px; }
-    [dir="rtl"] .card[style*="border-left"] { border-left: 1px solid var(--border) !important; }
     [dir="rtl"] .note { border-left: 1px solid var(--border); border-right: 4px solid var(--blue-mid); }
     [dir="rtl"] .integrity { border-left: 1px solid #bfe6cf; border-right: 4px solid var(--green-1); }
     [dir="rtl"] .copy-btn { float: left; }
@@ -1773,7 +1772,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
         html += row(L("— Marketplace take", "— עמלת מרקטפלייס"), c.mktRev);
         html += row(L("Total net revenue", "סך הכנסה נטו"), c.totalRev, { bold: true });
         html += row(L("Operating cost", "עלות תפעולית"), c.opex.map(function (v) { return -v; }));
-        html += row("EBITDA", c.ebitda, { signed: true });
+        html += row(L("EBITDA", "רווח תפעולי (EBITDA)"), c.ebitda, { signed: true });
         body.innerHTML = html;
       })();
 
