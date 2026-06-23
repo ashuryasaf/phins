@@ -30,6 +30,7 @@ import os
 import secrets
 import sys
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -48,7 +49,17 @@ _ACTIVE_AFFIL: Dict[Tuple[str, str], str] = {}    # (principal_type, principal_i
 _ACCRUED_KEYS: set = set()                         # (source_event_id, affiliation_id)
 
 _GENESIS_HASH = "0" * 64
-_hydrated = False
+# Refresh-on-read coalescing. In DB mode the durable tables are the source of
+# truth; the in-memory dicts are a short-lived per-instance cache that is
+# re-pulled from the database. This keeps multiple app instances consistent
+# (an agent/invitation/affiliation/suspension created on one instance becomes
+# visible on the others) instead of each instance reading a stale snapshot it
+# loaded once at startup. Writes force a fresh pull before deciding.
+_last_hydrate = 0.0
+try:
+    _HYDRATE_TTL = float(os.environ.get("PHINS_AGENT_HYDRATE_TTL", "1.5"))
+except (TypeError, ValueError):
+    _HYDRATE_TTL = 1.5
 
 VALID_INVITEE_TYPES = ("customer", "supplier", "agent")
 VALID_BASES = ("premium", "gmv", "one_time")
@@ -151,22 +162,30 @@ def _ledger_append(event_type: str, agent_id: str, amount: float,
 
 
 def verify_ledger_integrity() -> bool:
-    """Recompute the hash chain and confirm it is intact (used by tests/admin)."""
-    prev = _GENESIS_HASH
-    for entry in COMMISSION_LEDGER:
-        body = {
-            "sequence_no": entry["sequence_no"],
-            "event_type": entry["event_type"],
-            "agent_id": entry["agent_id"],
-            "amount": entry["amount"],
-            "timestamp": entry["timestamp"],
-            "payload": entry["payload"],
-        }
-        expected = hashlib.sha256((prev + _canonical(body)).encode("utf-8")).hexdigest()
-        if expected != entry["entry_hash"] or entry["previous_hash"] != prev:
-            return False
-        prev = entry["entry_hash"]
-    return True
+    """Recompute the hash chain and confirm it is intact (used by tests/admin).
+
+    Holds ``_LOCK`` so the chain cannot be rebuilt by a concurrent hydrate (the
+    portal runs on ``ThreadingHTTPServer``) while it is being walked, which would
+    otherwise yield spurious "tampered" or misleading "intact" results. ``_LOCK``
+    is reentrant, so callers that already hold it (e.g. ``community_overview``)
+    are unaffected.
+    """
+    with _LOCK:
+        prev = _GENESIS_HASH
+        for entry in COMMISSION_LEDGER:
+            body = {
+                "sequence_no": entry["sequence_no"],
+                "event_type": entry["event_type"],
+                "agent_id": entry["agent_id"],
+                "amount": entry["amount"],
+                "timestamp": entry["timestamp"],
+                "payload": entry["payload"],
+            }
+            expected = hashlib.sha256((prev + _canonical(body)).encode("utf-8")).hexdigest()
+            if expected != entry["entry_hash"] or entry["previous_hash"] != prev:
+                return False
+            prev = entry["entry_hash"]
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +215,17 @@ def _persist(kind: str, record: Dict[str, Any]) -> bool:
             if kind == "invitation":
                 payload = dict(payload)
                 payload["used_by"] = json.dumps(payload.get("used_by", []))
+            # The in-memory dicts carry ISO-string timestamps, but DateTime
+            # columns (e.g. agents.created_date/updated_date) reject strings on
+            # SQLite. Drop string-valued datetime fields so the column defaults
+            # (default/onupdate=datetime.utcnow) populate them durably.
+            try:
+                from sqlalchemy import DateTime as _SADateTime
+                for _col in repo.model_class.__table__.columns:  # type: ignore[attr-defined]
+                    if isinstance(_col.type, _SADateTime) and isinstance(payload.get(_col.name), str):
+                        payload.pop(_col.name, None)
+            except Exception:
+                pass
             key = payload.get(pk)
             if key is not None and repo.get_by_id(key) is not None:
                 repo.update(key, **payload)
@@ -225,21 +255,71 @@ def _find_persisted_commission(source_event_id: str,
         return None
 
 
-def _rebuild_commission_ledger_from_state() -> None:
-    """Rebuild the in-memory hash chain from hydrated commission rows.
+def _build_commission_ledger(
+    invitations: Dict[str, Dict[str, Any]],
+    affiliations: Dict[str, Dict[str, Any]],
+    commissions: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Build a fresh hash chain from the given durable state and return it.
 
-    The commission ledger is not itself a durable table; after a restart we
-    reconstruct an internally consistent accrual chain from the loaded
-    ``COMMISSIONS`` so the ledger view and integrity check reflect persisted
-    accrual history (and new accruals continue the chain).
+    The commission ledger is not itself a durable table; after a restart (or a
+    refresh-on-read full cache replace) we reconstruct an internally consistent
+    chain from the loaded invitations, affiliations and commissions so the
+    ledger view, KPI counts and integrity check reflect the full persisted event
+    history — both accruals and the invitation/affiliation lifecycle events that
+    are otherwise only appended in memory (and would be silently dropped on each
+    refresh). New events continue the chain.
+
+    Pure: it does not mutate any shared state, so the caller can swap the result
+    into ``COMMISSION_LEDGER`` only once the full refresh has succeeded.
     """
-    COMMISSION_LEDGER.clear()
-    for comm in sorted(COMMISSIONS.values(), key=lambda c: c.get("created_at", "")):
-        aff = AFFILIATIONS.get(comm.get("affiliation_id")) or {}
-        prev_hash = COMMISSION_LEDGER[-1]["entry_hash"] if COMMISSION_LEDGER else _GENESIS_HASH
-        seq = len(COMMISSION_LEDGER) + 1
-        body = {
-            "sequence_no": seq,
+    # Collect every reconstructable event with its timestamp; a stable sort by
+    # timestamp keeps each invitation's created event before its later
+    # approval/rejection event.
+    events: List[Dict[str, Any]] = []
+    for inv in invitations.values():
+        events.append({
+            "event_type": "agent.invitation.created",
+            "agent_id": inv.get("agent_id"),
+            "amount": 0.0,
+            "timestamp": inv.get("created_at") or _now_iso(),
+            "payload": {"code": inv.get("code"),
+                        "invitee_type": inv.get("invitee_type"),
+                        "proposed_rate": inv.get("proposed_rate")},
+        })
+        if inv.get("status") in ("approved", "sent", "accepted") and inv.get("approved_at"):
+            events.append({
+                "event_type": "agent.invitation.approved",
+                "agent_id": inv.get("agent_id"),
+                "amount": 0.0,
+                "timestamp": inv.get("approved_at"),
+                "payload": {"code": inv.get("code"),
+                            "commission_rate": inv.get("commission_rate"),
+                            "approved_by": inv.get("approved_by")},
+            })
+        elif inv.get("status") == "rejected":
+            events.append({
+                "event_type": "agent.invitation.rejected",
+                "agent_id": inv.get("agent_id"),
+                "amount": 0.0,
+                "timestamp": inv.get("approved_at") or inv.get("created_at") or _now_iso(),
+                "payload": {"code": inv.get("code"),
+                            "rejected_by": inv.get("approved_by")},
+            })
+    for aff in affiliations.values():
+        events.append({
+            "event_type": "agent.affiliation.created",
+            "agent_id": aff.get("agent_id"),
+            "amount": 0.0,
+            "timestamp": aff.get("effective_from") or _now_iso(),
+            "payload": {"affiliation_id": aff.get("id"),
+                        "principal_type": aff.get("principal_type"),
+                        "principal_id": aff.get("principal_id"),
+                        "commission_rate": aff.get("commission_rate")},
+        })
+    for comm in commissions.values():
+        aff = affiliations.get(comm.get("affiliation_id")) or {}
+        events.append({
             "event_type": "agent.commission.accrued",
             "agent_id": comm.get("agent_id"),
             "amount": round(float(comm.get("amount") or 0.0), 2),
@@ -253,40 +333,89 @@ def _rebuild_commission_ledger_from_state() -> None:
                 "rate": comm.get("rate"),
                 "source_event_id": comm.get("source_event_id"),
             },
+        })
+
+    events.sort(key=lambda e: e["timestamp"] or "")
+    ledger: List[Dict[str, Any]] = []
+    for ev in events:
+        prev_hash = ledger[-1]["entry_hash"] if ledger else _GENESIS_HASH
+        seq = len(ledger) + 1
+        body = {
+            "sequence_no": seq,
+            "event_type": ev["event_type"],
+            "agent_id": ev["agent_id"],
+            "amount": ev["amount"],
+            "timestamp": ev["timestamp"],
+            "payload": ev["payload"],
         }
         entry_hash = hashlib.sha256((prev_hash + _canonical(body)).encode("utf-8")).hexdigest()
-        COMMISSION_LEDGER.append({**body, "id": f"AGLEDGER-{seq:08d}",
-                                  "previous_hash": prev_hash, "entry_hash": entry_hash})
+        ledger.append({**body, "id": f"AGLEDGER-{seq:08d}",
+                       "previous_hash": prev_hash, "entry_hash": entry_hash})
+    return ledger
 
 
-def _hydrate_from_db() -> None:
-    global _hydrated
-    if _hydrated or not _db_enabled():
-        _hydrated = True
+def _hydrate_from_db(force: bool = False) -> None:
+    """Refresh the in-memory cache from the durable tables (DB mode only).
+
+    Full-replace semantics so peer instances' writes — new agents, approvals,
+    affiliations, suspensions, rate changes — become visible rather than a
+    stale once-at-startup snapshot. Read paths coalesce refreshes to at most one
+    every ``_HYDRATE_TTL`` seconds; write/decision paths pass ``force=True`` to
+    always act on the freshest state. No-op when DB is disabled (in-memory mode).
+    """
+    global _last_hydrate
+    if not _db_enabled():
+        return
+    now = time.monotonic()
+    if not force and (now - _last_hydrate) < _HYDRATE_TTL:
         return
     try:
         with _db() as db:
-            for a in db.agents.list_all():
-                d = a.to_dict()
-                AGENTS[d["id"]] = d
-                AGENT_BY_USER[d["user_username"]] = d["id"]
-            for inv in db.agent_invitations.get_all():
-                INVITATIONS[inv.code] = inv.to_dict()
-            for aff in db.agent_affiliations.get_all():
-                d = aff.to_dict()
-                AFFILIATIONS[d["id"]] = d
-                if d["status"] == "active":
-                    _ACTIVE_AFFIL[(d["principal_type"], d["principal_id"])] = d["id"]
-            for c in db.agent_commissions.get_all():
-                d = c.to_dict()
-                COMMISSIONS[d["id"]] = d
-                _ACCRUED_KEYS.add((d["source_event_id"], d["affiliation_id"]))
-            _rebuild_commission_ledger_from_state()
-        # Only mark hydration complete once the load actually succeeded, so a
-        # transient DB error is retried on the next call instead of leaving the
-        # in-memory store permanently empty.
-        _hydrated = True
+            agents = [a.to_dict() for a in db.agents.list_all()]
+            invitations = [i.to_dict() for i in db.agent_invitations.get_all()]
+            affiliations = [a.to_dict() for a in db.agent_affiliations.get_all()]
+            commissions = [c.to_dict() for c in db.agent_commissions.get_all()]
+        # Build the replacement state (including the rebuilt ledger) in local
+        # structures first. Only after all fallible work succeeds do we clear and
+        # repopulate the live cache, so a mid-refresh failure can never leave the
+        # service serving an emptied or partially loaded ecosystem.
+        new_agents: Dict[str, Dict[str, Any]] = {}
+        new_agent_by_user: Dict[str, str] = {}
+        new_invitations: Dict[str, Dict[str, Any]] = {}
+        new_affiliations: Dict[str, Dict[str, Any]] = {}
+        new_commissions: Dict[str, Dict[str, Any]] = {}
+        new_active_affil: Dict[Tuple[str, str], str] = {}
+        new_accrued_keys: set = set()
+        for d in agents:
+            new_agents[d["id"]] = d
+            new_agent_by_user[d["user_username"]] = d["id"]
+        for d in invitations:
+            new_invitations[d["code"]] = d
+        for d in affiliations:
+            new_affiliations[d["id"]] = d
+            if d["status"] == "active":
+                new_active_affil[(d["principal_type"], d["principal_id"])] = d["id"]
+        for d in commissions:
+            new_commissions[d["id"]] = d
+            new_accrued_keys.add((d["source_event_id"], d["affiliation_id"]))
+        new_ledger = _build_commission_ledger(
+            new_invitations, new_affiliations, new_commissions)
+        # Commit atomically (under the caller's lock) so reads reflect exactly the
+        # current durable state, including removals/status changes. Only fast,
+        # non-raising clear()/update() swaps remain, so reads never observe a
+        # cleared cache.
+        AGENTS.clear(); AGENTS.update(new_agents)
+        AGENT_BY_USER.clear(); AGENT_BY_USER.update(new_agent_by_user)
+        INVITATIONS.clear(); INVITATIONS.update(new_invitations)
+        AFFILIATIONS.clear(); AFFILIATIONS.update(new_affiliations)
+        COMMISSIONS.clear(); COMMISSIONS.update(new_commissions)
+        _ACTIVE_AFFIL.clear(); _ACTIVE_AFFIL.update(new_active_affil)
+        _ACCRUED_KEYS.clear(); _ACCRUED_KEYS.update(new_accrued_keys)
+        COMMISSION_LEDGER[:] = new_ledger
+        _last_hydrate = now
     except Exception:
+        # Durability/refresh is best-effort; keep serving the current cache and
+        # retry on the next call instead of failing the request.
         pass
 
 
@@ -304,13 +433,14 @@ def reset_agent_ecosystem() -> None:
         COMMISSION_LEDGER.clear()
         _ACTIVE_AFFIL.clear()
         _ACCRUED_KEYS.clear()
-        global _hydrated
-        _hydrated = False
+        global _last_hydrate
+        _last_hydrate = 0.0
 
 
 def ensure_demo_agent() -> Dict[str, Any]:
     """Ensure a demo agent profile exists for username 'agent' (AGT-DEMO-001)."""
     with _LOCK:
+        _hydrate_from_db(force=True)
         existing = AGENT_BY_USER.get("agent")
         if existing:
             return AGENTS[existing]
@@ -351,7 +481,7 @@ def create_agent(username: str, display_name: str = "", email: str = "",
                  default_rate: Any = 0.0, created_by: str = "admin",
                  parent_agent_id: Optional[str] = None) -> Dict[str, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         if username in AGENT_BY_USER:
             return AGENTS[AGENT_BY_USER[username]]
         return _create_agent_locked(
@@ -384,7 +514,7 @@ def list_agents() -> List[Dict[str, Any]]:
 def update_agent(agent_id: str, status: Optional[str] = None,
                  default_rate: Any = None) -> Optional[Dict[str, Any]]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         agent = AGENTS.get(agent_id)
         if not agent:
             return None
@@ -405,7 +535,7 @@ def create_invitation(agent_id: str, invitee_type: str, invitee_email: str = "",
                       commission_basis: str = "premium", expires_days: int = 30,
                       notes: str = "") -> Tuple[bool, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         agent = AGENTS.get(agent_id)
         if not agent:
             return False, "Agent not found"
@@ -459,7 +589,7 @@ def list_invitations(agent_id: Optional[str] = None,
 
 def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[bool, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
@@ -477,7 +607,7 @@ def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[boo
 
 def reject_invitation(code: str, admin: str, reason: str = "") -> Tuple[bool, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
@@ -519,7 +649,7 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
     Hierarchy integrity: a principal may have at most ONE active affiliation.
     """
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invalid invitation code"
@@ -755,7 +885,7 @@ def recompute_commissions(policies: Dict[str, Any]) -> int:
     Returns the number of NEW commission rows created.
     """
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         created = 0
         if not policies:
             return 0
@@ -817,6 +947,7 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
     commission — never full PII/medical data (cross-tenant safety).
     """
     with _LOCK:
+        _hydrate_from_db()
         affs = [a for a in AFFILIATIONS.values()
                 if a["agent_id"] == agent_id and a["principal_type"] == "customer"]
         rows: List[Dict[str, Any]] = []
@@ -848,6 +979,44 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
             "page": page,
             "page_size": page_size,
             "total": total,
+        }
+
+
+def community_overview() -> Dict[str, Any]:
+    """Aggregate, admin-facing view of the whole agent community.
+
+    Read-only; includes a live hash-chain integrity check so admins can confirm
+    the commission ledger has not been tampered with.
+    """
+    with _LOCK:
+        _hydrate_from_db()
+        agents = list(AGENTS.values())
+        affs = [a for a in AFFILIATIONS.values() if a["status"] == "active"]
+        invs = list(INVITATIONS.values())
+        comms = list(COMMISSIONS.values())
+
+        def ctotal(status: Optional[str] = None) -> float:
+            return round(sum(c["amount"] for c in comms
+                             if status is None or c["status"] == status), 2)
+
+        return {
+            "agents_total": len(agents),
+            "agents_active": len([a for a in agents if a.get("status") == "active"]),
+            "agents_suspended": len([a for a in agents if a.get("status") == "suspended"]),
+            "affiliated_customers": len([a for a in affs if a["principal_type"] == "customer"]),
+            "affiliated_suppliers": len([a for a in affs if a["principal_type"] == "supplier"]),
+            "sub_agents": len([a for a in affs if a["principal_type"] == "agent"]),
+            "invitations_total": len(invs),
+            "invitations_pending_approval": len([i for i in invs if i["status"] == "pending_approval"]),
+            "invitations_active": len([i for i in invs if i["status"] in ("approved", "sent")]),
+            "commission_accrued_total": ctotal("accrued"),
+            "commission_payable_total": ctotal("payable"),
+            "commission_paid_total": ctotal("paid"),
+            "commission_lifetime_total": ctotal(),
+            "commission_events": len(comms),
+            "ledger_entries": len(COMMISSION_LEDGER),
+            "ledger_intact": verify_ledger_integrity(),
+            "currency": "USD",
         }
 
 

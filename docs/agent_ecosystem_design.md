@@ -28,6 +28,30 @@
 Demo: log in to `/agent-portal.html` as `agent`/`agent123`, and manage from
 `/admin-agents.html` as `admin`/`admin123` (demo passwords work in test/demo mode only).
 
+### Post-merge follow-ups (shipped)
+
+- **Sign-in CAPTCHA**: the agent and admin portals now run the canonical CAPTCHA
+  challenge/verify before `/api/login` (production rejected logins that omitted a
+  verified token with "CAPTCHA verification required"). `login.js` also routes the
+  `agent` role to `/agent-portal.html`.
+- **Agent-community dashboard**: `admin-agents.html` is now a full community control
+  center — community KPIs, agent roster with editable default rates, invitation
+  approvals (lock rate in advance), per-agent network drill, commission ledger audit,
+  and a live hash-chain integrity badge. Backed by new read-only admin endpoints
+  `GET /api/admin/agents/overview|affiliations|network|ledger` and
+  `community_overview()` (which calls `verify_ledger_integrity()`).
+- **Durable persistence hardening**: in DB mode the durable tables are the source of
+  truth. The in-memory dicts became a short-lived per-instance cache that is
+  **refreshed from the database on read** (coalesced to once per `PHINS_AGENT_HYDRATE_TTL`,
+  default 1.5s) and **force-refreshed on every write/decision**, replacing the previous
+  hydrate-once-at-startup snapshot. This makes agent data **survive restarts** and stay
+  **consistent across multiple instances** (a peer's new agent / approval / affiliation /
+  suspension becomes visible) while preserving idempotent accrual and the hash-chained
+  ledger. Also fixed a latent write-through bug where agent `created_date`/`updated_date`
+  ISO strings were rejected by the SQLite `DateTime` columns (datetime columns are now
+  left to their DB defaults). Covered by `test_db_mode_durability_survives_restart` and
+  `test_db_mode_cross_instance_visibility`.
+
 Render the diagrams:
 
 ```bash

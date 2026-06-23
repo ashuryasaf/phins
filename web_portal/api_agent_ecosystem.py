@@ -118,6 +118,28 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             svc.recompute_commissions(data_sources.get("policies", {}))
             agent_id = _first(qs, "agent_id")
             return 200, {"items": svc.list_commissions(agent_id=agent_id)}
+        if path == "/api/admin/agents/overview":
+            svc.recompute_commissions(data_sources.get("policies", {}))
+            return 200, svc.community_overview()
+        if path == "/api/admin/agents/affiliations":
+            agent_id = _first(qs, "agent_id")
+            if not agent_id:
+                return 400, {"error": "agent_id is required"}
+            return 200, {"items": svc.list_affiliations(agent_id)}
+        if path == "/api/admin/agents/network":
+            svc.recompute_commissions(data_sources.get("policies", {}))
+            agent_id = _first(qs, "agent_id")
+            if not agent_id:
+                return 400, {"error": "agent_id is required"}
+            page = int(_first(qs, "page", 1) or 1)
+            page_size = int(_first(qs, "page_size", 50) or 50)
+            return 200, svc.network_customers(
+                agent_id, data_sources.get("customers", {}), data_sources.get("policies", {}),
+                page=page, page_size=page_size)
+        if path == "/api/admin/agents/ledger":
+            agent_id = _first(qs, "agent_id")
+            return 200, {"items": svc.get_ledger(agent_id=agent_id),
+                         "ledger_intact": svc.verify_ledger_integrity()}
         return 404, {"error": "Unknown admin agent endpoint"}
 
     return 404, {"error": "Unknown endpoint"}

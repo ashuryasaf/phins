@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PHINS Admin — Agents Management</title>
+  <title>PHINS Admin — Agent Community</title>
   <style>
     :root{--blue-dark:#0d47a1;--blue-mid:#1565c0;--violet:#6a1b9a;--green:#15803d;--bg:#eef3fb;--card:#fff;--border:#dbe4f0;--text:#1a202c;--sub:#4a5568;--soft:#64748b;--shadow:0 10px 26px rgba(15,23,42,.08)}
     *{box-sizing:border-box;margin:0;padding:0}
@@ -11,7 +11,7 @@
     header{background:linear-gradient(135deg,#3d1e6d,#5a2ca0 50%,#7c3aed);color:#fff;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
     header .brand{font-weight:900;letter-spacing:.05em;font-size:18pt}
     header .tag{font-size:8pt;opacity:.85;text-transform:uppercase;letter-spacing:.1em}
-    .wrap{max-width:1180px;margin:0 auto;padding:24px 18px 60px}
+    .wrap{max-width:1200px;margin:0 auto;padding:24px 18px 60px}
     .btn{font-family:inherit;font-size:8.6pt;font-weight:700;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--text);border-radius:9px;padding:7px 12px;transition:.15s}
     .btn:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
     .btn.primary{background:var(--violet);color:#fff;border-color:var(--violet)}
@@ -32,16 +32,23 @@
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
     .muted{color:var(--soft);font-size:8.4pt}
     .note{background:#f3fbf6;border:1px solid #bfe6cf;border-left:4px solid var(--green);border-radius:10px;padding:11px 14px;font-size:8.6pt;color:#1e4634}
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
+    .kpi .v{font-size:17pt;font-weight:900;color:var(--blue-dark);line-height:1}
+    .kpi .l{font-size:7.8pt;color:var(--soft);margin-top:6px;text-transform:uppercase;letter-spacing:.04em}
+    .badge{display:inline-block;font-size:8pt;font-weight:800;border-radius:999px;padding:3px 11px}
+    .badge.ok{background:#dcfce7;color:#15803d}.badge.bad{background:#fde8e8;color:#c62828}
     .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f274d;color:#fff;padding:10px 16px;border-radius:10px;font-size:9pt;opacity:0;transition:.25s;z-index:9}
     .toast.show{opacity:1}
     #login{max-width:360px;margin:60px auto}.hidden{display:none}
-    .rate-in{width:70px;display:inline-block}
+    .rate-in{width:64px;display:inline-block}
+    code.h{font-size:7.4pt;color:var(--soft)}
   </style>
 </head>
 <body>
   <header>
-    <div><div class="brand">PHINS · Admin</div><div class="tag">Agents Management · AgentOS</div></div>
-    <div class="row"><span class="muted" id="who" style="color:#fff;opacity:.9"></span><button class="btn" id="logout">Log out</button></div>
+    <div><div class="brand">PHINS · Admin</div><div class="tag">Agent Community · AgentOS</div></div>
+    <div class="row"><span class="muted" id="who" style="color:#fff;opacity:.9"></span><a class="btn" href="/unified-workbench.html">⚡ Workbench</a><button class="btn" id="logout">Log out</button></div>
   </header>
 
   <div class="wrap">
@@ -49,14 +56,20 @@
       <h2>Admin sign in</h2>
       <p class="muted" style="margin-bottom:12px">Demo: <code>admin</code> / <code>admin123</code></p>
       <div style="margin-bottom:10px"><label>Username</label><input id="lg-user" value="admin"></div>
-      <div style="margin-bottom:14px"><label>Password</label><input id="lg-pass" type="password"></div>
+      <div style="margin-bottom:10px"><label>Password</label><input id="lg-pass" type="password"></div>
+      <div id="cap-wrap" style="margin-bottom:14px;display:none"><label id="cap-q">Verification</label><input id="cap-a" placeholder="Your answer" autocomplete="off"></div>
       <button class="btn primary" id="lg-go" style="width:100%">Sign in</button>
       <p class="muted" id="lg-err" style="color:#c62828;margin-top:10px"></p>
     </div>
 
     <div id="app" class="hidden">
-      <div class="note">Agents management: create agents, <strong>approve invitations and lock the commission rate in advance</strong>, redeem on a prospect's behalf, recompute commissions from the policy book, and audit every accrual. Commissions are recorded on the append-only, hash-chained ledger.</div>
+      <div class="note">Agent community control center: every action and dataset from the agent ecosystem in one place — community KPIs, agent roster &amp; default rates, invitation approvals (lock the commission rate <strong>in advance</strong>), affiliations, per-agent networks, commission accruals, and the append-only <strong>hash-chained ledger</strong> with a live integrity check.</div>
 
+      <!-- Community KPIs -->
+      <div class="kpis" id="kpis"></div>
+      <div style="margin:-8px 0 16px"><span class="muted">Commission ledger integrity:</span> <span id="integrity" class="badge ok">checking…</span></div>
+
+      <!-- Create agent -->
       <div class="card">
         <h2>Create agent</h2>
         <div class="row">
@@ -68,6 +81,7 @@
         </div>
       </div>
 
+      <!-- Invitation approvals -->
       <div class="card">
         <div class="row" style="justify-content:space-between">
           <h2 style="margin:0">Invitation approvals</h2>
@@ -76,14 +90,23 @@
         <div style="overflow-x:auto;margin-top:10px"><table id="inv-table"><thead><tr><th>Code</th><th>Agent</th><th>Type</th><th>Proposed</th><th>Locked rate</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table></div>
       </div>
 
+      <!-- Agents roster -->
       <div class="card">
         <h2>Agents</h2>
-        <div style="overflow-x:auto"><table id="agents-table"><thead><tr><th>ID</th><th>Name</th><th>User</th><th>Default rate</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+        <div style="overflow-x:auto"><table id="agents-table"><thead><tr><th>ID</th><th>Name</th><th>User</th><th>Default rate</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
       </div>
 
+      <!-- Per-agent network drill -->
+      <div class="card hidden" id="net-card">
+        <div class="row" style="justify-content:space-between"><h2 style="margin:0" id="net-title">Agent network</h2><button class="btn sm" id="net-close">Close</button></div>
+        <div style="overflow-x:auto;margin-top:10px"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued</th></tr></thead><tbody></tbody></table></div>
+        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed.</p>
+      </div>
+
+      <!-- Commission ledger (hash-chained audit) -->
       <div class="card">
-        <h2>Commission ledger</h2>
-        <div style="overflow-x:auto"><table id="comm-table"><thead><tr><th>Commission</th><th>Agent</th><th>Source</th><th>Base</th><th>Rate</th><th>Amount</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+        <h2>Commission ledger <span class="muted">(append-only, hash-chained)</span></h2>
+        <div style="overflow-x:auto"><table id="ledger-table"><thead><tr><th>#</th><th>Event</th><th>Agent</th><th>Amount</th><th>Entry hash</th></tr></thead><tbody></tbody></table></div>
       </div>
     </div>
   </div>
@@ -95,13 +118,33 @@
     let TOKEN = localStorage.getItem('phins_token')||'';
     function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
     function fmt(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});}
+    function pct(r){return Math.round((r||0)*100)+'%';}
     async function api(path,opts={}){opts.headers=Object.assign({'Content-Type':'application/json'},opts.headers||{});if(TOKEN)opts.headers['Authorization']='Bearer '+TOKEN;const r=await fetch(path,opts);let b={};try{b=await r.json();}catch(e){}return {status:r.status,body:b};}
-    function showApp(on){$('#login').classList.toggle('hidden',on);$('#app').classList.toggle('hidden',!on);}
+    function showApp(on){$('#login').classList.toggle('hidden',on);$('#app').classList.toggle('hidden',!on);if(!on)loadCaptcha();}
+
+    // ---- CAPTCHA (production login requires a verified challenge token) ----
+    let CAP={id:null};
+    async function loadCaptcha(){
+      CAP={id:null}; const a=$('#cap-a'); if(a) a.value='';
+      try{
+        const r=await fetch('/api/security/captcha',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'login'})});
+        const d=await r.json();
+        if(r.ok&&d.success&&d.challenge&&d.challenge.challenge_type==='simple'){CAP.id=d.challenge.challenge_id;$('#cap-q').textContent=d.challenge.challenge_question||'Solve to continue';$('#cap-wrap').style.display='';}
+        else{$('#cap-wrap').style.display='none';}
+      }catch(e){$('#cap-wrap').style.display='none';}
+    }
 
     async function login(){
       $('#lg-err').textContent='';
-      const {status,body}=await api('/api/login',{method:'POST',body:JSON.stringify({username:$('#lg-user').value,password:$('#lg-pass').value})});
-      if(status!==200){$('#lg-err').textContent=(body&&body.error)||'Login failed';return;}
+      const payload={username:$('#lg-user').value,password:$('#lg-pass').value};
+      if(CAP.id){
+        const v=await fetch('/api/security/captcha/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenge_id:CAP.id,response:$('#cap-a').value})});
+        let vd={};try{vd=await v.json();}catch(e){}
+        if(!(v.ok&&vd.success)){$('#lg-err').textContent='Verification failed — try the new question.';loadCaptcha();return;}
+        payload.captcha_token=CAP.id;
+      } else { payload.captcha_fallback=true; }
+      const {status,body}=await api('/api/login',{method:'POST',body:JSON.stringify(payload)});
+      if(status!==200){$('#lg-err').textContent=(body&&body.error)||'Login failed';loadCaptcha();return;}
       if(body.role!=='admin'){$('#lg-err').textContent='Admin access required.';return;}
       TOKEN=body.token;localStorage.setItem('phins_token',TOKEN);boot();
     }
@@ -110,23 +153,36 @@
       const t=await api('/api/admin/agents');
       if(t.status!==200){showApp(false);return;}
       showApp(true); $('#who').textContent='admin';
-      loadInvitations();loadAgents();loadCommissions();
+      loadOverview();loadInvitations();loadAgents();loadCommissions();loadLedger();
+    }
+
+    async function loadOverview(){
+      const {body:o}=await api('/api/admin/agents/overview');
+      const cards=[
+        ['Agents', o.agents_total||0],['Active agents', o.agents_active||0],
+        ['Affiliated customers', o.affiliated_customers||0],['Affiliated suppliers', o.affiliated_suppliers||0],
+        ['Pending approvals', o.invitations_pending_approval||0],['Active invitations', o.invitations_active||0],
+        ['Lifetime commission', fmt(o.commission_lifetime_total)],['Accrued', fmt(o.commission_accrued_total)],
+        ['Paid out', fmt(o.commission_paid_total)],['Ledger entries', o.ledger_entries||0],
+      ];
+      $('#kpis').innerHTML=cards.map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+      const b=$('#integrity'); const ok=o.ledger_intact!==false;
+      b.textContent= ok?'✓ intact':'✗ TAMPERED'; b.className='badge '+(ok?'ok':'bad');
     }
 
     async function loadInvitations(){
       const {body}=await api('/api/admin/agent-invitations');
       const rows=(body.items||[]).map(i=>{
-        const locked=i.commission_rate==null?'—':Math.round(i.commission_rate*100)+'%';
+        const locked=i.commission_rate==null?'—':pct(i.commission_rate);
         let action='';
         if(i.status==='pending_approval'){
           action=`<input class="rate-in" id="rt-${i.code}" type="number" min="0" max="100" step="0.5" value="${Math.round((i.proposed_rate||0)*100)}"> `+
-            `<button class="btn green sm" data-approve="${i.code}">Approve</button> `+
-            `<button class="btn sm" data-reject="${i.code}">Reject</button>`;
+            `<button class="btn green sm" data-approve="${i.code}">Approve</button> <button class="btn sm" data-reject="${i.code}">Reject</button>`;
         } else if(i.status==='approved'||i.status==='sent'){
           action=`<button class="btn alt sm" data-redeem="${i.code}" data-type="${i.invitee_type}">Redeem…</button>`;
         }
         return `<tr><td><code>${i.code}</code></td><td>${i.agent_id}</td><td>${i.invitee_type}</td>`+
-          `<td>${Math.round((i.proposed_rate||0)*100)}%</td><td>${locked}</td>`+
+          `<td>${pct(i.proposed_rate)}</td><td>${locked}</td>`+
           `<td><span class="pill ${i.status.replace('pending_approval','pending')}">${i.status.replace(/_/g,' ')}</span></td><td>${action}</td></tr>`;
       }).join('');
       $('#inv-table tbody').innerHTML=rows||'<tr><td colspan="7" class="muted">No invitations.</td></tr>';
@@ -135,53 +191,61 @@
     async function loadAgents(){
       const {body}=await api('/api/admin/agents');
       const rows=(body.items||[]).map(a=>`<tr><td><code>${a.id}</code></td><td>${a.display_name||''}</td><td>${a.user_username}</td>`+
-        `<td>${Math.round((a.default_commission_rate||0)*100)}%</td><td><span class="pill ${a.status}">${a.status}</span></td>`+
-        `<td><button class="btn sm" data-toggle="${a.id}" data-status="${a.status}">${a.status==='active'?'Suspend':'Activate'}</button></td></tr>`).join('');
+        `<td><input class="rate-in" id="ar-${a.id}" type="number" min="0" max="100" step="0.5" value="${Math.round((a.default_commission_rate||0)*100)}"> `+
+        `<button class="btn sm" data-rate="${a.id}">Save</button></td>`+
+        `<td><span class="pill ${a.status}">${a.status}</span></td>`+
+        `<td><button class="btn sm" data-toggle="${a.id}" data-status="${a.status}">${a.status==='active'?'Suspend':'Activate'}</button> `+
+        `<button class="btn alt sm" data-network="${a.id}" data-name="${(a.display_name||a.user_username)}">Network</button></td></tr>`).join('');
       $('#agents-table tbody').innerHTML=rows||'<tr><td colspan="6" class="muted">No agents yet.</td></tr>';
     }
 
     async function loadCommissions(){
       const {body}=await api('/api/admin/agents/commissions');
-      const rows=(body.items||[]).map(c=>`<tr><td><code>${c.id}</code></td><td>${c.agent_id}</td><td>${c.source_event_id}</td>`+
-        `<td>${fmt(c.base_amount)}</td><td>${Math.round((c.rate||0)*100)}%</td><td>${fmt(c.amount)}</td>`+
-        `<td><span class="pill approved">${c.status}</span></td></tr>`).join('');
-      $('#comm-table tbody').innerHTML=rows||'<tr><td colspan="7" class="muted">No commissions accrued.</td></tr>';
+      window.__comms=(body.items||[]);
+    }
+
+    async function loadLedger(){
+      const {body}=await api('/api/admin/agents/ledger');
+      const rows=(body.items||[]).slice().reverse().map(e=>`<tr><td>${e.sequence_no}</td><td>${(e.event_type||'').replace(/^agent\./,'')}</td>`+
+        `<td>${e.agent_id}</td><td>${fmt(e.amount)}</td><td><code class="h">${(e.entry_hash||'').slice(0,16)}…</code></td></tr>`).join('');
+      $('#ledger-table tbody').innerHTML=rows||'<tr><td colspan="5" class="muted">No ledger entries.</td></tr>';
+    }
+
+    async function showNetwork(agentId,name){
+      const {body}=await api('/api/admin/agents/network?agent_id='+encodeURIComponent(agentId));
+      $('#net-title').textContent='Network — '+name;
+      const rows=(body.items||[]).map(r=>`<tr><td>${r.name}</td><td>${r.status}</td><td>${r.policy_count}</td>`+
+        `<td>${fmt(r.premium_basis)}</td><td>${pct(r.commission_rate)}</td><td>${fmt(r.accrued_commission)}</td></tr>`).join('');
+      $('#net-table tbody').innerHTML=rows||'<tr><td colspan="6" class="muted">No affiliated customers.</td></tr>';
+      $('#net-card').classList.remove('hidden');
+      $('#net-card').scrollIntoView({behavior:'smooth',block:'nearest'});
     }
 
     document.addEventListener('click', async (e)=>{
       const t=e.target;
-      if(t.dataset.approve){
-        const code=t.dataset.approve; const rate=parseFloat($('#rt-'+code).value)||0;
-        const {status,body}=await api('/api/admin/agent-invitations/approve',{method:'POST',body:JSON.stringify({code,commission_rate:rate})});
-        toast(status===200?'Approved — rate locked':(body.error||'Failed')); loadInvitations();
-      } else if(t.dataset.reject){
-        const {status}=await api('/api/admin/agent-invitations/reject',{method:'POST',body:JSON.stringify({code:t.dataset.reject,reason:'admin'})});
-        toast(status===200?'Rejected':'Failed'); loadInvitations();
-      } else if(t.dataset.redeem){
-        const pid=prompt(`Enter ${t.dataset.type} ID to affiliate (e.g. CUST-123):`);
-        if(!pid)return;
-        const {status,body}=await api('/api/admin/agent-invitations/redeem',{method:'POST',body:JSON.stringify({code:t.dataset.redeem,principal_type:t.dataset.type,principal_id:pid})});
-        toast(status===200?'Affiliation created':(body.error||'Failed')); loadInvitations();
-      } else if(t.dataset.toggle){
-        const next=t.dataset.status==='active'?'suspended':'active';
-        const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:t.dataset.toggle,status:next})});
-        toast(status===200?'Updated':'Failed'); loadAgents();
-      }
+      if(t.dataset.approve){const c=t.dataset.approve;const rate=parseFloat($('#rt-'+c).value)||0;const {status,body}=await api('/api/admin/agent-invitations/approve',{method:'POST',body:JSON.stringify({code:c,commission_rate:rate})});toast(status===200?'Approved — rate locked':(body.error||'Failed'));loadInvitations();loadOverview();}
+      else if(t.dataset.reject){const {status}=await api('/api/admin/agent-invitations/reject',{method:'POST',body:JSON.stringify({code:t.dataset.reject,reason:'admin'})});toast(status===200?'Rejected':'Failed');loadInvitations();loadOverview();}
+      else if(t.dataset.redeem){const pid=prompt(`Enter ${t.dataset.type} ID to affiliate (e.g. CUST-123):`);if(!pid)return;const {status,body}=await api('/api/admin/agent-invitations/redeem',{method:'POST',body:JSON.stringify({code:t.dataset.redeem,principal_type:t.dataset.type,principal_id:pid})});toast(status===200?'Affiliation created':(body.error||'Failed'));loadInvitations();loadOverview();}
+      else if(t.dataset.toggle){const next=t.dataset.status==='active'?'suspended':'active';const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:t.dataset.toggle,status:next})});toast(status===200?'Updated':'Failed');loadAgents();loadOverview();}
+      else if(t.dataset.rate){const id=t.dataset.rate;const rate=parseFloat($('#ar-'+id).value)||0;const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:id,default_rate:rate})});toast(status===200?'Default rate updated':'Failed');}
+      else if(t.dataset.network){showNetwork(t.dataset.network,t.dataset.name||t.dataset.network);}
     });
 
+    $('#net-close').addEventListener('click',()=>$('#net-card').classList.add('hidden'));
     $('#ca-go').addEventListener('click', async ()=>{
       const payload={username:$('#ca-user').value,display_name:$('#ca-name').value,email:$('#ca-email').value,default_rate:parseFloat($('#ca-rate').value)||0};
       if(!payload.username){toast('username required');return;}
       const {status,body}=await api('/api/admin/agents',{method:'POST',body:JSON.stringify(payload)});
-      toast(status===201?'Agent created':(body.error||'Failed')); if(status===201){loadAgents();}
+      toast(status===201?'Agent created':(body.error||'Failed'));if(status===201){loadAgents();loadOverview();}
     });
     $('#recompute').addEventListener('click', async ()=>{
       const {status,body}=await api('/api/admin/agents/recompute-commissions',{method:'POST',body:'{}'});
       toast(status===200?`Accrued ${body.created} new · ledger ${body.ledger_intact?'intact':'BROKEN'}`:'Failed');
-      loadCommissions();
+      loadOverview();loadCommissions();loadLedger();
     });
     $('#lg-go').addEventListener('click', login);
     $('#lg-pass').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+    document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.id==='cap-a')login();});
     $('#logout').addEventListener('click',()=>{localStorage.removeItem('phins_token');TOKEN='';showApp(false);});
     if(TOKEN) boot(); else showApp(false);
   })();

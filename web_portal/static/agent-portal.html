@@ -63,7 +63,11 @@
       <h2 style="margin-top:0">Agent sign in</h2>
       <p class="muted" style="margin-bottom:12px">Demo: <code>agent</code> / <code>agent123</code></p>
       <div style="margin-bottom:10px"><label>Username</label><input id="lg-user" value="agent" autocomplete="username"></div>
-      <div style="margin-bottom:14px"><label>Password</label><input id="lg-pass" type="password" value="" autocomplete="current-password"></div>
+      <div style="margin-bottom:10px"><label>Password</label><input id="lg-pass" type="password" value="" autocomplete="current-password"></div>
+      <div id="cap-wrap" style="margin-bottom:14px;display:none">
+        <label id="cap-q">Verification</label>
+        <input id="cap-a" placeholder="Your answer" autocomplete="off">
+      </div>
       <button class="btn primary" id="lg-go" style="width:100%">Sign in</button>
       <p class="muted" id="lg-err" style="color:#c62828;margin-top:10px"></p>
     </div>
@@ -116,16 +120,44 @@
       return {status:r.status, body};
     }
 
+    // CAPTCHA: production login requires a verified challenge token. We acquire a
+    // simple challenge, verify the user's answer, then pass the verified token to
+    // /api/login. If the CAPTCHA service is unavailable we fall back to the
+    // server-side fallback flag (which the server only honors when the service is
+    // truly unavailable), and in test mode the server skips CAPTCHA entirely.
+    let CAP = {id:null};
+    async function loadCaptcha(){
+      CAP={id:null}; const a=$('#cap-a'); if(a) a.value='';
+      try{
+        const r = await fetch('/api/security/captcha', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'login'})});
+        const d = await r.json();
+        if(r.ok && d.success && d.challenge && d.challenge.challenge_type==='simple'){
+          CAP.id = d.challenge.challenge_id;
+          $('#cap-q').textContent = d.challenge.challenge_question || 'Solve to continue';
+          $('#cap-wrap').style.display='';
+        } else { $('#cap-wrap').style.display='none'; }
+      }catch(e){ $('#cap-wrap').style.display='none'; }
+    }
+
     async function login(){
       $('#lg-err').textContent='';
-      const {status, body} = await api('/api/login', {method:'POST', body:JSON.stringify({username:$('#lg-user').value, password:$('#lg-pass').value})});
-      if(status!==200){ $('#lg-err').textContent = (body && body.error) || 'Login failed'; return; }
+      const payload = {username:$('#lg-user').value, password:$('#lg-pass').value};
+      if(CAP.id){
+        const v = await fetch('/api/security/captcha/verify', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({challenge_id:CAP.id, response:$('#cap-a').value})});
+        let vd={}; try{ vd = await v.json(); }catch(e){}
+        if(!(v.ok && vd.success)){ $('#lg-err').textContent='Verification failed — try the new question.'; loadCaptcha(); return; }
+        payload.captcha_token = CAP.id;
+      } else {
+        payload.captcha_fallback = true;
+      }
+      const {status, body} = await api('/api/login', {method:'POST', body:JSON.stringify(payload)});
+      if(status!==200){ $('#lg-err').textContent = (body && body.error) || 'Login failed'; loadCaptcha(); return; }
       if(body.role!=='agent'){ $('#lg-err').textContent='This account is not an agent.'; return; }
       TOKEN = body.token; localStorage.setItem('phins_token', TOKEN);
       boot();
     }
 
-    function showApp(on){ $('#login').classList.toggle('hidden',on); $('#app').classList.toggle('hidden',!on); }
+    function showApp(on){ $('#login').classList.toggle('hidden',on); $('#app').classList.toggle('hidden',!on); if(!on) loadCaptcha(); }
 
     async function boot(){
       const me = await api('/api/agent/me');
@@ -175,6 +207,7 @@
 
     $('#lg-go').addEventListener('click', login);
     $('#lg-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
+    document.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.target && e.target.id==='cap-a') login(); });
     $('#inv-go').addEventListener('click', createInvitation);
     $('#logout').addEventListener('click', ()=>{ localStorage.removeItem('phins_token'); TOKEN=''; showApp(false); });
 
