@@ -1,10 +1,32 @@
-# PHINS Agent / Broker Ecosystem ("AgentOS") — Design & Scoping
+# PHINS Agent / Broker Ecosystem ("AgentOS") — Design & Implementation
 
-> **Status: DESIGN / SCOPING ONLY — awaiting approval. No implementation in this PR.**
+> **Status: APPROVED & IMPLEMENTED (v1).** The model below was approved; the v1
+> vertical slice is now implemented in this PR. `docs/uml/agent_ecosystem.puml`
+> remains the model of record.
 >
-> This document and `docs/uml/agent_ecosystem.puml` model the missing agent/broker
-> layer so the investor deck's **AgentOS** claim is backed by working software.
-> Implementation will follow in the **same PR** once the model is approved.
+> **Confirmed decisions (formerly §9 open questions):**
+> 1. Hierarchy: `parent_agent_id` reserved on the model; **single-level payouts in v1**.
+> 2. Commission basis: **all three supported** (`premium` default, `gmv`, `one_time`).
+> 3. **Recurring while active** (v1 accrues once per policy; per-renewal keyed by
+>    period is the documented follow-up).
+> 4. Customer visibility: **yes** — `referring_agent_id` is surfaced ("referred by").
+> 5. Demo agent: **seeded** (`agent` / `PHINS_AGENT_PASSWORD`; demo `agent123` in test mode).
+> 6. Payouts: **accrual + dashboard in v1**; `agent_payouts` settlement is a follow-up.
+
+## Implemented in v1
+
+| Layer | Files |
+|---|---|
+| Schema | `database/models.py` (`Agent`, `AgentInvitation`, `AgentAffiliation`, `AgentCommission`; `Customer/Supplier.referring_agent_id`), `database/__init__.py` (`upgrade_schema`) |
+| Repositories | `database/repositories/agent_repository.py`, wired in `repositories/__init__.py` + `database/manager.py` |
+| Service | `services/agent_ecosystem_service.py` (in-memory authoritative + hash-chained ledger + best-effort DB write-through) |
+| API | `web_portal/api_agent_ecosystem.py`, dispatched from `web_portal/server.py` (GET + POST) |
+| Auth | `agent` role added to login fallback users, legacy demo passwords, and `database/seeds.py` |
+| UI | `web_portal/static/agent-portal.html`, `web_portal/static/admin-agents.html` (linked from `unified-workbench.html`) |
+| Tests | `tests/test_agent_ecosystem.py` (service, HTTP role scope, idempotency, ledger integrity, DB round-trip) |
+
+Demo: log in to `/agent-portal.html` as `agent`/`agent123`, and manage from
+`/admin-agents.html` as `admin`/`admin123` (demo passwords work in test/demo mode only).
 
 Render the diagrams:
 
@@ -142,21 +164,16 @@ Blast-radius note: touches `database/` (models/seeds/repos), `web_portal/server.
 `api_extensions.py` (routing/auth), `services/` (2 new), and static UI — additive and
 behind the new role, so existing flows are unaffected.
 
-## 9. Open questions (need your decision before implementation)
+## 9. Decisions (confirmed) and follow-ups
 
-1. **Sub-agents / hierarchy depth**: single-level agent→principal, or multi-level
-   agent→sub-agent trees with cascading override commissions? (UML supports both;
-   default proposal: support `parent_agent_id` but enable only single-level payouts in v1.)
-2. **Commission basis**: percentage of premium (default), of marketplace GMV, and/or a
-   one-time bounty per accepted invite? (Model supports all three via `commission_basis`.)
-3. **Recurring vs one-time**: commission on first premium only, or on every renewal while
-   the affiliation stays active? (Proposal: recurring while active.)
-4. **Customer consent/visibility**: should affiliated customers see that an agent is
-   attached to their account? (Proposal: yes, a neutral "referred by" line.)
-5. **Demo agent account**: create a seeded `agent` demo login (env-var password, like the
-   other roles) for the PR's manual testing? (Proposal: yes, `PHINS_AGENT_PASSWORD`.)
-6. **Payouts in v1**: include `agent_payouts` settlement now, or accrual + dashboard only
-   in v1 and payouts in a follow-up? (Proposal: accrual + dashboard in v1.)
+All six decisions were confirmed (see the status box at the top) and are implemented
+in v1. Tracked follow-ups:
 
-Please review the UML (`docs/uml/agent_ecosystem.puml`) and answer §9; I'll then
-implement on this branch and push to the same PR.
+- **Per-renewal accrual**: extend `accrue_for_policy` to key on billing period so
+  recurring premium accrues each cycle (v1 accrues once per policy).
+- **Automatic event hooks**: subscribe accrual directly to the billing "premium paid"
+  and marketplace "order settled" events (v1 drives accrual idempotently from the
+  policy/premium book on view + admin recompute).
+- **Sub-agent payouts** and the `agent_payouts` settlement run.
+- **Self-serve redemption** inside the customer/supplier registration flows (v1 redeems
+  via the admin endpoint, which is sufficient to prove the full lifecycle).
