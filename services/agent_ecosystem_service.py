@@ -851,6 +851,44 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
         }
 
 
+def community_overview() -> Dict[str, Any]:
+    """Aggregate, admin-facing view of the whole agent community.
+
+    Read-only; includes a live hash-chain integrity check so admins can confirm
+    the commission ledger has not been tampered with.
+    """
+    with _LOCK:
+        _hydrate_from_db()
+        agents = list(AGENTS.values())
+        affs = [a for a in AFFILIATIONS.values() if a["status"] == "active"]
+        invs = list(INVITATIONS.values())
+        comms = list(COMMISSIONS.values())
+
+        def ctotal(status: Optional[str] = None) -> float:
+            return round(sum(c["amount"] for c in comms
+                             if status is None or c["status"] == status), 2)
+
+        return {
+            "agents_total": len(agents),
+            "agents_active": len([a for a in agents if a.get("status") == "active"]),
+            "agents_suspended": len([a for a in agents if a.get("status") == "suspended"]),
+            "affiliated_customers": len([a for a in affs if a["principal_type"] == "customer"]),
+            "affiliated_suppliers": len([a for a in affs if a["principal_type"] == "supplier"]),
+            "sub_agents": len([a for a in affs if a["principal_type"] == "agent"]),
+            "invitations_total": len(invs),
+            "invitations_pending_approval": len([i for i in invs if i["status"] == "pending_approval"]),
+            "invitations_active": len([i for i in invs if i["status"] in ("approved", "sent")]),
+            "commission_accrued_total": ctotal("accrued"),
+            "commission_payable_total": ctotal("payable"),
+            "commission_paid_total": ctotal("paid"),
+            "commission_lifetime_total": ctotal(),
+            "commission_events": len(comms),
+            "ledger_entries": len(COMMISSION_LEDGER),
+            "ledger_intact": verify_ledger_integrity(),
+            "currency": "USD",
+        }
+
+
 def get_ledger(agent_id: Optional[str] = None, limit: int = 200) -> List[Dict[str, Any]]:
     with _LOCK:
         _hydrate_from_db()
