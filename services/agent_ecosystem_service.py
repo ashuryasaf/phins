@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import secrets
+import sys
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -61,7 +62,20 @@ def _now_iso() -> str:
 
 
 def _db_enabled() -> bool:
-    """Best-effort durability is on only when the platform runs DB-backed."""
+    """Best-effort durability is on only when the platform runs DB-backed.
+
+    Defers to the portal's *effective* runtime mode when the server module is
+    already loaded: ``web_portal/server.py`` can disable database mode at
+    runtime after a connection failure while leaving the ``USE_DATABASE`` env
+    var unchanged. Reading the env var alone would desync agent persistence
+    from the in-memory store the rest of the request path actually serves
+    (commissions/affiliations diverging from accrual data). Falls back to the
+    env var only when the portal module is not loaded (e.g. isolated unit use).
+    """
+    portal = sys.modules.get("web_portal.server")
+    if portal is not None:
+        return bool(getattr(portal, "USE_DATABASE", False)
+                    and getattr(portal, "database_enabled", False))
     return os.environ.get("USE_DATABASE", "true").lower() not in ("false", "0", "no")
 
 
@@ -178,6 +192,24 @@ def _persist(kind: str, record: Dict[str, Any]) -> None:
     except Exception:
         # Durability is best-effort; the in-memory store remains authoritative.
         pass
+
+
+def _find_persisted_commission(source_event_id: str,
+                               affiliation_id: str) -> Optional[Dict[str, Any]]:
+    """Look up a durable commission for an event, if any. No-op when DB disabled.
+
+    Used for cross-instance idempotency: another app instance may have accrued
+    and written through this revenue event before this instance's in-memory
+    ``_ACCRUED_KEYS`` learned about it.
+    """
+    if not _db_enabled():
+        return None
+    try:
+        with _db() as db:
+            row = db.agent_commissions.get_for_event(source_event_id, affiliation_id)
+            return row.to_dict() if row is not None else None
+    except Exception:
+        return None
 
 
 def _rebuild_commission_ledger_from_state() -> None:
@@ -592,6 +624,17 @@ def accrue_commission(principal_type: str, principal_id: str, base_amount: float
         key = (source_event_id, aff["id"])
         if key in _ACCRUED_KEYS:
             return None  # already accrued — idempotent
+        # Cross-instance idempotency: a peer instance may have already accrued
+        # and persisted this revenue event before our in-memory _ACCRUED_KEYS
+        # caught up. Reconcile from the durable store instead of appending a
+        # second ledger entry / commission row for one revenue event. The unique
+        # (source_event_id, affiliation_id) constraint backstops the simultaneous
+        # race at write-through time.
+        existing = _find_persisted_commission(source_event_id, aff["id"])
+        if existing is not None:
+            COMMISSIONS.setdefault(existing["id"], existing)
+            _ACCRUED_KEYS.add(key)
+            return None
         base = round(float(base_amount or 0.0), 2)
         if base <= 0:
             return None

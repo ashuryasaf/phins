@@ -5,7 +5,7 @@ These models define the database schema for all core entities in the system.
 Supports both SQLite (development) and PostgreSQL (production).
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -2717,6 +2717,12 @@ class AgentCommission(Base):
     Idempotency: unique (source_event_id, affiliation_id) prevents double accrual.
     """
     __tablename__ = 'agent_commissions'
+    __table_args__ = (
+        # Schema-level idempotency: one accrual per revenue event per affiliation,
+        # so concurrent app instances cannot each write a duplicate commission row.
+        UniqueConstraint('source_event_id', 'affiliation_id',
+                         name='uq_agent_commission_event_affiliation'),
+    )
 
     id = Column(String(80), primary_key=True)  # COMM...
     agent_id = Column(String(50), index=True, nullable=False)
