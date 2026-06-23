@@ -217,6 +217,52 @@ def test_http_requires_auth():
     assert status in (401, 403)
 
 
+def test_community_overview_aggregate_and_integrity():
+    agent = svc.create_agent("agent", default_rate=0.1, created_by="admin")
+    _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    svc.approve_invitation(inv["code"], 0.10, "admin")
+    svc.redeem_invitation(inv["code"], "customer", "CUST-OV")
+    svc.recompute_commissions({"POL-OV": {"id": "POL-OV", "customer_id": "CUST-OV", "annual_premium": 1000}})
+
+    o = svc.community_overview()
+    assert o["agents_total"] >= 1
+    assert o["affiliated_customers"] == 1
+    assert o["commission_lifetime_total"] == 100.0
+    assert o["ledger_intact"] is True
+
+
+def test_http_admin_community_endpoints():
+    admin_token, _ = _login("admin", "admin123")
+    agent_token, _ = _login("agent", "agent123")
+
+    # agent creates + admin approves + redeems, then recompute
+    body, _ = _post("/api/agent/invitations",
+                    {"invitee_type": "customer", "proposed_rate": 0.2}, token=agent_token)
+    code = body["invitation"]["code"]
+    _post("/api/admin/agent-invitations/approve", {"code": code, "commission_rate": 0.1}, token=admin_token)
+    portal.CUSTOMERS["CUST-COMM-1"] = {"id": "CUST-COMM-1", "name": "Comm Customer"}
+    portal.POLICIES["POL-COMM-1"] = {"id": "POL-COMM-1", "customer_id": "CUST-COMM-1", "annual_premium": 1000}
+    _post("/api/admin/agent-invitations/redeem",
+          {"code": code, "principal_type": "customer", "principal_id": "CUST-COMM-1"}, token=admin_token)
+
+    # overview reflects the community and confirms ledger integrity
+    ov, status = _get("/api/admin/agents/overview", token=admin_token)
+    assert status == 200 and ov["agents_total"] >= 1 and ov["ledger_intact"] is True
+    assert ov["commission_lifetime_total"] >= 100.0
+
+    # per-agent network (admin drill) + ledger audit are admin-only
+    me, _ = _get("/api/agent/me", token=agent_token)
+    aid = me["agent"]["id"]
+    net, status = _get(f"/api/admin/agents/network?agent_id={aid}", token=admin_token)
+    assert status == 200 and net["total"] >= 1
+    led, status = _get("/api/admin/agents/ledger", token=admin_token)
+    assert status == 200 and led["ledger_intact"] is True and len(led["items"]) >= 1
+
+    # an agent cannot reach the admin community endpoints
+    _, st = _get("/api/admin/agents/overview", token=agent_token)
+    assert st == 403
+
+
 # ---------------------------------------------------------------------------
 # DB repositories (durable schema round-trip)
 # ---------------------------------------------------------------------------

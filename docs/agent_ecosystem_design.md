@@ -28,6 +28,19 @@
 Demo: log in to `/agent-portal.html` as `agent`/`agent123`, and manage from
 `/admin-agents.html` as `admin`/`admin123` (demo passwords work in test/demo mode only).
 
+### Post-merge follow-ups (shipped)
+
+- **Sign-in CAPTCHA**: the agent and admin portals now run the canonical CAPTCHA
+  challenge/verify before `/api/login` (production rejected logins that omitted a
+  verified token with "CAPTCHA verification required"). `login.js` also routes the
+  `agent` role to `/agent-portal.html`.
+- **Agent-community dashboard**: `admin-agents.html` is now a full community control
+  center — community KPIs, agent roster with editable default rates, invitation
+  approvals (lock rate in advance), per-agent network drill, commission ledger audit,
+  and a live hash-chain integrity badge. Backed by new read-only admin endpoints
+  `GET /api/admin/agents/overview|affiliations|network|ledger` and
+  `community_overview()` (which calls `verify_ledger_integrity()`).
+
 Render the diagrams:
 
 ```bash
