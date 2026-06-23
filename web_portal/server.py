@@ -27672,6 +27672,86 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
                 return
+
+            # Admin: reset an agent's login password. Handled inline (not in the
+            # stateless API module) because it touches the USERS/auth stores and
+            # the durable users table. Scoped to accounts that have an agent
+            # profile so it cannot reset other staff/admin accounts.
+            if path == '/api/admin/agents/reset-password':
+                if not require_role(session, ['admin']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                    return
+                try:
+                    from services import agent_ecosystem_service as _agtsvc
+                    username = sanitize_input(str(agt_body.get('username') or ''), 100).strip()
+                    agent_id = sanitize_input(str(agt_body.get('agent_id') or ''), 60).strip()
+                    agent_profile = None
+                    if agent_id:
+                        agent_profile = _agtsvc.get_agent(agent_id)
+                        if agent_profile and not username:
+                            username = agent_profile.get('user_username') or ''
+                    if username and agent_profile is None:
+                        agent_profile = _agtsvc.get_agent_by_username(username)
+                    if not username or agent_profile is None:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Agent not found'}).encode('utf-8'))
+                        return
+
+                    new_password = str(agt_body.get('new_password') or '')
+                    generated = False
+                    if not new_password:
+                        new_password = 'Agt-' + secrets.token_urlsafe(9)
+                        generated = True
+                    if len(new_password) < 8:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                        return
+
+                    pwd = hash_password(new_password)
+                    current = USERS.get(username) or {}
+                    value = {
+                        'hash': pwd['hash'],
+                        'salt': pwd['salt'],
+                        'role': current.get('role') or 'agent',
+                        'name': current.get('name') or agent_profile.get('display_name') or username,
+                    }
+                    if current.get('customer_id'):
+                        value['customer_id'] = current['customer_id']
+                    # Writes through to the durable users table in DB mode and to
+                    # the in-memory fallback in both modes (see UserDictWrapper).
+                    USERS[username] = value
+
+                    # Best-effort, secret-free audit trail on the hash-chained
+                    # platform event ledger.
+                    try:
+                        platform_event_ledger.append_event(
+                            event_type='agent.password_reset',
+                            entity_type='agent',
+                            entity_id=agent_profile.get('id') or username,
+                            actor=(session or {}).get('username', 'admin'),
+                            amount=0.0,
+                            payload={'target_username': username, 'generated': generated},
+                        )
+                    except Exception:
+                        pass
+
+                    resp = {
+                        'success': True,
+                        'username': username,
+                        'agent_id': agent_profile.get('id'),
+                        'message': 'Agent password has been reset.',
+                    }
+                    if generated:
+                        resp['temporary_password'] = new_password
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(resp).encode('utf-8'))
+                    return
+                except Exception as pw_exc:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(pw_exc)}).encode('utf-8'))
+                    return
+
             try:
                 try:
                     from web_portal import api_agent_ecosystem as _agt

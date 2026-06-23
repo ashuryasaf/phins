@@ -195,7 +195,8 @@
         `<button class="btn sm" data-rate="${a.id}">Save</button></td>`+
         `<td><span class="pill ${a.status}">${a.status}</span></td>`+
         `<td><button class="btn sm" data-toggle="${a.id}" data-status="${a.status}">${a.status==='active'?'Suspend':'Activate'}</button> `+
-        `<button class="btn alt sm" data-network="${a.id}" data-name="${(a.display_name||a.user_username)}">Network</button></td></tr>`).join('');
+        `<button class="btn alt sm" data-network="${a.id}" data-name="${(a.display_name||a.user_username)}">Network</button> `+
+        `<button class="btn sm" data-resetpw="${a.id}" data-user="${a.user_username}">Reset PW</button></td></tr>`).join('');
       $('#agents-table tbody').innerHTML=rows||'<tr><td colspan="6" class="muted">No agents yet.</td></tr>';
     }
 
@@ -229,6 +230,18 @@
       else if(t.dataset.toggle){const next=t.dataset.status==='active'?'suspended':'active';const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:t.dataset.toggle,status:next})});toast(status===200?'Updated':'Failed');loadAgents();loadOverview();}
       else if(t.dataset.rate){const id=t.dataset.rate;const rate=parseFloat($('#ar-'+id).value)||0;const {status}=await api('/api/admin/agents/update',{method:'POST',body:JSON.stringify({agent_id:id,default_rate:rate})});toast(status===200?'Default rate updated':'Failed');}
       else if(t.dataset.network){showNetwork(t.dataset.network,t.dataset.name||t.dataset.network);}
+      else if(t.dataset.resetpw){
+        const who=t.dataset.user||t.dataset.resetpw;
+        const np=prompt('Reset password for "'+who+'".\nLeave blank to auto-generate a secure password:','');
+        if(np===null) return; // cancelled
+        const payload={agent_id:t.dataset.resetpw};
+        if(np) payload.new_password=np;
+        const {status,body}=await api('/api/admin/agents/reset-password',{method:'POST',body:JSON.stringify(payload)});
+        if(status===200){
+          if(body.temporary_password){ window.prompt('Password reset for '+body.username+'. Copy this temporary password and share it securely:', body.temporary_password); }
+          toast('Password reset for '+body.username);
+        } else { toast((body&&body.error)||'Reset failed'); }
+      }
     });
 
     $('#net-close').addEventListener('click',()=>$('#net-card').classList.add('hidden'));

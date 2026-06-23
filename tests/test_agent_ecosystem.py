@@ -201,6 +201,34 @@ def test_http_agent_invitation_admin_approval_and_income_flow():
     assert status == 200 and body["accrued_total"] == 180.0
 
 
+def test_http_admin_reset_agent_password():
+    admin_token, _ = _login("admin", "admin123")
+    agent_token, _ = _login("agent", "agent123")
+    # provision the demo agent profile and resolve its id
+    me, _ = _get("/api/agent/me", token=agent_token)
+    aid = me["agent"]["id"]
+
+    # auto-generated password
+    body, status = _post("/api/admin/agents/reset-password", {"agent_id": aid}, token=admin_token)
+    assert status == 200 and body["success"] is True
+    assert body.get("temporary_password") and len(body["temporary_password"]) >= 8
+
+    # explicit new password → agent can then log in with it
+    body, status = _post("/api/admin/agents/reset-password",
+                         {"agent_id": aid, "new_password": "BrandNewPass1"}, token=admin_token)
+    assert status == 200 and "temporary_password" not in body
+    relogin, st = _post("/api/login", {"username": "agent", "password": "BrandNewPass1"})
+    assert st == 200 and relogin["role"] == "agent"
+
+    # non-admin cannot reset
+    _, st = _post("/api/admin/agents/reset-password", {"agent_id": aid}, token=agent_token)
+    assert st == 403
+
+    # cannot reset a non-agent account (no agent profile) via this endpoint
+    _, st = _post("/api/admin/agents/reset-password", {"username": "admin"}, token=admin_token)
+    assert st == 404
+
+
 def test_http_validate_invitation_public():
     agent = svc.create_agent("agent", default_rate=0.1, created_by="admin")
     _, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=0.1)
