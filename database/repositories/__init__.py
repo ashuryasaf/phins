@@ -42,6 +42,12 @@ from .marketplace_repository import (
     IdempotencyRepository,
     OutboxRepository,
 )
+from .agent_repository import (
+    AgentRepository,
+    AgentInvitationRepository,
+    AgentAffiliationRepository,
+    AgentCommissionRepository,
+)
 
 __all__ = [
     'BaseRepository',
@@ -78,4 +84,8 @@ __all__ = [
     'PayerReceivableRepository',
     'IdempotencyRepository',
     'OutboxRepository',
+    'AgentRepository',
+    'AgentInvitationRepository',
+    'AgentAffiliationRepository',
+    'AgentCommissionRepository',
 ]

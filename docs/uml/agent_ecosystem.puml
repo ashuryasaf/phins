@@ -1,0 +1,355 @@
+' ============================================================================
+' PHINS — Agent / Broker Ecosystem ("AgentOS")
+' Multi-page PlantUML model — DESIGN / SCOPING ONLY (awaiting approval).
+' Render: plantuml -tsvg docs/uml/agent_ecosystem.puml -o rendered
+'
+' Pages:
+'   1. System context
+'   2. Domain model (new + touched entities)
+'   3. Sequence — invite -> admin commission approval -> accept -> affiliation
+'   4. Sequence — revenue event -> commission accrual on hash-chained ledger
+'   5. State machine — AgentInvitation lifecycle
+'   6. State machine — Commission lifecycle
+'   7. Component view — agent portal, admin agents-management, services
+' ============================================================================
+
+' ---------------------------------------------------------------------------
+' PAGE 1 — SYSTEM CONTEXT
+' ---------------------------------------------------------------------------
+@startuml agent_ecosystem_context
+title PHINS Agent Ecosystem — System Context (proposed)
+
+left to right direction
+skinparam actorStyle awesome
+
+actor "Agent / Broker" as Agent
+actor "Prospect\n(future Customer)" as Prospect
+actor "Prospect Supplier" as PSupplier
+actor "Admin\n(sub-admin owner)" as Admin
+
+rectangle "PHINS Platform" {
+  component "Agent Portal\n(role=agent)" as AgentPortal
+  component "Admin Portal\n> Agents Management" as AdminPortal
+  component "Client Portal\n(Customer)" as ClientPortal
+  component "Supplier Portal" as SupplierPortal
+  component "Agent Ecosystem Service" as AgentSvc
+  database "Append-only\nHash-chained Ledger" as Ledger
+}
+
+Agent --> AgentPortal : login, invite, track income
+Admin --> AdminPortal : approve commission (in advance),\nmanage agents, payouts
+Prospect --> ClientPortal : accept invite -> become affiliated customer
+PSupplier --> SupplierPortal : accept invite -> affiliated supplier
+
+AgentPortal --> AgentSvc
+AdminPortal --> AgentSvc
+ClientPortal --> AgentSvc : redeem invitation code
+SupplierPortal --> AgentSvc : redeem invitation code
+AgentSvc --> Ledger : append commission &\naffiliation events (immutable)
+
+note bottom of AgentSvc
+  Capital-light: commission is an **expense/share** booking,
+  never new PHINS revenue. Every accrual is appended to the
+  existing PlatformLedger (sequence_no + previous_hash + entry_hash).
+end note
+@enduml
+
+' ---------------------------------------------------------------------------
+' PAGE 2 — DOMAIN MODEL
+' ---------------------------------------------------------------------------
+@startuml agent_ecosystem_domain
+title Agent Ecosystem — Domain Model (new = green, touched = yellow, existing = white)
+
+skinparam classAttributeIconSize 0
+
+class User <<existing>> #white {
+  username : PK
+  role : 'admin'|'agent'|... 
+  password_hash / salt
+  +is_staff()
+}
+note right of User
+  role gains 'agent'.
+  Agents authenticate through the
+  existing User + Session tables.
+  is_staff() stays false for agents.
+end note
+
+class Agent <<new>> #ccffcc {
+  id : PK  (AGT...)
+  user_username : FK -> User
+  display_name
+  status : pending|active|suspended
+  default_commission_rate : Float  (admin-set)
+  parent_agent_id : FK -> Agent (nullable)
+  created_by : admin username
+  payout_account_ref : nullable
+  created_date / updated_date
+}
+
+class AgentInvitation <<new>> #ccffcc {
+  code : PK
+  agent_id : FK -> Agent
+  invitee_type : customer|supplier|agent
+  invitee_email / phone
+  proposed_rate : Float   (agent proposes)
+  commission_rate : Float (admin-approved, LOCKED)
+  commission_basis : premium|gmv|one_time
+  status : draft|pending_approval|approved|
+           sent|accepted|expired|revoked
+  approved_by : admin username
+  approved_at
+  expires_at / max_uses / used_count
+  used_by : JSON[]
+  entry_hash : chained on status change
+}
+
+class AgentAffiliation <<new>> #ccffcc {
+  id : PK
+  agent_id : FK -> Agent
+  principal_type : customer|supplier|agent
+  principal_id : customer_id|supplier_id|agent_id
+  source_invitation_code : FK -> AgentInvitation
+  commission_rate : Float (LOCKED snapshot)
+  commission_basis
+  status : active|inactive|revoked
+  effective_from / effective_to
+  --
+  UNIQUE(active per principal)  ' hierarchy integrity
+}
+
+class AgentCommission <<new>> #ccffcc {
+  id : PK
+  agent_id : FK -> Agent
+  affiliation_id : FK -> AgentAffiliation
+  source_event_id : ledger id (idempotency key)
+  source_type : policy_premium|marketplace_order
+  base_amount : Float
+  rate : Float (locked)
+  amount : Float = base_amount * rate
+  currency
+  status : accrued|payable|paid|reversed
+  ledger_entry_id : FK -> PlatformLedgerEntry
+}
+
+class PlatformLedgerEntry <<existing>> #white {
+  id / sequence_no
+  event_type : 'agent.commission.accrued' | ...
+  entity_type / entity_id
+  actor / amount / currency
+  previous_hash / entry_hash
+}
+
+class Customer <<touched>> #ffffcc {
+  id : PK
+  ... (PII)
+  referring_agent_id : FK -> Agent (nullable, NEW)
+}
+
+class Supplier <<touched>> #ffffcc {
+  id : PK
+  referring_agent_id : FK -> Agent (nullable, NEW)
+}
+
+class Policy <<existing>> #white {
+  id / customer_id / annual_premium
+}
+
+class AgentPayout <<new (phase 2)>> #ccffcc {
+  id : PK
+  agent_id : FK -> Agent
+  period
+  total_amount
+  status : pending|settled
+}
+
+User "1" -- "0..1" Agent
+Agent "1" -- "0..*" AgentInvitation
+Agent "1" -- "0..*" AgentAffiliation
+Agent "0..1" -- "0..*" Agent : parent / sub-agents
+AgentInvitation "1" -- "0..1" AgentAffiliation : on accept
+AgentAffiliation "1" -- "0..*" AgentCommission
+AgentCommission "1" -- "1" PlatformLedgerEntry : source of truth
+Customer "0..*" -- "0..1" Agent : referring_agent_id
+Supplier "0..*" -- "0..1" Agent : referring_agent_id
+Customer "1" -- "0..*" Policy
+Agent "1" -- "0..*" AgentPayout
+
+note bottom
+  Integrity invariants:
+  (1) Exactly one ACTIVE affiliation per principal -> no double commission.
+  (2) commission_rate is immutable post-approval; changes require a new
+      invitation/affiliation version (append-only, never in-place edit).
+  (3) Every AgentCommission row is backed 1:1 by a hash-chained ledger entry;
+      reversals are compensating entries, never deletes.
+  (4) (source_event_id, affiliation_id) is unique -> idempotent accrual.
+end note
+@enduml
+
+' ---------------------------------------------------------------------------
+' PAGE 3 — SEQUENCE: invite -> admin approval -> accept -> affiliation
+' ---------------------------------------------------------------------------
+@startuml agent_ecosystem_invite_seq
+title Sequence — Invitation with admin-approved commission (locked in advance)
+
+actor Agent
+participant "Agent Portal" as AP
+participant "Agent Ecosystem\nService" as SVC
+actor Admin
+participant "Admin Portal" as ADP
+actor Prospect
+participant "Client/Supplier\nRegister" as REG
+database "Ledger" as L
+
+Agent -> AP : create invitation\n(invitee_type, email, proposed_rate)
+AP -> SVC : POST /api/agent/invitations
+SVC -> SVC : status = pending_approval
+SVC -> L : append agent.invitation.created
+SVC --> AP : code (not yet sendable)
+
+Admin -> ADP : open approvals queue
+ADP -> SVC : GET /api/admin/agent-invitations?status=pending_approval
+Admin -> ADP : set/adjust commission_rate, approve
+ADP -> SVC : POST /api/admin/agent-invitations/{code}/approve {rate}
+SVC -> SVC : commission_rate = rate (LOCKED)\nstatus = approved
+SVC -> L : append agent.invitation.approved (rate snapshot)
+SVC --> ADP : approved
+
+Agent -> AP : send invite link/code
+note over AP: status -> sent
+
+Prospect -> REG : register with invitation code
+REG -> SVC : validate + redeem code
+SVC -> SVC : create AgentAffiliation\n(commission_rate copied & LOCKED)\nset referring_agent_id
+SVC -> L : append agent.affiliation.created
+SVC --> REG : account created, affiliated
+@enduml
+
+' ---------------------------------------------------------------------------
+' PAGE 4 — SEQUENCE: revenue event -> commission accrual
+' ---------------------------------------------------------------------------
+@startuml agent_ecosystem_accrual_seq
+title Sequence — Revenue event -> commission accrual (idempotent, ledger-backed)
+
+participant "Billing / Marketplace\n(existing revenue event)" as REV
+participant "Commission Engine\n(in Agent Svc)" as CE
+database "Ledger" as L
+database "agent_commissions\n(projection)" as PROJ
+participant "Agent Income\nDashboard" as DASH
+
+REV -> CE : on premium paid / order settled\n(source_event_id, principal_id, base_amount)
+CE -> CE : find ACTIVE affiliation for principal
+alt no active affiliation
+  CE --> REV : no-op
+else affiliation found
+  CE -> CE : idempotency check\n(source_event_id, affiliation_id)
+  alt already accrued
+    CE --> REV : skip (idempotent)
+  else new
+    CE -> CE : amount = base_amount * locked_rate
+    CE -> L : append agent.commission.accrued\n(actor=agent, entity=source event)
+    CE -> PROJ : upsert AgentCommission (status=accrued)
+    CE --> REV : accrued
+  end
+end
+
+DASH -> PROJ : GET /api/agent/income/summary (scoped to agent subtree)
+note over L,PROJ
+  Ledger is source of truth; the projection table is a
+  queryable materialization rebuilt from the ledger if needed.
+end note
+@enduml
+
+' ---------------------------------------------------------------------------
+' PAGE 5 — STATE MACHINE: AgentInvitation
+' ---------------------------------------------------------------------------
+@startuml agent_invitation_state
+title State Machine — AgentInvitation
+
+[*] --> draft
+draft --> pending_approval : agent submits
+pending_approval --> approved : admin sets rate & approves
+pending_approval --> rejected : admin rejects
+approved --> sent : agent shares code
+sent --> accepted : invitee redeems (-> Affiliation)
+sent --> expired : past expires_at
+approved --> revoked : admin/agent revokes
+sent --> revoked : admin/agent revokes
+rejected --> [*]
+expired --> [*]
+revoked --> [*]
+accepted --> [*]
+
+note right of approved
+  commission_rate is LOCKED here.
+  Re-pricing requires a NEW invitation.
+end note
+@enduml
+
+' ---------------------------------------------------------------------------
+' PAGE 6 — STATE MACHINE: Commission
+' ---------------------------------------------------------------------------
+@startuml agent_commission_state
+title State Machine — AgentCommission
+
+[*] --> accrued : revenue event (ledger append)
+accrued --> payable : period close / admin confirm
+payable --> paid : payout settlement run
+accrued --> reversed : compensating ledger entry\n(e.g. refund / chargeback)
+payable --> reversed : compensating ledger entry
+paid --> [*]
+reversed --> [*]
+
+note bottom
+  No state is mutated destructively. "reversed" is a NEW
+  compensating ledger entry; original accrual stays in the chain.
+end note
+@enduml
+
+' ---------------------------------------------------------------------------
+' PAGE 7 — COMPONENT VIEW
+' ---------------------------------------------------------------------------
+@startuml agent_ecosystem_components
+title Component View — Agent Portal + Admin Agents-Management
+
+package "web_portal/static (UI)" {
+  component "agent-portal.html\n(dashboard, invites, network, income)" as UIAgent
+  component "admin: agents-management\n(section in admin dashboard)" as UIAdmin
+}
+
+package "web_portal (routing)" {
+  component "server.py / api_extensions.py\nagent + admin agent routes" as Routes
+}
+
+package "services/" {
+  component "agent_ecosystem_service.py\n(invitations, affiliations, scope)" as SvcCore
+  component "agent_commission_service.py\n(accrual engine, idempotency)" as SvcComm
+  component "platform_event_ledger_service.py\n(existing)" as SvcLedger
+  component "billing_service / marketplace_service\n(existing revenue events)" as SvcRev
+}
+
+package "database/" {
+  database "agents / agent_invitations /\nagent_affiliations / agent_commissions" as DBnew
+  database "platform_ledger_entries\n(existing)" as DBledger
+  database "users / customers / suppliers\n(touched)" as DBcore
+}
+
+UIAgent --> Routes
+UIAdmin --> Routes
+Routes --> SvcCore
+Routes --> SvcComm
+SvcCore --> DBnew
+SvcCore --> DBcore
+SvcComm --> SvcLedger
+SvcComm --> DBnew
+SvcLedger --> DBledger
+SvcRev --> SvcComm : revenue event hook
+
+note bottom of Routes
+  Access control:
+   - role=agent  -> only own subtree (affiliations + sub-agents)
+   - role=admin  -> full agents-management
+  Customer "outline" returned to agents excludes PII/medical;
+  only name, status, policy count, premium contribution to commission.
+end note
+@enduml

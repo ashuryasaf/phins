@@ -9236,6 +9236,7 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
     'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
     'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
+    'agent': os.environ.get('PHINS_DEMO_AGENT_PASSWORD', 'agent123'),
 }
 
 # IMPORTANT:
@@ -11417,6 +11418,9 @@ def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
         'actuary': {**_get_secure_password('PHINS_ACTUARY_PASSWORD', 'actuary'), 'role': 'actuary', 'name': 'Actuary User'},
         'supplier': {**_get_secure_password('PHINS_SUPPLIER_PASSWORD', 'supplier'), 'role': 'supplier', 'name': 'Supplier User'},
         'media_ad': {**_get_secure_password('PHINS_MEDIA_PASSWORD', 'media_ad'), 'role': 'media', 'name': 'Media Admin'},
+        # Agent ecosystem ("AgentOS") demo login. Profile auto-provisions on first
+        # /api/agent call (see services/agent_ecosystem_service.ensure_demo_agent).
+        'agent': {**_get_secure_password('PHINS_AGENT_PASSWORD', 'agent'), 'role': 'agent', 'name': 'Demo Agent'},
         # Named accounts - use email-based env vars (replace special chars)
         'asaf@phins.ai': {**_get_secure_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'), 'role': 'admin', 'name': 'Asaf PHINS'},
         'asaf@assurance.co.il': {**_get_secure_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
@@ -14607,6 +14611,31 @@ For claims or questions, please contact:
                 status_code = 200
             except Exception as cap_exc:
                 status_code, payload = 500, {'error': str(cap_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        # ========== AGENT ECOSYSTEM (AgentOS) ==========
+        # Wires services/agent_ecosystem_service.py via web_portal/api_agent_ecosystem.py.
+        # Agent role + admin agents-management. Read-only routes handled here; the
+        # module enforces role scope (agent -> own subtree, admin -> management).
+        if (path.startswith('/api/agent/') or path.startswith('/api/admin/agent')
+                or path == '/api/agent-invitations/validate'):
+            try:
+                try:
+                    from web_portal import api_agent_ecosystem as _agt
+                except Exception:
+                    import api_agent_ecosystem as _agt
+                _agt_ctx = {
+                    'role': get_effective_role(session),
+                    'username': (session or {}).get('username'),
+                    'customer_id': (session or {}).get('customer_id'),
+                }
+                status_code, payload = _agt.handle_get(path, qs, _agt_ctx, {
+                    'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
+                })
+            except Exception as agt_exc:
+                status_code, payload = 500, {'error': str(agt_exc)}
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -27620,6 +27649,46 @@ For claims or questions, please contact:
                 status_code, response_data = _legal_doc_verify(body_data)
             self._set_json_headers(status_code)
             self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+            return
+
+        # ========== AGENT ECOSYSTEM (AgentOS) — mutations ==========
+        # Wires services/agent_ecosystem_service.py via web_portal/api_agent_ecosystem.py.
+        if (path.startswith('/api/agent/') or path.startswith('/api/admin/agent')):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else ''
+            try:
+                agt_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(agt_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            try:
+                try:
+                    from web_portal import api_agent_ecosystem as _agt
+                except Exception:
+                    import api_agent_ecosystem as _agt
+                _agt_ctx = {
+                    'role': get_effective_role(session),
+                    'username': (session or {}).get('username'),
+                    'customer_id': (session or {}).get('customer_id'),
+                }
+                status_code, payload = _agt.handle_post(path, qs_post, _agt_ctx, agt_body, {
+                    'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
+                })
+            except Exception as agt_exc:
+                status_code, payload = 500, {'error': str(agt_exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
         # Handle multipart form data for quote submission

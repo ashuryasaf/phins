@@ -113,6 +113,13 @@ def seed_default_users(session=None):
                 'email': 'accountant@phins.ai'
             },
             {
+                'username': 'agent',
+                'password': _get_env_password('PHINS_AGENT_PASSWORD', 'agent'),
+                'role': 'agent',
+                'name': 'Demo Agent',
+                'email': 'agent@phins.ai'
+            },
+            {
                 'username': 'media_ad',
                 'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
                 'role': 'media',

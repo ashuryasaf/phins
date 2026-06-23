@@ -13,6 +13,14 @@
   - wallet-safe marketplace and external payer domain model
   - coverage-aware purchase, settlement, and reimbursement sequence
   - marketplace financial lifecycle state machine
+- `docs/uml/agent_ecosystem.puml` — **proposed** agent/broker ecosystem ("AgentOS"),
+  design/scoping for review (see `docs/agent_ecosystem_design.md`):
+  - system context
+  - domain model (agent, invitation, affiliation, commission)
+  - invite → admin commission approval → accept → affiliation sequence
+  - revenue event → hash-chained commission accrual sequence
+  - invitation and commission state machines
+  - component view (agent portal, admin agents-management, services)
 
 ## Render diagrams locally
 

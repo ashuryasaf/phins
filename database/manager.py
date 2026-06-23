@@ -49,6 +49,10 @@ from database.repositories import (
     PayerReceivableRepository,
     IdempotencyRepository,
     OutboxRepository,
+    AgentRepository,
+    AgentInvitationRepository,
+    AgentAffiliationRepository,
+    AgentCommissionRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +117,11 @@ class DatabaseManager:
         self._payer_receivables = None
         self._idempotency = None
         self._outbox = None
+        # Agent ecosystem repositories.
+        self._agents = None
+        self._agent_invitations = None
+        self._agent_affiliations = None
+        self._agent_commissions = None
     
     def _ensure_session(self) -> Session:
         """
@@ -164,6 +173,10 @@ class DatabaseManager:
         self._payer_receivables = None
         self._idempotency = None
         self._outbox = None
+        self._agents = None
+        self._agent_invitations = None
+        self._agent_affiliations = None
+        self._agent_commissions = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -400,6 +413,39 @@ class DatabaseManager:
         if self._outbox is None:
             self._outbox = OutboxRepository(self._ensure_session())
         return self._outbox
+
+    # ------------------------------------------------------------------
+    # Agent ecosystem repositories ("AgentOS").
+    # See docs/agent_ecosystem_design.md.
+    # ------------------------------------------------------------------
+
+    @property
+    def agents(self) -> AgentRepository:
+        """Get agent profile repository."""
+        if self._agents is None:
+            self._agents = AgentRepository(self._ensure_session())
+        return self._agents
+
+    @property
+    def agent_invitations(self) -> AgentInvitationRepository:
+        """Get agent invitation repository."""
+        if self._agent_invitations is None:
+            self._agent_invitations = AgentInvitationRepository(self._ensure_session())
+        return self._agent_invitations
+
+    @property
+    def agent_affiliations(self) -> AgentAffiliationRepository:
+        """Get agent affiliation repository."""
+        if self._agent_affiliations is None:
+            self._agent_affiliations = AgentAffiliationRepository(self._ensure_session())
+        return self._agent_affiliations
+
+    @property
+    def agent_commissions(self) -> AgentCommissionRepository:
+        """Get agent commission repository."""
+        if self._agent_commissions is None:
+            self._agent_commissions = AgentCommissionRepository(self._ensure_session())
+        return self._agent_commissions
 
     def commit(self):
         """Commit current transaction"""

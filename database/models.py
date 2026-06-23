@@ -5,7 +5,7 @@ These models define the database schema for all core entities in the system.
 Supports both SQLite (development) and PostgreSQL (production).
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -86,6 +86,9 @@ class Customer(Base):
     portal_active = Column(Boolean, default=True)  # Can login to customer portal
     last_login = Column(DateTime, nullable=True)
     
+    # Agent ecosystem: referring agent (nullable; one active affiliation per principal)
+    referring_agent_id = Column(String(50), nullable=True, index=True)
+
     # Timestamps
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -112,6 +115,7 @@ class Customer(Base):
             'zip': self.zip,
             'occupation': self.occupation,
             'portal_active': self.portal_active,
+            'referring_agent_id': self.referring_agent_id,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
@@ -1168,6 +1172,9 @@ class Supplier(Base):
     password_salt = Column(String(255), nullable=True)
     portal_active = Column(Boolean, default=False)  # Activated after approval
     last_login = Column(DateTime, nullable=True)
+
+    # Agent ecosystem: referring agent (nullable; one active affiliation per principal)
+    referring_agent_id = Column(String(50), nullable=True, index=True)
     
     # Approval Workflow
     status = Column(String(50), default='pending', index=True)  # pending, under_review, approved, rejected, suspended, terminated
@@ -2575,4 +2582,174 @@ class DocumentProcessingJob(Base):
             'processing_time_ms': self.processing_time_ms,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'completed_date': self.completed_date.isoformat() if self.completed_date else None,
+        }
+
+
+# ============================================================================
+# Agent / Broker ecosystem ("AgentOS")
+# See docs/agent_ecosystem_design.md and docs/uml/agent_ecosystem.puml.
+# Durable backing for services/agent_ecosystem_service.py (in-memory authoritative,
+# best-effort write-through). Commission accruals are also anchored in the
+# append-only PlatformLedgerEntry chain for integrity.
+# ============================================================================
+
+
+class Agent(Base):
+    """An agent/broker profile, linked 1:1 to a User with role='agent'."""
+    __tablename__ = 'agents'
+
+    id = Column(String(50), primary_key=True)  # AGT...
+    user_username = Column(String(100), index=True, nullable=False)
+    display_name = Column(String(200))
+    email = Column(String(254))
+    status = Column(String(20), default='active', index=True)  # pending|active|suspended
+    default_commission_rate = Column(Float, default=0.0)  # admin-set, 0..1
+    parent_agent_id = Column(String(50), nullable=True, index=True)  # reserved for sub-agents
+    created_by = Column(String(100))
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_username': self.user_username,
+            'display_name': self.display_name,
+            'email': self.email,
+            'status': self.status,
+            'default_commission_rate': self.default_commission_rate,
+            'parent_agent_id': self.parent_agent_id,
+            'created_by': self.created_by,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+        }
+
+
+class AgentInvitation(Base):
+    """Invitation issued by an agent; commission rate is LOCKED by admin in advance."""
+    __tablename__ = 'agent_invitations'
+
+    code = Column(String(100), primary_key=True)
+    agent_id = Column(String(50), index=True, nullable=False)
+    invitee_type = Column(String(20), nullable=False)  # customer|supplier|agent
+    invitee_email = Column(String(254))
+    invitee_phone = Column(String(50))
+    proposed_rate = Column(Float, default=0.0)        # agent proposal (0..1)
+    commission_rate = Column(Float, nullable=True)    # admin-locked (0..1)
+    commission_basis = Column(String(20), default='premium')  # premium|gmv|one_time
+    status = Column(String(30), default='pending_approval', index=True)
+    approved_by = Column(String(100), nullable=True)
+    approved_at = Column(String(100), nullable=True)
+    created_at = Column(String(100), nullable=False)
+    expires_at = Column(String(100), nullable=True)
+    max_uses = Column(Integer, default=1)
+    used_count = Column(Integer, default=0)
+    used_by = Column(Text, nullable=True)  # JSON array of principal ids
+    notes = Column(Text, nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        used_by_list = []
+        if self.used_by:
+            try:
+                used_by_list = json.loads(self.used_by)
+            except Exception:
+                used_by_list = []
+        return {
+            'code': self.code,
+            'agent_id': self.agent_id,
+            'invitee_type': self.invitee_type,
+            'invitee_email': self.invitee_email,
+            'invitee_phone': self.invitee_phone,
+            'proposed_rate': self.proposed_rate,
+            'commission_rate': self.commission_rate,
+            'commission_basis': self.commission_basis,
+            'status': self.status,
+            'approved_by': self.approved_by,
+            'approved_at': self.approved_at,
+            'created_at': self.created_at,
+            'expires_at': self.expires_at,
+            'max_uses': self.max_uses,
+            'used_count': self.used_count,
+            'used_by': used_by_list,
+            'notes': self.notes,
+        }
+
+
+class AgentAffiliation(Base):
+    """Links a principal (customer/supplier/sub-agent) to a referring agent.
+
+    Integrity: at most ONE active affiliation per principal (enforced in service).
+    The commission_rate is a LOCKED snapshot copied from the approved invitation.
+    """
+    __tablename__ = 'agent_affiliations'
+
+    id = Column(String(60), primary_key=True)  # AFF...
+    agent_id = Column(String(50), index=True, nullable=False)
+    principal_type = Column(String(20), nullable=False)  # customer|supplier|agent
+    principal_id = Column(String(60), index=True, nullable=False)
+    source_invitation_code = Column(String(100), nullable=True)
+    commission_rate = Column(Float, default=0.0)  # locked
+    commission_basis = Column(String(20), default='premium')
+    status = Column(String(20), default='active', index=True)  # active|inactive|revoked
+    effective_from = Column(String(100), nullable=False)
+    effective_to = Column(String(100), nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'principal_type': self.principal_type,
+            'principal_id': self.principal_id,
+            'source_invitation_code': self.source_invitation_code,
+            'commission_rate': self.commission_rate,
+            'commission_basis': self.commission_basis,
+            'status': self.status,
+            'effective_from': self.effective_from,
+            'effective_to': self.effective_to,
+        }
+
+
+class AgentCommission(Base):
+    """A commission accrual, backed 1:1 by a hash-chained ledger entry.
+
+    Idempotency: unique (source_event_id, affiliation_id) prevents double accrual.
+    """
+    __tablename__ = 'agent_commissions'
+    __table_args__ = (
+        # Schema-level idempotency: one accrual per revenue event per affiliation,
+        # so concurrent app instances cannot each write a duplicate commission row.
+        UniqueConstraint('source_event_id', 'affiliation_id',
+                         name='uq_agent_commission_event_affiliation'),
+    )
+
+    id = Column(String(80), primary_key=True)  # COMM...
+    agent_id = Column(String(50), index=True, nullable=False)
+    affiliation_id = Column(String(60), index=True, nullable=False)
+    source_event_id = Column(String(120), index=True, nullable=False)
+    source_type = Column(String(40), default='policy_premium')  # policy_premium|marketplace_order|bounty
+    base_amount = Column(Float, default=0.0)
+    rate = Column(Float, default=0.0)
+    amount = Column(Float, default=0.0)
+    currency = Column(String(12), default='USD')
+    status = Column(String(20), default='accrued', index=True)  # accrued|payable|paid|reversed
+    ledger_entry_id = Column(String(120), nullable=True)
+    created_at = Column(String(100), nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'affiliation_id': self.affiliation_id,
+            'source_event_id': self.source_event_id,
+            'source_type': self.source_type,
+            'base_amount': self.base_amount,
+            'rate': self.rate,
+            'amount': self.amount,
+            'currency': self.currency,
+            'status': self.status,
+            'ledger_entry_id': self.ledger_entry_id,
+            'created_at': self.created_at,
         }
