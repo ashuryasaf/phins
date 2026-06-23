@@ -1,0 +1,20 @@
+c809abf Merge pull request #392 from ashuryasaf/cursor/refine-investor-deck-professional-b8a6
+67d6ca8 Refine unicorn investor deck: professional outline, clean PDF, internal appendix
+58bf6a1 Merge pull request #390 from ashuryasaf/cursor/seed-deck-configurator-e4ad
+5cfb0cc Fix seed deck FX override, Hebrew lang restore, and currency sync on load
+95d8c13 Fix seed deck FX override, Hebrew lang restore, and currency sync on load
+3edbccb Use ₪ glyph for Hebrew/ILS instead of ש"ח
+d27ce7c Make seed deck adjustable via configurator; currency follows language
+e9b9615 Restructure seed deck as fundraising story with richer design
+de341d1 Merge pull request #389 from ashuryasaf/cursor/seed-investor-5pager-e4ad
+ce1b386 Fix print hiding use-of-funds bars and English i18n stripping inline tags
+7ef749c Add focused 5-page seed investor super-pitch (EN/Hebrew, PDF)
+3212bf8 Merge pull request #388 from ashuryasaf/cursor/series-a-thesis-slide-e4ad
+5a5c393 Apply Series A master-deck prompt: exact headline + 10-pillar thesis
+bfc74cb Merge pull request #386 from ashuryasaf/cursor/unicorn-investor-deck-e4ad
+e35036b Fix ESOP dilution in deal math and hero take-rate label
+2669603 Fix manual FX overrides being overwritten on page load
+9198071 Add adjustable unicorn InsurTech investor deck
+fa00751 Merge pull request #381 from ashuryasaf/cursor/business-plan-executive-pdf-3daf
+a4823d5 Add downloadable Business Plan (Executive) PDF to investor documents
+bfe810f Merge pull request #380 from ashuryasaf/cursor/adjustable-investor-name-live-fx-26bb
