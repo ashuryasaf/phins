@@ -1549,6 +1549,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       fxEur: 0.92,
       fxIls: 3.7,
       fxSource: "default",
+      fxAsOf: "",
       investor: "Institutional Partner",
       round: 15000000,
       pre: 60000000,
@@ -1862,9 +1863,19 @@ derived from the same engine. Cite any market statistic; mark planning estimates
     function fxBadge(txt) { var b = document.getElementById("fx-badge"); if (b) b.textContent = txt; }
     function fxSource(txt) { var b = document.getElementById("fx-source"); if (b) b.textContent = txt; }
 
+    // Re-applies the localized FX badge + "as of" line from current state so the
+    // labels follow the active language (e.g. after a language switch).
+    function applyFxLabels() {
+      if (state.fxSource === "manual") fxBadge(L("manual ✎", "ידני ✎"));
+      else if (state.fxSource === "live") fxBadge(L("live ✓", "חי ✓"));
+      else if (state.fxSource === "fallback") fxBadge(L("fallback ⚠", "גיבוי ⚠"));
+      else fxBadge(state.fxSource + " ⚠");
+      fxSource(state.fxAsOf ? (L("as of ", "נכון ל‑") + String(state.fxAsOf).slice(0, 10)) : "");
+    }
+
     function loadFx(force) {
       if (!force && state.fxSource === "manual") {
-        fxBadge(L("manual ✎", "ידני ✎")); applyFxInputs(); render();
+        applyFxLabels(); applyFxInputs(); render();
         return;
       }
       fxBadge(L("loading…", "טוען…"));
@@ -1876,13 +1887,13 @@ derived from the same engine. Cite any market statistic; mark planning estimates
           if (usdEur) state.fxEur = Number(usdEur);
           if (usdIls) state.fxIls = Number(usdIls);
           state.fxSource = d.source === "alpha_vantage" ? "live" : (d.source || "fallback");
-          fxBadge(state.fxSource === "live" ? L("live ✓", "חי ✓") : (state.fxSource + " ⚠"));
-          fxSource(d.as_of ? (L("as of ", "נכון ל‑") + String(d.as_of).slice(0, 10)) : "");
+          state.fxAsOf = d.as_of || "";
+          applyFxLabels();
           applyFxInputs(); persist(); render();
         })
         .catch(function () {
           state.fxSource = "fallback";
-          fxBadge(L("fallback ⚠", "גיבוי ⚠")); applyFxInputs(); render();
+          applyFxLabels(); applyFxInputs(); render();
         });
     }
 
@@ -1950,6 +1961,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
           state.lang = this.getAttribute("data-lang") === "he" ? "he" : "en";
           persist();
           applyLang();
+          applyFxLabels();
           render();
         });
       }
