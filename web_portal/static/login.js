@@ -424,6 +424,7 @@ document.addEventListener('DOMContentLoaded', function () {
     switch (role) {
       case 'admin': return '/admin-portal.html';
       case 'media': return '/admin-media.html';
+      case 'agent': return '/agent-portal.html';
       case 'actuary': return '/actuary-dashboard.html';
       case 'supplier': return '/supplier-dashboard.html';
       case 'underwriter': return '/underwriter-dashboard.html';
