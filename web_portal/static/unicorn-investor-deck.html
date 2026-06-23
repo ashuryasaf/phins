@@ -282,28 +282,102 @@
       border: 1px solid #f0d98a; border-radius: 999px; padding: 4px 12px; margin-bottom: 10px;
     }
 
-    /* ── Print / PDF: clean, professional, one section per page ── */
+    /* ── Print / PDF: compact A4 report — dense, aligned, minimal blank space ── */
     @media print {
-      @page { margin: 14mm 12mm; }
+      @page { size: A4; margin: 11mm 10mm; }
+      html, body { background: #fff; color: #000; }
+      body { font-size: 8.7pt; line-height: 1.36; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .deck-nav, .site-header, .no-print { display: none !important; }
-      body { background: #fff; color: #000; }
       a { text-decoration: none; color: inherit; }
       .wrap { max-width: none; padding: 0; }
 
-      /* Cover page = hero */
-      .hero { padding: 40px 28px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-      /* One slide per page for a deck-like PDF */
-      section.slide { page-break-inside: avoid; page-break-before: always; margin-bottom: 0; padding-top: 4px; }
-
       /* Keep brand colors in print */
       .sec-num, .panel, .card, .hl-box, .integrity, .note, .closing, table.tbl th,
-      .bar-fill, .kpi-box, .fw-node, .hero-stat, .tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .bar-fill, .kpi-box, .fw-node, .hero-stat, .tag, .hero, .slide-label,
+      .funnel-bar, .agenda .ag-num { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      /* Re-assert multi-column grids: A4 content (~190mm ≈ 718px) is below the
+         880px screen breakpoint, which would otherwise collapse every grid to a
+         single column — the main cause of tall, half-empty pages. */
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+      .grid-3 { grid-template-columns: repeat(3, 1fr); }
+      .grid-4 { grid-template-columns: repeat(4, 1fr); }
+      .agenda { grid-template-columns: repeat(2, 1fr); }
+      .hl-grid { grid-template-columns: repeat(4, 1fr); }
+
+      /* Cover page = hero, compact */
+      .hero { padding: 24px 22px 20px; page-break-after: always; }
+      .hero h1 { font-size: 21pt; line-height: 1.1; margin-bottom: 9px; }
+      .hero p.lede { font-size: 9.4pt; }
+      .hero-eyebrow { font-size: 7.4pt; margin-bottom: 9px; padding: 4px 11px; }
+      .hero-badges { margin-top: 13px; gap: 6px; }
+      .hero-badge { font-size: 7.2pt; padding: 4px 9px; }
+      .hero-stats { margin-top: 15px; gap: 9px; grid-template-columns: repeat(4, 1fr); }
+      .hero-stat { padding: 9px 11px; border-radius: 9px; }
+      .hero-stat .v { font-size: 13.5pt; }
+      .hero-stat .l { font-size: 6.9pt; margin-top: 4px; }
+
+      /* Report-style flow: sections fill the page instead of one-slide-per-page.
+         Keep structural blocks intact so columns stay aligned across breaks. */
+      section.slide { page-break-before: auto; page-break-inside: auto; margin-bottom: 13px; padding-top: 0; scroll-margin-top: 0; }
+      .panel, .card, .hl-box, .note, .integrity, .fw-node, .kpi-box, .closing,
+      .bar-row, .funnel-row, .tl-item, code.prompt, .agenda a { page-break-inside: avoid; }
+      table.tbl { page-break-inside: auto; }
+      table.tbl thead { display: table-header-group; }
+      table.tbl tr { page-break-inside: avoid; }
+      .sec-head, .slide-title, .slide-label, .card h3, .fw-node h4 { page-break-after: avoid; }
+
+      /* Tighten type for A4 density */
+      .slide-title { font-size: 13pt; line-height: 1.18; margin-bottom: 5px; }
+      .slide-copy { font-size: 8.3pt; max-width: none; }
+      .slide-label { font-size: 6.9pt; padding: 3px 9px; margin-bottom: 6px; }
+      .card h3 { font-size: 10pt; margin-bottom: 5px; }
+      .card p { font-size: 8.1pt; }
+      .card .kpi { font-size: 13pt; margin: 3px 0 6px; }
+      .hl-box .hl-v { font-size: 15pt; }
+      .hl-box .hl-l { font-size: 7.5pt; margin-top: 4px; }
+      .kpi-box .v { font-size: 12.5pt; }
+      .kpi-box .l { font-size: 6.9pt; margin-top: 4px; }
+      .fw-node .n { font-size: 7.2pt; }
+      .fw-node h4 { font-size: 9pt; margin: 3px 0 4px; }
+      .fw-node p { font-size: 7.7pt; }
+      .tl-item h4 { font-size: 9pt; }
+      .tl-item p { font-size: 7.9pt; }
+      ul.tick { margin-top: 7px; }
+      ul.tick li { font-size: 8.2pt; margin-bottom: 4px; padding-left: 17px; }
+      table.tbl { font-size: 7.7pt; }
+      table.tbl th { padding: 5px 7px; }
+      table.tbl td { padding: 4px 7px; }
+      .note, .integrity { font-size: 7.9pt; line-height: 1.42; }
+      code.prompt { font-size: 7.6pt; line-height: 1.4; padding: 11px 13px; }
+      .agenda .ag-title { font-size: 9pt; }
+      .agenda .ag-desc { font-size: 7.4pt; }
+
+      /* Compact containers: removes the "big text box" look and blank space */
+      .panel { padding: 13px 14px; border-radius: 10px; box-shadow: none; }
+      .card { padding: 11px 12px; border-radius: 9px; box-shadow: none; }
+      .hl-box { padding: 11px 12px; border-radius: 9px; box-shadow: none; border-top-width: 3px; }
+      .note, .integrity { padding: 9px 12px; border-radius: 8px; }
+      .fw-node { padding: 11px 12px; border-radius: 10px; }
+      .kpi-box { padding: 10px 10px; border-radius: 9px; }
+      .grid-2, .grid-3, .grid-4 { gap: 10px; }
+      .ctrl-grid, .kpi-strip, .hl-grid, .flywheel, .agenda { gap: 9px; }
+      section.slide > .panel + .panel { margin-top: 12px; }
+      .sec-head { gap: 11px; margin-bottom: 9px; padding-bottom: 8px; }
+      .sec-num { min-width: 36px; height: 36px; font-size: 13pt; border-radius: 9px; }
+
+      /* De-emphasize decorative emoji icons for a formal report look */
+      .icon-chip { font-size: 13px; margin-bottom: 4px; }
+      .slide-label, .hero-eyebrow, .appendix-flag { letter-spacing: 0.06em; }
+
+      /* Closing block compaction */
+      .closing { padding: 22px 22px; border-radius: 12px; }
+      .closing h2 { font-size: 16pt; margin-bottom: 8px; }
+      .closing p { font-size: 9pt; }
 
       /* Hide live/interactive configurator chrome — keep the computed summary */
       .cfg .fx-strip, .cfg .ctrl-grid, .cfg .cur-btn { display: none !important; }
-      .panel { box-shadow: none; }
-      .card, .hl-box { box-shadow: none; }
+      .cfg { border-width: 1px; }
 
       .print-only { display: block !important; }
     }
