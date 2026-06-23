@@ -40,6 +40,17 @@ Demo: log in to `/agent-portal.html` as `agent`/`agent123`, and manage from
   and a live hash-chain integrity badge. Backed by new read-only admin endpoints
   `GET /api/admin/agents/overview|affiliations|network|ledger` and
   `community_overview()` (which calls `verify_ledger_integrity()`).
+- **Durable persistence hardening**: in DB mode the durable tables are the source of
+  truth. The in-memory dicts became a short-lived per-instance cache that is
+  **refreshed from the database on read** (coalesced to once per `PHINS_AGENT_HYDRATE_TTL`,
+  default 1.5s) and **force-refreshed on every write/decision**, replacing the previous
+  hydrate-once-at-startup snapshot. This makes agent data **survive restarts** and stay
+  **consistent across multiple instances** (a peer's new agent / approval / affiliation /
+  suspension becomes visible) while preserving idempotent accrual and the hash-chained
+  ledger. Also fixed a latent write-through bug where agent `created_date`/`updated_date`
+  ISO strings were rejected by the SQLite `DateTime` columns (datetime columns are now
+  left to their DB defaults). Covered by `test_db_mode_durability_survives_restart` and
+  `test_db_mode_cross_instance_visibility`.
 
 Render the diagrams:
 

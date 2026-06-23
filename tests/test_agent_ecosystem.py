@@ -264,6 +264,72 @@ def test_http_admin_community_endpoints():
 
 
 # ---------------------------------------------------------------------------
+# Persistence hardening: DB source-of-truth, restart durability, cross-instance
+# ---------------------------------------------------------------------------
+def _wipe_inmemory_cache():
+    """Simulate a fresh process/instance: drop the in-memory cache only (not DB)."""
+    svc.AGENTS.clear(); svc.AGENT_BY_USER.clear(); svc.INVITATIONS.clear()
+    svc.AFFILIATIONS.clear(); svc.COMMISSIONS.clear(); svc.COMMISSION_LEDGER.clear()
+    svc._ACTIVE_AFFIL.clear(); svc._ACCRUED_KEYS.clear()
+    svc._last_hydrate = 0.0
+
+
+def test_db_mode_durability_survives_restart(monkeypatch):
+    from database import init_database
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    init_database()
+    svc.reset_agent_ecosystem()
+
+    agent = svc.create_agent("dbagent", "DB Agent", default_rate=10, created_by="admin")
+    ok, inv = svc.create_invitation(agent["id"], "customer", proposed_rate=20)
+    assert ok
+    svc.approve_invitation(inv["code"], 15, "admin")  # lock 15%
+    ok, _ = svc.redeem_invitation(inv["code"], "customer", "CUST-DUR-1")
+    assert ok
+    svc.recompute_commissions({"POL-DUR": {"id": "POL-DUR", "customer_id": "CUST-DUR-1",
+                                           "annual_premium": 1000, "status": "active"}})
+    assert svc.income_summary(agent["id"])["accrued_total"] == 150.0  # 1000 * 0.15
+
+    # Simulate a restart / brand-new instance: only the in-memory cache is wiped.
+    _wipe_inmemory_cache()
+
+    # Reads re-pull from the durable tables — the data survived.
+    assert any(a["id"] == agent["id"] for a in svc.list_agents())
+    assert svc.income_summary(agent["id"])["accrued_total"] == 150.0
+    assert svc.verify_ledger_integrity() is True
+
+    # Idempotent: recompute after "restart" does not double-accrue.
+    created = svc.recompute_commissions({"POL-DUR": {"id": "POL-DUR", "customer_id": "CUST-DUR-1",
+                                                     "annual_premium": 1000, "status": "active"}})
+    assert created == 0
+    assert svc.income_summary(agent["id"])["accrued_total"] == 150.0
+
+
+def test_db_mode_cross_instance_visibility(monkeypatch):
+    from database import init_database
+    from database.manager import DatabaseManager
+    monkeypatch.setattr(svc, "_db_enabled", lambda: True)
+    init_database()
+    svc.reset_agent_ecosystem()
+
+    # A peer instance writes a new agent straight to the shared database.
+    with DatabaseManager() as db:
+        db.agents.create(id="AGT-PEER", user_username="peeragent", display_name="Peer Agent",
+                         status="active", default_commission_rate=0.05, created_by="admin")
+
+    # This instance (cold cache) sees the peer's agent via refresh-on-read.
+    peer = svc.get_agent_by_username("peeragent")
+    assert peer is not None and peer["id"] == "AGT-PEER"
+
+    # A peer suspends the agent; a forced refresh on the next decision reflects it.
+    with DatabaseManager() as db:
+        db.agents.update("AGT-PEER", status="suspended")
+    svc._last_hydrate = 0.0  # allow immediate refresh (bypass TTL coalescing)
+    ok, err = svc.create_invitation("AGT-PEER", "customer", proposed_rate=10)
+    assert ok is False and "not active" in err.lower()
+
+
+# ---------------------------------------------------------------------------
 # DB repositories (durable schema round-trip)
 # ---------------------------------------------------------------------------
 def test_db_repositories_round_trip():

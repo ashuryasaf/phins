@@ -30,6 +30,7 @@ import os
 import secrets
 import sys
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -48,7 +49,17 @@ _ACTIVE_AFFIL: Dict[Tuple[str, str], str] = {}    # (principal_type, principal_i
 _ACCRUED_KEYS: set = set()                         # (source_event_id, affiliation_id)
 
 _GENESIS_HASH = "0" * 64
-_hydrated = False
+# Refresh-on-read coalescing. In DB mode the durable tables are the source of
+# truth; the in-memory dicts are a short-lived per-instance cache that is
+# re-pulled from the database. This keeps multiple app instances consistent
+# (an agent/invitation/affiliation/suspension created on one instance becomes
+# visible on the others) instead of each instance reading a stale snapshot it
+# loaded once at startup. Writes force a fresh pull before deciding.
+_last_hydrate = 0.0
+try:
+    _HYDRATE_TTL = float(os.environ.get("PHINS_AGENT_HYDRATE_TTL", "1.5"))
+except (TypeError, ValueError):
+    _HYDRATE_TTL = 1.5
 
 VALID_INVITEE_TYPES = ("customer", "supplier", "agent")
 VALID_BASES = ("premium", "gmv", "one_time")
@@ -196,6 +207,17 @@ def _persist(kind: str, record: Dict[str, Any]) -> bool:
             if kind == "invitation":
                 payload = dict(payload)
                 payload["used_by"] = json.dumps(payload.get("used_by", []))
+            # The in-memory dicts carry ISO-string timestamps, but DateTime
+            # columns (e.g. agents.created_date/updated_date) reject strings on
+            # SQLite. Drop string-valued datetime fields so the column defaults
+            # (default/onupdate=datetime.utcnow) populate them durably.
+            try:
+                from sqlalchemy import DateTime as _SADateTime
+                for _col in repo.model_class.__table__.columns:  # type: ignore[attr-defined]
+                    if isinstance(_col.type, _SADateTime) and isinstance(payload.get(_col.name), str):
+                        payload.pop(_col.name, None)
+            except Exception:
+                pass
             key = payload.get(pk)
             if key is not None and repo.get_by_id(key) is not None:
                 repo.update(key, **payload)
@@ -259,34 +281,49 @@ def _rebuild_commission_ledger_from_state() -> None:
                                   "previous_hash": prev_hash, "entry_hash": entry_hash})
 
 
-def _hydrate_from_db() -> None:
-    global _hydrated
-    if _hydrated or not _db_enabled():
-        _hydrated = True
+def _hydrate_from_db(force: bool = False) -> None:
+    """Refresh the in-memory cache from the durable tables (DB mode only).
+
+    Full-replace semantics so peer instances' writes — new agents, approvals,
+    affiliations, suspensions, rate changes — become visible rather than a
+    stale once-at-startup snapshot. Read paths coalesce refreshes to at most one
+    every ``_HYDRATE_TTL`` seconds; write/decision paths pass ``force=True`` to
+    always act on the freshest state. No-op when DB is disabled (in-memory mode).
+    """
+    global _last_hydrate
+    if not _db_enabled():
+        return
+    now = time.monotonic()
+    if not force and (now - _last_hydrate) < _HYDRATE_TTL:
         return
     try:
         with _db() as db:
-            for a in db.agents.list_all():
-                d = a.to_dict()
-                AGENTS[d["id"]] = d
-                AGENT_BY_USER[d["user_username"]] = d["id"]
-            for inv in db.agent_invitations.get_all():
-                INVITATIONS[inv.code] = inv.to_dict()
-            for aff in db.agent_affiliations.get_all():
-                d = aff.to_dict()
-                AFFILIATIONS[d["id"]] = d
-                if d["status"] == "active":
-                    _ACTIVE_AFFIL[(d["principal_type"], d["principal_id"])] = d["id"]
-            for c in db.agent_commissions.get_all():
-                d = c.to_dict()
-                COMMISSIONS[d["id"]] = d
-                _ACCRUED_KEYS.add((d["source_event_id"], d["affiliation_id"]))
-            _rebuild_commission_ledger_from_state()
-        # Only mark hydration complete once the load actually succeeded, so a
-        # transient DB error is retried on the next call instead of leaving the
-        # in-memory store permanently empty.
-        _hydrated = True
+            agents = [a.to_dict() for a in db.agents.list_all()]
+            invitations = [i.to_dict() for i in db.agent_invitations.get_all()]
+            affiliations = [a.to_dict() for a in db.agent_affiliations.get_all()]
+            commissions = [c.to_dict() for c in db.agent_commissions.get_all()]
+        # Replace the cache atomically (under the caller's lock) so reads reflect
+        # exactly the current durable state, including removals/status changes.
+        AGENTS.clear(); AGENT_BY_USER.clear(); INVITATIONS.clear()
+        AFFILIATIONS.clear(); COMMISSIONS.clear()
+        _ACTIVE_AFFIL.clear(); _ACCRUED_KEYS.clear()
+        for d in agents:
+            AGENTS[d["id"]] = d
+            AGENT_BY_USER[d["user_username"]] = d["id"]
+        for d in invitations:
+            INVITATIONS[d["code"]] = d
+        for d in affiliations:
+            AFFILIATIONS[d["id"]] = d
+            if d["status"] == "active":
+                _ACTIVE_AFFIL[(d["principal_type"], d["principal_id"])] = d["id"]
+        for d in commissions:
+            COMMISSIONS[d["id"]] = d
+            _ACCRUED_KEYS.add((d["source_event_id"], d["affiliation_id"]))
+        _rebuild_commission_ledger_from_state()
+        _last_hydrate = now
     except Exception:
+        # Durability/refresh is best-effort; keep serving the current cache and
+        # retry on the next call instead of failing the request.
         pass
 
 
@@ -304,13 +341,14 @@ def reset_agent_ecosystem() -> None:
         COMMISSION_LEDGER.clear()
         _ACTIVE_AFFIL.clear()
         _ACCRUED_KEYS.clear()
-        global _hydrated
-        _hydrated = False
+        global _last_hydrate
+        _last_hydrate = 0.0
 
 
 def ensure_demo_agent() -> Dict[str, Any]:
     """Ensure a demo agent profile exists for username 'agent' (AGT-DEMO-001)."""
     with _LOCK:
+        _hydrate_from_db(force=True)
         existing = AGENT_BY_USER.get("agent")
         if existing:
             return AGENTS[existing]
@@ -351,7 +389,7 @@ def create_agent(username: str, display_name: str = "", email: str = "",
                  default_rate: Any = 0.0, created_by: str = "admin",
                  parent_agent_id: Optional[str] = None) -> Dict[str, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         if username in AGENT_BY_USER:
             return AGENTS[AGENT_BY_USER[username]]
         return _create_agent_locked(
@@ -384,7 +422,7 @@ def list_agents() -> List[Dict[str, Any]]:
 def update_agent(agent_id: str, status: Optional[str] = None,
                  default_rate: Any = None) -> Optional[Dict[str, Any]]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         agent = AGENTS.get(agent_id)
         if not agent:
             return None
@@ -405,7 +443,7 @@ def create_invitation(agent_id: str, invitee_type: str, invitee_email: str = "",
                       commission_basis: str = "premium", expires_days: int = 30,
                       notes: str = "") -> Tuple[bool, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         agent = AGENTS.get(agent_id)
         if not agent:
             return False, "Agent not found"
@@ -459,7 +497,7 @@ def list_invitations(agent_id: Optional[str] = None,
 
 def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[bool, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
@@ -477,7 +515,7 @@ def approve_invitation(code: str, commission_rate: Any, admin: str) -> Tuple[boo
 
 def reject_invitation(code: str, admin: str, reason: str = "") -> Tuple[bool, Any]:
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
@@ -519,7 +557,7 @@ def redeem_invitation(code: str, principal_type: str, principal_id: str) -> Tupl
     Hierarchy integrity: a principal may have at most ONE active affiliation.
     """
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invalid invitation code"
@@ -755,7 +793,7 @@ def recompute_commissions(policies: Dict[str, Any]) -> int:
     Returns the number of NEW commission rows created.
     """
     with _LOCK:
-        _hydrate_from_db()
+        _hydrate_from_db(force=True)
         created = 0
         if not policies:
             return 0
@@ -817,6 +855,7 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
     commission — never full PII/medical data (cross-tenant safety).
     """
     with _LOCK:
+        _hydrate_from_db()
         affs = [a for a in AFFILIATIONS.values()
                 if a["agent_id"] == agent_id and a["principal_type"] == "customer"]
         rows: List[Dict[str, Any]] = []
