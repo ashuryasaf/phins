@@ -27709,7 +27709,7 @@ For claims or questions, please contact:
                     new_password = str(agt_body.get('new_password') or '')
                     generated = False
                     if not new_password:
-                        new_password = 'Agt-' + secrets.token_urlsafe(9)
+                        new_password = f"Agt-{secrets.token_urlsafe(9)}"
                         generated = True
                     if len(new_password) < 8:
                         self._set_json_headers(400)
