@@ -88,6 +88,7 @@ def test_invitation_requires_admin_locked_rate_before_redeem():
 def test_percentage_rates_are_normalized():
     assert svc.normalize_rate(25) == 0.25
     assert svc.normalize_rate(0.25) == 0.25
+    assert svc.normalize_rate(1) == 0.01  # 1% percent input, not a 100% fraction
     assert svc.normalize_rate(150) == 1.0
     assert svc.normalize_rate(-5) == 0.0
 

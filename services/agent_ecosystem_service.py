@@ -82,13 +82,16 @@ def _db_enabled() -> bool:
 def normalize_rate(value: Any, default: float = 0.0) -> float:
     """Normalize a commission rate to a 0..1 fraction.
 
-    Accepts fractions (0.25) or percentages (25 -> 0.25). Clamped to [0, 1].
+    Accepts fractions (0.25) or whole-number percentages (25 -> 0.25, 1 -> 0.01).
+    The admin/agent portals send commission inputs as percents (e.g. ``1`` for
+    1%), so any value of 1 or more is treated as a percent; sub-1 values are
+    treated as already-fractional rates. Clamped to [0, 1].
     """
     try:
         r = float(value)
     except (TypeError, ValueError):
         return default
-    if r > 1.0:
+    if r >= 1.0:
         r = r / 100.0
     if r < 0:
         r = 0.0
@@ -110,8 +113,13 @@ def _canonical(payload: Dict[str, Any]) -> str:
 
 
 def _ledger_append(event_type: str, agent_id: str, amount: float,
-                   payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Append an immutable, hash-chained ledger entry. Returns the entry."""
+                   payload: Dict[str, Any], mirror: bool = True) -> Dict[str, Any]:
+    """Append an immutable, hash-chained ledger entry. Returns the entry.
+
+    ``mirror`` controls the best-effort write into the platform-wide ledger; it
+    is disabled when recording a commission another instance already accrued and
+    mirrored, so the shared ledger is not duplicated cross-instance.
+    """
     prev_hash = COMMISSION_LEDGER[-1]["entry_hash"] if COMMISSION_LEDGER else _GENESIS_HASH
     seq = len(COMMISSION_LEDGER) + 1
     body = {
@@ -126,7 +134,7 @@ def _ledger_append(event_type: str, agent_id: str, amount: float,
     entry = {**body, "id": f"AGLEDGER-{seq:08d}", "previous_hash": prev_hash, "entry_hash": entry_hash}
     COMMISSION_LEDGER.append(entry)
     # Best-effort mirror into the platform-wide hash-chained ledger.
-    if _db_enabled():
+    if mirror and _db_enabled():
         try:
             from web_portal.server import platform_event_ledger
             platform_event_ledger.append_event(
@@ -169,9 +177,13 @@ def _db():
     return DatabaseManager()
 
 
-def _persist(kind: str, record: Dict[str, Any]) -> None:
+def _persist(kind: str, record: Dict[str, Any]) -> bool:
+    """Best-effort durable write-through. Returns True on success (or when DB is
+    disabled and there is nothing to persist), False when the durable write
+    fails so callers can reconcile in-memory state (e.g. a lost unique-key race).
+    """
     if not _db_enabled():
-        return
+        return True
     try:
         with _db() as db:
             repo, pk = {
@@ -189,9 +201,10 @@ def _persist(kind: str, record: Dict[str, Any]) -> None:
                 repo.update(key, **payload)
             else:
                 repo.create(**payload)
+        return True
     except Exception:
         # Durability is best-effort; the in-memory store remains authoritative.
-        pass
+        return False
 
 
 def _find_persisted_commission(source_event_id: str,
@@ -632,7 +645,20 @@ def accrue_commission(principal_type: str, principal_id: str, base_amount: float
         # race at write-through time.
         existing = _find_persisted_commission(source_event_id, aff["id"])
         if existing is not None:
-            COMMISSIONS.setdefault(existing["id"], existing)
+            if existing["id"] not in COMMISSIONS:
+                COMMISSIONS[existing["id"]] = existing
+                # Record the reconciled accrual on this instance's ledger so the
+                # local ledger stays complete relative to COMMISSIONS. The peer
+                # that persisted it already mirrored to the platform ledger.
+                _ledger_append(
+                    "agent.commission.accrued", existing["agent_id"],
+                    existing.get("amount") or 0.0,
+                    {"commission_id": existing["id"], "affiliation_id": aff["id"],
+                     "principal_type": principal_type, "principal_id": principal_id,
+                     "base_amount": existing.get("base_amount"),
+                     "rate": existing.get("rate"),
+                     "source_event_id": source_event_id},
+                    mirror=False)
             _ACCRUED_KEYS.add(key)
             return None
         base = round(float(base_amount or 0.0), 2)
@@ -661,8 +687,31 @@ def accrue_commission(principal_type: str, principal_id: str, base_amount: float
         }
         COMMISSIONS[comm_id] = comm
         _ACCRUED_KEYS.add(key)
-        _persist("commission", comm)
-        return comm
+        if _persist("commission", comm):
+            return comm
+        # The durable write failed (e.g. a peer instance won the unique
+        # (source_event_id, affiliation_id) race). Roll back this instance's
+        # in-memory accrual so income totals do not double-count against the DB.
+        COMMISSIONS.pop(comm_id, None)
+        if COMMISSION_LEDGER and COMMISSION_LEDGER[-1]["id"] == entry["id"]:
+            COMMISSION_LEDGER.pop()
+        reconciled = _find_persisted_commission(source_event_id, aff["id"])
+        if reconciled is not None:
+            COMMISSIONS[reconciled["id"]] = reconciled
+            _ledger_append(
+                "agent.commission.accrued", reconciled["agent_id"],
+                reconciled.get("amount") or 0.0,
+                {"commission_id": reconciled["id"], "affiliation_id": aff["id"],
+                 "principal_type": principal_type, "principal_id": principal_id,
+                 "base_amount": reconciled.get("base_amount"),
+                 "rate": reconciled.get("rate"),
+                 "source_event_id": source_event_id},
+                mirror=False)
+        else:
+            # No durable row exists (transient failure, not a duplicate); allow a
+            # later call to re-accrue rather than stranding the event as accrued.
+            _ACCRUED_KEYS.discard(key)
+        return None
 
 
 def _policy_drives_commission(policy: Dict[str, Any]) -> bool:
