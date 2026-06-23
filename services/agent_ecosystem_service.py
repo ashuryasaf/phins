@@ -162,22 +162,30 @@ def _ledger_append(event_type: str, agent_id: str, amount: float,
 
 
 def verify_ledger_integrity() -> bool:
-    """Recompute the hash chain and confirm it is intact (used by tests/admin)."""
-    prev = _GENESIS_HASH
-    for entry in COMMISSION_LEDGER:
-        body = {
-            "sequence_no": entry["sequence_no"],
-            "event_type": entry["event_type"],
-            "agent_id": entry["agent_id"],
-            "amount": entry["amount"],
-            "timestamp": entry["timestamp"],
-            "payload": entry["payload"],
-        }
-        expected = hashlib.sha256((prev + _canonical(body)).encode("utf-8")).hexdigest()
-        if expected != entry["entry_hash"] or entry["previous_hash"] != prev:
-            return False
-        prev = entry["entry_hash"]
-    return True
+    """Recompute the hash chain and confirm it is intact (used by tests/admin).
+
+    Holds ``_LOCK`` so the chain cannot be rebuilt by a concurrent hydrate (the
+    portal runs on ``ThreadingHTTPServer``) while it is being walked, which would
+    otherwise yield spurious "tampered" or misleading "intact" results. ``_LOCK``
+    is reentrant, so callers that already hold it (e.g. ``community_overview``)
+    are unaffected.
+    """
+    with _LOCK:
+        prev = _GENESIS_HASH
+        for entry in COMMISSION_LEDGER:
+            body = {
+                "sequence_no": entry["sequence_no"],
+                "event_type": entry["event_type"],
+                "agent_id": entry["agent_id"],
+                "amount": entry["amount"],
+                "timestamp": entry["timestamp"],
+                "payload": entry["payload"],
+            }
+            expected = hashlib.sha256((prev + _canonical(body)).encode("utf-8")).hexdigest()
+            if expected != entry["entry_hash"] or entry["previous_hash"] != prev:
+                return False
+            prev = entry["entry_hash"]
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -247,8 +255,12 @@ def _find_persisted_commission(source_event_id: str,
         return None
 
 
-def _rebuild_commission_ledger_from_state() -> None:
-    """Rebuild the in-memory hash chain from hydrated durable state.
+def _build_commission_ledger(
+    invitations: Dict[str, Dict[str, Any]],
+    affiliations: Dict[str, Dict[str, Any]],
+    commissions: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Build a fresh hash chain from the given durable state and return it.
 
     The commission ledger is not itself a durable table; after a restart (or a
     refresh-on-read full cache replace) we reconstruct an internally consistent
@@ -257,12 +269,15 @@ def _rebuild_commission_ledger_from_state() -> None:
     history — both accruals and the invitation/affiliation lifecycle events that
     are otherwise only appended in memory (and would be silently dropped on each
     refresh). New events continue the chain.
+
+    Pure: it does not mutate any shared state, so the caller can swap the result
+    into ``COMMISSION_LEDGER`` only once the full refresh has succeeded.
     """
     # Collect every reconstructable event with its timestamp; a stable sort by
     # timestamp keeps each invitation's created event before its later
     # approval/rejection event.
     events: List[Dict[str, Any]] = []
-    for inv in INVITATIONS.values():
+    for inv in invitations.values():
         events.append({
             "event_type": "agent.invitation.created",
             "agent_id": inv.get("agent_id"),
@@ -291,7 +306,7 @@ def _rebuild_commission_ledger_from_state() -> None:
                 "payload": {"code": inv.get("code"),
                             "rejected_by": inv.get("approved_by")},
             })
-    for aff in AFFILIATIONS.values():
+    for aff in affiliations.values():
         events.append({
             "event_type": "agent.affiliation.created",
             "agent_id": aff.get("agent_id"),
@@ -302,8 +317,8 @@ def _rebuild_commission_ledger_from_state() -> None:
                         "principal_id": aff.get("principal_id"),
                         "commission_rate": aff.get("commission_rate")},
         })
-    for comm in COMMISSIONS.values():
-        aff = AFFILIATIONS.get(comm.get("affiliation_id")) or {}
+    for comm in commissions.values():
+        aff = affiliations.get(comm.get("affiliation_id")) or {}
         events.append({
             "event_type": "agent.commission.accrued",
             "agent_id": comm.get("agent_id"),
@@ -321,10 +336,10 @@ def _rebuild_commission_ledger_from_state() -> None:
         })
 
     events.sort(key=lambda e: e["timestamp"] or "")
-    COMMISSION_LEDGER.clear()
+    ledger: List[Dict[str, Any]] = []
     for ev in events:
-        prev_hash = COMMISSION_LEDGER[-1]["entry_hash"] if COMMISSION_LEDGER else _GENESIS_HASH
-        seq = len(COMMISSION_LEDGER) + 1
+        prev_hash = ledger[-1]["entry_hash"] if ledger else _GENESIS_HASH
+        seq = len(ledger) + 1
         body = {
             "sequence_no": seq,
             "event_type": ev["event_type"],
@@ -334,8 +349,9 @@ def _rebuild_commission_ledger_from_state() -> None:
             "payload": ev["payload"],
         }
         entry_hash = hashlib.sha256((prev_hash + _canonical(body)).encode("utf-8")).hexdigest()
-        COMMISSION_LEDGER.append({**body, "id": f"AGLEDGER-{seq:08d}",
-                                  "previous_hash": prev_hash, "entry_hash": entry_hash})
+        ledger.append({**body, "id": f"AGLEDGER-{seq:08d}",
+                       "previous_hash": prev_hash, "entry_hash": entry_hash})
+    return ledger
 
 
 def _hydrate_from_db(force: bool = False) -> None:
@@ -359,24 +375,43 @@ def _hydrate_from_db(force: bool = False) -> None:
             invitations = [i.to_dict() for i in db.agent_invitations.get_all()]
             affiliations = [a.to_dict() for a in db.agent_affiliations.get_all()]
             commissions = [c.to_dict() for c in db.agent_commissions.get_all()]
-        # Replace the cache atomically (under the caller's lock) so reads reflect
-        # exactly the current durable state, including removals/status changes.
-        AGENTS.clear(); AGENT_BY_USER.clear(); INVITATIONS.clear()
-        AFFILIATIONS.clear(); COMMISSIONS.clear()
-        _ACTIVE_AFFIL.clear(); _ACCRUED_KEYS.clear()
+        # Build the replacement state (including the rebuilt ledger) in local
+        # structures first. Only after all fallible work succeeds do we clear and
+        # repopulate the live cache, so a mid-refresh failure can never leave the
+        # service serving an emptied or partially loaded ecosystem.
+        new_agents: Dict[str, Dict[str, Any]] = {}
+        new_agent_by_user: Dict[str, str] = {}
+        new_invitations: Dict[str, Dict[str, Any]] = {}
+        new_affiliations: Dict[str, Dict[str, Any]] = {}
+        new_commissions: Dict[str, Dict[str, Any]] = {}
+        new_active_affil: Dict[Tuple[str, str], str] = {}
+        new_accrued_keys: set = set()
         for d in agents:
-            AGENTS[d["id"]] = d
-            AGENT_BY_USER[d["user_username"]] = d["id"]
+            new_agents[d["id"]] = d
+            new_agent_by_user[d["user_username"]] = d["id"]
         for d in invitations:
-            INVITATIONS[d["code"]] = d
+            new_invitations[d["code"]] = d
         for d in affiliations:
-            AFFILIATIONS[d["id"]] = d
+            new_affiliations[d["id"]] = d
             if d["status"] == "active":
-                _ACTIVE_AFFIL[(d["principal_type"], d["principal_id"])] = d["id"]
+                new_active_affil[(d["principal_type"], d["principal_id"])] = d["id"]
         for d in commissions:
-            COMMISSIONS[d["id"]] = d
-            _ACCRUED_KEYS.add((d["source_event_id"], d["affiliation_id"]))
-        _rebuild_commission_ledger_from_state()
+            new_commissions[d["id"]] = d
+            new_accrued_keys.add((d["source_event_id"], d["affiliation_id"]))
+        new_ledger = _build_commission_ledger(
+            new_invitations, new_affiliations, new_commissions)
+        # Commit atomically (under the caller's lock) so reads reflect exactly the
+        # current durable state, including removals/status changes. Only fast,
+        # non-raising clear()/update() swaps remain, so reads never observe a
+        # cleared cache.
+        AGENTS.clear(); AGENTS.update(new_agents)
+        AGENT_BY_USER.clear(); AGENT_BY_USER.update(new_agent_by_user)
+        INVITATIONS.clear(); INVITATIONS.update(new_invitations)
+        AFFILIATIONS.clear(); AFFILIATIONS.update(new_affiliations)
+        COMMISSIONS.clear(); COMMISSIONS.update(new_commissions)
+        _ACTIVE_AFFIL.clear(); _ACTIVE_AFFIL.update(new_active_affil)
+        _ACCRUED_KEYS.clear(); _ACCRUED_KEYS.update(new_accrued_keys)
+        COMMISSION_LEDGER[:] = new_ledger
         _last_hydrate = now
     except Exception:
         # Durability/refresh is best-effort; keep serving the current cache and
