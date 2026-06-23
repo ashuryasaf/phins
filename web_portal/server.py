@@ -27697,6 +27697,14 @@ For claims or questions, please contact:
                         self._set_json_headers(404)
                         self.wfile.write(json.dumps({'error': 'Agent not found'}).encode('utf-8'))
                         return
+                    # Enforce agent scope: the username being reset must belong to
+                    # the resolved agent profile. Without this, sending a valid
+                    # agent_id together with a different (e.g. staff/admin)
+                    # username would reset a non-agent account.
+                    if (agent_profile.get('user_username') or '') != username:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Agent not found'}).encode('utf-8'))
+                        return
 
                     new_password = str(agt_body.get('new_password') or '')
                     generated = False
@@ -27721,6 +27729,11 @@ For claims or questions, please contact:
                     # Writes through to the durable users table in DB mode and to
                     # the in-memory fallback in both modes (see UserDictWrapper).
                     USERS[username] = value
+
+                    # Invalidate any existing sessions/tokens so a compromised
+                    # login cannot keep working after the reset, matching the
+                    # behavior of /api/reset-password and change-password.
+                    _revoke_user_sessions(username)
 
                     # Best-effort, secret-free audit trail on the hash-chained
                     # platform event ledger.
