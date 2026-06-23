@@ -106,6 +106,7 @@
     let TOKEN = localStorage.getItem('phins_token') || '';
     function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
     function fmt(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});}
+    function escHtml(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
     async function api(path, opts={}){
       opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
@@ -159,7 +160,7 @@
 
     async function loadNetwork(){
       const {body} = await api('/api/agent/network/customers');
-      const rows = (body.items||[]).map(r=>`<tr><td>${r.name}</td><td>${r.status}</td><td>${r.policy_count}</td>`+
+      const rows = (body.items||[]).map(r=>`<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.status)}</td><td>${r.policy_count}</td>`+
         `<td>${fmt(r.premium_basis)}</td><td>${Math.round((r.commission_rate||0)*100)}%</td><td>${fmt(r.accrued_commission)}</td></tr>`).join('');
       $('#net-table tbody').innerHTML = rows || '<tr><td colspan="6" class="muted">No affiliated customers yet.</td></tr>';
     }

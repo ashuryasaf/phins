@@ -436,7 +436,7 @@ def reject_invitation(code: str, admin: str, reason: str = "") -> Tuple[bool, An
         inv = INVITATIONS.get(code)
         if not inv:
             return False, "Invitation not found"
-        if inv["status"] in ("accepted", "rejected"):
+        if inv["status"] != "pending_approval":
             return False, f"Cannot reject invitation in status '{inv['status']}'"
         inv["status"] = "rejected"
         inv["approved_by"] = admin
@@ -733,7 +733,7 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
             cust = (customers or {}).get(cid) or {}
             cust_policies = [p for p in (policies or {}).values()
                              if p.get("customer_id") == cid and _policy_drives_commission(p)]
-            premium_basis = round(sum(float(p.get("annual_premium") or 0) for p in cust_policies), 2)
+            premium_basis = round(sum(float(p.get("annual_premium") or p.get("premium") or 0) for p in cust_policies), 2)
             accrued = round(sum(c["amount"] for c in COMMISSIONS.values()
                                 if c["affiliation_id"] == aff["id"]), 2)
             rows.append({
