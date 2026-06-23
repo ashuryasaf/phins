@@ -114,10 +114,15 @@ def _ledger_append(event_type: str, agent_id: str, amount: float,
     # Best-effort mirror into the platform-wide hash-chained ledger.
     if _db_enabled():
         try:
-            from services.platform_event_ledger_service import record_event  # type: ignore
-            record_event(event_type=event_type, entity_type="agent_commission",
-                         entity_id=payload.get("commission_id") or agent_id,
-                         actor=agent_id, amount=body["amount"], payload=payload)
+            from web_portal.server import platform_event_ledger
+            platform_event_ledger.append_event(
+                event_type=event_type,
+                entity_type="agent_commission",
+                entity_id=payload.get("commission_id") or agent_id,
+                actor=agent_id,
+                amount=body["amount"],
+                payload=payload,
+            )
         except Exception:
             pass
     return entry
@@ -617,6 +622,17 @@ def accrue_commission(principal_type: str, principal_id: str, base_amount: float
         return comm
 
 
+def _policy_drives_commission(policy: Dict[str, Any]) -> bool:
+    """A policy contributes to the premium basis only when active/approved.
+
+    Shared by ``accrue_for_policy`` (accrual gate) and ``network_customers``
+    (dashboard premium basis) so the displayed basis matches what actually
+    accrues commission. A missing/blank status is treated as eligible.
+    """
+    status = (policy.get("status") or "").lower().replace(" ", "_")
+    return not status or status in ("active", "approved")
+
+
 def accrue_for_policy(policy: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Accrue commission from a policy's annual premium (premium basis).
 
@@ -629,8 +645,7 @@ def accrue_for_policy(policy: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     pid = policy.get("id")
     if not customer_id or not pid:
         return None
-    status = (policy.get("status") or "").lower().replace(" ", "_")
-    if status and status not in ("active", "approved"):
+    if not _policy_drives_commission(policy):
         return None  # only active/approved policies generate premium-basis commission
     premium = policy.get("annual_premium") or policy.get("premium") or 0
     try:
@@ -717,7 +732,7 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
             cid = aff["principal_id"]
             cust = (customers or {}).get(cid) or {}
             cust_policies = [p for p in (policies or {}).values()
-                             if p.get("customer_id") == cid]
+                             if p.get("customer_id") == cid and _policy_drives_commission(p)]
             premium_basis = round(sum(float(p.get("annual_premium") or 0) for p in cust_policies), 2)
             accrued = round(sum(c["amount"] for c in COMMISSIONS.values()
                                 if c["affiliation_id"] == aff["id"]), 2)
