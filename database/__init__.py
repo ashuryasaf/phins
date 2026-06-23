@@ -273,6 +273,9 @@ def upgrade_schema(engine=None):
         ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
         # Supplier offer media gallery (JSON list of media items)
         ('supplier_offers', 'media', 'TEXT', None),
+        # Agent ecosystem: referring agent linkage
+        ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
+        ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
     ]
     
     with engine.connect() as conn:
