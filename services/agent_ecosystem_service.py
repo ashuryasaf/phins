@@ -334,6 +334,7 @@ def list_agents() -> List[Dict[str, Any]]:
 def update_agent(agent_id: str, status: Optional[str] = None,
                  default_rate: Any = None) -> Optional[Dict[str, Any]]:
     with _LOCK:
+        _hydrate_from_db()
         agent = AGENTS.get(agent_id)
         if not agent:
             return None
@@ -354,6 +355,7 @@ def create_invitation(agent_id: str, invitee_type: str, invitee_email: str = "",
                       commission_basis: str = "premium", expires_days: int = 30,
                       notes: str = "") -> Tuple[bool, Any]:
     with _LOCK:
+        _hydrate_from_db()
         agent = AGENTS.get(agent_id)
         if not agent:
             return False, "Agent not found"
@@ -562,16 +564,20 @@ def persist_referring_agent(principal_type: str, principal_id: str, agent_id: st
 # ---------------------------------------------------------------------------
 def accrue_commission(principal_type: str, principal_id: str, base_amount: float,
                       source_event_id: str, source_type: str = "policy_premium",
-                      currency: str = "USD") -> Optional[Dict[str, Any]]:
+                      currency: str = "USD", basis: str = "premium") -> Optional[Dict[str, Any]]:
     """Accrue a commission for a revenue event, if the principal is affiliated.
 
     Idempotent on (source_event_id, affiliation_id). Returns the commission dict
-    or None when there is no active affiliation / nothing to accrue.
+    or None when there is no active affiliation / nothing to accrue. The event's
+    ``basis`` must match the affiliation's locked ``commission_basis`` (a
+    premium event does not accrue against a GMV / one-time affiliation, etc.).
     """
     with _LOCK:
         aff = get_active_affiliation(principal_type, principal_id)
         if not aff:
             return None
+        if (aff.get("commission_basis") or "premium") != basis:
+            return None  # event basis does not match the locked affiliation basis
         key = (source_event_id, aff["id"])
         if key in _ACCRUED_KEYS:
             return None  # already accrued — idempotent
@@ -623,7 +629,8 @@ def accrue_for_policy(policy: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except (TypeError, ValueError):
         premium = 0.0
     return accrue_commission("customer", customer_id, premium,
-                             source_event_id=f"policy:{pid}", source_type="policy_premium")
+                             source_event_id=f"policy:{pid}", source_type="policy_premium",
+                             basis="premium")
 
 
 def recompute_commissions(policies: Dict[str, Any]) -> int:
@@ -730,6 +737,7 @@ def network_customers(agent_id: str, customers: Dict[str, Any],
 
 def get_ledger(agent_id: Optional[str] = None, limit: int = 200) -> List[Dict[str, Any]]:
     with _LOCK:
+        _hydrate_from_db()
         items = COMMISSION_LEDGER
         if agent_id:
             items = [e for e in items if e["agent_id"] == agent_id]
