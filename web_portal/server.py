@@ -21883,7 +21883,11 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            # Fall back to the session role: customers on stateless tokens (or a
+            # replica whose in-memory USERS lacks them) are not in USERS, and
+            # without this fallback they fell through to the staff branch and could
+            # read another customer's purchases via ?customer_id=.
+            role = (user.get('role') or session.get('role') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             # GET purchases history
