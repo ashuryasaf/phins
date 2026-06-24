@@ -175,14 +175,58 @@ def _seed_two_customers() -> None:
         "due_date": "2026-12-31",
     }
 
-    # Health wallets (used by the wallet write-isolation tests).
-    for cid in (CUST_A, CUST_B):
+    # Health wallets (used by the wallet write-isolation tests). The transaction
+    # description carries the per-customer sentinel so any wallet read that leaks
+    # across tenants is detectable.
+    for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
         portal.HEALTH_WALLETS[cid] = {
             "customer_id": cid,
             "balance": 500.0,
             "monthly_deposit": 0.0,
-            "transactions": [],
+            "transactions": [
+                {
+                    "id": f"WALTX-{cid}",
+                    "type": "deposit",
+                    "amount": 500.0,
+                    "description": f"{sentinel} wallet seed deposit",
+                    "timestamp": _future_iso(0),
+                }
+            ],
             "created_at": _future_iso(0),
+        }
+
+    # Investment accounts (read by /api/investment/unified, ai-report, dashboard).
+    for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
+        portal.INVESTMENT_ACCOUNTS[cid] = {
+            "customer_id": cid,
+            "balance": 1000.0,
+            "index_balance": 400.0,
+            "bonds_balance": 400.0,
+            "crypto_balance": 200.0,
+            "deposits": [
+                {
+                    "id": f"INVDEP-{cid}",
+                    "amount": 1000.0,
+                    "source": f"{sentinel}-investment-seed",
+                    "timestamp": _future_iso(0),
+                }
+            ],
+            "allocations": [],
+            "created_at": _future_iso(0),
+        }
+
+    # Transaction-ledger entries (read by /api/ledger, /api/customer/activity-log).
+    for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
+        tx_id = f"TX-ISO-{cid}"
+        portal.TRANSACTION_LEDGER[tx_id] = {
+            "id": tx_id,
+            "customer_id": cid,
+            "type": "investment_deposit",
+            "amount": 1000.0,
+            "description": f"{sentinel} ledger seed entry",
+            "metadata": {},
+            "timestamp": _future_iso(0),
+            "status": "completed",
         }
 
     # Sessions (legacy phins_ tokens resolved via the in-memory SESSIONS dict).
@@ -235,6 +279,10 @@ CROSS_CUSTOMER_GET_PROBES: List[Tuple[str, str]] = [
     ("balance transactions", _attack("/api/balance/transactions", customer_id=CUST_B)),
     ("statement", _attack("/api/statement", customer_id=CUST_B)),
     ("allocations", _attack("/api/allocations", customer_id=CUST_B)),
+    ("ledger", _attack("/api/ledger", customer_id=CUST_B)),
+    ("billing transactions", _attack("/api/billing/transactions", customer_id=CUST_B)),
+    ("service transactions", _attack("/api/service-transactions", customer_id=CUST_B)),
+    ("customer status", _attack("/api/customer/status", customer_id=CUST_B)),
 ]
 
 
@@ -290,6 +338,21 @@ def test_owner_can_read_own_data_proves_detection():
     assert B_SENTINEL in body, (
         "Detection sanity failed: owner B could not see their own sentinel, so the "
         "leak test would not be able to detect a real cross-tenant leak."
+    )
+
+
+def test_owner_can_read_own_ledger_proves_new_seeds_detectable():
+    """Sanity for the enriched seeds: B's ledger sentinel is observable by B.
+
+    Proves the new ledger/investment/wallet probes can actually detect a leak,
+    so their green cross-tenant runs are not false negatives.
+    """
+    _seed_two_customers()
+    status, body = _http_get(_attack("/api/ledger", customer_id=CUST_B), token=TOKEN_B)
+    assert status == 200, f"owner B could not read own ledger (HTTP {status}): {body[:300]}"
+    assert B_SENTINEL in body, (
+        "Detection sanity failed: owner B's ledger sentinel was not observable, so "
+        "the ledger leak probe could not detect a real cross-tenant leak."
     )
 
 
