@@ -36,6 +36,7 @@ class _ServerThread(threading.Thread):
 
     def stop(self) -> None:
         self.httpd.shutdown()
+        self.httpd.server_close()
 
 
 def _get(url: str, token: str | None = None) -> tuple[int, dict | bytes]:

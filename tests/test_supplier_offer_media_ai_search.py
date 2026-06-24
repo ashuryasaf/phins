@@ -43,6 +43,7 @@ class _ServerThread(threading.Thread):
 
     def stop(self):
         self.httpd.shutdown()
+        self.httpd.server_close()
 
 
 def _post(url: str, payload: dict, token: str | None = None):

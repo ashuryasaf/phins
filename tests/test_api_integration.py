@@ -38,6 +38,7 @@ class ServerThread(threading.Thread):
 
     def stop(self):
         self.httpd.shutdown()
+        self.httpd.server_close()
 
 
 def _get(url, token=None):
@@ -1743,24 +1744,27 @@ def test_bi_underwriting_endpoint():
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.2)
-    
-    base = f"http://127.0.0.1:{port}"
-    
-    # Login as underwriter
-    body, _ = _post(base + "/api/login", {
-        "username": "underwriter",
-        "password": "under123"
-    })
-    uw_token = json.loads(body)['token']
-    
-    # Get underwriting BI data
-    body, status = _get(base + "/api/bi/underwriting", uw_token)
-    assert status == 200
-    data = json.loads(body)
-    assert 'pending_applications' in data
-    assert 'approved_this_month' in data
-    assert 'rejection_rate' in data
-    assert 'risk_assessment_distribution' in data
+
+    try:
+        base = f"http://127.0.0.1:{port}"
+
+        # Login as underwriter
+        body, _ = _post(base + "/api/login", {
+            "username": "underwriter",
+            "password": "under123"
+        })
+        uw_token = json.loads(body)['token']
+
+        # Get underwriting BI data
+        body, status = _get(base + "/api/bi/underwriting", uw_token)
+        assert status == 200
+        data = json.loads(body)
+        assert 'pending_applications' in data
+        assert 'approved_this_month' in data
+        assert 'rejection_rate' in data
+        assert 'risk_assessment_distribution' in data
+    finally:
+        srv.stop()
 
 
 def test_admin_balance_sheet_reflects_collected_premium_breakdown():
