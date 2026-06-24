@@ -94,6 +94,26 @@ def _http_get(path: str, token: str | None = None) -> Tuple[int, str]:
         raise AssertionError(f"Request to {path} failed: {exc}") from exc
 
 
+def _http_post(path: str, payload: Dict[str, Any], token: str | None = None) -> Tuple[int, str]:
+    """POST that always returns (status, body), including for error responses."""
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(_base_url() + path, data=data, headers=headers, method="POST")
+    try:
+        with urlopen(req, timeout=10) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    except HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        return exc.code, body
+    except URLError as exc:  # pragma: no cover - environment/network failure
+        raise AssertionError(f"POST to {path} failed: {exc}") from exc
+
+
 def _seed_two_customers() -> None:
     """Seed customers A and B (and their resources) into the in-memory stores.
 
@@ -283,4 +303,62 @@ def test_each_endpoint_isolated(name: str, path: str):
     status, body = _http_get(path, token=TOKEN_A)
     assert B_SENTINEL not in body, (
         f"{name}: customer A received customer B's data (HTTP {status}) from {path}"
+    )
+
+
+# --- Mutation (write) isolation -------------------------------------------
+# Read leaks expose data; write leaks let one tenant *change* another tenant's
+# records. The latter is strictly more dangerous, so the harness also probes a
+# representative money-movement mutation: paying a bill.
+
+def test_customer_cannot_pay_another_customers_bill():
+    """Customer A must not be able to pay/mutate customer B's bill.
+
+    ``/api/billing/pay`` resolves the bill (and its customer) purely from the
+    ``bill_id`` in the request body. Without an ownership check, A could mark B's
+    bill paid -- and via the health_wallet path drain B's wallet -- by guessing a
+    bill_id. This asserts the guard rejects the cross-tenant write and leaves B's
+    bill untouched.
+    """
+    _seed_two_customers()
+
+    status, body = _http_post(
+        "/api/billing/pay",
+        {"bill_id": BILL_B, "amount": 100.0, "payment_method": "card"},
+        token=TOKEN_A,
+    )
+
+    assert status == 403, (
+        f"Customer A was allowed to pay customer B's bill (HTTP {status}): {body[:300]}"
+    )
+    # B's bill must be completely untouched.
+    bill_after = portal.BILLING.get(BILL_B, {})
+    assert bill_after.get("status") == "pending", (
+        f"Customer B's bill status changed after A's blocked payment: {bill_after}"
+    )
+    assert float(bill_after.get("amount_paid", 0) or 0) == 0.0, (
+        f"Customer B's bill recorded a payment from customer A: {bill_after}"
+    )
+
+
+def test_owner_can_pay_own_bill_proves_guard_not_overbroad():
+    """Positive control: customer B can still pay B's own bill.
+
+    Ensures the ownership guard blocks only cross-tenant writes and does not
+    break the legitimate self-service payment path.
+    """
+    _seed_two_customers()
+
+    status, body = _http_post(
+        "/api/billing/pay",
+        {"bill_id": BILL_B, "amount": 100.0, "payment_method": "card"},
+        token=TOKEN_B,
+    )
+
+    assert status == 200, (
+        f"Owner B was blocked from paying their own bill (HTTP {status}): {body[:300]}"
+    )
+    bill_after = portal.BILLING.get(BILL_B, {})
+    assert float(bill_after.get("amount_paid", 0) or 0) == 100.0, (
+        f"Owner B's payment was not recorded: {bill_after}"
     )

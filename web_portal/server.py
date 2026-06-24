@@ -46196,11 +46196,51 @@ For claims or questions, please contact:
                 bill_id = data.get('bill_id')
                 amount = float(data.get('amount', 0))
                 payment_method = data.get('payment_method', 'card')
+
+                # SECURITY (premortem risk #1 - cross-tenant writes): a bill may
+                # only be paid by staff or by the customer who owns it. Without
+                # this check any caller could mutate another customer's bill by
+                # guessing a bill_id, and via the health_wallet path drain that
+                # customer's wallet. Auth is required outside test mode, mirroring
+                # the other customer-scoped routes. The session gate runs before
+                # the bill lookup so unauthenticated callers always get 401 and
+                # cannot use the 404-vs-401 split to enumerate valid bill_ids.
+                _pay_session = self._get_session()
+                if not _pay_session and not PHINS_TEST_MODE:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                    return
+
                 bill = BILLING.get(bill_id)
                 if not bill:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
                     return
+
+                _payer = get_session_user(_pay_session) or {}
+                _payer_role = (
+                    _payer.get('role')
+                    or (_pay_session.get('role') if _pay_session else '')
+                    or ''
+                ).lower()
+                _payer_customer_id = (
+                    _payer.get('customer_id')
+                    or (_pay_session.get('customer_id') if _pay_session else '')
+                    or ''
+                )
+                if _payer_role == 'customer':
+                    if not _payer_customer_id or str(bill.get('customer_id') or '') != _payer_customer_id:
+                        print(
+                            "⚠️ ACCESS VIOLATION: customer "
+                            f"'{_payer_customer_id or 'unknown'}' attempted to pay bill "
+                            f"'{bill_id}' owned by '{bill.get('customer_id')}'"
+                        )
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps(
+                            {'error': 'Access denied - you can only pay your own bills'}
+                        ).encode('utf-8'))
+                        return
+
                 if not validate_amount(amount):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
