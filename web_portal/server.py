@@ -12255,6 +12255,53 @@ class PortalHandler(BaseHTTPRequestHandler):
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
 
+    def _enforce_customer_write(self, target_customer_id: Any, resource: str = 'account') -> bool:
+        """Guard a customer-scoped write against cross-tenant access.
+
+        Premortem risk #1 (cross-tenant writes): many money-movement POST routes
+        resolve the affected customer purely from the request body, so without a
+        check any caller can mutate another customer's funds by supplying their
+        ``customer_id``. This centralizes the enforcement:
+
+        * Authentication is required outside test mode (mirrors the read routes).
+        * A ``customer`` may only write to their own ``customer_id``.
+        * Staff roles (admin/accountant/...) and tokenless test-mode callers are
+          unaffected.
+
+        Returns ``True`` if the request may proceed. On denial it writes the
+        appropriate 401/403 JSON response and returns ``False`` so callers can
+        simply ``if not self._enforce_customer_write(cid): return``.
+        """
+        session = self._get_session()
+        if not session and not PHINS_TEST_MODE:
+            self._set_json_headers(401)
+            self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+            return False
+        user = get_session_user(session) or {}
+        role = (
+            user.get('role')
+            or (session.get('role') if session else '')
+            or ''
+        ).lower()
+        if role == 'customer':
+            session_customer_id = (
+                user.get('customer_id')
+                or (session.get('customer_id') if session else '')
+                or ''
+            )
+            if not session_customer_id or str(target_customer_id or '') != session_customer_id:
+                print(
+                    "⚠️ ACCESS VIOLATION: customer "
+                    f"'{session_customer_id or 'unknown'}' attempted to modify {resource} "
+                    f"for '{target_customer_id}'"
+                )
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps(
+                    {'error': f'Access denied - you can only modify your own {resource}'}
+                ).encode('utf-8'))
+                return False
+        return True
+
     def _resolve_reports_user_context(
         self,
         session: Dict[str, Any]
@@ -42160,7 +42207,11 @@ For claims or questions, please contact:
                 customer_id = data.get('customer_id', 'CUST001')
                 amount = float(data.get('amount', 0))
                 payment_method = data.get('payment_method', 'card_on_file')
-                
+
+                # SECURITY: a customer may only deposit into their own wallet.
+                if not self._enforce_customer_write(customer_id, 'health wallet'):
+                    return
+
                 if amount < 1 or amount > 100000:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Amount must be between $1 and $100,000'}).encode('utf-8'))
@@ -42226,6 +42277,11 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body or '{}')
                 customer_id = data.get('customer_id', 'CUST001')
+
+                # SECURITY: a customer may only spend from their own wallet.
+                if not self._enforce_customer_write(customer_id, 'health wallet'):
+                    return
+
                 product_id = data.get('offer_id') or data.get('product_id')
                 product_name = data.get('product_name')
                 quantity = max(1, safe_int(data.get('quantity', 1), 1))
