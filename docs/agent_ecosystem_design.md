@@ -28,6 +28,16 @@
 Demo: log in to `/agent-portal.html` as `agent`/`agent123`, and manage from
 `/admin-agents.html` as `admin`/`admin123` (demo passwords work in test/demo mode only).
 
+### Admin password reset (shipped)
+
+`admin-agents.html` adds a **Reset PW** action per agent. `POST /api/admin/agents/reset-password`
+(admin-only, handled inline in `server.py` because it touches the auth/users stores)
+accepts `{agent_id|username, new_password?}`; when no password is given it returns a
+generated temporary one. The reset is scoped to accounts that have an agent profile (it
+cannot reset other staff/admin accounts), writes through to the durable `users` table in
+DB mode, updates the in-memory auth fallback, and records a secret-free entry on the
+hash-chained platform event ledger. Covered by `test_http_admin_reset_agent_password`.
+
 ### Post-merge follow-ups (shipped)
 
 - **Sign-in CAPTCHA**: the agent and admin portals now run the canonical CAPTCHA
