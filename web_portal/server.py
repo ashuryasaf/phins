@@ -12255,6 +12255,29 @@ class PortalHandler(BaseHTTPRequestHandler):
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
 
+    def _savings_account_owner(self, account_id: Any) -> Optional[str]:
+        """Resolve the customer_id that owns a portfolio/savings ``account_id``.
+
+        Returns ``None`` when the account cannot be found, which the write guard
+        treats as a denial for the ``customer`` role.
+        """
+        if not account_id or not portfolio_enabled or portfolio_service is None:
+            return None
+        try:
+            acc = None
+            try:
+                acc = portfolio_service.accounts.get(account_id)
+            except Exception:
+                acc = None
+            if acc is None:
+                for candidate in portfolio_service.accounts.values():
+                    if getattr(candidate, 'account_id', None) == account_id:
+                        acc = candidate
+                        break
+            return getattr(acc, 'customer_id', None) if acc is not None else None
+        except Exception:
+            return None
+
     def _enforce_customer_write(self, target_customer_id: Any, resource: str = 'account') -> bool:
         """Guard a customer-scoped write against cross-tenant access.
 
@@ -43668,6 +43691,10 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'account_id and positive amount required'}).encode('utf-8'))
                     return
+
+                # SECURITY: only the account owner (or staff) may withdraw.
+                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account'):
+                    return
                 
                 result = portfolio_service.withdraw(account_id, amount, reason)
                 
@@ -43701,6 +43728,10 @@ For claims or questions, please contact:
                 if not account_id or not symbol or amount <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'account_id, symbol, and positive amount required'}).encode('utf-8'))
+                    return
+
+                # SECURITY: only the account owner (or staff) may invest its funds.
+                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account'):
                     return
                 
                 # SYNC: Get the account and sync its balance with INVESTMENT_ACCOUNTS
@@ -43772,6 +43803,10 @@ For claims or questions, please contact:
                 if not account_id or not symbol or quantity <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'account_id, symbol, and positive quantity required'}).encode('utf-8'))
+                    return
+
+                # SECURITY: only the account owner (or staff) may sell its assets.
+                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account'):
                     return
                 
                 result = portfolio_service.sell_asset(account_id, symbol, quantity)
