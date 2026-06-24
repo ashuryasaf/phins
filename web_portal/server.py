@@ -19855,7 +19855,7 @@ For claims or questions, please contact:
                     return
                 
                 user = get_session_user(session) or {}
-                role = (user.get('role') or '').lower()
+                role = get_effective_role(session)
                 session_customer_id = user.get('customer_id') or session.get('customer_id')
                 
                 # Get filter from query string
@@ -19941,7 +19941,7 @@ For claims or questions, please contact:
                         })
                 
                 # 4. Transaction Ledger entries (for comprehensive view)
-                for tx in TRANSACTION_LEDGER:
+                for tx in TRANSACTION_LEDGER.values():
                     if customer_filter and tx.get('customer_id') != customer_filter:
                         continue
                     if is_suspended_account(tx.get('customer_id', '')):
