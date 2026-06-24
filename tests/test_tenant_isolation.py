@@ -175,6 +175,16 @@ def _seed_two_customers() -> None:
         "due_date": "2026-12-31",
     }
 
+    # Health wallets (used by the wallet write-isolation tests).
+    for cid in (CUST_A, CUST_B):
+        portal.HEALTH_WALLETS[cid] = {
+            "customer_id": cid,
+            "balance": 500.0,
+            "monthly_deposit": 0.0,
+            "transactions": [],
+            "created_at": _future_iso(0),
+        }
+
     # Sessions (legacy phins_ tokens resolved via the in-memory SESSIONS dict).
     portal.SESSIONS[TOKEN_A] = {
         "username": "iso_customer_a",
@@ -362,3 +372,63 @@ def test_owner_can_pay_own_bill_proves_guard_not_overbroad():
     assert float(bill_after.get("amount_paid", 0) or 0) == 100.0, (
         f"Owner B's payment was not recorded: {bill_after}"
     )
+
+
+def test_customer_cannot_deposit_to_another_customers_wallet():
+    """Customer A must not deposit into / mutate customer B's health wallet."""
+    _seed_two_customers()
+    before = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
+
+    status, body = _http_post(
+        "/api/health-wallet/deposit",
+        {"customer_id": CUST_B, "amount": 50.0, "payment_method": "card_on_file"},
+        token=TOKEN_A,
+    )
+
+    assert status == 403, (
+        f"Customer A was allowed to deposit into customer B's wallet (HTTP {status}): {body[:300]}"
+    )
+    after = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
+    assert after == before, f"Customer B's wallet balance changed ({before} -> {after})"
+
+
+def test_customer_cannot_spend_another_customers_wallet():
+    """Customer A must not spend from customer B's health wallet via purchase."""
+    _seed_two_customers()
+    before = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
+
+    status, body = _http_post(
+        "/api/health-wallet/purchase",
+        {
+            "customer_id": CUST_B,
+            "product_id": "PROD-ISO-X",
+            "product_name": "Foreign purchase",
+            "amount": 25.0,
+            "payment_method": "health_wallet",
+        },
+        token=TOKEN_A,
+    )
+
+    assert status == 403, (
+        f"Customer A was allowed to spend customer B's wallet (HTTP {status}): {body[:300]}"
+    )
+    after = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
+    assert after == before, f"Customer B's wallet was charged ({before} -> {after})"
+
+
+def test_owner_can_deposit_to_own_wallet_proves_guard_not_overbroad():
+    """Positive control: customer B can still deposit into B's own wallet."""
+    _seed_two_customers()
+    before = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
+
+    status, body = _http_post(
+        "/api/health-wallet/deposit",
+        {"customer_id": CUST_B, "amount": 50.0, "payment_method": "card_on_file"},
+        token=TOKEN_B,
+    )
+
+    assert status == 200, (
+        f"Owner B was blocked from depositing into their own wallet (HTTP {status}): {body[:300]}"
+    )
+    after = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
+    assert after == before + 50.0, f"Owner B's deposit was not applied ({before} -> {after})"
