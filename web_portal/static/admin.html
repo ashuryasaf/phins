@@ -772,6 +772,7 @@
         <a href="/savings-portfolio.html">📈 Investments</a>
         <a href="/actuary-dashboard.html">📐 Actuary</a>
         <a href="/admin-supplier-dashboard.html">🏪 Suppliers</a>
+        <a href="/admin-agents.html">🧑‍💼 Agents</a>
         <a href="/admin-foundations.html">🤝 Community</a>
         <a href="/admin-media.html">📁 Media</a>
         <a href="/assessment-center.html">🧠 Assessment Center</a>
@@ -1043,6 +1044,12 @@
         <div class="stat-label" style="color: rgba(255,255,255,0.9);">Assessment Center</div>
         <div class="stat-change" id="stat-assessment-facts" style="color: rgba(255,255,255,0.8);">Loading customer 360…</div>
       </a>
+      <a href="/admin-agents.html" class="stat-box" style="background: linear-gradient(135deg, #5a2ca0 0%, #7c3aed 100%); color: white; text-decoration: none; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)';" onmouseout="this.style.transform='scale(1)';">
+        <div class="stat-icon">🧑‍💼</div>
+        <div class="stat-value" id="stat-agents" style="color: white;">—</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Agent Community</div>
+        <div class="stat-change" id="stat-agents-sub" style="color: rgba(255,255,255,0.8);">Manage agents →</div>
+      </a>
     </div>
 
     <script>
@@ -1062,6 +1069,26 @@
           const elFacts = document.getElementById('stat-assessment-facts');
           if (elCust) elCust.textContent = items.length;
           if (elFacts) elFacts.textContent = totalFacts + ' facts · ' + high + ' high-risk';
+        } catch (_) { /* non-fatal */ }
+      })();
+
+      (async function loadAgentsTile() {
+        try {
+          const token = localStorage.getItem('phins_token');
+          if (!token) return;
+          const res = await fetch('/api/admin/agents/overview', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          if (!res.ok) return;
+          const o = await res.json();
+          const elV = document.getElementById('stat-agents');
+          const elS = document.getElementById('stat-agents-sub');
+          if (elV) elV.textContent = (o.agents_total != null ? o.agents_total : 0);
+          if (elS) {
+            const cust = o.affiliated_customers || 0;
+            const pend = o.invitations_pending_approval || 0;
+            elS.textContent = cust + ' affiliated · ' + pend + ' pending →';
+          }
         } catch (_) { /* non-fatal */ }
       })();
     </script>
