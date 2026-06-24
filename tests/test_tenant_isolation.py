@@ -489,6 +489,64 @@ def test_billing_pay_all_from_wallet_cross_tenant_is_forbidden():
     )
 
 
+def test_savings_account_routes_block_cross_tenant_writes():
+    """Account_id-keyed savings routes must enforce ownership.
+
+    ``/api/savings/withdraw|invest|sell`` act on a portfolio account identified by
+    ``account_id``. The owning customer is resolvable from ``portfolio_service``,
+    so a customer must not be able to withdraw / invest / sell against another
+    customer's account by supplying its ``account_id``.
+
+    The account is created through the real API as customer B; if the portfolio
+    service is disabled in this test build, the route returns 503 and the test
+    skips rather than asserting on an unavailable feature.
+    """
+    _seed_two_customers()
+
+    create_status, create_body = _http_post(
+        "/api/savings/create-account",
+        {
+            "customer_id": CUST_B,
+            "policy_id": POL_B,
+            "monthly_contribution": 500,
+            "savings_rate_pct": 25,
+            "risk_profile": "moderate",
+        },
+        token=TOKEN_B,
+    )
+    if create_status == 503:
+        pytest.skip("portfolio/savings service disabled in this build")
+    assert create_status in (200, 201), (
+        f"could not create B's savings account: {create_status} {create_body[:300]}"
+    )
+    account_id = json.loads(create_body).get("account_id")
+    assert account_id, f"no account_id returned: {create_body[:300]}"
+
+    cross_tenant_probes = [
+        ("/api/savings/withdraw", {"account_id": account_id, "amount": 10.0}),
+        ("/api/savings/invest", {"account_id": account_id, "symbol": "AAPL", "amount": 10.0}),
+        ("/api/savings/sell", {"account_id": account_id, "symbol": "AAPL", "quantity": 1.0}),
+    ]
+    for path, payload in cross_tenant_probes:
+        status, body = _http_post(path, payload, token=TOKEN_A)
+        assert status == 403, (
+            f"customer A was not blocked from {path} on B's account "
+            f"(HTTP {status}): {body[:300]}"
+        )
+
+    # Positive control: the owner (B) is never blocked by the ownership guard.
+    # (The service may still return 400 for insufficient funds, but never 403.)
+    owner_status, owner_body = _http_post(
+        "/api/savings/withdraw",
+        {"account_id": account_id, "amount": 10.0},
+        token=TOKEN_B,
+    )
+    assert owner_status != 403, (
+        f"owner B was wrongly blocked from their own savings account "
+        f"(HTTP {owner_status}): {owner_body[:300]}"
+    )
+
+
 def test_owner_can_deposit_to_own_wallet_proves_guard_not_overbroad():
     """Positive control: customer B can still deposit into B's own wallet."""
     _seed_two_customers()
