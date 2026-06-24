@@ -215,6 +215,18 @@ def _seed_two_customers() -> None:
             "created_at": _future_iso(0),
         }
 
+    # Medical purchases (read by GET /api/health-wallet/purchases).
+    for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
+        pid = f"PURCH-ISO-{cid}"
+        portal.MEDICAL_PURCHASES[pid] = {
+            "id": pid,
+            "customer_id": cid,
+            "product_name": f"{sentinel} medical purchase",
+            "amount": 42.0,
+            "category": "general",
+            "timestamp": _future_iso(0),
+        }
+
     # Transaction-ledger entries (read by /api/ledger, /api/customer/activity-log).
     for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
         tx_id = f"TX-ISO-{cid}"
@@ -283,6 +295,9 @@ CROSS_CUSTOMER_GET_PROBES: List[Tuple[str, str]] = [
     ("billing transactions", _attack("/api/billing/transactions", customer_id=CUST_B)),
     ("service transactions", _attack("/api/service-transactions", customer_id=CUST_B)),
     ("customer status", _attack("/api/customer/status", customer_id=CUST_B)),
+    ("health-wallet purchases", _attack("/api/health-wallet/purchases", customer_id=CUST_B)),
+    ("documents list", _attack("/api/documents/list", customer_id=CUST_B)),
+    ("notifications history", _attack("/api/notifications/history", customer_id=CUST_B)),
 ]
 
 
@@ -353,6 +368,18 @@ def test_owner_can_read_own_ledger_proves_new_seeds_detectable():
     assert B_SENTINEL in body, (
         "Detection sanity failed: owner B's ledger sentinel was not observable, so "
         "the ledger leak probe could not detect a real cross-tenant leak."
+    )
+
+
+def test_owner_can_read_own_purchases_proves_detection():
+    """Sanity: B's purchase sentinel is observable to B via health-wallet purchases."""
+    _seed_two_customers()
+    status, body = _http_get(
+        _attack("/api/health-wallet/purchases", customer_id=CUST_B), token=TOKEN_B
+    )
+    assert status == 200, f"owner B could not read own purchases (HTTP {status}): {body[:300]}"
+    assert B_SENTINEL in body, (
+        "Detection sanity failed: owner B's purchase sentinel was not observable."
     )
 
 
