@@ -416,6 +416,79 @@ def test_customer_cannot_spend_another_customers_wallet():
     assert after == before, f"Customer B's wallet was charged ({before} -> {after})"
 
 
+# Customer-scoped money-movement POST routes that take the target customer_id in
+# the request body. Probing as A with B's customer_id must never succeed (200).
+# Service-gated endpoints may answer 503 in test mode; that is still "no write".
+CROSS_CUSTOMER_WRITE_PROBES: List[Tuple[str, str, Dict[str, Any]]] = [
+    ("billing pay-all-from-wallet", "/api/billing/pay-all-from-wallet", {"customer_id": CUST_B}),
+    ("billing credits withdraw", "/api/billing/credits/withdraw",
+     {"customer_id": CUST_B, "amount": 10.0, "method": "bank_transfer"}),
+    ("billing credits transfer-to-wallet", "/api/billing/credits/transfer-to-wallet",
+     {"customer_id": CUST_B, "amount": 10.0}),
+    ("balance withdraw-from-algo", "/api/balance/withdraw-from-algo",
+     {"customer_id": CUST_B, "amount": 10.0}),
+    ("balance transfer-to-algo", "/api/balance/transfer-to-algo",
+     {"customer_id": CUST_B, "amount": 10.0}),
+    ("portfolio deposit-to-algo", "/api/portfolio/deposit-to-algo",
+     {"customer_id": CUST_B, "amount": 10.0}),
+    ("portfolio transfer", "/api/portfolio/transfer",
+     {"customer_id": CUST_B, "amount": 10.0, "from": "investment", "to": "algo_trading"}),
+]
+
+
+@pytest.mark.parametrize(
+    "name,path,payload",
+    CROSS_CUSTOMER_WRITE_PROBES,
+    ids=[n for n, _, _ in CROSS_CUSTOMER_WRITE_PROBES],
+)
+def test_money_route_write_isolation(name: str, path: str, payload: Dict[str, Any]):
+    """Customer A must not perform a money-movement write against customer B.
+
+    A successful cross-tenant write would return 200. A correctly guarded route
+    returns 403 (denied) -- or 503 when its optional service is disabled in test
+    mode, which also means no write happened. Anything other than 200 is safe;
+    200 means the guard is missing.
+    """
+    _seed_two_customers()
+    status, body = _http_post(path, payload, token=TOKEN_A)
+    assert status != 200, (
+        f"{name}: customer A performed a cross-tenant write against B "
+        f"(HTTP {status}): {body[:300]}"
+    )
+
+
+def test_billing_credits_withdraw_cross_tenant_is_forbidden():
+    """Strong assertion for the highest-severity route: credit withdrawal.
+
+    Without the guard, A could withdraw B's billing credit to attacker-supplied
+    bank details. The billing credit service is enabled in test mode, so the
+    guard must produce a concrete 403 here.
+    """
+    _seed_two_customers()
+    status, body = _http_post(
+        "/api/billing/credits/withdraw",
+        {"customer_id": CUST_B, "amount": 10.0, "method": "bank_transfer",
+         "bank_details": {"account": "attacker-acct"}},
+        token=TOKEN_A,
+    )
+    assert status == 403, (
+        f"Customer A was not blocked from withdrawing B's credit (HTTP {status}): {body[:300]}"
+    )
+
+
+def test_billing_pay_all_from_wallet_cross_tenant_is_forbidden():
+    """Strong assertion: A cannot sweep B's wallet to pay B's bills."""
+    _seed_two_customers()
+    status, body = _http_post(
+        "/api/billing/pay-all-from-wallet",
+        {"customer_id": CUST_B},
+        token=TOKEN_A,
+    )
+    assert status == 403, (
+        f"Customer A was not blocked from sweeping B's wallet (HTTP {status}): {body[:300]}"
+    )
+
+
 def test_owner_can_deposit_to_own_wallet_proves_guard_not_overbroad():
     """Positive control: customer B can still deposit into B's own wallet."""
     _seed_two_customers()

@@ -44971,6 +44971,10 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
                     return
+
+                # SECURITY: only the owner (or staff) may transfer to algo balance.
+                if not self._enforce_customer_write(customer_id, 'algo balance'):
+                    return
                 
                 # ========== PRE-TRANSFER SYNC ==========
                 # Sync balances from all sources to unified_balance_service before transfer
@@ -45107,6 +45111,10 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
                     return
+
+                # SECURITY: only the owner (or staff) may withdraw from algo balance.
+                if not self._enforce_customer_write(customer_id, 'algo balance'):
+                    return
                 
                 # ========== PRE-WITHDRAWAL SYNC ==========
                 # Sync algo trading balance from portfolio_tracker_service
@@ -45241,6 +45249,10 @@ For claims or questions, please contact:
                 if not customer_id or amount <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+
+                # SECURITY: only the owner (or staff) may deposit to algo balance.
+                if not self._enforce_customer_write(customer_id, 'algo balance'):
                     return
                 
                 # ========== SYNC ALL ACCOUNTS BEFORE TRANSFER ==========
@@ -45554,6 +45566,10 @@ For claims or questions, please contact:
                 if not customer_id or amount <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+
+                # SECURITY: only the owner (or staff) may move funds between their accounts.
+                if not self._enforce_customer_write(customer_id, 'portfolio'):
                     return
                 
                 # Handle different transfer directions
@@ -46496,6 +46512,10 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
+
+                # SECURITY: only the owner (or staff) may sweep a wallet to pay bills.
+                if not self._enforce_customer_write(customer_id, 'wallet'):
+                    return
                 
                 # Get customer's health wallet
                 wallet = HEALTH_WALLETS.get(customer_id, {})
@@ -47279,6 +47299,11 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id and amount are required'}).encode('utf-8'))
                 return
+
+            # SECURITY: a customer may only withdraw their own credit (and never to
+            # another customer's account / attacker-supplied bank details).
+            if not self._enforce_customer_write(customer_id, 'billing credit'):
+                return
             
             if not billing_credit_enabled or not billing_credit_service:
                 self._set_json_headers(503)
@@ -47329,6 +47354,10 @@ For claims or questions, please contact:
             if not customer_id or not amount:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id and amount are required'}).encode('utf-8'))
+                return
+
+            # SECURITY: a customer may only move their own credit to their wallet.
+            if not self._enforce_customer_write(customer_id, 'billing credit'):
                 return
             
             if not billing_credit_enabled or not billing_credit_service:
