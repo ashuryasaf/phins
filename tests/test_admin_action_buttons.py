@@ -61,6 +61,7 @@ class TestServer(threading.Thread):
     def stop(self):
         if self.httpd:
             self.httpd.shutdown()
+            self.httpd.server_close()
 
 
 def _request(method: str, url: str, data=None, token=None):

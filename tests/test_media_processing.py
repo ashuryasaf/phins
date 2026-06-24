@@ -32,6 +32,7 @@ class ServerThread(threading.Thread):
 
     def stop(self):
         self.httpd.shutdown()
+        self.httpd.server_close()
 
 
 def _json_request(url, method="GET", payload=None, token=None, extra_headers=None):

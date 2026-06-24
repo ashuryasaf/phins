@@ -34,6 +34,7 @@ class ServerThread(threading.Thread):
 
     def stop(self) -> None:
         self.httpd.shutdown()
+        self.httpd.server_close()
 
 
 def _status(url: str, method: str) -> int:
