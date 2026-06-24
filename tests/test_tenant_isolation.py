@@ -637,6 +637,41 @@ def test_savings_account_routes_block_cross_tenant_writes():
     )
 
 
+def test_savings_read_routes_block_cross_tenant():
+    """Savings read routes must not return another customer's accounts/portfolio.
+
+    /api/savings/accounts and /api/savings/portfolio derived role from the USERS
+    map only; a session-only customer was misclassified as staff and the requested
+    ?customer_id= was honored. This creates a real B-owned account and asserts A
+    cannot see it (skips if the portfolio service is disabled).
+    """
+    _seed_two_customers()
+
+    create_status, create_body = _http_post(
+        "/api/savings/create-account",
+        {"customer_id": CUST_B, "policy_id": POL_B, "monthly_contribution": 500,
+         "savings_rate_pct": 25, "risk_profile": "moderate"},
+        token=TOKEN_B,
+    )
+    if create_status == 503:
+        pytest.skip("portfolio/savings service disabled in this build")
+    assert create_status in (200, 201), f"could not create B's account: {create_body[:300]}"
+    account_id = json.loads(create_body).get("account_id")
+    assert account_id
+
+    for path in ("/api/savings/accounts", "/api/savings/portfolio"):
+        status, body = _http_get(_attack(path, customer_id=CUST_B), token=TOKEN_A)
+        assert account_id not in body, (
+            f"{path} leaked customer B's account to customer A (HTTP {status}): {body[:300]}"
+        )
+
+    # Positive control: owner B can see their own account.
+    status_b, body_b = _http_get(_attack("/api/savings/accounts", customer_id=CUST_B), token=TOKEN_B)
+    assert status_b == 200 and account_id in body_b, (
+        f"owner B could not see their own savings account (HTTP {status_b}): {body_b[:300]}"
+    )
+
+
 def test_owner_can_deposit_to_own_wallet_proves_guard_not_overbroad():
     """Positive control: customer B can still deposit into B's own wallet."""
     _seed_two_customers()

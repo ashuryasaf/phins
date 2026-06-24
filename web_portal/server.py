@@ -17339,7 +17339,7 @@ For claims or questions, please contact:
                 return
 
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             enabled_only = role == 'customer'
 
             if USE_DATABASE and database_enabled:
@@ -17498,7 +17498,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower() if session else 'admin'
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower() if session else 'admin'
             session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
             
             # Get specific application by ID
@@ -17574,7 +17574,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             policy = POLICIES.get(policy_id)
@@ -21928,7 +21928,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             requested_customer_id = qs.get('customer_id', [None])[0]
@@ -22173,7 +22173,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             # Support both query param (?customer_id=X) and path-style (/X)
@@ -22382,7 +22382,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             requested_customer_id = qs.get('customer_id', [''])[0]
@@ -22444,7 +22444,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             requested_customer_id = qs.get('customer_id', [''])[0]
@@ -27458,7 +27458,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             requested_customer_id = qs.get('customer_id', [None])[0]
@@ -38834,7 +38834,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
             try:
@@ -39060,7 +39060,7 @@ For claims or questions, please contact:
                     return
                 
                 user = get_session_user(session) or {}
-                role = (user.get('role') or '').lower()
+                role = (user.get('role') or (session.get('role') if session else '') or '').lower()
                 
                 if role not in ['admin', 'underwriter', 'agent']:
                     self._set_json_headers(403)
@@ -39669,7 +39669,7 @@ For claims or questions, please contact:
                 return
 
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower() if session else 'admin'
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower() if session else 'admin'
             session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
 
             try:
@@ -40044,7 +40044,7 @@ For claims or questions, please contact:
                 return
             
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = (user.get('role') or (session.get('role') if session else '') or '').lower()
             
             # Only admins can delete claims
             if role not in ['admin', 'underwriter']:
