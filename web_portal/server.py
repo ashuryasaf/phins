@@ -19562,7 +19562,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
                 return
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower() if session else 'admin'
+            # Fall back to the session role: customers authenticated via stateless
+            # tokens (or on a replica whose in-memory USERS map lacks them) are not
+            # in USERS, and without this fallback they were misclassified as staff
+            # and could read another customer's status via ?customer_id=.
+            role = (user.get('role') or (session.get('role') or '') if session else '').lower() if session else 'admin'
             session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
 
             requested_customer_id = qs.get('customer_id', [None])[0]
@@ -20270,6 +20274,28 @@ For claims or questions, please contact:
                     except Exception:
                         continue
                 
+                # SECURITY (premortem risk #1): this endpoint builds transactions
+                # from the entire BILLING/CLAIMS stores. Without scoping it returns
+                # every customer's billing + claim activity to any caller, so a
+                # customer must be restricted to their own transactions.
+                _bt_session = self._get_session()
+                _bt_user = get_session_user(_bt_session) or {}
+                _bt_role = (
+                    _bt_user.get('role')
+                    or (_bt_session.get('role') if _bt_session else '')
+                    or ''
+                ).lower()
+                if _bt_role == 'customer':
+                    _bt_cid = str(
+                        _bt_user.get('customer_id')
+                        or (_bt_session.get('customer_id') if _bt_session else '')
+                        or ''
+                    )
+                    transactions = [
+                        t for t in transactions
+                        if str(t.get('customer_id') or '') == _bt_cid
+                    ]
+
                 # Sort by date desc and limit
                 transactions.sort(key=lambda x: x.get('date', ''), reverse=True)
                 transactions = transactions[:100]
