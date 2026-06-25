@@ -215,6 +215,18 @@ def _seed_two_customers() -> None:
             "created_at": _future_iso(0),
         }
 
+    # NFT ledger entries (read by GET /api/nft-ledger; keyed by owner_id).
+    for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
+        tok = f"NFT-ISO-{cid}"
+        portal.NFT_LEDGER[tok] = {
+            "token_id": tok,
+            "owner_id": cid,
+            "transaction_type": "wallet_deposit",
+            "amount": 100.0,
+            "description": f"{sentinel} nft ledger entry",
+            "created_at": _future_iso(0),
+        }
+
     # Medical purchases (read by GET /api/health-wallet/purchases).
     for cid, sentinel in ((CUST_A, A_SENTINEL), (CUST_B, B_SENTINEL)):
         pid = f"PURCH-ISO-{cid}"
@@ -298,6 +310,7 @@ CROSS_CUSTOMER_GET_PROBES: List[Tuple[str, str]] = [
     ("health-wallet purchases", _attack("/api/health-wallet/purchases", customer_id=CUST_B)),
     ("documents list", _attack("/api/documents/list", customer_id=CUST_B)),
     ("notifications history", _attack("/api/notifications/history", customer_id=CUST_B)),
+    ("nft ledger", _attack("/api/nft-ledger", customer_id=CUST_B)),
 ]
 
 
@@ -368,6 +381,16 @@ def test_owner_can_read_own_ledger_proves_new_seeds_detectable():
     assert B_SENTINEL in body, (
         "Detection sanity failed: owner B's ledger sentinel was not observable, so "
         "the ledger leak probe could not detect a real cross-tenant leak."
+    )
+
+
+def test_owner_can_read_own_nft_ledger_proves_detection():
+    """Sanity: B's NFT-ledger sentinel is observable to B (so the probe has teeth)."""
+    _seed_two_customers()
+    status, body = _http_get(_attack("/api/nft-ledger", customer_id=CUST_B), token=TOKEN_B)
+    assert status == 200, f"owner B could not read own nft-ledger (HTTP {status}): {body[:300]}"
+    assert B_SENTINEL in body, (
+        "Detection sanity failed: owner B's NFT-ledger sentinel was not observable."
     )
 
 
