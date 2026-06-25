@@ -6,17 +6,20 @@ Called once at startup from ``web_portal/server.py``. The goals are:
 * Warn loudly in test/dev when defaults are in use.
 * Forbid the historical hardcoded ``phins-emergency-unlock-2026`` literal.
 
-The helpers only emit log lines and return a structured report; they never
-mutate global state. Callers decide whether a failing check should abort
-startup or just warn.
+The audit helpers only emit log lines and return a structured report; they
+never mutate global state. Callers decide whether a failing check should abort
+startup or just warn. The one exception is :func:`ensure_session_secret_key`,
+which intentionally provisions a strong key into the environment when none is
+configured (documented at its definition).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import secrets
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 
 LOGGER = logging.getLogger("phins.security.secrets")
@@ -159,6 +162,43 @@ def audit_environment_secrets(environ: Optional[dict] = None) -> SecretReport:
         )
 
     return report
+
+
+def generate_session_secret_key() -> str:
+    """Return a fresh, cryptographically strong signing key (>= 32 bytes)."""
+    return secrets.token_urlsafe(48)
+
+
+def ensure_session_secret_key(
+    environ: Optional[dict] = None,
+    *,
+    generator: Optional[Callable[[], str]] = None,
+) -> Optional[str]:
+    """Provision a strong ``SESSION_SECRET_KEY`` into ``environ`` if missing.
+
+    A missing key would otherwise force auth to degrade to insecure legacy v1
+    tokens (or, under the fail-closed startup policy, block boot entirely).
+    Generating a strong random key keeps token signing secure by default.
+
+    Only the *absent* case is provisioned: an explicitly configured key (even a
+    weak one) is left untouched so the audit can still flag it and fail closed.
+
+    Returns the generated key, or ``None`` if a usable key was already present.
+
+    NOTE: unlike the audit helpers, this intentionally mutates ``environ`` (the
+    process environment by default) so the rest of the process sees the key.
+
+    Caveat: an auto-generated key is process-local, so it is not stable across
+    restarts or replicas. Operators should still set a persistent
+    ``SESSION_SECRET_KEY`` for durable sessions in multi-instance deployments.
+    """
+    env = environ if environ is not None else os.environ
+    existing = (env.get("SESSION_SECRET_KEY") or "").strip()
+    if existing:
+        return None
+    key = (generator or generate_session_secret_key)()
+    env["SESSION_SECRET_KEY"] = key
+    return key
 
 
 def _enforcement_override(environ: Optional[dict] = None) -> Optional[bool]:

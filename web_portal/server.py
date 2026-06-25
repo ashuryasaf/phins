@@ -48978,22 +48978,35 @@ def run_server(port: int = PORT) -> None:
     # Audit security-critical secrets early so operators see misconfiguration
     # immediately and don't first learn about it via a failed login.
     #
-    # Deployment policy (fail-closed by default in production):
+    # Deployment policy (secure by default):
+    #   * If SESSION_SECRET_KEY is not configured we provision a strong random
+    #     key for this process, so auth signs securely instead of degrading to
+    #     legacy v1 tokens -- and a deploy that simply hasn't set the env var
+    #     still boots (just with process-local sessions). Operators should set a
+    #     stable SESSION_SECRET_KEY for durable, multi-replica sessions.
     #   * We always run the audit and log findings at startup.
-    #   * In a PRODUCTION runtime, secret-policy violations (e.g. a missing or
-    #     weak SESSION_SECRET_KEY) HARD ABORT the boot by default, so a service
-    #     can never come up silently insecure.
+    #   * In a PRODUCTION runtime, *explicitly insecure* configuration (a weak or
+    #     known-default secret that was set on purpose, ALLOW_LEGACY_DEMO_PASSWORDS
+    #     in production, etc.) HARD ABORTS the boot by default, so a service can
+    #     never come up knowingly insecure.
     #   * Escape hatch: set PHINS_ENFORCE_SECRET_POLICY=false to override and
     #     continue despite violations (deliberate, logged, NOT recommended).
-    #     Setting it to a truthy value is now redundant but still honored.
     #   * Non-production runtimes (local dev, PHINS_TEST_MODE) never abort; they
     #     only emit loud warnings, so the test suite and local runs keep working.
     try:
         from security.secrets_policy import (
             audit_environment_secrets,
+            ensure_session_secret_key,
             log_report,
             should_abort_startup,
         )
+        if ensure_session_secret_key() is not None:
+            print(
+                "[SECURITY][WARN] SESSION_SECRET_KEY was not set; generated a "
+                "strong ephemeral key for this process. Set a stable "
+                "SESSION_SECRET_KEY so sessions persist across restarts and are "
+                "valid across replicas."
+            )
         _secret_report = audit_environment_secrets()
         log_report(_secret_report)
         _abort, _reason = should_abort_startup(_secret_report)

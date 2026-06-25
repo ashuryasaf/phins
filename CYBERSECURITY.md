@@ -162,16 +162,26 @@ startup (`run_server`) and logs its findings. In production
   `change-me`, …) are errors.
 - `ALLOW_LEGACY_DEMO_PASSWORDS=true` is an error.
 
-**Behaviour on error (production):**
+**Missing `SESSION_SECRET_KEY` (secure auto-provision):**
 
-- Default (fail-closed): abort startup with exit code 2, logging the
-  violations and the override instructions. A service can never come up
-  silently insecure (e.g. with a missing `SESSION_SECRET_KEY` that would
-  degrade auth to legacy v1 tokens).
+- If `SESSION_SECRET_KEY` is *not set*, startup provisions a strong random key
+  for the process (`security/secrets_policy.py:ensure_session_secret_key`) and
+  logs a `[SECURITY][WARN]`. Auth then signs with a strong key instead of
+  degrading to legacy v1 tokens, and a deploy that simply hasn't populated the
+  env var still boots. The key is process-local, so **set a stable
+  `SESSION_SECRET_KEY`** for durable sessions that survive restarts and are
+  valid across replicas.
+
+**Behaviour on error (production) — explicitly insecure config:**
+
+- Default (fail-closed): when a secret is *explicitly set to an insecure value*
+  (weak/known-default/short key, weak `PHINS_EMERGENCY_UNLOCK_KEY` /
+  `PHINS_ADMIN_PASSWORD`, or `ALLOW_LEGACY_DEMO_PASSWORDS=true` in production),
+  abort startup with exit code 2, logging the violations and override
+  instructions. A service can never come up knowingly insecure.
 - With `PHINS_ENFORCE_SECRET_POLICY=false`: emit `[SECURITY][WARN]` log lines
   and continue despite violations. This is the deliberate, documented escape
-  hatch for an emergency rollout where the env vars are not yet populated;
-  remove it as soon as `SESSION_SECRET_KEY` is set.
+  hatch; remove it as soon as the configuration is corrected.
 
 In test/dev mode these conditions downgrade to warnings regardless of the
 enforce flag so the suite still runs on developer machines.

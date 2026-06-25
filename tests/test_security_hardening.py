@@ -449,6 +449,58 @@ def test_should_abort_treats_unrecognized_override_as_secure_default():
     assert abort is True
 
 
+def test_ensure_session_secret_key_provisions_strong_key_when_missing():
+    from security.secrets_policy import ensure_session_secret_key
+
+    env: dict = {}
+    key = ensure_session_secret_key(env)
+    assert key is not None
+    assert env["SESSION_SECRET_KEY"] == key
+    # Strong: at least 32 bytes so the token layer will accept it.
+    assert len(key.encode("utf-8")) >= 32
+
+
+def test_ensure_session_secret_key_makes_audit_pass_in_production():
+    """Auto-provisioning turns 'missing key' into a secure, bootable state."""
+    from security.secrets_policy import (
+        audit_environment_secrets,
+        ensure_session_secret_key,
+        should_abort_startup,
+    )
+
+    env = {"ENVIRONMENT": "production"}
+    ensure_session_secret_key(env)
+    report = audit_environment_secrets(env)
+    assert report.ok, report.errors
+    abort, _ = should_abort_startup(report, environ=env)
+    assert abort is False
+
+
+def test_ensure_session_secret_key_leaves_explicit_key_untouched():
+    """An operator-set key (even a weak one) is never silently overwritten."""
+    from security.secrets_policy import ensure_session_secret_key
+
+    env = {"SESSION_SECRET_KEY": "weak"}
+    assert ensure_session_secret_key(env) is None
+    assert env["SESSION_SECRET_KEY"] == "weak"
+
+
+def test_explicitly_insecure_key_still_fails_closed_in_production():
+    """Auto-provision must not weaken fail-closed for deliberately-bad secrets."""
+    from security.secrets_policy import (
+        audit_environment_secrets,
+        ensure_session_secret_key,
+        should_abort_startup,
+    )
+
+    env = {"ENVIRONMENT": "production", "SESSION_SECRET_KEY": "change-me"}
+    ensure_session_secret_key(env)  # no-op: key already present
+    report = audit_environment_secrets(env)
+    assert not report.ok
+    abort, _ = should_abort_startup(report, environ=env)
+    assert abort is True
+
+
 # ---------------------------------------------------------------------------
 # headers
 # ---------------------------------------------------------------------------
