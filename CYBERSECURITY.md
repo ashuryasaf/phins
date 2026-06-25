@@ -144,11 +144,12 @@ internal metadata services and prevents accidental downgrade to `http`.
   keys accepted for verification during rotation.
 - `ALLOW_LEGACY_DEMO_PASSWORDS` – enables short demo passwords
   (`admin123`, …). Startup audit flags this as an error in production.
-- `PHINS_ENFORCE_SECRET_POLICY` – opt-in kill-switch. When set to a truthy
-  value (`true`/`1`/`yes`/`on`), startup aborts with exit code 2 if the
-  audit finds any error in production. Defaults to **off** so that
-  introducing the audit does not take a running service down before
-  operators have had the chance to populate `SESSION_SECRET_KEY`.
+- `PHINS_ENFORCE_SECRET_POLICY` – enforcement override. Production now
+  **fails closed by default**: if the audit finds any error in production,
+  startup aborts with exit code 2. Set this to a falsy value
+  (`false`/`0`/`no`/`off`) as a deliberate escape hatch to continue despite
+  violations (NOT recommended). A truthy value is now redundant but still
+  honored. The override has no effect outside production.
 
 ### 6.3 Startup secret audit
 
@@ -161,14 +162,26 @@ startup (`run_server`) and logs its findings. In production
   `change-me`, …) are errors.
 - `ALLOW_LEGACY_DEMO_PASSWORDS=true` is an error.
 
-**Behaviour on error:**
+**Missing `SESSION_SECRET_KEY` (secure auto-provision):**
 
-- Default: emit `[SECURITY][WARN]` log lines and continue. Login falls back
-  to legacy v1 tokens with a warning so the service does not become
-  unavailable during a rollout that has not yet populated the env vars.
-- With `PHINS_ENFORCE_SECRET_POLICY=true`: abort startup with exit code 2.
-  Set this once every deploy target has a strong `SESSION_SECRET_KEY` so
-  future misconfigurations cannot silently degrade to v1.
+- If `SESSION_SECRET_KEY` is *not set*, startup provisions a strong random key
+  for the process (`security/secrets_policy.py:ensure_session_secret_key`) and
+  logs a `[SECURITY][WARN]`. Auth then signs with a strong key instead of
+  degrading to legacy v1 tokens, and a deploy that simply hasn't populated the
+  env var still boots. The key is process-local, so **set a stable
+  `SESSION_SECRET_KEY`** for durable sessions that survive restarts and are
+  valid across replicas.
+
+**Behaviour on error (production) — explicitly insecure config:**
+
+- Default (fail-closed): when a secret is *explicitly set to an insecure value*
+  (weak/known-default/short key, weak `PHINS_EMERGENCY_UNLOCK_KEY` /
+  `PHINS_ADMIN_PASSWORD`, or `ALLOW_LEGACY_DEMO_PASSWORDS=true` in production),
+  abort startup with exit code 2, logging the violations and override
+  instructions. A service can never come up knowingly insecure.
+- With `PHINS_ENFORCE_SECRET_POLICY=false`: emit `[SECURITY][WARN]` log lines
+  and continue despite violations. This is the deliberate, documented escape
+  hatch; remove it as soon as the configuration is corrected.
 
 In test/dev mode these conditions downgrade to warnings regardless of the
 enforce flag so the suite still runs on developer machines.

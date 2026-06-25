@@ -323,6 +323,18 @@ def test_secrets_policy_treats_short_test_mode_flag_as_non_production():
     assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
 
 
+def test_secrets_policy_treats_railway_preview_env_as_non_production():
+    from security.secrets_policy import audit_environment_secrets
+
+    report = audit_environment_secrets({
+        "RAILWAY_ENVIRONMENT": "pr-412",
+        "SESSION_SECRET_KEY": "",
+    })
+    assert report.production_mode is False
+    assert report.ok
+    assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
+
+
 def test_secrets_policy_downgrades_forbidden_default_in_test_mode():
     """A forbidden-default value is an error in prod but only a warning in
     test/dev so the test runner still starts. Both conditions must appear
@@ -366,6 +378,139 @@ def test_secrets_policy_rejects_short_emergency_key_in_prod():
     })
     assert not report.ok
     assert any("PHINS_EMERGENCY_UNLOCK_KEY" in e for e in report.errors)
+
+
+# ---------------------------------------------------------------------------
+# secrets_policy: fail-closed startup gate (should_abort_startup)
+# ---------------------------------------------------------------------------
+
+
+def _prod_failing_report():
+    from security.secrets_policy import audit_environment_secrets
+
+    return audit_environment_secrets({
+        "ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "",  # missing -> error in production
+    })
+
+
+def test_should_abort_defaults_to_fail_closed_in_production():
+    """Unset PHINS_ENFORCE_SECRET_POLICY => abort on violations in production."""
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    abort, reason = should_abort_startup(report, environ={"ENVIRONMENT": "production"})
+    assert abort is True
+    assert "SESSION_SECRET_KEY" in reason
+
+
+def test_should_abort_respects_explicit_opt_out():
+    """The documented escape hatch keeps the old continue-anyway behavior."""
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    for value in ("false", "0", "no", "off"):
+        abort, reason = should_abort_startup(
+            report,
+            environ={"ENVIRONMENT": "production", "PHINS_ENFORCE_SECRET_POLICY": value},
+        )
+        assert abort is False, value
+        assert "disabled" in reason
+
+
+def test_should_abort_honors_explicit_enforce_true():
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    abort, _ = should_abort_startup(
+        report,
+        environ={"ENVIRONMENT": "production", "PHINS_ENFORCE_SECRET_POLICY": "true"},
+    )
+    assert abort is True
+
+
+def test_should_abort_never_aborts_outside_production():
+    """Local dev / test mode must continue to boot even with violations."""
+    from security.secrets_policy import audit_environment_secrets, should_abort_startup
+
+    report = audit_environment_secrets({"PHINS_TEST_MODE": "true", "SESSION_SECRET_KEY": ""})
+    abort, _ = should_abort_startup(report, environ={"PHINS_TEST_MODE": "true"})
+    assert abort is False
+
+
+def test_should_abort_is_false_when_secrets_ok():
+    from security.secrets_policy import audit_environment_secrets, should_abort_startup
+
+    report = audit_environment_secrets({
+        "ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "a" * 48,
+    })
+    assert report.ok
+    abort, _ = should_abort_startup(report, environ={"ENVIRONMENT": "production"})
+    assert abort is False
+
+
+def test_should_abort_treats_unrecognized_override_as_secure_default():
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    abort, _ = should_abort_startup(
+        report,
+        environ={"ENVIRONMENT": "production", "PHINS_ENFORCE_SECRET_POLICY": "maybe"},
+    )
+    assert abort is True
+
+
+def test_ensure_session_secret_key_provisions_strong_key_when_missing():
+    from security.secrets_policy import ensure_session_secret_key
+
+    env: dict = {}
+    key = ensure_session_secret_key(env)
+    assert key is not None
+    assert env["SESSION_SECRET_KEY"] == key
+    # Strong: at least 32 bytes so the token layer will accept it.
+    assert len(key.encode("utf-8")) >= 32
+
+
+def test_ensure_session_secret_key_makes_audit_pass_in_production():
+    """Auto-provisioning turns 'missing key' into a secure, bootable state."""
+    from security.secrets_policy import (
+        audit_environment_secrets,
+        ensure_session_secret_key,
+        should_abort_startup,
+    )
+
+    env = {"ENVIRONMENT": "production"}
+    ensure_session_secret_key(env)
+    report = audit_environment_secrets(env)
+    assert report.ok, report.errors
+    abort, _ = should_abort_startup(report, environ=env)
+    assert abort is False
+
+
+def test_ensure_session_secret_key_leaves_explicit_key_untouched():
+    """An operator-set key (even a weak one) is never silently overwritten."""
+    from security.secrets_policy import ensure_session_secret_key
+
+    env = {"SESSION_SECRET_KEY": "weak"}
+    assert ensure_session_secret_key(env) is None
+    assert env["SESSION_SECRET_KEY"] == "weak"
+
+
+def test_explicitly_insecure_key_still_fails_closed_in_production():
+    """Auto-provision must not weaken fail-closed for deliberately-bad secrets."""
+    from security.secrets_policy import (
+        audit_environment_secrets,
+        ensure_session_secret_key,
+        should_abort_startup,
+    )
+
+    env = {"ENVIRONMENT": "production", "SESSION_SECRET_KEY": "change-me"}
+    ensure_session_secret_key(env)  # no-op: key already present
+    report = audit_environment_secrets(env)
+    assert not report.ok
+    abort, _ = should_abort_startup(report, environ=env)
+    assert abort is True
 
 
 # ---------------------------------------------------------------------------

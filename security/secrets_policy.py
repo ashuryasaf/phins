@@ -6,17 +6,20 @@ Called once at startup from ``web_portal/server.py``. The goals are:
 * Warn loudly in test/dev when defaults are in use.
 * Forbid the historical hardcoded ``phins-emergency-unlock-2026`` literal.
 
-The helpers only emit log lines and return a structured report; they never
-mutate global state. Callers decide whether a failing check should abort
-startup or just warn.
+The audit helpers only emit log lines and return a structured report; they
+never mutate global state. Callers decide whether a failing check should abort
+startup or just warn. The one exception is :func:`ensure_session_secret_key`,
+which intentionally provisions a strong key into the environment when none is
+configured (documented at its definition).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import secrets
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 
 LOGGER = logging.getLogger("phins.security.secrets")
@@ -56,12 +59,23 @@ def _is_production(environ: Optional[dict] = None) -> bool:
     env = environ if environ is not None else os.environ
     if str(env.get("PHINS_TEST_MODE", "")).lower() in ("1", "true", "yes", "y"):
         return False
-    env_label = str(env.get("ENVIRONMENT", env.get("ENV", ""))).lower()
-    if env_label in ("production", "prod", "live"):
+    production_labels = {"production", "prod", "live"}
+    non_production_labels = {"development", "dev", "staging", "stage", "test", "testing"}
+    env_label = str(
+        env.get("PHINS_ENVIRONMENT", env.get("ENVIRONMENT", env.get("ENV", "")))
+    ).strip().lower()
+    if env_label in production_labels:
         return True
-    # Railway, Render, and similar hosts set a platform flag without explicit
-    # ENVIRONMENT values; treat any non-test runtime as production.
-    if env.get("RAILWAY_ENVIRONMENT") or env.get("RENDER"):
+    if env_label in non_production_labels:
+        return False
+    railway_env = str(env.get("RAILWAY_ENVIRONMENT", "")).strip().lower()
+    if railway_env in production_labels:
+        return True
+    if railway_env in non_production_labels or railway_env.startswith("pr-"):
+        return False
+    # Render sets a platform flag; if no explicit environment hint is present,
+    # keep the previous secure default and treat it as production.
+    if env.get("RENDER"):
         return True
     return False
 
@@ -159,6 +173,90 @@ def audit_environment_secrets(environ: Optional[dict] = None) -> SecretReport:
         )
 
     return report
+
+
+def generate_session_secret_key() -> str:
+    """Return a fresh, cryptographically strong signing key (>= 32 bytes)."""
+    return secrets.token_urlsafe(48)
+
+
+def ensure_session_secret_key(
+    environ: Optional[dict] = None,
+    *,
+    generator: Optional[Callable[[], str]] = None,
+) -> Optional[str]:
+    """Provision a strong ``SESSION_SECRET_KEY`` into ``environ`` if missing.
+
+    A missing key would otherwise force auth to degrade to insecure legacy v1
+    tokens (or, under the fail-closed startup policy, block boot entirely).
+    Generating a strong random key keeps token signing secure by default.
+
+    Only the *absent* case is provisioned: an explicitly configured key (even a
+    weak one) is left untouched so the audit can still flag it and fail closed.
+
+    Returns the generated key, or ``None`` if a usable key was already present.
+
+    NOTE: unlike the audit helpers, this intentionally mutates ``environ`` (the
+    process environment by default) so the rest of the process sees the key.
+
+    Caveat: an auto-generated key is process-local, so it is not stable across
+    restarts or replicas. Operators should still set a persistent
+    ``SESSION_SECRET_KEY`` for durable sessions in multi-instance deployments.
+    """
+    env = environ if environ is not None else os.environ
+    existing = (env.get("SESSION_SECRET_KEY") or "").strip()
+    if existing:
+        return None
+    key = (generator or generate_session_secret_key)()
+    env["SESSION_SECRET_KEY"] = key
+    return key
+
+
+def _enforcement_override(environ: Optional[dict] = None) -> Optional[bool]:
+    """Return the explicit operator override for secret-policy enforcement.
+
+    ``PHINS_ENFORCE_SECRET_POLICY`` semantics:
+      * truthy  -> always enforce (abort on violations)
+      * falsy   -> never enforce (continue despite violations) -- escape hatch
+      * unset   -> ``None`` (caller applies the secure default)
+    """
+    env = environ if environ is not None else os.environ
+    raw = env.get("PHINS_ENFORCE_SECRET_POLICY")
+    if raw is None:
+        return None
+    token = str(raw).strip().lower()
+    if token in ("1", "true", "yes", "y", "on"):
+        return True
+    if token in ("0", "false", "no", "n", "off"):
+        return False
+    # Unrecognized value: treat as unset so the secure default applies.
+    return None
+
+
+def should_abort_startup(
+    report: SecretReport, environ: Optional[dict] = None
+) -> tuple[bool, str]:
+    """Decide whether secret-policy violations should abort startup.
+
+    Fail-closed by default in production: when the audit reports errors in a
+    production runtime the process refuses to boot, UNLESS an operator has
+    explicitly opted out via ``PHINS_ENFORCE_SECRET_POLICY=false`` (a deliberate,
+    documented escape hatch). Non-production runtimes never abort -- they only
+    warn -- so local dev and the test suite keep working.
+
+    Returns ``(abort, reason)``.
+    """
+    if report.ok:
+        return False, ""
+    if not report.production_mode:
+        # Dev/test: surface via warnings/logs, never block startup.
+        return False, ""
+
+    override = _enforcement_override(environ)
+    if override is False:
+        return False, "PHINS_ENFORCE_SECRET_POLICY explicitly disabled"
+    # override is True (explicit) or None (secure default) -> enforce.
+    return True, "; ".join(report.errors)
 
 
 def log_report(report: SecretReport) -> None:
