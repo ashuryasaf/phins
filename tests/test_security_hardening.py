@@ -369,6 +369,87 @@ def test_secrets_policy_rejects_short_emergency_key_in_prod():
 
 
 # ---------------------------------------------------------------------------
+# secrets_policy: fail-closed startup gate (should_abort_startup)
+# ---------------------------------------------------------------------------
+
+
+def _prod_failing_report():
+    from security.secrets_policy import audit_environment_secrets
+
+    return audit_environment_secrets({
+        "ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "",  # missing -> error in production
+    })
+
+
+def test_should_abort_defaults_to_fail_closed_in_production():
+    """Unset PHINS_ENFORCE_SECRET_POLICY => abort on violations in production."""
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    abort, reason = should_abort_startup(report, environ={"ENVIRONMENT": "production"})
+    assert abort is True
+    assert "SESSION_SECRET_KEY" in reason
+
+
+def test_should_abort_respects_explicit_opt_out():
+    """The documented escape hatch keeps the old continue-anyway behavior."""
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    for value in ("false", "0", "no", "off"):
+        abort, reason = should_abort_startup(
+            report,
+            environ={"ENVIRONMENT": "production", "PHINS_ENFORCE_SECRET_POLICY": value},
+        )
+        assert abort is False, value
+        assert "disabled" in reason
+
+
+def test_should_abort_honors_explicit_enforce_true():
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    abort, _ = should_abort_startup(
+        report,
+        environ={"ENVIRONMENT": "production", "PHINS_ENFORCE_SECRET_POLICY": "true"},
+    )
+    assert abort is True
+
+
+def test_should_abort_never_aborts_outside_production():
+    """Local dev / test mode must continue to boot even with violations."""
+    from security.secrets_policy import audit_environment_secrets, should_abort_startup
+
+    report = audit_environment_secrets({"PHINS_TEST_MODE": "true", "SESSION_SECRET_KEY": ""})
+    abort, _ = should_abort_startup(report, environ={"PHINS_TEST_MODE": "true"})
+    assert abort is False
+
+
+def test_should_abort_is_false_when_secrets_ok():
+    from security.secrets_policy import audit_environment_secrets, should_abort_startup
+
+    report = audit_environment_secrets({
+        "ENVIRONMENT": "production",
+        "SESSION_SECRET_KEY": "a" * 48,
+    })
+    assert report.ok
+    abort, _ = should_abort_startup(report, environ={"ENVIRONMENT": "production"})
+    assert abort is False
+
+
+def test_should_abort_treats_unrecognized_override_as_secure_default():
+    from security.secrets_policy import should_abort_startup
+
+    report = _prod_failing_report()
+    abort, _ = should_abort_startup(
+        report,
+        environ={"ENVIRONMENT": "production", "PHINS_ENFORCE_SECRET_POLICY": "maybe"},
+    )
+    assert abort is True
+
+
+# ---------------------------------------------------------------------------
 # headers
 # ---------------------------------------------------------------------------
 

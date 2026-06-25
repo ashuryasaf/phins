@@ -144,11 +144,12 @@ internal metadata services and prevents accidental downgrade to `http`.
   keys accepted for verification during rotation.
 - `ALLOW_LEGACY_DEMO_PASSWORDS` – enables short demo passwords
   (`admin123`, …). Startup audit flags this as an error in production.
-- `PHINS_ENFORCE_SECRET_POLICY` – opt-in kill-switch. When set to a truthy
-  value (`true`/`1`/`yes`/`on`), startup aborts with exit code 2 if the
-  audit finds any error in production. Defaults to **off** so that
-  introducing the audit does not take a running service down before
-  operators have had the chance to populate `SESSION_SECRET_KEY`.
+- `PHINS_ENFORCE_SECRET_POLICY` – enforcement override. Production now
+  **fails closed by default**: if the audit finds any error in production,
+  startup aborts with exit code 2. Set this to a falsy value
+  (`false`/`0`/`no`/`off`) as a deliberate escape hatch to continue despite
+  violations (NOT recommended). A truthy value is now redundant but still
+  honored. The override has no effect outside production.
 
 ### 6.3 Startup secret audit
 
@@ -161,14 +162,16 @@ startup (`run_server`) and logs its findings. In production
   `change-me`, …) are errors.
 - `ALLOW_LEGACY_DEMO_PASSWORDS=true` is an error.
 
-**Behaviour on error:**
+**Behaviour on error (production):**
 
-- Default: emit `[SECURITY][WARN]` log lines and continue. Login falls back
-  to legacy v1 tokens with a warning so the service does not become
-  unavailable during a rollout that has not yet populated the env vars.
-- With `PHINS_ENFORCE_SECRET_POLICY=true`: abort startup with exit code 2.
-  Set this once every deploy target has a strong `SESSION_SECRET_KEY` so
-  future misconfigurations cannot silently degrade to v1.
+- Default (fail-closed): abort startup with exit code 2, logging the
+  violations and the override instructions. A service can never come up
+  silently insecure (e.g. with a missing `SESSION_SECRET_KEY` that would
+  degrade auth to legacy v1 tokens).
+- With `PHINS_ENFORCE_SECRET_POLICY=false`: emit `[SECURITY][WARN]` log lines
+  and continue despite violations. This is the deliberate, documented escape
+  hatch for an emergency rollout where the env vars are not yet populated;
+  remove it as soon as `SESSION_SECRET_KEY` is set.
 
 In test/dev mode these conditions downgrade to warnings regardless of the
 enforce flag so the suite still runs on developer machines.

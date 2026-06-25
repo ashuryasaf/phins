@@ -161,6 +161,53 @@ def audit_environment_secrets(environ: Optional[dict] = None) -> SecretReport:
     return report
 
 
+def _enforcement_override(environ: Optional[dict] = None) -> Optional[bool]:
+    """Return the explicit operator override for secret-policy enforcement.
+
+    ``PHINS_ENFORCE_SECRET_POLICY`` semantics:
+      * truthy  -> always enforce (abort on violations)
+      * falsy   -> never enforce (continue despite violations) -- escape hatch
+      * unset   -> ``None`` (caller applies the secure default)
+    """
+    env = environ if environ is not None else os.environ
+    raw = env.get("PHINS_ENFORCE_SECRET_POLICY")
+    if raw is None:
+        return None
+    token = str(raw).strip().lower()
+    if token in ("1", "true", "yes", "y", "on"):
+        return True
+    if token in ("0", "false", "no", "n", "off"):
+        return False
+    # Unrecognized value: treat as unset so the secure default applies.
+    return None
+
+
+def should_abort_startup(
+    report: SecretReport, environ: Optional[dict] = None
+) -> tuple[bool, str]:
+    """Decide whether secret-policy violations should abort startup.
+
+    Fail-closed by default in production: when the audit reports errors in a
+    production runtime the process refuses to boot, UNLESS an operator has
+    explicitly opted out via ``PHINS_ENFORCE_SECRET_POLICY=false`` (a deliberate,
+    documented escape hatch). Non-production runtimes never abort -- they only
+    warn -- so local dev and the test suite keep working.
+
+    Returns ``(abort, reason)``.
+    """
+    if report.ok:
+        return False, ""
+    if not report.production_mode:
+        # Dev/test: surface via warnings/logs, never block startup.
+        return False, ""
+
+    override = _enforcement_override(environ)
+    if override is False:
+        return False, "PHINS_ENFORCE_SECRET_POLICY explicitly disabled"
+    # override is True (explicit) or None (secure default) -> enforce.
+    return True, "; ".join(report.errors)
+
+
 def log_report(report: SecretReport) -> None:
     """Emit the report to the logger; does not raise."""
     for warning in report.warnings:

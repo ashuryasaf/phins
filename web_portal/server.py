@@ -48978,36 +48978,42 @@ def run_server(port: int = PORT) -> None:
     # Audit security-critical secrets early so operators see misconfiguration
     # immediately and don't first learn about it via a failed login.
     #
-    # Deployment policy:
+    # Deployment policy (fail-closed by default in production):
     #   * We always run the audit and log findings at startup.
-    #   * We only HARD ABORT the process when PHINS_ENFORCE_SECRET_POLICY is
-    #     explicitly set to a truthy value. This keeps the default
-    #     rollout-safe: Railway services that happen to be missing
-    #     SESSION_SECRET_KEY keep booting (auth still works because login
-    #     falls back to legacy v1 tokens with a warning) but operators see
-    #     very loud SECURITY error lines in the log stream so they can fix
-    #     the configuration without downtime.
-    #   * Set PHINS_ENFORCE_SECRET_POLICY=true once every service has a
-    #     strong SESSION_SECRET_KEY to turn the audit into a hard gate.
+    #   * In a PRODUCTION runtime, secret-policy violations (e.g. a missing or
+    #     weak SESSION_SECRET_KEY) HARD ABORT the boot by default, so a service
+    #     can never come up silently insecure.
+    #   * Escape hatch: set PHINS_ENFORCE_SECRET_POLICY=false to override and
+    #     continue despite violations (deliberate, logged, NOT recommended).
+    #     Setting it to a truthy value is now redundant but still honored.
+    #   * Non-production runtimes (local dev, PHINS_TEST_MODE) never abort; they
+    #     only emit loud warnings, so the test suite and local runs keep working.
     try:
-        from security.secrets_policy import audit_environment_secrets, log_report
+        from security.secrets_policy import (
+            audit_environment_secrets,
+            log_report,
+            should_abort_startup,
+        )
         _secret_report = audit_environment_secrets()
         log_report(_secret_report)
-        _enforce = str(os.environ.get('PHINS_ENFORCE_SECRET_POLICY', '')).lower() in (
-            '1', 'true', 'yes', 'y', 'on'
-        )
+        _abort, _reason = should_abort_startup(_secret_report)
+        if _abort:
+            print(
+                "[SECURITY] Refusing to start: secret policy violations in "
+                "production: " + _reason
+            )
+            print(
+                "[SECURITY] Fix the configuration, or set "
+                "PHINS_ENFORCE_SECRET_POLICY=false to override (NOT recommended)."
+            )
+            raise SystemExit(2)
         if _secret_report.production_mode and not _secret_report.ok:
-            if _enforce:
-                print(
-                    "[SECURITY] Refusing to start (PHINS_ENFORCE_SECRET_POLICY is on): "
-                    + "; ".join(_secret_report.errors)
-                )
-                raise SystemExit(2)
-            # Not enforcing: emit a prominent warning but continue.
+            # Reached only when an operator explicitly opted out of enforcement.
             print(
                 "[SECURITY][WARN] Secret policy violations detected: "
                 + "; ".join(_secret_report.errors)
-                + " -- continuing because PHINS_ENFORCE_SECRET_POLICY is not set."
+                + " -- continuing because PHINS_ENFORCE_SECRET_POLICY is "
+                "explicitly disabled."
             )
     except SystemExit:
         raise
