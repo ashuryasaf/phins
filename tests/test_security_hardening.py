@@ -514,6 +514,72 @@ def test_explicitly_insecure_key_still_fails_closed_in_production():
 
 
 # ---------------------------------------------------------------------------
+# Data-at-rest integrity: the encryption key must never be auto-provisioned,
+# and vault round-trips must preserve data with or without a key.
+# ---------------------------------------------------------------------------
+
+
+def test_encryption_key_is_never_auto_provisioned():
+    """An ephemeral PHINS_ENCRYPTION_KEY would make previously-encrypted blobs
+    undecryptable after a restart (data loss). Only the transient
+    SESSION_SECRET_KEY may be auto-provisioned; the data-at-rest key never is."""
+    from security.secrets_policy import ensure_session_secret_key
+
+    env: dict = {}
+    ensure_session_secret_key(env)
+    assert "SESSION_SECRET_KEY" in env
+    assert "PHINS_ENCRYPTION_KEY" not in env
+
+
+def test_vault_plaintext_roundtrip_without_key_preserves_data():
+    """With no encryption key, the vault stores plaintext and round-trips
+    losslessly -- it does NOT silently generate a key."""
+    import os
+    from security import vault
+
+    saved = os.environ.pop("PHINS_ENCRYPTION_KEY", None)
+    try:
+        assert vault._get_fernet() is None  # no ephemeral key generation
+        blob = vault.encrypt_json({"a": 1, "b": "x"})
+        assert blob.scheme == "plain"
+        assert vault.decrypt_json(blob.to_json()) == {"a": 1, "b": "x"}
+    finally:
+        if saved is not None:
+            os.environ["PHINS_ENCRYPTION_KEY"] = saved
+
+
+def test_vault_encrypted_blob_survives_key_loss_without_corruption():
+    """A fernet blob whose key is later missing decrypts to the supplied default
+    (graceful) and leaves the stored ciphertext intact -- no corruption."""
+    import os
+
+    try:
+        from cryptography.fernet import Fernet
+    except Exception:  # pragma: no cover - cryptography optional
+        import pytest
+
+        pytest.skip("cryptography not installed")
+    from security import vault
+
+    saved = os.environ.get("PHINS_ENCRYPTION_KEY")
+    try:
+        os.environ["PHINS_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
+        blob_json = vault.encrypt_json({"secret": "data"}).to_json()
+        assert vault.decrypt_json(blob_json) == {"secret": "data"}
+
+        # Simulate key loss: ciphertext must remain intact and decrypt returns
+        # the default instead of raising or returning garbage.
+        os.environ.pop("PHINS_ENCRYPTION_KEY", None)
+        assert vault.decrypt_json(blob_json, default={"fallback": True}) == {"fallback": True}
+        assert '"scheme": "fernet"' in blob_json
+    finally:
+        if saved is not None:
+            os.environ["PHINS_ENCRYPTION_KEY"] = saved
+        else:
+            os.environ.pop("PHINS_ENCRYPTION_KEY", None)
+
+
+# ---------------------------------------------------------------------------
 # headers
 # ---------------------------------------------------------------------------
 
