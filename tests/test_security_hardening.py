@@ -323,6 +323,18 @@ def test_secrets_policy_treats_short_test_mode_flag_as_non_production():
     assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
 
 
+def test_secrets_policy_treats_railway_preview_env_as_non_production():
+    from security.secrets_policy import audit_environment_secrets
+
+    report = audit_environment_secrets({
+        "RAILWAY_ENVIRONMENT": "pr-412",
+        "SESSION_SECRET_KEY": "",
+    })
+    assert report.production_mode is False
+    assert report.ok
+    assert any("SESSION_SECRET_KEY" in w for w in report.warnings)
+
+
 def test_secrets_policy_downgrades_forbidden_default_in_test_mode():
     """A forbidden-default value is an error in prod but only a warning in
     test/dev so the test runner still starts. Both conditions must appear

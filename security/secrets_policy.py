@@ -59,12 +59,23 @@ def _is_production(environ: Optional[dict] = None) -> bool:
     env = environ if environ is not None else os.environ
     if str(env.get("PHINS_TEST_MODE", "")).lower() in ("1", "true", "yes", "y"):
         return False
-    env_label = str(env.get("ENVIRONMENT", env.get("ENV", ""))).lower()
-    if env_label in ("production", "prod", "live"):
+    production_labels = {"production", "prod", "live"}
+    non_production_labels = {"development", "dev", "staging", "stage", "test", "testing"}
+    env_label = str(
+        env.get("PHINS_ENVIRONMENT", env.get("ENVIRONMENT", env.get("ENV", "")))
+    ).strip().lower()
+    if env_label in production_labels:
         return True
-    # Railway, Render, and similar hosts set a platform flag without explicit
-    # ENVIRONMENT values; treat any non-test runtime as production.
-    if env.get("RAILWAY_ENVIRONMENT") or env.get("RENDER"):
+    if env_label in non_production_labels:
+        return False
+    railway_env = str(env.get("RAILWAY_ENVIRONMENT", "")).strip().lower()
+    if railway_env in production_labels:
+        return True
+    if railway_env in non_production_labels or railway_env.startswith("pr-"):
+        return False
+    # Render sets a platform flag; if no explicit environment hint is present,
+    # keep the previous secure default and treat it as production.
+    if env.get("RENDER"):
         return True
     return False
 
