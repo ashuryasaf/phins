@@ -8,16 +8,17 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50.7k lines)
 - optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
-  `api_delivery_bidding.py`)
-- service-layer logic in `services/` (80 modules)
+  `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
+  `api_assessment_center.py`)
+- service-layer logic in `services/` (83 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (120 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (129 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -41,6 +42,8 @@ Preferred file-by-task:
 | API route/response change | `web_portal/server.py`, then `web_portal/api_extensions.py` |
 | BI/analytics API | `web_portal/api_bi_analytics.py`, `services/bi_analytics_service.py` |
 | Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
+| Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
+| Assessment center API | `web_portal/api_assessment_center.py` |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -70,9 +73,11 @@ Preferred file-by-task:
 |  |- api_extensions.py
 |  |- api_bi_analytics.py
 |  |- api_delivery_bidding.py
+|  |- api_agent_ecosystem.py
+|  |- api_assessment_center.py
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
-|- services/                            # 80 service modules
+|- services/                            # 83 service modules
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -82,7 +87,7 @@ Preferred file-by-task:
 |  |- notification_models.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 14 *_repository.py + base.py
+|  |- repositories/                     # 15 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -98,11 +103,13 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 120 test files
+|- tests/                               # 129 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
 |  |- health_marketplace_implementation_spec.md
+|  |- agent_ecosystem_design.md
+|  |- ai_surface_design_principles.md
 |  |- INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md
 |  `- uml/
 `- .github/workflows/                   # CI (visual_test, security_scan)
@@ -162,6 +169,8 @@ Database patterns:
   `payment_intents`, `refunds`, `journal`, `supplier_settlement_runs`,
   `supplier_settlement_items`, `external_payers`, `marketplace_claims`,
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
+- Agents: `agents`, `agent_invitations`, `agent_affiliations`,
+  `agent_commissions`
 
 Common ID prefixes:
 
@@ -182,8 +191,10 @@ When changing or adding an API endpoint:
 
 1. Inspect the surrounding route in `web_portal/server.py` first.
 2. Check whether the endpoint belongs in `server.py`,
-   `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`, or
-   `web_portal/api_delivery_bidding.py`.
+   `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`,
+   `web_portal/api_delivery_bidding.py`,
+   `web_portal/api_agent_ecosystem.py`, or
+   `web_portal/api_assessment_center.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -222,18 +233,19 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 33 repository properties (see §4 for the full list).
-- Repository modules (14 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 37 repository properties (see §4 for the full list).
+- Repository modules (15 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
   `token_repository.py`, `document_repository.py`, `supplier_repository.py`
   (bundles supplier, invitation, offer, order, document, and supply-chain
-  ledger repositories), and `marketplace_repository.py` (bundles wallet,
+  ledger repositories), `marketplace_repository.py` (bundles wallet,
   payment-intent, refund, journal, settlement, external-payer,
   marketplace-claim, remittance, receivable, idempotency, and outbox
-  repositories).
+  repositories), and `agent_repository.py` (bundles agent, invitation,
+  affiliation, and commission repositories).
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -343,9 +355,11 @@ referenced files, commands, paths, and ports still exist.
   of the API extension modules; verify actual wiring rather than assuming.
 - Handler initialization, port assumptions, or shared module state can break many
   tests because pytest starts a real embedded `PortalHandler` server.
-- `supplier_repository.py` and `marketplace_repository.py` each bundle many
-  repository classes (suppliers/invitations/offers/orders/documents/ledger,
-  and wallet/payments/journal/settlements/claims/outbox respectively);
+- `supplier_repository.py`, `marketplace_repository.py`, and
+  `agent_repository.py` each bundle many repository classes
+  (suppliers/invitations/offers/orders/documents/ledger;
+  wallet/payments/journal/settlements/claims/outbox; and
+  agents/invitations/affiliations/commissions respectively);
   changes there can have a wide blast radius.
 - Hardcoding `http://localhost:8000` in tests breaks parallel or busy-port
   runs; read `TEST_BASE_URL` instead.
@@ -388,4 +402,4 @@ If you update this file again:
 
 ---
 
-Last updated: June 10, 2026
+Last updated: June 29, 2026
