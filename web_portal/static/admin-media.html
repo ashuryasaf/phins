@@ -488,6 +488,93 @@
         .assignment-status.active { color: #fff; }
         .assignment-status.inactive { color: rgba(255,255,255,0.6); }
 
+        /* Voice-Over Script Library */
+        .voiceover-section {
+            background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .vo-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .vo-header h2 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1rem;
+        }
+        .vo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .vo-card {
+            background: rgba(255,255,255,0.10);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .vo-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+        .vo-sub { font-size: 0.82rem; color: rgba(255,255,255,0.82); line-height: 1.4; margin-bottom: 10px; }
+        .vo-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+        .vo-chip {
+            background: rgba(255,255,255,0.16);
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+        .vo-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .vo-tab {
+            background: rgba(255,255,255,0.10);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .vo-tab:hover { background: rgba(255,255,255,0.2); }
+        .vo-tab.active { background: #fff; color: #4a148c; border-color: #fff; font-weight: 700; }
+        .vo-panel { position: relative; }
+        .vo-text {
+            background: rgba(0,0,0,0.28);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-family: inherit;
+            font-size: 0.82rem;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 0;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+        .vo-text[dir="rtl"] { text-align: right; }
+        .vo-copy {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255,255,255,0.16);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            padding: 4px 9px;
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+        .vo-copy:hover { background: rgba(255,255,255,0.28); }
+        .vo-text[dir="rtl"] + .vo-copy, .vo-panel[dir="rtl"] .vo-copy { right: auto; left: 8px; }
+        .vo-foot { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .vo-label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.85; margin: 12px 0 4px; }
+        .vo-label:first-child { margin-top: 0; }
+        .vo-subblock { position: relative; margin-bottom: 6px; }
+        a.media-action-btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+        .media-type-badge.pinned { background: #f1c40f; color: #1a1a1a; left: auto; right: 6px; }
+
         /* Growth Agent Bridge */
         .growth-bridge-section {
             background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
@@ -1065,7 +1152,185 @@
                 <p>Upload files or add from URL to get started</p>
             </div>
         </section>
-        
+
+        <!-- Voice-Over Script Library -->
+        <section class="voiceover-section">
+            <div class="vo-header">
+                <h2>🎙️ Voice-Over Script Library</h2>
+                <div class="vo-actions">
+                    <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" target="_blank" rel="noopener">👁️ Open PDF</a>
+                    <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" download>⬇️ PDF</a>
+                    <a class="btn btn-primary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.docx" download>⬇️ Word (.docx)</a>
+                </div>
+            </div>
+
+            <div class="vo-card">
+                <div class="vo-title">"The Woman I'll Become" — Phins bilingual VO (English / עברית)</div>
+                <div class="vo-sub">High-end AI-video voice-over from a 35-year-old woman's perspective on aging and the risk of one day needing total health care — positioning Phins as her health-financial operating system. Tuned for ElevenLabs. Includes a ~1:15 master plus 30-second and 9:16 vertical cutdowns.</div>
+                <div class="vo-chips">
+                    <span class="vo-chip">🎬 9 exact shots</span>
+                    <span class="vo-chip">🗣️ EN + עברית</span>
+                    <span class="vo-chip">⚡ ElevenLabs-ready</span>
+                    <span class="vo-chip">📐 16:9 + 9:16</span>
+                    <span class="vo-chip">⏱️ 1:15 / 0:30</span>
+                </div>
+
+                <div class="vo-tabs" role="tablist">
+                    <button class="vo-tab active" type="button" onclick="showVoPanel('en', this)">English script</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('he', this)">עברית</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('cut', this)">⏱️ 30-sec cut</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('vert', this)">📱 9:16 vertical</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('el', this)">ElevenLabs settings</button>
+                </div>
+
+                <div id="vo-panel-en" class="vo-panel">
+                    <pre id="vo-text-en" class="vo-text">I'm thirty-five. People say that's young. And maybe it is.
+
+But lately I've started thinking about the woman I'll become — the one who's seventy, eighty, ninety.
+
+We're all living longer now. That's the gift. But living longer also raises the odds — the odds that one day I'll need full-time care.
+
+And the part no one talks about isn't the illness. It's the cost — the kind that can swallow a lifetime of work.
+
+That's why I chose Phins. Not just insurance — a health-financial system that's ready before I ever need it.
+
+One health wallet. Coverage I can actually see. Care, suppliers, and claims that connect — and money that comes back to me when it should.
+
+So when the years come — and they will — I won't be afraid of them. I'll be ready for them.
+
+Because the best time to protect the woman I'll become… is the woman I am today.
+
+Phins. Health that grows old with you.</pre>
+                    <button class="vo-copy" type="button" onclick="copyVo('vo-text-en', this)">📋 Copy</button>
+                </div>
+
+                <div id="vo-panel-he" class="vo-panel" dir="rtl" style="display:none;">
+                    <pre id="vo-text-he" class="vo-text" dir="rtl">אני בת שלושים וחמש. אומרים שזה צעיר. ואולי זה באמת ככה.
+
+אבל לאחרונה התחלתי לחשוב על האישה שאהיה — זו שתהיה בת שבעים, שמונים, תשעים.
+
+כולנו חיים יותר שנים. זו המתנה. אבל אריכות ימים גם מעלה את הסיכוי — הסיכוי שיום אחד אצטרך טיפול מלא, מסביב לשעון.
+
+והחלק שאף אחד לא מדבר עליו הוא לא המחלה. זה המחיר — מחיר שיכול לבלוע חיים שלמים של עבודה.
+
+בגלל זה בחרתי ב-Phins. לא רק ביטוח — מערכת בריאותית-פיננסית שמוכנה עוד לפני שאזדקק לה.
+
+ארנק בריאות אחד. כיסוי שאני באמת רואה. טיפול, ספקים ותביעות שמתחברים — וכסף שחוזר אליי בדיוק כשצריך.
+
+אז כשהשנים יגיעו — והן יגיעו — אני לא אפחד מהן. אני אהיה מוכנה אליהן.
+
+כי הזמן הטוב ביותר להגן על האישה שאהיה… הוא האישה שאני היום.
+
+Phins. בריאות שמתבגרת יחד איתך.</pre>
+                    <button class="vo-copy" type="button" onclick="copyVo('vo-text-he', this)">📋 העתק</button>
+                </div>
+
+                <div id="vo-panel-cut" class="vo-panel" style="display:none;">
+                    <div class="vo-label">English — 30-second cut</div>
+                    <div class="vo-subblock">
+                        <pre id="vo-text-cut-en" class="vo-text">I'm thirty-five. We're all living longer now — and that's the gift. But living longer also raises the odds that one day I'll need full-time care. And the hardest part isn't the illness — it's the cost. That's why I chose Phins: one health wallet, coverage I can see, and money that comes back when it should. So when the years come, I won't fear them. I'll be ready. Phins. Health that grows old with you.</pre>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-en', this)">📋 Copy</button>
+                    </div>
+                    <div class="vo-label">עברית — גרסת 30 שניות</div>
+                    <div class="vo-subblock" dir="rtl">
+                        <pre id="vo-text-cut-he" class="vo-text" dir="rtl">אני בת שלושים וחמש. כולנו חיים יותר שנים — וזו המתנה. אבל אריכות ימים גם מעלה את הסיכוי שיום אחד אצטרך טיפול מלא. והחלק הקשה הוא לא המחלה — זה המחיר. בגלל זה בחרתי ב-Phins: ארנק בריאות אחד, כיסוי שאני רואה, וכסף שחוזר בדיוק כשצריך. אז כשהשנים יגיעו, לא אפחד מהן. אהיה מוכנה. Phins. בריאות שמתבגרת יחד איתך.</pre>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-he', this)">📋 העתק</button>
+                    </div>
+                </div>
+
+                <div id="vo-panel-vert" class="vo-panel" style="display:none;">
+                    <div class="vo-label">9:16 vertical — framing notes + shot list (~30s)</div>
+                    <div class="vo-subblock">
+                        <pre id="vo-text-vert" class="vo-text">REFRAMING NOTES
+• Shoot/generate natively vertical — keep the subject centered with generous top headroom (don't crop 16:9).
+• Keep eyes and key action in the upper-middle third; reserve the lower third for burned-in captions.
+• Stack motion graphics (wallet / coverage) vertically instead of spreading horizontally.
+• Faster cuts (~5s each) and a hook in the first 2 seconds for social feeds.
+• Burn bilingual captions; keep the "Phins" wordmark Latin in both languages.
+
+SHOT LIST  (VO = the 30-second cut)
+1 · 0:00–0:05 · Vertical close-up, face centered, top-third headroom; dawn light.
+    EN: "I'm thirty-five. We're all living longer now — and that's the gift."
+2 · 0:05–0:12 · Vertical full-body walk; seasonal morph behind her, centered.
+    EN: "But living longer also raises the odds that one day I'll need full-time care."
+3 · 0:12–0:17 · Vertical insert: glowing unopened envelope; caption-safe lower third.
+    EN: "And the hardest part isn't the illness — it's the cost."
+4 · 0:17–0:25 · Vertical phone-UI reflection; wallet + coverage graphics stacked.
+    EN: "That's why I chose Phins: one health wallet, coverage I can see, and money that comes back when it should."
+5 · 0:25–0:30 · Vertical montage of graceful aging into a serene older portrait.
+    EN: "So when the years come, I won't fear them. I'll be ready."
+6 · 0:30–0:33 · Vertical logo reveal from a single flowing line; tagline beneath.
+    EN: "Phins. Health that grows old with you."</pre>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-vert', this)">📋 Copy</button>
+                    </div>
+                </div>
+
+                <div id="vo-panel-el" class="vo-panel" style="display:none;">
+                    <pre class="vo-text">Recommended voice: warm, mature-but-youthful female, mid-low register ("inner monologue" tone).
+Library matches: Matilda, Alice, Charlotte, Serena — or a custom clone.
+
+Setting              English (EN)                          Hebrew (HE)
+Model                Eleven v3 or Multilingual v2          Multilingual v2 or v3 (v2 steadier for HE)
+Stability            45 (expressive, controlled)           50–55 (cleaner Hebrew diction)
+Similarity           75                                    75
+Style exaggeration   10–15                                 5–10
+Speed                0.95 (reflective pace)                0.92–0.95
+Speaker boost        On                                    On
+
+Notes:
+• Render EN and HE as separate generations (do not mix languages in one request).
+• Keep the brand as the Latin word "Phins" in the Hebrew track; add a pronunciation alias (/fInz/) if needed.
+• Use breaks for pauses, e.g.  &lt;break time="0.6s" /&gt;  (v2 / Studio).
+• The .docx / .pdf include a v3 audio-tag version, 30s cutdown, and a 9:16 vertical shot list.</pre>
+                </div>
+
+                <div class="vo-foot">
+                    <a href="#video-agents" onclick="switchMainTab('video-agents');return false;" class="btn btn-secondary">🎬 Send to Video Agents</a>
+                    <a href="https://elevenlabs.io/app/speech-synthesis" target="_blank" rel="noopener" class="btn btn-secondary">⚡ Open ElevenLabs</a>
+                </div>
+            </div>
+        </section>
+
+        <script>
+            function showVoPanel(which, btn) {
+                var ids = ['en', 'he', 'cut', 'vert', 'el'];
+                ids.forEach(function (id) {
+                    var panel = document.getElementById('vo-panel-' + id);
+                    if (panel) { panel.style.display = (id === which) ? 'block' : 'none'; }
+                });
+                var tabs = document.querySelectorAll('.vo-tab');
+                tabs.forEach(function (t) { t.classList.remove('active'); });
+                if (btn) { btn.classList.add('active'); }
+            }
+            function copyVo(elId, btn) {
+                var el = document.getElementById(elId);
+                if (!el) { return; }
+                var text = el.innerText || el.textContent || '';
+                var flash = function (label) {
+                    if (!btn) { return; }
+                    var original = btn.textContent;
+                    btn.textContent = label;
+                    setTimeout(function () { btn.textContent = original; }, 1500);
+                };
+                var done = function () { flash('✓ Copied'); };
+                var fail = function () { flash('✗ Copy failed'); };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done).catch(fail);
+                } else {
+                    var ok = false;
+                    try {
+                        var ta = document.createElement('textarea');
+                        ta.value = text;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        ok = document.execCommand('copy');
+                        document.body.removeChild(ta);
+                    } catch (e) { ok = false; }
+                    if (ok) { done(); } else { fail(); }
+                }
+            }
+        </script>
+
         <!-- Landing Page Assignments - Compact -->
         <section class="assignments-section">
             <h2>🎯 Media Assignments</h2>
@@ -2439,7 +2704,9 @@
                 filtered = mediaAssets.filter(m => m.type === currentFilter);
             }
             
-            if (filtered.length === 0) {
+            const pinned = (currentFilter === 'all' || currentFilter === 'document') ? voiceoverLibraryCards() : '';
+
+            if (filtered.length === 0 && !pinned) {
                 grid.innerHTML = '';
                 emptyState.style.display = 'block';
                 return;
@@ -2493,6 +2760,51 @@
                     ` : ''}
                 </div>
                 `;
+            }).join('') + pinned;
+        }
+
+        // Pinned, self-contained Voice-Over deliverables served from /voiceover/.
+        // These are download-only cards (no backend media IDs), so they always
+        // appear in the library without coupling to the upload/delete API.
+        const VOICEOVER_LIBRARY = [
+            {
+                name: 'Phins Voice-Over Script (EN/HE) — Word',
+                url: '/voiceover/Phins_VoiceOver_Script_EN_HE.docx',
+                size: 42659,
+                icon: '📝'
+            },
+            {
+                name: 'Phins Voice-Over Script (EN/HE) — PDF',
+                url: '/voiceover/Phins_VoiceOver_Script_EN_HE.pdf',
+                size: 65706,
+                icon: '📄'
+            }
+        ];
+
+        function voiceoverLibraryCards() {
+            return VOICEOVER_LIBRARY.map(doc => {
+                const name = escHtml(doc.name);
+                const url = escHtml(doc.url);
+                return `
+                <div class="media-card" title="${name}">
+                    <div class="media-thumbnail">
+                        <div class="media-thumbnail-icon">${doc.icon}</div>
+                        <span class="media-type-badge document">document</span>
+                        <span class="media-type-badge pinned">📌 script</span>
+                    </div>
+                    <div class="media-info">
+                        <div class="media-name" title="${name}">${name}</div>
+                        <div class="media-meta">
+                            <span>${formatFileSize(doc.size || 0)}</span>
+                            <span>EN / עברית</span>
+                        </div>
+                    </div>
+                    <div class="media-actions">
+                        <a class="media-action-btn use" href="${url}" download>⬇️ Download</a>
+                        <a class="media-action-btn preview" href="${url}" target="_blank" rel="noopener">👁️</a>
+                    </div>
+                </div>
+                `;
             }).join('');
         }
         
@@ -2517,10 +2829,13 @@
             const documents = mediaAssets.filter(m => m.type === 'document').length;
             const totalSize = mediaAssets.reduce((sum, m) => sum + (m.size || 0), 0);
             
+            const pinnedDocs = VOICEOVER_LIBRARY.length;
+            const pinnedSize = VOICEOVER_LIBRARY.reduce((s, d) => s + (d.size || 0), 0);
+
             document.getElementById('stat-videos').textContent = videos;
             document.getElementById('stat-images').textContent = images;
-            document.getElementById('stat-documents').textContent = documents;
-            document.getElementById('stat-storage').textContent = formatFileSize(totalSize);
+            document.getElementById('stat-documents').textContent = documents + pinnedDocs;
+            document.getElementById('stat-storage').textContent = formatFileSize(totalSize + pinnedSize);
         }
         
         function populateAssignmentSelects() {
