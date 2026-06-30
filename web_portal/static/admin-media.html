@@ -569,6 +569,11 @@
         .vo-copy:hover { background: rgba(255,255,255,0.28); }
         .vo-text[dir="rtl"] + .vo-copy, .vo-panel[dir="rtl"] .vo-copy { right: auto; left: 8px; }
         .vo-foot { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .vo-label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.85; margin: 12px 0 4px; }
+        .vo-label:first-child { margin-top: 0; }
+        .vo-subblock { position: relative; margin-bottom: 6px; }
+        a.media-action-btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+        .media-type-badge.pinned { background: #f1c40f; color: #1a1a1a; left: auto; right: 6px; }
 
         /* Growth Agent Bridge */
         .growth-bridge-section {
@@ -1173,6 +1178,8 @@
                 <div class="vo-tabs" role="tablist">
                     <button class="vo-tab active" type="button" onclick="showVoPanel('en', this)">English script</button>
                     <button class="vo-tab" type="button" onclick="showVoPanel('he', this)">עברית</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('cut', this)">⏱️ 30-sec cut</button>
+                    <button class="vo-tab" type="button" onclick="showVoPanel('vert', this)">📱 9:16 vertical</button>
                     <button class="vo-tab" type="button" onclick="showVoPanel('el', this)">ElevenLabs settings</button>
                 </div>
 
@@ -1218,6 +1225,46 @@ Phins. בריאות שמתבגרת יחד איתך.</pre>
                     <button class="vo-copy" type="button" onclick="copyVo('vo-text-he', this)">📋 העתק</button>
                 </div>
 
+                <div id="vo-panel-cut" class="vo-panel" style="display:none;">
+                    <div class="vo-label">English — 30-second cut</div>
+                    <div class="vo-subblock">
+                        <pre id="vo-text-cut-en" class="vo-text">I'm thirty-five. We're all living longer now — and that's the gift. But living longer also raises the odds that one day I'll need full-time care. And the hardest part isn't the illness — it's the cost. That's why I chose Phins: one health wallet, coverage I can see, and money that comes back when it should. So when the years come, I won't fear them. I'll be ready. Phins. Health that grows old with you.</pre>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-en', this)">📋 Copy</button>
+                    </div>
+                    <div class="vo-label">עברית — גרסת 30 שניות</div>
+                    <div class="vo-subblock" dir="rtl">
+                        <pre id="vo-text-cut-he" class="vo-text" dir="rtl">אני בת שלושים וחמש. כולנו חיים יותר שנים — וזו המתנה. אבל אריכות ימים גם מעלה את הסיכוי שיום אחד אצטרך טיפול מלא. והחלק הקשה הוא לא המחלה — זה המחיר. בגלל זה בחרתי ב-Phins: ארנק בריאות אחד, כיסוי שאני רואה, וכסף שחוזר בדיוק כשצריך. אז כשהשנים יגיעו, לא אפחד מהן. אהיה מוכנה. Phins. בריאות שמתבגרת יחד איתך.</pre>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-cut-he', this)">📋 העתק</button>
+                    </div>
+                </div>
+
+                <div id="vo-panel-vert" class="vo-panel" style="display:none;">
+                    <div class="vo-label">9:16 vertical — framing notes + shot list (~30s)</div>
+                    <div class="vo-subblock">
+                        <pre id="vo-text-vert" class="vo-text">REFRAMING NOTES
+• Shoot/generate natively vertical — keep the subject centered with generous top headroom (don't crop 16:9).
+• Keep eyes and key action in the upper-middle third; reserve the lower third for burned-in captions.
+• Stack motion graphics (wallet / coverage) vertically instead of spreading horizontally.
+• Faster cuts (~5s each) and a hook in the first 2 seconds for social feeds.
+• Burn bilingual captions; keep the "Phins" wordmark Latin in both languages.
+
+SHOT LIST  (VO = the 30-second cut)
+1 · 0:00–0:05 · Vertical close-up, face centered, top-third headroom; dawn light.
+    EN: "I'm thirty-five. We're all living longer now — and that's the gift."
+2 · 0:05–0:12 · Vertical full-body walk; seasonal morph behind her, centered.
+    EN: "But living longer also raises the odds that one day I'll need full-time care."
+3 · 0:12–0:17 · Vertical insert: glowing unopened envelope; caption-safe lower third.
+    EN: "And the hardest part isn't the illness — it's the cost."
+4 · 0:17–0:25 · Vertical phone-UI reflection; wallet + coverage graphics stacked.
+    EN: "That's why I chose Phins: one health wallet, coverage I can see, and money that comes back when it should."
+5 · 0:25–0:30 · Vertical montage of graceful aging into a serene older portrait.
+    EN: "So when the years come, I won't fear them. I'll be ready."
+6 · 0:30–0:33 · Vertical logo reveal from a single flowing line; tagline beneath.
+    EN: "Phins. Health that grows old with you."</pre>
+                        <button class="vo-copy" type="button" onclick="copyVo('vo-text-vert', this)">📋 Copy</button>
+                    </div>
+                </div>
+
                 <div id="vo-panel-el" class="vo-panel" style="display:none;">
                     <pre class="vo-text">Recommended voice: warm, mature-but-youthful female, mid-low register ("inner monologue" tone).
 Library matches: Matilda, Alice, Charlotte, Serena — or a custom clone.
@@ -1246,7 +1293,7 @@ Notes:
 
         <script>
             function showVoPanel(which, btn) {
-                var ids = ['en', 'he', 'el'];
+                var ids = ['en', 'he', 'cut', 'vert', 'el'];
                 ids.forEach(function (id) {
                     var panel = document.getElementById('vo-panel-' + id);
                     if (panel) { panel.style.display = (id === which) ? 'block' : 'none'; }
@@ -2654,7 +2701,9 @@ Notes:
                 filtered = mediaAssets.filter(m => m.type === currentFilter);
             }
             
-            if (filtered.length === 0) {
+            const pinned = (currentFilter === 'all' || currentFilter === 'document') ? voiceoverLibraryCards() : '';
+
+            if (filtered.length === 0 && !pinned) {
                 grid.innerHTML = '';
                 emptyState.style.display = 'block';
                 return;
@@ -2708,6 +2757,51 @@ Notes:
                     ` : ''}
                 </div>
                 `;
+            }).join('') + pinned;
+        }
+
+        // Pinned, self-contained Voice-Over deliverables served from /voiceover/.
+        // These are download-only cards (no backend media IDs), so they always
+        // appear in the library without coupling to the upload/delete API.
+        const VOICEOVER_LIBRARY = [
+            {
+                name: 'Phins Voice-Over Script (EN/HE) — Word',
+                url: '/voiceover/Phins_VoiceOver_Script_EN_HE.docx',
+                size: 42659,
+                icon: '📝'
+            },
+            {
+                name: 'Phins Voice-Over Script (EN/HE) — PDF',
+                url: '/voiceover/Phins_VoiceOver_Script_EN_HE.pdf',
+                size: 65706,
+                icon: '📄'
+            }
+        ];
+
+        function voiceoverLibraryCards() {
+            return VOICEOVER_LIBRARY.map(doc => {
+                const name = escHtml(doc.name);
+                const url = escHtml(doc.url);
+                return `
+                <div class="media-card" title="${name}">
+                    <div class="media-thumbnail">
+                        <div class="media-thumbnail-icon">${doc.icon}</div>
+                        <span class="media-type-badge document">document</span>
+                        <span class="media-type-badge pinned">📌 script</span>
+                    </div>
+                    <div class="media-info">
+                        <div class="media-name" title="${name}">${name}</div>
+                        <div class="media-meta">
+                            <span>${formatFileSize(doc.size || 0)}</span>
+                            <span>EN / עברית</span>
+                        </div>
+                    </div>
+                    <div class="media-actions">
+                        <a class="media-action-btn use" href="${url}" download>⬇️ Download</a>
+                        <a class="media-action-btn preview" href="${url}" target="_blank" rel="noopener">👁️</a>
+                    </div>
+                </div>
+                `;
             }).join('');
         }
         
@@ -2732,10 +2826,13 @@ Notes:
             const documents = mediaAssets.filter(m => m.type === 'document').length;
             const totalSize = mediaAssets.reduce((sum, m) => sum + (m.size || 0), 0);
             
+            const pinnedDocs = VOICEOVER_LIBRARY.length;
+            const pinnedSize = VOICEOVER_LIBRARY.reduce((s, d) => s + (d.size || 0), 0);
+
             document.getElementById('stat-videos').textContent = videos;
             document.getElementById('stat-images').textContent = images;
-            document.getElementById('stat-documents').textContent = documents;
-            document.getElementById('stat-storage').textContent = formatFileSize(totalSize);
+            document.getElementById('stat-documents').textContent = documents + pinnedDocs;
+            document.getElementById('stat-storage').textContent = formatFileSize(totalSize + pinnedSize);
         }
         
         function populateAssignmentSelects() {
