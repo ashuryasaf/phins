@@ -1306,24 +1306,27 @@ Notes:
                 var el = document.getElementById(elId);
                 if (!el) { return; }
                 var text = el.innerText || el.textContent || '';
-                var done = function () {
+                var flash = function (label) {
                     if (!btn) { return; }
                     var original = btn.textContent;
-                    btn.textContent = '✓ Copied';
+                    btn.textContent = label;
                     setTimeout(function () { btn.textContent = original; }, 1500);
                 };
+                var done = function () { flash('✓ Copied'); };
+                var fail = function () { flash('✗ Copy failed'); };
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text).then(done).catch(function () { done(); });
+                    navigator.clipboard.writeText(text).then(done).catch(fail);
                 } else {
+                    var ok = false;
                     try {
                         var ta = document.createElement('textarea');
                         ta.value = text;
                         document.body.appendChild(ta);
                         ta.select();
-                        document.execCommand('copy');
+                        ok = document.execCommand('copy');
                         document.body.removeChild(ta);
-                    } catch (e) { /* no-op */ }
-                    done();
+                    } catch (e) { ok = false; }
+                    if (ok) { done(); } else { fail(); }
                 }
             }
         </script>
