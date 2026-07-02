@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Executive Summary | AgentOS for Insurance + a Disability/Longevity Protection Marketplace</title>
+  <meta name="description" content="PHINS Series A executive summary: the AI operating system for the global protection economy. A capital-light, AI-native InsurTech platform with two AI moats, an AgentOS SaaS cockpit and a five-sided protection marketplace — attacking a $1.4T+ protection gap. Round specifics available in the full deck / under NDA.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue-dark: #0d47a1;
+      --blue-mid: #1565c0;
+      --blue-light: #1976d2;
+      --accent-1: #42a5f5;
+      --accent-2: #64b5f6;
+      --green-1: #15803d;
+      --violet-1: #6a1b9a;
+      --violet-2: #7c3aed;
+      --gradient-hdr: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      --text-main: #1a202c;
+      --text-sub: #4a5568;
+      --text-soft: #64748b;
+      --border: #dbe4f0;
+      --bg-page: #eef3fb;
+      --bg-light: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-dark-card: #0f274d;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.14);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+
+    /* ── Header ── */
+    .site-header {
+      background: var(--gradient-hdr);
+      color: #fff;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 2px 12px rgba(13, 71, 161, 0.28);
+      position: sticky;
+      top: 0;
+      z-index: 60;
+    }
+    .logo-row { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: var(--gradient-logo);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    }
+    .logo-text { font-size: 20pt; font-weight: 900; letter-spacing: 0.06em; }
+    .logo-tagline { font-size: 8pt; opacity: 0.85; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 1px; }
+    .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      font-family: inherit; cursor: pointer; font-size: 9pt; font-weight: 700;
+      border-radius: 20px; padding: 7px 15px; border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.14); color: #fff; transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .btn:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.24); }
+    .back-link {
+      color: rgba(255, 255, 255, 0.92); text-decoration: none; font-size: 9pt;
+      border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 20px; padding: 6px 14px;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .back-link:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+
+    /* ── Hero / cover ── */
+    .hero {
+      background: radial-gradient(circle at top right, rgba(124, 58, 237, 0.30), transparent 42%), var(--bg-dark-card);
+      color: #fff; padding: 44px 32px 36px;
+    }
+    .hero-inner { max-width: 1120px; margin: 0 auto; }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; padding: 5px 13px; border-radius: 999px;
+      background: rgba(124, 58, 237, 0.22); border: 1px solid rgba(124, 58, 237, 0.5);
+      font-size: 8.5pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px;
+    }
+    .hero h1 { font-size: 27pt; font-weight: 900; line-height: 1.13; margin-bottom: 13px; max-width: 940px; }
+    .hero h1 .grad {
+      background: linear-gradient(120deg, #64b5f6, #b388ff);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero p.lede { font-size: 11pt; max-width: 860px; opacity: 0.94; }
+    .hero-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+    .hero-badge {
+      font-size: 8.5pt; font-weight: 600; padding: 6px 12px; border-radius: 999px;
+      background: rgba(255, 255, 255, 0.10); border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+    .hero-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 24px; }
+    .hero-stat { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px; padding: 14px 16px; }
+    .hero-stat .v { font-size: 17pt; font-weight: 900; line-height: 1.05; }
+    .hero-stat .l { font-size: 8pt; opacity: 0.82; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .hero-stat .tagline { font-size: 6.8pt; opacity: 0.6; margin-top: 4px; letter-spacing: 0.04em; }
+
+    /* ── Layout ── */
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 30px 24px 56px; }
+    section.block { margin-bottom: 26px; }
+    .sec-label {
+      display: inline-flex; align-items: center; gap: 7px; font-size: 8pt; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet-1);
+      background: #f3e8ff; border-radius: 999px; padding: 4px 12px; margin-bottom: 10px;
+    }
+    .sec-title { font-size: 17pt; font-weight: 850; line-height: 1.22; margin-bottom: 8px; color: var(--text-main); }
+    .sec-copy { font-size: 10.4pt; color: var(--text-sub); max-width: 900px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 880px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } .hero h1 { font-size: 21pt; } }
+
+    .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; box-shadow: var(--shadow); }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 17px; box-shadow: var(--shadow); }
+    .card .icon-chip { font-size: 20px; margin-bottom: 8px; display: block; }
+    .card h3 { font-size: 11.6pt; margin-bottom: 6px; }
+    .card p { font-size: 9.5pt; color: var(--text-sub); }
+
+    .hl-box { background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--blue-mid); border-radius: 14px; padding: 15px 16px; box-shadow: var(--shadow); }
+    .hl-box.green { border-top-color: var(--green-1); }
+    .hl-box.violet { border-top-color: var(--violet-1); }
+    .hl-box .hl-v { font-size: 16pt; font-weight: 900; color: var(--blue-dark); line-height: 1.05; }
+    .hl-box.green .hl-v { color: var(--green-1); }
+    .hl-box.violet .hl-v { color: var(--violet-1); }
+    .hl-box .hl-l { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); margin-top: 5px; }
+    .hl-box .hl-d { font-size: 9pt; color: var(--text-sub); margin-top: 8px; }
+
+    ul.tick, ul.arrow { list-style: none; margin-top: 8px; }
+    ul.tick li, ul.arrow li { position: relative; padding-left: 22px; margin-bottom: 8px; font-size: 9.8pt; color: var(--text-sub); }
+    ul.tick li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--green-1); font-weight: 800; }
+    ul.arrow li::before { content: "→"; position: absolute; left: 0; top: 0; color: var(--blue-mid); font-weight: 800; }
+
+    table.tbl { width: 100%; border-collapse: collapse; font-size: 9pt; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    table.tbl th { background: var(--blue-dark); color: #fff; padding: 8px 10px; text-align: left; font-weight: 700; }
+    table.tbl td { padding: 7px 10px; border-top: 1px solid var(--border); vertical-align: top; }
+    table.tbl tr:nth-child(even) td { background: #f8fafc; }
+
+    .note {
+      background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b;
+      border-radius: 10px; padding: 13px 16px; font-size: 9.4pt; color: #713f12;
+    }
+    .integrity {
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid var(--green-1);
+      border-radius: 10px; padding: 13px 16px; font-size: 8.9pt; color: #14532d; line-height: 1.5;
+    }
+    .closing {
+      background: var(--gradient-hdr); color: #fff; border-radius: 18px; padding: 30px 28px;
+      box-shadow: var(--shadow-lg);
+    }
+    .closing h2 { font-size: 17pt; font-weight: 850; margin-bottom: 8px; }
+    .closing p { font-size: 10.4pt; opacity: 0.95; max-width: 820px; }
+    .closing .contact { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .contact-chip { font-size: 9pt; font-weight: 600; padding: 7px 13px; border-radius: 999px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); }
+
+    .tag { display: inline-block; font-size: 7pt; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; vertical-align: middle; }
+    .tag-reported { background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }
+    .tag-nda { background: #ede9fe; color: #5b21b6; border: 1px solid #ddd6fe; }
+
+    .deck-footer { text-align: center; font-size: 8.6pt; color: var(--text-soft); padding: 22px 20px 34px; }
+    .deck-footer a { color: var(--blue-mid); text-decoration: none; }
+
+    /* ── Print / PDF: compact A4, 2–3 pages ── */
+    @media print {
+      @page { size: A4; margin: 12mm 11mm; }
+      html, body { background: #fff; color: #000; }
+      body { font-size: 8.9pt; line-height: 1.38; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .site-header, .no-print { display: none !important; }
+      a { text-decoration: none; color: inherit; }
+      .wrap { max-width: none; padding: 0; }
+
+      .hero, .panel, .card, .hl-box, .note, .integrity, .closing,
+      .hero-stat, .hero-badge, .sec-label, .tag, table.tbl th {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+      .grid-3 { grid-template-columns: repeat(3, 1fr); }
+      .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+      .hero { padding: 22px 20px 18px; }
+      .hero h1 { font-size: 19pt; line-height: 1.12; margin-bottom: 8px; }
+      .hero p.lede { font-size: 9.2pt; }
+      .hero-eyebrow { font-size: 7.2pt; margin-bottom: 8px; padding: 3px 10px; }
+      .hero-badges { margin-top: 11px; gap: 6px; }
+      .hero-badge { font-size: 7pt; padding: 3px 9px; }
+      .hero-stats { margin-top: 13px; gap: 8px; grid-template-columns: repeat(5, 1fr); }
+      .hero-stat { padding: 9px 10px; border-radius: 9px; }
+      .hero-stat .v { font-size: 12pt; }
+      .hero-stat .l { font-size: 6.4pt; margin-top: 4px; }
+      .hero-stat .tagline { font-size: 5.6pt; }
+
+      section.block { margin-bottom: 13px; }
+      .sec-title { font-size: 12.5pt; margin-bottom: 5px; }
+      .sec-copy { font-size: 8.3pt; max-width: none; }
+      .sec-label { font-size: 6.7pt; padding: 3px 9px; margin-bottom: 6px; }
+
+      .panel { padding: 13px 14px; border-radius: 10px; box-shadow: none; }
+      .card { padding: 11px 12px; border-radius: 9px; box-shadow: none; }
+      .card .icon-chip { font-size: 14px; margin-bottom: 4px; }
+      .card h3 { font-size: 9.6pt; margin-bottom: 4px; }
+      .card p { font-size: 8pt; }
+      .hl-box { padding: 10px 12px; border-radius: 9px; box-shadow: none; border-top-width: 3px; }
+      .hl-box .hl-v { font-size: 13pt; }
+      .hl-box .hl-l { font-size: 6.6pt; margin-top: 3px; }
+      .hl-box .hl-d { font-size: 7.6pt; margin-top: 5px; }
+      ul.tick li, ul.arrow li { font-size: 8.1pt; margin-bottom: 4px; padding-left: 16px; }
+      table.tbl { font-size: 7.8pt; }
+      table.tbl th { padding: 5px 8px; }
+      table.tbl td { padding: 4px 8px; }
+      .note, .integrity { font-size: 7.9pt; line-height: 1.42; padding: 9px 12px; border-radius: 8px; }
+      .closing { padding: 20px 20px; border-radius: 12px; }
+      .closing h2 { font-size: 14pt; margin-bottom: 6px; }
+      .closing p { font-size: 8.6pt; }
+      .contact-chip { font-size: 7.6pt; padding: 5px 10px; }
+      .grid-2, .grid-3, .grid-4 { gap: 10px; }
+
+      .page-break { page-break-before: always; }
+      .panel, .card, .hl-box, .note, .integrity, .closing { page-break-inside: avoid; }
+      .sec-title, .sec-label, .card h3 { page-break-after: avoid; }
+      table.tbl tr { page-break-inside: avoid; }
+      .deck-footer { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="logo-row">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <div class="logo-text">PHINS</div>
+        <div class="logo-tagline">AI InsurTech · AgentOS · Protection Marketplace</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn no-print" id="print-btn">🖨️ Print / PDF</button>
+      <a class="back-link" href="/unicorn-investor-deck.html">Full Series A deck →</a>
+      <a class="back-link" href="/pitch-dashboard.html">← Pitch dashboard</a>
+    </div>
+  </header>
+
+  <!-- ── COVER ── -->
+  <section class="hero">
+    <div class="hero-inner">
+      <span class="hero-eyebrow">🦄 Series A · Executive Summary · Confidential</span>
+      <h1>PHINS is <span class="grad">AgentOS for Insurance + a Disability/Longevity Protection Marketplace</span> — the AI operating system for the global protection economy.</h1>
+      <p class="lede">
+        A capital-light, AI-native platform that distributes, underwrites, pays and orchestrates care on a single
+        hash-chained ledger. The disability &amp; long-term-care MGA is the <strong>wedge, not the whole story</strong>:
+        it proves pricing and generates proprietary data, then compounds into two AI moats, an AgentOS SaaS cockpit
+        and a five-sided marketplace — a software-multiple path to a category-defining company.
+      </p>
+      <div class="hero-badges">
+        <span class="hero-badge">Capital-light MGA model</span>
+        <span class="hero-badge">AI underwriting + claims moats</span>
+        <span class="hero-badge">AgentOS SaaS</span>
+        <span class="hero-badge">Protection marketplace</span>
+        <span class="hero-badge">Hash-chained data integrity</span>
+        <span class="hero-badge">Multi-market by design</span>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="v">$1.4T+</div>
+          <div class="l">Protection gap</div>
+          <div class="tagline">reported estimate</div>
+        </div>
+        <div class="hero-stat">
+          <div class="v">$140B</div>
+          <div class="l">Digitally-addressable (SAM)</div>
+          <div class="tagline">reported estimate</div>
+        </div>
+        <div class="hero-stat">
+          <div class="v">3</div>
+          <div class="l">Compounding revenue engines</div>
+          <div class="tagline">MGA · SaaS · marketplace</div>
+        </div>
+        <div class="hero-stat">
+          <div class="v">64+</div>
+          <div class="l">Modules already live</div>
+          <div class="tagline">deployed platform</div>
+        </div>
+        <div class="hero-stat">
+          <div class="v">5-sided</div>
+          <div class="l">Marketplace network</div>
+          <div class="tagline">one ledger</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+
+    <!-- ── THE OPPORTUNITY ── -->
+    <section class="block">
+      <span class="sec-label">01 · The opportunity</span>
+      <h2 class="sec-title">A trillion-dollar protection gap — served by software built before the smartphone.</h2>
+      <p class="sec-copy">
+        The world is aging and living longer, but the systems that protect people against severe disability and the
+        cost of long-term care are analog, adversarial and underfunded. That mismatch is not a demand problem — it is a
+        software, pricing and trust problem, exactly what an AI-native platform with flawless data integrity is built to solve.
+      </p>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="hl-box">
+          <div class="hl-v">$1.4T+</div>
+          <div class="hl-l">Global protection gap <span class="tag tag-reported">reported</span></div>
+          <div class="hl-d">Disability, long-term-care &amp; longevity protection — the fastest-growing slice of a ~$7T global insurance market. Illustrative planning estimate.</div>
+        </div>
+        <div class="hl-box green">
+          <div class="hl-v">$140B</div>
+          <div class="hl-l">Serviceable market (SAM) <span class="tag tag-reported">reported</span></div>
+          <div class="hl-d">Digitally-addressable severity, disability &amp; embedded protection across PHINS priority markets (IL, USA, Canada, EU gateways, GCC, AU).</div>
+        </div>
+        <div class="hl-box violet">
+          <div class="hl-v">Widening</div>
+          <div class="hl-l">Structural tailwind</div>
+          <div class="hl-d">Aging plus a longevity shock strains public LTC budgets every year, while incumbents retreat from severity risk they cannot price.</div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:11.5pt;margin-bottom:6px;">Why people are unprotected</h3>
+          <ul class="tick">
+            <li>Aging + longevity shock widen the private protection gap every year.</li>
+            <li>Severe disability is mispriced or excluded — carriers retreat or overcharge.</li>
+            <li>Claims are adversarial: the moment of need is the moment of friction.</li>
+            <li>Agents are stuck in software from the 1990s, fragmenting the relationship.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:11.5pt;margin-bottom:6px;">Why incumbents can’t fix it</h3>
+          <ul class="tick">
+            <li>Legacy cores bolt AI onto decades-old, unauditable infrastructure.</li>
+            <li>Channel conflict: carriers under-invest in agent software.</li>
+            <li>Balance-sheet capital intensity can’t move at software speed or margin.</li>
+            <li>No data flywheel — underwriting, claims and care data never compound.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── THE SOLUTION ── -->
+    <section class="block">
+      <span class="sec-label">02 · The solution</span>
+      <h2 class="sec-title">One AI-native platform: distribute, underwrite, pay and orchestrate care — on a single ledger.</h2>
+      <p class="sec-copy">
+        PHINS automates the full insurance lifecycle end-to-end: quote-to-bind in seconds, auditable AI underwriting,
+        code-based settlement of eligible claims, and marketplace routing of care — all reproducible from append-only,
+        hash-chained state across 64+ deployed modules.
+      </p>
+      <div class="grid-4" style="margin-top:16px;">
+        <div class="card">
+          <span class="icon-chip">📝</span>
+          <h3>Distribute</h3>
+          <p>Digital quote-to-bind for clients and an AgentOS cockpit for agents.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">🧠</span>
+          <h3>Underwrite</h3>
+          <p>Auditable AI underwriting with per-segment thresholds and a model registry.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">⚙️</span>
+          <h3>Pay</h3>
+          <p>AI claims intelligence; eligible benefits settled by code, anchored to the ledger.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">🤝</span>
+          <h3>Orchestrate</h3>
+          <p>Marketplace routing across doctors, care providers, reinsurers and payers.</p>
+        </div>
+      </div>
+      <div class="note" style="margin-top:14px;">
+        <strong>The wedge → platform thesis.</strong> The severity MGA is the beachhead that proves pricing, generates
+        proprietary data and funds the build. The investable headline is the platform — AgentOS (SaaS multiples) plus the
+        marketplace (network effects) on top of two AI moats and a data flywheel.
+      </div>
+    </section>
+
+    <!-- ── WHY PHINS WINS (page 2) ── -->
+    <section class="block page-break">
+      <span class="sec-label">03 · Why PHINS wins</span>
+      <h2 class="sec-title">Two AI moats, an agent-loved SaaS cockpit, and a network that compounds.</h2>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card">
+          <span class="icon-chip">🧠</span>
+          <h3>AI underwriting moat</h3>
+          <p>Per-segment severity thresholds, a versioned model registry and replayable decisions — proprietary data rivals can’t see, with reinsurance-ready evidence.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">⚙️</span>
+          <h3>AI claims-intelligence moat</h3>
+          <p>Triage, code-based settlement of eligible benefits and home-care-first navigation — better loss economics against tamper-evident records.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">💻</span>
+          <h3>AgentOS for agents</h3>
+          <p>The SaaS cockpit that arms agents instead of disintermediating them — instant quoting, compliance autopilot, copilots and book analytics.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">🤝</span>
+          <h3>Five-sided marketplace</h3>
+          <p>Clients, agents, doctors, reinsurers and care providers on one ledger-clean network with wallets, settlement and payer recovery.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">🔗</span>
+          <h3>Flawless data integrity</h3>
+          <p>Append-only, hash-chained state. AI/BI recommend, score and explain — but never post. A trust moat with regulators and reinsurers.</p>
+        </div>
+        <div class="card">
+          <span class="icon-chip">💸</span>
+          <h3>Capital-light economics</h3>
+          <p>Risk sits with carriers/reinsurers; PHINS earns software + take-rate margins without carrier balance-sheet drag.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── REVENUE ENGINES ── -->
+    <section class="block">
+      <span class="sec-label">04 · Business model</span>
+      <h2 class="sec-title">Three compounding, capital-light revenue engines — plus a flywheel that links them.</h2>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="hl-box">
+          <div class="hl-l">Engine 1 <span class="tag tag-reported">rate-based</span></div>
+          <div class="hl-v" style="font-size:13pt;margin-top:4px;">MGA insurance take</div>
+          <div class="hl-d">A take rate on gross written premium. Risk sits with carriers/reinsurers — capital-light.</div>
+        </div>
+        <div class="hl-box green">
+          <div class="hl-l">Engine 2 <span class="tag tag-reported">recurring</span></div>
+          <div class="hl-v" style="font-size:13pt;margin-top:4px;">AgentOS SaaS</div>
+          <div class="hl-d">Per-seat recurring software with high gross margin and a land-and-expand motion.</div>
+        </div>
+        <div class="hl-box violet">
+          <div class="hl-l">Engine 3 <span class="tag tag-reported">network</span></div>
+          <div class="hl-v" style="font-size:13pt;margin-top:4px;">Marketplace take</div>
+          <div class="hl-d">A take rate on marketplace GMV (care, services, embedded products) with no underwriting risk.</div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <h3 style="font-size:11.5pt;margin-bottom:6px;">The growth flywheel</h3>
+        <ul class="arrow">
+          <li><strong>AgentOS adds agents</strong> → they bring their book and clients onto the platform.</li>
+          <li><strong>Clients generate data</strong> → each policy and claim enriches proprietary underwriting and claims datasets.</li>
+          <li><strong>AI prices sharper</strong> → better loss ratios and treaty terms.</li>
+          <li><strong>Marketplace deepens</strong> → care and provider supply grow; embedded products expand.</li>
+          <li><strong>Cheaper, faster cover</strong> → better economics attract more agents and clients. Repeat.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ── TRACTION & MARKET SEQUENCING ── -->
+    <section class="block">
+      <span class="sec-label">05 · Traction &amp; go-to-market</span>
+      <h2 class="sec-title">Already built — and expanding on capital-light rails, not a rebuild.</h2>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="panel">
+          <h3 style="font-size:11.5pt;margin-bottom:6px;">Built &amp; validated</h3>
+          <ul class="tick">
+            <li>Deployed, ledger-governed platform across 64+ modules — policy, underwriting, billing, claims, reinsurance and a health marketplace.</li>
+            <li>26 country/regulator packs &amp; localization rails already modeled.</li>
+            <li>Pricing model validated by an IAA-recognised executive actuary (incoming Chief Actuary).</li>
+            <li>Senior insurance operator engaged as investor / active co-founder.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:11.5pt;margin-bottom:6px;">Disciplined market sequencing</h3>
+          <table class="tbl">
+            <thead>
+              <tr><th>Wave</th><th>Markets</th><th>Entry model</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1 — Launch</td><td>🇮🇱 Israel</td><td>MGA + carrier/reinsurer</td></tr>
+              <tr><td>2 — Scale</td><td>🇺🇸 USA · 🇨🇦 Canada</td><td>MGA + AgentOS SaaS</td></tr>
+              <tr><td>3 — Expand</td><td>EU gateways · GCC · AU</td><td>AgentOS + marketplace + embedded</td></tr>
+            </tbody>
+          </table>
+          <p style="font-size:8.6pt;color:var(--text-soft);margin-top:8px;">Land with the MGA, attach AgentOS seats, then open the marketplace and sell BI/data products to carriers &amp; reinsurers.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── THE ASK ── -->
+    <section class="block">
+      <div class="closing">
+        <h2>The ask: partner with us to build the operating system for global protection.</h2>
+        <p>
+          We are raising a <strong>Series A</strong> to launch the severity MGA, ship AgentOS and open the protection
+          marketplace — funding the path to <strong>EBITDA-positive (base 2030)</strong>. The model is capital-light:
+          claims reserves sit with risk carriers/reinsurers and are not booked as PHINS revenue. Round size, valuation,
+          ownership and the full five-year model are provided in the live deck and diligence library.
+        </p>
+        <div class="contact">
+          <span class="contact-chip">🌐 phins.ai</span>
+          <span class="contact-chip">📄 Due-diligence library under NDA</span>
+          <span class="contact-chip">🤝 Series A · Institutional Venture</span>
+          <span class="contact-chip">🎛️ Every figure adjustable &amp; reconciled in the full deck</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── DATA INTEGRITY ── -->
+    <section class="block">
+      <div class="integrity">
+        <strong>Data integrity notice.</strong> This executive summary intentionally shows <em>market potential</em> and
+        <em>structural</em> facts only. <span class="tag tag-reported">reported</span> market figures ($1.4T+ protection
+        gap, ~$7T insurance market, $140B SAM) are third-party / public planning estimates shown in source currency and
+        are never presented as PHINS revenue. PHINS-specific financials — the Series A round size, pre/post-money
+        valuation, investor ownership, modeled revenue and EBITDA, policy counts, seats, GMV and the implied valuation —
+        are <span class="tag tag-nda">withheld here</span> and available in the full Series A deck / under NDA, where every
+        modeled number derives from a single canonical base and always reconciles. All figures are forward-looking planning
+        assumptions, not commitments or guidance. Confidential — do not distribute without authorization.
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="deck-footer">
+    <div>PHINS — AI InsurTech · AgentOS · Protection Marketplace &nbsp;·&nbsp; <a href="/unicorn-investor-deck.html">Full Series A deck</a> · <a href="/pitch-dashboard.html#investor-documents-section">Due-diligence library</a></div>
+    <div style="margin-top:8px;opacity:0.75;">Confidential investor materials. Figures are planning assumptions, not guidance.</div>
+  </footer>
+
+  <script>
+    (function () {
+      "use strict";
+      var btn = document.getElementById("print-btn");
+      if (btn) { btn.addEventListener("click", function () { window.print(); }); }
+    })();
+  </script>
+</body>
+</html>
