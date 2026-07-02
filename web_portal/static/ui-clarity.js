@@ -474,6 +474,9 @@
           width: min(310px, calc(100vw - 16px));
         }
       }
+      @media print {
+        #${FLOATING_BAR_ID} { display: none !important; }
+      }
     `;
     document.head.appendChild(style);
   }
