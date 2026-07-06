@@ -8,16 +8,22 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50.7k lines)
 - optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
-  and domain-specific API modules (`api_bi_analytics.py`,
-  `api_delivery_bidding.py`)
-- service-layer logic in `services/` (80 modules)
+  and domain-specific API modules:
+  - `web_portal/api_assessment_center.py` (~1135 lines, wired conditionally
+    in `server.py` as `assessment_center_enabled`)
+  - `web_portal/api_agent_ecosystem.py` (~240 lines, imported lazily per
+    route rather than at module load)
+  - `web_portal/api_bi_analytics.py` (~180 lines, imported lazily per route)
+  - `web_portal/api_delivery_bidding.py` (~300 lines, **not currently wired
+    into `server.py`** — reachable only through direct import or tests)
+- service-layer logic in `services/` (83 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (120 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (129 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -39,8 +45,10 @@ Preferred file-by-task:
 | Task | Start here |
 |---|---|
 | API route/response change | `web_portal/server.py`, then `web_portal/api_extensions.py` |
+| Assessment Center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py`, `services/assessment_ai_service.py` |
+| Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | BI/analytics API | `web_portal/api_bi_analytics.py`, `services/bi_analytics_service.py` |
-| Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
+| Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` (verify wiring — see §5) |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -68,11 +76,13 @@ Preferred file-by-task:
 |- web_portal/
 |  |- server.py
 |  |- api_extensions.py
+|  |- api_assessment_center.py
+|  |- api_agent_ecosystem.py
 |  |- api_bi_analytics.py
-|  |- api_delivery_bidding.py
+|  |- api_delivery_bidding.py           # NOT wired into server.py today
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
-|- services/                            # 80 service modules
+|- services/                            # 83 service modules
 |- database/
 |  |- config.py
 |  |- manager.py
@@ -82,7 +92,7 @@ Preferred file-by-task:
 |  |- notification_models.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 14 *_repository.py + base.py
+|  |- repositories/                     # 15 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -98,8 +108,10 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 120 test files
+|- tests/                               # 129 test files
 |- docs/
+|  |- agent_ecosystem_design.md
+|  |- ai_surface_design_principles.md
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
 |  |- health_marketplace_implementation_spec.md
@@ -150,7 +162,7 @@ Database patterns:
 - `database/config.py` resolves `DATABASE_URL` first, then SQLite settings such
   as `USE_SQLITE` and `SQLITE_PATH`.
 
-`DatabaseManager` repositories (as properties):
+`DatabaseManager` repositories (as properties, 37 total):
 
 - Core: `customers`, `policies`, `claims`, `underwriting`, `billing`
 - Auth/audit: `users`, `sessions`, `audit`, `tokens`
@@ -162,6 +174,8 @@ Database patterns:
   `payment_intents`, `refunds`, `journal`, `supplier_settlement_runs`,
   `supplier_settlement_items`, `external_payers`, `marketplace_claims`,
   `remittances`, `payer_receivables`, `idempotency`, `outbox`
+- Agent ecosystem: `agents`, `agent_invitations`, `agent_affiliations`,
+  `agent_commissions`
 
 Common ID prefixes:
 
@@ -175,6 +189,9 @@ Common ID prefixes:
 - Audit: `AUDIT` / `AUD`
 - Ledger: `LEDGER`
 - Credit: `CREDIT`
+- Agent: `AGT`
+- Agent affiliation: `AFF`
+- Agent commission: `COMM`
 
 ## 5) API Task Playbook
 
@@ -182,16 +199,24 @@ When changing or adding an API endpoint:
 
 1. Inspect the surrounding route in `web_portal/server.py` first.
 2. Check whether the endpoint belongs in `server.py`,
-   `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`, or
+   `web_portal/api_extensions.py`, `web_portal/api_assessment_center.py`,
+   `web_portal/api_agent_ecosystem.py`, `web_portal/api_bi_analytics.py`, or
    `web_portal/api_delivery_bidding.py`.
 3. Verify the extension is actually wired; `server.py` imports extension
-   dispatchers conditionally and can run without them.
+   dispatchers conditionally and can run without them. Current wiring:
+   - `api_extensions` — module-level import, gated by `api_extensions_enabled`
+   - `api_assessment_center` — module-level import, gated by
+     `assessment_center_enabled`
+   - `api_agent_ecosystem` — imported lazily inside the request handlers
+   - `api_bi_analytics` — imported lazily inside the request handlers
+   - `api_delivery_bidding` — **not currently imported by `server.py`**; a
+     new route must add its own wiring
 4. Reuse service-layer logic from `services/` instead of embedding new business
    rules directly in the handler.
 5. Validate request payloads and preserve response shape conventions.
 6. Confirm whether related dashboard, billing, underwriting, or ledger behavior
    depends on the same data.
-7. Add success and failure-path tests.
+7. Add success and failure-path tests (see §8 for tenant-isolation harnesses).
 
 Watch-outs:
 
@@ -202,6 +227,10 @@ Watch-outs:
 - `api_extensions.py` covers foundations, OTP/CAPTCHA, contribution payments,
   community messaging, wallet, admin foundation routes, backup/persistence,
   invitation handling, and media/video processing jobs and webhooks.
+- Customer-scoped routes must use the session-role fallback and enforce
+  ownership on both reads and writes to avoid cross-tenant leakage — the
+  tenant-isolation harness in `tests/` exists specifically to catch
+  regressions here.
 
 ## 6) Database Task Playbook
 
@@ -222,18 +251,19 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 33 repository properties (see §4 for the full list).
-- Repository modules (14 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 37 repository properties (see §4 for the full list).
+- Repository modules (15 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
   `platform_ledger_repository.py`, `actuarial_repository.py`,
   `token_repository.py`, `document_repository.py`, `supplier_repository.py`
   (bundles supplier, invitation, offer, order, document, and supply-chain
-  ledger repositories), and `marketplace_repository.py` (bundles wallet,
+  ledger repositories), `marketplace_repository.py` (bundles wallet,
   payment-intent, refund, journal, settlement, external-payer,
   marketplace-claim, remittance, receivable, idempotency, and outbox
-  repositories).
+  repositories), and `agent_repository.py` (bundles agent, agent-invitation,
+  agent-affiliation, and agent-commission repositories).
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
@@ -277,9 +307,14 @@ Environment variables commonly used:
   `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`
 - **Auto-pay:** `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`,
   `MONTHLY_AUTO_PAY_COMMAND_TOKEN`
-- **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
-  `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
-  `ALLOW_LEGACY_DEMO_PASSWORDS`
+- **Security:** `SESSION_SECRET_KEY` (auto-provisioned into the process env
+  when missing so single-instance boots don't fail; set it explicitly for
+  multi-instance/durable-session deployments),
+  `PHINS_ENCRYPTION_KEY`,
+  `PHINS_ENFORCE_SECRET_POLICY` (truthy = always enforce, `false` = explicit
+  opt-out escape hatch, unset = secure default: fail-closed in production,
+  warn-only in dev/test),
+  `PHINS_EMERGENCY_UNLOCK_KEY`, `ALLOW_LEGACY_DEMO_PASSWORDS`
 - **Integrations:** `PLAID_*`, `STRIPE_*`, `ACH_*`, `ALPACA_*`, `COINBASE_*`,
   `IB_*`, `WEBHOOK_BASE_URL`, `ALPHA_VANTAGE_API_KEY`
 
@@ -326,9 +361,15 @@ Important test harness facts:
 - **`tests/conftest.py`** only adds `sys.path` and sets `PHINS_TEST_MODE`; it
   does **not** start the server
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
-  `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
-- Options wheel service and document processing service are also reset per test
-- 120 test files under `tests/`, 11 root-level `test_*.py` files
+  `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, `HEALTH_WALLETS`,
+  `MEDICAL_PURCHASES`, `INVESTMENT_ACCOUNTS`, `CUSTOMER_ALLOCATIONS`,
+  `TRANSACTION_LEDGER`, and rate-limit/IDS stores).
+- The following singletons are also reset per test: options wheel service,
+  document processing service, assessment center service, accounting engine,
+  firewall, and intrusion detector.
+- 129 test files under `tests/`, 11 root-level `test_*.py` files.
+- Tenant-isolation coverage lives in `tests/` — new customer-scoped routes
+  should extend the existing harness rather than roll a bespoke fixture.
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -388,4 +429,4 @@ If you update this file again:
 
 ---
 
-Last updated: June 10, 2026
+Last updated: July 6, 2026
