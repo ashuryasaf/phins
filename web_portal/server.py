@@ -12858,6 +12858,11 @@ For claims or questions, please contact:
             self.send_header('Content-Type', 'application/javascript; charset=utf-8')
         elif path.endswith('.css'):
             self.send_header('Content-Type', 'text/css; charset=utf-8')
+        elif path.endswith('.svg'):
+            # SVG assets (e.g. the PHINS logo) must be served with their real
+            # type: with X-Content-Type-Options: nosniff, browsers refuse to
+            # render SVG images delivered as application/octet-stream.
+            self.send_header('Content-Type', 'image/svg+xml; charset=utf-8')
         elif path.endswith('.pdf'):
             # Serve PDFs with their real type so "Open" links render inline in
             # the browser's viewer instead of downloading a blank tab; an
