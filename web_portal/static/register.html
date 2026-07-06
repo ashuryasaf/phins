@@ -3,7 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#060d1f" />
   <title>PHINS Portal — Register</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <style>
     body {
@@ -11,19 +17,32 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      background: #060d1f;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       position: relative;
+      overflow-x: hidden;
     }
-    body::before {
+    .auth-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+        radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+        radial-gradient(600px 400px at 50% 45%, rgba(30, 82, 170, 0.22), transparent 65%),
+        #060d1f;
+    }
+    .auth-backdrop::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-      opacity: 0.5;
-      pointer-events: none;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
+      -webkit-mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
     }
     .register-container {
       width: 100%;
@@ -33,29 +52,36 @@
       z-index: 1;
     }
     .register-card {
-      background: #fff;
-      border-radius: 20px;
+      background: rgba(249, 251, 255, 0.97);
+      border-radius: 22px;
       padding: 48px;
-      box-shadow: 0 16px 48px rgba(13, 71, 161, 0.3);
-      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 30px 80px rgba(2, 8, 23, 0.65), 0 0 0 1px rgba(127, 178, 255, 0.22);
+      border-top: 3px solid #e3bf6f;
     }
     .register-header {
       text-align: center;
       margin-bottom: 32px;
     }
     .register-logo {
-      font-size: 3.5rem;
       margin-bottom: 16px;
     }
+    .register-logo img {
+      width: 76px;
+      height: 76px;
+      display: block;
+      margin: 0 auto;
+      filter: drop-shadow(0 8px 24px rgba(18, 63, 130, 0.35));
+    }
     .register-title {
-      color: #0d47a1;
+      font-family: 'Space Grotesk', sans-serif;
+      color: #0d2a5c;
       margin: 0 0 8px 0;
       font-size: 1.9rem;
       font-weight: 700;
-      letter-spacing: -0.5px;
+      letter-spacing: 0.06em;
     }
     .register-subtitle {
-      color: #546e7a;
+      color: #5a6b85;
       margin: 0;
       font-size: 0.95rem;
     }
@@ -66,65 +92,86 @@
       display: block;
       margin-bottom: 8px;
       font-weight: 600;
-      color: #0d47a1;
+      color: #0d2a5c;
       font-size: 0.95rem;
     }
     .form-group input, .form-group select {
       width: 100%;
       padding: 14px 16px;
-      border: 2px solid #e3f2fd;
+      border: 2px solid #dde7f5;
       border-radius: 10px;
       font-size: 1rem;
       transition: all 0.3s;
-      background: #fafcff;
+      background: #f8fbff;
     }
     .form-group input:focus, .form-group select:focus {
       outline: none;
-      border-color: #1565c0;
-      box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.1);
+      border-color: #c9a24b;
+      box-shadow: 0 0 0 4px rgba(201, 162, 75, 0.14);
       background: #fff;
     }
     .form-group small {
       display: block;
       margin-top: 4px;
-      color: #546e7a;
+      color: #5a6b85;
       font-size: 0.85rem;
+    }
+    .invite-box {
+      background: #fdf8ec;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+      border: 1.5px solid #ecd9a8;
+    }
+    .invite-box label {
+      color: #8a6d2e;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .invite-box small {
+      color: #8a6d2e;
     }
     .btn-submit {
       width: 100%;
       padding: 16px;
-      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
-      color: #fff;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       border: none;
-      border-radius: 10px;
-      font-size: 1.1rem;
+      border-radius: 999px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.02rem;
       font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
       transition: all 0.3s;
-      box-shadow: 0 4px 15px rgba(21, 101, 192, 0.3);
+      box-shadow: 0 0 0 1px rgba(184, 137, 59, 0.35), 0 8px 26px rgba(227, 191, 111, 0.35);
     }
     .btn-submit:hover:not(:disabled) {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(21, 101, 192, 0.4);
+      box-shadow: 0 0 0 1px rgba(184, 137, 59, 0.55), 0 12px 34px rgba(227, 191, 111, 0.5);
     }
     .btn-submit:disabled {
-      background: #546e7a;
+      background: #9aa7bd;
+      color: #f2f5fa;
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
     }
-    .back-link {
-      display: block;
+    .aux-links {
+      margin-top: 20px;
       text-align: center;
-      margin-top: 24px;
-      color: #1565c0;
-      text-decoration: none;
-      font-weight: 600;
-      transition: all 0.3s;
+      font-size: 0.9rem;
     }
-    .back-link:hover {
-      color: #0d47a1;
+    .aux-links a {
+      color: #14509e;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .aux-links a:hover {
+      color: #0d2a5c;
+      text-decoration: underline;
     }
     #register-msg {
       margin-top: 16px;
@@ -133,7 +180,7 @@
     }
     .password-strength {
       height: 4px;
-      background: var(--border);
+      background: #dde7f5;
       border-radius: 2px;
       margin-top: 8px;
       overflow: hidden;
@@ -146,7 +193,7 @@
     .password-requirements {
       margin-top: 8px;
       font-size: 0.8rem;
-      color: var(--muted);
+      color: #5a6b85;
     }
     .requirement {
       margin: 4px 0;
@@ -157,28 +204,32 @@
     
     /* CAPTCHA Styles */
     .captcha-box {
-      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-      border: 2px solid #90caf9;
+      background: #f0f5fd;
+      border: 1.5px solid #d7e4f7;
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 20px;
     }
     .captcha-box label {
-      color: #1565c0;
+      color: #0d2a5c;
       font-size: 0.9rem;
+      font-weight: 600;
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .captcha-box label::before {
-      content: '🤖';
-      font-size: 1.2rem;
+      content: '';
+      width: 20px;
+      height: 20px;
+      background: url('/phins-logo.svg') center / contain no-repeat;
     }
     .captcha-question {
       font-size: 1rem;
       font-weight: 600;
-      color: #0d47a1;
+      color: #0d2a5c;
       background: #fff;
+      border: 1px solid #e3ecf9;
       padding: 12px;
       border-radius: 8px;
       margin: 10px 0;
@@ -187,22 +238,23 @@
     .captcha-input {
       width: 100%;
       padding: 12px;
-      border: 2px solid #e3f2fd;
+      border: 2px solid #dde7f5;
       border-radius: 8px;
       font-size: 1rem;
       text-align: center;
       letter-spacing: 2px;
       font-weight: 600;
+      background: #fff;
     }
     .captcha-input:focus {
-      border-color: #1565c0;
+      border-color: #c9a24b;
       outline: none;
     }
     
     /* OTP Verification Styles */
     .otp-box {
-      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-      border: 2px solid #81c784;
+      background: #eef8ef;
+      border: 1.5px solid #b5dcb8;
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 20px;
@@ -284,8 +336,8 @@
       width: 28px;
       height: 28px;
       border-radius: 50%;
-      background: #e0e0e0;
-      color: #666;
+      background: #dbe4f2;
+      color: #5a6b85;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -293,7 +345,7 @@
       font-weight: 600;
     }
     .step-item.active .step-number {
-      background: #1565c0;
+      background: #c9a24b;
       color: #fff;
     }
     .step-item.complete .step-number {
@@ -305,16 +357,16 @@
     }
     .step-label {
       font-size: 0.8rem;
-      color: #666;
+      color: #5a6b85;
     }
     .step-item.active .step-label {
-      color: #1565c0;
+      color: #8a6d2e;
       font-weight: 600;
     }
     .step-connector {
       width: 30px;
       height: 2px;
-      background: #e0e0e0;
+      background: #dbe4f2;
     }
     .step-connector.complete {
       background: #4caf50;
@@ -322,10 +374,11 @@
   </style>
 </head>
 <body>
+  <div class="auth-backdrop" aria-hidden="true"></div>
   <div class="register-container">
     <div class="register-card">
       <div class="register-header">
-        <div class="register-logo">🛡️</div>
+        <div class="register-logo"><a href="/" title="PHINS"><img src="/phins-logo.svg" alt="PHINS emblem"></a></div>
         <h1 class="register-title">Create Account</h1>
         <p class="register-subtitle">By Invitation Only</p>
       </div>
@@ -352,14 +405,14 @@
         <!-- Step 1: Registration Details -->
         <div id="details-section">
           <!-- Invitation Code (Required) -->
-          <div class="form-group" style="background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); padding: 16px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #ffc107;">
-            <label for="invitation-code" style="color: #856404; display: flex; align-items: center; gap: 8px;">
+          <div class="form-group invite-box">
+            <label for="invitation-code">
               <span style="font-size: 1.3rem;">🎟️</span> Invitation Code *
             </label>
             <input type="text" id="invitation-code" name="invitation_code" required 
                    placeholder="Enter your invitation code (e.g., PHINS-2026-XXXX)"
                    style="text-transform: uppercase; font-family: monospace; font-size: 1.1rem; letter-spacing: 1px;" />
-            <small style="color: #856404;">Registration is by invitation only. Please enter the code you received.</small>
+            <small>Registration is by invitation only. Please enter the code you received.</small>
             <div id="code-validation" style="margin-top: 8px; font-weight: 600;"></div>
           </div>
 
@@ -440,15 +493,9 @@
       
       <div id="register-msg"></div>
 
-      <div style="margin-top: 20px; text-align: center;">
-        <a href="/login.html" style="color: var(--brand); text-decoration: none; font-size: 0.9rem;">Already have an account? Sign In</a>
+      <div class="aux-links">
+        <a href="/login.html">Already have an account? Sign In</a>
       </div>
-
-      <div style="margin-top: 16px; text-align: center; font-size: 0.8rem; color: #90a4ae;">
-        By registering, you agree to our <a href="/terms-of-use.html" target="_blank" style="color: #1565c0; text-decoration: none;">Terms of Use</a>
-        and <a href="/privacy-policy.html" target="_blank" style="color: #1565c0; text-decoration: none;">Privacy Policy</a>.
-      </div>
-      <a href="/" class="back-link">← Back to Home</a>
     </div>
   </div>
   
@@ -469,14 +516,18 @@
         var r = await fetch('/api/design/settings');
         if (!r.ok) return;
         var s = await r.json();
+        var backdrop = document.querySelector('.auth-backdrop');
         var p = normalizeHexColor(s.primary_color, '#0d47a1');
-        if (p && p !== '#0d47a1') {
-          document.body.style.background = 'linear-gradient(135deg, ' + p + ' 0%, ' + p + 'cc 50%, ' + p + 'bb 100%)';
+        if (p && p !== '#0d47a1' && backdrop) {
+          backdrop.style.background =
+            'radial-gradient(1000px 600px at 80% -10%, ' + p + '8c, transparent 60%),' +
+            'radial-gradient(800px 520px at 8% 110%, ' + p + '59, transparent 60%),' +
+            '#060d1f';
         }
-        if (s.hero_background_url) {
-          document.body.style.backgroundImage = 'linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.65)), url(' + JSON.stringify(s.hero_background_url) + ')';
-          document.body.style.backgroundSize = 'cover';
-          document.body.style.backgroundPosition = 'center';
+        if (s.hero_background_url && backdrop) {
+          backdrop.style.backgroundImage = 'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.86)), url(' + JSON.stringify(s.hero_background_url) + ')';
+          backdrop.style.backgroundSize = 'cover';
+          backdrop.style.backgroundPosition = 'center';
         }
       } catch (e) { /* branding optional */ }
     })();

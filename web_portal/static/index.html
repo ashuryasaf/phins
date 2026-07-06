@@ -6,455 +6,304 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#0d47a1" />
+  <meta name="theme-color" content="#060d1f" />
   <meta name="apple-mobile-web-app-title" content="PHINS" />
-  <title>PHINS Insurance — Safe Assurance</title>
+  <title>PHINS — Safe Assurance</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --ds-primary: #0d47a1;
+      --ds-accent: #e3bf6f;
+      --ds-accent-strong: #f7e2a0;
+      --ds-accent-shadow: rgba(227, 191, 111, 0.35);
+      --ds-accent-shadow-hover: rgba(227, 191, 111, 0.5);
+      --ink: #eaf1ff;
+      --ink-dim: rgba(234, 241, 255, 0.62);
+      --line: rgba(127, 178, 255, 0.16);
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: linear-gradient(180deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      background: #060d1f;
+      color: var(--ink);
       min-height: 100vh;
-      color: white;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
-    
-    /* Splash Screen */
+
+    /* ===== Ambient backdrop ===== */
+    .backdrop {
+      position: fixed; inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+        radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+        radial-gradient(600px 400px at 50% 45%, rgba(30, 82, 170, 0.22), transparent 65%),
+        #060d1f;
+    }
+    .backdrop::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
+      -webkit-mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
+    }
+    .backdrop::after {
+      content: '';
+      position: absolute; inset: -30%;
+      background: conic-gradient(from 180deg at 50% 50%,
+        transparent 0deg, rgba(79, 216, 255, 0.05) 90deg,
+        transparent 180deg, rgba(227, 191, 111, 0.04) 270deg, transparent 360deg);
+      animation: slow-spin 60s linear infinite;
+    }
+    @keyframes slow-spin { to { transform: rotate(360deg); } }
+
+    /* ===== Splash ===== */
     #splash-screen {
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      position: fixed; inset: 0;
+      background: #060d1f;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       z-index: 9999;
-      transition: opacity 0.5s ease, visibility 0.5s ease;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
     }
     #splash-screen.hidden { opacity: 0; visibility: hidden; }
     .splash-logo {
-      width: 120px; height: 120px;
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      border-radius: 30px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 4rem;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      border: 3px solid rgba(255,255,255,0.3);
-      animation: pulse-logo 2s ease-in-out infinite;
+      width: 110px; height: 110px;
+      filter: drop-shadow(0 12px 44px rgba(79, 216, 255, 0.28));
+      animation: pulse-logo 2.2s ease-in-out infinite;
     }
-    .splash-text { margin-top: 24px; font-size: 2.5rem; font-weight: 700; letter-spacing: 4px; }
-    .splash-tagline { margin-top: 8px; font-size: 1rem; color: rgba(255,255,255,0.8); letter-spacing: 2px; }
-    @keyframes pulse-logo { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-    
-    /* Header */
+    .splash-logo img { width: 100%; height: 100%; display: block; }
+    .splash-text {
+      margin-top: 26px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 2.3rem; font-weight: 600; letter-spacing: 0.5em;
+      padding-left: 0.5em;
+    }
+    .splash-tagline {
+      margin-top: 10px; font-size: 0.8rem; letter-spacing: 0.42em; padding-left: 0.42em;
+      color: var(--ds-accent);
+      text-transform: uppercase;
+    }
+    @keyframes pulse-logo { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+
+    /* ===== Header ===== */
     .landing-header {
       position: fixed; top: 0; left: 0; right: 0;
-      background: rgba(13, 71, 161, 0.95);
-      backdrop-filter: blur(10px);
-      padding: 16px 24px;
       z-index: 1000;
-      box-shadow: 0 2px 20px rgba(0,0,0,0.2);
+      background: rgba(6, 13, 31, 0.66);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-bottom: 1px solid var(--line);
     }
     .header-inner {
-      max-width: 1200px; margin: 0 auto;
+      max-width: 1160px; margin: 0 auto;
+      padding: 14px 28px;
       display: flex; justify-content: space-between; align-items: center;
     }
     .logo {
-      display: flex; align-items: center; gap: 12px;
-      text-decoration: none; color: white;
+      display: flex; align-items: center; gap: 14px;
+      text-decoration: none; color: var(--ink);
     }
-    .logo-icon {
-      width: 44px; height: 44px;
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.5rem;
-      box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
+    .logo-icon { width: 42px; height: 42px; filter: drop-shadow(0 4px 16px rgba(79, 216, 255, 0.3)); }
+    .logo-icon img { width: 100%; height: 100%; display: block; }
+    .logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.35rem; font-weight: 600; letter-spacing: 0.34em;
     }
-    .logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 2px; }
-    .nav-links { display: flex; align-items: center; gap: 8px; }
-    .nav-links a {
-      color: rgba(255,255,255,0.9); text-decoration: none;
-      padding: 10px 16px; border-radius: 8px; font-weight: 500;
-      transition: all 0.2s;
+    .btn-login {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 11px 28px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.92rem; font-weight: 600; letter-spacing: 0.14em;
+      text-transform: uppercase;
+      text-decoration: none;
+      color: #071022;
+      background: linear-gradient(135deg, var(--ds-accent-strong) 0%, var(--ds-accent) 100%);
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(247, 226, 160, 0.35), 0 8px 28px var(--ds-accent-shadow);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
     }
-    .nav-links a:hover { background: rgba(255,255,255,0.15); }
-    .nav-links .btn-login {
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      color: white; font-weight: 600;
-      box-shadow: 0 4px 15px rgba(66, 165, 245, 0.3);
+    .btn-login:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 0 1px rgba(247, 226, 160, 0.55), 0 14px 38px var(--ds-accent-shadow-hover);
     }
-    .nav-links .btn-login:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(66, 165, 245, 0.4); }
-    
-    /* Main Content */
+
+    /* ===== Hero ===== */
     .main-content {
-      padding-top: 80px;
+      position: relative; z-index: 1;
       min-height: 100vh;
       display: flex; flex-direction: column;
     }
-    
-    /* Hero Section */
     .hero {
       flex: 1;
       display: flex; align-items: center; justify-content: center;
-      padding: 60px 24px;
+      padding: 140px 24px 80px;
       text-align: center;
     }
-    .hero-content { max-width: 800px; }
+    .hero-content { max-width: 760px; }
     .hero-logo {
-      width: 140px; height: 140px;
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      border-radius: 35px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 5rem;
-      margin: 0 auto 24px;
-      box-shadow: 0 20px 60px rgba(66, 165, 245, 0.4);
-      border: 3px solid rgba(255,255,255,0.3);
-      animation: float 3s ease-in-out infinite;
+      width: 168px; height: 168px;
+      margin: 0 auto 34px;
+      filter: drop-shadow(0 24px 70px rgba(79, 216, 255, 0.32));
+      animation: float 5s ease-in-out infinite;
     }
+    .hero-logo img { width: 100%; height: 100%; display: block; }
     @keyframes float {
       0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
+      50% { transform: translateY(-12px); }
     }
     .hero h1 {
-      font-size: 3.5rem; font-weight: 700;
-      margin-bottom: 8px;
-      text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(3rem, 9vw, 5rem);
+      font-weight: 700;
+      letter-spacing: 0.32em; padding-left: 0.32em;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 70%, #7fa8e8 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .hero .tagline {
-      font-size: 1.5rem; font-weight: 500;
-      color: rgba(255,255,255,0.9);
-      letter-spacing: 3px;
-      margin-bottom: 24px;
+      margin-top: 18px;
+      font-size: clamp(0.8rem, 2.4vw, 1rem);
+      font-weight: 500;
+      letter-spacing: 0.5em; padding-left: 0.5em;
+      text-transform: uppercase;
+      color: var(--ds-accent);
     }
-    .hero .subtitle {
-      font-size: 1.2rem;
-      color: rgba(255,255,255,0.8);
-      max-width: 600px;
-      margin: 0 auto 40px;
-      line-height: 1.6;
-    }
-    
-    /* CTA Buttons */
-    .cta-buttons {
-      display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;
-      margin-bottom: 32px;
-    }
-    .btn-cta {
-      padding: 18px 40px;
-      font-size: 1.1rem; font-weight: 600;
-      border-radius: 12px;
-      text-decoration: none;
-      transition: all 0.3s;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, var(--ds-accent, #ff6b35) 0%, var(--ds-accent-strong, #f7931e) 100%);
-      color: white;
-      box-shadow: 0 8px 30px var(--ds-accent-shadow, rgba(255, 107, 53, 0.4));
-    }
-    .btn-primary:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 12px 40px var(--ds-accent-shadow-hover, rgba(255, 107, 53, 0.5));
-    }
-    .btn-secondary {
-      background: rgba(255,255,255,0.95);
-      color: #0d47a1;
-      box-shadow: 0 8px 30px rgba(255,255,255,0.2);
-    }
-    .btn-secondary:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 12px 40px rgba(255,255,255,0.3);
-    }
-    
-    /* Trust Badges */
-    .trust-badges {
-      display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;
-    }
-    .badge {
-      background: rgba(255,255,255,0.15);
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      display: flex; align-items: center; gap: 6px;
-    }
-    
-    /* Video Section */
-    .video-section {
-      background: rgba(0,0,0,0.2);
-      padding: 60px 24px;
-    }
-    .video-container {
-      max-width: 900px;
-      margin: 0 auto;
-      text-align: center;
-    }
-    .video-title {
-      font-size: 1.8rem; font-weight: 600;
-      margin-bottom: 24px;
-    }
-    .video-wrapper {
+    .hero-divider {
+      width: 120px; height: 1px;
+      margin: 36px auto;
+      background: linear-gradient(90deg, transparent, rgba(227, 191, 111, 0.7), transparent);
       position: relative;
-      padding-bottom: 56.25%; /* 16:9 aspect ratio */
-      background: rgba(0,0,0,0.3);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-    .video-wrapper iframe,
-    .video-wrapper video {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      border: none;
+    .hero-divider::after {
+      content: '';
+      position: absolute; left: 50%; top: 50%;
+      width: 5px; height: 5px;
+      transform: translate(-50%, -50%) rotate(45deg);
+      background: var(--ds-accent);
+      box-shadow: 0 0 12px var(--ds-accent);
     }
-    .video-placeholder {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
-      color: rgba(255,255,255,0.7);
-    }
-    .video-placeholder .play-icon {
-      font-size: 4rem;
-      margin-bottom: 16px;
-      opacity: 0.8;
-    }
-    .video-caption {
-      margin-top: 16px;
-      color: rgba(255,255,255,0.7);
-      font-size: 0.95rem;
-    }
-    
-    /* Contact Section */
-    .contact-section {
-      background: rgba(255,255,255,0.05);
-      padding: 60px 24px;
-    }
-    .contact-container {
-      max-width: 1000px;
-      margin: 0 auto;
-    }
-    .contact-title {
-      text-align: center;
-      font-size: 2rem;
-      margin-bottom: 40px;
-    }
-    .contact-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 24px;
-    }
-    .contact-card {
-      background: rgba(255,255,255,0.1);
-      padding: 24px;
-      border-radius: 16px;
-      text-align: center;
-      transition: transform 0.3s, background 0.3s;
-    }
-    .contact-card:hover {
-      background: rgba(255,255,255,0.15);
-      transform: translateY(-4px);
-    }
-    .contact-card h3 {
-      font-size: 1.3rem;
-      margin-bottom: 12px;
-    }
-    .contact-card p {
-      color: rgba(255,255,255,0.8);
-      font-size: 0.95rem;
-      line-height: 1.6;
-    }
-    
-    /* Footer */
-    .landing-footer {
-      background: rgba(0,0,0,0.3);
-      padding: 30px 24px;
-      text-align: center;
-    }
-    .footer-content {
-      max-width: 1000px;
-      margin: 0 auto;
-    }
-    .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-    .footer-links a {
-      color: rgba(255,255,255,0.7);
+    .hero-cta {
+      display: inline-flex; align-items: center; gap: 12px;
+      padding: 17px 54px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1rem; font-weight: 600; letter-spacing: 0.2em;
+      text-transform: uppercase;
       text-decoration: none;
-      font-size: 0.9rem;
+      color: var(--ink);
+      background: rgba(127, 178, 255, 0.06);
+      border: 1px solid rgba(127, 178, 255, 0.35);
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
     }
-    .footer-links a:hover { color: white; }
+    .hero-cta::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.14) 50%, transparent 70%);
+      transform: translateX(-100%);
+      transition: transform 0.7s ease;
+    }
+    .hero-cta:hover { border-color: rgba(227, 191, 111, 0.75); box-shadow: 0 0 34px rgba(127, 178, 255, 0.22); transform: translateY(-2px); }
+    .hero-cta:hover::before { transform: translateX(100%); }
+
+    /* Entrance choreography */
+    .rise { opacity: 0; transform: translateY(22px); animation: rise-in 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+    .rise.d1 { animation-delay: 0.15s; }
+    .rise.d2 { animation-delay: 0.3s; }
+    .rise.d3 { animation-delay: 0.45s; }
+    .rise.d4 { animation-delay: 0.6s; }
+    @keyframes rise-in { to { opacity: 1; transform: translateY(0); } }
+
+    /* ===== Footer ===== */
+    .landing-footer {
+      position: relative; z-index: 1;
+      padding: 26px 24px;
+      text-align: center;
+      border-top: 1px solid var(--line);
+    }
     .footer-copyright {
-      color: rgba(255,255,255,0.5);
-      font-size: 0.85rem;
+      color: var(--ink-dim);
+      font-size: 0.82rem;
+      letter-spacing: 0.18em;
     }
-    .footer-badges {
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-      margin-top: 16px;
+
+    @media (prefers-reduced-motion: reduce) {
+      .backdrop::after, .splash-logo, .hero-logo, .rise { animation: none; }
+      .rise { opacity: 1; transform: none; }
     }
-    .footer-badge {
-      background: rgba(255,255,255,0.1);
-      padding: 4px 10px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.7);
-    }
-    
-    /* Mobile Responsive */
-    @media screen and (max-width: 768px) {
-      .header-inner { flex-direction: column; gap: 12px; }
-      .nav-links { flex-wrap: wrap; justify-content: center; }
-      .nav-links a { padding: 8px 12px; font-size: 0.9rem; }
-      .hero { padding: 40px 16px; }
-      .hero h1 { font-size: 2.2rem; }
-      .hero .tagline { font-size: 1.1rem; }
-      .hero .subtitle { font-size: 1rem; }
-      .hero-logo { width: 100px; height: 100px; font-size: 3.5rem; }
-      .cta-buttons { flex-direction: column; align-items: center; }
-      .btn-cta { width: 100%; max-width: 300px; justify-content: center; }
-      .trust-badges { flex-direction: column; align-items: center; }
-      .contact-grid { grid-template-columns: 1fr; }
-    }
-    @media screen and (max-width: 480px) {
-      .logo-text { display: none; }
-      .hero h1 { font-size: 1.8rem; }
-      .video-title { font-size: 1.4rem; }
-      .contact-title { font-size: 1.5rem; }
+    @media screen and (max-width: 600px) {
+      .header-inner { padding: 12px 18px; }
+      .logo-text { letter-spacing: 0.22em; font-size: 1.15rem; }
+      .btn-login { padding: 9px 20px; font-size: 0.82rem; }
+      .hero { padding: 120px 18px 60px; }
+      .hero-logo { width: 128px; height: 128px; }
+      .hero-cta { padding: 15px 40px; }
     }
   </style>
 </head>
 <body>
+  <div class="backdrop" aria-hidden="true"></div>
+
   <!-- Splash Screen -->
   <div id="splash-screen">
-    <div class="splash-logo">🛡️</div>
+    <div class="splash-logo"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
     <div class="splash-text">PHINS</div>
-    <div class="splash-tagline">SAFE ASSURANCE</div>
+    <div class="splash-tagline">Safe Assurance</div>
   </div>
-  
+
   <!-- Header -->
   <header class="landing-header">
     <div class="header-inner">
       <a href="/" class="logo">
-        <div class="logo-icon">🛡️</div>
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
         <span class="logo-text">PHINS</span>
       </a>
       <nav class="nav-links">
-        <a href="#home">Home</a>
-        <a href="#contact">Contact</a>
-        <a href="/login.html" class="btn-login">🔐 Login</a>
+        <a href="/login.html" class="btn-login">Login</a>
       </nav>
     </div>
   </header>
-  
+
   <!-- Main Content -->
   <main class="main-content">
-    
-    <!-- Hero Section -->
     <section id="home" class="hero">
       <div class="hero-content">
-        <div class="hero-logo">🛡️</div>
-        <h1>PHINS</h1>
-        <p class="tagline">SAFE ASSURANCE</p>
-        <p class="subtitle" id="hero-subtitle">Comprehensive Protection for Your Future</p>
-        
-        <div class="cta-buttons">
-          <a href="/login.html" class="btn-cta btn-secondary">
-            🔐 Access My Account
-          </a>
-          <a href="/apply.html" class="btn-cta btn-primary">
-            📝 Apply for Coverage
-          </a>
-        </div>
-        
-        <div class="trust-badges">
-          <span class="badge">🔒 256-bit SSL Encryption</span>
-          <span class="badge">🏆 Global Pre-Licensed</span>
-          <span class="badge">📞 24/7 Support</span>
-        </div>
-      </div>
-    </section>
-    
-    <!-- Video Section -->
-    <section id="video" class="video-section">
-      <div class="video-container">
-        <h2 class="video-title">📹 Learn About PHINS</h2>
-        <div class="video-wrapper" id="video-wrapper">
-          <!-- Video will be loaded here via admin settings -->
-          <div class="video-placeholder" id="video-placeholder">
-            <div class="play-icon">▶️</div>
-            <p>Video coming soon</p>
-          </div>
-        </div>
-        <p class="video-caption">Discover how PHINS protects what matters most</p>
-      </div>
-    </section>
-    
-    <!-- Contact Section -->
-    <section id="contact" class="contact-section">
-      <div class="contact-container">
-        <h2 class="contact-title">📞 Contact Us</h2>
-        <div class="contact-grid">
-          <div class="contact-card">
-            <h3>📍 Address</h3>
-            <p>123 Insurance Boulevard<br>Financial District<br>New York, NY 10004</p>
-          </div>
-          <div class="contact-card">
-            <h3>📞 Phone</h3>
-            <p><strong>Customer Service:</strong><br>1-800-PHINS-01<br>(1-800-744-6701)</p>
-          </div>
-          <div class="contact-card">
-            <h3>✉️ Email</h3>
-            <p>info@phins.com<br>sales@phins.com<br>claims@phins.com</p>
-          </div>
-          <div class="contact-card">
-            <h3>🕐 Hours</h3>
-            <p>Mon-Fri: 8AM-8PM EST<br>Sat: 9AM-5PM EST<br>Emergency: 24/7</p>
-          </div>
-        </div>
+        <div class="hero-logo rise"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <h1 class="rise d1">PHINS</h1>
+        <p class="tagline rise d2">Safe Assurance</p>
+        <div class="hero-divider rise d3"></div>
+        <a href="/login.html" class="hero-cta rise d4">Login</a>
       </div>
     </section>
   </main>
-  
+
   <!-- Footer -->
   <footer class="landing-footer">
-    <div class="footer-content">
-      <div class="footer-links">
-        <a href="/login.html">Customer Login</a>
-        <a href="/apply.html">Apply Now</a>
-        <a href="#contact">Contact</a>
-        <a href="/privacy-policy.html">Privacy Policy</a>
-        <a href="/terms-of-use.html">Terms of Use</a>
-      </div>
-      <p class="footer-copyright">&copy; 2026 PHINS Insurance Company. All rights reserved.</p>
-      <div class="footer-badges">
-        <span class="footer-badge">SOC 2</span>
-        <span class="footer-badge">HIPAA</span>
-        <span class="footer-badge">PCI DSS</span>
-        <span class="footer-badge">GDPR</span>
-        <span class="footer-badge">EU AI Act</span>
-      </div>
-    </div>
+    <p class="footer-copyright">&copy; 2026 PHINS</p>
   </footer>
-  
+
   <script>
     // Hide splash screen
     function hideSplashScreen() {
       const splash = document.getElementById('splash-screen');
       if (splash) {
         splash.classList.add('hidden');
-        setTimeout(() => splash.remove(), 500);
+        setTimeout(() => splash.remove(), 600);
       }
     }
-    
+
     function normalizeHexColor(color, fallback) {
       if (typeof color !== 'string') return fallback;
       const trimmed = color.trim().toLowerCase();
@@ -481,44 +330,44 @@
 
     function applyDesignColors(settings) {
       const defaultPrimary = '#0d47a1';
-      const defaultAccent = '#ff6b35';
+      const defaultAccent = '#e3bf6f';
+      // The platform's legacy accent default; treat it as "not customized"
+      // so the landing page keeps its gold accent unless an admin picks a
+      // deliberate brand color in the design settings.
+      const legacyDefaultAccent = '#ff6b35';
       const primary = normalizeHexColor(settings.primary_color, defaultPrimary);
-      const accent = normalizeHexColor(settings.accent_color, defaultAccent);
+      let accent = normalizeHexColor(settings.accent_color, defaultAccent);
+      if (accent === legacyDefaultAccent) accent = defaultAccent;
       const accentStrong =
-        accent === defaultAccent ? '#f7931e' : mixHexColors(accent, '#ffffff', 0.18);
+        accent === defaultAccent ? '#f7e2a0' : mixHexColors(accent, '#ffffff', 0.18);
       const root = document.documentElement;
       root.style.setProperty('--ds-primary', primary);
       root.style.setProperty('--ds-accent', accent);
       root.style.setProperty('--ds-accent-strong', accentStrong);
-      root.style.setProperty('--ds-accent-shadow', `${accent}66`);
+      root.style.setProperty('--ds-accent-shadow', `${accent}59`);
       root.style.setProperty('--ds-accent-shadow-hover', `${accent}80`);
 
-      const splash = document.getElementById('splash-screen');
-      const header = document.querySelector('.landing-header');
       if (primary !== defaultPrimary) {
-        const primaryMid = mixHexColors(primary, '#ffffff', 0.18);
-        const primaryEnd = mixHexColors(primary, '#ffffff', 0.28);
-
-        document.body.style.background =
-          `linear-gradient(180deg, ${primary} 0%, ${primaryMid} 50%, ${primaryEnd} 100%)`;
-
-        if (splash) {
-          splash.style.background =
-            `linear-gradient(135deg, ${primary} 0%, ${primaryMid} 50%, ${primaryEnd} 100%)`;
+        const glowSoft = mixHexColors(primary, '#000000', 0.35);
+        const backdrop = document.querySelector('.backdrop');
+        if (backdrop) {
+          backdrop.style.background =
+            `radial-gradient(1000px 600px at 80% -10%, ${glowSoft}8c, transparent 60%),` +
+            `radial-gradient(800px 520px at 8% 110%, ${glowSoft}66, transparent 60%),` +
+            `radial-gradient(600px 400px at 50% 45%, ${glowSoft}38, transparent 65%),` +
+            '#060d1f';
         }
-
-        if (header) header.style.background = `${primary}f2`;
       }
 
       const themeColor = document.querySelector('meta[name="theme-color"]');
-      if (themeColor) themeColor.setAttribute('content', primary);
+      if (themeColor) themeColor.setAttribute('content', '#060d1f');
     }
 
     function applyHeroBackground(url) {
       if (!url) return;
       const hero = document.querySelector('.hero');
       if (!hero) return;
-      hero.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url(${JSON.stringify(url)})`;
+      hero.style.backgroundImage = `linear-gradient(rgba(4,9,22,0.72), rgba(4,9,22,0.82)), url(${JSON.stringify(url)})`;
       hero.style.backgroundSize = 'cover';
       hero.style.backgroundPosition = 'center';
     }
@@ -530,7 +379,7 @@
       else {
         var banner = document.createElement('div');
         banner.id = 'promo-banner';
-        banner.style.cssText = 'width:100%;text-align:center;padding:0;background:rgba(0,0,0,0.15);';
+        banner.style.cssText = 'position:relative;z-index:1;width:100%;text-align:center;padding:0;background:rgba(255,255,255,0.04);border-top:1px solid rgba(127,178,255,0.16);';
         var img = document.createElement('img');
         img.src = url;
         img.alt = 'Promotion';
@@ -556,7 +405,7 @@
       }
     }
 
-    async function loadVideoSettings() {
+    async function loadDesignSettings() {
       try {
         const response = await fetch('/api/design/settings');
         if (response.ok) {
@@ -572,44 +421,21 @@
           if (settings.promo_banner_url) {
             applyPromoBanner(settings.promo_banner_url);
           }
-
-          if (settings.video_url) {
-            const wrapper = document.getElementById('video-wrapper');
-
-            if (settings.video_url.includes('youtube.com') || settings.video_url.includes('youtu.be')) {
-              let embedUrl = settings.video_url;
-              if (settings.video_url.includes('watch?v=')) {
-                embedUrl = settings.video_url.replace('watch?v=', 'embed/');
-              } else if (settings.video_url.includes('youtu.be/')) {
-                embedUrl = settings.video_url.replace('youtu.be/', 'youtube.com/embed/');
-              }
-              wrapper.innerHTML = `<iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
-            } else if (settings.video_url.includes('vimeo.com')) {
-              const vimeoId = settings.video_url.split('/').pop();
-              wrapper.innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-            } else {
-              wrapper.innerHTML = `<video controls poster="${settings.video_poster || ''}"><source src="${settings.video_url}" type="video/mp4">Your browser does not support video.</video>`;
-            }
-          }
-
-          if (settings.tagline) {
-            document.getElementById('hero-subtitle').textContent = settings.tagline;
-          }
         }
       } catch (err) {
         console.log('Design settings not configured yet');
       }
     }
-    
+
     // Initialize
     window.addEventListener('DOMContentLoaded', function() {
-      // Hide splash after 1.5s
-      setTimeout(hideSplashScreen, 1500);
-      
-      // Load video settings
-      loadVideoSettings();
+      // Hide splash after 1.2s
+      setTimeout(hideSplashScreen, 1200);
+
+      // Load admin-managed design settings
+      loadDesignSettings();
     });
-    
+
     // Smooth scroll for anchor links
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       anchor.addEventListener('click', function(e) {

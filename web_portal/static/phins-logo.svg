@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="PHINS emblem">
+  <defs>
+    <linearGradient id="phinsShield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e2f63"/>
+      <stop offset="55%" stop-color="#123f82"/>
+      <stop offset="100%" stop-color="#081c3f"/>
+    </linearGradient>
+    <linearGradient id="phinsGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7e2a0"/>
+      <stop offset="45%" stop-color="#e3bf6f"/>
+      <stop offset="100%" stop-color="#b8893b"/>
+    </linearGradient>
+    <linearGradient id="phinsFin" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff"/>
+      <stop offset="55%" stop-color="#6ea8ff"/>
+      <stop offset="100%" stop-color="#b7d9ff"/>
+    </linearGradient>
+    <linearGradient id="phinsWave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#7fe3ff"/>
+      <stop offset="100%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="url(#phinsShield)"/>
+  <!-- Gold rim -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="none" stroke="url(#phinsGold)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Inner keyline -->
+  <path d="M60 14 L98 27.5 V56.5 C98 83 81 100.5 60 107.5 C39 100.5 22 83 22 56.5 V27.5 Z"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <!-- Guiding star -->
+  <path d="M60 22 L62.2 28.2 L68.5 28.4 L63.5 32.2 L65.3 38.3 L60 34.7 L54.7 38.3 L56.5 32.2 L51.5 28.4 L57.8 28.2 Z"
+        fill="url(#phinsGold)"/>
+
+  <!-- Dolphin fin -->
+  <path d="M40 76 C44.5 57 57 44 80 38.5 C72.5 50.5 70.5 61 73 73.5 C61.5 66.5 49 69 40 76 Z"
+        fill="url(#phinsFin)"/>
+  <!-- Fin highlight -->
+  <path d="M46 70 C51 58 60 49 72 44.5 C67 53 65.5 61 66.8 69.5 C59.5 65.5 52 66.5 46 70 Z"
+        fill="#ffffff" fill-opacity="0.16"/>
+
+  <!-- Waves -->
+  <path d="M32 84 Q42 77.5 52 84 T72 84 T92 84" fill="none"
+        stroke="url(#phinsWave)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M40 93 Q49 87.5 58 93 T76 93" fill="none"
+        stroke="url(#phinsWave)" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+</svg>
