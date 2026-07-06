@@ -249,10 +249,13 @@ class TestLegalStaticPages:
 
 class TestLegalLinksIntegration:
 
-    def test_index_page_has_legal_links(self):
+    def test_index_page_is_minimal_landing(self):
+        # The redesigned landing page intentionally carries no footer link
+        # clutter; legal links remain on login/register/apply/dashboard pages.
         body, _ = _get(f"{BASE_URL}/index.html")
-        assert '/privacy-policy.html' in body
-        assert '/terms-of-use.html' in body
+        assert '/privacy-policy.html' not in body
+        assert '/terms-of-use.html' not in body
+        assert '/login.html' in body
 
     def test_apply_page_has_legal_links(self):
         body, _ = _get(f"{BASE_URL}/apply.html")
