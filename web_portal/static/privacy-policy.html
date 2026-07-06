@@ -3,25 +3,52 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#0d47a1" />
+  <meta name="theme-color" content="#060d1f" />
   <title>PHINS — Privacy Policy</title>
   <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
   <link rel="apple-touch-icon" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <style>
     body {
-      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
+      background: #060d1f;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       margin: 0;
       padding: 0;
+      position: relative;
+      overflow-x: hidden;
+    }
+    .legal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+        radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+        radial-gradient(600px 400px at 50% 45%, rgba(30, 82, 170, 0.22), transparent 65%),
+        #060d1f;
+    }
+    .legal-backdrop::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(900px 620px at 50% 30%, rgba(0,0,0,0.85), transparent 78%);
+      -webkit-mask-image: radial-gradient(900px 620px at 50% 30%, rgba(0,0,0,0.85), transparent 78%);
     }
     .legal-header {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 40%, #1976d2 100%);
-      color: #fff;
-      padding: 24px 0;
-      box-shadow: 0 4px 24px rgba(13, 71, 161, 0.25);
+      background: rgba(6, 13, 31, 0.66);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-bottom: 1px solid rgba(127, 178, 255, 0.16);
+      color: #eaf1ff;
+      padding: 14px 0;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -38,70 +65,101 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      font-size: 1.5rem;
-      font-weight: 700;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
       text-decoration: none;
-      color: #fff;
+      color: #eaf1ff;
     }
     .legal-header .brand img {
-      width: 36px;
-      height: 36px;
+      width: 38px;
+      height: 38px;
       display: block;
-      filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
+      filter: drop-shadow(0 4px 16px rgba(79, 216, 255, 0.3));
     }
     .legal-header .nav a {
-      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 26px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
       text-decoration: none;
-      font-weight: 500;
-      padding: 8px 16px;
-      border-radius: 6px;
-      transition: background 0.3s;
+      color: #071022;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(247, 226, 160, 0.35), 0 8px 28px rgba(227, 191, 111, 0.35);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
     }
     .legal-header .nav a:hover {
-      background: rgba(255,255,255,0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 0 0 1px rgba(247, 226, 160, 0.55), 0 14px 38px rgba(227, 191, 111, 0.5);
     }
     .legal-hero {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
-      color: #fff;
-      padding: 48px 0 36px;
+      position: relative;
+      z-index: 1;
+      color: #eaf1ff;
+      padding: 68px 16px 44px;
       text-align: center;
     }
     .legal-hero h1 {
-      font-size: 2.2rem;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2rem, 6vw, 2.9rem);
       font-weight: 700;
-      margin: 0 0 8px;
+      letter-spacing: 0.12em;
+      margin: 0 0 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 70%, #7fa8e8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .legal-hero .effective-date {
-      font-size: 1rem;
-      opacity: 0.85;
+      font-size: 0.9rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #e3bf6f;
+    }
+    .legal-hero::after {
+      content: '';
+      display: block;
+      width: 120px;
+      height: 1px;
+      margin: 30px auto 0;
+      background: linear-gradient(90deg, transparent, rgba(227, 191, 111, 0.7), transparent);
     }
     .legal-container {
+      position: relative;
+      z-index: 1;
       max-width: 900px;
-      margin: -24px auto 48px;
+      margin: 0 auto 64px;
       padding: 0 16px;
     }
     .legal-content {
-      background: #fff;
-      border-radius: 16px;
+      background: rgba(249, 251, 255, 0.97);
+      border-radius: 22px;
       padding: 48px;
-      box-shadow: 0 8px 30px rgba(13, 71, 161, 0.12);
-      border: 1px solid #e3f2fd;
+      box-shadow: 0 30px 80px rgba(2, 8, 23, 0.65), 0 0 0 1px rgba(127, 178, 255, 0.22);
+      border-top: 3px solid #e3bf6f;
       line-height: 1.8;
       color: #333;
     }
     .legal-content h2 {
-      color: #0d47a1;
+      font-family: 'Space Grotesk', sans-serif;
+      color: #0d2a5c;
       font-size: 1.4rem;
       font-weight: 700;
       margin: 36px 0 16px;
       padding-bottom: 8px;
-      border-bottom: 2px solid #e3f2fd;
+      border-bottom: 2px solid #eee3c8;
     }
     .legal-content h2:first-child {
       margin-top: 0;
     }
     .legal-content h3 {
-      color: #1565c0;
+      color: #14509e;
       font-size: 1.15rem;
       font-weight: 600;
       margin: 24px 0 12px;
@@ -181,44 +239,17 @@
       text-decoration: underline;
     }
     .legal-footer {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
-      color: #fff;
-      padding: 32px 0;
+      position: relative;
+      z-index: 1;
+      padding: 26px 16px;
       text-align: center;
-    }
-    .legal-footer .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-    .legal-footer .footer-links a {
-      color: rgba(255,255,255,0.9);
-      text-decoration: none;
-      font-size: 0.9rem;
-    }
-    .legal-footer .footer-links a:hover {
-      color: #fff;
-      text-decoration: underline;
+      border-top: 1px solid rgba(127, 178, 255, 0.16);
     }
     .legal-footer .footer-copyright {
-      font-size: 0.85rem;
-      opacity: 0.8;
+      color: rgba(234, 241, 255, 0.62);
+      font-size: 0.82rem;
+      letter-spacing: 0.18em;
       margin: 0;
-    }
-    .legal-footer .footer-badges {
-      margin-top: 12px;
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-    }
-    .legal-footer .footer-badge {
-      background: rgba(255,255,255,0.15);
-      padding: 4px 12px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-      font-weight: 600;
     }
     @media (max-width: 768px) {
       .legal-content {
@@ -231,6 +262,7 @@
   </style>
 </head>
 <body>
+  <div class="legal-backdrop" aria-hidden="true"></div>
 
   <header class="legal-header">
     <div class="container">
