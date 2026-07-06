@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0d47a1" />
   <title>PHINS — Terms of Use</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -33,10 +35,19 @@
       padding: 0 16px;
     }
     .legal-header .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       font-size: 1.5rem;
       font-weight: 700;
       text-decoration: none;
       color: #fff;
+    }
+    .legal-header .brand img {
+      width: 36px;
+      height: 36px;
+      display: block;
+      filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
     }
     .legal-header .nav a {
       color: #fff;
@@ -231,10 +242,8 @@
 
   <header class="legal-header">
     <div class="container">
-      <a href="/" class="brand">🛡️ PHINS Insurance</a>
+      <a href="/" class="brand"><img src="/phins-logo.svg" alt="PHINS emblem"> PHINS Insurance</a>
       <nav class="nav">
-        <a href="/">Home</a>
-        <a href="/apply.html">Apply</a>
         <a href="/login.html">Login</a>
       </nav>
     </div>
@@ -617,21 +626,7 @@
   </div>
 
   <footer class="legal-footer">
-    <div class="footer-links">
-      <a href="/">Home</a>
-      <a href="/apply.html">Apply Now</a>
-      <a href="/privacy-policy.html">Privacy Policy</a>
-      <a href="/terms-of-use.html">Terms of Use</a>
-      <a href="/login.html">Customer Login</a>
-    </div>
-    <p class="footer-copyright">&copy; 2026 PHINS Insurance Company. All rights reserved.</p>
-    <div class="footer-badges">
-      <span class="footer-badge">SOC 2</span>
-      <span class="footer-badge">HIPAA</span>
-      <span class="footer-badge">PCI DSS</span>
-      <span class="footer-badge">GDPR</span>
-      <span class="footer-badge">EU AI Act</span>
-    </div>
+    <p class="footer-copyright">&copy; 2026 PHINS</p>
   </footer>
 
 </body>

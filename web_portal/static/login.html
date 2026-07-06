@@ -6,8 +6,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#0d47a1" />
+  <meta name="theme-color" content="#060d1f" />
   <title>PHINS Portal — Login</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="apple-touch-icon" href="/phins-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <style>
     body {
@@ -15,19 +20,32 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      background: #060d1f;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       position: relative;
+      overflow-x: hidden;
     }
-    body::before {
+    .auth-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+        radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+        radial-gradient(600px 400px at 50% 45%, rgba(30, 82, 170, 0.22), transparent 65%),
+        #060d1f;
+    }
+    .auth-backdrop::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-      opacity: 0.5;
-      pointer-events: none;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(127, 178, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127, 178, 255, 0.05) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
+      -webkit-mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
     }
     .login-container {
       width: 100%;
@@ -37,29 +55,36 @@
       z-index: 1;
     }
     .login-card {
-      background: #fff;
-      border-radius: 20px;
+      background: rgba(249, 251, 255, 0.97);
+      border-radius: 22px;
       padding: 52px;
-      box-shadow: 0 16px 48px rgba(13, 71, 161, 0.3);
-      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 30px 80px rgba(2, 8, 23, 0.65), 0 0 0 1px rgba(127, 178, 255, 0.22);
+      border-top: 3px solid #e3bf6f;
     }
     .login-header {
       text-align: center;
       margin-bottom: 36px;
     }
     .login-logo {
-      font-size: 3.5rem;
       margin-bottom: 16px;
     }
+    .login-logo img {
+      width: 76px;
+      height: 76px;
+      display: block;
+      margin: 0 auto;
+      filter: drop-shadow(0 8px 24px rgba(18, 63, 130, 0.35));
+    }
     .login-title {
-      color: #0d47a1;
+      font-family: 'Space Grotesk', sans-serif;
+      color: #0d2a5c;
       margin: 0 0 8px 0;
       font-size: 1.9rem;
       font-weight: 700;
-      letter-spacing: -0.5px;
+      letter-spacing: 0.06em;
     }
     .login-subtitle {
-      color: #546e7a;
+      color: #5a6b85;
       margin: 0;
       font-size: 0.95rem;
     }
@@ -70,59 +95,68 @@
       display: block;
       margin-bottom: 8px;
       font-weight: 600;
-      color: #0d47a1;
+      color: #0d2a5c;
       font-size: 0.95rem;
     }
     .form-group input {
       width: 100%;
       padding: 14px 16px;
-      border: 2px solid #e3f2fd;
+      border: 2px solid #dde7f5;
       border-radius: 10px;
       font-size: 1rem;
       transition: all 0.3s;
-      background: #fafcff;
+      background: #f8fbff;
     }
     .form-group input:focus {
       outline: none;
-      border-color: #1565c0;
-      box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.1);
+      border-color: #c9a24b;
+      box-shadow: 0 0 0 4px rgba(201, 162, 75, 0.14);
       background: #fff;
     }
     .btn-submit {
       width: 100%;
       padding: 16px;
-      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
-      color: #fff;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       border: none;
-      border-radius: 10px;
-      font-size: 1.1rem;
+      border-radius: 999px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.02rem;
       font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
       transition: all 0.3s;
-      box-shadow: 0 4px 15px rgba(21, 101, 192, 0.3);
+      box-shadow: 0 0 0 1px rgba(184, 137, 59, 0.35), 0 8px 26px rgba(227, 191, 111, 0.35);
     }
     .btn-submit:hover:not(:disabled) {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(21, 101, 192, 0.4);
+      box-shadow: 0 0 0 1px rgba(184, 137, 59, 0.55), 0 12px 34px rgba(227, 191, 111, 0.5);
     }
     .btn-submit:disabled {
-      background: #9e9e9e;
+      background: #9aa7bd;
+      color: #f2f5fa;
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
     }
-    .back-link {
-      display: block;
+    .aux-links {
+      margin-top: 20px;
       text-align: center;
-      margin-top: 24px;
-      color: #1565c0;
-      text-decoration: none;
-      font-weight: 600;
-      transition: all 0.3s;
+      font-size: 0.9rem;
     }
-    .back-link:hover {
-      color: #0d47a1;
+    .aux-links a {
+      color: #14509e;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .aux-links a:hover {
+      color: #0d2a5c;
+      text-decoration: underline;
+    }
+    .aux-links .sep {
+      margin: 0 10px;
+      color: #9aa7bd;
     }
     #login-msg {
       margin-top: 16px;
@@ -132,8 +166,8 @@
     
     /* CAPTCHA Styles */
     .captcha-box {
-      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-      border: 2px solid #90caf9;
+      background: #f0f5fd;
+      border: 1.5px solid #d7e4f7;
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 20px;
@@ -144,15 +178,18 @@
       align-items: center;
     }
     .captcha-box label {
-      color: #1565c0;
+      color: #0d2a5c;
       font-size: 0.9rem;
+      font-weight: 600;
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .captcha-box label::before {
-      content: '🛡️';
-      font-size: 1.2rem;
+      content: '';
+      width: 20px;
+      height: 20px;
+      background: url('/phins-logo.svg') center / contain no-repeat;
     }
     .captcha-refresh {
       display: inline-flex;
@@ -161,22 +198,23 @@
       width: 32px;
       height: 32px;
       border-radius: 50%;
-      background: rgba(21, 101, 192, 0.1);
-      color: #1565c0;
+      background: rgba(20, 80, 158, 0.1);
+      color: #14509e;
       font-size: 1.2rem;
       text-decoration: none;
       transition: all 0.2s;
       cursor: pointer;
     }
     .captcha-refresh:hover {
-      background: rgba(21, 101, 192, 0.2);
+      background: rgba(20, 80, 158, 0.2);
       transform: rotate(90deg);
     }
     .captcha-question {
       font-size: 1.05rem;
       font-weight: 600;
-      color: #0d47a1;
+      color: #0d2a5c;
       background: #fff;
+      border: 1px solid #e3ecf9;
       padding: 12px;
       border-radius: 8px;
       margin: 10px 0;
@@ -191,22 +229,23 @@
     .captcha-input {
       width: 100%;
       padding: 12px;
-      border: 2px solid #e3f2fd;
+      border: 2px solid #dde7f5;
       border-radius: 8px;
       font-size: 1rem;
       text-align: center;
       letter-spacing: 2px;
       font-weight: 600;
+      background: #fff;
     }
     .captcha-input:focus {
-      border-color: #1565c0;
+      border-color: #c9a24b;
       outline: none;
     }
     
     /* OTP Verification Styles */
     .otp-box {
-      background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-      border: 2px solid #ffb74d;
+      background: #fdf8ec;
+      border: 1.5px solid #ecd9a8;
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 20px;
@@ -226,12 +265,12 @@
     }
     .otp-header h3 {
       margin: 0;
-      color: #e65100;
+      color: #8a6d2e;
       font-size: 1.1rem;
     }
     .otp-info {
       font-size: 0.9rem;
-      color: #bf360c;
+      color: #7a601f;
       margin-bottom: 15px;
     }
     .otp-input-group {
@@ -243,7 +282,7 @@
     .otp-digit {
       width: 45px;
       height: 55px;
-      border: 2px solid #ffb74d;
+      border: 2px solid #e3cf96;
       border-radius: 8px;
       font-size: 1.5rem;
       font-weight: 700;
@@ -251,9 +290,9 @@
       background: #fff;
     }
     .otp-digit:focus {
-      border-color: #e65100;
+      border-color: #b8893b;
       outline: none;
-      box-shadow: 0 0 0 3px rgba(230, 81, 0, 0.2);
+      box-shadow: 0 0 0 3px rgba(184, 137, 59, 0.2);
     }
     .otp-actions {
       display: flex;
@@ -262,7 +301,7 @@
       margin-top: 15px;
     }
     .otp-resend {
-      color: #e65100;
+      color: #8a6d2e;
       text-decoration: none;
       font-size: 0.9rem;
       cursor: pointer;
@@ -276,7 +315,7 @@
       align-items: center;
       gap: 8px;
       font-size: 0.85rem;
-      color: #666;
+      color: #5a6b85;
     }
     .trust-device input {
       width: auto;
@@ -293,11 +332,11 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: #e0e0e0;
+      background: #dbe4f2;
       transition: all 0.3s;
     }
     .step.active {
-      background: #1565c0;
+      background: #c9a24b;
       width: 24px;
       border-radius: 5px;
     }
@@ -314,8 +353,9 @@
         padding: 28px 20px;
         border-radius: 16px;
       }
-      .login-logo {
-        font-size: 2.5rem;
+      .login-logo img {
+        width: 60px;
+        height: 60px;
       }
       .login-title {
         font-size: 1.5rem;
@@ -344,10 +384,11 @@
   </style>
 </head>
 <body>
+  <div class="auth-backdrop" aria-hidden="true"></div>
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-logo"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:72px;height:72px;display:block;margin:0 auto;"></div>
+        <div class="login-logo"><a href="/" title="PHINS"><img src="/phins-logo.svg" alt="PHINS emblem"></a></div>
         <h1 class="login-title">PHINS Portal</h1>
         <p class="login-subtitle">Sign in to access your account</p>
       </div>
@@ -415,17 +456,10 @@
       
       <div id="login-msg"></div>
 
-      <div style="margin-top: 20px; text-align: center;">
-        <a href="/register.html" style="color: var(--brand); text-decoration: none; font-size: 0.9rem;">Don't have an account? Register</a>
-        <span style="margin: 0 10px; color: var(--muted);">•</span>
-        <a href="/forgot-password.html" style="color: var(--brand); text-decoration: none; font-size: 0.9rem;">Forgot Password?</a>
-      </div>
-
-      <a href="/" class="back-link">← Back to Home</a>
-      <div style="margin-top: 16px; text-align: center; font-size: 0.8rem; color: #90a4ae;">
-        <a href="/privacy-policy.html" style="color: #90a4ae; text-decoration: none;">Privacy Policy</a>
-        <span style="margin: 0 6px;">&middot;</span>
-        <a href="/terms-of-use.html" style="color: #90a4ae; text-decoration: none;">Terms of Use</a>
+      <div class="aux-links">
+        <a href="/register.html">Don't have an account? Register</a>
+        <span class="sep">•</span>
+        <a href="/forgot-password.html">Forgot Password?</a>
       </div>
     </div>
   </div>
@@ -447,16 +481,18 @@
         var r = await fetch('/api/design/settings');
         if (!r.ok) return;
         var s = await r.json();
+        var backdrop = document.querySelector('.auth-backdrop');
         var p = normalizeHexColor(s.primary_color, '#0d47a1');
-        if (p && p !== '#0d47a1') {
-          document.body.style.background = 'linear-gradient(135deg, ' + p + ' 0%, ' + p + 'cc 50%, ' + p + 'bb 100%)';
-          var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', p);
+        if (p && p !== '#0d47a1' && backdrop) {
+          backdrop.style.background =
+            'radial-gradient(1000px 600px at 80% -10%, ' + p + '8c, transparent 60%),' +
+            'radial-gradient(800px 520px at 8% 110%, ' + p + '59, transparent 60%),' +
+            '#060d1f';
         }
-        if (s.hero_background_url) {
-          document.body.style.backgroundImage = 'linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.65)), url(' + JSON.stringify(s.hero_background_url) + ')';
-          document.body.style.backgroundSize = 'cover';
-          document.body.style.backgroundPosition = 'center';
+        if (s.hero_background_url && backdrop) {
+          backdrop.style.backgroundImage = 'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.86)), url(' + JSON.stringify(s.hero_background_url) + ')';
+          backdrop.style.backgroundSize = 'cover';
+          backdrop.style.backgroundPosition = 'center';
         }
       } catch (e) { /* branding optional */ }
     })();

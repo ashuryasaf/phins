@@ -262,15 +262,17 @@ class TestLegalLinksIntegration:
         assert '/privacy-policy.html' in body
         assert '/terms-of-use.html' in body
 
-    def test_login_page_has_legal_links(self):
+    def test_login_page_is_minimal(self):
+        # The redesigned login page intentionally carries no footer link
+        # clutter; legal links remain on apply/dashboard pages.
         body, _ = _get(f"{BASE_URL}/login.html")
-        assert '/privacy-policy.html' in body
-        assert '/terms-of-use.html' in body
+        assert '/privacy-policy.html' not in body
+        assert '/terms-of-use.html' not in body
 
-    def test_register_page_has_legal_links(self):
+    def test_register_page_is_minimal(self):
         body, _ = _get(f"{BASE_URL}/register.html")
-        assert '/privacy-policy.html' in body
-        assert '/terms-of-use.html' in body
+        assert '/privacy-policy.html' not in body
+        assert '/terms-of-use.html' not in body
 
     def test_dashboard_has_legal_links(self):
         body, _ = _get(f"{BASE_URL}/dashboard.html")
