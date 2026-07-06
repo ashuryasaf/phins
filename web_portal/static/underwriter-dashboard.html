@@ -1001,7 +1001,20 @@
                     </html>
                 `);
                 printWindow.document.close();
-                setTimeout(() => printWindow.print(), 500);
+                let printed = false;
+                const doPrint = () => {
+                    if (printed) return;
+                    printed = true;
+                    printWindow.print();
+                };
+                const logo = printWindow.document.querySelector('.logo img');
+                if (logo && !logo.complete) {
+                    logo.addEventListener('load', doPrint);
+                    logo.addEventListener('error', doPrint);
+                    setTimeout(doPrint, 3000);
+                } else {
+                    setTimeout(doPrint, 500);
+                }
                 showToast('PDF export ready', 'success');
             }
         }
