@@ -182,6 +182,17 @@
       a { text-decoration: none; color: inherit; }
       .wrap { max-width: none; padding: 0; }
 
+      /* Gradient text (background-clip:text + transparent fill) is invisible in
+         most PDF renderers. Override with a solid opaque light-blue so the title
+         remains legible and visually distinct against the dark hero background. */
+      .hero h1 .grad {
+        background: none !important;
+        -webkit-background-clip: unset !important;
+        background-clip: unset !important;
+        -webkit-text-fill-color: #90caf9 !important;
+        color: #90caf9 !important;
+      }
+
       .hero, .panel, .card, .hl-box, .note, .integrity, .closing,
       .hero-stat, .hero-badge, .sec-label, .tag, table.tbl th {
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
