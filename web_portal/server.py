@@ -13053,7 +13053,12 @@ For claims or questions, please contact:
         _ensure_test_port_state(server_port)
 
         # ── Firewall check (runs before legacy IP block) ──
-        if _firewall_enabled:
+        # Trusted internal/proxy IPs (Railway/Render upstreams, localhost) are
+        # exempt — mirroring block_ip()/is_ip_blocked()/register_malicious_attempt().
+        # Behind a reverse proxy every request shares one upstream IP, so without
+        # this guard a burst of normal traffic would auto-block that shared IP and
+        # deny the landing page (and every other page) for all users.
+        if _firewall_enabled and not is_trusted_ip(client_ip):
             _fw_verdict = firewall_check_request(
                 client_ip,
                 path=self.path,
@@ -27647,7 +27652,8 @@ For claims or questions, please contact:
         _ensure_test_port_state(server_port)
 
         # ── Firewall check ──
-        if _firewall_enabled:
+        # Trusted internal/proxy IPs are exempt (see do_GET for rationale).
+        if _firewall_enabled and not is_trusted_ip(client_ip):
             _fw_verdict = firewall_check_request(
                 client_ip,
                 path=self.path,
@@ -48675,7 +48681,8 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
 
-        if _firewall_enabled:
+        # Trusted internal/proxy IPs are exempt (see do_GET for rationale).
+        if _firewall_enabled and not is_trusted_ip(client_ip):
             _fw_verdict = firewall_check_request(
                 client_ip,
                 path=path,
@@ -48768,7 +48775,8 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
 
-        if _firewall_enabled:
+        # Trusted internal/proxy IPs are exempt (see do_GET for rationale).
+        if _firewall_enabled and not is_trusted_ip(client_ip):
             _fw_verdict = firewall_check_request(
                 client_ip,
                 path=path,
