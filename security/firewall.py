@@ -204,8 +204,20 @@ def check_request(
     if _is_connection_flood(client_ip, now):
         signals.append("connection_flood")
 
-    # Record any signals and check cumulative score
+    # Record any signals and check cumulative score.
+    #
+    # ``connection_flood`` is intentionally excluded from the persistent
+    # threat-score accumulator: a single legitimate page load pulls many
+    # sub-resources (HTML + CSS + JS + images + favicon), so an honest
+    # browser — or, behind a reverse proxy, the aggregate of *all* users
+    # sharing one upstream IP — can briefly burst above the connection
+    # limit.  Feeding those bursts into the score would escalate ordinary
+    # traffic into a multi-hour auto-block.  Sustained request volume is
+    # already governed by the request rate-limiter (HTTP 429); flooding is
+    # surfaced here purely as an observability signal.
     for sig in signals:
+        if sig == "connection_flood":
+            continue
         record_threat_signal(client_ip, sig)
 
     score = _current_score(client_ip, now)

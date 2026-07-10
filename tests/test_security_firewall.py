@@ -272,6 +272,26 @@ class TestFirewall:
         finally:
             fw.BURST_MAX_CONNECTIONS = old
 
+    def test_connection_flood_does_not_accumulate_threat_score(self):
+        """Regression: a burst of ordinary requests (e.g. a single page load
+        pulling many static assets, or all users sharing one upstream proxy IP)
+        is surfaced as a signal but must NOT feed the persistent threat score,
+        otherwise normal browsing escalates into a multi-hour auto-block and the
+        landing page returns ``Request blocked by firewall`` for everyone."""
+        from security.firewall import check_request, get_threat_score
+        import security.firewall as fw
+        old = fw.BURST_MAX_CONNECTIONS
+        fw.BURST_MAX_CONNECTIONS = 3
+        try:
+            verdict = None
+            for _ in range(50):
+                verdict = check_request("10.0.0.123", path="/", method="GET")
+                assert verdict.allowed is True
+            assert "connection_flood" in verdict.signals
+            assert get_threat_score("10.0.0.123") == 0
+        finally:
+            fw.BURST_MAX_CONNECTIONS = old
+
     def test_firewall_status_returns_data(self):
         from security.firewall import get_firewall_status, add_to_blocklist
         add_to_blocklist("1.2.3.4")
@@ -285,6 +305,48 @@ class TestFirewall:
         reset_firewall()
         status = get_firewall_status()
         assert "5.5.5.5" not in status["blocklist_ips"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SERVER FIREWALL GUARD — trusted-IP exemption
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestServerTrustedIPExemption:
+    """The server must exempt trusted internal/proxy IPs from the firewall,
+    matching block_ip()/is_ip_blocked(). Behind a reverse proxy every request
+    shares one upstream IP, so without this the shared IP gets auto-blocked and
+    the whole site returns ``Request blocked by firewall``."""
+
+    def test_trusted_proxy_ranges_recognised(self, monkeypatch):
+        import web_portal.server as portal
+        # is_trusted_ip() is deliberately disabled under pytest; assert the
+        # production behaviour the firewall guard relies on.
+        monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
+        for ip in ("10.0.0.5", "100.64.1.1", "172.16.9.9", "192.168.1.2", "127.0.0.1"):
+            assert portal.is_trusted_ip(ip) is True, ip
+        assert portal.is_trusted_ip("203.0.113.7") is False
+
+    def test_get_handler_skips_firewall_for_trusted_ip(self, monkeypatch):
+        """do_GET must not invoke the firewall for a trusted IP."""
+        import web_portal.server as portal
+
+        monkeypatch.setattr(portal, "PHINS_TEST_MODE", False)
+        monkeypatch.setattr(portal, "_firewall_enabled", True)
+
+        calls: List[str] = []
+
+        def _boom(client_ip, **kwargs):  # pragma: no cover - must not run
+            calls.append(client_ip)
+            raise AssertionError("firewall must be skipped for trusted IPs")
+
+        monkeypatch.setattr(portal, "firewall_check_request", _boom)
+
+        # A trusted upstream IP is exempt regardless of firewall verdict.
+        assert portal.is_trusted_ip("10.0.0.42") is True
+        # Guard mirrors the inline check in do_GET/do_POST/do_PUT/do_DELETE.
+        should_check = portal._firewall_enabled and not portal.is_trusted_ip("10.0.0.42")
+        assert should_check is False
+        assert calls == []
 
 
 # ═══════════════════════════════════════════════════════════════════════════
