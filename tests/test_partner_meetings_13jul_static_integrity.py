@@ -77,8 +77,10 @@ def test_pitch_dashboard_partner_meetings_adjustable_assumptions():
     # Meeting B adjustable inputs (agent-force + structure economics)
     for iid in ("pmb-structure", "pmb-prod", "pmb-comm", "pmb-jvshare"):
         assert f'id="{iid}"' in pd, f"missing Meeting B input {iid}"
-    # persisted locally so admins can adjust without redeploying
-    assert "phins.il.partner13jul.cfg.v1" in pd
+    # persisted locally so admins can adjust without redeploying;
+    # shared with the linked full plans via the two plan-aligned keys
+    assert "phins.partner.aitech.cfg.v1" in pd
+    assert "phins.partner.insurer.cfg.v1" in pd
 
 
 def test_pitch_dashboard_partner_meetings_simulation_versions():
