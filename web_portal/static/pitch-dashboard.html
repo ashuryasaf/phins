@@ -7088,8 +7088,8 @@
       var AITECH_STORE_ID = "phins.partner.aitech.cfg.v1";   // /internal/phins-ai-tech-partner-business-plan.html
       var INSURER_STORE_ID = "phins.partner.insurer.cfg.v1"; // /internal/phins-insurer-mga-business-plan.html
       // Dashboard field -> canonical plan field (Track A = AI-tech, Track B = insurer/MGA).
-      var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion", aPremium: "premium" };
-      var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion", bPremium: "premium", bTakePct: "takePct", bChurnPct: "churnPct" };
+      var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion", aSimProvenance: "simProvenance", aPremium: "premium" };
+      var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion", bSimProvenance: "simProvenance", bPremium: "premium", bTakePct: "takePct", bChurnPct: "churnPct" };
       // Canonical IL base — must mirror the investor section + /api/investor/valuation-sim scope.
       var BASE = {
         eoyPolicies: [4000, 12000, 28000],   // EoY 2027/28/29 (avg in force 2,000/8,000/20,000)
@@ -7105,8 +7105,8 @@
 
       var cfg = {
         usdIls: null, fxSource: "loading",
-        aInvest: 6000000, aPre: 24000000, aMarkets: 2, aLicense: 1500000, aRoyalty: 3, aScale: 60, aSimVersion: null, aPremium: BASE.premium,
-        bStructure: "jv", bProd: 2, bComm: 10, bJvShare: 50, bPre: 24000000, bSimVersion: null, bPremium: BASE.premium, bTakePct: BASE.takeRate * 100, bChurnPct: BASE.churn * 100
+        aInvest: 6000000, aPre: 24000000, aMarkets: 2, aLicense: 1500000, aRoyalty: 3, aScale: 60, aSimVersion: null, aSimProvenance: null, aPremium: BASE.premium,
+        bStructure: "jv", bProd: 2, bComm: 10, bJvShare: 50, bPre: 24000000, bSimVersion: null, bSimProvenance: null, bPremium: BASE.premium, bTakePct: BASE.takeRate * 100, bChurnPct: BASE.churn * 100
       };
       function readStore(id) {
         try { var s = JSON.parse(localStorage.getItem(id) || "null"); return (s && typeof s === "object") ? s : {}; }
@@ -7214,7 +7214,7 @@
         });
       }
       bind("pma-invest", "aInvest");
-      bind("pma-pre", "aPre", function () { cfg.aSimVersion = null; });
+      bind("pma-pre", "aPre", function () { cfg.aSimVersion = null; cfg.aSimProvenance = null; });
       bind("pma-markets", "aMarkets");
       bind("pma-license", "aLicense");
       bind("pma-royalty", "aRoyalty");
@@ -7243,12 +7243,13 @@
           var res = $(track === "a" ? "pma-sim-result" : "pmb-sim-result");
           if (res) res.textContent = "Running actuarial appraisal simulation " + ver + "…";
           fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-            if (!d || !d.pre_money) { if (res) res.textContent = "Simulation unavailable — keeping current valuation."; return; }
+            if (!d || d.error || !d.pre_money) { if (res) res.textContent = "Simulation unavailable — keeping current valuation."; return; }
+            var prov = { version: ver, percentile: pct, seed: d.seed, runs: d.runs, content_hash: d.content_hash, distribution: d.distribution, central: d.central };
             if (track === "a") {
-              cfg.aPre = d.pre_money; cfg.aSimVersion = ver;
+              cfg.aPre = d.pre_money; cfg.aSimVersion = ver; cfg.aSimProvenance = prov;
               var inA = $("pma-pre"); if (inA) inA.value = cfg.aPre;
             } else {
-              cfg.bPre = d.pre_money; cfg.bSimVersion = ver;
+              cfg.bPre = d.pre_money; cfg.bSimVersion = ver; cfg.bSimProvenance = prov;
             }
             if (res) {
               var dist = d.distribution || {};

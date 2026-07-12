@@ -512,7 +512,7 @@ strong { color: var(--navy); }
       var res = $("sim-result");
       if (res) res.textContent = "Running actuarial appraisal simulation " + ver + "…";
       fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d || !d.pre_money) { if (res) res.textContent = "Simulation unavailable — keeping current pre-money."; return; }
+        if (!d || d.error || !d.pre_money) { if (res) res.textContent = "Simulation unavailable — keeping current pre-money."; return; }
         cfg.preMoney = d.pre_money;
         cfg.simVersion = ver;
         cfg.simProvenance = { version: ver, percentile: pct, seed: d.seed, runs: d.runs, content_hash: d.content_hash, distribution: d.distribution, central: d.central };
