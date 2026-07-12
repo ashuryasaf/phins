@@ -487,8 +487,8 @@ strong { color: var(--navy); }
   bind("in-license", "license");
   bind("in-royalty", "royaltyPct");
   bind("in-scale", "scalePct");
-  bind("in-premium", "premium");
-  bind("in-take", "takePct");
+  bind("in-premium", "premium", function () { cfg.simVersion = null; cfg.simProvenance = null; });
+  bind("in-take", "takePct", function () { cfg.simVersion = null; cfg.simProvenance = null; });
 
   document.querySelectorAll(".cur-btn").forEach(function (b) {
     b.addEventListener("click", function () {

@@ -506,9 +506,9 @@ strong { color: var(--navy); }
   bind("in-prod", "prod");
   bind("in-comm", "commPct");
   bind("in-jvshare", "jvSharePct");
-  bind("in-premium", "premium");
-  bind("in-take", "takePct");
-  bind("in-churn", "churnPct");
+  bind("in-premium", "premium", function () { cfg.simVersion = null; cfg.simProvenance = null; });
+  bind("in-take", "takePct", function () { cfg.simVersion = null; cfg.simProvenance = null; });
+  bind("in-churn", "churnPct", function () { cfg.simVersion = null; cfg.simProvenance = null; });
   bind("in-jvpre", "jvPre", function () { cfg.simVersion = null; cfg.simProvenance = null; });
 
   document.querySelectorAll(".cur-btn").forEach(function (b) {
