@@ -7088,8 +7088,8 @@
       var AITECH_STORE_ID = "phins.partner.aitech.cfg.v1";   // /internal/phins-ai-tech-partner-business-plan.html
       var INSURER_STORE_ID = "phins.partner.insurer.cfg.v1"; // /internal/phins-insurer-mga-business-plan.html
       // Dashboard field -> canonical plan field (Track A = AI-tech, Track B = insurer/MGA).
-      var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion" };
-      var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion" };
+      var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion", aPremium: "premium" };
+      var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion", bPremium: "premium", bTakePct: "takePct", bChurnPct: "churnPct" };
       // Canonical IL base — must mirror the investor section + /api/investor/valuation-sim scope.
       var BASE = {
         eoyPolicies: [4000, 12000, 28000],   // EoY 2027/28/29 (avg in force 2,000/8,000/20,000)
@@ -7105,8 +7105,8 @@
 
       var cfg = {
         usdIls: null, fxSource: "loading",
-        aInvest: 6000000, aPre: 24000000, aMarkets: 2, aLicense: 1500000, aRoyalty: 3, aScale: 60, aSimVersion: null,
-        bStructure: "jv", bProd: 2, bComm: 10, bJvShare: 50, bPre: 24000000, bSimVersion: null
+        aInvest: 6000000, aPre: 24000000, aMarkets: 2, aLicense: 1500000, aRoyalty: 3, aScale: 60, aSimVersion: null, aPremium: BASE.premium,
+        bStructure: "jv", bProd: 2, bComm: 10, bJvShare: 50, bPre: 24000000, bSimVersion: null, bPremium: BASE.premium, bTakePct: BASE.takeRate * 100, bChurnPct: BASE.churn * 100
       };
       function readStore(id) {
         try { var s = JSON.parse(localStorage.getItem(id) || "null"); return (s && typeof s === "object") ? s : {}; }
@@ -7118,7 +7118,7 @@
         Object.keys(B_MAP).forEach(function (k) { var v = b[B_MAP[k]]; if (v !== undefined && v !== null) cfg[k] = v; });
       })();
 
-      // Merge back into each canonical store so plan-only fields (premium, take, currency…) survive.
+      // Merge back into each canonical store so plan-only fields (currency, labels…) survive.
       function persist() {
         try {
           var a = readStore(AITECH_STORE_ID);
@@ -7147,7 +7147,7 @@
 
       // ---- Track A derived deal (tech partner: stake + license/royalty revenue) ----
       function modelA() {
-        var gwp29 = ((BASE.eoyPolicies[1] + BASE.eoyPolicies[2]) / 2) * BASE.premium; // avg in-force 2029 × premium = ₪72.0M
+        var gwp29 = ((BASE.eoyPolicies[1] + BASE.eoyPolicies[2]) / 2) * cfg.aPremium; // avg in-force 2029 × premium = ₪72.0M
         var post = cfg.aPre + cfg.aInvest;
         var stake = post > 0 ? cfg.aInvest / post : 0;
         var perMarketGwp = gwp29 * (cfg.aScale / 100);
@@ -7161,11 +7161,11 @@
         var eoy = BASE.eoyPolicies, agents = [], margin = [], phins = [];
         for (var i = 0; i < eoy.length; i++) {
           var prev = i === 0 ? 0 : eoy[i - 1];
-          var newPol = eoy[i] - prev * (1 - BASE.churn);
+          var newPol = eoy[i] - prev * (1 - cfg.bChurnPct / 100);
           agents.push(newPol / (Math.max(cfg.bProd, 0.01) * 12));
           var avg = (prev + eoy[i]) / 2;
-          var gwp = avg * BASE.premium;
-          var m = gwp * BASE.takeRate - gwp * (cfg.bComm / 100);
+          var gwp = avg * cfg.bPremium;
+          var m = gwp * (cfg.bTakePct / 100) - gwp * (cfg.bComm / 100);
           margin.push(m);
           phins.push(cfg.bStructure === "jv" ? m * (cfg.bJvShare / 100) : m);
         }
