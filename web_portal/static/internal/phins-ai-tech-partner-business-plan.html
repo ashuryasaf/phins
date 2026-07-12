@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>PHINS — Technology Partner Business Plan (AI Public Company · 13 July 2026)</title>
+<!--
+  This is a counterparty-facing print document.
+  Marker: ui-clarity.js — keep this token in the file so the server-side
+  injector skips the shared assistant widget (no floating admin mic/branding
+  may appear on this page).
+-->
+<style>
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+  @bottom-left { content: "PHINS — Technology Partner Plan — Confidential"; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+}
+:root {
+  --navy: #0b2545; --navy-2: #13315c; --ink: #1a1f2c;
+  --green: #15803d; --green-soft: #f1faf4;
+  --gold: #b98a00; --line: #d4dae6; --soft: #f6f8fc;
+  --accent: #4338ca; --accent-soft: #eef2ff;
+  --purple: #6a1b9a; --purple-soft: #f3edff;
+}
+html { font-size: 10.5pt; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  line-height: 1.5;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #fff;
+}
+h1 { font-size: 22pt; color: var(--navy); margin: 0; }
+h2 { font-size: 15pt; color: var(--navy); margin-top: 30px; border-bottom: 2px solid var(--line); padding-bottom: 4px; page-break-after: avoid; }
+h2 .secno { color: var(--gold); margin-right: 6px; }
+h3 { font-size: 12.5pt; color: var(--navy-2); margin-top: 18px; page-break-after: avoid; }
+p { margin: 8px 0; text-align: justify; }
+ul, ol { margin: 6px 0 10px 22px; padding: 0; }
+li { margin: 3px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: var(--navy); color: #fff; font-weight: 600; }
+tr:nth-child(even) td { background: var(--soft); }
+td.num, th.num { text-align: right; }
+strong { color: var(--navy); }
+.confidential { text-align: center; font-size: 9pt; color: #8a3324; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.hero {
+  border-radius: 14px; overflow: hidden; margin: 10px 0 20px 0;
+  background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 55%, #6366f1 100%);
+  color: #fff; padding: 26px 28px; page-break-inside: avoid;
+  box-shadow: 0 14px 36px rgba(67,56,202,0.25);
+}
+.hero h1 { color: #fff; font-size: 24pt; letter-spacing: 0.01em; }
+.hero .tagline { font-size: 11pt; opacity: 0.92; margin: 6px 0 0 0; max-width: 660px; text-align: left; }
+.hero .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.hero .badge { display: inline-block; padding: 3px 11px; border-radius: 999px; background: rgba(255,255,255,0.16); font-size: 8pt; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-top: 18px; }
+.kpi { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.22); border-radius: 10px; padding: 10px 12px; }
+.kpi .v { font-size: 13pt; font-weight: 800; }
+.kpi .l { font-size: 7.6pt; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+.cover { border: 1px solid var(--line); background: var(--soft); padding: 14px 18px; border-radius: 8px; margin: 14px 0 22px 0; font-size: 10pt; }
+.cover strong { color: var(--navy); }
+.callout { border-left: 3px solid var(--green); background: var(--green-soft); padding: 8px 14px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+.callout.tech { border-left-color: var(--accent); background: var(--accent-soft); }
+.callout.sim { border-left-color: var(--purple); background: var(--purple-soft); }
+.pitchbox { border: 2px solid var(--accent); border-radius: 12px; padding: 14px 18px; margin: 14px 0; background: var(--accent-soft); page-break-inside: avoid; }
+.pitchbox .pb-label { font-size: 8pt; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.pitchbox p { font-size: 10.5pt; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.controls .cg label { display: block; font-size: 7.6pt; font-weight: 700; color: var(--navy-2); margin-bottom: 3px; }
+.controls .cg input, .controls .cg select { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-family: inherit; font-size: 9.5pt; }
+.sim-btn { font-family: inherit; font-size: 9pt; font-weight: 700; border: 1px solid var(--purple); background: #fff; color: var(--purple); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.sim-btn.on { background: var(--purple); color: #fff; }
+.sync-pill { display: inline-block; font-size: 7.6pt; font-weight: 700; color: var(--green); background: #dcfce7; border-radius: 999px; padding: 2px 9px; vertical-align: middle; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px 0; align-items: center; }
+.toolbar a, .toolbar button { font-family: inherit; font-size: 9.5pt; border: 1px solid var(--navy); background: var(--navy); color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; text-decoration: none; }
+.toolbar a.secondary { background: #fff; color: var(--navy); }
+.toolbar .cur-btn { background: #fff; color: var(--navy); padding: 6px 10px; }
+.toolbar .cur-btn.on { background: var(--navy); color: #fff; }
+.toolbar .fxnote { font-size: 7.8pt; color: #5a6b86; }
+.fine { font-size: 8.5pt; color: #5a6b86; }
+.integrity { border: 1px solid #dbe4f0; background: #f0f4fa; border-radius: 10px; padding: 12px 14px; font-size: 8.5pt; color: #40506b; margin-top: 24px; }
+@media print {
+  .toolbar { display: none; }
+  body { padding: 0; }
+  .hero { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  table, .callout, .cover, .kpi, .pitchbox { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <a class="secondary" href="/pitch-dashboard.html#partner-meetings-13jul">← Back to Partner Meetings (13 Jul)</a>
+  <span style="flex:1;"></span>
+  <span style="font-size:7.8pt;color:#5a6b86;">Display currency</span>
+  <button type="button" class="cur-btn" data-cur="ILS">₪ ILS</button>
+  <button type="button" class="cur-btn" data-cur="USD">$ USD</button>
+  <button type="button" class="cur-btn" data-cur="EUR">€ EUR</button>
+  <span class="fxnote" id="fx-note">live FX loading…</span>
+</div>
+
+<div class="confidential">Internal · Confidential · Prepared for the 13 July 2026 technology-partner meeting · Do not distribute</div>
+
+<div class="hero">
+  <div class="badges">
+    <span class="badge">🔒 Confidential</span>
+    <span class="badge">🗓️ 13 July 2026 · 11:00</span>
+    <span class="badge">🤖 Technology co-development</span>
+    <span class="badge">🌍 Markets opening</span>
+    <span class="badge">adjustable · live FX · sim versions</span>
+  </div>
+  <h1>PHINS × AI Technology Partner — Business Plan</h1>
+  <p class="tagline">
+    Strategic plan for the meeting with the <strong>Chairman of an AI technology development public company</strong>:
+    invest in PHINS and/or co-develop the PHINS insurance technology stack, opening new markets on a shared,
+    integrity-guaranteed platform. Tech orientation first; the insurance economics reconcile to the same
+    canonical Israel model used across the IL pitch dashboard.
+  </p>
+  <div class="kpis">
+    <div class="kpi"><div class="v">64+</div><div class="l">Deployed platform modules</div></div>
+    <div class="kpi"><div class="v" id="k-round">₪6.0M</div><div class="l">Seed / build round</div></div>
+    <div class="kpi"><div class="v" id="k-pre">₪24.0M</div><div class="l">Pre-money (adjustable)</div></div>
+    <div class="kpi"><div class="v" id="k-gwp29">₪72.0M</div><div class="l">2029 GWP (IL model)</div></div>
+    <div class="kpi"><div class="v" id="k-techrev">—</div><div class="l">Partner-market tech revenue / yr</div></div>
+  </div>
+</div>
+
+<div class="cover">
+  <strong>Meeting:</strong> 13 July 2026, 11:00 · Chairman, AI technology development public company (name to be confirmed under NDA)<br>
+  <strong>Objective:</strong> strategic investment in PHINS and/or a technology co-development &amp; market-opening partnership<br>
+  <strong>Prepared by:</strong> PHINS founding team · <strong>Basis:</strong> canonical IL business-plan assumptions (₪3,600 average premium · 25% take rate · sales from 1 Jan 2027)<br>
+  <strong>Valuation basis:</strong> adjustable — manual, or derived from the deterministic actuarial appraisal simulation (versions A·P25 / A·P50 / A·P75 below)
+</div>
+
+<!-- ELEVATOR PITCH -->
+<div class="pitchbox" id="elevator-pitch">
+  <div class="pb-label">⚡ Elevator pitch — 30 seconds</div>
+  <p>
+    PHINS is an <strong>AI-operated insurance operating system</strong>: 64+ deployed modules covering policy,
+    underwriting, billing, claims, reinsurance, payments, and an agent ecosystem — all running on an
+    append-only, hash-chained ledger where <strong>AI recommends but never posts</strong>. We are opening the
+    disability and long-term-care protection market — Israel first, then OECD markets on the same codebase.
+    For a public AI-technology company, PHINS is a ready-made regulated-industry deployment surface:
+    <strong>invest at seed terms, co-develop the stack, and take it to new markets together</strong> under a
+    licensing and royalty frame that pays your engineering twice — once in equity, once in recurring
+    technology revenue.
+  </p>
+</div>
+
+<!-- EXECUTIVE PITCH -->
+<div class="pitchbox" id="executive-pitch" style="border-color: var(--navy); background: var(--soft);">
+  <div class="pb-label" style="color: var(--navy);">🎯 Executive pitch — 3 minutes</div>
+  <p><strong>What PHINS is.</strong> A production insurance platform — not a deck. Policy admin, AI underwriting,
+  billing, claims adjudication, reinsurance structuring, wallets and settlement, agent commissions, and BI —
+  live today, with every balance reproducible from append-only, hash-chained state.</p>
+  <p><strong>Why an AI public company should care.</strong> Insurance is the largest regulated data industry still
+  running on legacy cores. PHINS gives your AI capability a governed place to operate: the platform's integrity
+  contract (AI recommends, the ledger decides) is precisely the architecture regulators are converging on.
+  Co-developing PHINS puts your models inside underwriting, claims triage, and actuarial simulation — with an
+  audit trail your compliance team can sign.</p>
+  <p><strong>The market opening.</strong> Israel is the proof market (five-million-plus private LTC policyholders,
+  home-care-first culture). The same codebase then opens OECD markets — each new market is a configuration and a
+  filing, not a rebuild. Your public-market footprint and capital accelerate that sequence.</p>
+  <p><strong>The ask.</strong> Two compatible tracks: (1) a strategic investment on the seed terms
+  (<span class="m-round">₪6.0M</span> round at <span class="m-pre">₪24.0M</span> pre-money — or a pre-money derived
+  live from the actuarial appraisal simulation below), and (2) a technology co-development &amp; market-opening
+  agreement: joint roadmap, platform licensing per market, and a royalty on partner-market premium. Both tracks
+  are priced on the adjustable assumptions in §7 so every figure in the room reconciles.</p>
+</div>
+
+<h2><span class="secno">1.</span> Company &amp; founder</h2>
+<p>
+  PHINS (Personal Health Insurance &amp; Savings) was founded by <strong>Asaf Ashury, Adv. &amp; Insurance Broker</strong>,
+  who has developed the platform end-to-end: an AI-enhanced insurance stack purpose-built for disability and
+  long-term-care severity products. The company operates a digital MGA / platform model — it earns a take rate
+  on premium while underwriting risk sits with licensed carriers and reinsurers.
+</p>
+<ul>
+  <li><strong>Built:</strong> 64+ deployed service modules — policy, underwriting, billing, claims, reinsurance, wallet/settlement, agent ecosystem, BI/actuarial.</li>
+  <li><strong>Validated:</strong> an IAA-recognised executive actuary reviewed the pricing model (26 May 2026) and is joining on the hybrid Chief-Actuary path.</li>
+  <li><strong>Governed:</strong> every financial event is anchored to an append-only, hash-chained platform ledger; AI layers recommend but never post.</li>
+</ul>
+
+<h2><span class="secno">2.</span> The need</h2>
+<p>
+  Disability and long-term-care exposure is the largest under-served personal risk in every OECD market, and the
+  incumbent stacks cannot price or service it digitally. Carriers want the product but not the build; AI vendors
+  have the models but no regulated surface to run them on. PHINS closes both gaps at once.
+</p>
+
+<h2><span class="secno">3.</span> The technology (co-development scope)</h2>
+<p>The proposed co-development is structured around four workstreams where the partner's AI capability compounds the platform:</p>
+<table>
+  <thead><tr><th>Workstream</th><th>PHINS today</th><th>Co-developed target</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Underwriting &amp; risk models</strong></td><td>Rules + AI-assisted scoring with audit trail</td><td>Partner foundation models fine-tuned on governed features; explainable decisions filed with regulators</td></tr>
+    <tr><td><strong>Claims adjudication &amp; triage</strong></td><td>ADL-severity workflow with human sign-off</td><td>Multimodal evidence triage (documents, assessments) at claim intake; navigation to home-care pathways</td></tr>
+    <tr><td><strong>Actuarial simulation</strong></td><td>Deterministic Monte-Carlo appraisal &amp; portfolio engine (reproducible by seed)</td><td>Accelerated simulation at market scale; scenario labs exposed to carrier and reinsurer counterparties</td></tr>
+    <tr><td><strong>Market localisation</strong></td><td>IL-first configuration; i18n scaffolding</td><td>Config-driven market packs (product terms, filings, language) — each new market a configuration, not a rebuild</td></tr>
+  </tbody>
+</table>
+<div class="callout tech">
+  <strong>Integrity contract (non-negotiable):</strong> AI recommends; the hash-chained ledger decides and records.
+  Co-developed models plug into the existing decision-audit layer, so every recommendation remains reproducible
+  and regulator-defensible. This is the platform property that makes the joint stack sellable to carriers.
+</div>
+
+<h2><span class="secno">4.</span> Markets opening — the sequence</h2>
+<p>
+  Israel is the proof market; the partnership then opens additional markets on the shared codebase. The sequence
+  is deliberately capital-light for PHINS and revenue-generative for the partner from wave 1.
+</p>
+<table>
+  <thead><tr><th>Wave</th><th>Markets</th><th>Mode</th><th>Partner role</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Proof (2026–27)</strong></td><td>Israel</td><td>PHINS digital MGA on carrier paper</td><td>Strategic investor; co-development roadmap starts</td></tr>
+    <tr><td><strong>Wave 1 (2028)</strong></td><td>2 partner-opened markets (adjustable in §7)</td><td>Licensed platform + local carrier / MGA</td><td>Market opening, enterprise distribution, joint engineering</td></tr>
+    <tr><td><strong>Wave 2 (2029+)</strong></td><td>Further OECD markets</td><td>License + royalty, or joint entities per market</td><td>Scale the playbook; optional deeper equity</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">5.</span> Business model</h2>
+<ul>
+  <li><strong>Core (IL) model:</strong> PHINS earns a blended <strong>25% take rate on gross written premium</strong> as a digital MGA / platform. Claims reserves sit with the risk carrier and are never booked as PHINS revenue.</li>
+  <li><strong>Partner-market model:</strong> per-market <strong>platform license fee</strong> plus a <strong>royalty on partner-market GWP</strong> — both adjustable in §7; shared between PHINS and the partner per the co-development agreement.</li>
+  <li><strong>Equity track:</strong> strategic investment at the seed terms participates in the whole platform, not only the partner markets.</li>
+</ul>
+
+<h2><span class="secno">6.</span> Canonical financial model (Israel · locked base)</h2>
+<p>
+  These are the <strong>tested business-plan assumptions</strong> shared by every PHINS investor document — the
+  partner-market economics in §7 derive from this base so the numbers always reconcile. Sales start
+  <strong>1 January 2027</strong>; the period before launch is the build phase.
+</p>
+<table>
+  <thead><tr><th>Driver</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
+  <tbody>
+    <tr><td>Average policies in force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td></tr>
+    <tr><td>Active policies (end of year)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td></tr>
+    <tr><td>Average annual premium</td><td class="num" colspan="3">₪3,600 (₪300 / month) · adjustable in §7</td></tr>
+    <tr><td>Gross written premium (GWP)</td><td class="num m-gwp" data-y="0">₪7.2M</td><td class="num m-gwp" data-y="1">₪28.8M</td><td class="num m-gwp" data-y="2">₪72.0M</td></tr>
+    <tr><td>PHINS net revenue (25% take)</td><td class="num m-nrev" data-y="0">₪1.8M</td><td class="num m-nrev" data-y="1">₪7.2M</td><td class="num m-nrev" data-y="2">₪18.0M</td></tr>
+    <tr><td>Operating expenses</td><td class="num m-opex" data-y="0">₪5.4M</td><td class="num m-opex" data-y="1">₪9.0M</td><td class="num m-opex" data-y="2">₪14.4M</td></tr>
+    <tr><td><strong>EBITDA</strong></td><td class="num m-ebitda" data-y="0">−₪3.6M</td><td class="num m-ebitda" data-y="1">−₪1.8M</td><td class="num m-ebitda" data-y="2">₪3.6M</td></tr>
+  </tbody>
+</table>
+<p class="fine">Annual policy churn 8% · blended CAC ≈ ₪650 per policy · seed / build round ₪6.0M · base pre-money ₪24.0M (₪30.0M post). The actuarial appraisal simulation in §8 is scoped to exactly this model.</p>
+
+<h2><span class="secno">7.</span> Adjustable partnership assumptions <span class="sync-pill">adjustable · persists in this browser</span></h2>
+<p>
+  Adjust the deal in the room. Every derived figure below recomputes live from these inputs and the canonical
+  base in §6; nothing else on this page is edited by hand, so the plan cannot drift out of reconciliation.
+</p>
+<div class="controls" id="cfg-controls">
+  <div class="cg"><label for="in-invest">Strategic investment (₪)</label><input id="in-invest" type="number" min="0" step="250000" value="6000000"></div>
+  <div class="cg"><label for="in-pre">Pre-money valuation (₪) <span id="pre-basis" style="font-weight:600;color:#5a6b86;"></span></label><input id="in-pre" type="number" min="0" step="1000000" value="24000000"></div>
+  <div class="cg"><label for="in-markets">Wave-1 partner markets (#)</label><input id="in-markets" type="number" min="0" max="10" step="1" value="2"></div>
+  <div class="cg"><label for="in-license">Platform license / market / yr (₪)</label><input id="in-license" type="number" min="0" step="100000" value="1500000"></div>
+  <div class="cg"><label for="in-royalty">Royalty on partner-market GWP (%)</label><input id="in-royalty" type="number" min="0" max="20" step="0.5" value="3"></div>
+  <div class="cg"><label for="in-scale">Partner-market scale vs IL 2029 GWP (%)</label><input id="in-scale" type="number" min="0" max="300" step="5" value="60"></div>
+  <div class="cg"><label for="in-premium">Average annual premium (₪)</label><input id="in-premium" type="number" min="0" step="100" value="3600"></div>
+  <div class="cg"><label for="in-take">PHINS take rate on GWP (%)</label><input id="in-take" type="number" min="0" max="60" step="0.5" value="25"></div>
+</div>
+<table>
+  <thead><tr><th>Derived deal figure</th><th class="num">Value</th><th>Derivation</th></tr></thead>
+  <tbody id="deal-derived"><!-- rendered by script --></tbody>
+</table>
+
+<h2><span class="secno">8.</span> Actuarial valuation — simulation versions <span class="sync-pill">deterministic · reproducible by seed</span></h2>
+<p>
+  The pre-money can be hand-set in §7 or derived from the platform's <strong>actuarial appraisal simulation</strong>
+  (<code>/api/investor/valuation-sim</code>): present value of projected EBITDA plus a terminal exit value,
+  Monte-Carlo over the plan drivers, risk-adjusted by a prudence margin — scoped to exactly the §6 model.
+  Three named versions are pinned for this meeting; each is deterministic for its seed, so any party can
+  reproduce the distribution bit-for-bit and verify the content hash.
+</p>
+<table>
+  <thead><tr><th>Version</th><th>Percentile</th><th>WACC</th><th>Exit ×</th><th>Exit metric</th><th>Prudence</th><th>Seed</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A·P25 — conservative</strong></td><td>P25</td><td>30%</td><td>5.0×</td><td>2029 net revenue</td><td>15%</td><td>20260713</td></tr>
+    <tr><td><strong>A·P50 — central</strong></td><td>P50</td><td>30%</td><td>5.0×</td><td>2029 net revenue</td><td>15%</td><td>20260713</td></tr>
+    <tr><td><strong>A·P75 — upside</strong></td><td>P75</td><td>30%</td><td>5.0×</td><td>2029 net revenue</td><td>15%</td><td>20260713</td></tr>
+  </tbody>
+</table>
+<div class="callout sim">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <strong>🧮 Run a version:</strong>
+    <button type="button" class="sim-btn" data-ver="A·P25" data-pct="25">▶ A·P25</button>
+    <button type="button" class="sim-btn" data-ver="A·P50" data-pct="50">▶ A·P50</button>
+    <button type="button" class="sim-btn" data-ver="A·P75" data-pct="75">▶ A·P75</button>
+    <span class="fine">Applying a version sets the §7 pre-money to the simulated percentile.</span>
+  </div>
+  <div id="sim-result" class="fine" style="margin-top:8px;">Run a version to derive the pre-money from the actuarial appraisal distribution (5,000 runs · seed 20260713 · deterministic).</div>
+</div>
+
+<h2><span class="secno">9.</span> Partnership structures on the table</h2>
+<table>
+  <thead><tr><th>Structure</th><th>Partner puts in</th><th>Partner gets</th><th>Best when</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Strategic equity (seed terms)</strong></td><td>Capital at the §7 terms</td><td>Equity stake in the whole platform; board seat / observer</td><td>Conviction in the platform beyond the partner markets</td></tr>
+    <tr><td><strong>Technology co-development JV</strong></td><td>Engineering capacity + roadmap co-ownership</td><td>Shared IP in co-developed modules; revenue share on partner markets</td><td>The AI stack is the strategic asset</td></tr>
+    <tr><td><strong>License + royalty (markets opening)</strong></td><td>Market access, distribution, local entity</td><td>Exclusive platform license per opened market; royalty economics in §7</td><td>Fast expansion with clear per-market economics</td></tr>
+    <tr><td><strong>Combined (recommended ★)</strong></td><td>Capital + engineering + market opening</td><td>Equity + shared tech revenue + co-developed IP</td><td>Full alignment across capital, technology, and markets</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">10.</span> Milestone execution gates</h2>
+<ul>
+  <li><strong>Gate 1 · Q3 2026</strong> — co-development agreement signed; joint roadmap fixed; strategic investment closes with the seed round.</li>
+  <li><strong>Gate 2 · Q4 2026</strong> — IL launch feature set complete; Appointed-Actuary pricing &amp; reserve sign-off; first co-developed model in the decision-audit layer.</li>
+  <li><strong>Gate 3 · 1 Jan 2027</strong> — IL sales start on the canonical model (§6).</li>
+  <li><strong>Gate 4 · 2028</strong> — wave-1 partner markets live on licensed platform; license + royalty revenue begins.</li>
+  <li><strong>Gate 5 · 2029</strong> — IL model at ₪72.0M GWP run-rate; wave-2 market decisions with proven per-market economics.</li>
+</ul>
+
+<h2><span class="secno">11.</span> Risks &amp; mitigations</h2>
+<table>
+  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>Regulatory timing per market</td><td>Market packs are configuration-driven; filings sequenced behind the IL proof; local carrier paper used first</td></tr>
+    <tr><td>AI-governance scrutiny</td><td>The integrity contract (AI recommends, ledger decides) is built in; every decision reproducible and auditable</td></tr>
+    <tr><td>Partner-market adoption slower than plan</td><td>License fee provides a per-market floor; royalty carries the upside; scale assumption adjustable in §7</td></tr>
+    <tr><td>Key-person concentration</td><td>Chief-Actuary hybrid path underway; co-development spreads engineering ownership</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">12.</span> Next steps</h2>
+<ol>
+  <li>Sign mutual NDA (ledger-anchored signature available on the IL pitch dashboard).</li>
+  <li>Agree the preferred structure (§9) and pin the assumption set (§7) with a named simulation version (§8).</li>
+  <li>Technical deep-dive: platform walkthrough (policy → UW → billing → claim → reinsurance, with audit log) and co-development scoping.</li>
+  <li>Term sheet + confirmatory diligence via the data room.</li>
+</ol>
+
+<div class="integrity" id="integrity-note">
+  <strong>Data integrity notice:</strong> All financials in this document are forward-looking planning assumptions
+  in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate from <code>/api/fx/rates</code>
+  (source is labelled; a static fallback is used only when the live feed is unavailable) and every display currency
+  derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The
+  canonical Israel model (₪3,600 average premium, 25% take rate, stated in-force counts) is the single base for the
+  §6 table, the §7 derived deal figures, and the §8 actuarial appraisal simulation — which is deterministic for its
+  seed and returns a verifiable content hash. Partner-market license and royalty figures are illustrative deal
+  parameters, adjustable in the room, and never overwrite the canonical base. PHINS is modelled as a digital MGA /
+  platform earning a take rate on premium, so claims reserves are not booked as PHINS revenue.
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var CFG_STORE_ID = "phins.partner.aitech.cfg.v1";
+  var SYM = { ILS: "₪", USD: "$", EUR: "€" };
+  // Canonical IL base (must mirror the pitch dashboard / valuation-sim scope)
+  var BASE = {
+    years: [2027, 2028, 2029],
+    inForce: [2000, 8000, 20000],
+    opex: [5400000, 9000000, 14400000],
+    round: 6000000,
+    preMoney: 24000000
+  };
+  var cfg = {
+    currency: "ILS",
+    usdIls: null, usdEur: null, fxSource: "loading",
+    invest: 6000000, preMoney: 24000000,
+    markets: 2, license: 1500000, royaltyPct: 3, scalePct: 60,
+    premium: 3600, takePct: 25,
+    simVersion: null, simProvenance: null
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
+    if (saved && typeof saved === "object") {
+      Object.keys(cfg).forEach(function (k) { if (saved[k] !== undefined && saved[k] !== null) cfg[k] = saved[k]; });
+    }
+  } catch (e) {}
+
+  function persist() { try { localStorage.setItem(CFG_STORE_ID, JSON.stringify(cfg)); } catch (e) {} }
+  function $(id) { return document.getElementById(id); }
+  function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+
+  function rateFromILS(cur) {
+    if (cur === "ILS" || !cfg.usdIls) return 1;
+    if (cur === "USD") return 1 / cfg.usdIls;
+    if (cur === "EUR") return (cfg.usdEur || 1) / cfg.usdIls;
+    return 1;
+  }
+  function fmtMoney(ils) {
+    var cur = cfg.currency, v = ils * rateFromILS(cur);
+    return SYM[cur] + Math.round(v).toLocaleString("en-US");
+  }
+  function fmtShort(ils) {
+    var cur = cfg.currency, v = ils * rateFromILS(cur);
+    var a = Math.abs(v), s = v < 0 ? "−" : "";
+    if (a >= 1e6) return s + SYM[cur] + (a / 1e6).toFixed(1) + "M";
+    if (a >= 1e3) return s + SYM[cur] + (a / 1e3).toFixed(0) + "K";
+    return s + SYM[cur] + a.toFixed(0);
+  }
+
+  // ---- live FX (single USD snapshot; labelled source; graceful fallback) ----
+  function applyFxNote() {
+    var el = $("fx-note");
+    if (!el) return;
+    if (cfg.usdIls) {
+      el.textContent = "1 USD = ₪" + cfg.usdIls.toFixed(4) + " · 1 USD = €" + (cfg.usdEur || 0).toFixed(4) + " (" + cfg.fxSource + ")";
+    } else { el.textContent = "live FX unavailable — figures shown in ₪"; }
+  }
+  function loadFx() {
+    fetch("/api/fx/rates").then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.usd_ils) { cfg.usdIls = d.usd_ils; cfg.usdEur = d.usd_eur; cfg.fxSource = d.source || "live"; }
+      applyFxNote(); recompute(); persist();
+    }).catch(function () { cfg.fxSource = "offline"; applyFxNote(); });
+  }
+
+  // ---- canonical model (recomputed so premium/take stay reconciled) ----
+  function model() {
+    var take = cfg.takePct / 100;
+    var gwp = BASE.inForce.map(function (n) { return n * cfg.premium; });
+    var nrev = gwp.map(function (g) { return g * take; });
+    var ebitda = nrev.map(function (r, i) { return r - BASE.opex[i]; });
+    return { gwp: gwp, nrev: nrev, ebitda: ebitda };
+  }
+
+  function recompute() {
+    var m = model();
+    // hero KPIs
+    if ($("k-round")) $("k-round").textContent = fmtShort(cfg.invest);
+    if ($("k-pre")) $("k-pre").textContent = fmtShort(cfg.preMoney);
+    if ($("k-gwp29")) $("k-gwp29").textContent = fmtShort(m.gwp[2]);
+    // canonical table cells
+    document.querySelectorAll(".m-gwp").forEach(function (el) { el.textContent = fmtShort(m.gwp[+el.getAttribute("data-y")]); });
+    document.querySelectorAll(".m-nrev").forEach(function (el) { el.textContent = fmtShort(m.nrev[+el.getAttribute("data-y")]); });
+    document.querySelectorAll(".m-opex").forEach(function (el) { el.textContent = fmtShort(BASE.opex[+el.getAttribute("data-y")]); });
+    document.querySelectorAll(".m-ebitda").forEach(function (el) { el.textContent = fmtShort(m.ebitda[+el.getAttribute("data-y")]); });
+    document.querySelectorAll(".m-round").forEach(function (el) { el.textContent = fmtShort(cfg.invest); });
+    document.querySelectorAll(".m-pre").forEach(function (el) { el.textContent = fmtShort(cfg.preMoney); });
+    // derived deal figures
+    var post = cfg.preMoney + cfg.invest;
+    var stake = post > 0 ? cfg.invest / post : 0;
+    var perMarketGwp = m.gwp[2] * (cfg.scalePct / 100);
+    var licenseRev = cfg.markets * cfg.license;
+    var royaltyRev = cfg.markets * perMarketGwp * (cfg.royaltyPct / 100);
+    var techRev = licenseRev + royaltyRev;
+    if ($("k-techrev")) $("k-techrev").textContent = fmtShort(techRev);
+    var rows = [
+      ["Post-money valuation", fmtMoney(post), "pre-money + investment"],
+      ["Partner equity stake", (stake * 100).toFixed(2) + "%", "investment ÷ post-money"],
+      ["Per-market GWP at maturity", fmtShort(perMarketGwp), cfg.scalePct + "% × IL 2029 GWP (" + fmtShort(m.gwp[2]) + ")"],
+      ["Annual platform license revenue (wave 1)", fmtShort(licenseRev), cfg.markets + " market(s) × " + fmtShort(cfg.license)],
+      ["Annual royalty revenue (wave 1, at maturity)", fmtShort(royaltyRev), cfg.royaltyPct + "% × " + cfg.markets + " × per-market GWP"],
+      ["Total partner-market technology revenue / yr", fmtShort(techRev), "license + royalty (shared per agreement)"]
+    ];
+    var tb = $("deal-derived");
+    if (tb) {
+      tb.innerHTML = rows.map(function (r) {
+        return "<tr><td>" + r[0] + '</td><td class="num"><strong>' + r[1] + "</strong></td><td>" + r[2] + "</td></tr>";
+      }).join("");
+    }
+    var basisEl = $("pre-basis");
+    if (basisEl) {
+      basisEl.textContent = cfg.simVersion ? "— from actuarial simulation " + cfg.simVersion : "— manual";
+    }
+    // toolbar currency buttons
+    document.querySelectorAll(".cur-btn").forEach(function (b) {
+      b.classList.toggle("on", b.getAttribute("data-cur") === cfg.currency);
+    });
+  }
+
+  // ---- inputs ----
+  function bind(id, key, post) {
+    var el = $(id);
+    if (!el) return;
+    el.value = cfg[key];
+    el.addEventListener("input", function () {
+      cfg[key] = Math.max(0, num(el.value, cfg[key]));
+      if (post) post();
+      persist(); recompute();
+    });
+  }
+  bind("in-invest", "invest");
+  bind("in-pre", "preMoney", function () { cfg.simVersion = null; cfg.simProvenance = null; });
+  bind("in-markets", "markets");
+  bind("in-license", "license");
+  bind("in-royalty", "royaltyPct");
+  bind("in-scale", "scalePct");
+  bind("in-premium", "premium");
+  bind("in-take", "takePct");
+
+  document.querySelectorAll(".cur-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      cfg.currency = b.getAttribute("data-cur");
+      persist(); recompute();
+    });
+  });
+
+  // ---- actuarial simulation versions (deterministic, verifiable) ----
+  var SIM_BASE = { wacc: 30, exit_multiple: 5, prudence: 15, exit_metric: "net_revenue", runs: 5000, seed: 20260713 };
+  document.querySelectorAll(".sim-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var pct = num(b.getAttribute("data-pct"), 50);
+      var ver = b.getAttribute("data-ver");
+      var q = {
+        wacc: SIM_BASE.wacc / 100, exit_multiple: SIM_BASE.exit_multiple,
+        prudence: SIM_BASE.prudence / 100, exit_metric: SIM_BASE.exit_metric,
+        percentile: pct, runs: SIM_BASE.runs, seed: SIM_BASE.seed
+      };
+      var url = "/api/investor/valuation-sim?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
+      var res = $("sim-result");
+      if (res) res.textContent = "Running actuarial appraisal simulation " + ver + "…";
+      fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || !d.pre_money) { if (res) res.textContent = "Simulation unavailable — keeping current pre-money."; return; }
+        cfg.preMoney = d.pre_money;
+        cfg.simVersion = ver;
+        cfg.simProvenance = { version: ver, percentile: pct, seed: d.seed, runs: d.runs, content_hash: d.content_hash, distribution: d.distribution, central: d.central };
+        var inPre = $("in-pre"); if (inPre) inPre.value = cfg.preMoney;
+        document.querySelectorAll(".sim-btn").forEach(function (x) { x.classList.toggle("on", x === b); });
+        if (res) {
+          var dist = d.distribution || {};
+          res.innerHTML = "<strong>" + ver + " applied:</strong> pre-money set to P" + pct + " = " + fmtMoney(d.pre_money) +
+            " · central " + fmtMoney(d.central || 0) + " · P25 " + fmtMoney(dist.p25 || 0) + " / P50 " + fmtMoney(dist.p50 || 0) +
+            " / P75 " + fmtMoney(dist.p75 || 0) + " · " + d.runs + " runs · seed " + d.seed +
+            " · reproducible — content hash <code>" + String(d.content_hash || "").slice(0, 24) + "…</code>";
+        }
+        persist(); recompute();
+      }).catch(function () { if (res) res.textContent = "Offline — could not run the simulation."; });
+    });
+  });
+
+  applyFxNote();
+  recompute();
+  loadFx();
+})();
+</script>
+</body>
+</html>

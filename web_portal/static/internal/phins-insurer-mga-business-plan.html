@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>PHINS — Insurer Partnership Business Plan (Joint Company / MGA · 13 July 2026)</title>
+<!--
+  This is a counterparty-facing print document.
+  Marker: ui-clarity.js — keep this token in the file so the server-side
+  injector skips the shared assistant widget (no floating admin mic/branding
+  may appear on this page).
+-->
+<style>
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+  @bottom-left { content: "PHINS — Insurer Partnership Plan — Confidential"; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 9pt; color: #888; }
+}
+:root {
+  --navy: #0b2545; --navy-2: #13315c; --ink: #1a1f2c;
+  --green: #15803d; --green-soft: #f1faf4;
+  --gold: #b98a00; --line: #d4dae6; --soft: #f6f8fc;
+  --teal: #0f766e; --teal-soft: #ecfdf8;
+  --purple: #6a1b9a; --purple-soft: #f3edff;
+}
+html { font-size: 10.5pt; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  line-height: 1.5;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #fff;
+}
+h1 { font-size: 22pt; color: var(--navy); margin: 0; }
+h2 { font-size: 15pt; color: var(--navy); margin-top: 30px; border-bottom: 2px solid var(--line); padding-bottom: 4px; page-break-after: avoid; }
+h2 .secno { color: var(--gold); margin-right: 6px; }
+h3 { font-size: 12.5pt; color: var(--navy-2); margin-top: 18px; page-break-after: avoid; }
+p { margin: 8px 0; text-align: justify; }
+ul, ol { margin: 6px 0 10px 22px; padding: 0; }
+li { margin: 3px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: var(--navy); color: #fff; font-weight: 600; }
+tr:nth-child(even) td { background: var(--soft); }
+td.num, th.num { text-align: right; }
+strong { color: var(--navy); }
+.confidential { text-align: center; font-size: 9pt; color: #8a3324; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.hero {
+  border-radius: 14px; overflow: hidden; margin: 10px 0 20px 0;
+  background: linear-gradient(135deg, #042f2e 0%, #0f766e 55%, #14b8a6 100%);
+  color: #fff; padding: 26px 28px; page-break-inside: avoid;
+  box-shadow: 0 14px 36px rgba(15,118,110,0.25);
+}
+.hero h1 { color: #fff; font-size: 24pt; letter-spacing: 0.01em; }
+.hero .tagline { font-size: 11pt; opacity: 0.92; margin: 6px 0 0 0; max-width: 660px; text-align: left; }
+.hero .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.hero .badge { display: inline-block; padding: 3px 11px; border-radius: 999px; background: rgba(255,255,255,0.16); font-size: 8pt; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-top: 18px; }
+.kpi { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.22); border-radius: 10px; padding: 10px 12px; }
+.kpi .v { font-size: 13pt; font-weight: 800; }
+.kpi .l { font-size: 7.6pt; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+.cover { border: 1px solid var(--line); background: var(--soft); padding: 14px 18px; border-radius: 8px; margin: 14px 0 22px 0; font-size: 10pt; }
+.cover strong { color: var(--navy); }
+.callout { border-left: 3px solid var(--green); background: var(--green-soft); padding: 8px 14px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+.callout.agents { border-left-color: var(--teal); background: var(--teal-soft); }
+.callout.sim { border-left-color: var(--purple); background: var(--purple-soft); }
+.pitchbox { border: 2px solid var(--teal); border-radius: 12px; padding: 14px 18px; margin: 14px 0; background: var(--teal-soft); page-break-inside: avoid; }
+.pitchbox .pb-label { font-size: 8pt; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); margin-bottom: 6px; }
+.pitchbox p { font-size: 10.5pt; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.controls .cg label { display: block; font-size: 7.6pt; font-weight: 700; color: var(--navy-2); margin-bottom: 3px; }
+.controls .cg input, .controls .cg select { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-family: inherit; font-size: 9.5pt; }
+.sim-btn { font-family: inherit; font-size: 9pt; font-weight: 700; border: 1px solid var(--purple); background: #fff; color: var(--purple); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.sim-btn.on { background: var(--purple); color: #fff; }
+.sync-pill { display: inline-block; font-size: 7.6pt; font-weight: 700; color: var(--green); background: #dcfce7; border-radius: 999px; padding: 2px 9px; vertical-align: middle; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px 0; align-items: center; }
+.toolbar a, .toolbar button { font-family: inherit; font-size: 9.5pt; border: 1px solid var(--navy); background: var(--navy); color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; text-decoration: none; }
+.toolbar a.secondary { background: #fff; color: var(--navy); }
+.toolbar .cur-btn { background: #fff; color: var(--navy); padding: 6px 10px; }
+.toolbar .cur-btn.on { background: var(--navy); color: #fff; }
+.toolbar .fxnote { font-size: 7.8pt; color: #5a6b86; }
+.fine { font-size: 8.5pt; color: #5a6b86; }
+.integrity { border: 1px solid #dbe4f0; background: #f0f4fa; border-radius: 10px; padding: 12px 14px; font-size: 8.5pt; color: #40506b; margin-top: 24px; }
+@media print {
+  .toolbar { display: none; }
+  body { padding: 0; }
+  .hero { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  table, .callout, .cover, .kpi, .pitchbox { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <a class="secondary" href="/pitch-dashboard.html#partner-meetings-13jul">← Back to Partner Meetings (13 Jul)</a>
+  <span style="flex:1;"></span>
+  <span style="font-size:7.8pt;color:#5a6b86;">Display currency</span>
+  <button type="button" class="cur-btn" data-cur="ILS">₪ ILS</button>
+  <button type="button" class="cur-btn" data-cur="USD">$ USD</button>
+  <button type="button" class="cur-btn" data-cur="EUR">€ EUR</button>
+  <span class="fxnote" id="fx-note">live FX loading…</span>
+</div>
+
+<div class="confidential">Internal · Confidential · Prepared for the 13 July 2026 insurer-partnership meeting · Do not distribute</div>
+
+<div class="hero">
+  <div class="badges">
+    <span class="badge">🔒 Confidential</span>
+    <span class="badge">🗓️ 13 July 2026 · time TBC</span>
+    <span class="badge">🤝 Joint company / MGA</span>
+    <span class="badge">🧑‍💼 Agent-force distribution</span>
+    <span class="badge">adjustable · live FX · sim versions</span>
+  </div>
+  <h1>PHINS × Insurer — Joint Company / MGA Business Plan</h1>
+  <p class="tagline">
+    Strategic plan for the meeting with the <strong>CEO of a major insurance company (agents orientation)</strong>:
+    build and distribute a disability / long-term-care severity product together — through a
+    <strong>joint company (NewCo)</strong> or a <strong>PHINS-operated MGA on the insurer's paper</strong> —
+    powered by the insurer's agent force and the PHINS platform. All economics reconcile to the canonical
+    Israel model used across the IL pitch dashboard.
+  </p>
+  <div class="kpis">
+    <div class="kpi"><div class="v" id="k-agents27">—</div><div class="l">Agents required · 2027</div></div>
+    <div class="kpi"><div class="v" id="k-agents29">—</div><div class="l">Agents required · 2029</div></div>
+    <div class="kpi"><div class="v" id="k-gwp29">₪72.0M</div><div class="l">2029 GWP (IL model)</div></div>
+    <div class="kpi"><div class="v" id="k-margin29">—</div><div class="l">2029 structure margin</div></div>
+    <div class="kpi"><div class="v" id="k-phins29">—</div><div class="l">2029 PHINS share</div></div>
+  </div>
+</div>
+
+<div class="cover">
+  <strong>Meeting:</strong> 13 July 2026, time to be confirmed · CEO, major insurance company — agents orientation (name to be confirmed under NDA)<br>
+  <strong>Objective:</strong> agree the build-and-distribute structure — joint company (NewCo) or MGA on the insurer's paper — and the agent-force distribution plan<br>
+  <strong>Prepared by:</strong> PHINS founding team · <strong>Basis:</strong> canonical IL business-plan assumptions (₪3,600 average premium · 25% take rate · sales from 1 Jan 2027)<br>
+  <strong>Valuation basis (for JV pricing):</strong> adjustable — manual, or derived from the deterministic actuarial appraisal simulation (versions B·P25 / B·P50 / B·P75 below)
+</div>
+
+<!-- ELEVATOR PITCH -->
+<div class="pitchbox" id="elevator-pitch">
+  <div class="pb-label">⚡ Elevator pitch — 30 seconds</div>
+  <p>
+    PHINS puts a <strong>digital MGA in a box</strong> behind your agent force. We bring the platform — policy,
+    AI underwriting, billing, claims adjudication, reinsurance, and agent commissions, all anchored to a
+    hash-chained ledger — and you bring risk capacity and the agents. Together we launch a disability /
+    long-term-care severity product that <strong>your agents can sell in minutes</strong>: digital application,
+    instant underwriting decision with an audit trail, and commission statements that reconcile to the shekel.
+    Structure it as a <strong>joint company or an MGA on your paper</strong> — either way, you keep underwriting
+    control and gain a product line your competitors cannot service digitally.
+  </p>
+</div>
+
+<!-- EXECUTIVE PITCH -->
+<div class="pitchbox" id="executive-pitch" style="border-color: var(--navy); background: var(--soft);">
+  <div class="pb-label" style="color: var(--navy);">🎯 Executive pitch — 3 minutes</div>
+  <p><strong>The product.</strong> A permanent 3+ ADL disability / LTC severity layer — objectively triggered,
+  digitally underwritten, home-care-first in claims navigation. Israel already thinks in LTC terms; the product
+  gap is a carrier that can service it digitally at agent scale.</p>
+  <p><strong>What PHINS brings.</strong> A production platform (64+ modules, validated pricing model reviewed by
+  an IAA-recognised executive actuary): agent onboarding and commissions, digital application, AI-assisted
+  underwriting with human sign-off, billing, claims adjudication, and reinsurance structuring — every financial
+  event anchored to an append-only, hash-chained ledger.</p>
+  <p><strong>What the insurer brings.</strong> Risk capacity (your paper), the agent force, brand, and regulatory
+  standing. Your agents get a modern selling surface; your actuaries keep pricing sign-off; your reserves stay
+  where they belong — with the carrier.</p>
+  <p><strong>The two structures.</strong> (1) <strong>MGA:</strong> PHINS operates as your MGA — fastest to launch,
+  distribution economics split from the take rate; (2) <strong>Joint company:</strong> a NewCo owns the market
+  P&amp;L — equity split adjustable in §7, JV valuation derivable from the actuarial appraisal simulation in §8.
+  The agent economics below are derived from the same canonical plan either way, so the numbers reconcile in
+  the room.</p>
+</div>
+
+<h2><span class="secno">1.</span> Company &amp; founder</h2>
+<p>
+  PHINS (Personal Health Insurance &amp; Savings) was founded by <strong>Asaf Ashury, Adv. &amp; Insurance Broker</strong>,
+  who has developed the platform end-to-end: an AI-enhanced insurance stack purpose-built for disability and
+  long-term-care severity products. PHINS operates a digital MGA / platform model — it earns a take rate on
+  premium while underwriting risk sits with licensed carriers and reinsurers.
+</p>
+<ul>
+  <li><strong>Built:</strong> 64+ deployed service modules — policy, underwriting, billing, claims, reinsurance, wallet/settlement, agent ecosystem, BI/actuarial.</li>
+  <li><strong>Validated:</strong> an IAA-recognised executive actuary reviewed the pricing model (26 May 2026) and is joining on the hybrid Chief-Actuary path.</li>
+  <li><strong>Agent-native:</strong> the agent ecosystem (invitations, affiliations, commissions, ledger-anchored statements) is a deployed module, not a roadmap item.</li>
+</ul>
+
+<h2><span class="secno">2.</span> The need</h2>
+<p>
+  Israel has more than five million private LTC policyholders and a home-care-first claims culture — yet no
+  carrier can originate and service a severity product digitally at agent scale. Agents lose sales to paperwork;
+  carriers lose the product line to complexity. A joint build closes the gap in one launch.
+</p>
+
+<h2><span class="secno">3.</span> The solution — platform + paper + agents</h2>
+<table>
+  <thead><tr><th>Layer</th><th>PHINS provides</th><th>Insurer provides</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Product &amp; pricing</strong></td><td>Digital product engine; Appointed-Actuary-ready pricing &amp; reserving models</td><td>Actuarial sign-off; risk appetite; policy paper</td></tr>
+    <tr><td><strong>Distribution</strong></td><td>Agent portal: onboarding, digital application, instant quotes, commission statements</td><td>Agent force, brand, field management</td></tr>
+    <tr><td><strong>Underwriting</strong></td><td>AI-assisted decisioning with human sign-off and a reproducible audit trail</td><td>Underwriting authority limits and referral rules</td></tr>
+    <tr><td><strong>Claims</strong></td><td>ADL-severity adjudication workflow; home-care-first navigation</td><td>Claims oversight; reinsurance treaty alignment</td></tr>
+    <tr><td><strong>Finance &amp; integrity</strong></td><td>Hash-chained ledger: premiums, commissions, settlements reproducible to the shekel</td><td>Statutory accounting; reserves on carrier balance sheet</td></tr>
+  </tbody>
+</table>
+<div class="callout agents">
+  <strong>Agents are the flywheel:</strong> the plan below converts the canonical policy ramp into the agent
+  head-count and commission pool your field organisation understands — policies per agent per month in,
+  agents required and commission economics out. Every figure derives from the same base, so distribution,
+  finance, and actuarial see one consistent plan.
+</div>
+
+<h2><span class="secno">4.</span> Market</h2>
+<ul>
+  <li><strong>Israel first:</strong> the strongest launch narrative — high home-care orientation, large private LTC penetration, visible public spend, and an agent-intermediated market structure.</li>
+  <li><strong>Product:</strong> permanent 3+ ADL severity layer — objective trigger, disciplined reserving, reinsurance-friendly.</li>
+  <li><strong>Expansion:</strong> the same platform opens employer/affinity channels and additional markets once the agent-force model is proven.</li>
+</ul>
+
+<h2><span class="secno">5.</span> Business model &amp; structures</h2>
+<table>
+  <thead><tr><th>Structure</th><th>How it works</th><th>Economics</th><th>Best when</th></tr></thead>
+  <tbody>
+    <tr><td><strong>MGA on insurer paper (fastest)</strong></td><td>PHINS operates as MGA; insurer carries risk and owns the customer paper</td><td>Blended take rate on GWP funds platform + agent commissions; carrier keeps underwriting result</td><td>Speed to market; minimal corporate build</td></tr>
+    <tr><td><strong>Joint company (NewCo)</strong></td><td>Shared entity owns the product P&amp;L; PHINS licenses the platform in, insurer contributes capacity &amp; agents</td><td>Structure margin split by equity (adjustable §7); JV priced off the actuarial appraisal (§8)</td><td>Long-term alignment; joint balance-sheet commitment</td></tr>
+    <tr><td><strong>Hybrid (recommended ★)</strong></td><td>Launch as MGA now; convert to NewCo at pre-agreed milestones</td><td>MGA economics now; NewCo conversion at the §8 simulated valuation basis</td><td>De-risks both sides; keeps momentum</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">6.</span> Canonical financial model (Israel · locked base)</h2>
+<p>
+  These are the <strong>tested business-plan assumptions</strong> shared by every PHINS investor document — the
+  agent-force plan in §7 derives from this base so the numbers always reconcile. Sales start
+  <strong>1 January 2027</strong>; the period before launch is the build phase.
+</p>
+<table>
+  <thead><tr><th>Driver</th><th class="num">2027</th><th class="num">2028</th><th class="num">2029</th></tr></thead>
+  <tbody>
+    <tr><td>Active policies (end of year)</td><td class="num">4,000</td><td class="num">12,000</td><td class="num">28,000</td></tr>
+    <tr><td>Average policies in force</td><td class="num">2,000</td><td class="num">8,000</td><td class="num">20,000</td></tr>
+    <tr><td>Average annual premium</td><td class="num" colspan="3">₪3,600 (₪300 / month) · adjustable in §7</td></tr>
+    <tr><td>Gross written premium (GWP)</td><td class="num m-gwp" data-y="0">₪7.2M</td><td class="num m-gwp" data-y="1">₪28.8M</td><td class="num m-gwp" data-y="2">₪72.0M</td></tr>
+    <tr><td>Distribution take (25% of GWP)</td><td class="num m-take" data-y="0">₪1.8M</td><td class="num m-take" data-y="1">₪7.2M</td><td class="num m-take" data-y="2">₪18.0M</td></tr>
+  </tbody>
+</table>
+<p class="fine">Annual policy churn 8% · blended CAC ≈ ₪650 per policy · claims reserves sit with the risk carrier and are never booked as PHINS / NewCo revenue. The actuarial appraisal simulation in §8 is scoped to exactly this model.</p>
+
+<h2><span class="secno">7.</span> Adjustable agent-force &amp; structure assumptions <span class="sync-pill">adjustable · persists in this browser</span></h2>
+<p>
+  The agent plan is derived <em>from</em> the canonical policy ramp — adjust productivity or commission terms and
+  the required agent force and the commission pool recompute live; the policy plan itself only changes if you
+  change it here, so distribution and finance stay reconciled to one base.
+</p>
+<div class="controls" id="cfg-controls">
+  <div class="cg"><label for="in-structure">Structure</label>
+    <select id="in-structure">
+      <option value="mga">MGA on insurer paper</option>
+      <option value="jv" selected>Joint company (NewCo)</option>
+    </select>
+  </div>
+  <div class="cg"><label for="in-prod">Policies / agent / month</label><input id="in-prod" type="number" min="0.25" max="30" step="0.25" value="2"></div>
+  <div class="cg"><label for="in-comm">Agent commission (% of GWP)</label><input id="in-comm" type="number" min="0" max="25" step="0.5" value="10"></div>
+  <div class="cg"><label for="in-jvshare">PHINS share of NewCo (%)</label><input id="in-jvshare" type="number" min="0" max="100" step="1" value="50"></div>
+  <div class="cg"><label for="in-premium">Average annual premium (₪)</label><input id="in-premium" type="number" min="0" step="100" value="3600"></div>
+  <div class="cg"><label for="in-take">Distribution take on GWP (%)</label><input id="in-take" type="number" min="0" max="60" step="0.5" value="25"></div>
+  <div class="cg"><label for="in-churn">Annual policy churn (%)</label><input id="in-churn" type="number" min="0" max="40" step="0.5" value="8"></div>
+  <div class="cg"><label for="in-jvpre">NewCo pre-money for JV pricing (₪) <span id="pre-basis" style="font-weight:600;color:#5a6b86;"></span></label><input id="in-jvpre" type="number" min="0" step="1000000" value="24000000"></div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Derived agent-force plan</th>
+      <th class="num">2027</th>
+      <th class="num">2028</th>
+      <th class="num">2029</th>
+    </tr>
+  </thead>
+  <tbody id="agent-derived"><!-- rendered by script --></tbody>
+</table>
+<p class="fine" id="structure-note"><!-- rendered by script --></p>
+
+<h2><span class="secno">8.</span> Actuarial valuation — simulation versions <span class="sync-pill">deterministic · reproducible by seed</span></h2>
+<p>
+  The NewCo / conversion valuation can be hand-set in §7 or derived from the platform's
+  <strong>actuarial appraisal simulation</strong> (<code>/api/investor/valuation-sim</code>): present value of
+  projected EBITDA plus a terminal exit value, Monte-Carlo over the plan drivers, risk-adjusted by a prudence
+  margin — scoped to exactly the §6 model. Three named versions are pinned for this meeting with a
+  carrier-grade prudence margin; each is deterministic for its seed, so any party can reproduce the
+  distribution bit-for-bit and verify the content hash.
+</p>
+<table>
+  <thead><tr><th>Version</th><th>Percentile</th><th>WACC</th><th>Exit ×</th><th>Exit metric</th><th>Prudence</th><th>Seed</th></tr></thead>
+  <tbody>
+    <tr><td><strong>B·P25 — conservative</strong></td><td>P25</td><td>40%</td><td>3.0×</td><td>2029 net revenue</td><td>25%</td><td>20260713</td></tr>
+    <tr><td><strong>B·P50 — central</strong></td><td>P50</td><td>40%</td><td>3.0×</td><td>2029 net revenue</td><td>25%</td><td>20260713</td></tr>
+    <tr><td><strong>B·P75 — upside</strong></td><td>P75</td><td>40%</td><td>3.0×</td><td>2029 net revenue</td><td>25%</td><td>20260713</td></tr>
+  </tbody>
+</table>
+<div class="callout sim">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <strong>🧮 Run a version:</strong>
+    <button type="button" class="sim-btn" data-ver="B·P25" data-pct="25">▶ B·P25</button>
+    <button type="button" class="sim-btn" data-ver="B·P50" data-pct="50">▶ B·P50</button>
+    <button type="button" class="sim-btn" data-ver="B·P75" data-pct="75">▶ B·P75</button>
+    <span class="fine">Applying a version sets the §7 NewCo pre-money to the simulated percentile.</span>
+  </div>
+  <div id="sim-result" class="fine" style="margin-top:8px;">Run a version to derive the NewCo valuation from the actuarial appraisal distribution (5,000 runs · seed 20260713 · deterministic).</div>
+</div>
+
+<h2><span class="secno">9.</span> Milestone execution gates</h2>
+<ul>
+  <li><strong>Gate 1 · Q3 2026</strong> — structure agreed (MGA / NewCo / hybrid); heads of terms signed; product filing plan fixed with the insurer's Appointed Actuary.</li>
+  <li><strong>Gate 2 · Q4 2026</strong> — agent portal live for the insurer's field force; pricing &amp; reserve sign-off; pilot agent cohort onboarded.</li>
+  <li><strong>Gate 3 · 1 Jan 2027</strong> — sales start on the canonical model (§6) through the agent force.</li>
+  <li><strong>Gate 4 · 2028</strong> — agent force scaled per §7; commission economics verified against the ledger; NewCo conversion decision (if hybrid).</li>
+  <li><strong>Gate 5 · 2029</strong> — ₪72.0M GWP run-rate; second product line / channel decision.</li>
+</ul>
+
+<h2><span class="secno">10.</span> Team &amp; governance</h2>
+<ul>
+  <li><strong>PHINS:</strong> founder-led engineering and product; incoming Chief Actuary (IAA-recognised, IL·CA·US) on the hybrid path; platform operations.</li>
+  <li><strong>Insurer:</strong> distribution leadership (agents), Appointed Actuary sign-off, claims oversight, statutory accounting.</li>
+  <li><strong>Joint governance:</strong> product committee (pricing, underwriting rules) and a distribution committee (agent economics) — both reading from the same ledger-anchored reports, so there is one version of the truth.</li>
+</ul>
+
+<h2><span class="secno">11.</span> Risks &amp; mitigations</h2>
+<table>
+  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>Agent adoption slower than plan</td><td>Productivity assumption adjustable (§7); pilot cohort at Gate 2 validates before scale; commission economics transparent per statement</td></tr>
+    <tr><td>Underwriting quality at digital speed</td><td>AI recommends, humans sign off; authority limits set by the insurer; full decision audit trail</td></tr>
+    <tr><td>Channel conflict with existing products</td><td>Severity layer positioned as a top-up, not a replacement; product committee owns the boundary</td></tr>
+    <tr><td>Structure disagreement stalls launch</td><td>Hybrid path launches as MGA now with pre-agreed NewCo conversion terms at the §8 simulated valuation basis</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="secno">12.</span> Next steps</h2>
+<ol>
+  <li>Sign mutual NDA (ledger-anchored signature available on the IL pitch dashboard).</li>
+  <li>Pick the structure (§5) and pin the assumption set (§7) with a named simulation version (§8).</li>
+  <li>Working session: PHINS platform walkthrough for the insurer's distribution and actuarial leads (agent portal → application → UW decision → commission statement).</li>
+  <li>Heads of terms + product filing plan with the Appointed Actuary.</li>
+</ol>
+
+<div class="integrity" id="integrity-note">
+  <strong>Data integrity notice:</strong> All financials in this document are forward-looking planning assumptions
+  in ₪ (ILS), the canonical base; $ / € equivalents convert at a live exchange rate from <code>/api/fx/rates</code>
+  (source is labelled; a static fallback is used only when the live feed is unavailable) and every display currency
+  derives from a single USD snapshot so the numbers stay consistent. They are not commitments or guidance. The
+  canonical Israel model (₪3,600 average premium, 25% take rate, stated in-force counts) is the single base for the
+  §6 table, the §7 derived agent-force plan, and the §8 actuarial appraisal simulation — which is deterministic for
+  its seed and returns a verifiable content hash. The agent plan is derived from the policy ramp (never the other
+  way around), so adjusting productivity or commission terms cannot corrupt the underlying model. Claims reserves
+  sit with the risk carrier and are never booked as PHINS / NewCo revenue.
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var CFG_STORE_ID = "phins.partner.insurer.cfg.v1";
+  var SYM = { ILS: "₪", USD: "$", EUR: "€" };
+  // Canonical IL base (must mirror the pitch dashboard / valuation-sim scope)
+  var BASE = {
+    years: [2027, 2028, 2029],
+    eoyPolicies: [4000, 12000, 28000]
+  };
+  var cfg = {
+    currency: "ILS",
+    usdIls: null, usdEur: null, fxSource: "loading",
+    structure: "jv",
+    prod: 2, commPct: 10, jvSharePct: 50,
+    premium: 3600, takePct: 25, churnPct: 8,
+    jvPre: 24000000,
+    simVersion: null, simProvenance: null
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
+    if (saved && typeof saved === "object") {
+      Object.keys(cfg).forEach(function (k) { if (saved[k] !== undefined && saved[k] !== null) cfg[k] = saved[k]; });
+    }
+  } catch (e) {}
+
+  function persist() { try { localStorage.setItem(CFG_STORE_ID, JSON.stringify(cfg)); } catch (e) {} }
+  function $(id) { return document.getElementById(id); }
+  function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
+
+  function rateFromILS(cur) {
+    if (cur === "ILS" || !cfg.usdIls) return 1;
+    if (cur === "USD") return 1 / cfg.usdIls;
+    if (cur === "EUR") return (cfg.usdEur || 1) / cfg.usdIls;
+    return 1;
+  }
+  function fmtMoney(ils) {
+    var cur = cfg.currency, v = ils * rateFromILS(cur);
+    return SYM[cur] + Math.round(v).toLocaleString("en-US");
+  }
+  function fmtShort(ils) {
+    var cur = cfg.currency, v = ils * rateFromILS(cur);
+    var a = Math.abs(v), s = v < 0 ? "−" : "";
+    if (a >= 1e6) return s + SYM[cur] + (a / 1e6).toFixed(1) + "M";
+    if (a >= 1e3) return s + SYM[cur] + (a / 1e3).toFixed(0) + "K";
+    return s + SYM[cur] + a.toFixed(0);
+  }
+  function fmtInt(n) { return Math.round(n).toLocaleString("en-US"); }
+
+  // ---- live FX (single USD snapshot; labelled source; graceful fallback) ----
+  function applyFxNote() {
+    var el = $("fx-note");
+    if (!el) return;
+    if (cfg.usdIls) {
+      el.textContent = "1 USD = ₪" + cfg.usdIls.toFixed(4) + " · 1 USD = €" + (cfg.usdEur || 0).toFixed(4) + " (" + cfg.fxSource + ")";
+    } else { el.textContent = "live FX unavailable — figures shown in ₪"; }
+  }
+  function loadFx() {
+    fetch("/api/fx/rates").then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.usd_ils) { cfg.usdIls = d.usd_ils; cfg.usdEur = d.usd_eur; cfg.fxSource = d.source || "live"; }
+      applyFxNote(); recompute(); persist();
+    }).catch(function () { cfg.fxSource = "offline"; applyFxNote(); });
+  }
+
+  // ---- derived agent-force model (FROM the canonical policy ramp) ----
+  function model() {
+    var churn = cfg.churnPct / 100, take = cfg.takePct / 100, comm = cfg.commPct / 100;
+    var eoy = BASE.eoyPolicies, out = { years: BASE.years, newPolicies: [], agents: [], avgInForce: [], gwp: [], take: [], commission: [], margin: [], phins: [], insurer: [] };
+    for (var i = 0; i < eoy.length; i++) {
+      var prev = i === 0 ? 0 : eoy[i - 1];
+      var newPol = eoy[i] - prev * (1 - churn);
+      var perAgentYr = Math.max(cfg.prod, 0.01) * 12;
+      var avg = (prev + eoy[i]) / 2;
+      var gwp = avg * cfg.premium;
+      var takeRev = gwp * take;
+      var commission = gwp * comm;
+      var margin = takeRev - commission;
+      var phinsShare = cfg.structure === "jv" ? margin * (cfg.jvSharePct / 100) : margin;
+      out.newPolicies.push(newPol);
+      out.agents.push(newPol / perAgentYr);
+      out.avgInForce.push(avg);
+      out.gwp.push(gwp);
+      out.take.push(takeRev);
+      out.commission.push(commission);
+      out.margin.push(margin);
+      out.phins.push(phinsShare);
+      out.insurer.push(margin - phinsShare);
+    }
+    return out;
+  }
+
+  function recompute() {
+    var m = model();
+    if ($("k-agents27")) $("k-agents27").textContent = fmtInt(m.agents[0]);
+    if ($("k-agents29")) $("k-agents29").textContent = fmtInt(m.agents[2]);
+    if ($("k-gwp29")) $("k-gwp29").textContent = fmtShort(m.gwp[2]);
+    if ($("k-margin29")) $("k-margin29").textContent = fmtShort(m.margin[2]);
+    if ($("k-phins29")) $("k-phins29").textContent = fmtShort(m.phins[2]);
+    document.querySelectorAll(".m-gwp").forEach(function (el) { el.textContent = fmtShort(m.gwp[+el.getAttribute("data-y")]); });
+    document.querySelectorAll(".m-take").forEach(function (el) { el.textContent = fmtShort(m.take[+el.getAttribute("data-y")]); });
+    var rows = [
+      ["New policies written", m.newPolicies.map(fmtInt), "EoY plan − survivors of prior EoY (churn " + cfg.churnPct + "%)"],
+      ["Active agents required", m.agents.map(fmtInt), "new policies ÷ (" + cfg.prod + " / agent / month × 12)"],
+      ["Average policies in force", m.avgInForce.map(fmtInt), "(prior EoY + EoY) ÷ 2 — matches the canonical model"],
+      ["Gross written premium", m.gwp.map(fmtShort), "avg in force × " + fmtMoney(cfg.premium) + " premium"],
+      ["Distribution take (" + cfg.takePct + "% of GWP)", m.take.map(fmtShort), "funds agents + platform + structure margin"],
+      ["Agent commission pool (" + cfg.commPct + "% of GWP)", m.commission.map(fmtShort), "paid from the distribution take"],
+      ["Structure margin (take − commissions)", m.margin.map(fmtShort), "the P&L the structure splits"],
+      [(cfg.structure === "jv" ? "PHINS share (" + cfg.jvSharePct + "% of NewCo)" : "PHINS share (MGA operator)"), m.phins.map(fmtShort), cfg.structure === "jv" ? "structure margin × PHINS equity" : "PHINS operates the MGA; insurer keeps the underwriting result"],
+      [(cfg.structure === "jv" ? "Insurer share (" + (100 - cfg.jvSharePct) + "% of NewCo)" : "Insurer share of margin"), m.insurer.map(fmtShort), cfg.structure === "jv" ? "structure margin × insurer equity" : "0 by construction — the insurer's return is the underwriting result on its paper"]
+    ];
+    var tb = $("agent-derived");
+    if (tb) {
+      tb.innerHTML = rows.map(function (r) {
+        return "<tr><td><strong>" + r[0] + "</strong><div class=\"fine\">" + r[2] + "</div></td>" +
+          r[1].map(function (v) { return '<td class="num">' + v + "</td>"; }).join("") + "</tr>";
+      }).join("");
+    }
+    var note = $("structure-note");
+    if (note) {
+      note.textContent = cfg.structure === "jv"
+        ? "Structure: joint company (NewCo) — structure margin splits " + cfg.jvSharePct + "% PHINS / " + (100 - cfg.jvSharePct) + "% insurer; NewCo priced at " + fmtMoney(cfg.jvPre) + " pre-money (" + (cfg.simVersion ? "simulation " + cfg.simVersion : "manual") + ")."
+        : "Structure: MGA on insurer paper — PHINS retains the structure margin as MGA operator; the insurer's return is the underwriting result on its own paper.";
+    }
+    var basisEl = $("pre-basis");
+    if (basisEl) basisEl.textContent = cfg.simVersion ? "— from actuarial simulation " + cfg.simVersion : "— manual";
+    document.querySelectorAll(".cur-btn").forEach(function (b) {
+      b.classList.toggle("on", b.getAttribute("data-cur") === cfg.currency);
+    });
+  }
+
+  // ---- inputs ----
+  function bind(id, key, post) {
+    var el = $(id);
+    if (!el) return;
+    el.value = cfg[key];
+    el.addEventListener("input", function () {
+      cfg[key] = Math.max(0, num(el.value, cfg[key]));
+      if (post) post();
+      persist(); recompute();
+    });
+  }
+  var elStructure = $("in-structure");
+  if (elStructure) {
+    elStructure.value = cfg.structure;
+    elStructure.addEventListener("change", function () { cfg.structure = elStructure.value; persist(); recompute(); });
+  }
+  bind("in-prod", "prod");
+  bind("in-comm", "commPct");
+  bind("in-jvshare", "jvSharePct");
+  bind("in-premium", "premium");
+  bind("in-take", "takePct");
+  bind("in-churn", "churnPct");
+  bind("in-jvpre", "jvPre", function () { cfg.simVersion = null; cfg.simProvenance = null; });
+
+  document.querySelectorAll(".cur-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      cfg.currency = b.getAttribute("data-cur");
+      persist(); recompute();
+    });
+  });
+
+  // ---- actuarial simulation versions (deterministic, verifiable) ----
+  var SIM_BASE = { wacc: 40, exit_multiple: 3, prudence: 25, exit_metric: "net_revenue", runs: 5000, seed: 20260713 };
+  document.querySelectorAll(".sim-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var pct = num(b.getAttribute("data-pct"), 50);
+      var ver = b.getAttribute("data-ver");
+      var q = {
+        wacc: SIM_BASE.wacc / 100, exit_multiple: SIM_BASE.exit_multiple,
+        prudence: SIM_BASE.prudence / 100, exit_metric: SIM_BASE.exit_metric,
+        percentile: pct, runs: SIM_BASE.runs, seed: SIM_BASE.seed
+      };
+      var url = "/api/investor/valuation-sim?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
+      var res = $("sim-result");
+      if (res) res.textContent = "Running actuarial appraisal simulation " + ver + "…";
+      fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || !d.pre_money) { if (res) res.textContent = "Simulation unavailable — keeping current valuation."; return; }
+        cfg.jvPre = d.pre_money;
+        cfg.simVersion = ver;
+        cfg.simProvenance = { version: ver, percentile: pct, seed: d.seed, runs: d.runs, content_hash: d.content_hash, distribution: d.distribution, central: d.central };
+        var inPre = $("in-jvpre"); if (inPre) inPre.value = cfg.jvPre;
+        document.querySelectorAll(".sim-btn").forEach(function (x) { x.classList.toggle("on", x === b); });
+        if (res) {
+          var dist = d.distribution || {};
+          res.innerHTML = "<strong>" + ver + " applied:</strong> NewCo pre-money set to P" + pct + " = " + fmtMoney(d.pre_money) +
+            " · central " + fmtMoney(d.central || 0) + " · P25 " + fmtMoney(dist.p25 || 0) + " / P50 " + fmtMoney(dist.p50 || 0) +
+            " / P75 " + fmtMoney(dist.p75 || 0) + " · " + d.runs + " runs · seed " + d.seed +
+            " · reproducible — content hash <code>" + String(d.content_hash || "").slice(0, 24) + "…</code>";
+        }
+        persist(); recompute();
+      }).catch(function () { if (res) res.textContent = "Offline — could not run the simulation."; });
+    });
+  });
+
+  applyFxNote();
+  recompute();
+  loadFx();
+})();
+</script>
+</body>
+</html>
