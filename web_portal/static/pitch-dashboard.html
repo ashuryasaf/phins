@@ -7083,7 +7083,13 @@
       var section = document.getElementById("partner-meetings-13jul");
       if (!section) return;
 
-      var CFG_STORE_ID = "phins.il.partner13jul.cfg.v1";
+      // Shared with the linked full business plans so in-room deal terms reconcile
+      // across artifacts (same pattern as the investor configurator / plan).
+      var AITECH_STORE_ID = "phins.partner.aitech.cfg.v1";   // /internal/phins-ai-tech-partner-business-plan.html
+      var INSURER_STORE_ID = "phins.partner.insurer.cfg.v1"; // /internal/phins-insurer-mga-business-plan.html
+      // Dashboard field -> canonical plan field (Track A = AI-tech, Track B = insurer/MGA).
+      var A_MAP = { aInvest: "invest", aPre: "preMoney", aMarkets: "markets", aLicense: "license", aRoyalty: "royaltyPct", aScale: "scalePct", aSimVersion: "simVersion" };
+      var B_MAP = { bStructure: "structure", bProd: "prod", bComm: "commPct", bJvShare: "jvSharePct", bPre: "jvPre", bSimVersion: "simVersion" };
       // Canonical IL base — must mirror the investor section + /api/investor/valuation-sim scope.
       var BASE = {
         eoyPolicies: [4000, 12000, 28000],   // EoY 2027/28/29 (avg in force 2,000/8,000/20,000)
@@ -7102,14 +7108,27 @@
         aInvest: 6000000, aPre: 24000000, aMarkets: 2, aLicense: 1500000, aRoyalty: 3, aScale: 60, aSimVersion: null,
         bStructure: "jv", bProd: 2, bComm: 10, bJvShare: 50, bPre: 24000000, bSimVersion: null
       };
-      try {
-        var saved = JSON.parse(localStorage.getItem(CFG_STORE_ID) || "null");
-        if (saved && typeof saved === "object") {
-          Object.keys(cfg).forEach(function (k) { if (saved[k] !== undefined && saved[k] !== null) cfg[k] = saved[k]; });
-        }
-      } catch (e) {}
+      function readStore(id) {
+        try { var s = JSON.parse(localStorage.getItem(id) || "null"); return (s && typeof s === "object") ? s : {}; }
+        catch (e) { return {}; }
+      }
+      (function loadShared() {
+        var a = readStore(AITECH_STORE_ID), b = readStore(INSURER_STORE_ID);
+        Object.keys(A_MAP).forEach(function (k) { var v = a[A_MAP[k]]; if (v !== undefined && v !== null) cfg[k] = v; });
+        Object.keys(B_MAP).forEach(function (k) { var v = b[B_MAP[k]]; if (v !== undefined && v !== null) cfg[k] = v; });
+      })();
 
-      function persist() { try { localStorage.setItem(CFG_STORE_ID, JSON.stringify(cfg)); } catch (e) {} }
+      // Merge back into each canonical store so plan-only fields (premium, take, currency…) survive.
+      function persist() {
+        try {
+          var a = readStore(AITECH_STORE_ID);
+          Object.keys(A_MAP).forEach(function (k) { a[A_MAP[k]] = cfg[k]; });
+          localStorage.setItem(AITECH_STORE_ID, JSON.stringify(a));
+          var b = readStore(INSURER_STORE_ID);
+          Object.keys(B_MAP).forEach(function (k) { b[B_MAP[k]] = cfg[k]; });
+          localStorage.setItem(INSURER_STORE_ID, JSON.stringify(b));
+        } catch (e) {}
+      }
       function $(id) { return document.getElementById(id); }
       function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : (d || 0); }
       function ils(v) { return "₪" + Math.round(v).toLocaleString("en-US"); }
