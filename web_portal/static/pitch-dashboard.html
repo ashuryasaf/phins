@@ -7237,7 +7237,9 @@
           var p = SIM_PRESETS[track] || SIM_PRESETS.a;
           var q = {
             wacc: p.wacc, exit_multiple: p.exit_multiple, prudence: p.prudence,
-            exit_metric: p.exit_metric, percentile: pct, runs: p.runs, seed: p.seed
+            exit_metric: p.exit_metric, percentile: pct, runs: p.runs, seed: p.seed,
+            premium: track === "a" ? cfg.aPremium : cfg.bPremium,
+            take_rate: track === "a" ? BASE.takeRate : cfg.bTakePct / 100
           };
           var url = "/api/investor/valuation-sim?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
           var res = $(track === "a" ? "pma-sim-result" : "pmb-sim-result");

@@ -506,7 +506,8 @@ strong { color: var(--navy); }
       var q = {
         wacc: SIM_BASE.wacc / 100, exit_multiple: SIM_BASE.exit_multiple,
         prudence: SIM_BASE.prudence / 100, exit_metric: SIM_BASE.exit_metric,
-        percentile: pct, runs: SIM_BASE.runs, seed: SIM_BASE.seed
+        percentile: pct, runs: SIM_BASE.runs, seed: SIM_BASE.seed,
+        premium: cfg.premium, take_rate: cfg.takePct / 100
       };
       var url = "/api/investor/valuation-sim?" + Object.keys(q).map(function (k) { return k + "=" + encodeURIComponent(q[k]); }).join("&");
       var res = $("sim-result");

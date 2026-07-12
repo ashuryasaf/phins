@@ -7910,9 +7910,12 @@ def compute_investor_valuation_sim(params):
     """Deterministic Monte-Carlo actuarial appraisal of the IL seed pre-money.
 
     ``params`` (all optional): runs, seed, wacc, exit_multiple, prudence,
-    exit_metric ('net_revenue'|'ebitda'), percentile. Returns the chosen
-    percentile as ``pre_money`` plus the full distribution, the deterministic
-    central case, the echoed assumptions, and a content hash for verification.
+    exit_metric ('net_revenue'|'ebitda'), percentile, premium, take_rate.
+    ``premium``/``take_rate`` override the canonical base so the appraisal stays
+    reconciled with an adjusted income model; both default to the base values.
+    Returns the chosen percentile as ``pre_money`` plus the full distribution,
+    the deterministic central case, the echoed assumptions, and a content hash
+    for verification.
     """
     def _f(name, default):
         try:
@@ -7931,8 +7934,10 @@ def compute_investor_valuation_sim(params):
     percentile = min(max(_f('percentile', 50.0), 1.0), 99.0)
 
     b = _INV_VAL_BASE
+    premium = min(max(_f('premium', b['premium']), 0.0), 1000000.0)
+    take_rate = min(max(_f('take_rate', b['take_rate']), 0.0), 1.0)
     central = _inv_appraisal_pre_money(
-        b['in_force'], b['premium'], b['take_rate'], b['opex'],
+        b['in_force'], premium, take_rate, b['opex'],
         wacc, exit_multiple, exit_metric, prudence,
     )
 
@@ -7952,7 +7957,7 @@ def compute_investor_valuation_sim(params):
         in_force = [x * grow_m for x in b['in_force']]
         opex = [x * opex_m for x in b['opex']]
         vals.append(_inv_appraisal_pre_money(
-            in_force, b['premium'] * prem_m, b['take_rate'] * take_m, opex,
+            in_force, premium * prem_m, take_rate * take_m, opex,
             wc, em, exit_metric, prudence,
         ))
     vals.sort()
@@ -7963,7 +7968,7 @@ def compute_investor_valuation_sim(params):
     assumptions = {
         'wacc': round(wacc, 6), 'exit_multiple': round(exit_multiple, 4),
         'prudence': round(prudence, 6), 'exit_metric': exit_metric,
-        'premium': b['premium'], 'take_rate': b['take_rate'],
+        'premium': round(premium, 4), 'take_rate': round(take_rate, 6),
         'in_force': b['in_force'], 'opex': b['opex'],
     }
     out = {
@@ -7986,7 +7991,8 @@ def compute_investor_valuation_sim(params):
         'in': {'runs': runs, 'seed': seed, 'wacc': out['assumptions']['wacc'],
                'exit_multiple': out['assumptions']['exit_multiple'],
                'prudence': out['assumptions']['prudence'], 'exit_metric': exit_metric,
-               'percentile': percentile},
+               'percentile': percentile, 'premium': out['assumptions']['premium'],
+               'take_rate': out['assumptions']['take_rate']},
         'out': {'pre_money': out['pre_money'], 'central': out['central'], 'dist': dist},
     }, sort_keys=True).encode('utf-8')).hexdigest()
     return out
