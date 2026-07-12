@@ -5,7 +5,7 @@ Two meetings are pinned to the IL pitch dashboard:
 - Meeting A (11:00): chairman of an AI technology development public company —
   strategic investment / technology co-development (markets opening, tech
   orientation).
-- Meeting B (time TBC): CEO of a major insurance company (agents orientation) —
+- Meeting B (14:15): CEO of a major insurance company (agents orientation) —
   build & distribute via a joint company (NewCo) or MGA on the insurer's paper.
 
 These tests read the shipped static assets (no server required) and assert:
@@ -47,7 +47,9 @@ def test_pitch_dashboard_partner_meetings_section():
     assert 'id="pm-track-a"' in pd and 'id="pm-track-b"' in pd
     assert "AI technology development public company" in pd
     assert "CEO — major insurance company" in pd or "CEO of a major insurance company" in pd
+    # meeting times: A 11:00, B 14:15
     assert "11:00" in pd
+    assert "14:15" in pd
     # meeting B structures
     assert "joint company" in pd.lower()
     assert "MGA" in pd
@@ -208,6 +210,8 @@ def test_business_plan_a_tech_partner_specifics():
 
 def test_business_plan_b_insurer_mga_specifics():
     bp = _read(INTERNAL / PLAN_B)
+    # meeting time confirmed at 14:15
+    assert "14:15" in bp
     # agents orientation: JV / MGA structures + agent-force plan
     assert "agent force" in bp.lower()
     assert "MGA on insurer paper" in bp
