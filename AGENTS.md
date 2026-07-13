@@ -18,7 +18,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (129 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (130 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -103,7 +103,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 129 test files
+|- tests/                               # 130 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -341,7 +341,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 129 test files under `tests/`, 11 root-level `test_*.py` files
+- 130 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -401,4 +401,4 @@ If you update this file again:
 
 ---
 
-Last updated: July 7, 2026
+Last updated: July 13, 2026
