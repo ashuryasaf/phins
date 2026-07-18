@@ -456,10 +456,11 @@ def main(argv=None) -> int:
         print('All investor PDFs present.')
         return 0
 
-    _register_hebrew_font()
+    have_hebrew_font = _register_hebrew_font() == 'PHINSHebrew'
     styles = _styles()
     rtl_styles = None
     generated = []
+    skipped_rtl = []
     for md_name, pdf_name, title in DOCUMENTS:
         md_path = os.path.join(STATIC_DIR, md_name)
         pdf_path = os.path.join(STATIC_DIR, pdf_name)
@@ -467,6 +468,13 @@ def main(argv=None) -> int:
             print(f"  ! skip (source missing): {md_name}")
             continue
         if md_name in RTL_DOCUMENTS:
+            if not have_hebrew_font:
+                # Regenerating with the Helvetica fallback would overwrite a
+                # good Hebrew PDF with missing-glyph output. Leave the existing
+                # file untouched and fail so the bad regen can't ship silently.
+                print(f"  ! skip (no Hebrew font): {pdf_name}")
+                skipped_rtl.append(pdf_name)
+                continue
             if rtl_styles is None:
                 rtl_styles = _rtl_styles()
             generate_one(md_path, pdf_path, title, rtl_styles)
@@ -476,6 +484,10 @@ def main(argv=None) -> int:
         generated.append(pdf_name)
         print(f"  ✓ {pdf_name} ({size_kb:.0f} KB)")
     print(f"Generated {len(generated)} investor PDF(s) under {STATIC_DIR}")
+    if skipped_rtl:
+        print('  ! no Hebrew-capable font installed; skipped RTL document(s): '
+              + ', '.join(skipped_rtl))
+        return 1
     return 0
 
 
