@@ -711,6 +711,12 @@ def _source_has_hebrew(md_path: str) -> bool:
         return _HEBREW_RUN.search(fh.read()) is not None
 
 
+def _source_has_hebrew(md_path: str) -> bool:
+    """True when a markdown source embeds Hebrew text needing build-time bidi."""
+    with open(md_path, 'r', encoding='utf-8') as fh:
+        return _HEBREW_RUN.search(fh.read()) is not None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description='Generate investor PDF reports')
     parser.add_argument('--check', action='store_true',
