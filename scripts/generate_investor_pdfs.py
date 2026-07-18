@@ -565,6 +565,12 @@ def generate_one(md_path: str, pdf_path: str, title: str, styles) -> None:
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
 
 
+def _source_has_hebrew(md_path: str) -> bool:
+    """True when a markdown source embeds Hebrew text needing build-time bidi."""
+    with open(md_path, 'r', encoding='utf-8') as fh:
+        return _HEBREW_RUN.search(fh.read()) is not None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description='Generate investor PDF reports')
     parser.add_argument('--check', action='store_true',
@@ -610,6 +616,16 @@ def main(argv=None) -> int:
                 rtl_styles = _rtl_styles()
             generate_one(md_path, pdf_path, title, rtl_styles)
         else:
+            # LTR sources can still embed Hebrew runs (e.g. authority names),
+            # which _wrap_hebrew_runs bidi-reorders via the Hebrew font. When
+            # that font is registered but python-bidi is missing, _bidi_line
+            # would crash mid-build; skip (fail-closed) so English regen fails
+            # cleanly instead of aborting after other PDFs were rewritten.
+            if (have_hebrew_font and _bidi_get_display is None
+                    and _source_has_hebrew(md_path)):
+                print(f"  ! skip (python-bidi not installed): {pdf_name}")
+                skipped_rtl.append(pdf_name)
+                continue
             generate_one(md_path, pdf_path, title, styles)
         size_kb = os.path.getsize(pdf_path) / 1024
         generated.append(pdf_name)
