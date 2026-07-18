@@ -272,7 +272,10 @@ def _wrap_hebrew_runs(text: str) -> str:
 
     def repl(match):
         run = match.group(0)
-        visual = _bidi_get_display(run, base_dir='R') if _bidi_get_display else run[::-1]
+        # Reuse the fail-closed bidi reorder so embedded Hebrew never renders
+        # in the wrong visual order: without python-bidi this raises rather
+        # than emitting a naively reversed (and subtly incorrect) run.
+        visual = _bidi_line(run)
         return f'<font face="PHINSHebrew">{visual}</font>'
 
     return _HEBREW_RUN.sub(repl, text)
