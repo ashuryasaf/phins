@@ -426,7 +426,7 @@ def calculate_reinsurance_program(
 
 AGE_BAND_TABLE_TYPES = ('mortality_rates', 'disability_incidence_rates')
 AGE_BAND_MAX_AGE = 130          # upper bound for any age band
-AGE_BAND_MIN_COVERAGE = 100     # last band must end at this age or above
+AGE_BAND_MIN_COVERAGE = 101     # last band must end at this age or above (half-open, so age 100 stays covered)
 AGE_BAND_MAX_RATE_PER_1000 = 500.0
 
 

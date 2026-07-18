@@ -3764,8 +3764,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           return `Gap between bands ${prev.age_min}-${prev.age_max} and ${cur.age_min}-${cur.age_max} — bands must be contiguous.`;
         }
       }
-      if (rows[rows.length - 1].age_max < 100) {
-        return `The last age band must end at age 100 or above (got ${rows[rows.length - 1].age_max}).`;
+      if (rows[rows.length - 1].age_max < 101) {
+        return `The last age band must end at age 101 or above (got ${rows[rows.length - 1].age_max}).`;
       }
       return null;
     }
@@ -4058,6 +4058,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (allSuccess) {
           alert('✅ All ADL tables saved successfully!');
           loadTables();
+          loadVersions();
         } else {
           alert('❌ Some errors occurred:\n' + errors.join('\n'));
         }
