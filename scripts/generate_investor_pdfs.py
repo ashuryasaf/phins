@@ -580,6 +580,7 @@ def main(argv=None) -> int:
         return 0
 
     have_hebrew_font = _register_hebrew_font() == 'PHINSHebrew'
+    can_render_rtl = have_hebrew_font and _bidi_get_display is not None
     styles = _styles()
     rtl_styles = None
     generated = []
@@ -591,11 +592,15 @@ def main(argv=None) -> int:
             print(f"  ! skip (source missing): {md_name}")
             continue
         if md_name in RTL_DOCUMENTS:
-            if not have_hebrew_font:
-                # Regenerating with the Helvetica fallback would overwrite a
-                # good Hebrew PDF with missing-glyph output. Leave the existing
-                # file untouched and fail so the bad regen can't ship silently.
-                print(f"  ! skip (no Hebrew font): {pdf_name}")
+            if not can_render_rtl:
+                # Regenerating without a Hebrew font would overwrite a good
+                # Hebrew PDF with missing-glyph output; without python-bidi
+                # the build would crash mid-write and could truncate it.
+                # Leave the existing file untouched and fail so the bad
+                # regen can't ship silently.
+                reason = ('no Hebrew font' if not have_hebrew_font
+                          else 'python-bidi not installed')
+                print(f"  ! skip ({reason}): {pdf_name}")
                 skipped_rtl.append(pdf_name)
                 continue
             if rtl_styles is None:
@@ -608,8 +613,8 @@ def main(argv=None) -> int:
         print(f"  ✓ {pdf_name} ({size_kb:.0f} KB)")
     print(f"Generated {len(generated)} investor PDF(s) under {STATIC_DIR}")
     if skipped_rtl:
-        print('  ! no Hebrew-capable font installed; skipped RTL document(s): '
-              + ', '.join(skipped_rtl))
+        print('  ! RTL rendering unavailable (needs a Hebrew-capable font and '
+              'python-bidi); skipped: ' + ', '.join(skipped_rtl))
         return 1
     return 0
 
