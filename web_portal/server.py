@@ -11824,6 +11824,40 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
         'quarterly': round(quarterly_premium, 2)
     }
 
+
+def persist_actuarial_version_snapshot(store, actor: str) -> None:
+    """Best-effort durable copy of the current actuarial tables version.
+
+    Every accepted rate-table change creates a new immutable version in the
+    in-memory ActuarialTablesStore; when the database is available the full
+    snapshot is also written to the actuarial_tables catalog (encrypted) so
+    the version history survives restarts and stays auditable.
+    """
+    if not (USE_DATABASE and database_enabled):
+        return
+    try:
+        snapshot = store.get_current_tables()
+        if encrypt_json:
+            blob = encrypt_json(snapshot).to_json()
+        else:
+            blob = json.dumps({'scheme': 'plain', 'ciphertext': json.dumps(snapshot)})
+        from database.manager import DatabaseManager
+        from database.models import ActuarialTable
+        with DatabaseManager() as db:
+            db.actuarial.create(ActuarialTable(
+                id=f"ATV-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                name=f"Rate tables snapshot {store.current_version}",
+                table_type='rate_table_version',
+                version=store.current_version,
+                effective_date=datetime.now(),
+                payload=blob,
+                classification='restricted',
+                created_by=actor,
+            ))
+    except Exception as exc:
+        print(f"[WARN] Failed to persist actuarial version snapshot: {exc}")
+
+
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
     # Best-effort include actuarial upload state (table governance signal)
@@ -15502,6 +15536,7 @@ For claims or questions, please contact:
                         'effective_date': v_data.get('effective_date'),
                         'created_by': v_data.get('created_by'),
                         'status': v_data.get('status'),
+                        'change_summary': v_data.get('change_summary'),
                         'is_current': v_id == store.current_version
                     })
                 self._set_json_headers()
@@ -28394,12 +28429,14 @@ For claims or questions, please contact:
                 result = store.update_current_tables(table_type, table_data, session.get('username', 'admin'))
                 
                 if result['success']:
+                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'))
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
-                        'message': f"Table {table_type} updated successfully",
+                        'message': f"Table {table_type} updated successfully as version {result.get('version')}",
                         'table_type': result['table_type'],
-                        'data': result['data']
+                        'data': result['data'],
+                        'version': result.get('version')
                     }).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
@@ -28478,12 +28515,14 @@ For claims or questions, please contact:
                 result = store.reset_tables_to_default(table_type, session.get('username', 'admin'))
                 
                 if result['success']:
+                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'))
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
-                        'message': f"Table {table_type} reset to defaults",
+                        'message': f"Table {table_type} reset to defaults as version {result.get('version')}",
                         'table_type': result['table_type'],
-                        'data': result['data']
+                        'data': result['data'],
+                        'version': result.get('version')
                     }).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
@@ -29007,6 +29046,9 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': result.get('error', 'Apply failed')}).encode('utf-8'))
                     return
 
+                from services.actuarial_service import get_actuarial_store
+                persist_actuarial_version_snapshot(get_actuarial_store(), actor)
+
                 if audit:
                     try:
                         audit.log(actor, 'apply', 'actuarial_table', table_id, {
@@ -29024,6 +29066,7 @@ For claims or questions, please contact:
                     'rows_applied': normalization['rows_normalized'],
                     'rows_skipped': normalization['rows_skipped'],
                     'applied_table_id': table_id,
+                    'version': result.get('version'),
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
