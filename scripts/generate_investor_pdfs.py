@@ -33,10 +33,13 @@ import re
 import sys
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.pdfmetrics import registerFontFamily
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     ListFlowable, ListItem, Paragraph, Preformatted, SimpleDocTemplate,
     Spacer, Table, TableStyle,
@@ -71,7 +74,65 @@ DOCUMENTS = [
     ('PHINS_Business_Plan_Executive.md',
      'PHINS_Business_Plan_Executive.pdf',
      'PHINS — Business Plan (Executive) 2026–2029'),
+    ('investor-docs/israel-regulatory-application-en.md',
+     'investor-docs/israel-regulatory-application-en.pdf',
+     'PHINS — Regulatory Application Memorandum (Israel) · '
+     'Life Insurance with Disability Mechanism (1:4)'),
+    ('investor-docs/israel-regulatory-application-he.md',
+     'investor-docs/israel-regulatory-application-he.pdf',
+     'פינס — תזכיר בקשה רגולטורית (ישראל) · ביטוח חיים עם מנגנון נכות (1:4)'),
 ]
+
+# Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
+# font, right-aligned paragraph styles with reportlab's RTL word wrap, and
+# mirrored table columns so the logical first column sits on the right.
+RTL_DOCUMENTS = {
+    'investor-docs/israel-regulatory-application-he.md',
+}
+
+# Candidate Hebrew-capable fonts (first hit wins). DejaVu Sans covers the
+# Hebrew block and ships with most Linux build hosts.
+HEBREW_FONT_CANDIDATES = [
+    ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
+    ('/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf',
+     '/usr/share/fonts/truetype/noto/NotoSansHebrew-Bold.ttf'),
+    ('/usr/share/fonts/truetype/noto/NotoSerifHebrew-Regular.ttf',
+     '/usr/share/fonts/truetype/noto/NotoSerifHebrew-Bold.ttf'),
+]
+
+# Hebrew letter runs (letters plus intra-run spacing/punctuation) embedded in
+# LTR documents. Helvetica has no Hebrew glyphs and reportlab applies no bidi
+# outside ``wordWrap='RTL'``, so these runs are reversed to visual order and
+# wrapped in the registered Hebrew-capable font.
+_HEBREW_RUN = re.compile(
+    r'[\u0590-\u05FF](?:[\u0590-\u05FF\u05F3\u05F4 ,·—\-]*[\u0590-\u05FF])?'
+)
+_HEBREW_FONT = {'name': None}  # populated once a Hebrew font is registered
+
+
+def _register_hebrew_font() -> str:
+    """Register a Hebrew-capable TTF family; return its family name.
+
+    Falls back to Helvetica (Hebrew glyphs missing) if no candidate font is
+    installed, so ``--check`` and English-only regeneration keep working on
+    hosts without the fonts.
+    """
+    if _HEBREW_FONT['name']:
+        return _HEBREW_FONT['name']
+    for regular, bold in HEBREW_FONT_CANDIDATES:
+        if os.path.isfile(regular) and os.path.isfile(bold):
+            pdfmetrics.registerFont(TTFont('PHINSHebrew', regular))
+            pdfmetrics.registerFont(TTFont('PHINSHebrew-Bold', bold))
+            registerFontFamily('PHINSHebrew', normal='PHINSHebrew',
+                               bold='PHINSHebrew-Bold',
+                               italic='PHINSHebrew',
+                               boldItalic='PHINSHebrew-Bold')
+            _HEBREW_FONT['name'] = 'PHINSHebrew'
+            return 'PHINSHebrew'
+    print('  ! no Hebrew-capable font found; Hebrew text will use Helvetica')
+    _HEBREW_FONT['name'] = 'Helvetica'
+    return 'Helvetica'
 
 PHINS_BLUE = colors.HexColor('#0d47a1')
 PHINS_BLUE_MID = colors.HexColor('#1565c0')
@@ -105,7 +166,46 @@ def _styles():
         'cellhdr': ParagraphStyle('PhinsCellHdr', parent=base['BodyText'], fontSize=8,
                                   leading=10.5, textColor=colors.white),
     }
+    styles['_rtl'] = False
     return styles
+
+
+def _rtl_styles():
+    """Right-to-left (Hebrew) variants of the document styles.
+
+    Every text style is right-aligned, uses reportlab's ``wordWrap='RTL'``
+    bidi reordering, and a Hebrew-capable font family so bold markup keeps
+    working inside Hebrew paragraphs.
+    """
+    font = _register_hebrew_font()
+    bold = font + '-Bold' if font == 'PHINSHebrew' else 'Helvetica-Bold'
+    styles = _styles()
+    rtl = {}
+    for key, style in styles.items():
+        if key == '_rtl':
+            continue
+        if key == 'code':
+            # Formulas / code stay LTR but adopt a size-compatible look.
+            rtl[key] = style
+            continue
+        clone = ParagraphStyle(style.name + 'RTL', parent=style,
+                               alignment=TA_RIGHT, wordWrap='RTL',
+                               fontName=bold if key in ('title', 'h1', 'h2', 'h3', 'cellhdr') else font)
+        rtl[key] = clone
+    rtl['_rtl'] = True
+    return rtl
+
+
+def _wrap_hebrew_runs(text: str) -> str:
+    """Render Hebrew runs inside LTR text in visual order with a Hebrew font."""
+    if _HEBREW_FONT['name'] != 'PHINSHebrew':
+        return text
+
+    def repl(match):
+        visual = match.group(0)[::-1]
+        return f'<font face="PHINSHebrew">{visual}</font>'
+
+    return _HEBREW_RUN.sub(repl, text)
 
 
 def _inline(text: str) -> str:
@@ -124,6 +224,7 @@ def _inline(text: str) -> str:
     text = re.sub(r'__([^_]+)__', r'<b>\1</b>', text)
     text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', text)
+    text = _wrap_hebrew_runs(text)
     for i, span in enumerate(code_spans):
         text = text.replace(
             f"\x00CODE{i}\x00",
@@ -132,8 +233,39 @@ def _inline(text: str) -> str:
     return text
 
 
+def _rtl_plain(text: str) -> str:
+    """Markdown inline subset -> plain escaped text for RTL paragraphs.
+
+    reportlab's ``wordWrap='RTL'`` bidi reordering operates per text
+    fragment, so inline ``<b>``/``<i>``/``<font>`` tags split a Hebrew
+    sentence into fragments that get reassembled in the wrong visual order.
+    RTL documents therefore drop inline emphasis (headings and table headers
+    keep their bold font via styles) and render each paragraph as a single
+    fragment, which reorders correctly.
+    """
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'__([^_]+)__', r'\1', text)
+    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', text)
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', text)
+    return html.escape(text)
+
+
+def _inline_for(styles, text: str) -> str:
+    """Pick the inline renderer matching the document direction."""
+    return _rtl_plain(text) if styles.get('_rtl') else _inline(text)
+
+
 def _flush_list(items, ordered, styles, story):
     if not items:
+        return
+    if styles.get('_rtl'):
+        # ListFlowable anchors bullets on the left; for RTL documents render
+        # items as right-aligned paragraphs so the marker sits on the right.
+        for idx, item in enumerate(items, start=1):
+            prefix = f"{idx}. " if ordered else "\u2022 "
+            story.append(Paragraph(_rtl_plain(prefix + item), styles['bullet']))
+        story.append(Spacer(1, 4))
         return
     flow = [
         ListItem(Paragraph(_inline(it), styles['bullet']), leftIndent=12)
@@ -152,11 +284,17 @@ def _table(rows, styles, story):
     if not rows:
         return
     header, body = rows[0], rows[1:]
-    data = [[Paragraph(_inline(c), styles['cellhdr']) for c in header]]
+    rtl = styles.get('_rtl', False)
+    if rtl:
+        # Mirror columns so the logical first column reads from the right.
+        header = list(reversed(header))
+    data = [[Paragraph(_inline_for(styles, c), styles['cellhdr']) for c in header]]
     for r in body:
         # Pad/truncate to header width.
         r = (r + [''] * len(header))[:len(header)]
-        data.append([Paragraph(_inline(c), styles['cell']) for c in r])
+        if rtl:
+            r = list(reversed(r))
+        data.append([Paragraph(_inline_for(styles, c), styles['cell']) for c in r])
     tbl = Table(data, repeatRows=1)
     tbl.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), PHINS_BLUE_MID),
@@ -230,7 +368,7 @@ def markdown_to_story(md_text: str, title: str, styles):
             flush_list()
             level = len(m.group(1))
             key = 'h1' if level <= 1 else ('h2' if level == 2 else 'h3')
-            story.append(Paragraph(_inline(m.group(2)), styles[key]))
+            story.append(Paragraph(_inline_for(styles, m.group(2)), styles[key]))
             i += 1
             continue
 
@@ -245,7 +383,7 @@ def markdown_to_story(md_text: str, title: str, styles):
         if stripped.startswith('>'):
             flush_list()
             quote = re.sub(r'^>\s?', '', stripped)
-            story.append(Paragraph(_inline(quote), styles['quote']))
+            story.append(Paragraph(_inline_for(styles, quote), styles['quote']))
             i += 1
             continue
 
@@ -271,7 +409,7 @@ def markdown_to_story(md_text: str, title: str, styles):
 
         # Paragraph
         flush_list()
-        story.append(Paragraph(_inline(stripped), styles['body']))
+        story.append(Paragraph(_inline_for(styles, stripped), styles['body']))
         i += 1
 
     flush_list()
@@ -318,7 +456,9 @@ def main(argv=None) -> int:
         print('All investor PDFs present.')
         return 0
 
+    _register_hebrew_font()
     styles = _styles()
+    rtl_styles = None
     generated = []
     for md_name, pdf_name, title in DOCUMENTS:
         md_path = os.path.join(STATIC_DIR, md_name)
@@ -326,7 +466,12 @@ def main(argv=None) -> int:
         if not os.path.isfile(md_path):
             print(f"  ! skip (source missing): {md_name}")
             continue
-        generate_one(md_path, pdf_path, title, styles)
+        if md_name in RTL_DOCUMENTS:
+            if rtl_styles is None:
+                rtl_styles = _rtl_styles()
+            generate_one(md_path, pdf_path, title, rtl_styles)
+        else:
+            generate_one(md_path, pdf_path, title, styles)
         size_kb = os.path.getsize(pdf_path) / 1024
         generated.append(pdf_name)
         print(f"  ✓ {pdf_name} ({size_kb:.0f} KB)")
