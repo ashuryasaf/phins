@@ -89,10 +89,10 @@ DOCUMENTS = [
     ('investor-docs/israel-regulatory-application-en.md',
      'investor-docs/israel-regulatory-application-en.pdf',
      'PHINS — Regulatory Application Memorandum (Israel) · '
-     'Life Insurance with Disability Mechanism (1:4)'),
+     'Life Insurance with Lifelong Disability Mechanism (1:4 · 1:1 from 65)'),
     ('investor-docs/israel-regulatory-application-he.md',
      'investor-docs/israel-regulatory-application-he.pdf',
-     'פינס — תזכיר בקשה רגולטורית (ישראל) · ביטוח חיים עם מנגנון נכות (1:4)'),
+     'פינס — תזכיר בקשה רגולטורית (ישראל) · ביטוח חיים עם מנגנון נכות לכל החיים (1:4 · 1:1 מגיל 65)'),
 ]
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
@@ -116,9 +116,11 @@ HEBREW_FONT_CANDIDATES = [
 # Hebrew letter runs (letters plus intra-run spacing/punctuation) embedded in
 # LTR documents. Helvetica has no Hebrew glyphs and reportlab applies no bidi
 # outside ``wordWrap='RTL'``, so these runs are reversed to visual order and
-# wrapped in the registered Hebrew-capable font.
+# wrapped in the registered Hebrew-capable font. The new-shekel sign ₪
+# (U+20AA) is included because Helvetica lacks that glyph too; a lone ₪
+# is wrapped in the Hebrew-capable font without reordering.
 _HEBREW_RUN = re.compile(
-    r'[\u0590-\u05FF](?:[\u0590-\u05FF\u05F3\u05F4 ,·—\-]*[\u0590-\u05FF])?'
+    r'[\u0590-\u05FF\u20AA](?:[\u0590-\u05FF\u05F3\u05F4 ,·—\-]*[\u0590-\u05FF])?'
 )
 _HEBREW_FONT = {'name': None}  # populated once a Hebrew font is registered
 
