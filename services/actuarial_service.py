@@ -633,6 +633,16 @@ class ActuarialTablesStore:
     def get_current_tables(self) -> Dict:
         """Get the currently active tables"""
         return self.versions.get(self.current_version, {})
+
+    def get_version_snapshot(self, version_id: str) -> Dict:
+        """Return a deep copy of a specific immutable version by id.
+
+        Fetching by explicit id (under the version lock) lets callers persist
+        the exact version they just created, even if a concurrent save has since
+        advanced ``current_version``.
+        """
+        with self._version_lock:
+            return copy.deepcopy(self.versions.get(version_id, {}))
     
     def get_mortality_rate(self, age: int) -> float:
         """Get mortality rate for age (per 1000)"""

@@ -11825,18 +11825,22 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     }
 
 
-def persist_actuarial_version_snapshot(store, actor: str) -> None:
-    """Best-effort durable copy of the current actuarial tables version.
+def persist_actuarial_version_snapshot(store, actor: str, version_id: str) -> None:
+    """Best-effort durable copy of a specific actuarial tables version.
 
     Every accepted rate-table change creates a new immutable version in the
     in-memory ActuarialTablesStore; when the database is available the full
     snapshot is also written to the actuarial_tables catalog (encrypted) so
-    the version history survives restarts and stays auditable.
+    the version history survives restarts and stays auditable. The exact
+    ``version_id`` returned by the mutation is fetched here so a concurrent save
+    advancing ``current_version`` can never mismatch the payload and its label.
     """
     if not (USE_DATABASE and database_enabled):
         return
     try:
-        snapshot = store.get_current_tables()
+        snapshot = store.get_version_snapshot(version_id)
+        if not snapshot:
+            return
         if encrypt_json:
             blob = encrypt_json(snapshot).to_json()
         else:
@@ -11846,9 +11850,9 @@ def persist_actuarial_version_snapshot(store, actor: str) -> None:
         with DatabaseManager() as db:
             db.actuarial.create(ActuarialTable(
                 id=f"ATV-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                name=f"Rate tables snapshot {store.current_version}",
+                name=f"Rate tables snapshot {version_id}",
                 table_type='rate_table_version',
-                version=store.current_version,
+                version=version_id,
                 effective_date=datetime.now(),
                 payload=blob,
                 classification='restricted',
@@ -28381,7 +28385,7 @@ For claims or questions, please contact:
                 result = store.upload_new_tables(tables, session.get('username', 'admin'), effective_date)
                 
                 if result['success']:
-                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'))
+                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'), result['version'])
                     self._set_json_headers(201)
                     self.wfile.write(json.dumps({
                         'success': True,
@@ -28430,7 +28434,7 @@ For claims or questions, please contact:
                 result = store.update_current_tables(table_type, table_data, session.get('username', 'admin'))
                 
                 if result['success']:
-                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'))
+                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'), result['version'])
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
@@ -28516,7 +28520,7 @@ For claims or questions, please contact:
                 result = store.reset_tables_to_default(table_type, session.get('username', 'admin'))
                 
                 if result['success']:
-                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'))
+                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'), result['version'])
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
@@ -29048,7 +29052,7 @@ For claims or questions, please contact:
                     return
 
                 from services.actuarial_service import get_actuarial_store
-                persist_actuarial_version_snapshot(get_actuarial_store(), actor)
+                persist_actuarial_version_snapshot(get_actuarial_store(), actor, result['version'])
 
                 if audit:
                     try:
