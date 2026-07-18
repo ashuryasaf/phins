@@ -20,3 +20,8 @@ pytest>=7.0
 mypy>=1.0
 types-reportlab>=0.0.1
 moto>=4.0
+
+# Build-time only: Unicode bidi algorithm for rendering the Hebrew (RTL)
+# investor PDFs in scripts/generate_investor_pdfs.py. Not needed at runtime;
+# the generated PDFs are committed.
+python-bidi>=0.6
