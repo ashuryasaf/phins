@@ -1450,17 +1450,23 @@
           
           <div class="card">
             <div class="card-title">Rate Table</div>
+            <p style="margin-bottom:12px;color:var(--text-light);font-size:0.9rem;">
+              Age bands must be contiguous (no gaps or overlaps), start at age 0 and reach at least age 100.
+              Saving creates a new table version used by simulations and new-policy pricing.
+            </p>
             <table class="data-table" id="mortality-table">
               <thead>
                 <tr>
                   <th>Age Min</th>
                   <th>Age Max</th>
                   <th>Rate per 1,000</th>
+                  <th style="width:80px;">Actions</th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
             <div style="margin-top:16px;">
+              <button class="btn btn-outline" onclick="addRateRow('mortality-table')">➕ Add Row</button>
               <button class="btn btn-success" onclick="saveMortalityRates()">💾 Save Changes</button>
               <button class="btn btn-outline" onclick="resetMortalityRates()">↻ Reset to Defaults</button>
             </div>
@@ -1473,17 +1479,23 @@
           
           <div class="card">
             <div class="card-title">Rate Table</div>
+            <p style="margin-bottom:12px;color:var(--text-light);font-size:0.9rem;">
+              Age bands must be contiguous (no gaps or overlaps), start at age 0 and reach at least age 100.
+              Saving creates a new table version used by simulations and new-policy pricing.
+            </p>
             <table class="data-table" id="disability-table">
               <thead>
                 <tr>
                   <th>Age Min</th>
                   <th>Age Max</th>
                   <th>Rate per 1,000</th>
+                  <th style="width:80px;">Actions</th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
             <div style="margin-top:16px;">
+              <button class="btn btn-outline" onclick="addRateRow('disability-table')">➕ Add Row</button>
               <button class="btn btn-success" onclick="saveDisabilityRates()">💾 Save Changes</button>
               <button class="btn btn-outline" onclick="resetDisabilityRates()">↻ Reset to Defaults</button>
             </div>
@@ -2570,6 +2582,7 @@
                   <th>Version</th>
                   <th>Effective Date</th>
                   <th>Created By</th>
+                  <th>Change</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -3637,20 +3650,26 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
     }
     
+    // Build one editable age-band row (age_min / age_max / rate + remove button)
+    function rateRowHtml(ageMin, ageMax, rate) {
+      return `
+        <tr>
+          <td><input type="number" min="0" max="130" step="1" value="${ageMin}" data-field="age_min"></td>
+          <td><input type="number" min="0" max="130" step="1" value="${ageMax}" data-field="age_max"></td>
+          <td><input type="number" min="0" max="500" value="${rate}" step="0.1" data-field="rate_per_1000"></td>
+          <td><button class="btn btn-outline" style="padding:4px 10px;" title="Remove this age band" onclick="removeRateRow(this)">🗑</button></td>
+        </tr>
+      `;
+    }
+
     function renderMortalityTable() {
       const tbody = document.querySelector('#mortality-table tbody');
       tbody.innerHTML = '';
       
       if (!currentTables || !currentTables.mortality_rates) return;
       
-      currentTables.mortality_rates.forEach((row, idx) => {
-        tbody.innerHTML += `
-          <tr>
-            <td><input type="number" value="${row.age_min}" data-idx="${idx}" data-field="age_min" onchange="updateMortalityRow(this)"></td>
-            <td><input type="number" value="${row.age_max}" data-idx="${idx}" data-field="age_max" onchange="updateMortalityRow(this)"></td>
-            <td><input type="number" value="${row.rate_per_1000}" step="0.1" data-idx="${idx}" data-field="rate_per_1000" onchange="updateMortalityRow(this)"></td>
-          </tr>
-        `;
+      currentTables.mortality_rates.forEach(row => {
+        tbody.innerHTML += rateRowHtml(row.age_min, row.age_max, row.rate_per_1000);
       });
     }
     
@@ -3660,15 +3679,95 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       
       if (!currentTables || !currentTables.disability_incidence_rates) return;
       
-      currentTables.disability_incidence_rates.forEach((row, idx) => {
-        tbody.innerHTML += `
-          <tr>
-            <td><input type="number" value="${row.age_min}" data-idx="${idx}" data-field="age_min"></td>
-            <td><input type="number" value="${row.age_max}" data-idx="${idx}" data-field="age_max"></td>
-            <td><input type="number" value="${row.rate_per_1000}" step="0.1" data-idx="${idx}" data-field="rate_per_1000"></td>
-          </tr>
-        `;
+      currentTables.disability_incidence_rates.forEach(row => {
+        tbody.innerHTML += rateRowHtml(row.age_min, row.age_max, row.rate_per_1000);
       });
+    }
+
+    // Append a new age band continuing from the last row of the table
+    function addRateRow(tableId) {
+      const tbody = document.querySelector(`#${tableId} tbody`);
+      if (!tbody) return;
+      const rows = tbody.querySelectorAll('tr');
+      let ageMin = 0;
+      if (rows.length > 0) {
+        const lastInputs = rows[rows.length - 1].querySelectorAll('input');
+        const lastMax = parseInt(lastInputs[1]?.value);
+        if (!Number.isNaN(lastMax)) ageMin = lastMax;
+      }
+      const ageMax = Math.min(ageMin + 10, 130);
+      tbody.insertAdjacentHTML('beforeend', rateRowHtml(ageMin, ageMax, 0));
+    }
+
+    // Remove an age band row (at least one band must remain)
+    function removeRateRow(btn) {
+      const row = btn.closest('tr');
+      const tbody = row?.parentElement;
+      if (!tbody) return;
+      if (tbody.querySelectorAll('tr').length <= 1) {
+        alert('❌ At least one age band row is required.');
+        return;
+      }
+      row.remove();
+    }
+
+    // Collect {age_min, age_max, rate_per_1000} rows from an editable table
+    function collectRateRows(tableId) {
+      const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+      const data = [];
+      rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        if (inputs.length >= 3) {
+          data.push({
+            age_min: parseInt(inputs[0].value),
+            age_max: parseInt(inputs[1].value),
+            rate_per_1000: parseFloat(inputs[2].value)
+          });
+        }
+      });
+      return data;
+    }
+
+    // Client-side integrity check mirroring the server's rules. Returns an
+    // error message (string) or null when the rows are valid. Rows are
+    // sorted in place by age_min.
+    function validateRateRows(rows) {
+      if (!rows.length) return 'At least one age band row is required.';
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (Number.isNaN(r.age_min) || Number.isNaN(r.age_max)) {
+          return `Row ${i + 1}: Age Min and Age Max are required whole numbers.`;
+        }
+        if (Number.isNaN(r.rate_per_1000)) {
+          return `Row ${i + 1}: Rate per 1,000 is required.`;
+        }
+        if (r.age_min < 0 || r.age_max > 130) {
+          return `Row ${i + 1}: ages must be between 0 and 130.`;
+        }
+        if (r.age_min >= r.age_max) {
+          return `Row ${i + 1}: Age Min (${r.age_min}) must be less than Age Max (${r.age_max}).`;
+        }
+        if (r.rate_per_1000 < 0 || r.rate_per_1000 > 500) {
+          return `Row ${i + 1}: Rate per 1,000 must be between 0 and 500.`;
+        }
+      }
+      rows.sort((a, b) => (a.age_min - b.age_min) || (a.age_max - b.age_max));
+      if (rows[0].age_min !== 0) {
+        return `The first age band must start at age 0 (got ${rows[0].age_min}).`;
+      }
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1], cur = rows[i];
+        if (cur.age_min < prev.age_max) {
+          return `Bands ${prev.age_min}-${prev.age_max} and ${cur.age_min}-${cur.age_max} overlap.`;
+        }
+        if (cur.age_min > prev.age_max) {
+          return `Gap between bands ${prev.age_min}-${prev.age_max} and ${cur.age_min}-${cur.age_max} — bands must be contiguous.`;
+        }
+      }
+      if (rows[rows.length - 1].age_max < 100) {
+        return `The last age band must end at age 100 or above (got ${rows[rows.length - 1].age_max}).`;
+      }
+      return null;
     }
     
     function renderADLTables() {
@@ -3800,26 +3899,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
     }
     
-    // Save mortality rates table
-    async function saveMortalityRates() {
-      if (!currentTables || !currentTables.mortality_rates) {
-        alert('❌ No mortality rates loaded');
+    // Shared saver for the two age-banded rate tables. Validates locally
+    // (mirroring the server rules) then posts to /api/actuarial/table-update,
+    // which creates a new immutable table version on success.
+    async function saveRateTable(tableId, tableType, label) {
+      const data = collectRateRows(tableId);
+      const validationError = validateRateRows(data);
+      if (validationError) {
+        alert('❌ ' + validationError);
         return;
       }
-      
-      // Collect data from inputs
-      const rows = document.querySelectorAll('#mortality-table tbody tr');
-      const data = [];
-      rows.forEach(row => {
-        const inputs = row.querySelectorAll('input');
-        if (inputs.length >= 3) {
-          data.push({
-            age_min: parseInt(inputs[0].value),
-            age_max: parseInt(inputs[1].value),
-            rate_per_1000: parseFloat(inputs[2].value)
-          });
-        }
-      });
       
       try {
         const res = await fetch('/api/actuarial/table-update', {
@@ -3829,21 +3918,31 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            table_type: 'mortality_rates',
+            table_type: tableType,
             data: data
           })
         });
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Mortality rates saved successfully!');
+          alert(`✅ ${label} saved as new version ${result.version || ''}`.trim() + '!');
           loadTables();
+          loadVersions();
         } else {
           alert('❌ Error: ' + (result.error || 'Unknown error'));
         }
       } catch (err) {
-        alert('❌ Error saving mortality rates: ' + err.message);
+        alert(`❌ Error saving ${label.toLowerCase()}: ` + err.message);
       }
+    }
+
+    // Save mortality rates table
+    async function saveMortalityRates() {
+      if (!currentTables || !currentTables.mortality_rates) {
+        alert('❌ No mortality rates loaded');
+        return;
+      }
+      await saveRateTable('mortality-table', 'mortality_rates', 'Mortality rates');
     }
     
     // Save disability rates table
@@ -3852,44 +3951,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         alert('❌ No disability rates loaded');
         return;
       }
-      
-      // Collect data from inputs
-      const rows = document.querySelectorAll('#disability-table tbody tr');
-      const data = [];
-      rows.forEach(row => {
-        const inputs = row.querySelectorAll('input');
-        if (inputs.length >= 3) {
-          data.push({
-            age_min: parseInt(inputs[0].value),
-            age_max: parseInt(inputs[1].value),
-            rate_per_1000: parseFloat(inputs[2].value)
-          });
-        }
-      });
-      
-      try {
-        const res = await fetch('/api/actuarial/table-update', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            table_type: 'disability_incidence_rates',
-            data: data
-          })
-        });
-        
-        const result = await res.json();
-        if (result.success) {
-          alert('✅ Disability incidence rates saved successfully!');
-          loadTables();
-        } else {
-          alert('❌ Error: ' + (result.error || 'Unknown error'));
-        }
-      } catch (err) {
-        alert('❌ Error saving disability rates: ' + err.message);
-      }
+      await saveRateTable('disability-table', 'disability_incidence_rates', 'Disability incidence rates');
     }
     
     // Save all ADL tables
@@ -4072,8 +4134,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Mortality rates reset to defaults!');
+          alert(`✅ Mortality rates reset to defaults as version ${result.version || ''}`.trim() + '!');
           loadTables();
+          loadVersions();
         } else {
           alert('❌ Error: ' + (result.error || 'Unknown error'));
         }
@@ -4098,8 +4161,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         
         const result = await res.json();
         if (result.success) {
-          alert('✅ Disability rates reset to defaults!');
+          alert(`✅ Disability rates reset to defaults as version ${result.version || ''}`.trim() + '!');
           loadTables();
+          loadVersions();
         } else {
           alert('❌ Error: ' + (result.error || 'Unknown error'));
         }
@@ -4536,6 +4600,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               <td><span class="version-badge ${v.status}">${v.version}</span> ${v.is_current ? '(Current)' : ''}</td>
               <td>${v.effective_date ? new Date(v.effective_date).toLocaleString() : 'N/A'}</td>
               <td>${v.created_by || 'system'}</td>
+              <td>${v.change_summary || '—'}</td>
               <td>${v.status}</td>
             </tr>
           `).join('');
