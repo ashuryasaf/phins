@@ -526,6 +526,9 @@ class ActuarialTablesStore:
         self.versions: Dict[str, Dict] = {}
         self.config = UnderwritingConfig()
         self.audit_log: List[Dict] = []
+        # Serializes version-id allocation and assignment so concurrent saves
+        # (the portal runs a threading HTTP server) never reuse the same id.
+        self._version_lock = threading.Lock()
         
         # Initialize with default V2.0 tables
         self._initialize_default_tables()
@@ -781,25 +784,26 @@ class ActuarialTablesStore:
         an accurate record of every table set that has ever driven pricing.
         """
         metadata_keys = ('version', 'effective_date', 'created_by', 'status', 'change_summary')
-        current = self.versions.get(self.current_version, {})
-        snapshot = copy.deepcopy({k: v for k, v in current.items() if k not in metadata_keys})
-        snapshot.update(copy.deepcopy(table_overrides))
+        with self._version_lock:
+            current = self.versions.get(self.current_version, {})
+            snapshot = copy.deepcopy({k: v for k, v in current.items() if k not in metadata_keys})
+            snapshot.update(copy.deepcopy(table_overrides))
 
-        new_version = self._next_version_id()
-        self.versions[new_version] = {
-            'version': new_version,
-            'effective_date': datetime.now().isoformat(),
-            'created_by': user,
-            'status': 'active',
-            'change_summary': change_summary,
-            **snapshot,
-        }
+            new_version = self._next_version_id()
+            self.versions[new_version] = {
+                'version': new_version,
+                'effective_date': datetime.now().isoformat(),
+                'created_by': user,
+                'status': 'active',
+                'change_summary': change_summary,
+                **snapshot,
+            }
 
-        old_version = self.current_version
-        if old_version in self.versions:
-            self.versions[old_version]['status'] = 'archived'
-        self.current_version = new_version
-        return new_version
+            old_version = self.current_version
+            if old_version in self.versions:
+                self.versions[old_version]['status'] = 'archived'
+            self.current_version = new_version
+            return new_version
 
     def update_current_tables(self, table_type: str, table_data: List[Dict], user: str) -> Dict:
         """Update a specific table, creating a new immutable version.
