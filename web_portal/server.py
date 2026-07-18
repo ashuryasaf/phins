@@ -28381,6 +28381,7 @@ For claims or questions, please contact:
                 result = store.upload_new_tables(tables, session.get('username', 'admin'), effective_date)
                 
                 if result['success']:
+                    persist_actuarial_version_snapshot(store, session.get('username', 'admin'))
                     self._set_json_headers(201)
                     self.wfile.write(json.dumps({
                         'success': True,
