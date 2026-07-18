@@ -176,15 +176,39 @@ def test_normalize_uploaded_rate_table_rejects_unsupported_type():
 
 def test_apply_uploaded_table_to_store_round_trip():
     store = get_actuarial_store()
+    version_before = store.current_version
     new_table = [
+        {'age_min': 0, 'age_max': 30, 'rate_per_1000': 0.4},
         {'age_min': 30, 'age_max': 40, 'rate_per_1000': 0.9},
-        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.0},
+        {'age_min': 40, 'age_max': 120, 'rate_per_1000': 2.0},
     ]
     result = apply_uploaded_table_to_store('mortality_rates', new_table, user='pytest')
     assert result.get('success') is True
+    # Promoting a table snapshots a new immutable version
+    assert result.get('version') and result['version'] != version_before
+    assert store.current_version == result['version']
     # Round-trip: rate at age 35 must come from the new table
     rate = store.get_mortality_rate(35)
     assert abs(rate - (0.9 / 1000.0)) < 1e-9
+    # Restore defaults so other tests see the standard tables
+    store.reset_tables_to_default('mortality_rates', 'pytest')
+
+
+def test_apply_uploaded_table_to_store_rejects_partial_coverage():
+    """A global rate band with gaps / missing ages must be rejected."""
+    store = get_actuarial_store()
+    version_before = store.current_version
+    tables_before = store.get_current_tables().get('mortality_rates')
+    partial = [
+        {'age_min': 30, 'age_max': 40, 'rate_per_1000': 0.9},
+        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.0},
+    ]
+    result = apply_uploaded_table_to_store('mortality_rates', partial, user='pytest')
+    assert result.get('success') is False
+    assert 'start at age 0' in result.get('error', '')
+    # The rejected update must not create a version or mutate the tables
+    assert store.current_version == version_before
+    assert store.get_current_tables().get('mortality_rates') == tables_before
 
 
 # ----------------------------------------------------------------------------

@@ -18,6 +18,7 @@ Author: PHINS Actuarial Team
 Version: 2.0
 """
 
+import copy
 import math
 import random
 import re
@@ -408,6 +409,109 @@ def calculate_reinsurance_program(
 
 
 # =============================================================================
+# AGE-BAND RATE TABLE VALIDATION
+# =============================================================================
+#
+# Mortality / disability rate tables are lists of age bands
+# ``{age_min, age_max, rate_per_1000}``. Actuaries can add or remove bands
+# from the dashboard, so the platform enforces structural integrity before
+# any table becomes the pricing source of truth:
+#
+# * every band must satisfy ``0 <= age_min < age_max <= AGE_BAND_MAX_AGE``
+# * bands must be contiguous — no overlaps and no gaps between bands
+# * the table must start at age 0 and reach at least ``AGE_BAND_MIN_COVERAGE``
+#   so no insurable age silently falls through to the hardcoded fallback rate
+# * every rate must be a finite number in ``[0, AGE_BAND_MAX_RATE_PER_1000]``
+# =============================================================================
+
+AGE_BAND_TABLE_TYPES = ('mortality_rates', 'disability_incidence_rates')
+AGE_BAND_MAX_AGE = 130          # upper bound for any age band
+AGE_BAND_MIN_COVERAGE = 100     # last band must end at this age or above
+AGE_BAND_MAX_RATE_PER_1000 = 500.0
+
+
+def validate_age_band_rate_rows(table_type: str, rows: Any) -> Tuple[List[Dict], List[str]]:
+    """Validate and normalize an age-banded rate table.
+
+    Returns ``(normalized_rows, errors)``. When ``errors`` is non-empty the
+    normalized list is empty and the table must be rejected. Normalized rows
+    are sorted by ``age_min`` with integer ages and float rates.
+    """
+    errors: List[str] = []
+    if not isinstance(rows, list) or not rows:
+        return [], [f'{table_type}: at least one age band row is required']
+
+    normalized: List[Dict] = []
+    for idx, row in enumerate(rows):
+        label = f'{table_type} row {idx + 1}'
+        if not isinstance(row, dict):
+            errors.append(f'{label}: each row must be an object with age_min, age_max, rate_per_1000')
+            continue
+        try:
+            age_min_raw = float(row.get('age_min'))
+            age_max_raw = float(row.get('age_max'))
+        except (TypeError, ValueError):
+            errors.append(f'{label}: age_min and age_max are required whole numbers')
+            continue
+        if (not math.isfinite(age_min_raw) or not math.isfinite(age_max_raw)
+                or age_min_raw != int(age_min_raw) or age_max_raw != int(age_max_raw)):
+            errors.append(f'{label}: age_min and age_max must be whole numbers')
+            continue
+        age_min, age_max = int(age_min_raw), int(age_max_raw)
+        try:
+            rate = float(row.get('rate_per_1000'))
+        except (TypeError, ValueError):
+            errors.append(f'{label}: rate_per_1000 is required and must be a number')
+            continue
+        if not math.isfinite(rate):
+            errors.append(f'{label}: rate_per_1000 must be a finite number')
+            continue
+        if age_min < 0 or age_max > AGE_BAND_MAX_AGE:
+            errors.append(f'{label}: ages must be between 0 and {AGE_BAND_MAX_AGE}')
+            continue
+        if age_min >= age_max:
+            errors.append(f'{label}: age_min ({age_min}) must be less than age_max ({age_max})')
+            continue
+        if rate < 0 or rate > AGE_BAND_MAX_RATE_PER_1000:
+            errors.append(
+                f'{label}: rate_per_1000 must be between 0 and '
+                f'{AGE_BAND_MAX_RATE_PER_1000:g} per 1,000 lives, got {rate}'
+            )
+            continue
+        normalized.append({'age_min': age_min, 'age_max': age_max, 'rate_per_1000': round(rate, 6)})
+
+    if errors:
+        return [], errors
+
+    normalized.sort(key=lambda r: (r['age_min'], r['age_max']))
+
+    if normalized[0]['age_min'] != 0:
+        errors.append(
+            f'{table_type}: the first band must start at age 0 '
+            f'(got {normalized[0]["age_min"]}) so young ages never fall outside the table'
+        )
+    for prev, cur in zip(normalized, normalized[1:]):
+        prev_label = f'{prev["age_min"]}-{prev["age_max"]}'
+        cur_label = f'{cur["age_min"]}-{cur["age_max"]}'
+        if cur['age_min'] < prev['age_max']:
+            errors.append(f'{table_type}: bands {prev_label} and {cur_label} overlap')
+        elif cur['age_min'] > prev['age_max']:
+            errors.append(
+                f'{table_type}: gap between bands {prev_label} and {cur_label} — '
+                f'bands must be contiguous (next age_min must equal previous age_max)'
+            )
+    if normalized[-1]['age_max'] < AGE_BAND_MIN_COVERAGE:
+        errors.append(
+            f'{table_type}: the last band must end at age {AGE_BAND_MIN_COVERAGE} or above '
+            f'(got {normalized[-1]["age_max"]}) so older insured ages are always covered'
+        )
+
+    if errors:
+        return [], errors
+    return normalized, []
+
+
+# =============================================================================
 # ACTUARIAL TABLES STORE (Version Controlled)
 # =============================================================================
 
@@ -598,6 +702,7 @@ class ActuarialTablesStore:
             'effective_date': effective_date or datetime.now().isoformat(),
             'created_by': user,
             'status': 'active',
+            'change_summary': 'full table set upload',
             **tables
         }
         
@@ -657,8 +762,51 @@ class ActuarialTablesStore:
         
         return {'success': True, 'config': asdict(self.config)}
     
+    def _next_version_id(self) -> str:
+        """Compute the next sequential version id (V2.0 -> V2.1 -> ... -> V3.0)."""
+        numbers = []
+        for version_id in self.versions:
+            try:
+                numbers.append(float(str(version_id).lstrip('Vv')))
+            except (TypeError, ValueError):
+                continue
+        base = max(numbers) if numbers else 2.0
+        return f'V{base + 0.1:.1f}'
+
+    def _create_new_version(self, table_overrides: Dict[str, List[Dict]], user: str,
+                            change_summary: str) -> str:
+        """Snapshot the current tables into a new immutable version.
+
+        The previous version is archived untouched so the version history is
+        an accurate record of every table set that has ever driven pricing.
+        """
+        metadata_keys = ('version', 'effective_date', 'created_by', 'status', 'change_summary')
+        current = self.versions.get(self.current_version, {})
+        snapshot = copy.deepcopy({k: v for k, v in current.items() if k not in metadata_keys})
+        snapshot.update(copy.deepcopy(table_overrides))
+
+        new_version = self._next_version_id()
+        self.versions[new_version] = {
+            'version': new_version,
+            'effective_date': datetime.now().isoformat(),
+            'created_by': user,
+            'status': 'active',
+            'change_summary': change_summary,
+            **snapshot,
+        }
+
+        old_version = self.current_version
+        if old_version in self.versions:
+            self.versions[old_version]['status'] = 'archived'
+        self.current_version = new_version
+        return new_version
+
     def update_current_tables(self, table_type: str, table_data: List[Dict], user: str) -> Dict:
-        """Update a specific table within the current version without creating a new version.
+        """Update a specific table, creating a new immutable version.
+
+        Every accepted change snapshots the full table set into a new version
+        (the previous version is archived, never mutated) so simulations and
+        premium quotes always reference a reproducible ``tables_version``.
         
         Args:
             table_type: One of 'mortality_rates', 'disability_incidence_rates', 
@@ -668,7 +816,7 @@ class ActuarialTablesStore:
             user: Username making the change
             
         Returns:
-            Dict with success status and updated table
+            Dict with success status, updated table, and the new version id
         """
         valid_types = [
             'mortality_rates', 'disability_incidence_rates',
@@ -686,13 +834,11 @@ class ActuarialTablesStore:
         old_data = current_tables.get(table_type, [])
         
         # Validate the new data
-        if table_type in ['mortality_rates', 'disability_incidence_rates']:
-            for item in table_data:
-                rate = item.get('rate_per_1000')
-                if rate is None:
-                    return {'success': False, 'error': f'{table_type}: rate_per_1000 is required'}
-                if rate < 0 or rate > 500:
-                    return {'success': False, 'error': f'{table_type}: rate_per_1000 must be 0-500 per 1000 lives, got {rate}'}
+        if table_type in AGE_BAND_TABLE_TYPES:
+            normalized, errors = validate_age_band_rate_rows(table_type, table_data)
+            if errors:
+                return {'success': False, 'error': '; '.join(errors), 'errors': errors}
+            table_data = normalized
         
         if table_type in ['adl_mortality_multipliers', 'adl_disability_multipliers']:
             for item in table_data:
@@ -710,17 +856,23 @@ class ActuarialTablesStore:
                 if pct < 0 or pct > 1:
                     return {'success': False, 'error': f'{table_type}: benefit_pct must be 0.0-1.0 (decimal, where 1.0 = 100%), got {pct}'}
         
-        # Update the table
-        current_tables[table_type] = table_data
+        # Snapshot the change into a new immutable version
+        old_version = self.current_version
+        new_version = self._create_new_version(
+            {table_type: table_data}, user,
+            change_summary=f'{table_type} updated ({len(table_data)} rows)',
+        )
         
         # Audit log
         self._log_change('update_table', user, {
             'table_type': table_type,
+            'old_version': old_version,
+            'new_version': new_version,
             'old_data': old_data,
             'new_data': table_data
         })
         
-        return {'success': True, 'table_type': table_type, 'data': table_data}
+        return {'success': True, 'table_type': table_type, 'data': table_data, 'version': new_version}
     
     def get_default_config(self) -> Dict:
         """Get the original default underwriting configuration values.
@@ -863,16 +1015,22 @@ class ActuarialTablesStore:
             return {'success': False, 'error': 'No current version found'}
         
         old_data = current_tables.get(table_type, [])
-        current_tables[table_type] = defaults[table_type]
+        old_version = self.current_version
+        new_version = self._create_new_version(
+            {table_type: defaults[table_type]}, user,
+            change_summary=f'{table_type} reset to defaults',
+        )
         
         # Audit log
         self._log_change('reset_table', user, {
             'table_type': table_type,
+            'old_version': old_version,
+            'new_version': new_version,
             'old_data': old_data,
             'new_data': defaults[table_type]
         })
         
-        return {'success': True, 'table_type': table_type, 'data': defaults[table_type]}
+        return {'success': True, 'table_type': table_type, 'data': defaults[table_type], 'version': new_version}
     
     def _validate_tables(self, tables: Dict) -> Dict:
         """Validate table structure and values"""
@@ -885,13 +1043,11 @@ class ActuarialTablesStore:
             if table not in tables:
                 errors.append(f'Missing required table: {table}')
         
-        # Validate rates are within bounds
-        for table in ['mortality_rates', 'disability_incidence_rates']:
+        # Validate age-band rate tables (bounds + contiguity + coverage)
+        for table in AGE_BAND_TABLE_TYPES:
             if table in tables:
-                for item in tables[table]:
-                    rate = item.get('rate_per_1000', 0)
-                    if rate < 0 or rate > 1000:
-                        errors.append(f'{table}: rate must be 0-1000, got {rate}')
+                _, band_errors = validate_age_band_rate_rows(table, tables[table])
+                errors.extend(band_errors)
         
         # Validate multipliers
         for table in ['adl_mortality_multipliers', 'adl_disability_multipliers']:
