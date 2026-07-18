@@ -131,6 +131,21 @@ def test_hebrew_renders_right_to_left():
     assert "1:4" in mixed.text and "40" in mixed.text
 
 
+def test_branded_letterhead_assets_and_masthead():
+    """The investor PDFs carry the PHINS letterhead: the committed logo
+    raster exists next to its SVG source and the generator builds a
+    masthead for both directions."""
+    mod = _load_generator()
+    assert Path(mod.LOGO_PATH).is_file(), "phins-logo.png raster missing"
+    assert (STATIC / "phins-logo.svg").is_file(), "logo SVG source missing"
+    # LTR masthead builds (logo + wordmark + brand rules)
+    assert len(mod._masthead(mod._styles())) >= 3
+    # footer/header decorations build for both directions
+    for rtl in (False, True):
+        on_first, on_later = mod._page_decorations("PHINS — Test", rtl)
+        assert callable(on_first) and callable(on_later)
+
+
 def test_dashboard_links_documents_with_downloadable_pdfs():
     pd = (STATIC / "pitch-dashboard.html").read_text(encoding="utf-8")
     assert "/investor-docs/israel-regulatory-application-en.pdf" in pd

@@ -45,8 +45,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import registerFontFamily, stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    ListFlowable, ListItem, Paragraph, Preformatted, SimpleDocTemplate,
-    Spacer, Table, TableStyle,
+    HRFlowable, Image as RLImage, ListFlowable, ListItem, Paragraph,
+    Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 try:
@@ -148,17 +148,29 @@ def _register_hebrew_font() -> str:
 
 PHINS_BLUE = colors.HexColor('#0d47a1')
 PHINS_BLUE_MID = colors.HexColor('#1565c0')
+PHINS_NAVY = colors.HexColor('#0e2f63')     # shield navy from phins-logo.svg
+PHINS_GOLD = colors.HexColor('#c9a04e')     # gold rim from phins-logo.svg
+PHINS_GREY = colors.HexColor('#5b6b82')
 CODE_BG = colors.HexColor('#f3f4f6')
 QUOTE_BG = colors.HexColor('#eef3fb')
+
+# Raster of web_portal/static/phins-logo.svg (committed alongside it) used
+# for the PDF letterhead and page headers. Rendering falls back gracefully
+# when the file is missing so --check / CI never break on the asset.
+LOGO_PATH = os.path.join(STATIC_DIR, 'phins-logo.png')
+BRAND_NAME = 'PHINS'
+BRAND_TAGLINE = 'Personal Health Insurance & Savings · AI-Operated Insurance Platform'
+BRAND_TAGLINE_HE = 'פלטפורמת ביטוח מופעלת-AI · ביטוח בריאות אישי וחיסכון'
 
 
 def _styles():
     base = getSampleStyleSheet()
     styles = {
-        'title': ParagraphStyle('PhinsTitle', parent=base['Title'], fontSize=20,
-                                 textColor=PHINS_BLUE, spaceAfter=14, leading=24),
+        'title': ParagraphStyle('PhinsTitle', parent=base['Title'], fontSize=18.5,
+                                 textColor=PHINS_NAVY, spaceAfter=12, leading=23,
+                                 alignment=TA_LEFT),
         'h1': ParagraphStyle('PhinsH1', parent=base['Heading1'], fontSize=15,
-                              textColor=PHINS_BLUE, spaceBefore=14, spaceAfter=6, leading=18),
+                              textColor=PHINS_NAVY, spaceBefore=14, spaceAfter=6, leading=18),
         'h2': ParagraphStyle('PhinsH2', parent=base['Heading2'], fontSize=12.5,
                               textColor=PHINS_BLUE_MID, spaceBefore=12, spaceAfter=5, leading=15),
         'h3': ParagraphStyle('PhinsH3', parent=base['Heading3'], fontSize=11,
@@ -169,7 +181,8 @@ def _styles():
                                  leading=13, spaceAfter=2),
         'quote': ParagraphStyle('PhinsQuote', parent=base['BodyText'], fontSize=9.5,
                                 leading=14, leftIndent=10, textColor=colors.HexColor('#33425a'),
-                                backColor=QUOTE_BG, borderPadding=6, spaceAfter=6),
+                                backColor=QUOTE_BG, borderPadding=6, spaceAfter=6,
+                                borderColor=PHINS_GOLD, borderWidth=0),
         'code': ParagraphStyle('PhinsCode', parent=base['Code'], fontSize=8,
                                leading=10.5, backColor=CODE_BG, borderPadding=6,
                                textColor=colors.HexColor('#1a202c')),
@@ -206,6 +219,9 @@ def _rtl_styles():
         clone = ParagraphStyle(style.name + 'RTL', parent=style,
                                alignment=TA_RIGHT,
                                fontName=bold if key in ('title', 'h1', 'h2', 'h3', 'cellhdr') else font)
+        if key == 'quote':
+            # Mirror the blockquote inset: indent from the right margin.
+            clone.leftIndent, clone.rightIndent = 0, 10
         rtl[key] = clone
     rtl['_rtl'] = True
     return rtl
@@ -447,6 +463,7 @@ def markdown_to_story(md_text: str, title: str, styles):
     i = 0
     list_items: list = []
     list_ordered = False
+    seen_level1 = False
 
     def flush_list():
         nonlocal list_items, list_ordered
@@ -493,6 +510,14 @@ def markdown_to_story(md_text: str, title: str, styles):
         if m:
             flush_list()
             level = len(m.group(1))
+            if level == 1 and not seen_level1:
+                seen_level1 = True
+                # The document title flowable already shows this; skip the
+                # markdown's own top heading when it repeats the title.
+                plain = _rtl_plain(m.group(2)).strip()
+                if plain and (plain in title or title in plain):
+                    i += 1
+                    continue
             key = 'h1' if level <= 1 else ('h2' if level == 2 else 'h3')
             story.append(_paragraph_for(styles, key, m.group(2)))
             i += 1
@@ -542,14 +567,128 @@ def markdown_to_story(md_text: str, title: str, styles):
     return story
 
 
-def _footer(canvas, doc):
-    canvas.saveState()
-    canvas.setFont('Helvetica', 7)
-    canvas.setFillColor(colors.HexColor('#94a3b8'))
-    canvas.drawString(2 * cm, 1.1 * cm,
-                      'PHINS — Confidential investor document · generated from canonical markdown')
-    canvas.drawRightString(A4[0] - 2 * cm, 1.1 * cm, f"Page {doc.page}")
-    canvas.restoreState()
+def _masthead(styles) -> list:
+    """Branded letterhead flowables: shield logo, wordmark, tagline, rules.
+
+    Direction-aware: the emblem and wordmark sit on the left for LTR
+    documents and on the right for RTL (Hebrew) documents. Falls back to a
+    text-only wordmark when the committed logo raster is unavailable.
+    """
+    rtl = styles.get('_rtl', False)
+    # The wordmark itself is Latin ("PHINS") in both directions.
+    wordmark = ParagraphStyle('PhinsWordmark', fontName='Helvetica-Bold',
+                              fontSize=21, leading=23, textColor=PHINS_NAVY,
+                              alignment=TA_RIGHT if rtl else TA_LEFT)
+    tagline = ParagraphStyle('PhinsTagline', fontName='Helvetica', fontSize=6.8,
+                             leading=9, textColor=PHINS_GREY,
+                             alignment=TA_RIGHT if rtl else TA_LEFT)
+    if rtl:
+        tagline.fontName = _HEBREW_FONT['name'] if _HEBREW_FONT['name'] else 'Helvetica'
+        tagline_text = html.escape(_bidi_line(BRAND_TAGLINE_HE))
+    else:
+        tagline_text = html.escape(BRAND_TAGLINE)
+
+    text_block = [Paragraph(BRAND_NAME, wordmark), Paragraph(tagline_text, tagline)]
+    if os.path.isfile(LOGO_PATH):
+        logo = RLImage(LOGO_PATH, width=42, height=42)
+        cells = [[text_block, logo]] if rtl else [[logo, text_block]]
+        widths = [FRAME_WIDTH - 52, 52] if rtl else [52, FRAME_WIDTH - 52]
+        head = Table(cells, colWidths=widths)
+        head.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        flowables = [head]
+    else:
+        flowables = list(text_block)
+    flowables += [
+        Spacer(1, 8),
+        HRFlowable(width='100%', thickness=2.2, color=PHINS_GOLD,
+                   spaceBefore=0, spaceAfter=1.6, lineCap='butt'),
+        HRFlowable(width='100%', thickness=0.8, color=PHINS_NAVY,
+                   spaceBefore=0, spaceAfter=14, lineCap='butt'),
+    ]
+    return flowables
+
+
+def _truncate_to_width(text: str, font: str, size: float, max_width: float) -> str:
+    if stringWidth(text, font, size) <= max_width:
+        return text
+    ell = '…'
+    while text and stringWidth(text + ell, font, size) > max_width:
+        text = text[:-1]
+    return (text + ell) if text else ell
+
+
+def _page_decorations(title: str, rtl: bool):
+    """Build (onFirstPage, onLaterPages) canvas callbacks.
+
+    Every page gets a branded footer (hairline rule, confidentiality note,
+    page number). Continuation pages additionally get a slim running header
+    with the shield emblem and the document title, mirrored for RTL.
+    """
+    left_x, right_x = 2 * cm, A4[0] - 2 * cm
+    has_logo = os.path.isfile(LOGO_PATH)
+    hebrew_font = _HEBREW_FONT['name'] if _HEBREW_FONT['name'] else 'Helvetica'
+
+    def _footer(canvas, doc):
+        canvas.saveState()
+        canvas.setStrokeColor(PHINS_GOLD)
+        canvas.setLineWidth(0.9)
+        canvas.line(left_x, 1.45 * cm, right_x, 1.45 * cm)
+        canvas.setFont('Helvetica', 6.8)
+        canvas.setFillColor(PHINS_GREY)
+        note = ('PHINS — Confidential investor document · '
+                'generated from canonical markdown')
+        if has_logo:
+            canvas.drawImage(LOGO_PATH, left_x, 0.92 * cm, width=11, height=11,
+                             mask='auto', preserveAspectRatio=True)
+            canvas.drawString(left_x + 15, 1.02 * cm, note)
+        else:
+            canvas.drawString(left_x, 1.02 * cm, note)
+        canvas.drawRightString(right_x, 1.02 * cm, f"Page {doc.page}")
+        canvas.restoreState()
+
+    def _running_header(canvas):
+        canvas.saveState()
+        y = A4[1] - 1.05 * cm
+        canvas.setFont('Helvetica-Bold', 7.5)
+        canvas.setFillColor(PHINS_NAVY)
+        max_w = FRAME_WIDTH - 60
+        if rtl:
+            visual_title = _truncate_to_width(title, hebrew_font, 7.5, max_w)
+            visual_title = _bidi_line(visual_title)
+            canvas.setFont(hebrew_font, 7.5)
+            if has_logo:
+                canvas.drawImage(LOGO_PATH, right_x - 13, y - 3.5, width=13,
+                                 height=13, mask='auto', preserveAspectRatio=True)
+                canvas.drawRightString(right_x - 17, y, visual_title)
+            else:
+                canvas.drawRightString(right_x, y, visual_title)
+        else:
+            text = _truncate_to_width(title, 'Helvetica-Bold', 7.5, max_w)
+            if has_logo:
+                canvas.drawImage(LOGO_PATH, left_x, y - 3.5, width=13, height=13,
+                                 mask='auto', preserveAspectRatio=True)
+                canvas.drawString(left_x + 17, y, text)
+            else:
+                canvas.drawString(left_x, y, text)
+        canvas.setStrokeColor(PHINS_GOLD)
+        canvas.setLineWidth(0.9)
+        canvas.line(left_x, y - 7, right_x, y - 7)
+        canvas.restoreState()
+
+    def on_first(canvas, doc):
+        _footer(canvas, doc)
+
+    def on_later(canvas, doc):
+        _running_header(canvas)
+        _footer(canvas, doc)
+
+    return on_first, on_later
 
 
 def generate_one(md_path: str, pdf_path: str, title: str, styles) -> None:
@@ -558,11 +697,12 @@ def generate_one(md_path: str, pdf_path: str, title: str, styles) -> None:
     doc = SimpleDocTemplate(
         pdf_path, pagesize=A4,
         leftMargin=2 * cm, rightMargin=2 * cm,
-        topMargin=1.8 * cm, bottomMargin=1.8 * cm,
+        topMargin=1.9 * cm, bottomMargin=2.0 * cm,
         title=title, author='PHINS',
     )
-    story = markdown_to_story(md_text, title, styles)
-    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    story = _masthead(styles) + markdown_to_story(md_text, title, styles)
+    on_first, on_later = _page_decorations(title, styles.get('_rtl', False))
+    doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
 
 
 def _source_has_hebrew(md_path: str) -> bool:
