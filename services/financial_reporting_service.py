@@ -274,7 +274,17 @@ class FinancialReportingService:
     # ==========================================================================
     
     def get_mortality_rate(self, age: int) -> float:
-        """Get base mortality rate per 1000 lives for given age"""
+        """Get base mortality rate per 1000 lives for given age.
+
+        Reads from the central versioned ActuarialTablesStore (the tables
+        edited on the actuary dashboard); the module-level constants are
+        only a fallback if the central store is unavailable.
+        """
+        try:
+            from services.actuarial_service import get_actuarial_store
+            return get_actuarial_store().get_mortality_rate(age)
+        except Exception:
+            pass
         for (low, high), rate in MORTALITY_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
@@ -282,6 +292,11 @@ class FinancialReportingService:
     
     def get_disability_incidence_rate(self, age: int) -> float:
         """Get disability incidence rate per 1000 lives for given age (NEW)"""
+        try:
+            from services.actuarial_service import get_actuarial_store
+            return get_actuarial_store().get_disability_rate(age)
+        except Exception:
+            pass
         for (low, high), rate in DISABILITY_INCIDENCE_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
@@ -399,15 +414,28 @@ class FinancialReportingService:
             TableSet, get_age_curve, get_product, price_policy,
         )
 
+        # Mortality / disability age bands come from the central
+        # ActuarialTablesStore (the same versioned tables the actuary
+        # dashboard edits) so premium quotes react to rate-table changes.
+        # The module-level constants remain only as a fallback if the
+        # central store is unavailable.
+        try:
+            from services.actuarial_service import get_actuarial_store
+            _store_tables = get_actuarial_store().get_current_tables()
+        except Exception:
+            _store_tables = {}
+        mortality_rows = _store_tables.get('mortality_rates') or [
+            {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
+            for (low, high), rate in MORTALITY_RATES.items()
+        ]
+        disability_rows = _store_tables.get('disability_incidence_rates') or [
+            {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
+            for (low, high), rate in DISABILITY_INCIDENCE_RATES.items()
+        ]
+
         kernel_tables = TableSet(
-            mortality_rates=[
-                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
-                for (low, high), rate in MORTALITY_RATES.items()
-            ],
-            disability_incidence_rates=[
-                {'age_min': low, 'age_max': high, 'rate_per_1000': rate}
-                for (low, high), rate in DISABILITY_INCIDENCE_RATES.items()
-            ],
+            mortality_rates=[dict(row) for row in mortality_rows],
+            disability_incidence_rates=[dict(row) for row in disability_rows],
             adl_mortality_multipliers=[
                 {'adl': adl, 'multiplier': mult}
                 for adl, mult in ADL_MORTALITY_MULTIPLIERS.items()
