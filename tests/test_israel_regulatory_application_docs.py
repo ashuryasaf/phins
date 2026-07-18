@@ -14,6 +14,8 @@ Covers:
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 STATIC = REPO / "web_portal" / "static"
 DOCS = STATIC / "investor-docs"
@@ -94,6 +96,39 @@ def test_markdown_uses_filed_actuarial_tables():
     # lapse anchors
     for rate in ("8%", "5%", "4%", "3%", "2%", "1%"):
         assert rate in en, f"missing lapse anchor {rate}"
+
+
+def test_hebrew_renders_right_to_left():
+    """Regression: Hebrew must be drawn in visual (right-to-left) order.
+
+    reportlab's ``wordWrap='RTL'`` is a silent no-op without the proprietary
+    ``rlbidi`` package, which rendered the Hebrew memo mirrored. The
+    generator now bidi-reorders each wrapped line itself, so the draw string
+    of a Hebrew paragraph must be the visual form (per-line reversal of the
+    logical text).
+    """
+    pytest.importorskip("bidi", reason="python-bidi needed for RTL rendering")
+    mod = _load_generator()
+    styles = mod._rtl_styles()
+
+    # single line: logical "שלום עולם" draws as "םלוע םולש" (fully mirrored)
+    para = mod._rtl_paragraph("שלום עולם", styles["body"], 400)
+    assert para.text == "םלוע םולש"
+
+    # multi-line: wrapping happens on the logical text BEFORE the bidi pass,
+    # so the first visual line contains the beginning of the sentence
+    long_text = "פינס מבקשת אישור לתוכנית ביטוח חיים אחת עם מנגנון נכות קבועה"
+    narrow = mod._rtl_paragraph(long_text, styles["body"], 150)
+    lines = narrow.text.split("<br/>")
+    assert len(lines) > 1
+    assert lines[0].endswith("סניפ")  # visual form of leading word "פינס"
+
+    # RTL styles must not rely on reportlab's no-op wordWrap='RTL'
+    assert styles["body"].wordWrap != "RTL"
+
+    # numbers / Latin stay left-to-right inside the RTL line
+    mixed = mod._rtl_paragraph("יחס חוזי 1:4 לפי סעיף 40", styles["body"], 400)
+    assert "1:4" in mixed.text and "40" in mixed.text
 
 
 def test_dashboard_links_documents_with_downloadable_pdfs():

@@ -16,6 +16,10 @@ Design / data-integrity notes:
 - **No new runtime dependency.** Uses ``reportlab``, already in
   ``requirements.txt``. The PHINS web server does not import this module; it is a
   build/ops script (run manually or in CI) and the resulting PDFs are committed.
+  Rendering right-to-left (Hebrew) documents additionally requires the
+  build-time-only ``python-bidi`` package (see ``requirements-dev.txt``);
+  reportlab's own RTL word wrap is a silent no-op without the proprietary
+  ``rlbidi`` package, so this script runs the Unicode bidi algorithm itself.
 - Supports a pragmatic markdown subset: ATX headings, paragraphs, bold/inline
   code, bullet and numbered lists, blockquotes, fenced code blocks, and pipe
   tables. Anything unrecognized is rendered as a paragraph, so output is always
@@ -38,12 +42,20 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.pdfmetrics import registerFontFamily
+from reportlab.pdfbase.pdfmetrics import registerFontFamily, stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     ListFlowable, ListItem, Paragraph, Preformatted, SimpleDocTemplate,
     Spacer, Table, TableStyle,
 )
+
+try:
+    # Required only to render right-to-left (Hebrew) documents. reportlab's
+    # own ``wordWrap='RTL'`` silently does nothing without the proprietary
+    # ``rlbidi`` package, so we run the Unicode bidi algorithm ourselves.
+    from bidi.algorithm import get_display as _bidi_get_display
+except ImportError:  # pragma: no cover - exercised only on hosts without bidi
+    _bidi_get_display = None
 
 STATIC_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -173,9 +185,12 @@ def _styles():
 def _rtl_styles():
     """Right-to-left (Hebrew) variants of the document styles.
 
-    Every text style is right-aligned, uses reportlab's ``wordWrap='RTL'``
-    bidi reordering, and a Hebrew-capable font family so bold markup keeps
-    working inside Hebrew paragraphs.
+    Every text style is right-aligned and uses a Hebrew-capable font family.
+    NOTE: reportlab's ``wordWrap='RTL'`` is intentionally NOT used — without
+    the proprietary ``rlbidi`` package it is a silent no-op, which renders
+    Hebrew mirrored (left-to-right). Instead, RTL text is line-broken
+    manually and each line is reordered to visual order with ``python-bidi``
+    (see :func:`_rtl_paragraph`).
     """
     font = _register_hebrew_font()
     bold = font + '-Bold' if font == 'PHINSHebrew' else 'Helvetica-Bold'
@@ -189,11 +204,65 @@ def _rtl_styles():
             rtl[key] = style
             continue
         clone = ParagraphStyle(style.name + 'RTL', parent=style,
-                               alignment=TA_RIGHT, wordWrap='RTL',
+                               alignment=TA_RIGHT,
                                fontName=bold if key in ('title', 'h1', 'h2', 'h3', 'cellhdr') else font)
         rtl[key] = clone
     rtl['_rtl'] = True
     return rtl
+
+
+# Usable frame width shared by the document template in :func:`generate_one`
+# (A4 minus the 2cm left/right margins). RTL text is line-broken manually
+# against this width so each visual line can be bidi-reordered as a unit.
+FRAME_WIDTH = A4[0] - 4 * cm
+
+
+def _bidi_line(line: str) -> str:
+    """Reorder one logical RTL line to visual order (Unicode bidi)."""
+    if _bidi_get_display is None:
+        raise RuntimeError(
+            'python-bidi is required to render right-to-left documents: '
+            'pip install python-bidi'
+        )
+    return _bidi_get_display(line, base_dir='R')
+
+
+def _rtl_break_lines(text: str, font: str, size: float, max_width: float):
+    """Greedy word wrap of logical text against ``max_width``.
+
+    Returns the logical lines; callers bidi-reorder each line to visual
+    order. Wrapping must happen *before* the bidi pass — otherwise reportlab
+    would wrap the visual string and the wrapped lines would read bottom-up.
+    """
+    words = text.split()
+    lines, current = [], ''
+    for word in words:
+        trial = f'{current} {word}'.strip()
+        if not current or stringWidth(trial, font, size) <= max_width:
+            current = trial
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines or ['']
+
+
+def _rtl_paragraph(text: str, style, max_width: float) -> Paragraph:
+    """Build a right-aligned Paragraph with per-line bidi-reordered text."""
+    logical = _rtl_break_lines(text, style.fontName, style.fontSize,
+                               max(1.0, max_width))
+    visual = [html.escape(_bidi_line(line)) for line in logical]
+    return Paragraph('<br/>'.join(visual), style)
+
+
+def _rtl_width_for(styles, key: str) -> float:
+    """Usable width for a top-level RTL flowable of the given style key."""
+    style = styles[key]
+    pad = 2.0  # safety so measured lines never re-wrap inside reportlab
+    width = FRAME_WIDTH - style.leftIndent - style.rightIndent - pad
+    border = getattr(style, 'borderPadding', 0) or 0
+    return width - 2 * border
 
 
 def _wrap_hebrew_runs(text: str) -> str:
@@ -202,7 +271,8 @@ def _wrap_hebrew_runs(text: str) -> str:
         return text
 
     def repl(match):
-        visual = match.group(0)[::-1]
+        run = match.group(0)
+        visual = _bidi_get_display(run, base_dir='R') if _bidi_get_display else run[::-1]
         return f'<font face="PHINSHebrew">{visual}</font>'
 
     return _HEBREW_RUN.sub(repl, text)
@@ -234,26 +304,28 @@ def _inline(text: str) -> str:
 
 
 def _rtl_plain(text: str) -> str:
-    """Markdown inline subset -> plain escaped text for RTL paragraphs.
+    """Markdown inline subset -> plain (unescaped) text for RTL paragraphs.
 
-    reportlab's ``wordWrap='RTL'`` bidi reordering operates per text
-    fragment, so inline ``<b>``/``<i>``/``<font>`` tags split a Hebrew
-    sentence into fragments that get reassembled in the wrong visual order.
-    RTL documents therefore drop inline emphasis (headings and table headers
-    keep their bold font via styles) and render each paragraph as a single
-    fragment, which reorders correctly.
+    Inline ``<b>``/``<i>``/``<font>`` tags would split a Hebrew sentence
+    into fragments that reassemble in the wrong visual order, so RTL
+    documents drop inline emphasis (headings and table headers keep their
+    bold font via styles) and render each paragraph as a single fragment.
+    Escaping happens per visual line inside :func:`_rtl_paragraph`.
     """
     text = re.sub(r'`([^`]+)`', r'\1', text)
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
     text = re.sub(r'__([^_]+)__', r'\1', text)
     text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', text)
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', text)
-    return html.escape(text)
+    return text
 
 
-def _inline_for(styles, text: str) -> str:
-    """Pick the inline renderer matching the document direction."""
-    return _rtl_plain(text) if styles.get('_rtl') else _inline(text)
+def _paragraph_for(styles, key: str, text: str, max_width=None) -> Paragraph:
+    """Build a Paragraph in the document's direction for a markdown snippet."""
+    if styles.get('_rtl'):
+        width = _rtl_width_for(styles, key) if max_width is None else max_width
+        return _rtl_paragraph(_rtl_plain(text), styles[key], width)
+    return Paragraph(_inline(text), styles[key])
 
 
 def _flush_list(items, ordered, styles, story):
@@ -264,7 +336,7 @@ def _flush_list(items, ordered, styles, story):
         # items as right-aligned paragraphs so the marker sits on the right.
         for idx, item in enumerate(items, start=1):
             prefix = f"{idx}. " if ordered else "\u2022 "
-            story.append(Paragraph(_rtl_plain(prefix + item), styles['bullet']))
+            story.append(_paragraph_for(styles, 'bullet', prefix + item))
         story.append(Spacer(1, 4))
         return
     flow = [
@@ -280,21 +352,69 @@ def _flush_list(items, ordered, styles, story):
     story.append(Spacer(1, 4))
 
 
+def _rtl_col_widths(rows, styles):
+    """Column widths for an RTL table (reportlab can't autosize the
+    pre-wrapped bidi Paragraphs, so measure the natural text widths and
+    scale to the frame if needed)."""
+    ncols = max(len(r) for r in rows)
+    pad = 10.0  # LEFT+RIGHT cell padding below
+    naturals = []
+    for c in range(ncols):
+        width = 0.0
+        for ri, row in enumerate(rows):
+            if c < len(row):
+                st = styles['cellhdr'] if ri == 0 else styles['cell']
+                width = max(width, stringWidth(_rtl_plain(row[c]),
+                                               st.fontName, st.fontSize))
+        naturals.append(width + pad + 4)
+    total = sum(naturals)
+    avail = FRAME_WIDTH
+    if total <= avail:
+        return naturals
+    return [max(46.0, avail * w / total) for w in naturals]
+
+
 def _table(rows, styles, story):
     if not rows:
         return
     header, body = rows[0], rows[1:]
     rtl = styles.get('_rtl', False)
     if rtl:
-        # Mirror columns so the logical first column reads from the right.
+        # Mirror columns so the logical first column reads from the right,
+        # then pre-wrap every cell against its column width and reorder each
+        # wrapped line to visual order.
         header = list(reversed(header))
-    data = [[Paragraph(_inline_for(styles, c), styles['cellhdr']) for c in header]]
+        mirrored = [header]
+        for r in body:
+            r = (r + [''] * len(header))[:len(header)]
+            mirrored.append(list(reversed(r)))
+        widths = _rtl_col_widths(mirrored, styles)
+        data = []
+        for ri, row in enumerate(mirrored):
+            key = 'cellhdr' if ri == 0 else 'cell'
+            data.append([
+                _paragraph_for(styles, key, cell, max_width=widths[ci] - 11)
+                for ci, cell in enumerate(row)
+            ])
+        tbl = Table(data, colWidths=widths, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), PHINS_BLUE_MID),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#cbd5e1')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 8))
+        return
+    data = [[Paragraph(_inline(c), styles['cellhdr']) for c in header]]
     for r in body:
         # Pad/truncate to header width.
         r = (r + [''] * len(header))[:len(header)]
-        if rtl:
-            r = list(reversed(r))
-        data.append([Paragraph(_inline_for(styles, c), styles['cell']) for c in r])
+        data.append([Paragraph(_inline(c), styles['cell']) for c in r])
     tbl = Table(data, repeatRows=1)
     tbl.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), PHINS_BLUE_MID),
@@ -316,7 +436,10 @@ def _parse_table_row(line: str):
 
 
 def markdown_to_story(md_text: str, title: str, styles):
-    story = [Paragraph(html.escape(title), styles['title']), Spacer(1, 6)]
+    if styles.get('_rtl'):
+        story = [_paragraph_for(styles, 'title', title), Spacer(1, 6)]
+    else:
+        story = [Paragraph(html.escape(title), styles['title']), Spacer(1, 6)]
     lines = md_text.splitlines()
     i = 0
     list_items: list = []
@@ -368,7 +491,7 @@ def markdown_to_story(md_text: str, title: str, styles):
             flush_list()
             level = len(m.group(1))
             key = 'h1' if level <= 1 else ('h2' if level == 2 else 'h3')
-            story.append(Paragraph(_inline_for(styles, m.group(2)), styles[key]))
+            story.append(_paragraph_for(styles, key, m.group(2)))
             i += 1
             continue
 
@@ -383,7 +506,7 @@ def markdown_to_story(md_text: str, title: str, styles):
         if stripped.startswith('>'):
             flush_list()
             quote = re.sub(r'^>\s?', '', stripped)
-            story.append(Paragraph(_inline_for(styles, quote), styles['quote']))
+            story.append(_paragraph_for(styles, 'quote', quote))
             i += 1
             continue
 
@@ -409,7 +532,7 @@ def markdown_to_story(md_text: str, title: str, styles):
 
         # Paragraph
         flush_list()
-        story.append(Paragraph(_inline_for(styles, stripped), styles['body']))
+        story.append(_paragraph_for(styles, 'body', stripped))
         i += 1
 
     flush_list()
