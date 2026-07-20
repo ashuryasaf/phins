@@ -13397,40 +13397,56 @@ For claims or questions, please contact:
             return
 
         if path == '/api/legal/stats':
+            legal_documents = [
+                {
+                    'name': 'Privacy Policy',
+                    'version': '1.0',
+                    'effective_date': '2026-01-01',
+                    'last_updated': '2026-04-20',
+                    'url': '/privacy-policy.html',
+                    'status': 'active'
+                },
+                {
+                    'name': 'Terms of Use',
+                    'version': '1.0',
+                    'effective_date': '2026-01-01',
+                    'last_updated': '2026-04-20',
+                    'url': '/terms-of-use.html',
+                    'status': 'active'
+                }
+            ]
+            # Framework statuses must stay consistent with the legal
+            # compliance register (static/legal/legal-compliance.html),
+            # which records SOC 2 Type II as in progress.
+            compliance_frameworks = [
+                {'name': 'GDPR', 'status': 'compliant', 'region': 'EU/EEA'},
+                {'name': 'EU AI Act', 'status': 'compliant', 'region': 'EU'},
+                {'name': 'HIPAA', 'status': 'compliant', 'region': 'United States'},
+                {'name': 'CCPA/CPRA', 'status': 'compliant', 'region': 'California, US'},
+                {'name': 'LGPD', 'status': 'compliant', 'region': 'Brazil'},
+                {'name': 'POPIA', 'status': 'compliant', 'region': 'South Africa'},
+                {'name': 'PIPEDA', 'status': 'compliant', 'region': 'Canada'},
+                {'name': 'DPDPA', 'status': 'compliant', 'region': 'India'},
+                {'name': 'PCI DSS', 'status': 'compliant', 'region': 'Global'},
+                {'name': 'SOC 2', 'status': 'in_progress', 'region': 'Global',
+                 'note': 'SOC 2 Type II audit in progress'}
+            ]
+            all_compliant = all(
+                status_eq(fw, 'compliant') for fw in compliance_frameworks
+            )
+            in_progress = [
+                fw['name'] for fw in compliance_frameworks
+                if not status_eq(fw, 'compliant')
+            ]
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
-                'documents': [
-                    {
-                        'name': 'Privacy Policy',
-                        'version': '1.0',
-                        'effective_date': '2026-01-01',
-                        'last_updated': '2026-04-20',
-                        'url': '/privacy-policy.html',
-                        'status': 'active'
-                    },
-                    {
-                        'name': 'Terms of Use',
-                        'version': '1.0',
-                        'effective_date': '2026-01-01',
-                        'last_updated': '2026-04-20',
-                        'url': '/terms-of-use.html',
-                        'status': 'active'
-                    }
-                ],
-                'compliance_frameworks': [
-                    {'name': 'GDPR', 'status': 'compliant', 'region': 'EU/EEA'},
-                    {'name': 'EU AI Act', 'status': 'compliant', 'region': 'EU'},
-                    {'name': 'HIPAA', 'status': 'compliant', 'region': 'United States'},
-                    {'name': 'CCPA/CPRA', 'status': 'compliant', 'region': 'California, US'},
-                    {'name': 'LGPD', 'status': 'compliant', 'region': 'Brazil'},
-                    {'name': 'POPIA', 'status': 'compliant', 'region': 'South Africa'},
-                    {'name': 'PIPEDA', 'status': 'compliant', 'region': 'Canada'},
-                    {'name': 'DPDPA', 'status': 'compliant', 'region': 'India'},
-                    {'name': 'PCI DSS', 'status': 'compliant', 'region': 'Global'},
-                    {'name': 'SOC 2', 'status': 'compliant', 'region': 'Global'}
-                ],
-                'total_documents': 2,
-                'all_compliant': True,
+                'documents': legal_documents,
+                'compliance_frameworks': compliance_frameworks,
+                'total_documents': len(legal_documents),
+                'all_compliant': all_compliant,
+                'compliance_status': 'All Clear' if all_compliant else (
+                    'In progress: ' + ', '.join(in_progress)
+                ),
                 'last_review_date': '2026-04-20'
             }).encode('utf-8'))
             return

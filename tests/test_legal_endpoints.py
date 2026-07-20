@@ -166,12 +166,41 @@ class TestLegalStatsAPI:
         assert 'EU AI Act' in framework_names
         assert 'HIPAA' in framework_names
         for fw in data['compliance_frameworks']:
-            assert fw['status'] == 'compliant'
+            assert fw['status'] in ('compliant', 'in_progress')
 
-    def test_legal_stats_all_compliant_flag(self):
+    def test_legal_stats_soc2_reported_in_progress(self):
+        # The legal compliance register (static/legal/legal-compliance.html)
+        # records SOC 2 Type II as in progress; the API must not claim
+        # SOC 2 compliance until an attestation report exists.
         body, _ = _get(f"{BASE_URL}/api/legal/stats")
         data = json.loads(body)
-        assert data['all_compliant'] is True
+        soc2 = next(
+            fw for fw in data['compliance_frameworks'] if fw['name'] == 'SOC 2'
+        )
+        assert soc2['status'] == 'in_progress'
+        assert 'note' in soc2
+
+    def test_legal_stats_all_compliant_flag_matches_frameworks(self):
+        body, _ = _get(f"{BASE_URL}/api/legal/stats")
+        data = json.loads(body)
+        expected = all(
+            fw['status'] == 'compliant'
+            for fw in data['compliance_frameworks']
+        )
+        assert data['all_compliant'] is expected
+        # SOC 2 is in progress, so the aggregate flag must be False.
+        assert data['all_compliant'] is False
+
+    def test_legal_stats_compliance_status_lists_in_progress(self):
+        body, _ = _get(f"{BASE_URL}/api/legal/stats")
+        data = json.loads(body)
+        assert 'compliance_status' in data
+        assert 'SOC 2' in data['compliance_status']
+
+    def test_legal_stats_total_documents_matches_list(self):
+        body, _ = _get(f"{BASE_URL}/api/legal/stats")
+        data = json.loads(body)
+        assert data['total_documents'] == len(data['documents'])
 
 
 class TestConsentStatusAPI:
