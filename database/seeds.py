@@ -39,6 +39,24 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
+def _is_db_backed_store(store) -> bool:
+    """Return True when a server data store is a write-through DatabaseDict.
+
+    When web_portal.server runs in database mode its CUSTOMERS/POLICIES/
+    UNDERWRITING_APPLICATIONS/BILLING/CLAIMS "dicts" are DatabaseDict wrappers
+    whose __setitem__ performs a SELECT + UPDATE against the database. Seed
+    code that mirrors freshly created rows into those stores would therefore
+    re-write the row the repository just persisted (the "Created X" followed
+    by "Updated X" pattern in startup logs). Mirroring is only useful for the
+    plain in-memory dicts used when the database is disabled.
+    """
+    try:
+        from database.data_access import DatabaseDict
+        return isinstance(store, DatabaseDict)
+    except ImportError:
+        return False
+
+
 def _get_env_password(env_var: str, username: str) -> str:
     """
     Get password from environment variable or generate random unusable password.
@@ -303,10 +321,13 @@ def seed_sample_data(session=None):
         # =================================================================
         # PRIMARY TEST ACCOUNT: asaf@assurance.co.il
         # =================================================================
-        # Import in-memory data structures for primary customer sync
+        # Import in-memory data structures for primary customer sync.
+        # Skip mirroring when the stores are DB-backed: the repository create
+        # below already persists the row, so the mirror write would only issue
+        # a redundant SELECT + UPDATE against the same database row.
         try:
             from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING, CLAIMS
-            sync_primary_to_memory = True
+            sync_primary_to_memory = not _is_db_backed_store(CUSTOMERS)
         except ImportError:
             sync_primary_to_memory = False
             logger.warning("Could not import in-memory data structures for primary customer")
@@ -422,7 +443,14 @@ def seed_sample_data(session=None):
                         risk_score=pol_data['risk_score'],
                         start_date=now,
                         end_date=now + timedelta(days=365),
-                        approval_date=now
+                        approval_date=now,
+                        # Previously only written via the in-memory mirror's
+                        # DB write-through; persist directly at create time.
+                        billing=json.dumps({
+                            'auto_pay': True,
+                            'frequency': 'monthly',
+                            'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                        })
                     )
                     if policy is not None:
                         logger.info(f"Created policy: {policy.id}")
@@ -582,7 +610,8 @@ def seed_sample_data(session=None):
                             claimed_amount=claim_data['claimed_amount'],
                             approved_amount=claim_data.get('approved_amount'),
                             status=claim_data['status'],
-                            filed_date=filed_date
+                            filed_date=filed_date,
+                            created_date=filed_date
                         )
                         if claim is not None:
                             logger.info(f"Created claim: {claim.id}")
@@ -663,39 +692,13 @@ def seed_sample_data(session=None):
             or underwriting_repo.get_by_policy('POL-ASAF-HEALTH-001')
         )
         uw_asaf_id = existing_uw.id if existing_uw else STABLE_UW_ASAF_ID
-        if not existing_uw:
-            try:
-                # Only insert if parent policy exists to avoid FK violation
-                parent_policy = policy_repo.find_one_by(id='POL-ASAF-HEALTH-001')
-                if parent_policy:
-                    uw_app = underwriting_repo.create(
-                        id=uw_asaf_id,
-                        policy_id='POL-ASAF-HEALTH-001',
-                        customer_id='CUST-ASAF-001',
-                        status='pending',
-                        risk_assessment='medium',
-                        risk_score='medium',
-                        created_date=now
-                    )
-                    if uw_app is not None:
-                        logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
-                else:
-                    logger.warning(
-                        f"Skipping underwriting {uw_asaf_id}: parent policy "
-                        f"POL-ASAF-HEALTH-001 not found in database"
-                    )
-            except Exception as e:
-                logger.warning(f"Could not create underwriting application for primary customer: {e}")
-
-        # Mirror UW application to memory ONLY for newly-seeded rows. An
-        # existing application may have advanced through the underwriting
-        # pipeline (status, risk_assessment, premium_adjustment, documents);
-        # rewriting the seed dict on every restart would silently roll the
-        # decision back to 'pending'.
-        if sync_primary_to_memory and not existing_uw:
-            # Premium calculation for age 47, moderate risk, $500K health:
-            # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
-            UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
+        # Single source of truth for the seeded application. Used both for
+        # the DB create (fields outside the model are filtered by the
+        # repository) and the in-memory mirror, so we no longer need a
+        # create-then-update double write to enrich the row.
+        # Premium calculation for age 47, moderate risk, $500K health:
+        # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
+        uw_asaf_payload = {
                 'id': uw_asaf_id,
                 'policy_id': 'POL-ASAF-HEALTH-001',
                 'customer_id': 'CUST-ASAF-001',
@@ -753,7 +756,38 @@ def seed_sample_data(session=None):
                 'submitted_date': now.isoformat(),
                 'updated_date': now.isoformat()
             }
-        
+
+        if not existing_uw:
+            try:
+                # Only insert if parent policy exists to avoid FK violation
+                parent_policy = policy_repo.find_one_by(id='POL-ASAF-HEALTH-001')
+                if parent_policy:
+                    # convert_datetime_strings() serializes the JSON fields
+                    # (medical_conditions, documents) and parses the ISO
+                    # timestamps exactly like the DatabaseDict write-through
+                    # used to do when the mirror enriched this row.
+                    from database.data_access import convert_datetime_strings
+                    uw_app = underwriting_repo.create(
+                        **convert_datetime_strings(uw_asaf_payload)
+                    )
+                    if uw_app is not None:
+                        logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
+                else:
+                    logger.warning(
+                        f"Skipping underwriting {uw_asaf_id}: parent policy "
+                        f"POL-ASAF-HEALTH-001 not found in database"
+                    )
+            except Exception as e:
+                logger.warning(f"Could not create underwriting application for primary customer: {e}")
+
+        # Mirror UW application to memory ONLY for newly-seeded rows. An
+        # existing application may have advanced through the underwriting
+        # pipeline (status, risk_assessment, premium_adjustment, documents);
+        # rewriting the seed dict on every restart would silently roll the
+        # decision back to 'pending'.
+        if sync_primary_to_memory and not existing_uw:
+            UNDERWRITING_APPLICATIONS[uw_asaf_id] = uw_asaf_payload
+
         # =================================================================
         # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
         # These customers are primary platform users with full data persistence
@@ -864,10 +898,12 @@ def seed_sample_data(session=None):
         except ImportError:
             sync_wallets = False
         
-        # Import main in-memory structures for syncing
+        # Import main in-memory structures for syncing. DB-backed stores are
+        # write-through, so mirroring newly created rows would just re-write
+        # them; mirror only when the server runs on plain in-memory dicts.
         try:
             from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING
-            sync_to_memory = True
+            sync_to_memory = not _is_db_backed_store(CUSTOMERS)
         except ImportError:
             sync_to_memory = False
             logger.warning("Could not import in-memory data structures for PHINS customers")
@@ -897,7 +933,7 @@ def seed_sample_data(session=None):
             pol_data = phins_cust['policy']
             existing_policy = policy_repo.find_one_by(id=pol_data['id'])
             if not existing_policy:
-                policy_repo.create(
+                policy_kwargs = dict(
                     id=pol_data['id'],
                     customer_id=phins_cust['id'],
                     type=pol_data['type'],
@@ -909,6 +945,15 @@ def seed_sample_data(session=None):
                     start_date=now,
                     end_date=now + timedelta(days=365)
                 )
+                if pol_data['status'] == 'active':
+                    # Previously only written via the in-memory mirror's DB
+                    # write-through; persist directly at create time.
+                    policy_kwargs['billing'] = json.dumps({
+                        'auto_pay': True,
+                        'frequency': 'monthly',
+                        'next_billing_date': (now + timedelta(days=30)).isoformat(),
+                    })
+                policy_repo.create(**policy_kwargs)
                 logger.info(f"Created policy: {pol_data['id']} for {phins_cust['email']}")
             
             # Create/verify underwriting application
@@ -919,9 +964,21 @@ def seed_sample_data(session=None):
                     id=app_data['id'],
                     policy_id=pol_data['id'],
                     customer_id=phins_cust['id'],
+                    customer_name=phins_cust['name'],
+                    customer_email=phins_cust['email'],
+                    policy_type=pol_data['type'],
+                    coverage_amount=pol_data['coverage_amount'],
+                    age=phins_cust['age'],
+                    gender=phins_cust['gender'],
+                    occupation=phins_cust['occupation'],
                     status=app_data['status'],
                     risk_assessment=app_data['risk_score'],
                     risk_score=app_data['risk_score'],
+                    bmi=app_data.get('bmi'),
+                    smoking_status=app_data.get('smoking_status'),
+                    disability_percentage=app_data.get('disability_percentage', 0),
+                    medical_conditions=json.dumps(app_data.get('medical_conditions', [])),
+                    medical_exam_required=False,
                     submitted_date=now,
                     created_date=now
                 )
@@ -1101,10 +1158,11 @@ def seed_sample_data(session=None):
             }
         ]
         
-        # Import in-memory data structures for sync
+        # Import in-memory data structures for sync (skipped for DB-backed
+        # stores — see _is_db_backed_store; the creates below already persist)
         try:
             from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING
-            sync_to_memory = True
+            sync_to_memory = not _is_db_backed_store(CUSTOMERS)
         except ImportError:
             sync_to_memory = False
             logger.warning("Could not import in-memory data structures - database-only seeding")
@@ -1156,8 +1214,13 @@ def seed_sample_data(session=None):
                 id=uw_id,
                 policy_id=pol_id,
                 customer_id=customer.id,
+                customer_name=cust_data['name'],
+                customer_email=cust_data['email'],
+                policy_type=cust_data['policy_type'],
+                coverage_amount=float(cust_data['coverage']),
                 status='pending',
                 risk_assessment='medium',
+                risk_score='medium',
                 medical_exam_required=False,
                 submitted_date=now
             )
