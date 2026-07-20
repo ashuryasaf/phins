@@ -1315,6 +1315,29 @@ except ImportError:
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
+
+
+def demo_data_seeding_enabled() -> bool:
+    """Whether startup may seed demo/test fixtures (sample customers, demo
+    claims, demo ledger entries, demo documents).
+
+    Mirrors the rule already enforced by ``scripts/entrypoint.sh db-init`` and
+    ``init_database.py``: POPULATE_DEMO_DATA (default true) controls seeding,
+    and a production environment always disables it regardless of the flag so
+    demo/test fixtures can never leak into a real production database.
+    Production detection reuses security.secrets_policy (PHINS_ENVIRONMENT /
+    ENVIRONMENT / RAILWAY_ENVIRONMENT / RENDER, with PHINS_TEST_MODE always
+    treated as non-production).
+    """
+    try:
+        from security.secrets_policy import _is_production
+        if _is_production():
+            return False
+    except Exception:
+        # Fall back to the entrypoint.sh rule if the policy module is missing.
+        if os.environ.get('PHINS_ENVIRONMENT', '').strip().lower() in ('production', 'prod', 'live'):
+            return False
+    return os.environ.get('POPULATE_DEMO_DATA', 'true').strip().lower() in ('true', '1', 'yes')
 # Data-integrity guardrail (opt-in, default OFF so existing behavior is unchanged).
 # When PHINS_REQUIRE_DATABASE is truthy, the platform refuses to run on the
 # volatile in-memory fallback — this prevents the silent split-brain where the
@@ -3568,6 +3591,8 @@ def seed_demo_documents() -> None:
     id, receipt, and general — giving the '📋 My Uploaded Documents' tab populated
     data out of the box.
     """
+    if not demo_data_seeding_enabled():
+        return  # demo fixtures disabled (production or POPULATE_DEMO_DATA=false)
     if POLICY_DOCUMENTS:
         return  # already populated (persisted or previously seeded)
 
@@ -4980,6 +5005,17 @@ def _graceful_shutdown(signum, frame):
         print("[SHUTDOWN] Ledger data flushed to disk successfully")
     except Exception as exc:
         print(f"[SHUTDOWN] Error flushing ledger: {exc}")
+    # Dispose the SQLAlchemy engine so pooled PostgreSQL connections are
+    # closed cleanly. Without this, Railway redeploys kill the old container
+    # with connections still open and Postgres logs "could not receive data
+    # from client: Connection reset by peer" on every deploy.
+    if USE_DATABASE and database_enabled:
+        try:
+            from database import close_database
+            close_database()
+            print("[SHUTDOWN] Database connections closed")
+        except Exception as exc:
+            print(f"[SHUTDOWN] Error closing database connections: {exc}")
     # Re-raise so the default handler terminates the process.
     raise SystemExit(0)
 
@@ -49009,229 +49045,17 @@ def _repair_hydrated_ledger_chain(
         )
 
 
-def run_server(port: int = PORT) -> None:
-    # Audit security-critical secrets early so operators see misconfiguration
-    # immediately and don't first learn about it via a failed login.
-    #
-    # Deployment policy (secure by default):
-    #   * If SESSION_SECRET_KEY is not configured we provision a strong random
-    #     key for this process, so auth signs securely instead of degrading to
-    #     legacy v1 tokens -- and a deploy that simply hasn't set the env var
-    #     still boots (just with process-local sessions). Operators should set a
-    #     stable SESSION_SECRET_KEY for durable, multi-replica sessions.
-    #   * We always run the audit and log findings at startup.
-    #   * In a PRODUCTION runtime, *explicitly insecure* configuration (a weak or
-    #     known-default secret that was set on purpose, ALLOW_LEGACY_DEMO_PASSWORDS
-    #     in production, etc.) HARD ABORTS the boot by default, so a service can
-    #     never come up knowingly insecure.
-    #   * Escape hatch: set PHINS_ENFORCE_SECRET_POLICY=false to override and
-    #     continue despite violations (deliberate, logged, NOT recommended).
-    #   * Non-production runtimes (local dev, PHINS_TEST_MODE) never abort; they
-    #     only emit loud warnings, so the test suite and local runs keep working.
-    try:
-        from security.secrets_policy import (
-            audit_environment_secrets,
-            ensure_session_secret_key,
-            log_report,
-            should_abort_startup,
-        )
-        if ensure_session_secret_key() is not None:
-            print(
-                "[SECURITY][WARN] SESSION_SECRET_KEY was not set; generated a "
-                "strong ephemeral key for this process. Set a stable "
-                "SESSION_SECRET_KEY so sessions persist across restarts and are "
-                "valid across replicas."
-            )
-        _secret_report = audit_environment_secrets()
-        log_report(_secret_report)
-        _abort, _reason = should_abort_startup(_secret_report)
-        if _abort:
-            print(
-                "[SECURITY] Refusing to start: secret policy violations in "
-                "production: " + _reason
-            )
-            print(
-                "[SECURITY] Fix the configuration, or set "
-                "PHINS_ENFORCE_SECRET_POLICY=false to override (NOT recommended)."
-            )
-            raise SystemExit(2)
-        if _secret_report.production_mode and not _secret_report.ok:
-            # Reached only when an operator explicitly opted out of enforcement.
-            print(
-                "[SECURITY][WARN] Secret policy violations detected: "
-                + "; ".join(_secret_report.errors)
-                + " -- continuing because PHINS_ENFORCE_SECRET_POLICY is "
-                "explicitly disabled."
-            )
-    except SystemExit:
-        raise
-    except Exception as _exc:  # pragma: no cover - defensive
-        print(f"[SECURITY] secret audit failed: {_exc}")
+def _seed_startup_demo_fixtures() -> None:
+    """Seed demo/QA fixtures for non-production runs.
 
-    # Load persisted ledger data first
-    print("📂 Loading persisted ledger data...")
-    verify_persistence_writable()
-    _ledger_loaded = load_ledger_data()
-    if _ledger_loaded:
-        print("✓ Ledger data restored from persistent storage")
-    else:
-        print("ℹ️  Starting with fresh ledger data")
-
-    # Hydrate the in-memory ledger from the DB BEFORE any sample/seed entries
-    # are appended. Without this, append_event() observes a memory ledger that
-    # is missing rows the DB already holds and assigns sequence numbers
-    # starting at latest_db.sequence_no + 1, while the DB still holds the
-    # original rows for the same IDs — producing the "1 broken link,
-    # N sequence gaps" startup integrity warning and a permanent memory↔DB
-    # chain divergence. This runs even when the JSON persistence file loaded:
-    # a stale snapshot (e.g. crash before the periodic save) would otherwise
-    # silently drop DB-only entries from memory. Entries already in memory
-    # always take precedence; hydration only fills the gaps.
-    if USE_DATABASE and database_enabled:
-        try:
-            hydrated = platform_event_ledger.hydrate_from_db()
-            if hydrated:
-                if _ledger_loaded:
-                    print(f"📒 Backfilled {hydrated} DB-only ledger entries "
-                          f"missing from the JSON snapshot")
-                else:
-                    print(f"📒 Hydrated {hydrated} ledger entries from database "
-                          f"(prevents sequence/hash divergence after restart)")
-
-            # Repair the in-memory chain if hydrated rows carry drift, then
-            # reconcile the divergent DB rows (gated by
-            # PHINS_LEDGER_DB_AUTOREPAIR, default on) so the same warning
-            # does not recur — and compound — on every restart.
-            _repair_hydrated_ledger_chain(verbose=True, persist_to_db=True)
-        except Exception as _hyd_exc:
-            print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
-
-    # Sync algo trading data that was staged by load_ledger_data().
-    # This MUST happen after load_ledger_data() and after services are
-    # initialized at import time — both conditions are met here.
-    try:
-        sync_loaded_algo_data()
-    except Exception as _algo_exc:
-        print(f"Note: Could not sync loaded algo data: {_algo_exc}")
-
-    # Load dynamic customers from registration
-    print("👥 Loading dynamic customers...")
-    dynamic_count = load_dynamic_customers()
-    if dynamic_count > 0:
-        print(f"✓ Loaded {dynamic_count} dynamically registered customers")
-    
-    # Load invitation codes from persistent file
-    print("🎟️ Loading invitation codes...")
-    invitation_count = load_invitation_codes_from_file()
-    if invitation_count > 0:
-        print(f"✓ Loaded {invitation_count} invitation codes from persistent storage")
-    
-    # Seed demo documents into Document Center if none exist yet
-    print("📄 Seeding demo documents...")
-    seed_demo_documents()
-
-    # Backfill missing customer attribution on every existing document so the
-    # Customer Document Vault ("durable objects" view) returns a complete and
-    # consistent collection regardless of how each file was originally uploaded.
-    try:
-        _backfill_counts = backfill_customer_document_attribution()
-        if _backfill_counts and any(_backfill_counts.values()):
-            print(
-                "🗄️  Customer Document Vault backfill: "
-                + ", ".join(f"{k}={v}" for k, v in _backfill_counts.items() if v)
-            )
-    except Exception as _backfill_exc:
-        print(f"[durable-objects] Backfill warning: {_backfill_exc}")
-
-    # Initialize PHINS Balance Sheet (General Reserves)
-    print("💰 Initializing PHINS Balance Sheet...")
-    initialize_balance_sheet()
-    print(f"   Claims Reserve: ${PHINS_BALANCE_SHEET['claims_reserve']:,.2f}")
-    print(f"   Operating Reserve: ${PHINS_BALANCE_SHEET['operating_reserve']:,.2f}")
-    
-    # Start periodic save thread
-    schedule_periodic_save()
-    
-    # Initialize database if enabled (skip if already done at import time)
-    if USE_DATABASE and database_enabled and not _db_init_done:
-        print("📊 Initializing database...")
-        try:
-            # Check connection
-            if check_database_connection():
-                print("✓ Database connection successful")
-                db_info = get_database_info()
-                print(f"   Type: {db_info['database_type']}")
-            else:
-                print("⚠️  Database connection failed, will try to initialize anyway")
-            
-            # Initialize schema
-            init_database()
-            print("✓ Database schema initialized")
-            
-            # Seed default users
-            try:
-                seed_default_users()
-                print("✓ Default admin users seeded")
-            except Exception as e:
-                print(f"Note: User seeding skipped (may already exist): {e}")
-            
-            # Ensure asi@phins.ai and shosh@phins.ai users exist
-            try:
-                from database.manager import DatabaseManager
-                from database.repositories.user_repository import UserRepository
-                with DatabaseManager() as db:
-                    user_repo = UserRepository(db.session)
-                    
-                    # Users to ensure exist - passwords from environment variables
-                    ensure_users = [
-                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Asi PHINS'},
-                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Shosh PHINS'}
-                    ]
-                    
-                    for user_data in ensure_users:
-                        existing = user_repo.get_by_username(user_data['username'])
-                        if not existing:
-                            pw_data = hash_password(user_data['password'])
-                            user_repo.create(
-                                username=user_data['username'],
-                                password_hash=pw_data['hash'],
-                                password_salt=pw_data['salt'],
-                                role=user_data['role'],
-                                name=user_data['name'],
-                                email=user_data['username'],
-                                active=True
-                            )
-                            print(f"   ✓ Created user: {user_data['username']}")
-                        else:
-                            print(f"   ℹ️  User {user_data['username']} already exists")
-            except Exception as e:
-                print(f"   Note: Additional users seeding: {e}")
-            
-            # Seed sample customer data (test accounts)
-            try:
-                from database.seeds import seed_sample_data
-                seed_sample_data()
-                print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
-            except Exception as e:
-                print(f"Note: Sample data seeding skipped (may already exist): {e}")
-        except Exception as e:
-            print(f"❌ Database initialization failed: {e}")
-            print("   Server will continue with in-memory storage")
-            # Don't fail - just fall back to in-memory
-    elif USE_DATABASE and database_enabled and _db_init_done:
-        print("📊 Database already initialized at startup, skipping re-initialization")
-        try:
-            db_info = get_database_info()
-            print(f"   Type: {db_info['database_type']}")
-        except Exception:
-            pass
-        try:
-            from database.seeds import seed_sample_data
-            seed_sample_data()
-            print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
-        except Exception as e:
-            print(f"Note: Sample data seeding skipped (may already exist): {e}")
-    
+    Includes the PHINS demo customer accounts (asi/efrat/shosh), demo
+    wallets and underwriting enrichment for the primary demo customer,
+    sample marketplace purchases, sample claims, the demo transaction
+    ledger, and the demo-data integrity checks. Every block is idempotent
+    (existing rows are preserved on restart). Callers must gate this
+    behind demo_data_seeding_enabled() so demo/test fixtures never leak
+    into production data.
+    """
     # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
     print("👤 Initializing customer accounts...")
     
@@ -49897,49 +49721,7 @@ def run_server(port: int = PORT) -> None:
             print(f"✓ Service transactions already exist ({len(MEDICAL_PURCHASES)} records)")
     except Exception as e:
         print(f"⚠️  Service transaction initialization skipped: {e}")
-    
-    # Load claims from database (DATA INTEGRITY: Restore persisted claims)
-    print("📋 Loading claims from database...")
-    db_claims_loaded = 0
-    try:
-        if USE_DATABASE and database_enabled:
-            from database.manager import DatabaseManager
-            with DatabaseManager() as db:
-                claim_repo = db.claims
-                db_claims = claim_repo.get_all()
-                for db_claim in db_claims:
-                    claim_dict = db_claim.to_dict() if hasattr(db_claim, 'to_dict') else {
-                        'id': db_claim.id,
-                        'policy_id': db_claim.policy_id,
-                        'customer_id': db_claim.customer_id,
-                        'type': db_claim.type,
-                        'description': db_claim.description,
-                        'claimed_amount': db_claim.claimed_amount,
-                        'approved_amount': db_claim.approved_amount,
-                        'status': db_claim.status,
-                        'filed_date': db_claim.filed_date.isoformat() if db_claim.filed_date else None,
-                        'approval_date': db_claim.approval_date.isoformat() if db_claim.approval_date else None,
-                        'payment_date': db_claim.payment_date.isoformat() if db_claim.payment_date else None,
-                        'incident_date': db_claim.incident_date,
-                        'provider': db_claim.provider,
-                        'payment_destination': db_claim.payment_destination,
-                        'nft_token_id': db_claim.nft_token_id,
-                        'ledger_tx_id': db_claim.ledger_tx_id,
-                        'files_count': db_claim.files_count or 0
-                    }
-                    # Only load if not already in memory (preserve runtime state)
-                    if claim_dict['id'] not in CLAIMS:
-                        CLAIMS[claim_dict['id']] = claim_dict
-                        db_claims_loaded += 1
-                total_db = len(db_claims)
-                in_memory_before = len(CLAIMS) - db_claims_loaded
-                if db_claims_loaded > 0:
-                    print(f"   ✓ Loaded {db_claims_loaded} new claims from database ({total_db} total in DB, {in_memory_before} already in memory)")
-                else:
-                    print(f"   ✓ Loaded {db_claims_loaded} claims from database ({total_db} in DB, all {in_memory_before} already in memory)")
-    except Exception as db_err:
-        print(f"   ℹ️ Database claims loading: {db_err}")
-    
+
     # Seed sample claims for Asaf — only insert claims that don't already
     # exist so that user/admin modifications and persisted state are preserved.
     print("📋 Initializing sample claims...")
@@ -50323,16 +50105,7 @@ def run_server(port: int = PORT) -> None:
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")
-    
-    # Log suspended test accounts (these exist for QA/underwriting tests and
-    # consume negligible resources — 3 DB rows.  They can log in but their data
-    # is excluded from admin dashboards, reports, and BI aggregations.
-    # To reactivate: POST /api/admin/reactivate-account or remove from
-    # SUSPENDED_TEST_ACCOUNTS set above.)
-    print(f"🚫 Suspended test accounts (hidden from platform data, used for QA): {len(SUSPENDED_TEST_ACCOUNTS)}")
-    for acc in SUSPENDED_TEST_ACCOUNTS:
-        print(f"   • {acc}")
-    
+
     # Final step 1: Ensure all PHINS customers exist in the CUSTOMERS dictionary
     print("🔧 Final data integrity check - PHINS customer records...")
     try:
@@ -50566,6 +50339,295 @@ def run_server(port: int = PORT) -> None:
             print(f"   ✓ All PHINS applications already have complete data")
     except Exception as e:
         print(f"   ⚠️  Data integrity check error: {e}")
+
+
+def run_server(port: int = PORT) -> None:
+    # Audit security-critical secrets early so operators see misconfiguration
+    # immediately and don't first learn about it via a failed login.
+    #
+    # Deployment policy (secure by default):
+    #   * If SESSION_SECRET_KEY is not configured we provision a strong random
+    #     key for this process, so auth signs securely instead of degrading to
+    #     legacy v1 tokens -- and a deploy that simply hasn't set the env var
+    #     still boots (just with process-local sessions). Operators should set a
+    #     stable SESSION_SECRET_KEY for durable, multi-replica sessions.
+    #   * We always run the audit and log findings at startup.
+    #   * In a PRODUCTION runtime, *explicitly insecure* configuration (a weak or
+    #     known-default secret that was set on purpose, ALLOW_LEGACY_DEMO_PASSWORDS
+    #     in production, etc.) HARD ABORTS the boot by default, so a service can
+    #     never come up knowingly insecure.
+    #   * Escape hatch: set PHINS_ENFORCE_SECRET_POLICY=false to override and
+    #     continue despite violations (deliberate, logged, NOT recommended).
+    #   * Non-production runtimes (local dev, PHINS_TEST_MODE) never abort; they
+    #     only emit loud warnings, so the test suite and local runs keep working.
+    try:
+        from security.secrets_policy import (
+            audit_environment_secrets,
+            ensure_session_secret_key,
+            log_report,
+            should_abort_startup,
+        )
+        if ensure_session_secret_key() is not None:
+            print(
+                "[SECURITY][WARN] SESSION_SECRET_KEY was not set; generated a "
+                "strong ephemeral key for this process. Set a stable "
+                "SESSION_SECRET_KEY so sessions persist across restarts and are "
+                "valid across replicas."
+            )
+        _secret_report = audit_environment_secrets()
+        log_report(_secret_report)
+        _abort, _reason = should_abort_startup(_secret_report)
+        if _abort:
+            print(
+                "[SECURITY] Refusing to start: secret policy violations in "
+                "production: " + _reason
+            )
+            print(
+                "[SECURITY] Fix the configuration, or set "
+                "PHINS_ENFORCE_SECRET_POLICY=false to override (NOT recommended)."
+            )
+            raise SystemExit(2)
+        if _secret_report.production_mode and not _secret_report.ok:
+            # Reached only when an operator explicitly opted out of enforcement.
+            print(
+                "[SECURITY][WARN] Secret policy violations detected: "
+                + "; ".join(_secret_report.errors)
+                + " -- continuing because PHINS_ENFORCE_SECRET_POLICY is "
+                "explicitly disabled."
+            )
+    except SystemExit:
+        raise
+    except Exception as _exc:  # pragma: no cover - defensive
+        print(f"[SECURITY] secret audit failed: {_exc}")
+
+    # Load persisted ledger data first
+    print("📂 Loading persisted ledger data...")
+    verify_persistence_writable()
+    _ledger_loaded = load_ledger_data()
+    if _ledger_loaded:
+        print("✓ Ledger data restored from persistent storage")
+    else:
+        print("ℹ️  Starting with fresh ledger data")
+
+    # Hydrate the in-memory ledger from the DB BEFORE any sample/seed entries
+    # are appended. Without this, append_event() observes a memory ledger that
+    # is missing rows the DB already holds and assigns sequence numbers
+    # starting at latest_db.sequence_no + 1, while the DB still holds the
+    # original rows for the same IDs — producing the "1 broken link,
+    # N sequence gaps" startup integrity warning and a permanent memory↔DB
+    # chain divergence. This runs even when the JSON persistence file loaded:
+    # a stale snapshot (e.g. crash before the periodic save) would otherwise
+    # silently drop DB-only entries from memory. Entries already in memory
+    # always take precedence; hydration only fills the gaps.
+    if USE_DATABASE and database_enabled:
+        try:
+            hydrated = platform_event_ledger.hydrate_from_db()
+            if hydrated:
+                if _ledger_loaded:
+                    print(f"📒 Backfilled {hydrated} DB-only ledger entries "
+                          f"missing from the JSON snapshot")
+                else:
+                    print(f"📒 Hydrated {hydrated} ledger entries from database "
+                          f"(prevents sequence/hash divergence after restart)")
+
+            # Repair the in-memory chain if hydrated rows carry drift, then
+            # reconcile the divergent DB rows (gated by
+            # PHINS_LEDGER_DB_AUTOREPAIR, default on) so the same warning
+            # does not recur — and compound — on every restart.
+            _repair_hydrated_ledger_chain(verbose=True, persist_to_db=True)
+        except Exception as _hyd_exc:
+            print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
+
+    # Sync algo trading data that was staged by load_ledger_data().
+    # This MUST happen after load_ledger_data() and after services are
+    # initialized at import time — both conditions are met here.
+    try:
+        sync_loaded_algo_data()
+    except Exception as _algo_exc:
+        print(f"Note: Could not sync loaded algo data: {_algo_exc}")
+
+    # Load dynamic customers from registration
+    print("👥 Loading dynamic customers...")
+    dynamic_count = load_dynamic_customers()
+    if dynamic_count > 0:
+        print(f"✓ Loaded {dynamic_count} dynamically registered customers")
+    
+    # Load invitation codes from persistent file
+    print("🎟️ Loading invitation codes...")
+    invitation_count = load_invitation_codes_from_file()
+    if invitation_count > 0:
+        print(f"✓ Loaded {invitation_count} invitation codes from persistent storage")
+    
+    # Seed demo documents into Document Center if none exist yet
+    print("📄 Seeding demo documents...")
+    seed_demo_documents()
+
+    # Backfill missing customer attribution on every existing document so the
+    # Customer Document Vault ("durable objects" view) returns a complete and
+    # consistent collection regardless of how each file was originally uploaded.
+    try:
+        _backfill_counts = backfill_customer_document_attribution()
+        if _backfill_counts and any(_backfill_counts.values()):
+            print(
+                "🗄️  Customer Document Vault backfill: "
+                + ", ".join(f"{k}={v}" for k, v in _backfill_counts.items() if v)
+            )
+    except Exception as _backfill_exc:
+        print(f"[durable-objects] Backfill warning: {_backfill_exc}")
+
+    # Initialize PHINS Balance Sheet (General Reserves)
+    print("💰 Initializing PHINS Balance Sheet...")
+    initialize_balance_sheet()
+    print(f"   Claims Reserve: ${PHINS_BALANCE_SHEET['claims_reserve']:,.2f}")
+    print(f"   Operating Reserve: ${PHINS_BALANCE_SHEET['operating_reserve']:,.2f}")
+    
+    # Start periodic save thread
+    schedule_periodic_save()
+    
+    # Initialize database if enabled (skip if already done at import time)
+    if USE_DATABASE and database_enabled and not _db_init_done:
+        print("📊 Initializing database...")
+        try:
+            # Check connection
+            if check_database_connection():
+                print("✓ Database connection successful")
+                db_info = get_database_info()
+                print(f"   Type: {db_info['database_type']}")
+            else:
+                print("⚠️  Database connection failed, will try to initialize anyway")
+            
+            # Initialize schema
+            init_database()
+            print("✓ Database schema initialized")
+            
+            # Seed default users
+            try:
+                seed_default_users()
+                print("✓ Default admin users seeded")
+            except Exception as e:
+                print(f"Note: User seeding skipped (may already exist): {e}")
+            
+            # Ensure asi@phins.ai and shosh@phins.ai users exist (demo
+            # customer logins — skipped when demo data seeding is disabled)
+            if demo_data_seeding_enabled():
+                try:
+                    from database.manager import DatabaseManager
+                    from database.repositories.user_repository import UserRepository
+                    with DatabaseManager() as db:
+                        user_repo = UserRepository(db.session)
+
+                        # Users to ensure exist - passwords from environment variables
+                        ensure_users = [
+                            {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Asi PHINS'},
+                            {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Shosh PHINS'}
+                        ]
+
+                        for user_data in ensure_users:
+                            existing = user_repo.get_by_username(user_data['username'])
+                            if not existing:
+                                pw_data = hash_password(user_data['password'])
+                                user_repo.create(
+                                    username=user_data['username'],
+                                    password_hash=pw_data['hash'],
+                                    password_salt=pw_data['salt'],
+                                    role=user_data['role'],
+                                    name=user_data['name'],
+                                    email=user_data['username'],
+                                    active=True
+                                )
+                                print(f"   ✓ Created user: {user_data['username']}")
+                            else:
+                                print(f"   ℹ️  User {user_data['username']} already exists")
+                except Exception as e:
+                    print(f"   Note: Additional users seeding: {e}")
+            
+            # Seed sample customer data (test accounts) — demo fixtures only
+            if demo_data_seeding_enabled():
+                try:
+                    from database.seeds import seed_sample_data
+                    seed_sample_data()
+                    print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
+                except Exception as e:
+                    print(f"Note: Sample data seeding skipped (may already exist): {e}")
+        except Exception as e:
+            print(f"❌ Database initialization failed: {e}")
+            print("   Server will continue with in-memory storage")
+            # Don't fail - just fall back to in-memory
+    elif USE_DATABASE and database_enabled and _db_init_done:
+        print("📊 Database already initialized at startup, skipping re-initialization")
+        try:
+            db_info = get_database_info()
+            print(f"   Type: {db_info['database_type']}")
+        except Exception:
+            pass
+        if demo_data_seeding_enabled():
+            try:
+                from database.seeds import seed_sample_data
+                seed_sample_data()
+                print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
+            except Exception as e:
+                print(f"Note: Sample data seeding skipped (may already exist): {e}")
+    
+    # Load claims from database (DATA INTEGRITY: Restore persisted claims)
+    print("📋 Loading claims from database...")
+    db_claims_loaded = 0
+    try:
+        if USE_DATABASE and database_enabled:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                claim_repo = db.claims
+                db_claims = claim_repo.get_all()
+                for db_claim in db_claims:
+                    claim_dict = db_claim.to_dict() if hasattr(db_claim, 'to_dict') else {
+                        'id': db_claim.id,
+                        'policy_id': db_claim.policy_id,
+                        'customer_id': db_claim.customer_id,
+                        'type': db_claim.type,
+                        'description': db_claim.description,
+                        'claimed_amount': db_claim.claimed_amount,
+                        'approved_amount': db_claim.approved_amount,
+                        'status': db_claim.status,
+                        'filed_date': db_claim.filed_date.isoformat() if db_claim.filed_date else None,
+                        'approval_date': db_claim.approval_date.isoformat() if db_claim.approval_date else None,
+                        'payment_date': db_claim.payment_date.isoformat() if db_claim.payment_date else None,
+                        'incident_date': db_claim.incident_date,
+                        'provider': db_claim.provider,
+                        'payment_destination': db_claim.payment_destination,
+                        'nft_token_id': db_claim.nft_token_id,
+                        'ledger_tx_id': db_claim.ledger_tx_id,
+                        'files_count': db_claim.files_count or 0
+                    }
+                    # Only load if not already in memory (preserve runtime state)
+                    if claim_dict['id'] not in CLAIMS:
+                        CLAIMS[claim_dict['id']] = claim_dict
+                        db_claims_loaded += 1
+                total_db = len(db_claims)
+                in_memory_before = len(CLAIMS) - db_claims_loaded
+                if db_claims_loaded > 0:
+                    print(f"   ✓ Loaded {db_claims_loaded} new claims from database ({total_db} total in DB, {in_memory_before} already in memory)")
+                else:
+                    print(f"   ✓ Loaded {db_claims_loaded} claims from database ({total_db} in DB, all {in_memory_before} already in memory)")
+    except Exception as db_err:
+        print(f"   ℹ️ Database claims loading: {db_err}")
+
+    # Demo/test fixtures (PHINS demo customers/policies, sample claims,
+    # demo transaction ledger, demo marketplace purchases) are only seeded
+    # outside production and when POPULATE_DEMO_DATA allows it. This keeps
+    # test accounts and demo rows out of production databases and removes
+    # the associated re-seed work and log noise from production boots.
+    if demo_data_seeding_enabled():
+        _seed_startup_demo_fixtures()
+    else:
+        print("⏭️  Demo data seeding disabled (production environment or POPULATE_DEMO_DATA=false)")
+
+    # Log suspended test accounts (these exist for QA/underwriting tests and
+    # consume negligible resources — 3 DB rows.  They can log in but their data
+    # is excluded from admin dashboards, reports, and BI aggregations.
+    # To reactivate: POST /api/admin/reactivate-account or remove from
+    # SUSPENDED_TEST_ACCOUNTS set above.)
+    print(f"🚫 Suspended test accounts (hidden from platform data, used for QA): {len(SUSPENDED_TEST_ACCOUNTS)}")
+    for acc in SUSPENDED_TEST_ACCOUNTS:
+        print(f"   • {acc}")
     
     # When ledger started fresh but DB has data, reconcile in-memory stores
     if not _ledger_loaded and USE_DATABASE and database_enabled:
