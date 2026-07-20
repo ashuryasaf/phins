@@ -64,7 +64,9 @@ class BaseRepository(Generic[T]):
             self.session.add(instance)
             self.session.commit()
             self.session.refresh(instance)
-            logger.info(f"Created {self.model_class.__name__}: {kwargs.get('id', 'N/A')}")
+            # DEBUG (not INFO): row-level create/update logging floods
+            # deployment logs — one line per row on every seed/hydration pass.
+            logger.debug(f"Created {self.model_class.__name__}: {kwargs.get('id', 'N/A')}")
             return instance
         except (SQLAlchemyError, TypeError, ValueError) as e:
             logger.error(f"Error creating {self.model_class.__name__}: {e}")
@@ -130,7 +132,7 @@ class BaseRepository(Generic[T]):
                         setattr(instance, key, value)
                 self.session.commit()
                 self.session.refresh(instance)
-                logger.info(f"Updated {self.model_class.__name__}: {id_value}")
+                logger.debug(f"Updated {self.model_class.__name__}: {id_value}")
                 return instance
             return None
         except SQLAlchemyError as e:
