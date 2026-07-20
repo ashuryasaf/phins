@@ -207,6 +207,74 @@ def get_db_session(max_retries: int = 3, retry_delay: float = 0.5) -> Session:
     raise last_error or Exception("Failed to establish database connection")
 
 
+def _schema_fingerprint() -> str:
+    """Deterministic fingerprint of the declared SQLAlchemy schema.
+
+    Derived from every table's name and column names, so any model change
+    (new table, new column, renamed column) yields a new fingerprint. Used to
+    skip the per-table reflection queries of ``create_all`` +
+    ``upgrade_schema`` on boots where the schema is already in sync.
+    """
+    import hashlib
+
+    parts = []
+    for table in sorted(Base.metadata.tables.values(), key=lambda t: t.name):
+        columns = ",".join(sorted(column.name for column in table.columns))
+        parts.append(f"{table.name}({columns})")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _read_schema_marker(engine) -> Optional[str]:
+    """Read the stored schema fingerprint (None when absent/unreadable)."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT fingerprint FROM schema_sync_state WHERE id = 1")
+            ).fetchone()
+            return row[0] if row else None
+    except Exception:
+        # Missing marker table (first boot / pre-marker database) or any
+        # read failure simply means "no marker": run the full DDL sync.
+        return None
+
+
+def _write_schema_marker(engine, fingerprint: str) -> None:
+    """Persist the schema fingerprint after a successful DDL sync."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS schema_sync_state ("
+                "id INTEGER PRIMARY KEY, "
+                "fingerprint VARCHAR(64) NOT NULL, "
+                "applied_at TIMESTAMP)"
+            ))
+            updated = conn.execute(
+                text(
+                    "UPDATE schema_sync_state "
+                    "SET fingerprint = :fp, applied_at = CURRENT_TIMESTAMP "
+                    "WHERE id = 1"
+                ),
+                {"fp": fingerprint},
+            )
+            if updated.rowcount == 0:
+                conn.execute(
+                    text(
+                        "INSERT INTO schema_sync_state (id, fingerprint, applied_at) "
+                        "VALUES (1, :fp, CURRENT_TIMESTAMP)"
+                    ),
+                    {"fp": fingerprint},
+                )
+            conn.commit()
+    except Exception as exc:
+        # Non-fatal: without a marker the next boot just re-runs the
+        # idempotent DDL sync.
+        logger.debug(f"Could not persist schema sync marker: {exc}")
+
+
 def init_database(drop_existing: bool = False):
     """
     Initialize the database schema.
@@ -226,10 +294,32 @@ def init_database(drop_existing: bool = False):
         pass
 
     engine = get_engine()
-    
+
+    # Fast path: when the stored schema fingerprint matches the declared
+    # models, the previous successful DDL sync already created every table
+    # and column — skip create_all (one reflection query per table) and
+    # upgrade_schema (full table/column inspection) and boot with a single
+    # SELECT instead. Any model change produces a new fingerprint and the
+    # full sync runs again. PHINS_FORCE_SCHEMA_SYNC=true bypasses the marker.
+    force_sync = str(os.environ.get('PHINS_FORCE_SCHEMA_SYNC', '')).lower() in ('1', 'true', 'yes', 'y')
+    fingerprint = _schema_fingerprint()
+    if not drop_existing and not force_sync:
+        if _read_schema_marker(engine) == fingerprint:
+            logger.info("Database schema up to date (fingerprint match); skipping DDL sync")
+            return
+
     if drop_existing:
         logger.warning("Dropping all existing database tables!")
         Base.metadata.drop_all(engine)
+        # The marker table is not part of Base.metadata; drop it explicitly so
+        # a wiped database never reports a stale fingerprint match.
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS schema_sync_state"))
+                conn.commit()
+        except Exception:
+            pass
     
     logger.info("Creating database tables...")
     Base.metadata.create_all(engine)
@@ -237,6 +327,8 @@ def init_database(drop_existing: bool = False):
     
     # Upgrade schema to add any new columns
     upgrade_schema(engine)
+
+    _write_schema_marker(engine, fingerprint)
 
 
 def upgrade_schema(engine=None):
