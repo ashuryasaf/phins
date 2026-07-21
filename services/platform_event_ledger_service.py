@@ -558,7 +558,14 @@ class PlatformEventLedgerService:
                         ]
                         if not missing_ids:
                             return 0
-                        rows = db.platform_ledger.get_by_ids(missing_ids)
+                        try:
+                            rows = db.platform_ledger.get_by_ids(missing_ids)
+                        except Exception:
+                            # A fetch failure here must not be mistaken for
+                            # "nothing to load"; fall back to the full scan so
+                            # missing rows are still hydrated and the chain does
+                            # not silently diverge on later appends.
+                            rows = None
                 if rows is None:
                     rows = db.platform_ledger.get_all_by_sequence(limit=limit)
                 records = []

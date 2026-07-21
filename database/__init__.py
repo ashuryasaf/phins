@@ -207,13 +207,54 @@ def get_db_session(max_retries: int = 3, retry_delay: float = 0.5) -> Session:
     raise last_error or Exception("Failed to establish database connection")
 
 
+# Static migration definitions applied by ``upgrade_schema``. Kept at module
+# scope so ``_schema_fingerprint`` can fold them into the skip-gate hash; their
+# effects are not reflected in the ORM metadata, so changes here must still
+# re-trigger the DDL sync.
+# New columns to add (table_name, column_name, column_type, default).
+_UPGRADE_NEW_COLUMNS = [
+    # Claim extended fields
+    ('claims', 'incident_date', 'VARCHAR(50)', None),
+    ('claims', 'provider', 'VARCHAR(200)', None),
+    ('claims', 'payment_destination', 'VARCHAR(50)', "'health_wallet'"),
+    ('claims', 'bank_details', 'TEXT', None),
+    ('claims', 'files_metadata', 'TEXT', None),
+    ('claims', 'files_count', 'INTEGER', '0'),
+    ('claims', 'nft_token_id', 'VARCHAR(100)', None),
+    ('claims', 'ledger_tx_id', 'VARCHAR(100)', None),
+    ('claims', 'approved_by', 'VARCHAR(100)', None),
+    ('claims', 'approval_notes', 'TEXT', None),
+    ('claims', 'rejected_by', 'VARCHAR(100)', None),
+    ('claims', 'processed_by', 'VARCHAR(100)', None),
+    ('claims', 'payment_method', 'VARCHAR(50)', None),
+    ('claims', 'payment_reference', 'VARCHAR(100)', None),
+    ('claims', 'paid_amount', 'FLOAT', None),
+    # Supplier invitation code reference
+    ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
+    # Supplier offer media gallery (JSON list of media items)
+    ('supplier_offers', 'media', 'TEXT', None),
+    # Agent ecosystem: referring agent linkage
+    ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
+    ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
+]
+# Columns whose declared type must be widened on existing databases
+# (table_name, column_name, new_type).
+_UPGRADE_COLUMN_WIDENING = [
+    ('sessions', 'token', 'VARCHAR(512)'),
+]
+
+
 def _schema_fingerprint() -> str:
     """Deterministic fingerprint of the declared SQLAlchemy schema.
 
     Derived from every table's name and column names, so any model change
-    (new table, new column, renamed column) yields a new fingerprint. Used to
-    skip the per-table reflection queries of ``create_all`` +
-    ``upgrade_schema`` on boots where the schema is already in sync.
+    (new table, new column, renamed column) yields a new fingerprint. It also
+    folds in the ``upgrade_schema`` migration definitions (added columns and
+    column widenings), whose effects are not reflected in the ORM metadata, so
+    that changing those lists re-triggers the DDL sync rather than being masked
+    by a matching model fingerprint. Used to skip the per-table reflection
+    queries of ``create_all`` + ``upgrade_schema`` on boots where the schema is
+    already in sync.
     """
     import hashlib
 
@@ -221,6 +262,12 @@ def _schema_fingerprint() -> str:
     for table in sorted(Base.metadata.tables.values(), key=lambda t: t.name):
         columns = ",".join(sorted(column.name for column in table.columns))
         parts.append(f"{table.name}({columns})")
+    parts.append("new_columns=" + ";".join(
+        f"{t}.{c}:{ct}:{d}" for t, c, ct, d in _UPGRADE_NEW_COLUMNS
+    ))
+    parts.append("column_widening=" + ";".join(
+        f"{t}.{c}:{nt}" for t, c, nt in _UPGRADE_COLUMN_WIDENING
+    ))
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -344,32 +391,8 @@ def upgrade_schema(engine=None):
     inspector = inspect(engine)
     
     # Define new columns to add (table_name, column_name, column_type, default)
-    new_columns = [
-        # Claim extended fields
-        ('claims', 'incident_date', 'VARCHAR(50)', None),
-        ('claims', 'provider', 'VARCHAR(200)', None),
-        ('claims', 'payment_destination', 'VARCHAR(50)', "'health_wallet'"),
-        ('claims', 'bank_details', 'TEXT', None),
-        ('claims', 'files_metadata', 'TEXT', None),
-        ('claims', 'files_count', 'INTEGER', '0'),
-        ('claims', 'nft_token_id', 'VARCHAR(100)', None),
-        ('claims', 'ledger_tx_id', 'VARCHAR(100)', None),
-        ('claims', 'approved_by', 'VARCHAR(100)', None),
-        ('claims', 'approval_notes', 'TEXT', None),
-        ('claims', 'rejected_by', 'VARCHAR(100)', None),
-        ('claims', 'processed_by', 'VARCHAR(100)', None),
-        ('claims', 'payment_method', 'VARCHAR(50)', None),
-        ('claims', 'payment_reference', 'VARCHAR(100)', None),
-        ('claims', 'paid_amount', 'FLOAT', None),
-        # Supplier invitation code reference
-        ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
-        # Supplier offer media gallery (JSON list of media items)
-        ('supplier_offers', 'media', 'TEXT', None),
-        # Agent ecosystem: referring agent linkage
-        ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
-        ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
-    ]
-    
+    new_columns = _UPGRADE_NEW_COLUMNS
+
     with engine.connect() as conn:
         for table_name, column_name, column_type, default in new_columns:
             # Check if table exists
@@ -395,9 +418,7 @@ def upgrade_schema(engine=None):
         # The sessions.token column was VARCHAR(100) but JWT tokens are ~220 chars.
         # Note: SQLite does not support ALTER COLUMN TYPE, but it also does not
         # enforce VARCHAR lengths, so this migration only matters on PostgreSQL.
-        column_widening = [
-            ('sessions', 'token', 'VARCHAR(512)'),
-        ]
+        column_widening = _UPGRADE_COLUMN_WIDENING
         is_sqlite = str(engine.url).startswith('sqlite')
         if not is_sqlite:
             for table_name, column_name, new_type in column_widening:
