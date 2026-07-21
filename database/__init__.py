@@ -372,16 +372,27 @@ def init_database(drop_existing: bool = False):
     Base.metadata.create_all(engine)
     logger.info("Database tables created successfully")
     
-    # Upgrade schema to add any new columns
-    upgrade_schema(engine)
+    # Upgrade schema to add any new columns. Only persist the fingerprint
+    # marker when every migration step succeeded; otherwise the next boot must
+    # re-run the DDL sync so transient failures get another chance.
+    if upgrade_schema(engine):
+        _write_schema_marker(engine, fingerprint)
+    else:
+        logger.warning(
+            "Schema upgrade had failures; not persisting schema sync marker "
+            "so the DDL sync retries on next boot"
+        )
 
-    _write_schema_marker(engine, fingerprint)
 
-
-def upgrade_schema(engine=None):
+def upgrade_schema(engine=None) -> bool:
     """
     Add missing columns to existing tables.
     This handles schema migrations for new columns added to models.
+
+    Returns:
+        True if every applicable migration step succeeded (or was already
+        applied); False if any step failed. Callers use this to decide whether
+        the schema sync marker may be persisted.
     """
     if engine is None:
         engine = get_engine()
@@ -392,6 +403,8 @@ def upgrade_schema(engine=None):
     
     # Define new columns to add (table_name, column_name, column_type, default)
     new_columns = _UPGRADE_NEW_COLUMNS
+
+    all_succeeded = True
 
     with engine.connect() as conn:
         for table_name, column_name, column_type, default in new_columns:
@@ -412,6 +425,7 @@ def upgrade_schema(engine=None):
                 conn.commit()
                 logger.info(f"Added column {column_name} to {table_name}")
             except Exception as e:
+                all_succeeded = False
                 logger.warning(f"Could not add column {column_name} to {table_name}: {e}")
 
         # Widen columns that were originally defined too narrow.
@@ -433,7 +447,10 @@ def upgrade_schema(engine=None):
                     if 'already' in str(e).lower() or 'nothing to alter' in str(e).lower():
                         pass
                     else:
+                        all_succeeded = False
                         logger.debug(f"Column widen {table_name}.{column_name}: {e}")
+
+    return all_succeeded
 
 
 def close_database():

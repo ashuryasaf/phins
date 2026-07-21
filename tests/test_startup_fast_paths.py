@@ -117,6 +117,23 @@ def test_drop_existing_reruns_and_resets_marker(isolated_sqlite, caplog):
     assert "skipping DDL sync" in _init_and_capture(caplog)
 
 
+def test_failed_upgrade_does_not_persist_marker(isolated_sqlite, caplog, monkeypatch):
+    """If upgrade_schema reports a failure, the marker must not be written so
+    the next boot re-runs the DDL sync (transient failures get retried)."""
+    import database as db
+
+    monkeypatch.setattr(db, "upgrade_schema", lambda engine=None: False)
+
+    first = _init_and_capture(caplog)
+    assert "Creating database tables..." in first
+    assert db._read_schema_marker(db.get_engine()) is None
+
+    # Next boot must re-run the full sync rather than skip via a stale marker.
+    rerun = _init_and_capture(caplog)
+    assert "Creating database tables..." in rerun
+    assert "skipping DDL sync" not in rerun
+
+
 def test_schema_still_usable_after_marker_skip(isolated_sqlite, caplog):
     """A boot that skipped the DDL sync must still see a fully working schema."""
     from database import get_db_session, reset_connection
