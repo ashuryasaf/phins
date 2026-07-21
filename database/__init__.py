@@ -207,6 +207,121 @@ def get_db_session(max_retries: int = 3, retry_delay: float = 0.5) -> Session:
     raise last_error or Exception("Failed to establish database connection")
 
 
+# Static migration definitions applied by ``upgrade_schema``. Kept at module
+# scope so ``_schema_fingerprint`` can fold them into the skip-gate hash; their
+# effects are not reflected in the ORM metadata, so changes here must still
+# re-trigger the DDL sync.
+# New columns to add (table_name, column_name, column_type, default).
+_UPGRADE_NEW_COLUMNS = [
+    # Claim extended fields
+    ('claims', 'incident_date', 'VARCHAR(50)', None),
+    ('claims', 'provider', 'VARCHAR(200)', None),
+    ('claims', 'payment_destination', 'VARCHAR(50)', "'health_wallet'"),
+    ('claims', 'bank_details', 'TEXT', None),
+    ('claims', 'files_metadata', 'TEXT', None),
+    ('claims', 'files_count', 'INTEGER', '0'),
+    ('claims', 'nft_token_id', 'VARCHAR(100)', None),
+    ('claims', 'ledger_tx_id', 'VARCHAR(100)', None),
+    ('claims', 'approved_by', 'VARCHAR(100)', None),
+    ('claims', 'approval_notes', 'TEXT', None),
+    ('claims', 'rejected_by', 'VARCHAR(100)', None),
+    ('claims', 'processed_by', 'VARCHAR(100)', None),
+    ('claims', 'payment_method', 'VARCHAR(50)', None),
+    ('claims', 'payment_reference', 'VARCHAR(100)', None),
+    ('claims', 'paid_amount', 'FLOAT', None),
+    # Supplier invitation code reference
+    ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
+    # Supplier offer media gallery (JSON list of media items)
+    ('supplier_offers', 'media', 'TEXT', None),
+    # Agent ecosystem: referring agent linkage
+    ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
+    ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
+]
+# Columns whose declared type must be widened on existing databases
+# (table_name, column_name, new_type).
+_UPGRADE_COLUMN_WIDENING = [
+    ('sessions', 'token', 'VARCHAR(512)'),
+]
+
+
+def _schema_fingerprint() -> str:
+    """Deterministic fingerprint of the declared SQLAlchemy schema.
+
+    Derived from every table's name and column names, so any model change
+    (new table, new column, renamed column) yields a new fingerprint. It also
+    folds in the ``upgrade_schema`` migration definitions (added columns and
+    column widenings), whose effects are not reflected in the ORM metadata, so
+    that changing those lists re-triggers the DDL sync rather than being masked
+    by a matching model fingerprint. Used to skip the per-table reflection
+    queries of ``create_all`` + ``upgrade_schema`` on boots where the schema is
+    already in sync.
+    """
+    import hashlib
+
+    parts = []
+    for table in sorted(Base.metadata.tables.values(), key=lambda t: t.name):
+        columns = ",".join(sorted(column.name for column in table.columns))
+        parts.append(f"{table.name}({columns})")
+    parts.append("new_columns=" + ";".join(
+        f"{t}.{c}:{ct}:{d}" for t, c, ct, d in _UPGRADE_NEW_COLUMNS
+    ))
+    parts.append("column_widening=" + ";".join(
+        f"{t}.{c}:{nt}" for t, c, nt in _UPGRADE_COLUMN_WIDENING
+    ))
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _read_schema_marker(engine) -> Optional[str]:
+    """Read the stored schema fingerprint (None when absent/unreadable)."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT fingerprint FROM schema_sync_state WHERE id = 1")
+            ).fetchone()
+            return row[0] if row else None
+    except Exception:
+        # Missing marker table (first boot / pre-marker database) or any
+        # read failure simply means "no marker": run the full DDL sync.
+        return None
+
+
+def _write_schema_marker(engine, fingerprint: str) -> None:
+    """Persist the schema fingerprint after a successful DDL sync."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS schema_sync_state ("
+                "id INTEGER PRIMARY KEY, "
+                "fingerprint VARCHAR(64) NOT NULL, "
+                "applied_at TIMESTAMP)"
+            ))
+            updated = conn.execute(
+                text(
+                    "UPDATE schema_sync_state "
+                    "SET fingerprint = :fp, applied_at = CURRENT_TIMESTAMP "
+                    "WHERE id = 1"
+                ),
+                {"fp": fingerprint},
+            )
+            if updated.rowcount == 0:
+                conn.execute(
+                    text(
+                        "INSERT INTO schema_sync_state (id, fingerprint, applied_at) "
+                        "VALUES (1, :fp, CURRENT_TIMESTAMP)"
+                    ),
+                    {"fp": fingerprint},
+                )
+            conn.commit()
+    except Exception as exc:
+        # Non-fatal: without a marker the next boot just re-runs the
+        # idempotent DDL sync.
+        logger.debug(f"Could not persist schema sync marker: {exc}")
+
+
 def init_database(drop_existing: bool = False):
     """
     Initialize the database schema.
@@ -226,23 +341,58 @@ def init_database(drop_existing: bool = False):
         pass
 
     engine = get_engine()
-    
+
+    # Fast path: when the stored schema fingerprint matches the declared
+    # models, the previous successful DDL sync already created every table
+    # and column — skip create_all (one reflection query per table) and
+    # upgrade_schema (full table/column inspection) and boot with a single
+    # SELECT instead. Any model change produces a new fingerprint and the
+    # full sync runs again. PHINS_FORCE_SCHEMA_SYNC=true bypasses the marker.
+    force_sync = str(os.environ.get('PHINS_FORCE_SCHEMA_SYNC', '')).lower() in ('1', 'true', 'yes', 'y')
+    fingerprint = _schema_fingerprint()
+    if not drop_existing and not force_sync:
+        if _read_schema_marker(engine) == fingerprint:
+            logger.info("Database schema up to date (fingerprint match); skipping DDL sync")
+            return
+
     if drop_existing:
         logger.warning("Dropping all existing database tables!")
         Base.metadata.drop_all(engine)
+        # The marker table is not part of Base.metadata; drop it explicitly so
+        # a wiped database never reports a stale fingerprint match.
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS schema_sync_state"))
+                conn.commit()
+        except Exception:
+            pass
     
     logger.info("Creating database tables...")
     Base.metadata.create_all(engine)
     logger.info("Database tables created successfully")
     
-    # Upgrade schema to add any new columns
-    upgrade_schema(engine)
+    # Upgrade schema to add any new columns. Only persist the fingerprint
+    # marker when every migration step succeeded; otherwise the next boot must
+    # re-run the DDL sync so transient failures get another chance.
+    if upgrade_schema(engine):
+        _write_schema_marker(engine, fingerprint)
+    else:
+        logger.warning(
+            "Schema upgrade had failures; not persisting schema sync marker "
+            "so the DDL sync retries on next boot"
+        )
 
 
-def upgrade_schema(engine=None):
+def upgrade_schema(engine=None) -> bool:
     """
     Add missing columns to existing tables.
     This handles schema migrations for new columns added to models.
+
+    Returns:
+        True if every applicable migration step succeeded (or was already
+        applied); False if any step failed. Callers use this to decide whether
+        the schema sync marker may be persisted.
     """
     if engine is None:
         engine = get_engine()
@@ -252,32 +402,10 @@ def upgrade_schema(engine=None):
     inspector = inspect(engine)
     
     # Define new columns to add (table_name, column_name, column_type, default)
-    new_columns = [
-        # Claim extended fields
-        ('claims', 'incident_date', 'VARCHAR(50)', None),
-        ('claims', 'provider', 'VARCHAR(200)', None),
-        ('claims', 'payment_destination', 'VARCHAR(50)', "'health_wallet'"),
-        ('claims', 'bank_details', 'TEXT', None),
-        ('claims', 'files_metadata', 'TEXT', None),
-        ('claims', 'files_count', 'INTEGER', '0'),
-        ('claims', 'nft_token_id', 'VARCHAR(100)', None),
-        ('claims', 'ledger_tx_id', 'VARCHAR(100)', None),
-        ('claims', 'approved_by', 'VARCHAR(100)', None),
-        ('claims', 'approval_notes', 'TEXT', None),
-        ('claims', 'rejected_by', 'VARCHAR(100)', None),
-        ('claims', 'processed_by', 'VARCHAR(100)', None),
-        ('claims', 'payment_method', 'VARCHAR(50)', None),
-        ('claims', 'payment_reference', 'VARCHAR(100)', None),
-        ('claims', 'paid_amount', 'FLOAT', None),
-        # Supplier invitation code reference
-        ('suppliers', 'invitation_code', 'VARCHAR(100)', None),
-        # Supplier offer media gallery (JSON list of media items)
-        ('supplier_offers', 'media', 'TEXT', None),
-        # Agent ecosystem: referring agent linkage
-        ('customers', 'referring_agent_id', 'VARCHAR(50)', None),
-        ('suppliers', 'referring_agent_id', 'VARCHAR(50)', None),
-    ]
-    
+    new_columns = _UPGRADE_NEW_COLUMNS
+
+    all_succeeded = True
+
     with engine.connect() as conn:
         for table_name, column_name, column_type, default in new_columns:
             # Check if table exists
@@ -297,15 +425,14 @@ def upgrade_schema(engine=None):
                 conn.commit()
                 logger.info(f"Added column {column_name} to {table_name}")
             except Exception as e:
+                all_succeeded = False
                 logger.warning(f"Could not add column {column_name} to {table_name}: {e}")
 
         # Widen columns that were originally defined too narrow.
         # The sessions.token column was VARCHAR(100) but JWT tokens are ~220 chars.
         # Note: SQLite does not support ALTER COLUMN TYPE, but it also does not
         # enforce VARCHAR lengths, so this migration only matters on PostgreSQL.
-        column_widening = [
-            ('sessions', 'token', 'VARCHAR(512)'),
-        ]
+        column_widening = _UPGRADE_COLUMN_WIDENING
         is_sqlite = str(engine.url).startswith('sqlite')
         if not is_sqlite:
             for table_name, column_name, new_type in column_widening:
@@ -320,7 +447,10 @@ def upgrade_schema(engine=None):
                     if 'already' in str(e).lower() or 'nothing to alter' in str(e).lower():
                         pass
                     else:
+                        all_succeeded = False
                         logger.debug(f"Column widen {table_name}.{column_name}: {e}")
+
+    return all_succeeded
 
 
 def close_database():

@@ -15,6 +15,23 @@ class UserRepository(BaseRepository[User]):
     def get_by_username(self, username: str) -> Optional[User]:
         """Get user by username (primary key)"""
         return self.get_by_id(username)
+
+    def get_by_usernames(self, usernames: List[str]) -> List[User]:
+        """Get all users whose username is in the given list (single query).
+
+        Lets seed/bootstrap code check N accounts with one SELECT instead of
+        N primary-key lookups on every startup.
+        """
+        if not usernames:
+            return []
+        try:
+            return (
+                self.session.query(User)
+                .filter(User.username.in_(usernames))
+                .all()
+            )
+        except Exception:
+            return []
     
     def get_by_role(self, role: str) -> List[User]:
         """Get all users with a specific role"""

@@ -90,56 +90,56 @@ def seed_default_users(session=None):
         default_users = [
             {
                 'username': 'admin',
-                'password': _get_env_password('PHINS_ADMIN_PASSWORD', 'admin'),
+                'password_env': 'PHINS_ADMIN_PASSWORD',
                 'role': 'admin',
                 'name': 'Admin User',
                 'email': 'admin@phins.ai'
             },
             {
                 'username': 'actuary',
-                'password': _get_env_password('PHINS_ACTUARY_PASSWORD', 'actuary'),
+                'password_env': 'PHINS_ACTUARY_PASSWORD',
                 'role': 'actuary',
                 'name': 'Actuary User',
                 'email': 'actuary@phins.ai'
             },
             {
                 'username': 'supplier',
-                'password': _get_env_password('PHINS_SUPPLIER_PASSWORD', 'supplier'),
+                'password_env': 'PHINS_SUPPLIER_PASSWORD',
                 'role': 'supplier',
                 'name': 'Supplier User',
                 'email': 'supplier@phins.ai'
             },
             {
                 'username': 'underwriter',
-                'password': _get_env_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'),
+                'password_env': 'PHINS_UNDERWRITER_PASSWORD',
                 'role': 'underwriter',
                 'name': 'John Underwriter',
                 'email': 'underwriter@phins.ai'
             },
             {
                 'username': 'claims_adjuster',
-                'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
+                'password_env': 'PHINS_CLAIMS_PASSWORD',
                 'role': 'claims',
                 'name': 'Jane Claims',
                 'email': 'claims@phins.ai'
             },
             {
                 'username': 'accountant',
-                'password': _get_env_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'),
+                'password_env': 'PHINS_ACCOUNTANT_PASSWORD',
                 'role': 'accountant',
                 'name': 'Bob Accountant',
                 'email': 'accountant@phins.ai'
             },
             {
                 'username': 'agent',
-                'password': _get_env_password('PHINS_AGENT_PASSWORD', 'agent'),
+                'password_env': 'PHINS_AGENT_PASSWORD',
                 'role': 'agent',
                 'name': 'Demo Agent',
                 'email': 'agent@phins.ai'
             },
             {
                 'username': 'media_ad',
-                'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
+                'password_env': 'PHINS_MEDIA_PASSWORD',
                 'role': 'media',
                 'name': 'Media Admin',
                 'email': 'media@phins.ai'
@@ -147,7 +147,7 @@ def seed_default_users(session=None):
             # Primary customer account (links to CUST-ASAF-001 in customers table)
             {
                 'username': 'asaf@assurance.co.il',
-                'password': _get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'),
+                'password_env': 'PHINS_USER_ASAF_ASSURANCE_PASSWORD',
                 'role': 'customer',
                 'name': 'Asaf Assurance',
                 'email': 'asaf@assurance.co.il'
@@ -155,7 +155,7 @@ def seed_default_users(session=None):
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asaf@phins.ai',
-                'password': _get_env_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'),
+                'password_env': 'PHINS_USER_ASAF_PHINS_PASSWORD',
                 'role': 'admin',
                 'name': 'Asaf PHINS',
                 'email': 'asaf@phins.ai'
@@ -163,7 +163,7 @@ def seed_default_users(session=None):
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'efrat@phins.ai',
-                'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
+                'password_env': 'PHINS_USER_EFRAT_PASSWORD',
                 'role': 'customer',
                 'name': 'Efrat PHINS',
                 'email': 'efrat@phins.ai'
@@ -171,7 +171,7 @@ def seed_default_users(session=None):
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asi@phins.ai',
-                'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
+                'password_env': 'PHINS_USER_ASI_PASSWORD',
                 'role': 'customer',
                 'name': 'Asi PHINS',
                 'email': 'asi@phins.ai'
@@ -179,16 +179,26 @@ def seed_default_users(session=None):
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'shosh@phins.ai',
-                'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
+                'password_env': 'PHINS_USER_SHOSH_PASSWORD',
                 'role': 'customer',
                 'name': 'Shosh PHINS',
                 'email': 'shosh@phins.ai'
             }
         ]
         
+        # Single SELECT for all default accounts instead of one primary-key
+        # lookup per user on every startup.
+        existing_by_username = {
+            user.username: user
+            for user in user_repo.get_by_usernames(
+                [user_data['username'] for user_data in default_users]
+            )
+        }
+
+        skipped_existing = 0
         for user_data in default_users:
             # Check if user already exists
-            existing_user = user_repo.get_by_username(user_data['username'])
+            existing_user = existing_by_username.get(user_data['username'])
             if existing_user:
                 # Update role if it has changed (important for role changes like media_ad)
                 if existing_user.role != user_data['role']:
@@ -196,11 +206,16 @@ def seed_default_users(session=None):
                     session.commit()
                     logger.info(f"Updated user '{user_data['username']}' role to: {user_data['role']}")
                 else:
-                    logger.info(f"User '{user_data['username']}' already exists with correct role, skipping...")
+                    skipped_existing += 1
                 continue
             
-            # Hash password
-            password_hash = hash_password(user_data['password'])
+            # Resolve + hash the password only when the account is actually
+            # created. Resolving eagerly for accounts that already exist
+            # emitted a misleading "No password configured" warning (and
+            # generated a throwaway random password) on every startup.
+            password_hash = hash_password(
+                _get_env_password(user_data['password_env'], user_data['username'])
+            )
             
             # Create user
             user_repo.create(
@@ -214,6 +229,8 @@ def seed_default_users(session=None):
             )
             logger.info(f"Created user: {user_data['username']} (Role: {user_data['role']})")
         
+        if skipped_existing:
+            logger.info(f"Default users: {skipped_existing} already exist with correct roles, skipped")
         logger.info("Default users seeded successfully")
         
         # ========== LOAD DYNAMIC CUSTOMERS (from registration) ==========
@@ -251,6 +268,25 @@ def seed_dynamic_customers(session, user_repo):
                 seen[key] = customer
         unique_customers = list(seen.values())
 
+        # One SELECT for all dynamic accounts instead of a lookup per customer.
+        # Fall back to per-user lookups for repos (e.g. test doubles) that only
+        # implement get_by_username.
+        candidate_usernames = [
+            customer.get('username', customer.get('email', ''))
+            for customer in unique_customers
+            if customer.get('username', customer.get('email', ''))
+        ]
+        batch_lookup = getattr(user_repo, 'get_by_usernames', None)
+        if callable(batch_lookup):
+            existing_usernames = {
+                user.username for user in batch_lookup(candidate_usernames)
+            }
+        else:
+            existing_usernames = {
+                username for username in candidate_usernames
+                if user_repo.get_by_username(username)
+            }
+
         created_count = 0
         skipped_count = 0
         for customer in unique_customers:
@@ -258,9 +294,7 @@ def seed_dynamic_customers(session, user_repo):
             if not username:
                 continue
             
-            existing_user = user_repo.get_by_username(username)
-            if existing_user:
-                logger.info(f"Dynamic customer '{username}' already exists, skipping...")
+            if username in existing_usernames:
                 skipped_count += 1
                 continue
             
@@ -802,7 +836,7 @@ def seed_sample_data(session=None):
                 'age': 35,
                 'gender': 'female',
                 'occupation': 'Product Manager',
-                'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
+                'password_env': 'PHINS_USER_EFRAT_PASSWORD',
                 # Premium: $500K, age 35, low risk: (500*0.25*1.15*0.90) = $129.38/mo = $1552.50/yr
                 'policy': {
                     'id': 'POL-EFRAT-UNIFIED-001',
@@ -834,7 +868,7 @@ def seed_sample_data(session=None):
                 'age': 40,
                 'gender': 'male',
                 'occupation': 'Software Engineer',
-                'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
+                'password_env': 'PHINS_USER_ASI_PASSWORD',
                 # Premium: $400K, age 40, low risk: (400*0.25*1.225*0.90) = $110.25/mo = $1323.0/yr
                 'policy': {
                     'id': 'POL-ASI-UNIFIED-001',
@@ -866,7 +900,7 @@ def seed_sample_data(session=None):
                 'age': 37,
                 'gender': 'female',
                 'occupation': 'Marketing Director',
-                'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
+                'password_env': 'PHINS_USER_SHOSH_PASSWORD',
                 # Premium: $450K, age 37, low risk: (450*0.25*1.18*0.90) = $119.48/mo = $1433.70/yr
                 'policy': {
                     'id': 'POL-SHOSH-UNIFIED-001',
@@ -913,7 +947,11 @@ def seed_sample_data(session=None):
             if existing:
                 logger.info(f"PHINS customer {phins_cust['email']} already exists, syncing to memory...")
             else:
-                pwd = hash_password(phins_cust['password'])
+                # Password resolved only when the customer is actually created
+                # (avoids a spurious missing-password warning on every boot).
+                pwd = hash_password(
+                    _get_env_password(phins_cust['password_env'], phins_cust['email'])
+                )
                 customer = customer_repo.create(
                     id=phins_cust['id'],
                     name=phins_cust['name'],

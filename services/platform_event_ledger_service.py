@@ -538,7 +538,36 @@ class PlatformEventLedgerService:
         try:
             db_factory = self._get_db_manager_factory()
             with db_factory() as db:
-                rows = db.platform_ledger.get_all_by_sequence(limit=limit)
+                rows = None
+                if limit is None:
+                    # Delta fast path: probe ids only (one string per row)
+                    # and fetch full rows — payload JSON included — only for
+                    # entries missing from memory. On restarts where the JSON
+                    # persistence snapshot already restored the ledger this
+                    # avoids re-transferring the entire (ever-growing) table,
+                    # keeping startup time flat. Falls back to the full scan
+                    # if the id probe is unavailable.
+                    try:
+                        db_ids = db.platform_ledger.get_all_ids_by_sequence()
+                    except Exception:
+                        db_ids = None
+                    if db_ids is not None:
+                        missing_ids = [
+                            entry_id for entry_id in db_ids
+                            if entry_id and entry_id not in self.transaction_ledger
+                        ]
+                        if not missing_ids:
+                            return 0
+                        try:
+                            rows = db.platform_ledger.get_by_ids(missing_ids)
+                        except Exception:
+                            # A fetch failure here must not be mistaken for
+                            # "nothing to load"; fall back to the full scan so
+                            # missing rows are still hydrated and the chain does
+                            # not silently diverge on later appends.
+                            rows = None
+                if rows is None:
+                    rows = db.platform_ledger.get_all_by_sequence(limit=limit)
                 records = []
                 for row in rows or []:
                     if row is None:
