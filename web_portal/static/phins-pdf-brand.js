@@ -54,7 +54,14 @@
           reader.readAsDataURL(blob);
         });
       })
-      .catch(function () { return null; });
+      .catch(function () { return null; })
+      .then(function (result) {
+        // Don't cache a failed attempt: clearing logoPromise lets a later
+        // preload() retry once /phins-logo.png becomes available in the same
+        // page session, instead of pinning the text-only fallback forever.
+        if (!result) logoPromise = null;
+        return result;
+      });
     return logoPromise;
   }
 
