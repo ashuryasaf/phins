@@ -27,6 +27,10 @@
   var BRAND_NAME = 'PHINS';
   var BRAND_TAGLINE = 'Personal Health Insurance & Savings · AI-Operated Insurance Platform';
   var LOGO_URL = '/phins-logo.png';
+  // Baseline where continuation-page body content must start so it clears the
+  // running header drawn by finalize() (emblem + title at y≈24, gold rule at
+  // y≈29). Generators reset `y` to this on addPage() instead of the top margin.
+  var CONTINUATION_TOP = 46;
 
   var logoDataUrl = null;
   var logoPromise = null;
@@ -198,6 +202,7 @@
     GREY: GREY,
     BRAND_NAME: BRAND_NAME,
     BRAND_TAGLINE: BRAND_TAGLINE,
+    CONTINUATION_TOP: CONTINUATION_TOP,
     preload: preload,
     letterhead: letterhead,
     finalize: finalize
