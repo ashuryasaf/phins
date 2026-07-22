@@ -5144,7 +5144,7 @@
       return options.startY;
     }
 
-    function downloadFullAssessmentPdf() {
+    async function downloadFullAssessmentPdf() {
       setExportStatus("Preparing full PDF export...");
       if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
         setExportStatus("PDF library unavailable. Please refresh and retry.", true);
@@ -5155,6 +5155,8 @@
         if (downloadPdfBtn) {
           downloadPdfBtn.disabled = true;
         }
+
+        await window.PhinsPdfBrand.preload();
 
         const payload = buildScenarioState();
         const region = getRegion(regionSelect.value);
@@ -5458,13 +5460,14 @@
       }
     }
 
-    function downloadExecSummaryPdf() {
+    async function downloadExecSummaryPdf() {
       if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
         alert("PDF library unavailable. Please refresh and retry.");
         return;
       }
 
       try {
+        await window.PhinsPdfBrand.preload();
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
         const pw = doc.internal.pageSize.getWidth();
@@ -5990,12 +5993,13 @@
         statusEl.style.color = "var(--green-1)";
       });
 
-      pdfBtn.addEventListener("click", function() {
+      pdfBtn.addEventListener("click", async function() {
         var m = getModifyInputs();
         if (!m) return;
         if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) { alert("PDF library not loaded. Please refresh."); return; }
         try {
           statusEl.textContent = "Generating investor-grade pitch PDF...";
+          await window.PhinsPdfBrand.preload();
           var jsPDF = window.jspdf.jsPDF;
           var doc = new jsPDF({ unit: "pt", format: "a4" });
           var pw = doc.internal.pageSize.getWidth();
@@ -6655,12 +6659,13 @@
       }
 
       if (bpPdfBtn) {
-        bpPdfBtn.addEventListener("click", function() {
+        bpPdfBtn.addEventListener("click", async function() {
           if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
             alert("PDF library not loaded. Please refresh.");
             return;
           }
           try {
+            await window.PhinsPdfBrand.preload();
             if (bpPanel.hidden) {
               bpPanel.hidden = false;
               bpToggle.textContent = "Close Business Plan Dashboard";
