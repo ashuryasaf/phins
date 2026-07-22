@@ -244,13 +244,27 @@
       .sec-title, .sec-label, .card h3 { page-break-after: avoid; }
       table.tbl tr { page-break-inside: avoid; }
       .deck-footer { display: none; }
+
+      /* PHINS first-level document letterhead — printed cover only
+         (matches the branded investor PDFs and phins-pdf-brand.js) */
+      .phins-letterhead {
+        display: flex !important; align-items: center; gap: 12px; position: relative;
+        border-bottom: 2.2px solid #c9a04e; padding-bottom: 10px; margin: 0 0 12px 0;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .phins-letterhead::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: #0e2f63; }
+      .phins-letterhead img { width: 40px; height: 40px; object-fit: contain; }
+      .phins-letterhead .lh-name { font-size: 15pt; font-weight: 900; color: #0e2f63; letter-spacing: 0.05em; line-height: 1.1; }
+      .phins-letterhead .lh-tag { font-size: 7pt; color: #5b6b82; letter-spacing: 0.08em; text-transform: uppercase; }
     }
+    /* screen: the branded site-header already carries the logo */
+    .phins-letterhead { display: none; }
   </style>
 </head>
 <body>
   <header class="site-header">
     <div class="logo-row">
-      <div class="logo-icon">🛡️</div>
+      <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
       <div>
         <div class="logo-text">PHINS</div>
         <div class="logo-tagline">AI InsurTech · AgentOS · Protection Marketplace</div>
@@ -262,6 +276,14 @@
       <a class="back-link" href="/pitch-dashboard.html">← Pitch dashboard</a>
     </div>
   </header>
+
+  <div class="phins-letterhead" aria-hidden="true">
+    <img src="/phins-logo.svg" alt="PHINS emblem">
+    <div>
+      <div class="lh-name">PHINS</div>
+      <div class="lh-tag">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+    </div>
+  </div>
 
   <!-- ── COVER ── -->
   <section class="hero">
