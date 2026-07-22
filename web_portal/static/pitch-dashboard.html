@@ -4384,6 +4384,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="/phins-pdf-brand.js"></script>
   <script>
     const sourceRegistry = {
       oecd_2025: {
@@ -5145,7 +5146,7 @@
 
     function downloadFullAssessmentPdf() {
       setExportStatus("Preparing full PDF export...");
-      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
         setExportStatus("PDF library unavailable. Please refresh and retry.", true);
         return;
       }
@@ -5188,11 +5189,12 @@
           y += blockHeight + 4;
         };
 
-        doc.setFontSize(17);
-        doc.setFont(undefined, "bold");
-        doc.text("PHI Permanent 3+ ADL Executive Business Assessment", margin, y);
-        y += 20;
-        doc.setFont(undefined, "normal");
+        // Branded letterhead — same first-level identity as the committed
+        // investor PDFs (shield logo, wordmark, tagline, gold/navy rules).
+        y = window.PhinsPdfBrand.letterhead(doc, {
+          margin: margin,
+          title: "PHI Permanent 3+ ADL Executive Business Assessment"
+        });
         addParagraph(`Export timestamp: ${printedAt}`, 9, 13);
         addParagraph(`Selected market snapshot: ${region.name} (${region.currency})`, 9, 13);
         addParagraph("Data integrity rule: Reported public evidence remains fixed. PHINS assumptions are editable and are shown as a separate scenario layer.", 9, 13);
@@ -5301,13 +5303,11 @@
           }
         });
 
-        const pageCount = doc.getNumberOfPages();
-        for (let page = 1; page <= pageCount; page += 1) {
-          doc.setPage(page);
-          doc.setFontSize(8);
-          doc.setTextColor(90, 102, 122);
-          doc.text(`PHINS Executive Assessment PDF · Page ${page} of ${pageCount}`, margin, pageHeight - 18);
-        }
+        window.PhinsPdfBrand.finalize(doc, {
+          margin: margin,
+          title: "PHI Permanent 3+ ADL Executive Business Assessment",
+          note: "PHINS — Executive Assessment · " + printedAt + " · Confidential investor document"
+        });
 
         const filename = `phi-permanent-3-adl-executive-business-assessment-${slugify(region.name)}.pdf`;
         doc.save(filename);
@@ -5459,7 +5459,7 @@
     }
 
     function downloadExecSummaryPdf() {
-      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+      if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
         alert("PDF library unavailable. Please refresh and retry.");
         return;
       }
@@ -5521,17 +5521,14 @@
           y += 20;
         };
 
-        doc.setFillColor(13, 71, 161);
-        doc.rect(0, 0, pw, 68, "F");
-        doc.setFontSize(20);
-        doc.setFont(undefined, "bold");
-        doc.setTextColor(255, 255, 255);
-        doc.text("PHINS Platform — Executive Summary", m, 38);
-        doc.setFontSize(9);
-        doc.setFont(undefined, "normal");
-        doc.text("Technology-first insurtech for disability & long-term care insurance | " + printedAt, m, 54);
-        doc.setTextColor(0, 0, 0);
-        y = 88;
+        // Branded letterhead — same first-level identity as the committed
+        // investor PDFs (shield logo, wordmark, tagline, gold/navy rules).
+        y = window.PhinsPdfBrand.letterhead(doc, {
+          margin: m,
+          title: "PHINS Platform — Executive Summary",
+          subtitle: "Technology-first insurtech for disability & long-term care insurance",
+          meta: ["Generated " + printedAt + " · Charts included · No confidential commercial data"]
+        });
 
         heading("Platform Vision", 14);
         para("PHINS is an AI-native insurance technology platform purpose-built for severe disability and long-term care. Unlike legacy systems that bolt automation onto decades-old infrastructure, PHINS was designed from the ground up to unify underwriting, claims adjudication, care navigation, investment management, community foundations, and health marketplace orchestration into a single digital-first operating system.", 9.5, 13);
@@ -5783,13 +5780,11 @@
         doc.text(intNote, m + 8, y + 12);
         doc.setTextColor(0, 0, 0);
 
-        const pc = doc.getNumberOfPages();
-        for (let p = 1; p <= pc; p++) {
-          doc.setPage(p);
-          doc.setFontSize(7.5);
-          doc.setTextColor(90, 102, 122);
-          doc.text("PHINS Executive Summary · " + printedAt + " · Page " + p + " of " + pc, m, ph - 18);
-        }
+        window.PhinsPdfBrand.finalize(doc, {
+          margin: m,
+          title: "PHINS Platform — Executive Summary",
+          note: "PHINS — Executive Summary · " + printedAt + " · Confidential investor document"
+        });
 
         doc.save("phins-executive-summary.pdf");
       } catch (err) {
@@ -5998,7 +5993,7 @@
       pdfBtn.addEventListener("click", function() {
         var m = getModifyInputs();
         if (!m) return;
-        if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") { alert("PDF library not loaded. Please refresh."); return; }
+        if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) { alert("PDF library not loaded. Please refresh."); return; }
         try {
           statusEl.textContent = "Generating investor-grade pitch PDF...";
           var jsPDF = window.jspdf.jsPDF;
@@ -6088,16 +6083,17 @@
           var impliedValEbitda = yr5Ebitda > 0 ? yr5Ebitda * ebitdaMultiple : 0;
           var blendedVal = (impliedValRev + impliedValEbitda) / 2;
 
-          doc.setFillColor(13, 71, 161);
-          doc.rect(0, 0, pw, 82, "F");
-          doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
-          doc.text("PHINS — " + m.d.name + " — Investor Pitch", mg, 30);
-          doc.setFontSize(11); doc.setFont(undefined, "normal");
-          doc.text("AI-Native Insurtech Platform | Disability & Long-Term Care | " + m.pitchDate, mg, 48);
-          doc.setFontSize(8.5);
-          doc.text("Technology-first platform transforming disability and LTC insurance through AI automation, blockchain integrity, and health marketplace orchestration", mg, 62);
-          doc.text("Confidential — " + printedAt + " | Data integrity: public evidence unchanged, PHINS assumptions adjustable", mg, 74);
-          doc.setTextColor(0, 0, 0); y = 102;
+          // Branded letterhead — same first-level identity as the committed
+          // investor PDFs (shield logo, wordmark, tagline, gold/navy rules).
+          y = window.PhinsPdfBrand.letterhead(doc, {
+            margin: mg,
+            title: "PHINS — " + m.d.name + " — Investor Pitch",
+            subtitle: "AI-Native Insurtech Platform | Disability & Long-Term Care | " + m.pitchDate,
+            meta: [
+              "Technology-first platform transforming disability and LTC insurance through AI automation, blockchain integrity, and health marketplace orchestration",
+              "Confidential — " + printedAt + " | Data integrity: public evidence unchanged, PHINS assumptions adjustable"
+            ]
+          });
 
           heading("Executive Summary", 16);
           para("PHINS is an AI-native insurance technology platform purpose-built for severe disability and long-term care. The platform unifies automated underwriting, claims intelligence, care navigation, algorithmic investment management, community foundations, and a health marketplace into a single digital-first operating system. PHINS replaces legacy manual processes with machine-learning-driven risk assessment, real-time portfolio management, blockchain-anchored transaction integrity, and supplier ecosystem orchestration.", 9.5, 13);
@@ -6309,12 +6305,12 @@
           doc.text(intNote, mg + 8, y + 12);
           doc.setTextColor(0, 0, 0);
 
+          window.PhinsPdfBrand.finalize(doc, {
+            margin: mg,
+            title: "PHINS — " + m.d.name + " — Investor Pitch",
+            note: "PHINS Investor Pitch — " + m.d.name + " · " + printedAt + " · CONFIDENTIAL"
+          });
           var pc = doc.getNumberOfPages();
-          for (var pn = 1; pn <= pc; pn++) {
-            doc.setPage(pn);
-            doc.setFontSize(7.5); doc.setTextColor(90, 102, 122);
-            doc.text("PHINS Investor Pitch — " + m.d.name + " · " + printedAt + " · CONFIDENTIAL · Page " + pn + " of " + pc, mg, ph - 18);
-          }
 
           doc.save("phins-investor-pitch-" + slugify(m.d.name) + ".pdf");
           statusEl.textContent = "Investor-grade pitch PDF downloaded for " + m.d.name + " (" + pc + " pages). Public evidence unchanged.";
@@ -6660,7 +6656,7 @@
 
       if (bpPdfBtn) {
         bpPdfBtn.addEventListener("click", function() {
-          if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+          if (!window.jspdf || typeof window.jspdf.jsPDF !== "function" || !window.PhinsPdfBrand) {
             alert("PDF library not loaded. Please refresh.");
             return;
           }
@@ -6721,21 +6717,17 @@
               doc.setFont(undefined, "normal"); y += 26;
             };
 
-            doc.setFillColor(13, 71, 161);
-            doc.rect(0, 0, pw, 96, "F");
-            doc.setFillColor(21, 101, 192);
-            doc.rect(0, 84, pw, 12, "F");
-            doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(255, 255, 255);
-            doc.text("PHINS Technologies", mg, 30);
-            doc.setFontSize(13); doc.setFont(undefined, "normal");
-            doc.text("Technology Investor Business Plan", mg, 48);
-            doc.setFontSize(9);
-            doc.text("AI-Native Insurance Operating System  |  Joint Venture Model  |  Global Market Penetration", mg, 64);
-            doc.setFontSize(8);
-            doc.text(eqMin + "-" + eqMax + "% PHINS equity  |  " + royaltyRate + "% royalty  |  " + revenueSharePct + "% revenue share  |  Confidential  |  " + printedAt, mg, 78);
-            doc.setFontSize(7); doc.setTextColor(180, 200, 230);
-            doc.text("Data integrity: scenario lab methodology, public evidence unchanged", mg, 92);
-            doc.setTextColor(0, 0, 0); y = 114;
+            // Branded letterhead — same first-level identity as the committed
+            // investor PDFs (shield logo, wordmark, tagline, gold/navy rules).
+            y = window.PhinsPdfBrand.letterhead(doc, {
+              margin: mg,
+              title: "PHINS Technologies — Technology Investor Business Plan",
+              subtitle: "AI-Native Insurance Operating System  |  Joint Venture Model  |  Global Market Penetration",
+              meta: [
+                eqMin + "-" + eqMax + "% PHINS equity  |  " + royaltyRate + "% royalty  |  " + revenueSharePct + "% revenue share  |  Confidential  |  " + printedAt,
+                "Data integrity: scenario lab methodology, public evidence unchanged"
+              ]
+            });
 
             heading("Investment Thesis — Software as Infrastructure", 16);
             para("PHINS Technologies is an AI-native insurance operating system purpose-built for severe disability and long-term care markets globally. Unlike single-market insurance startups, PHINS is a software platform that licenses technology, earns royalties on gross written premium, and maintains majority equity (51-80%) in local insurance joint ventures across 26+ target jurisdictions.", 9.5, 13);
@@ -6914,15 +6906,12 @@
             doc.text(intNote, mg + 10, y + 24);
             doc.setTextColor(0, 0, 0);
 
+            window.PhinsPdfBrand.finalize(doc, {
+              margin: mg,
+              title: "PHINS Technologies — Technology Investor Business Plan",
+              note: "PHINS Technologies  |  Technology Investor Business Plan  |  " + printedAt + "  |  CONFIDENTIAL"
+            });
             var pc = doc.getNumberOfPages();
-            for (var pn = 1; pn <= pc; pn++) {
-              doc.setPage(pn);
-              doc.setDrawColor(200, 210, 225);
-              doc.line(mg, ph - 30, pw - mg, ph - 30);
-              doc.setFontSize(7); doc.setTextColor(90, 102, 122);
-              doc.text("PHINS Technologies  |  Technology Investor Business Plan  |  " + printedAt + "  |  CONFIDENTIAL", mg, ph - 20);
-              doc.text("Page " + pn + " of " + pc, pw - mg, ph - 20, { align: "right" });
-            }
 
             doc.save("phins-tech-investor-business-plan.pdf");
             bpStatusEl.textContent = "Technology Investor PDF downloaded (" + pc + " pages). All data from scenario lab.";

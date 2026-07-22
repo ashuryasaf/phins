@@ -374,7 +374,7 @@
   LegalDoc.prototype.buildHeader = function () {
     var h = el('header', 'ld-header');
     h.innerHTML =
-      '<div class="ld-logo-row"><div class="ld-logo-icon">🛡️</div>' +
+      '<div class="ld-logo-row"><div class="ld-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>' +
       '<div><div class="ld-logo-text">PHINS</div>' +
       '<div class="ld-logo-tagline">Personal Health Insurance &amp; Savings</div></div></div>' +
       '<div class="ld-header-links">' +
@@ -531,8 +531,8 @@
     // head
     var head = el('div', 'ld-doc-head');
     head.innerHTML =
-      '<div class="brand"><div class="icon">🛡️</div><div>' +
-      '<div class="name">PHINS</div><div class="tag">Personal Health Insurance &amp; Savings</div></div></div>' +
+      '<div class="brand"><div class="icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div><div>' +
+      '<div class="name">PHINS</div><div class="tag">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div></div></div>' +
       '<div class="ld-doc-ref"><span class="badge">' + esc(this.cfg.refLabel || 'CORPORATE DOCUMENT') + '</span><br>' +
       'Ref: <span data-bind="__docid">' + esc(this.docInstanceId) + '</span><br>' +
       'Context: <span data-bind="__context">' + esc(this.context) + '</span></div>';

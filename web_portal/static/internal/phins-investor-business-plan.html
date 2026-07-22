@@ -105,6 +105,17 @@ html[dir="rtl"] .callout.unicorn { border-right-color: var(--accent); }
 html[dir="rtl"] svg { direction: ltr; }
 html[dir="rtl"] .confidential { letter-spacing: 0; }
 
+/* PHINS first-level document letterhead (matches the branded investor PDFs) */
+.phins-letterhead {
+  display: flex; align-items: center; gap: 12px; position: relative;
+  border-bottom: 2.2px solid #c9a04e; padding-bottom: 10px; margin: 2px 0 14px 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.phins-letterhead::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 1px; background: #0e2f63; }
+.phins-letterhead img { width: 44px; height: 44px; object-fit: contain; }
+.phins-letterhead .lh-name { font-size: 17pt; font-weight: 900; color: #0e2f63; letter-spacing: 0.05em; line-height: 1.1; }
+.phins-letterhead .lh-tag { font-size: 7.4pt; color: #5b6b82; letter-spacing: 0.08em; text-transform: uppercase; }
+
 @media print {
   .toolbar { display: none; }
   body { padding: 0; }
@@ -124,6 +135,14 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
   <button type="button" class="cur-btn" data-cur="EUR">€ EUR</button>
   <span class="fxnote" id="bp-fx-note"></span>
 </div>
+<div class="phins-letterhead">
+  <img src="/phins-logo.svg" alt="PHINS emblem">
+  <div>
+    <div class="lh-name">PHINS</div>
+    <div class="lh-tag">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+  </div>
+</div>
+
 <div class="confidential" data-i18n="confidential.banner">Confidential — For the Recipient Only</div>
 
 <div class="hero">
