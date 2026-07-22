@@ -5183,7 +5183,7 @@
           const blockHeight = lines.length * lineGap;
           if (y + blockHeight > pageHeight - margin) {
             doc.addPage();
-            y = margin;
+            y = window.PhinsPdfBrand.CONTINUATION_TOP;
           }
           doc.text(lines, margin, y);
           y += blockHeight + 4;
@@ -5251,7 +5251,7 @@
 
         if (y + 80 > pageHeight - margin) {
           doc.addPage();
-          y = margin;
+          y = window.PhinsPdfBrand.CONTINUATION_TOP;
         }
         doc.setFont(undefined, "bold");
         addParagraph("Evidence matrix (reported public layer)", 12, 15);
@@ -5475,7 +5475,7 @@
         let y = m;
 
         const ensureSpace = (needed) => {
-          if (y + needed > ph - m) { doc.addPage(); y = m; }
+          if (y + needed > ph - m) { doc.addPage(); y = window.PhinsPdfBrand.CONTINUATION_TOP; }
         };
 
         const heading = (text, size) => {
@@ -6008,7 +6008,7 @@
           var sym = m.sym;
           var lastY = function() { return doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 80; };
 
-          var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = mg; } };
+          var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = window.PhinsPdfBrand.CONTINUATION_TOP; } };
           var heading = function(text, sz) {
             ensureSpace(sz + 14);
             doc.setFontSize(sz); doc.setFont(undefined, "bold"); doc.setTextColor(13, 71, 161);
@@ -6689,7 +6689,7 @@
             var at = typeof doc.autoTable === "function";
             var lastY = function() { return doc.lastAutoTable ? doc.lastAutoTable.finalY + 14 : y + 80; };
 
-            var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = mg; } };
+            var ensureSpace = function(h) { if (y + h > ph - mg) { doc.addPage(); y = window.PhinsPdfBrand.CONTINUATION_TOP; } };
             var heading = function(text, sz) {
               ensureSpace(sz + 14);
               doc.setFontSize(sz); doc.setFont(undefined, "bold"); doc.setTextColor(13, 71, 161);
