@@ -12905,6 +12905,12 @@ For claims or questions, please contact:
             # type: with X-Content-Type-Options: nosniff, browsers refuse to
             # render SVG images delivered as application/octet-stream.
             self.send_header('Content-Type', 'image/svg+xml; charset=utf-8')
+        elif path.endswith('.png'):
+            # Raster brand assets (e.g. /phins-logo.png used by the branded
+            # PDF letterhead) need their real image type under nosniff.
+            self.send_header('Content-Type', 'image/png')
+        elif path.endswith(('.jpg', '.jpeg')):
+            self.send_header('Content-Type', 'image/jpeg')
         elif path.endswith('.pdf'):
             # Serve PDFs with their real type so "Open" links render inline in
             # the browser's viewer instead of downloading a blank tab; an
