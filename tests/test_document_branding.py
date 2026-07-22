@@ -22,7 +22,9 @@ footers); these tests also pin that contract by asserting the canonical
 content anchors of each surface remain untouched.
 """
 
+import os
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -140,6 +142,22 @@ def test_internal_document_carries_branded_letterhead(fname):
     assert f"#{GOLD}" in doc
     assert f"#{NAVY}" in doc
     assert "print-color-adjust: exact" in doc
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_BASE_URL"),
+                    reason="embedded server base URL not available")
+def test_logo_assets_served_with_real_image_types():
+    """The brand helper fetches /phins-logo.png for the jsPDF letterhead;
+    under X-Content-Type-Options: nosniff both logo assets must be served
+    with their real image mime types."""
+    base = os.environ["TEST_BASE_URL"].rstrip("/")
+    with urlopen(Request(base + "/phins-logo.png")) as resp:
+        assert resp.status == 200
+        assert resp.headers.get("Content-Type") == "image/png"
+        assert resp.read(8) == b"\x89PNG\r\n\x1a\n"
+    with urlopen(Request(base + "/phins-logo.svg")) as resp:
+        assert resp.status == 200
+        assert (resp.headers.get("Content-Type") or "").startswith("image/svg+xml")
 
 
 def test_actuary_briefing_pdf_regenerated_with_letterhead():

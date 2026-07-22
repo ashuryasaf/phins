@@ -38,7 +38,14 @@
       .then(function (blob) {
         return new Promise(function (resolve) {
           var reader = new FileReader();
-          reader.onload = function () { logoDataUrl = reader.result; resolve(logoDataUrl); };
+          reader.onload = function () {
+            // The static server may label the raster application/octet-stream;
+            // jsPDF needs a real image mime to decode the data URL, and the
+            // committed asset is a PNG, so normalize the prefix.
+            logoDataUrl = String(reader.result || '')
+              .replace(/^data:[^;]*;base64,/, 'data:image/png;base64,');
+            resolve(logoDataUrl);
+          };
           reader.onerror = function () { resolve(null); };
           reader.readAsDataURL(blob);
         });
