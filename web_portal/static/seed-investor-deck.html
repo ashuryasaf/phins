@@ -185,6 +185,16 @@
       .hero { color: #0b1730; background: none; }
       .hero .eyebrow, .metric .v, .metric .l, .hero .tag, .hero h1, .hero .prep { color: inherit; }
       .hero::after { display: none; }
+      /* Gradient text (background-clip:text + transparent fill) is invisible in
+         most PDF renderers. The printed hero is light, so fall back to solid
+         brand navy; stat values sit on white cards and get the same treatment. */
+      h1 .grad, .stat .v {
+        background: none !important;
+        -webkit-background-clip: unset !important;
+        background-clip: unset !important;
+        -webkit-text-fill-color: var(--blue-dark) !important;
+        color: var(--blue-dark) !important;
+      }
       .metric { background: #f5f8ff; border-color: var(--line); }
       .metric .v { color: var(--blue-dark); } .metric .l { color: var(--soft); }
       .page-num { position: static; margin-top: 6px; }

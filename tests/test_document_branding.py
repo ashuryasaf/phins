@@ -156,6 +156,22 @@ UNICORN_DOCS = [
 
 
 @pytest.mark.parametrize("fname", UNICORN_DOCS)
+def test_unicorn_gradient_text_has_print_fallback(fname):
+    """Gradient headlines (background-clip:text + transparent fill) are
+    invisible in most print/PDF renderers — the gradient paints as a block
+    behind transparent glyphs. Every deck that uses the technique must carry
+    a solid-color print override so titles stay legible in the saved PDF."""
+    doc = _read(STATIC / fname)
+    if "text-fill-color: transparent" not in doc:
+        pytest.skip(f"{fname} uses no gradient text")
+    assert "-webkit-text-fill-color:" in doc.split("@media print", 1)[-1], \
+        f"{fname} missing print fallback for gradient text"
+    # the override must re-assert an opaque fill
+    assert doc.count("text-fill-color: transparent") >= 1
+    assert ("!important" in doc.split("@media print", 1)[-1])
+
+
+@pytest.mark.parametrize("fname", UNICORN_DOCS)
 def test_unicorn_document_carries_branded_letterhead(fname):
     doc = _read(STATIC / fname)
     # real shield logo in the on-screen brand header

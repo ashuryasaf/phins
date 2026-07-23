@@ -327,6 +327,19 @@
       .bar-fill, .kpi-box, .fw-node, .hero-stat, .tag, .hero, .slide-label,
       .funnel-bar, .agenda .ag-num { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
+      /* Gradient text (background-clip:text + transparent fill) is invisible in
+         most PDF renderers — the gradient paints as the text's background, hiding
+         the glyphs against the dark hero/closing panels. Override with a solid
+         opaque light-blue so the headline stays legible (same fix as the
+         executive summary). */
+      .hero h1 .grad, .closing h2 .grad {
+        background: none !important;
+        -webkit-background-clip: unset !important;
+        background-clip: unset !important;
+        -webkit-text-fill-color: #90caf9 !important;
+        color: #90caf9 !important;
+      }
+
       /* Re-assert multi-column grids: A4 content (~190mm ≈ 718px) is below the
          880px screen breakpoint, which would otherwise collapse every grid to a
          single column — the main cause of tall, half-empty pages. */
