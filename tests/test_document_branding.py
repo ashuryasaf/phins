@@ -197,6 +197,10 @@ def test_templated_document_carries_shield_logo_and_gold_rule(doc_path):
     assert "/phins-logo.svg" in doc, f"{doc_path.name} missing shield logo"
     assert "PHINS unified document branding" in doc, \
         f"{doc_path.name} missing brand CSS"
+    # gold letterhead rule with print-color preservation
+    assert f"3px solid #{GOLD}" in doc, f"{doc_path.name} missing gold rule"
+    assert "print-color-adjust: exact" in doc, \
+        f"{doc_path.name} missing print-color preservation"
     # brand icon containers no longer fall back to the emoji shield
     assert '"logo-icon">🛡️' not in doc and '"cover-logo-icon">🛡️' not in doc
 
