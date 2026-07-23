@@ -144,6 +144,74 @@ def test_internal_document_carries_branded_letterhead(fname):
     assert "print-color-adjust: exact" in doc
 
 
+# ---------------------------------------------------------------------------
+# Unicorn tab documents (deck, executive summary, seed 5-pager)
+# ---------------------------------------------------------------------------
+
+UNICORN_DOCS = [
+    "unicorn-investor-deck.html",
+    "unicorn-executive-summary.html",
+    "seed-investor-deck.html",
+]
+
+
+@pytest.mark.parametrize("fname", UNICORN_DOCS)
+def test_unicorn_document_carries_branded_letterhead(fname):
+    doc = _read(STATIC / fname)
+    # real shield logo in the on-screen brand header
+    assert "/phins-logo.svg" in doc, f"{fname} missing shield logo"
+    # print letterhead with the unified wordmark + tagline + gold/navy rules
+    assert 'class="phins-letterhead"' in doc, f"{fname} missing letterhead"
+    assert BRAND_TAGLINE.replace("&", "&amp;") in doc
+    assert f"#{GOLD}" in doc
+    assert f"#{NAVY}" in doc
+    assert "print-color-adjust: exact" in doc
+
+
+# ---------------------------------------------------------------------------
+# Templated investor documents (country pitches, prospectuses, NDAs,
+# business-plan presentation) and the addressed risk 1-pagers
+# ---------------------------------------------------------------------------
+
+def _templated_docs():
+    docs = sorted(STATIC.glob("*capital-markets-pitch.html"))
+    docs += sorted(STATIC.glob("*-prospectus.html"))
+    docs += sorted(STATIC.glob("nda-*.html"))
+    docs += [STATIC / "PHINS_Business_Plan_Presentation.html"]
+    return docs
+
+
+def test_templated_docs_discovered():
+    names = {p.name for p in _templated_docs()}
+    # representative anchors so the glob never silently goes empty
+    for expected in ("israel-capital-markets-pitch.html",
+                     "israel-isa-prospectus.html", "nda-israel.html",
+                     "PHINS_Business_Plan_Presentation.html"):
+        assert expected in names
+    assert len(names) >= 55
+
+
+@pytest.mark.parametrize("doc_path", _templated_docs(), ids=lambda p: p.name)
+def test_templated_document_carries_shield_logo_and_gold_rule(doc_path):
+    doc = _read(doc_path)
+    assert "/phins-logo.svg" in doc, f"{doc_path.name} missing shield logo"
+    assert "PHINS unified document branding" in doc, \
+        f"{doc_path.name} missing brand CSS"
+    # brand icon containers no longer fall back to the emoji shield
+    assert '"logo-icon">🛡️' not in doc and '"cover-logo-icon">🛡️' not in doc
+
+
+@pytest.mark.parametrize("fname", ["phins-risk-1pager-goldsobel.html",
+                                   "phins-risk-1pager-fefferman.html"])
+def test_risk_1pager_uses_raster_logo_for_canvas_pdf(fname):
+    doc = _read(STATIC / fname)
+    # html2canvas rasterizes the page for the jsPDF download; the PNG logo
+    # renders reliably there (dimensionless SVGs can be dropped)
+    assert "/phins-logo.png" in doc, f"{fname} missing raster shield logo"
+    assert "PHINS unified document branding" in doc
+    assert f"#{GOLD}" in doc
+
+
 @pytest.mark.skipif(not os.environ.get("TEST_BASE_URL"),
                     reason="embedded server base URL not available")
 def test_logo_assets_served_with_real_image_types():

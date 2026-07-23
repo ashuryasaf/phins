@@ -187,12 +187,18 @@
       font-size: 8pt;
     }
   </style>
+  <style>
+    /* PHINS unified document branding — shield logo + gold letterhead rule
+       (matches the branded investor PDFs and phins-pdf-brand.js) */
+    .page-header, .site-header { border-bottom: 3px solid #c9a04e; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .logo-icon img, .cover-logo-icon img, .bc-logo-icon img { margin: auto; }
+  </style>
 </head>
 <body>
 
 <header class="site-header">
   <div class="logo-row">
-    <div class="logo-icon">🛡️</div>
+    <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
     <div>
       <div class="logo-text">PHINS</div>
       <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
