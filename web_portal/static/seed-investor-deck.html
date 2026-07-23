@@ -271,6 +271,8 @@
         <div class="f"><label data-i18n="cfg_seat">AgentOS seat price (USD/yr)</label><input id="c-seat" type="number" min="0" step="100" value="3000"></div>
         <div class="f"><label data-i18n="cfg_mtake">Marketplace take on GMV (%)</label><input id="c-mtake" type="number" min="0" max="30" step="0.5" value="6"></div>
         <div class="f"><label data-i18n="cfg_mult">Exit revenue multiple (×)</label><input id="c-mult" type="number" min="1" max="25" step="0.5" value="6"></div>
+        <div class="f"><label data-i18n="cfg_opexfix">Fixed operating cost (% of base)</label><input id="c-opexfix" type="number" min="0" max="400" step="5" value="100"></div>
+        <div class="f"><label data-i18n="cfg_opexvar">Variable operating cost (% of base)</label><input id="c-opexvar" type="number" min="0" max="400" step="5" value="100"></div>
       </div>
 
       <div class="cfg-kpis">
@@ -304,7 +306,7 @@
           <div class="metric"><div class="v" data-calc="rev31">—</div><div class="l" data-i18n="p1_m1">2031 net revenue · modeled</div></div>
           <div class="metric"><div class="v" data-calc="val31">—</div><div class="l" data-i18n="p1_m2">2031 implied valuation</div></div>
           <div class="metric"><div class="v" data-calc="round_own">—</div><div class="l" data-i18n="p1_m3">Seed round · for ownership</div></div>
-          <div class="metric"><div class="v">2030</div><div class="l" data-i18n="p1_m4">EBITDA-positive</div></div>
+          <div class="metric"><div class="v" data-calc="ebitda_pos">2030</div><div class="l" data-i18n="p1_m4">EBITDA-positive</div></div>
         </div>
       </div>
       <div class="page-body">
@@ -375,7 +377,7 @@
         <div class="note mt20" data-i18n-html="p3_fly"><strong>Data flywheel:</strong> more agents → more clients → more data → sharper pricing &amp; faster claims → better treaty terms → cheaper, faster cover → more agents.</div>
         <div class="cols-3 mt20">
           <div class="feat t"><span class="ic">🔗</span><h3 data-i18n="p3_a1">Hash-chained ledger</h3><p data-i18n="p3_a1d">Every balance &amp; decision reproducible from append-only state; AI recommends, only ledger transactions post.</p></div>
-          <div class="feat t"><span class="ic">🧩</span><h3 data-i18n="p3_a2">64+ modules, live</h3><p data-i18n="p3_a2d">Full lifecycle: policy → underwriting → billing → claim → reinsurance — not slideware.</p></div>
+          <div class="feat t"><span class="ic">🧩</span><h3 data-i18n="p3_a2">83 service modules, live</h3><p data-i18n="p3_a2d">Full lifecycle: policy → underwriting → billing → claim → reinsurance — not slideware.</p></div>
           <div class="feat t"><span class="ic">🌐</span><h3 data-i18n="p3_a3">Multi-market by design</h3><p data-i18n="p3_a3d">Regulatory adapters &amp; 26 country packs make new markets a configuration.</p></div>
         </div>
         <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
@@ -388,19 +390,19 @@
       <div class="page-body">
         <div class="sec"><span class="sec-no">04</span><div><h2 data-i18n="p4_team_h">Team</h2><p class="sub" data-i18n="p4_team_s">Operators who already built the platform — plus insurance &amp; capital firepower.</p></div></div>
         <div class="people">
-          <div class="person"><div class="av">👨‍💻</div><h4 data-i18n="p4_p1">Founder · Platform</h4><p data-i18n="p4_p1d">Shipped a 64+ module, ledger-governed insurance platform end-to-end.</p></div>
+          <div class="person"><div class="av">👨‍💻</div><h4 data-i18n="p4_p1">Founder · Platform</h4><p data-i18n="p4_p1d">Shipped an 83-service-module, ledger-governed insurance platform end-to-end.</p></div>
           <div class="person"><div class="av">📐</div><h4 data-i18n="p4_p2">Chief Actuary · incoming</h4><p data-i18n="p4_p2d">IAA-recognised executive actuary; validated pricing &amp; agreed to join.</p></div>
           <div class="person"><div class="av">🤝</div><h4 data-i18n="p4_p3">Insurance operator + capital</h4><p data-i18n="p4_p3d">Senior CEO / chairman engaged as investor / active co-founder.</p></div>
         </div>
         <div class="sec mt24"><span class="sec-no">05</span><div><h2 data-i18n="p4_tr_h">Traction</h2><p class="sub" data-i18n="p4_tr_s">Pre-launch, but de-risked: product built and pricing validated.</p></div></div>
         <div class="stats">
-          <div class="stat"><div class="v">64+</div><div class="l" data-i18n="p4_st1">Modules deployed</div></div>
+          <div class="stat"><div class="v">83</div><div class="l" data-i18n="p4_st1">Service modules deployed</div></div>
           <div class="stat"><div class="v">26</div><div class="l" data-i18n="p4_st2">Country / regulator packs</div></div>
           <div class="stat"><div class="v">✓</div><div class="l" data-i18n="p4_st3">Pricing validated by actuary</div></div>
           <div class="stat"><div class="v">100%</div><div class="l" data-i18n="p4_st4">Ledger-reproducible state</div></div>
         </div>
         <div class="tl mt20">
-          <div class="it done"><h4 data-i18n="p4_tl1">Platform built &amp; validated</h4><p data-i18n="p4_tl1d">64+ modules live; full insurance lifecycle on a hash-chained ledger.</p></div>
+          <div class="it done"><h4 data-i18n="p4_tl1">Platform built &amp; validated</h4><p data-i18n="p4_tl1d">83 service modules live incl. AgentOS v1; full insurance lifecycle on a hash-chained ledger.</p></div>
           <div class="it done"><h4 data-i18n="p4_tl2">Actuary credibility gate cleared</h4><p data-i18n="p4_tl2d">IAA-recognised actuary validated the pricing model and is joining.</p></div>
           <div class="it done"><h4 data-i18n="p4_tl3">Insurance operator engaged</h4><p data-i18n="p4_tl3d">Senior industry CEO/chairman in as investor / active co-founder.</p></div>
           <div class="it target"><h4 data-i18n="p4_tl4">Next: seed → launch (2027)</h4><p data-i18n="p4_tl4d">This round funds the MGA launch, AgentOS rollout, and first markets.</p></div>
@@ -474,7 +476,7 @@
           <div>
             <h3 style="font-size:10.5pt;margin-bottom:10px;" data-i18n="p6_bars_h">Net revenue ramp</h3>
             <div id="ramp-bars"></div>
-            <div class="note mt12" data-i18n-html="p6_unicorn"><strong>Unicorn path:</strong> 2031 net revenue <span data-calc="rev31">—</span> × a <span data-calc="mult">—</span> revenue multiple ≈ <strong><span data-calc="val31">—</span></strong>. EBITDA-positive from 2030.</div>
+            <div class="note mt12" data-i18n-html="p6_unicorn"><strong>Unicorn path:</strong> 2031 net revenue <span data-calc="rev31">—</span> × a <span data-calc="mult">—</span> revenue multiple ≈ <strong><span data-calc="val31">—</span></strong>. EBITDA-positive from <span data-calc="ebitda_pos">—</span>.</div>
           </div>
         </div>
         <div class="page-foot" data-i18n="foot">Modeled planning assumptions, not guidance. Confidential — do not distribute.</div>
@@ -550,7 +552,10 @@
       fxEur: 0.92, fxIls: 3.7, fxSource: "default",
       investor: "Seed Investor",
       round: 4000000, pre: 16000000, esop: 0,
-      scale: 1, prem: 1000, take: 25, seat: 3000, mtake: 6, mult: 6
+      scale: 1, prem: 1000, take: 25, seat: 3000, mtake: 6, mult: 6,
+      // Operating-cost factors (% of the canonical BASE opex curves) — kept in
+      // sync with the unicorn deck model so the two reports reconcile.
+      opexFixPct: 100, opexVarPct: 100
     };
     try {
       var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
@@ -593,8 +598,14 @@
       var saasRev = seats.map(function (s) { return s * seat; });
       var mktRev = gmv.map(function (g) { return g * mtk; });
       var totalRev = YEARS.map(function (_, i) { return insRev[i] + saasRev[i] + mktRev[i]; });
-      var opex = YEARS.map(function (_, i) { return BASE.opexFixed[i] + BASE.opexVar[i] * m; });
+      var ofx = Math.max(0, state.opexFixPct == null ? 100 : state.opexFixPct) / 100;
+      var ovr = Math.max(0, state.opexVarPct == null ? 100 : state.opexVarPct) / 100;
+      var opex = YEARS.map(function (_, i) { return BASE.opexFixed[i] * ofx + BASE.opexVar[i] * m * ovr; });
       var ebitda = YEARS.map(function (_, i) { return totalRev[i] - opex[i]; });
+      var ebitdaPosYear = null;
+      for (var yi = 0; yi < ebitda.length; yi++) {
+        if (ebitda[yi] >= 0) { ebitdaPosYear = YEARS[yi]; break; }
+      }
       var valPath = totalRev.map(function (r) { return r * state.mult; });
       var post = state.pre + state.round;
       var own = post > 0 ? state.round / post : 0;
@@ -603,7 +614,7 @@
       var i31 = 4;
       return {
         gwp: gwp, insRev: insRev, saasRev: saasRev, mktRev: mktRev, totalRev: totalRev,
-        ebitda: ebitda, gmv: gmv, valPath: valPath, post: post, own: own,
+        ebitda: ebitda, ebitdaPosYear: ebitdaPosYear, gmv: gmv, valPath: valPath, post: post, own: own,
         val31: valPath[i31], rev31: totalRev[i31], som: gwp[i31] + gmv[i31]
       };
     }
@@ -624,6 +635,7 @@
       setCalc("rev31", money(c.rev31));
       setCalc("val31", money(c.val31));
       setCalc("mult", state.mult + "×");
+      setCalc("ebitda_pos", c.ebitdaPosYear ? String(c.ebitdaPosYear) : (state.lang === "he" ? "אחרי 2031" : "post-2031"));
       setCalc("eng_ins", money(c.insRev[i31]));
       setCalc("eng_saas", money(c.saasRev[i31]));
       setCalc("eng_mkt", money(c.mktRev[i31]));
@@ -746,6 +758,7 @@
       bindNum("c-round", "round"); bindNum("c-pre", "pre"); bindNum("c-esop", "esop");
       bindNum("c-prem", "prem"); bindNum("c-take", "take"); bindNum("c-seat", "seat");
       bindNum("c-mtake", "mtake"); bindNum("c-mult", "mult");
+      bindNum("c-opexfix", "opexFixPct"); bindNum("c-opexvar", "opexVarPct");
       var sc = document.getElementById("c-scale");
       if (sc) { sc.value = state.scale; sc.addEventListener("change", function () { state.scale = parseFloat(sc.value); persist(); render(); }); }
 
@@ -784,6 +797,7 @@
       cfg_round: "סבב Seed (USD)", cfg_pre: "שווי לפני הכסף (USD)", cfg_esop: "מאגר אופציות חדש (%)",
       cfg_scale: "תרחיש קנה-מידה", cfg_prem: "פרמיה שנתית ממוצעת (USD)", cfg_take: "עמלת MGA מה-GWP (%)",
       cfg_seat: "מחיר מושב AgentOS (USD/שנה)", cfg_mtake: "עמלת Marketplace מה-GMV (%)", cfg_mult: "מכפיל הכנסה ביציאה (×)",
+      cfg_opexfix: "עלות תפעולית קבועה (% מהבסיס)", cfg_opexvar: "עלות תפעולית משתנה (% מהבסיס)",
       sc_cons: "שמרני (×0.5)", sc_baselow: "בסיס-נמוך (×0.75)", sc_base: "תוכנית בסיס (×1.0)", sc_up: "אופטימי (×1.5)", sc_agg: "אגרסיבי (×2.0)",
       k_post: "שווי אחרי הכסף", k_own: "אחזקת המשקיע", k_rev: "הכנסה נטו 2031", k_val: "שווי נגזר 2031",
       cfg_note: 'הקלט מוזן ב-USD (הבסיס הקנוני); הפלט מומר למטבע הנבחר לפי השער החי. תקדימים מדווחים נשארים במטבע המקור (USD). ההגדרות נשמרות בדפדפן.',
@@ -819,16 +833,16 @@
       p3_t4: "Marketplace", p3_t4d: "רשת חמש-צדדית: לקוחות, סוכנים, רופאים, מבטחי-משנה ונותני-טיפול.",
       p3_fly: "<strong>גלגל-תנופה של דאטה:</strong> יותר סוכנים → יותר לקוחות → יותר דאטה → תמחור חד ותביעות מהירות → תנאי ביטוח-משנה טובים → כיסוי זול ומהיר יותר → יותר סוכנים.",
       p3_a1: "ספר-חשבונות משורשר", p3_a1d: "כל יתרה והחלטה ניתנות לשחזור ממצב append-only; ה-AI ממליץ, רק טרנזקציות נרשמות.",
-      p3_a2: "64+ מודולים, חיים", p3_a2d: "מחזור חיים מלא: פוליסה → חיתום → חיוב → תביעה → ביטוח-משנה — לא מצגת.",
+      p3_a2: "83 מודולי שירות, חיים", p3_a2d: "מחזור חיים מלא: פוליסה → חיתום → חיוב → תביעה → ביטוח-משנה — לא מצגת.",
       p3_a3: "רב-שוקי מתוכנן", p3_a3d: "מתאמים רגולטוריים ו-26 ערכות מדינה הופכים שוק חדש לקונפיגורציה.",
 
       p4_team_h: "צוות", p4_team_s: "אנשים שכבר בנו את הפלטפורמה — בתוספת עוצמת ביטוח והון.",
-      p4_p1: "מייסד · פלטפורמה", p4_p1d: "בנה מקצה-לקצה פלטפורמת ביטוח של 64+ מודולים מבוססת ספר-חשבונות.",
+      p4_p1: "מייסד · פלטפורמה", p4_p1d: "בנה מקצה-לקצה פלטפורמת ביטוח של 83 מודולי שירות מבוססת ספר-חשבונות.",
       p4_p2: "אקטואר ראשי · מצטרף", p4_p2d: "אקטואר בכיר מוכר IAA; אימת את התמחור והסכים להצטרף.",
       p4_p3: "מפעיל ביטוח + הון", p4_p3d: 'מנכ"ל / יו"ר בכיר מעורב כמשקיע / שותף-מייסד פעיל.',
       p4_tr_h: "מומנטום (Traction)", p4_tr_s: "טרם השקה, אך עם סיכון מופחת: מוצר בנוי ותמחור מאומת.",
       p4_st1: "מודולים פרוסים", p4_st2: "ערכות מדינה / רגולטור", p4_st3: "תמחור מאומת ע\"י אקטואר", p4_st4: "מצב בר-שחזור בספר",
-      p4_tl1: "פלטפורמה בנויה ומאומתת", p4_tl1d: "64+ מודולים חיים; מחזור ביטוח מלא על ספר-חשבונות משורשר.",
+      p4_tl1: "פלטפורמה בנויה ומאומתת", p4_tl1d: "83 מודולי שירות חיים כולל AgentOS v1; מחזור ביטוח מלא על ספר-חשבונות משורשר.",
       p4_tl2: "שער האמינות האקטוארי נעבר", p4_tl2d: "אקטואר מוכר IAA אימת את מודל התמחור ומצטרף.",
       p4_tl3: "מפעיל ביטוח מעורב", p4_tl3d: 'מנכ"ל/יו"ר בכיר בענף, כמשקיע / שותף-מייסד פעיל.',
       p4_tl4: "הבא: Seed → השקה (2027)", p4_tl4d: "הסבב מממן את השקת ה-MGA, פריסת AgentOS, והשווקים הראשונים.",
@@ -855,7 +869,7 @@
       p6_table_h: "מסלול חמש-שנתי", p6_line: "שורה", p6_gwp: "פרמיה מתווכת (GWP)", p6_rev: "הכנסה נטו", p6_ebitda: "EBITDA",
       p6_light: "<strong>דל-הון:</strong> עתודות התביעות אצל המבטחים / מבטחי-המשנה — לא אצל PHINS — ולכן צמיחה במרווחי תוכנה.",
       p6_bars_h: "עליית הכנסה נטו",
-      p6_unicorn: '<strong>מסלול ליוניקורן:</strong> הכנסה נטו 2031 <span data-calc="rev31">—</span> × מכפיל הכנסה של <span data-calc="mult">—</span> ≈ <strong><span data-calc="val31">—</span></strong>. רווחיות EBITDA מ-2030.',
+      p6_unicorn: '<strong>מסלול ליוניקורן:</strong> הכנסה נטו 2031 <span data-calc="rev31">—</span> × מכפיל הכנסה של <span data-calc="mult">—</span> ≈ <strong><span data-calc="val31">—</span></strong>. רווחיות EBITDA מ-<span data-calc="ebitda_pos">—</span>.',
 
       p7_h: "הבקשה", p7_s: "הון Seed כדי להפוך פלטפורמה בנויה לקטגוריה.",
       p7_terms: "תנאי ה-Seed", p7_round: "סבב Seed", p7_pre: "שווי לפני הכסף", p7_post: "שווי אחרי הכסף", p7_own: "אחזקת המשקיע",

@@ -583,12 +583,12 @@
         <div class="hl-box"><div class="hl-v">3</div><div class="hl-l" data-i18n="sum_hl4">Capital-light revenue engines: MGA take · AgentOS SaaS · marketplace take</div></div>
       </div>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="sum_c1"><span class="icon-chip">🏗️</span><h3>Already built</h3><p>A deployed, ledger-governed platform spanning policy, underwriting, billing, claims, reinsurance and a health marketplace across 64+ modules.</p></div>
+        <div class="card" data-i18n="sum_c1"><span class="icon-chip">🏗️</span><h3>Already built</h3><p>A deployed, ledger-governed platform spanning policy, underwriting, billing, claims, reinsurance, a health marketplace and a live agent ecosystem (AgentOS v1) across 83 service modules.</p></div>
         <div class="card" data-i18n="sum_c2"><span class="icon-chip">🧠</span><h3>Two AI moats</h3><p>Auditable AI underwriting and AI claims intelligence — proprietary data competitors cannot see, with reinsurance-ready evidence.</p></div>
         <div class="card" data-i18n="sum_c3"><span class="icon-chip">🔗</span><h3>Flawless data integrity</h3><p>Append-only, hash-chained state. AI/BI recommend but never post — a trust moat with regulators and reinsurers.</p></div>
       </div>
       <div class="integrity" style="margin-top:16px;" data-i18n="sum_integrity">
-        <strong>The ask.</strong> Raising <strong data-calc="hero_round">—</strong> (Series A) to launch the severity MGA, ship AgentOS, and open the protection marketplace — funding the path to EBITDA-positive (base 2030) and a modeled 2031 implied valuation of <strong data-calc="kpi_val31">—</strong>. Tune every assumption live in the configurator; all figures recompute from one canonical base.
+        <strong>The ask.</strong> Raising <strong data-calc="hero_round">—</strong> (Series A) to launch the severity MGA, scale AgentOS from the live v1 to the full agent cockpit, and open the protection marketplace — funding the path to EBITDA-positive (base 2030) and a modeled 2031 implied valuation of <strong data-calc="kpi_val31">—</strong>. Tune every assumption live in the configurator; all figures recompute from one canonical base.
       </div>
     </section>
 
@@ -645,12 +645,15 @@
           <div><label class="field" for="c-seat" data-i18n="cfg_f_seat">AgentOS seat price (USD/yr)</label><input id="c-seat" type="number" min="0" step="100" value="3000"></div>
           <div><label class="field" for="c-mtake" data-i18n="cfg_f_mtake">Marketplace take on GMV (%)</label><input id="c-mtake" type="number" min="0" max="30" step="0.5" value="6"></div>
           <div><label class="field" for="c-mult" data-i18n="cfg_f_mult">Exit revenue multiple (×)</label><input id="c-mult" type="number" min="1" max="25" step="0.5" value="6"></div>
+          <div><label class="field" for="c-opexfix" data-i18n="cfg_f_opexfix">Fixed operating cost (% of base)</label><input id="c-opexfix" type="number" min="0" max="400" step="5" value="100"></div>
+          <div><label class="field" for="c-opexvar" data-i18n="cfg_f_opexvar">Variable operating cost (% of base)</label><input id="c-opexvar" type="number" min="0" max="400" step="5" value="100"></div>
         </div>
 
         <div class="kpi-strip">
           <div class="kpi-box"><div class="v" data-calc="kpi_post">—</div><div class="l" data-i18n="cfg_k_post">Post-money</div></div>
           <div class="kpi-box"><div class="v" data-calc="kpi_own" style="color:var(--green-1);">—</div><div class="l" data-calc="kpi_own_lbl">Investor ownership</div></div>
           <div class="kpi-box"><div class="v" data-calc="kpi_rev31">—</div><div class="l" data-i18n="cfg_k_rev">2031 net revenue</div></div>
+          <div class="kpi-box"><div class="v" data-calc="kpi_opex31">—</div><div class="l" data-i18n="cfg_k_opex">2031 operating cost</div></div>
           <div class="kpi-box"><div class="v" data-calc="kpi_ebitda31">—</div><div class="l" data-i18n="cfg_k_ebitda">2031 EBITDA</div></div>
           <div class="kpi-box"><div class="v" data-calc="kpi_val31" style="color:var(--violet-1);">—</div><div class="l" data-i18n="cfg_k_val">2031 implied valuation</div></div>
           <div class="kpi-box"><div class="v" data-calc="kpi_moic" style="color:var(--violet-1);">—</div><div class="l" data-i18n="cfg_k_moic">Gross MOIC on this round</div></div>
@@ -783,14 +786,25 @@
     <section class="slide" id="product">
       <div class="slide-label" data-i18n="prod_label">05 · Product</div>
       <h2 class="slide-title" data-i18n="prod_title">A platform that is already built — not a slideware promise.</h2>
-      <p class="slide-copy" data-i18n="prod_copy">PHINS is a deployed, multi-module platform spanning policy, underwriting, billing, claims, reinsurance, foundations, a health marketplace, and multi-market regulatory adapters — all on an append-only, hash-chained ledger.</p>
+      <p class="slide-copy" data-i18n="prod_copy">PHINS is a deployed, multi-module platform spanning policy, underwriting, billing, claims, reinsurance, foundations, a health marketplace, a live agent ecosystem, and multi-market regulatory adapters — all on an append-only, hash-chained ledger.</p>
       <div class="grid-3" style="margin-top:16px;">
         <div class="card" data-i18n="prod_c1"><span class="icon-chip">🔁</span><h3>Full insurance lifecycle</h3><p>Policy → underwriting → billing → claim → reinsurance, each step audit-logged and reproducible.</p></div>
-        <div class="card" data-i18n="prod_c2"><span class="icon-chip">🧩</span><h3>64+ deployed modules</h3><p>Composable services for distribution, risk, finance, care and compliance.</p></div>
+        <div class="card" data-i18n="prod_c2"><span class="icon-chip">🧩</span><h3>83 deployed service modules</h3><p>Composable services for distribution, risk, finance, care and compliance.</p></div>
         <div class="card" data-i18n="prod_c3"><span class="icon-chip">🔗</span><h3>Hash-chained ledger</h3><p>Every balance &amp; decision reproducible from append-only state. AI/BI may recommend but never post.</p></div>
         <div class="card" data-i18n="prod_c4"><span class="icon-chip">🌐</span><h3>Multi-market adapters</h3><p>26 country/regulator pitch packs &amp; localization rails already modeled.</p></div>
         <div class="card" data-i18n="prod_c5"><span class="icon-chip">🏦</span><h3>Wallets &amp; settlement</h3><p>Marketplace wallets, holds, settlement runs, payer recovery and remittances.</p></div>
         <div class="card" data-i18n="prod_c6"><span class="icon-chip">🛡️</span><h3>Security by design</h3><p>Vault, auth tokens, firewall, intrusion detection, request sanitization, file scanning.</p></div>
+      </div>
+      <div class="panel" style="margin-top:16px;" data-i18n="prod_momentum">
+        <h3 style="font-size:11.5pt;margin-bottom:8px;">🚀 Platform momentum — shipped since this deck was assembled (June–July 2026)</h3>
+        <ul class="tick">
+          <li><strong>AgentOS v1 live:</strong> agent portal, admin agent-community dashboard, invitations &amp; affiliations, and ledger-anchored commission statements.</li>
+          <li><strong>Deterministic actuarial appraisal simulation:</strong> seeded, bit-reproducible valuation runs with a verifiable content hash, powering investor and partner pricing.</li>
+          <li><strong>Israel regulatory application memorandum (EN + Hebrew)</strong> with the filed product redesign (Draft 3.0 — lifelong disability cover, 1:1 ratio from age 65).</li>
+          <li><strong>AI governance hardening:</strong> capability discovery catalog, durable AI decision-log audit across underwriting, claims, trading and video agents.</li>
+          <li><strong>Security wave:</strong> tenant-isolation enforcement across customer-scoped routes and fail-closed secret policy in production.</li>
+          <li><strong>First-level investor document set:</strong> every downloadable report, plan, NDA and prospectus now carries the branded shield letterhead.</li>
+        </ul>
       </div>
     </section>
 
@@ -825,7 +839,7 @@
     <section class="slide" id="agentos">
       <div class="slide-label" data-i18n="aos_label">07 · AgentOS</div>
       <h2 class="slide-title" data-i18n="aos_title">AgentOS turns every insurance agent into a 10× operator — and into our distribution flywheel.</h2>
-      <p class="slide-copy" data-i18n="aos_copy">Instead of fighting agents, we arm them. AgentOS is the SaaS cockpit agents run their whole book on — and the reason PHINS scales distribution without a balance sheet.</p>
+      <p class="slide-copy" data-i18n="aos_copy">Instead of fighting agents, we arm them. AgentOS v1 is already live on the platform — agent portal, invitations &amp; affiliations, and ledger-anchored commission statements — and this round scales it into the full SaaS cockpit agents run their whole book on: the reason PHINS scales distribution without a balance sheet.</p>
       <div class="grid-4" style="margin-top:16px;">
         <div class="card" data-i18n="aos_c1"><span class="icon-chip">⚡</span><h3>Instant quoting</h3><p>AI quote-to-bind across products and carriers from one screen.</p></div>
         <div class="card" data-i18n="aos_c2"><span class="icon-chip">📋</span><h3>Compliance autopilot</h3><p>Suitability, disclosures and audit trail generated automatically.</p></div>
@@ -980,7 +994,7 @@
                 <tr><td data-i18n="cap_r_own">Investor ownership</td><td class="num" data-calc="cap_own">—</td></tr>
                 <tr><td data-i18n="cap_r_esop">New ESOP pool</td><td class="num" data-calc="cap_esop">—</td></tr>
                 <tr><td data-i18n="cap_r_burn">Cumulative burn to EBITDA+</td><td class="num" data-calc="cap_burn">—</td></tr>
-                <tr><td data-i18n="cap_r_runway">Runway to profitability</td><td class="num" data-i18n="cap_r_runway_v">EBITDA-positive by 2030 (base)</td></tr>
+                <tr><td data-i18n="cap_r_runway">Runway to profitability</td><td class="num" data-calc="cap_runway_v">—</td></tr>
               </tbody>
             </table>
           </div>
@@ -1023,7 +1037,7 @@
       <div class="slide-label" data-i18n="team_label">16 · Team</div>
       <h2 class="slide-title" data-i18n="team_title">Operators who have already built the platform — adding insurance &amp; capital firepower.</h2>
       <div class="grid-3" style="margin-top:16px;">
-        <div class="card" data-i18n="team_c1"><span class="icon-chip">👨‍💻</span><h3>Founding / platform</h3><p>Shipped a 64+ module, ledger-governed insurance platform end-to-end.</p></div>
+        <div class="card" data-i18n="team_c1"><span class="icon-chip">👨‍💻</span><h3>Founding / platform</h3><p>Shipped an 83-service-module, ledger-governed insurance platform end-to-end.</p></div>
         <div class="card" data-i18n="team_c2"><span class="icon-chip">📐</span><h3>Chief Actuary (incoming)</h3><p>IAA-recognised executive actuary validated pricing &amp; agreed to join.</p></div>
         <div class="card" data-i18n="team_c3"><span class="icon-chip">🤝</span><h3>Insurance operator + capital</h3><p>Senior insurance entrepreneur (CEO/chairman) engaged as investor / active co-founder.</p></div>
       </div>
@@ -1061,7 +1075,7 @@
         <div class="note" style="margin-top:12px;" data-calc="unicorn_note">—</div>
       </div>
       <div class="timeline" style="margin-top:20px;">
-        <div class="tl-item done" data-i18n="uni_t1"><h4>Now — Platform built &amp; validated</h4><p>64+ modules live; actuary validated; insurance operator engaged.</p></div>
+        <div class="tl-item done" data-i18n="uni_t1"><h4>Now — Platform built &amp; validated</h4><p>83 service modules live incl. AgentOS v1; actuary validated; IL regulatory application drafted; insurance operator engaged.</p></div>
         <div class="tl-item target" data-i18n="uni_t2"><h4>Series A (this round)</h4><p>Launch MGA, ship AgentOS, open marketplace; prove unit economics.</p></div>
         <div class="tl-item" data-i18n="uni_t3"><h4>2028–2029 — Multi-market &amp; SaaS scale</h4><p>USA/Canada/EU; AgentOS net-revenue retention; marketplace GMV ramps.</p></div>
         <div class="tl-item" data-i18n="uni_t4"><h4>2030 — EBITDA-positive (base)</h4><p>Operating leverage; data flywheel compounds pricing &amp; treaty terms.</p></div>
@@ -1201,8 +1215,8 @@ derived from the same engine. Cite any market statistic; mark planning estimates
         € / ₪ equivalents convert at a live exchange rate (<span data-calc="integrity_fx">live FX — loading…</span>) derived from a single
         USD snapshot, so figures stay consistent. They are not commitments or guidance. Every <span class="tag tag-modeled">modeled</span>
         number — KPIs, the five-year model, revenue mix, use of funds, the unicorn valuation path, gross MOIC and the exit table — is computed
-        from one set of base assumptions (premium, take rate, scale scenario, AgentOS seats &amp; price, marketplace GMV &amp; take), so the deck always
-        reconciles. <span class="tag tag-reported">reported</span> comparables and market estimates are third-party / public data shown in source
+        from one set of base assumptions (premium, take rate, scale scenario, AgentOS seats &amp; price, marketplace GMV &amp; take, and the
+        fixed/variable operating-cost factors), so the deck always reconciles. <span class="tag tag-reported">reported</span> comparables and market estimates are third-party / public data shown in source
         currency and are never added to PHINS revenue. PHINS is modeled as a capital-light MGA / platform, so insurance claims reserves sit with
         risk carriers / reinsurers and are not booked as PHINS revenue. Confidential — do not distribute without authorization.
       </div>
@@ -1312,10 +1326,10 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       sum_hl2: "שווי משתמע 2031 <span class=\"tag tag-modeled\">מודלי</span>",
       sum_hl3: "סבב סדרה A — הבקשה <span class=\"tag tag-adj\">מתכוונן</span>",
       sum_hl4: "מנועי הכנסה רזי‑הון: עמלת MGA · AgentOS SaaS · עמלת מרקטפלייס",
-      sum_c1: "<span class=\"icon-chip\">🏗️</span><h3>כבר בנויה</h3><p>פלטפורמה פרוסה ומנוהלת בספר חשבונות המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה ומרקטפלייס בריאות לאורך 64+ מודולים.</p>",
+      sum_c1: "<span class=\"icon-chip\">🏗️</span><h3>כבר בנויה</h3><p>פלטפורמה פרוסה ומנוהלת בספר חשבונות המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה, מרקטפלייס בריאות ומערך סוכנים חי (AgentOS v1) לאורך 83 מודולי שירות.</p>",
       sum_c2: "<span class=\"icon-chip\">🧠</span><h3>שני חפירי AI</h3><p>חיתום AI בר‑ביקורת ובינת תביעות AI — נתונים קנייניים שמתחרים לא רואים, עם ראיות מוכנות לביטוח משנה.</p>",
       sum_c3: "<span class=\"icon-chip\">🔗</span><h3>שלמות נתונים ללא פשרות</h3><p>מצב צובר‑בלבד בשרשרת גיבוב. AI/BI ממליצים אך לעולם לא רושמים — חפיר אמון מול רגולטורים ומבטחי משנה.</p>",
-      sum_integrity: "<strong>הבקשה.</strong> מגייסים <strong data-calc=\"hero_round\">—</strong> (סדרה A) להשקת ה‑MGA לחומרה, השקת AgentOS ופתיחת מרקטפלייס ההגנה — מימון המסלול ל‑EBITDA חיובי (בסיס 2030) ושווי משתמע מודלי ל‑2031 של <strong data-calc=\"kpi_val31\">—</strong>. כווננו כל הנחה בזמן אמת במחולל; כל המספרים מחושבים מחדש מבסיס קנוני אחד.",
+      sum_integrity: "<strong>הבקשה.</strong> מגייסים <strong data-calc=\"hero_round\">—</strong> (סדרה A) להשקת ה‑MGA לחומרה, הרחבת AgentOS מגרסה 1 הפעילה לקוקפיט הסוכנים המלא ופתיחת מרקטפלייס ההגנה — מימון המסלול ל‑EBITDA חיובי (בסיס 2030) ושווי משתמע מודלי ל‑2031 של <strong data-calc=\"kpi_val31\">—</strong>. כווננו כל הנחה בזמן אמת במחולל; כל המספרים מחושבים מחדש מבסיס קנוני אחד.",
 
       // ── configurator ──
       cfg_eyebrow: "🎛️ מנוע מתכוונן",
@@ -1341,6 +1355,9 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       cfg_f_seat: "מחיר מושב AgentOS (USD/שנה)",
       cfg_f_mtake: "עמלת מרקטפלייס על GMV (%)",
       cfg_f_mult: "מכפיל הכנסה ביציאה (×)",
+      cfg_f_opexfix: "עלות תפעולית קבועה (% מהבסיס)",
+      cfg_f_opexvar: "עלות תפעולית משתנה (% מהבסיס)",
+      cfg_k_opex: "עלות תפעולית 2031",
       cfg_k_post: "אחרי הכסף",
       cfg_k_rev: "הכנסה נטו 2031",
       cfg_k_ebitda: "EBITDA 2031",
@@ -1404,9 +1421,10 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // ── product ──
       prod_label: "05 · מוצר",
       prod_title: "פלטפורמה שכבר בנויה — לא הבטחת מצגת.",
-      prod_copy: "PHINS היא פלטפורמה פרוסה רבת‑מודולים המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה, תשתיות, מרקטפלייס בריאות ומתאמים רגולטוריים רב‑שוקיים — הכול על ספר חשבונות צובר‑בלבד בשרשרת גיבוב.",
+      prod_copy: "PHINS היא פלטפורמה פרוסה רבת‑מודולים המשתרעת על פוליסות, חיתום, חיוב, תביעות, ביטוח משנה, תשתיות, מרקטפלייס בריאות, מערך סוכנים חי ומתאמים רגולטוריים רב‑שוקיים — הכול על ספר חשבונות צובר‑בלבד בשרשרת גיבוב.",
       prod_c1: "<span class=\"icon-chip\">🔁</span><h3>מחזור חיי ביטוח מלא</h3><p>פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, כל שלב מתועד לביקורת וניתן לשחזור.</p>",
-      prod_c2: "<span class=\"icon-chip\">🧩</span><h3>64+ מודולים פרוסים</h3><p>שירותים מורכבים להפצה, סיכון, פיננסים, טיפול וציות.</p>",
+      prod_c2: "<span class=\"icon-chip\">🧩</span><h3>83 מודולי שירות פרוסים</h3><p>שירותים מורכבים להפצה, סיכון, פיננסים, טיפול וציות.</p>",
+      prod_momentum: "<h3 style=\"font-size:11.5pt;margin-bottom:8px;\">🚀 תנופת פלטפורמה — מה נשלח מאז הרכבת המצגת (יוני–יולי 2026)</h3><ul class=\"tick\"><li><strong>AgentOS v1 פעיל:</strong> פורטל סוכנים, לוח קהילת סוכנים למנהלים, הזמנות ושיוכים, ודוחות עמלה מעוגני ספר חשבונות.</li><li><strong>סימולציית הערכה אקטוארית דטרמיניסטית:</strong> ריצות שווי משוחזרות ביט‑אחר‑ביט עם גיבוב תוכן בר‑אימות, המזינות תמחור למשקיעים ולשותפים.</li><li><strong>תזכיר בקשה רגולטורית לישראל (אנגלית + עברית)</strong> עם עיצוב המוצר המוגש (טיוטה 3.0 — כיסוי נכות לכל החיים, יחס 1:1 מגיל 65).</li><li><strong>חיזוק ממשל AI:</strong> קטלוג יכולות, תיעוד ביקורת עמיד להחלטות AI בחיתום, תביעות, מסחר וסוכני וידאו.</li><li><strong>גל אבטחה:</strong> אכיפת בידוד דיירים בכל מסלולי הלקוח ומדיניות סודות שנכשלת‑סגור בפרודקשן.</li><li><strong>סט מסמכי משקיעים ברמה ראשונה:</strong> כל דוח, תכנית, NDA ותשקיף להורדה נושאים כעת את נייר המכתבים הממותג עם סמל המגן.</li></ul>",
       prod_c3: "<span class=\"icon-chip\">🔗</span><h3>ספר חשבונות בשרשרת גיבוב</h3><p>כל יתרה והחלטה ניתנות לשחזור ממצב צובר‑בלבד. AI/BI רשאים להמליץ אך לעולם לא לרשום.</p>",
       prod_c4: "<span class=\"icon-chip\">🌐</span><h3>מתאמים רב‑שוקיים</h3><p>26 חבילות מצגת למדינה/רגולטור ומסילות לוקליזציה כבר ממודלים.</p>",
       prod_c5: "<span class=\"icon-chip\">🏦</span><h3>ארנקים וסילוק</h3><p>ארנקי מרקטפלייס, החזקות, מחזורי סילוק, השבת משלמים והעברות.</p>",
@@ -1422,7 +1440,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // ── agentos ──
       aos_label: "07 · AgentOS",
       aos_title: "AgentOS הופך כל סוכן ביטוח למפעיל פי 10 — ולגלגל התנופה של ההפצה שלנו.",
-      aos_copy: "במקום להילחם בסוכנים, אנחנו מחזקים אותם. AgentOS הוא קוקפיט ה‑SaaS שעליו סוכנים מנהלים את כל התיק שלהם — והסיבה ש‑PHINS מרחיבה הפצה ללא מאזן.",
+      aos_copy: "במקום להילחם בסוכנים, אנחנו מחזקים אותם. AgentOS v1 כבר פעיל בפלטפורמה — פורטל סוכנים, הזמנות ושיוכים, ודוחות עמלה מעוגני ספר חשבונות — והסבב הזה מרחיב אותו לקוקפיט ה‑SaaS המלא שעליו סוכנים מנהלים את כל התיק שלהם: הסיבה ש‑PHINS מרחיבה הפצה ללא מאזן.",
       aos_c1: "<span class=\"icon-chip\">⚡</span><h3>הצעת מחיר מיידית</h3><p>הצעת מחיר עד הנפקה מבוססת‑AI על פני מוצרים ומבטחים ממסך אחד.</p>",
       aos_c2: "<span class=\"icon-chip\">📋</span><h3>טייס אוטומטי לציות</h3><p>התאמה, גילויי נאות ושובל ביקורת נוצרים אוטומטית.</p>",
       aos_c3: "<span class=\"icon-chip\">🤖</span><h3>קו‑פיילוטים לסוכן</h3><p>ניסוח AI, שירות, חידושים והפעולה הבאה הטובה ביותר על התיק.</p>",
@@ -1494,7 +1512,6 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       cap_r_esop: "מאגר ESOP חדש",
       cap_r_burn: "שריפה מצטברת עד EBITDA+",
       cap_r_runway: "מסלול לרווחיות",
-      cap_r_runway_v: "EBITDA חיובי עד 2030 (בסיס)",
       cap_uof_h: "שימוש בכספים",
       cap_uof_note: "ההקצאה מתרחבת עם הסבב ותמיד מתואמת אליו.",
 
@@ -1508,7 +1525,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       // ── team ──
       team_label: "16 · צוות",
       team_title: "מפעילים שכבר בנו את הפלטפורמה — מוסיפים עוצמת ביטוח והון.",
-      team_c1: "<span class=\"icon-chip\">👨‍💻</span><h3>ייסוד / פלטפורמה</h3><p>הוקמה פלטפורמת ביטוח מנוהלת‑ספר בת 64+ מודולים מקצה לקצה.</p>",
+      team_c1: "<span class=\"icon-chip\">👨‍💻</span><h3>ייסוד / פלטפורמה</h3><p>הוקמה פלטפורמת ביטוח מנוהלת‑ספר בת 83 מודולי שירות מקצה לקצה.</p>",
       team_c2: "<span class=\"icon-chip\">📐</span><h3>אקטואר ראשי (נכנס)</h3><p>אקטואר בכיר מוכר‑IAA אימת את התמחור והסכים להצטרף.</p>",
       team_c3: "<span class=\"icon-chip\">🤝</span><h3>מפעיל ביטוח + הון</h3><p>יזם ביטוח בכיר (מנכ\"ל/יו\"ר) מעורב כמשקיע / שותף מייסד פעיל.</p>",
       team_note: "הסבב הזה מממן גיוסי מפתח ב‑AI/ML, הפצה (AgentOS), תפעול מרקטפלייס וציות רב‑שוקי. שמות וקורות חיים ספציפיים מסופקים תחת NDA.",
@@ -1522,7 +1539,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       uni_label: "18 · מסלול יוניקורן",
       uni_title: "מ‑MGA חומרה אל פלטפורמת 1 מיליארד דולר+.",
       uni_copy: "מסלול השווי מיישם את מכפיל הכנסת היציאה הנבחר על ההכנסה נטו המודלית של כל שנה. <span class=\"tag tag-modeled\">מודלי</span> — כווננו את המכפיל וקנה המידה במחולל.",
-      uni_t1: "<h4>עכשיו — פלטפורמה בנויה ומאומתת</h4><p>64+ מודולים פעילים; אקטואר אימת; מפעיל ביטוח מעורב.</p>",
+      uni_t1: "<h4>עכשיו — פלטפורמה בנויה ומאומתת</h4><p>83 מודולי שירות פעילים כולל AgentOS v1; אקטואר אימת; תזכיר רגולטורי לישראל נוסח; מפעיל ביטוח מעורב.</p>",
       uni_t2: "<h4>סדרה A (הסבב הזה)</h4><p>השקת MGA, הפעלת AgentOS, פתיחת מרקטפלייס; הוכחת כלכלת יחידה.</p>",
       uni_t3: "<h4>2028–2029 — קנה מידה רב‑שוקי ו‑SaaS</h4><p>ארה\"ב/קנדה/אירופה; שימור הכנסה נטו ב‑AgentOS; ה‑GMV של המרקטפלייס מואץ.</p>",
       uni_t4: "<h4>2030 — EBITDA חיובי (בסיס)</h4><p>מנוף תפעולי; גלגל תנופה של נתונים מצביר תמחור ותנאי חוזה.</p>",
@@ -1567,7 +1584,7 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       apx_tip: "טיפ: המחולל שלמעלה כבר מיישם את משתני פקודה B באופן אינטראקטיבי — שתפו דף זה עם משקיע וכווננו בזמן אמת בפגישה.",
 
       // ── data integrity notice ──
-      dint_notice: "<strong>הודעת שלמות נתונים.</strong> כל הפיננסים הם הנחות תכנון צופות פני עתיד בדולר (הבסיס הקנוני); שווי‑ערך ב‑€ / ₪ מומר בשער חליפין חי (<span data-calc=\"integrity_fx\">שער חי — טוען…</span>) שנגזר ממצב דולרי יחיד, כך שהמספרים נשארים עקביים. הם אינם התחייבות או הנחיה. כל מספר <span class=\"tag tag-modeled\">מודלי</span> — KPIs, המודל החמש‑שנתי, תמהיל ההכנסות, שימוש בכספים, מסלול שווי היוניקורן, MOIC ברוטו וטבלת היציאה — מחושב מערכת אחת של הנחות בסיס (פרמיה, שיעור עמלה, תרחיש קנה מידה, מושבי AgentOS ומחירם, GMV ועמלת מרקטפלייס), כך שהמצגת תמיד מתואמת. השוואות ואומדני שוק <span class=\"tag tag-reported\">מדווחים</span> הם נתוני צד‑שלישי / ציבוריים המוצגים במטבע המקור ולעולם אינם מתווספים להכנסת PHINS. PHINS ממודלת כ‑MGA / פלטפורמה רזת‑הון, ולכן עתודות תביעות ביטוח יושבות אצל מבטחי הסיכון / מבטחי המשנה ואינן נרשמות כהכנסת PHINS. חסוי — לא להפצה ללא אישור.",
+      dint_notice: "<strong>הודעת שלמות נתונים.</strong> כל הפיננסים הם הנחות תכנון צופות פני עתיד בדולר (הבסיס הקנוני); שווי‑ערך ב‑€ / ₪ מומר בשער חליפין חי (<span data-calc=\"integrity_fx\">שער חי — טוען…</span>) שנגזר ממצב דולרי יחיד, כך שהמספרים נשארים עקביים. הם אינם התחייבות או הנחיה. כל מספר <span class=\"tag tag-modeled\">מודלי</span> — KPIs, המודל החמש‑שנתי, תמהיל ההכנסות, שימוש בכספים, מסלול שווי היוניקורן, MOIC ברוטו וטבלת היציאה — מחושב מערכת אחת של הנחות בסיס (פרמיה, שיעור עמלה, תרחיש קנה מידה, מושבי AgentOS ומחירם, GMV ועמלת מרקטפלייס, ומקדמי העלות התפעולית הקבועה/המשתנה), כך שהמצגת תמיד מתואמת. השוואות ואומדני שוק <span class=\"tag tag-reported\">מדווחים</span> הם נתוני צד‑שלישי / ציבוריים המוצגים במטבע המקור ולעולם אינם מתווספים להכנסת PHINS. PHINS ממודלת כ‑MGA / פלטפורמה רזת‑הון, ולכן עתודות תביעות ביטוח יושבות אצל מבטחי הסיכון / מבטחי המשנה ואינן נרשמות כהכנסת PHINS. חסוי — לא להפצה ללא אישור.",
 
       // ── footer ──
       ft_line1: "PHINS — AI InsurTech · AgentOS · מרקטפלייס הגנה &nbsp;·&nbsp; <a href=\"/pitch-dashboard.html\">לוח המצגת</a> · <a href=\"/pitch-dashboard.html#investor-documents-section\">ספריית בדיקת נאותות</a>",
@@ -1594,7 +1611,11 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       take: 25,
       seat: 3000,
       mtake: 6,
-      mult: 6
+      mult: 6,
+      // Operating-cost factors (% of the canonical BASE opex curves), so the
+      // cost side of the model is investor-adjustable like every other driver.
+      opexFixPct: 100,
+      opexVarPct: 100
     };
     try {
       var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
@@ -1655,12 +1676,22 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       var mktRev = gmv.map(function (g) { return g * mtk; });
       var totalRev = YEARS.map(function (_, i) { return insRev[i] + saasRev[i] + mktRev[i]; });
 
-      var opex = YEARS.map(function (_, i) { return BASE.opexFixed[i] + BASE.opexVar[i] * m; });
+      // Operating cost = fixed base + variable base × scale, each tunable via
+      // the configurator's percent-of-base factors (100% = canonical base).
+      var ofx = Math.max(0, state.opexFixPct == null ? 100 : state.opexFixPct) / 100;
+      var ovr = Math.max(0, state.opexVarPct == null ? 100 : state.opexVarPct) / 100;
+      var opex = YEARS.map(function (_, i) { return BASE.opexFixed[i] * ofx + BASE.opexVar[i] * m * ovr; });
       var ebitda = YEARS.map(function (_, i) { return totalRev[i] - opex[i]; });
 
       // cumulative burn to EBITDA-positive (sum of negative EBITDA)
       var burn = 0;
       ebitda.forEach(function (e) { if (e < 0) burn += -e; });
+
+      // first modeled EBITDA-positive year at the current settings
+      var ebitdaPosYear = null;
+      for (var yi = 0; yi < ebitda.length; yi++) {
+        if (ebitda[yi] >= 0) { ebitdaPosYear = YEARS[yi]; break; }
+      }
 
       // valuation path: exit multiple × net revenue each year
       var valPath = totalRev.map(function (r) { return r * state.mult; });
@@ -1681,7 +1712,8 @@ derived from the same engine. Cite any market statistic; mark planning estimates
         policies: policies, seats: seats, gmv: gmv, gwp: gwp,
         insRev: insRev, saasRev: saasRev, mktRev: mktRev,
         totalRev: totalRev, opex: opex, ebitda: ebitda,
-        burn: burn, valPath: valPath, post: post, own: own,
+        burn: burn, ebitdaPosYear: ebitdaPosYear,
+        valPath: valPath, post: post, own: own,
         val31: val31, moic: moic
       };
     }
@@ -1737,14 +1769,17 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       setCalc("kpi_own", fmtPct(c.own));
       setCalc("kpi_own_lbl", L(state.investor + " ownership", "אחזקת " + state.investor));
       setCalc("kpi_rev31", fmtAbbrev(c.totalRev[i31]));
+      setCalc("kpi_opex31", fmtAbbrev(c.opex[i31]));
       setCalc("kpi_ebitda31", fmtAbbrev(c.ebitda[i31]));
       setCalc("kpi_val31", fmtAbbrev(c.val31));
       setCalc("kpi_moic", c.moic.toFixed(1) + "×");
       setCalc("cfg_note", L(
         "Showing in " + state.cur + " · scale " + scaleName() +
-        " · " + state.take + "% MGA take · " + state.mtake + "% marketplace take · " + state.mult + "× exit multiple. Inputs are in USD (canonical base); outputs convert at the live rate.",
+        " · " + state.take + "% MGA take · " + state.mtake + "% marketplace take · " + state.mult + "× exit multiple · opex " +
+        state.opexFixPct + "% fixed / " + state.opexVarPct + "% variable of base. Inputs are in USD (canonical base); outputs convert at the live rate.",
         "מוצג ב‑" + state.cur + " · תרחיש " + scaleName() +
-        " · " + state.take + "% עמלת MGA · " + state.mtake + "% עמלת מרקטפלייס · מכפיל יציאה " + state.mult + "×. הקלט מוזן בדולר (בסיס קנוני); הפלט מומר לפי השער החי."));
+        " · " + state.take + "% עמלת MGA · " + state.mtake + "% עמלת מרקטפלייס · מכפיל יציאה " + state.mult + "× · עלות תפעולית " +
+        state.opexFixPct + "% קבועה / " + state.opexVarPct + "% משתנה מהבסיס. הקלט מוזן בדולר (בסיס קנוני); הפלט מומר לפי השער החי."));
 
       // market SOM 2031 = GWP + GMV intermediated
       setCalc("som_2031", fmtAbbrev(c.gwp[i31] + c.gmv[i31]));
@@ -1823,6 +1858,11 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       setCalc("cap_own", fmtPct(c.own));
       setCalc("cap_esop", state.esop + "%");
       setCalc("cap_burn", fmtAbbrev(c.burn));
+      setCalc("cap_runway_v", c.ebitdaPosYear
+        ? L("EBITDA-positive by " + c.ebitdaPosYear + " (current settings)",
+            "‏EBITDA חיובי עד " + c.ebitdaPosYear + " (בהגדרות הנוכחיות)")
+        : L("Not EBITDA-positive by 2031 at current settings",
+            "לא חיובי ב‑EBITDA עד 2031 בהגדרות הנוכחיות"));
 
       // use of funds bars (scale to round)
       (function () {
@@ -2032,6 +2072,8 @@ derived from the same engine. Cite any market statistic; mark planning estimates
       bindNum("c-seat", "seat");
       bindNum("c-mtake", "mtake");
       bindNum("c-mult", "mult");
+      bindNum("c-opexfix", "opexFixPct");
+      bindNum("c-opexvar", "opexVarPct");
 
       // FX inputs
       var fe = document.getElementById("fx-eur");
