@@ -228,6 +228,75 @@ def test_risk_1pager_uses_raster_logo_for_canvas_pdf(fname):
     assert f"#{GOLD}" in doc
 
 
+# ---------------------------------------------------------------------------
+# Unicorn report series — adjustable operating cost + platform-refresh claims
+# ---------------------------------------------------------------------------
+
+def test_deck_module_count_claims_match_service_layer():
+    """The report series quotes the number of deployed service modules; keep
+    the claim reconciled to the actual service layer so the decks never
+    overstate (or silently understate) the platform."""
+    services = Path(__file__).resolve().parents[1] / "services"
+    count = len(list(services.glob("*.py")))
+    for fname in ("unicorn-investor-deck.html", "unicorn-executive-summary.html",
+                  "seed-investor-deck.html"):
+        doc = _read(STATIC / fname)
+        assert "64+" not in doc, f"{fname} still carries the stale 64+ module claim"
+        assert f"{count} service module" in doc or f"{count} deployed service" in doc \
+            or f"{count}-service-module" in doc, \
+            f"{fname} module-count claim out of sync with services/ ({count})"
+
+
+@pytest.mark.parametrize("fname", ["unicorn-investor-deck.html",
+                                   "seed-investor-deck.html"])
+def test_deck_operating_cost_is_adjustable(fname):
+    doc = _read(STATIC / fname)
+    # configurator inputs
+    assert 'id="c-opexfix"' in doc, f"{fname} missing fixed-opex control"
+    assert 'id="c-opexvar"' in doc, f"{fname} missing variable-opex control"
+    # persisted state + factors applied in compute()
+    assert "opexFixPct" in doc and "opexVarPct" in doc
+    assert "BASE.opexFixed[i] * ofx" in doc
+    assert "BASE.opexVar[i] * m * ovr" in doc
+    # defaults preserve the canonical base (100% = identity)
+    assert 'value="100"' in doc
+    assert "opexFixPct: 100" in doc and "opexVarPct: 100" in doc
+    # the modeled EBITDA-positive year follows the adjusted cost side
+    assert "ebitdaPosYear" in doc
+
+
+def test_unicorn_deck_runway_and_kpis_follow_opex():
+    doc = _read(STATIC / "unicorn-investor-deck.html")
+    # dynamic runway row (was a static "EBITDA-positive by 2030 (base)" label)
+    assert 'data-calc="cap_runway_v"' in doc
+    assert 'data-i18n="cap_r_runway_v"' not in doc
+    # 2031 operating cost KPI surfaced next to revenue/EBITDA
+    assert 'data-calc="kpi_opex31"' in doc
+    # integrity notice lists operating-cost factors among base assumptions
+    assert "operating-cost factors" in doc
+
+
+def test_seed_deck_ebitda_positive_year_is_dynamic():
+    doc = _read(STATIC / "seed-investor-deck.html")
+    assert doc.count('data-calc="ebitda_pos"') >= 2  # cover metric + unicorn note
+
+
+def test_series_reflects_agentos_v1_and_momentum():
+    """The decks must reflect platform reality: AgentOS v1 shipped after the
+    deck was originally assembled, plus the June–July 2026 momentum items."""
+    deck = _read(STATIC / "unicorn-investor-deck.html")
+    assert "AgentOS v1" in deck
+    assert 'data-i18n="prod_momentum"' in deck
+    for anchor in ("ledger-anchored commission", "actuarial appraisal simulation",
+                   "regulatory application memorandum", "Draft 3.0"):
+        assert anchor in deck, f"unicorn deck missing momentum anchor: {anchor}"
+    summary = _read(STATIC / "unicorn-executive-summary.html")
+    assert "AgentOS v1" in summary
+    assert "regulatory application memorandum" in summary
+    seed = _read(STATIC / "seed-investor-deck.html")
+    assert "AgentOS v1" in seed
+
+
 @pytest.mark.skipif(not os.environ.get("TEST_BASE_URL"),
                     reason="embedded server base URL not available")
 def test_logo_assets_served_with_real_image_types():
