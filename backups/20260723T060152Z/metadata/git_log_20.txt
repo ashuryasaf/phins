@@ -1,0 +1,20 @@
+a5c3099 Merge pull request #458 from ashuryasaf/cursor/branded-downloadable-documents-4cc7
+8516758 Retry logo preload after a failed fetch
+678b720 Await logo preload before generating pitch dashboard PDFs
+f95539f Fix running header overlapping continuation-page PDF content
+29f66f9 Serve PNG/JPEG brand assets with real image mime and normalize logo data URL for jsPDF letterhead
+0c8c238 Fix running header overlapping continuation-page PDF content
+1ba8d61 Unify downloadable document branding: PHINS shield letterhead, wordmark/tagline, gold-navy rules across pitch-dashboard PDFs, legal docs, and internal print plans
+401cb6e Merge pull request #455 from ashuryasaf/cursor/startup-fast-paths-ee1e
+53ad6f3 Don't persist schema marker when upgrade_schema fails
+6c9e8f5 Fix ledger hydration fetch-failure fallback and schema fingerprint gaps
+53437ee Merge pull request #454 from ashuryasaf/cursor/reduce-startup-seed-noise-ee1e
+167591d Add startup fast paths: schema fingerprint marker, batched seed checks, ledger hydration delta
+004c050 Gate startup demo/test fixture seeding and close DB connections on shutdown
+1f04d02 Skip redundant in-memory mirror writes when stores are DB-backed
+3623c6e Downgrade row-level repository create/update logs to DEBUG
+6a90b02 Merge pull request #452 from ashuryasaf/cursor/agents-markdown-file-0061
+c14d986 Merge pull request #450 from ashuryasaf/cursor/system-backup-configuration-c0f9
+e7bba6e Align investor-facing SOC 2 claims with in-progress attestation status
+9b24197 Report honest SOC 2 status in legal stats API and derive aggregate flags
+b80ad12 Refresh AGENTS.md: sync test count and add marketplace_models to tree
