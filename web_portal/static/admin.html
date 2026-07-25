@@ -326,11 +326,11 @@
     @keyframes pulse-ai {
       0%, 100% {
         transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(225, 190, 231, 0.35);
+        box-shadow: 0 0 0 0 rgba(227, 191, 111, 0.35);
       }
       50% {
         transform: scale(1.04);
-        box-shadow: 0 0 18px 8px rgba(225, 190, 231, 0.2);
+        box-shadow: 0 0 18px 8px rgba(227, 191, 111, 0.2);
       }
     }
     @keyframes pulse-recording {
@@ -351,12 +351,18 @@
     }
 
     /* ==================== ADMIN AI ASSISTANT (Customer-style) ==================== */
+    /* Deep-navy glass with a violet-blue aurora; complements the gold/spectrum
+       overview tiles instead of the old solid purple gradient. */
     #admin-ai-assistant-panel {
-      background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 50%, #9c27b0 100%);
+      background:
+        radial-gradient(820px 240px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%),
+        radial-gradient(640px 220px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(9, 17, 38, 0.97);
+      border: 1px solid rgba(127, 178, 255, 0.16);
       border-radius: 20px;
       padding: 24px;
       margin-bottom: 24px;
-      box-shadow: 0 12px 40px rgba(74, 20, 140, 0.35);
+      box-shadow: 0 12px 40px rgba(2, 8, 23, 0.4);
       color: white;
     }
     #admin-ai-assistant-panel[data-minimized="true"] {
@@ -394,11 +400,11 @@
       transform: translateY(-1px);
     }
     .admin-ai-tab-btn.active {
-      background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);
-      color: #4a148c;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       border-color: transparent;
       font-weight: 700;
-      box-shadow: 0 6px 20px rgba(225, 190, 231, 0.45);
+      box-shadow: 0 6px 20px rgba(227, 191, 111, 0.4);
     }
     .admin-ai-action-btn {
       background: rgba(255,255,255,0.12);
@@ -882,13 +888,13 @@
     <div id="admin-ai-assistant-panel" data-minimized="true">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:12px;">
-          <div style="width:46px;height:46px;background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
+          <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
           <div>
             <h2 style="margin:0;color:white;font-size:1.3rem;font-weight:700;">PHINS admin AI Assistant</h2>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟣 Ready</span>
+          <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟡 Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
           <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">🎤➕</button>
         </div>
@@ -916,12 +922,12 @@
           <button
             id="admin-ai-voice-btn"
             onclick="startAdminAssistantVoiceInput()"
-            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);border:none;width:36px;height:36px;border-radius:50%;cursor:not-allowed;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:white;opacity:0.5;"
+            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:linear-gradient(135deg, #15449b 0%, #4fd8ff 100%);border:none;width:36px;height:36px;border-radius:50%;cursor:not-allowed;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:white;opacity:0.5;"
             title="Voice input available after login validation"
             disabled
           >🎤</button>
         </div>
-        <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%);border:none;color:#4a148c;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">⚡ Ask</button>
+        <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border:none;color:#071022;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">⚡ Ask</button>
         <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">🔄 Refresh Tab</button>
       </div>
 
@@ -951,7 +957,7 @@
       <div id="admin-ai-quick-actions" style="margin-bottom:12px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
           <button onclick="adminAssistantQuickAction('refresh_overview')" class="admin-ai-quick-btn">🔄 Refresh All</button>
-          <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(123,31,162,0.36) 0%, rgba(25,118,210,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">🤖📊 AI + BI Insights</button>
+          <button onclick="adminAssistantQuickAction('run_ai_bi_insights')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(123,97,255,0.36) 0%, rgba(25,118,210,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">🤖📊 AI + BI Insights</button>
           <button onclick="adminAssistantQuickAction('run_actuary_simulation')" class="admin-ai-quick-btn" style="background:linear-gradient(135deg, rgba(13,71,161,0.36) 0%, rgba(66,165,245,0.36) 100%);border:1px solid rgba(255,255,255,0.45);">📐 Actuary Simulation</button>
           <button onclick="adminAssistantQuickAction('open_console')" class="admin-ai-quick-btn" style="background:rgba(79,172,254,0.22);border:1px solid rgba(79,172,254,0.45);">⌨️ Console</button>
           <button onclick="adminAssistantQuickAction('system_health')" class="admin-ai-quick-btn" style="background:rgba(76,175,80,0.22);">🏥 System Health</button>
@@ -2792,7 +2798,7 @@
       if (!panel) return;
       adminAssistantSwitchTab('overview');
       initAdminAssistantVoiceRecognition();
-      adminAssistantSetStatus('ready', '🟣 Ready');
+      adminAssistantSetStatus('ready', '🟡 Ready');
     }
 
     function toggleAdminAIHelp() {

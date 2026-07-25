@@ -548,12 +548,12 @@
 
     <!-- ==================== AI QUERY ASSISTANT ==================== -->
     <!-- Minimized by default: only the ask bar (header + query input) is visible until the user expands it. -->
-    <div id="ai-assistant-panel" data-minimized="true" style="background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 50%, #9c27b0 100%); border-radius: 20px; padding: 18px; margin-bottom: 24px; box-shadow: 0 12px 40px rgba(74, 20, 140, 0.35);">
+    <div id="ai-assistant-panel" data-minimized="true" style="background: radial-gradient(820px 240px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%), radial-gradient(640px 220px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%), rgba(9, 17, 38, 0.97); border: 1px solid rgba(127, 178, 255, 0.16); border-radius: 20px; padding: 18px; margin-bottom: 24px; box-shadow: 0 12px 40px rgba(2, 8, 23, 0.4);">
       
       <!-- Header -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; animation: pulse-ai 2s ease-in-out infinite;">🤖</div>
+          <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; animation: pulse-ai 2s ease-in-out infinite;">🤖</div>
           <div>
             <h2 style="margin: 0; color: white; font-size: 1.3rem; font-weight: 700;">PHINS AI Assistant</h2>
             <p style="margin: 2px 0 0 0; color: rgba(255,255,255,0.8); font-size: 0.85rem;">Ask me anything about your account</p>
@@ -625,17 +625,17 @@
                  placeholder="Ask me anything... e.g., 'Show my billing report' or 'How much do I save monthly?'" 
                  style="width: 100%; padding: 16px 50px 16px 20px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.95); font-size: 1rem; outline: none; transition: all 0.3s;"
                  onkeypress="if(event.key==='Enter') processAIQuery()"
-                 onfocus="this.style.borderColor='#e1bee7'; this.style.boxShadow='0 0 20px rgba(225, 190, 231, 0.5)';"
+                 onfocus="this.style.borderColor='#e3bf6f'; this.style.boxShadow='0 0 20px rgba(227, 191, 111, 0.45)';"
                  onblur="this.style.borderColor='rgba(255,255,255,0.3)'; this.style.boxShadow='none';">
           <button onclick="startVoiceInput()" id="voice-btn" 
-                  style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: not-allowed; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: all 0.3s; opacity: 0.55;"
+                  style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #15449b 0%, #4fd8ff 100%); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: not-allowed; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: all 0.3s; opacity: 0.55;"
                   title="Voice input available after login validation"
                   disabled>🎤</button>
         </div>
         <button onclick="processAIQuery()" 
-                style="background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%); border: none; color: #4a148c; padding: 16px 24px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 1rem; transition: all 0.3s; box-shadow: 0 4px 15px rgba(225, 190, 231, 0.4);"
-                onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 20px rgba(225, 190, 231, 0.6)';"
-                onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 15px rgba(225, 190, 231, 0.4)';">
+                style="background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); border: none; color: #071022; padding: 16px 24px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 1rem; transition: all 0.3s; box-shadow: 0 4px 15px rgba(227, 191, 111, 0.35);"
+                onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 20px rgba(227, 191, 111, 0.55)';"
+                onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 15px rgba(227, 191, 111, 0.35)';">
           ⚡ Ask
         </button>
       </div>
@@ -701,8 +701,8 @@
     
     <style>
       @keyframes pulse-ai {
-        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(225, 190, 231, 0.4); }
-        50% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(225, 190, 231, 0.2); }
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(227, 191, 111, 0.4); }
+        50% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(227, 191, 111, 0.2); }
       }
       @keyframes pulse-recording {
         0%, 100% { opacity: 1; transform: scale(1); }
@@ -2013,7 +2013,7 @@
       voiceBtn.style.background = 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)';
       voiceBtn.innerHTML = '✓';
       setTimeout(() => {
-        voiceBtn.style.background = 'linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%)';
+        voiceBtn.style.background = 'linear-gradient(135deg, #15449b 0%, #4fd8ff 100%)';
         voiceBtn.innerHTML = '🎤';
       }, 1500);
     }
@@ -2054,7 +2054,7 @@
       document.getElementById('voice-recording-indicator').style.display = 'none';
       const voiceBtn = document.getElementById('voice-btn');
       if (voiceBtn) {
-        voiceBtn.style.background = 'linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%)';
+        voiceBtn.style.background = 'linear-gradient(135deg, #15449b 0%, #4fd8ff 100%)';
         voiceBtn.innerHTML = '🎤';
       }
       
