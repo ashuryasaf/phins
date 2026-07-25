@@ -1,0 +1,124 @@
+/*
+ * PHINS RTL / Hebrew support
+ * ==========================
+ * Loaded on customer journey pages together with /i18n.js.
+ * Rules only activate under [dir="rtl"] (set by the i18n engine when the
+ * active dictionary declares dir=rtl), so English rendering is unaffected.
+ */
+
+[dir="rtl"] body {
+  direction: rtl;
+  text-align: right;
+  font-family: 'Heebo', 'Assistant', 'Segoe UI', 'Arial Hebrew', Arial, sans-serif;
+}
+
+/* Keep numerals, IDs, codes, currency and email fields readable (LTR isolate) */
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="tel"],
+[dir="rtl"] input[type="number"],
+[dir="rtl"] input[name*="card"],
+[dir="rtl"] input[id*="card"],
+[dir="rtl"] code,
+[dir="rtl"] .ltr-data {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+
+/* Generic layout mirroring for the shared PHINS theme */
+[dir="rtl"] .phins-nav,
+[dir="rtl"] .phins-header-inner,
+[dir="rtl"] .nav,
+[dir="rtl"] .header-inner {
+  direction: rtl;
+}
+
+[dir="rtl"] th,
+[dir="rtl"] td {
+  text-align: right;
+}
+
+[dir="rtl"] select {
+  background-position: left 0.75rem center;
+  padding-right: 0.9rem;
+}
+
+[dir="rtl"] input,
+[dir="rtl"] textarea {
+  text-align: right;
+}
+
+[dir="rtl"] input::placeholder,
+[dir="rtl"] textarea::placeholder {
+  text-align: right;
+}
+
+/* Checkboxes / radios keep their label spacing mirrored */
+[dir="rtl"] input[type="checkbox"] + label,
+[dir="rtl"] input[type="radio"] + label {
+  margin-right: 0.4rem;
+  margin-left: 0;
+}
+
+/* Floating language toggle (injected by i18n.js on pages without a selector) */
+#phins-lang-toggle {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 2147483000;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(6, 13, 31, 0.82);
+  border: 1px solid rgba(120, 165, 255, 0.35);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+[dir="rtl"] #phins-lang-toggle {
+  right: auto;
+  left: 14px;
+}
+
+.phins-lang-btn {
+  border: none;
+  background: transparent;
+  color: #b9c8e8;
+  font: 600 0.8rem/1 'Heebo', 'Segoe UI', Arial, sans-serif;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.phins-lang-btn:hover {
+  color: #ffffff;
+}
+
+.phins-lang-btn.active {
+  background: linear-gradient(135deg, #2f6fdb, #15449b);
+  color: #ffffff;
+}
+
+/* Progress steps / wizards flow right-to-left */
+[dir="rtl"] .progress-steps,
+[dir="rtl"] .steps,
+[dir="rtl"] .step-indicator {
+  flex-direction: row-reverse;
+}
+
+/* Mirror common icon/label gaps built with margins */
+[dir="rtl"] .card-change,
+[dir="rtl"] .summary-card,
+[dir="rtl"] .form-hint,
+[dir="rtl"] .help-text {
+  text-align: right;
+}
+
+/* Toast notifications appear on the left in RTL */
+[dir="rtl"] .toast,
+[dir="rtl"] .notification {
+  right: auto;
+  left: 20px;
+}

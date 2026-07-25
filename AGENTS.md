@@ -13,7 +13,7 @@ PHINS is a Python platform built around:
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`)
-- service-layer logic in `services/` (83 modules)
+- service-layer logic in `services/` (84 modules)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
@@ -77,7 +77,7 @@ Preferred file-by-task:
 |  |- api_assessment_center.py
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
-|- services/                            # 83 service modules
+|- services/                            # 84 service modules
 |- database/
 |  |- config.py
 |  |- manager.py

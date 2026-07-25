@@ -12919,6 +12919,10 @@ For claims or questions, please contact:
             # the browser instead of being served as an opaque octet-stream,
             # which presented as a blank page.
             self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        elif path.endswith('.json'):
+            # Static JSON assets (e.g. /locales/he.json i18n dictionaries)
+            # must carry their real type under nosniff.
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
 
