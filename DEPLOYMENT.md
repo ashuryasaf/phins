@@ -206,7 +206,7 @@ variables in Railway (or Render / your hosting platform):
 | `ALPACA_SECRET_KEY` | Yes | Alpaca secret key (also accepted as `ALPACA_API_SECRET`) |
 | `ALPACA_PAPER` | No | `true` (default) for paper trading, `false` for live |
 | `ALPACA_BROKER_MODE` | No | `true` to enable Broker API endpoints (account creation, funding) |
-| `INVESTMENT_AI_ACCESS_KEY` | Yes | Access key for the trading terminal UI authentication |
+| `TERMINAL_ACCESS_KEY` | Yes | Access key for the trading terminal UI authentication (legacy `INVESTMENT_AI_ACCESS_KEY` still honored) |
 
 **Paper trading** is enabled by default. To switch to live trading, set
 `ALPACA_PAPER=false`. The terminal will show "Paper" or "Live" in the header.

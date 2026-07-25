@@ -7479,35 +7479,33 @@ try:
 except ImportError as e:
     print(f"Warning: Alpha Vantage service not available: {e}")
 
-# Investment AI Tool Service for super AI investment analysis
-investment_ai_enabled = False
+# Terminal Access Service for trading terminal API authentication
+terminal_access_enabled = False
 try:
-    from services.investment_ai_tool_service import (
-        dispatch_investment_ai, get_modules_catalog,
-        validate_investment_ai_access, get_access_key_display,
-        AVAILABLE_MODULES, LIVE_DATA_AVAILABLE,
+    from services.terminal_access_service import (
+        validate_terminal_access, get_access_key_display,
     )
-    investment_ai_enabled = True
-    _ai_key = get_access_key_display()
-    _live_str = "LIVE (Alpha Vantage)" if LIVE_DATA_AVAILABLE else "static fallback"
-    print(f"✓ Investment AI Tool enabled (17 AI modules, data: {_live_str})")
+    terminal_access_enabled = True
+    _term_key = get_access_key_display()
+    print("✓ Trading Terminal access control enabled")
     # Never print the raw access key to the deployment log stream — anyone
     # with log read access could otherwise authenticate against the
-    # Investment AI APIs. Emit a length+fingerprint summary instead.
-    _ai_key_source = (
-        "env" if os.environ.get("INVESTMENT_AI_ACCESS_KEY") else "auto-generated"
+    # terminal APIs. Emit a length+fingerprint summary instead.
+    _term_key_source = (
+        "env" if (os.environ.get("TERMINAL_ACCESS_KEY") or os.environ.get("INVESTMENT_AI_ACCESS_KEY"))
+        else "auto-generated"
     )
-    if _ai_key:
-        _ai_key_fp = hashlib.sha256(_ai_key.encode("utf-8")).hexdigest()[:12]
+    if _term_key:
+        _term_key_fp = hashlib.sha256(_term_key.encode("utf-8")).hexdigest()[:12]
         print(
-            f"  Investment AI Access Key: configured "
-            f"(source={_ai_key_source}, length={len(_ai_key)}, "
-            f"fingerprint=sha256:{_ai_key_fp})"
+            f"  Terminal Access Key: configured "
+            f"(source={_term_key_source}, length={len(_term_key)}, "
+            f"fingerprint=sha256:{_term_key_fp})"
         )
     else:
-        print("  Investment AI Access Key: not configured")
+        print("  Terminal Access Key: not configured")
 except ImportError as e:
-    print(f"Warning: Investment AI Tool not available: {e}")
+    print(f"Warning: Terminal access service not available: {e}")
 
 # Trading Platform Service for live broker connections
 trading_platform_enabled = False
@@ -23757,26 +23755,11 @@ For claims or questions, please contact:
         
         # ========== END UNIFIED INVESTMENT API ==========
 
-        # ========== INVESTMENT AI TOOL API (GET) ==========
-        if path == '/api/investment-ai/modules':
-            if not investment_ai_enabled:
+        # ========== TRADING TERMINAL API (GET) ==========
+        if path == '/api/terminal/access-key':
+            if not terminal_access_enabled:
                 self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
-                return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not validate_investment_ai_access(ai_key):
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
-                return
-            catalog = get_modules_catalog()
-            self._set_json_headers()
-            self.wfile.write(json.dumps(catalog).encode('utf-8'))
-            return
-
-        if path == '/api/investment-ai/access-key':
-            if not investment_ai_enabled:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Terminal access service unavailable'}).encode('utf-8'))
                 return
             if not require_role(session, ['admin']):
                 self._set_json_headers(403)
@@ -23785,114 +23768,17 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'access_key': get_access_key_display(),
-                'note': 'Provide this key via X-Investment-AI-Key header or api_key query parameter.',
+                'note': 'Provide this key via X-Terminal-Key header or api_key query parameter.',
             }).encode('utf-8'))
             return
 
-        if path.startswith('/api/investment-ai/analyze'):
-            if not investment_ai_enabled:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
-                return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not validate_investment_ai_access(ai_key):
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
-                return
-            module = qs.get('module', [''])[0]
-            if not module:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'module parameter required', 'available': list(AVAILABLE_MODULES.keys())}).encode('utf-8'))
-                return
-            params = {}
-            for k, v in qs.items():
-                if k not in ('module', 'api_key'):
-                    params[k] = v[0] if len(v) == 1 else v
-            if 'current_holdings' in params and isinstance(params['current_holdings'], str):
-                params['current_holdings'] = [s.strip() for s in params['current_holdings'].split(',') if s.strip()]
-            if 'symbols' in params and isinstance(params['symbols'], str):
-                params['symbols'] = [s.strip() for s in params['symbols'].split(',') if s.strip()]
-            for numeric_field in ('portfolio_value', 'max_risk_per_trade', 'initial_capital', 'pe_max', 'pe_min', 'rsi_max', 'rsi_min', 'min_volume', 'min_market_cap'):
-                if numeric_field in params:
-                    try:
-                        params[numeric_field] = float(params[numeric_field])
-                    except (ValueError, TypeError):
-                        pass
-            if 'period_years' in params:
-                try:
-                    params['period_years'] = int(params['period_years'])
-                except (ValueError, TypeError):
-                    pass
-            result = dispatch_investment_ai(module, params)
-            self._set_json_headers()
-            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
-            return
-
-        if path == '/api/investment-ai/wallet':
-            if not investment_ai_enabled:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
-                return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not validate_investment_ai_access(ai_key):
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
-                return
-            auth_header = self.headers.get('Authorization', '')
-            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-            sess = validate_session(token) if token else None
-            customer_id = qs.get('customer_id', [''])[0]
-            if sess and sess.get('customer_id'):
-                customer_id = customer_id or sess['customer_id']
-            if not customer_id:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'customer_id required (login or pass as parameter)'}).encode('utf-8'))
-                return
-            inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
-            hw = HEALTH_WALLETS.get(customer_id, {})
-            allocation = {}
-            distribution = {}
-            try:
-                distribution = calculate_monthly_distribution(customer_id)
-                allocation = distribution.get('allocation', {})
-            except Exception:
-                pass
-            total_balance = safe_float(inv_account.get('balance', 0))
-            index_balance = safe_float(inv_account.get('index_balance', 0))
-            bonds_balance = safe_float(inv_account.get('bonds_balance', 0))
-            crypto_balance = safe_float(inv_account.get('crypto_balance', 0))
-            invested = index_balance + bonds_balance + crypto_balance
-            cash_balance = total_balance - invested
-            wallet_data = {
-                'customer_id': customer_id,
-                'investment_account': {
-                    'total_balance': total_balance,
-                    'cash_available': cash_balance,
-                    'invested_assets': invested,
-                    'index_funds': index_balance,
-                    'bonds': bonds_balance,
-                    'crypto': crypto_balance,
-                },
-                'health_wallet': {
-                    'balance': safe_float(hw.get('balance', 0)),
-                    'monthly_deposit': safe_float(hw.get('monthly_deposit', 0)),
-                },
-                'allocation': allocation,
-                'monthly_distribution': distribution.get('distribution', {}),
-                'total_monthly_premium': distribution.get('total_monthly_premium', 0),
-            }
-            self._set_json_headers()
-            self.wfile.write(json.dumps(wallet_data, default=str).encode('utf-8'))
-            return
-
-        # ========== TRADING TERMINAL API (GET) ==========
         if path == '/api/terminal/connection-status':
             if not trading_platform_enabled:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23905,8 +23791,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23921,8 +23807,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23935,8 +23821,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23949,8 +23835,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23963,8 +23849,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23977,8 +23863,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -23996,8 +23882,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24012,8 +23898,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24029,8 +23915,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24043,8 +23929,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24058,8 +23944,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24072,8 +23958,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24087,8 +23973,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24101,8 +23987,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24115,8 +24001,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24130,8 +24016,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24145,8 +24031,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24172,8 +24058,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24187,8 +24073,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24201,8 +24087,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24217,8 +24103,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24233,8 +24119,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24256,8 +24142,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24274,8 +24160,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24290,8 +24176,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24313,8 +24199,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24330,8 +24216,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24348,8 +24234,8 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '') or qs.get('api_key', [''])[0]
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            ai_key = self.headers.get('X-Terminal-Key', '') or qs.get('api_key', [''])[0]
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -24358,7 +24244,7 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(UNIVERSE, default=str).encode('utf-8'))
             return
 
-        # ========== END INVESTMENT AI TOOL API (GET) ==========
+        # ========== END TRADING TERMINAL API (GET) ==========
         
         # Reconcile balances
         if path == '/api/balance/reconcile':
@@ -30806,49 +30692,20 @@ For claims or questions, please contact:
         else:
             body = body_bytes.decode('utf-8') if body_bytes else ''
         
-        # ========== INVESTMENT AI TOOL API (POST) ==========
-        if path == '/api/investment-ai/analyze':
-            if not investment_ai_enabled:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': 'Investment AI Tool unavailable'}).encode('utf-8'))
-                return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
-            try:
-                body_data = json.loads(body) if body else {}
-            except json.JSONDecodeError:
-                body_data = {}
-            if not ai_key:
-                ai_key = body_data.get('api_key', '')
-            if not validate_investment_ai_access(ai_key):
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Invalid Investment AI access key'}).encode('utf-8'))
-                return
-            module = body_data.get('module', '')
-            if not module:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'module field required', 'available': list(AVAILABLE_MODULES.keys())}).encode('utf-8'))
-                return
-            params = body_data.get('params', {})
-            result = dispatch_investment_ai(module, params)
-            self._set_json_headers()
-            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
-            return
-        # ========== END INVESTMENT AI TOOL API (POST) ==========
-
         # ========== TRADING TERMINAL API (POST) ==========
         if path == '/api/terminal/order':
             if not trading_platform_enabled:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -30879,14 +30736,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -30905,14 +30762,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -30930,14 +30787,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -30958,14 +30815,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -30983,14 +30840,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -31004,14 +30861,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -31034,14 +30891,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -31056,14 +30913,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -31084,14 +30941,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -31111,14 +30968,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
@@ -31144,14 +31001,14 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Trading platform unavailable'}).encode('utf-8'))
                 return
-            ai_key = self.headers.get('X-Investment-AI-Key', '')
+            ai_key = self.headers.get('X-Terminal-Key', '')
             try:
                 body_data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 body_data = {}
             if not ai_key:
                 ai_key = body_data.get('api_key', '')
-            if not (investment_ai_enabled and validate_investment_ai_access(ai_key)):
+            if not (terminal_access_enabled and validate_terminal_access(ai_key)):
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Invalid access key'}).encode('utf-8'))
                 return
