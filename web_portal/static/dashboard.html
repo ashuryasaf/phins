@@ -127,16 +127,10 @@
         gap: 12px !important;
       }
       .dashboard-actions .action-card {
-        padding: 16px !important;
+        padding: 14px 16px !important;
       }
-      .dashboard-actions .stat-icon {
-        font-size: 28px !important;
-      }
-      .dashboard-actions .action-card > div:nth-child(2) {
-        font-size: 16px !important;
-      }
-      .dashboard-actions .action-card > div:nth-child(3) {
-        font-size: 22px !important;
+      .dashboard-actions .action-card-value {
+        font-size: 1.3rem !important;
       }
       
       /* Stats Grid Mobile - 2 columns */
@@ -740,73 +734,67 @@
       }
     </style>
 
-    <!-- Quick Actions - 5 Main Buttons -->
-    <div class="dashboard-actions" style="margin-bottom: 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-      
+    <!-- Quick Actions - spectrum hero cards -->
+    <div class="dashboard-actions phins-spectrum-actions" style="display: grid;">
+
       <!-- Investment Button -->
-      <a href="/savings-portfolio.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; box-shadow: 0 8px 30px rgba(21, 101, 192, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(21, 101, 192, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(21, 101, 192, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">📈</div>
-          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">LIVE</span>
+      <a href="/savings-portfolio.html" class="action-card">
+        <div class="action-card-top">
+          <div class="action-card-title">Investments</div>
+          <span class="action-card-badge">LIVE</span>
         </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Investments</div>
-        <div style="font-size: 28px; font-weight: 700; margin: 8px 0;" id="action-investment-value">$0.00</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Portfolio • Crypto • Stocks • Bonds</div>
+        <div class="action-card-value" id="action-investment-value">$0.00</div>
+        <div class="action-card-sub">Portfolio • Crypto • Stocks • Bonds</div>
       </a>
-      
+
       <!-- Wallet Button -->
-      <a href="#health-wallet" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; box-shadow: 0 8px 30px rgba(46, 125, 50, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(46, 125, 50, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(46, 125, 50, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">🏥</div>
-          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">ACTIVE</span>
+      <a href="#health-wallet" class="action-card">
+        <div class="action-card-top">
+          <div class="action-card-title">Health Wallet</div>
+          <span class="action-card-badge">ACTIVE</span>
         </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Health Wallet</div>
-        <div style="font-size: 28px; font-weight: 700; margin: 8px 0;" id="action-wallet-balance">$0.00</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Medical • Pharmacy • Services</div>
+        <div class="action-card-value" id="action-wallet-balance">$0.00</div>
+        <div class="action-card-sub">Medical • Pharmacy • Services</div>
       </a>
-      
-      <!-- BILLING BUTTON - NEW -->
-      <a href="#billing-settings" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; box-shadow: 0 8px 30px rgba(123, 31, 162, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(123, 31, 162, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(123, 31, 162, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">💳</div>
-          <span id="billing-due-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; display: none;">DUE</span>
+
+      <!-- Billing Button -->
+      <a href="#billing-settings" class="action-card">
+        <div class="action-card-top">
+          <div class="action-card-title">Billing</div>
+          <span id="billing-due-badge" class="action-card-badge" style="display: none;">DUE</span>
         </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Billing</div>
-        <div style="font-size: 28px; font-weight: 700; margin: 8px 0;" id="action-billing-due">$0.00</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Pay • Settings • Password</div>
+        <div class="action-card-value" id="action-billing-due">$0.00</div>
+        <div class="action-card-sub">Pay • Settings • Password</div>
       </a>
-      
+
       <!-- File Claim Button -->
-      <a href="#claims" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%); color: white; box-shadow: 0 8px 30px rgba(239, 108, 0, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(239, 108, 0, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(239, 108, 0, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">📝</div>
-          <span id="pending-claims-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; display: none;">0 PENDING</span>
+      <a href="#claims" class="action-card">
+        <div class="action-card-top">
+          <div class="action-card-title">Claims</div>
+          <span id="pending-claims-badge" class="action-card-badge" style="display: none;">0 PENDING</span>
         </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Claims</div>
-        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">File or track claims</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Submit • Track • History</div>
+        <div class="action-card-value">File or track</div>
+        <div class="action-card-sub">Submit • Track • History</div>
       </a>
-      
+
       <!-- Referral Program Button -->
-      <a href="#referrals" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; box-shadow: 0 8px 30px rgba(255, 107, 53, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(255, 107, 53, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(255, 107, 53, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">🎁</div>
-          <span id="referral-count-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">10 LEFT</span>
+      <a href="#referrals" class="action-card">
+        <div class="action-card-top">
+          <div class="action-card-title">Refer Friends</div>
+          <span id="referral-count-badge" class="action-card-badge">10 LEFT</span>
         </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Refer Friends</div>
-        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">Earn rewards together</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Invite • Share • Earn</div>
+        <div class="action-card-value">Earn rewards</div>
+        <div class="action-card-sub">Invite • Share • Earn</div>
       </a>
-      
+
       <!-- Unified Workbench (one card replacing Reports + Documents + Assessment + Risk) -->
-      <a href="/unified-workbench.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 60%, #ff8f00 100%); color: white; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25); transition: transform 0.2s, box-shadow 0.2s; grid-column: span 2;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(13, 71, 161, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(13, 71, 161, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">⚡</div>
-          <span id="reports-count-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;" title="One screen, one button — Documents · Assessment · Risk · Reports">UNIFIED</span>
+      <a href="/unified-workbench.html" class="action-card">
+        <div class="action-card-top">
+          <div class="action-card-title">Unified Workbench</div>
+          <span id="reports-count-badge" class="action-card-badge" title="One screen, one button — Documents · Assessment · Risk · Reports">UNIFIED</span>
         </div>
-        <div style="font-size: 22px; font-weight: 700; margin-top: 12px;">Unified Workbench</div>
-        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.95);" id="action-reports-count">Documents · Assessment · Risk · BI · Reports</div>
-        <div style="color: rgba(255,255,255,0.9); font-size: 13px;">One button drives every bar · SHA-256 verified data integrity</div>
+        <div class="action-card-value" id="action-reports-count" style="font-size: 1.1rem;">Documents · Assessment · Risk · BI · Reports</div>
+        <div class="action-card-sub">One button drives every bar · SHA-256 verified data integrity</div>
         <span id="assessment-count-badge" style="display:none;"></span>
         <span id="assessment-action-summary" style="display:none;"></span>
       </a>
@@ -814,24 +802,20 @@
     </div>
 
     <!-- Quick Stats -->
-    <div class="dashboard-stats">
+    <div class="dashboard-stats phins-spectrum-stats">
       <div class="stat-box">
-        <div class="stat-icon">📋</div>
         <div class="stat-value" id="policy-count">0</div>
         <div class="stat-label">Active PHINS Contracts</div>
       </div>
       <div class="stat-box">
-        <div class="stat-icon">💰</div>
         <div class="stat-value" id="total-premium">$0</div>
         <div class="stat-label">Monthly Premium Total</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%); color: white;">
-        <div class="stat-icon">🏥</div>
-        <div class="stat-value" id="wallet-balance" style="color: white;">$0</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Health Wallet Balance</div>
+      <div class="stat-box">
+        <div class="stat-value" id="wallet-balance">$0</div>
+        <div class="stat-label">Health Wallet Balance</div>
       </div>
       <div class="stat-box">
-        <div class="stat-icon">📈</div>
         <div class="stat-value" id="investment-value">$0</div>
         <div class="stat-label">Total Investment Value</div>
       </div>
@@ -7897,7 +7881,7 @@
             if (totalDue > 0) {
               billingDueBadge.textContent = 'DUE';
               billingDueBadge.style.display = 'inline-block';
-              billingDueBadge.style.background = '#dc3545';
+              billingDueBadge.style.color = '#ff8a8a';
             } else {
               billingDueBadge.style.display = 'none';
             }

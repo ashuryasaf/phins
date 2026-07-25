@@ -210,12 +210,6 @@
       background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
       min-height: 100vh;
     }
-    .stat-box-blue { background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%) !important; color: white !important; }
-    .stat-box-green { background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%) !important; color: white !important; }
-    .stat-box-orange { background: linear-gradient(135deg, #f57c00 0%, #ff9800 100%) !important; color: white !important; }
-    .stat-box-purple { background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%) !important; color: white !important; }
-    .stat-box-blue .stat-value, .stat-box-green .stat-value, .stat-box-orange .stat-value, .stat-box-purple .stat-value { color: white !important; }
-    .stat-box-blue .stat-label, .stat-box-green .stat-label, .stat-box-orange .stat-label, .stat-box-purple .stat-label { color: rgba(255,255,255,0.9) !important; }
     
     /* Elegant Action Buttons */
     .action-btn {
@@ -979,77 +973,62 @@
       </div>
     </div>
 
-    <!-- System Statistics - Row 1 -->
-    <div class="dashboard-stats">
-      <div class="stat-box stat-box-blue">
-        <div class="stat-icon">👥</div>
+    <!-- System Statistics - single proportional spectrum grid (2 rows x 6 cols on desktop) -->
+    <div class="dashboard-stats phins-spectrum-stats phins-stats-grid-12">
+      <div class="stat-box">
         <div class="stat-value" id="stat-customers">0</div>
         <div class="stat-label">Total Customers</div>
         <div class="stat-change" id="stat-customers-new">Loading...</div>
       </div>
-      <div class="stat-box stat-box-green">
-        <div class="stat-icon">📋</div>
+      <div class="stat-box">
         <div class="stat-value" id="stat-policies">0</div>
         <div class="stat-label">Active Policies</div>
         <div class="stat-change" id="stat-policies-pending">Loading...</div>
       </div>
-      <div class="stat-box stat-box-orange">
-        <div class="stat-icon">📝</div>
+      <div class="stat-box">
         <div class="stat-value" id="stat-applications">0</div>
         <div class="stat-label">Pending Applications</div>
         <div class="stat-change" id="stat-applications-approved">Loading...</div>
       </div>
-      <div class="stat-box stat-box-purple">
-        <div class="stat-icon">💰</div>
+      <div class="stat-box">
         <div class="stat-value" id="stat-aum">$0</div>
         <div class="stat-label">Total AUM</div>
         <div class="stat-change" id="stat-premium">Loading...</div>
       </div>
-    </div>
-    
-    <!-- System Statistics - Row 2 -->
-    <div class="dashboard-stats" style="margin-top: 16px;">
-      <div class="stat-box" style="background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%); color: white;">
-        <div class="stat-icon">🏥</div>
-        <div class="stat-value" id="stat-claims" style="color: white;">0</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Pending Claims</div>
-        <div class="stat-change" id="stat-claims-approved" style="color: rgba(255,255,255,0.8);">Loading...</div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-revenue">$0</div>
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-change" id="stat-outstanding">Loading...</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;">
-        <div class="stat-icon">💵</div>
-        <div class="stat-value" id="stat-revenue" style="color: white;">$0</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Revenue</div>
-        <div class="stat-change" id="stat-outstanding" style="color: rgba(255,255,255,0.8);">Loading...</div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-deposits">$0</div>
+        <div class="stat-label">Health Wallet Deposits</div>
+        <div class="stat-change" id="stat-wallets">Loading...</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #1976d2 0%, #64b5f6 100%); color: white;">
-        <div class="stat-icon">🏦</div>
-        <div class="stat-value" id="stat-deposits" style="color: white;">$0</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Health Wallet Deposits</div>
-        <div class="stat-change" id="stat-wallets" style="color: rgba(255,255,255,0.8);">Loading...</div>
+      <div class="stat-box phins-stat-wide">
+        <div class="stat-value" id="stat-claims">0</div>
+        <div class="stat-label">Pending Claims</div>
+        <div class="stat-change" id="stat-claims-approved">Loading...</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #42a5f5 0%, #90caf9 100%); color: white;">
-        <div class="stat-icon">📈</div>
-        <div class="stat-value" id="stat-investment" style="color: white;">$0</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Investment Value</div>
-        <div class="stat-change" id="stat-coverage" style="color: rgba(255,255,255,0.8);">Loading...</div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-investment">$0</div>
+        <div class="stat-label">Investment Value</div>
+        <div class="stat-change" id="stat-coverage">Loading...</div>
       </div>
-      <a href="/risk-reports-dashboard.html" class="stat-box" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); color: white; text-decoration: none; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)';" onmouseout="this.style.transform='scale(1)';">
-        <div class="stat-icon">📊</div>
-        <div class="stat-value" id="stat-reports" style="color: white;">AI</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Risk & Reports</div>
-        <div class="stat-change" style="color: rgba(255,255,255,0.8);">Upload & Analyze →</div>
+      <a href="/risk-reports-dashboard.html" class="stat-box">
+        <div class="stat-value" id="stat-reports">AI</div>
+        <div class="stat-label">Risk & Reports</div>
+        <div class="stat-change">Upload & Analyze →</div>
       </a>
-      <a href="/assessment-center.html" class="stat-box" style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; text-decoration: none; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)';" onmouseout="this.style.transform='scale(1)';">
-        <div class="stat-icon">🧠</div>
-        <div class="stat-value" id="stat-assessment-customers" style="color: white;">—</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Assessment Center</div>
-        <div class="stat-change" id="stat-assessment-facts" style="color: rgba(255,255,255,0.8);">Loading customer 360…</div>
+      <a href="/assessment-center.html" class="stat-box">
+        <div class="stat-value" id="stat-assessment-customers">—</div>
+        <div class="stat-label">Assessment Center</div>
+        <div class="stat-change" id="stat-assessment-facts">Loading customer 360…</div>
       </a>
-      <a href="/admin-agents.html" class="stat-box" style="background: linear-gradient(135deg, #5a2ca0 0%, #7c3aed 100%); color: white; text-decoration: none; cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)';" onmouseout="this.style.transform='scale(1)';">
-        <div class="stat-icon">🧑‍💼</div>
-        <div class="stat-value" id="stat-agents" style="color: white;">—</div>
-        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Agent Community</div>
-        <div class="stat-change" id="stat-agents-sub" style="color: rgba(255,255,255,0.8);">Manage agents →</div>
+      <a href="/admin-agents.html" class="stat-box">
+        <div class="stat-value" id="stat-agents">—</div>
+        <div class="stat-label">Agent Community</div>
+        <div class="stat-change" id="stat-agents-sub">Manage agents →</div>
       </a>
     </div>
 
