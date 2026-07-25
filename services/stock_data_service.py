@@ -129,8 +129,10 @@ def _resolve_stock_data(symbol: str) -> Dict[str, Any]:
         profile = get_live_technical_profile(symbol)
         if profile:
             ind = profile.get("indicators", {})
-            result["rsi"] = ind.get("rsi") or 50
-            result["ma50"] = ind.get("sma_50") or result["price"]
+            rsi_obj = ind.get("rsi") or {}
+            sma50_obj = ind.get("sma_50") or {}
+            result["rsi"] = rsi_obj.get("value") or 50
+            result["ma50"] = sma50_obj.get("value") or result["price"]
         _live_stock_cache[symbol] = result
         _live_cache_ts[symbol] = now
         return result
