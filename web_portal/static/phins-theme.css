@@ -115,3 +115,258 @@
 ::selection {
   background: rgba(227, 191, 111, 0.35);
 }
+
+/* ==========================================================================
+   AI assistant chrome — complementary navy/gold
+   --------------------------------------------------------------------------
+   The floating voice quick-actions pill and panel are injected at runtime by
+   ui-clarity.js with a purple gradient. On themed pages, restyle them to the
+   deep-navy glass + gold accent language (complementary to the spectrum
+   tiles). !important is required to beat the runtime-injected stylesheet.
+   ========================================================================== */
+
+#phins-vqa-bar #phins-vqa-toggle {
+  background: rgba(9, 17, 38, 0.95) !important;
+  border: 1px solid rgba(227, 191, 111, 0.65) !important;
+  color: var(--phins-gold) !important;
+  box-shadow: 0 10px 28px rgba(2, 8, 23, 0.4) !important;
+}
+#phins-vqa-panel {
+  background:
+    radial-gradient(520px 180px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%),
+    radial-gradient(420px 160px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%),
+    rgba(9, 17, 38, 0.97) !important;
+  border: 1px solid var(--phins-line) !important;
+  box-shadow: 0 14px 36px rgba(2, 8, 23, 0.45) !important;
+}
+#phins-vqa-panel .phins-vqa-ask {
+  background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%) !important;
+  color: #071022 !important;
+}
+
+/* ==========================================================================
+   Overview spectrum tiles
+   --------------------------------------------------------------------------
+   Opt-in layer for the dashboard "overview" area (admin.html and
+   dashboard.html). Applies the landing-page design language to the stat
+   tiles and hero action cards: deep-navy glass surfaces, a spectrum of
+   accent hues across the row, Space Grotesk numerals, Inter labels, no
+   emoji icons, compact spacing.
+
+   Enable by adding .phins-spectrum-stats to a .dashboard-stats grid and
+   .phins-spectrum-actions to a .dashboard-actions grid.
+   ========================================================================== */
+
+/* --- Spectrum hue ramp (cycles across tiles, left to right) --- */
+.phins-spectrum-stats > *:nth-child(12n + 1),
+.phins-spectrum-actions > *:nth-child(12n + 1) { --tile-accent: #4fd8ff; }
+.phins-spectrum-stats > *:nth-child(12n + 2),
+.phins-spectrum-actions > *:nth-child(12n + 2) { --tile-accent: #64b5ff; }
+.phins-spectrum-stats > *:nth-child(12n + 3),
+.phins-spectrum-actions > *:nth-child(12n + 3) { --tile-accent: #7fb2ff; }
+.phins-spectrum-stats > *:nth-child(12n + 4),
+.phins-spectrum-actions > *:nth-child(12n + 4) { --tile-accent: #9d8cff; }
+.phins-spectrum-stats > *:nth-child(12n + 5),
+.phins-spectrum-actions > *:nth-child(12n + 5) { --tile-accent: #c58cf2; }
+.phins-spectrum-stats > *:nth-child(12n + 6),
+.phins-spectrum-actions > *:nth-child(12n + 6) { --tile-accent: #f18fc1; }
+.phins-spectrum-stats > *:nth-child(12n + 7),
+.phins-spectrum-actions > *:nth-child(12n + 7) { --tile-accent: #ff9e8a; }
+.phins-spectrum-stats > *:nth-child(12n + 8),
+.phins-spectrum-actions > *:nth-child(12n + 8) { --tile-accent: #ffbe76; }
+.phins-spectrum-stats > *:nth-child(12n + 9),
+.phins-spectrum-actions > *:nth-child(12n + 9) { --tile-accent: #e3bf6f; }
+.phins-spectrum-stats > *:nth-child(12n + 10),
+.phins-spectrum-actions > *:nth-child(12n + 10) { --tile-accent: #b9d977; }
+.phins-spectrum-stats > *:nth-child(12n + 11),
+.phins-spectrum-actions > *:nth-child(12n + 11) { --tile-accent: #6fe0b8; }
+.phins-spectrum-stats > *:nth-child(12n + 12),
+.phins-spectrum-actions > *:nth-child(12n + 12) { --tile-accent: #58d6de; }
+
+/* --- Stat tiles --- */
+.dashboard-stats.phins-spectrum-stats {
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)) !important;
+  gap: 10px !important;
+  margin-bottom: 18px !important;
+}
+
+/* 12-cell variant (admin overview: 11 tiles + one double-width tile) so the
+   grid always resolves to full, proportionally aligned rows. */
+.dashboard-stats.phins-spectrum-stats.phins-stats-grid-12 {
+  grid-template-columns: repeat(6, 1fr) !important;
+}
+.phins-stats-grid-12 .phins-stat-wide {
+  grid-column: span 2;
+}
+@media screen and (max-width: 1180px) {
+  .dashboard-stats.phins-spectrum-stats.phins-stats-grid-12 {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+  .phins-stats-grid-12 .phins-stat-wide {
+    grid-column: span 2;
+  }
+}
+@media screen and (max-width: 768px) {
+  .dashboard-stats.phins-spectrum-stats.phins-stats-grid-12 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .phins-stats-grid-12 .phins-stat-wide {
+    grid-column: span 2;
+  }
+}
+.phins-spectrum-stats .stat-box {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  background:
+    radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+    rgba(7, 15, 34, 0.96) !important;
+  border: 1px solid var(--phins-line) !important;
+  border-left-width: 1px !important;
+  border-left-color: var(--phins-line) !important;
+  border-radius: 12px !important;
+  padding: 12px 14px 11px !important;
+  text-align: left !important;
+  color: var(--phins-ink) !important;
+  box-shadow: 0 4px 18px rgba(2, 8, 23, 0.28) !important;
+  text-decoration: none !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+}
+.phins-spectrum-stats .stat-box::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--tile-accent, #7fb2ff) 0%, transparent 88%);
+  opacity: 0.9;
+}
+.phins-spectrum-stats .stat-box:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(127, 178, 255, 0.4) !important;
+  box-shadow: 0 10px 26px rgba(2, 8, 23, 0.42) !important;
+}
+.phins-spectrum-stats .stat-icon {
+  display: none !important;
+}
+.phins-spectrum-stats .stat-value {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+  font-size: 1.42rem !important;
+  font-weight: 600 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0 !important;
+  color: #ffffff !important;
+  margin: 0 0 3px 0 !important;
+}
+.phins-spectrum-stats .stat-label {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.64rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
+  color: rgba(234, 241, 255, 0.6) !important;
+  margin: 0 !important;
+}
+.phins-spectrum-stats .stat-change {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.7rem !important;
+  color: var(--tile-accent, #7fb2ff) !important;
+  margin-top: 5px !important;
+}
+
+/* --- Hero action cards (customer dashboard) --- */
+/* Fixed 3-column grid: the six cards always resolve to two full rows. */
+.dashboard-actions.phins-spectrum-actions {
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 12px !important;
+  margin-bottom: 22px !important;
+}
+@media screen and (max-width: 1024px) and (min-width: 769px) {
+  .dashboard-actions.phins-spectrum-actions {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+.phins-spectrum-actions .action-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+    rgba(7, 15, 34, 0.96) !important;
+  border: 1px solid var(--phins-line) !important;
+  border-radius: 14px !important;
+  padding: 15px 18px 14px !important;
+  text-align: left !important;
+  color: var(--phins-ink) !important;
+  box-shadow: 0 4px 18px rgba(2, 8, 23, 0.28) !important;
+  text-decoration: none !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+}
+.phins-spectrum-actions .action-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--tile-accent, #7fb2ff) 0%, transparent 88%);
+  opacity: 0.9;
+}
+.phins-spectrum-actions .action-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(127, 178, 255, 0.4) !important;
+  box-shadow: 0 10px 26px rgba(2, 8, 23, 0.42) !important;
+}
+.phins-spectrum-actions .action-card .stat-icon {
+  display: none !important;
+}
+.phins-spectrum-actions .action-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.phins-spectrum-actions .action-card-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(234, 241, 255, 0.6);
+}
+.phins-spectrum-actions .action-card-badge {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--tile-accent, #7fb2ff);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.phins-spectrum-actions .action-card-value {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #ffffff;
+  margin: 0 0 4px 0;
+}
+.phins-spectrum-actions .action-card-sub {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.74rem;
+  color: rgba(234, 241, 255, 0.55);
+}
+
+@media screen and (max-width: 768px) {
+  .dashboard-stats.phins-spectrum-stats {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .dashboard-actions.phins-spectrum-actions {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+}
