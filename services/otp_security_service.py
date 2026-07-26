@@ -317,14 +317,17 @@ class SimpleCaptchaGenerator:
         "Solve: {} {} {} = ?",
     ]
     
+    # Hebrew synonyms are accepted alongside English so the localized UI
+    # (see web_portal/static/locales/he.json) can present these questions
+    # in Hebrew without changing the stored expected answer (answers[0]).
     TEXT_QUESTIONS = [
-        ("What color is the sky on a clear day?", ["blue", "azure"]),
-        ("What comes after 'one, two, ...'?", ["three", "3"]),
+        ("What color is the sky on a clear day?", ["blue", "azure", "כחול", "תכלת"]),
+        ("What comes after 'one, two, ...'?", ["three", "3", "שלוש"]),
         ("Enter the current year:", [str(datetime.now().year)]),
-        ("How many days are in a week?", ["seven", "7"]),
-        ("What is the capital of France?", ["paris"]),
-        ("How many months are in a year?", ["twelve", "12"]),
-        ("What planet do we live on?", ["earth"]),
+        ("How many days are in a week?", ["seven", "7", "שבעה", "שבע"]),
+        ("What is the capital of France?", ["paris", "פריז", "פריס"]),
+        ("How many months are in a year?", ["twelve", "12", "שנים עשר", "שתים עשרה"]),
+        ("What planet do we live on?", ["earth", "כדור הארץ", "הארץ"]),
     ]
     
     @classmethod
@@ -387,7 +390,9 @@ class SimpleCaptchaGenerator:
         expected_clean = expected.lower().strip()
         provided_clean = provided.lower().strip()
         
-        if hmac.compare_digest(expected_clean, provided_clean):
+        # Compare as UTF-8 bytes: compare_digest rejects non-ASCII str inputs
+        # (Hebrew answers are accepted for localized text questions).
+        if hmac.compare_digest(expected_clean.encode('utf-8'), provided_clean.encode('utf-8')):
             return True
         
         for _question, answers in cls.TEXT_QUESTIONS:

@@ -55,6 +55,16 @@
       var core = dict.strings[m[2]];
       if (core) return (m[1] || '') + core + (m[3] || '');
     }
+    // Number-tolerant patterns: "What is 12 + 7?" matches "What is # + #?"
+    if (dict.patterns && /\d/.test(text)) {
+      var normalized = text.replace(/\d+(?:\.\d+)?/g, '#');
+      var tmpl = dict.patterns[normalized];
+      if (tmpl) {
+        var nums = text.match(/\d+(?:\.\d+)?/g) || [];
+        var i = 0;
+        return tmpl.replace(/#/g, function () { return i < nums.length ? nums[i++] : '#'; });
+      }
+    }
     return null;
   }
 
