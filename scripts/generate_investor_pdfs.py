@@ -93,6 +93,10 @@ DOCUMENTS = [
     ('investor-docs/israel-regulatory-application-he.md',
      'investor-docs/israel-regulatory-application-he.pdf',
      'פינס — תזכיר בקשה רגולטורית (ישראל) · ביטוח חיים עם מנגנון נכות לכל החיים (1:4 · 1:1 מגיל 65)'),
+    ('investor-docs/regulatory-meeting-27jul-brief.md',
+     'investor-docs/regulatory-meeting-27jul-brief.pdf',
+     'PHINS — Regulatory Meeting Brief (27 July 2026) · '
+     'Herzog Fox Neeman & Co. Advocates'),
 ]
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
