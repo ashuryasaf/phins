@@ -11,6 +11,8 @@
   <link rel="apple-touch-icon" href="/phins-logo.svg" />
   <title>PHINS Portal — My Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/i18n-rtl.css">
+  <script src="/i18n.js"></script>
   <style>
     /* ========== SPLASH SCREEN ========== */
     #splash-screen {
@@ -485,7 +487,6 @@
         <a href="/dashboard.html" class="active">Dashboard</a>
         <a href="/dashboard.html#policies">Policies</a>
         <a href="/savings-portfolio.html">📈 Investments</a>
-        <a href="/investment-ai.html">🧠 Investment AI</a>
         <a href="/dashboard.html#billing-settings">💳 Billing</a>
         <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
         <a href="/dashboard.html#claims">Claims</a>
@@ -494,12 +495,9 @@
         <a href="/unified-workbench.html">⚡ Unified Workbench</a>
         <a href="/customer-ai-report.html">🤖 AI Report</a>
         <div class="nav-divider"></div>
-        <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
-          <option value="en">🌐 EN</option>
-          <option value="es">🌐 ES</option>
-          <option value="fr">🌐 FR</option>
-          <option value="de">🌐 DE</option>
-          <option value="he">🌐 עב</option>
+        <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)" data-no-i18n>
+          <option value="en">🌐 English</option>
+          <option value="he">🌐 עברית</option>
         </select>
         <a href="/" class="btn-logout">Logout</a>
       </nav>
@@ -8881,17 +8879,17 @@
       });
     }
 
-    // Language change functionality
+    // Language change functionality — delegates to the PHINS i18n engine,
+    // which persists the preference and reloads so the whole page re-renders
+    // in the selected language (including RTL layout for Hebrew).
     function changeLanguage(lang) {
-      safeStorageSet(localStore, 'phins_language', lang);
       recordCustomerAction('settings_change', 0, `Language changed to ${lang}`);
-      const notification = document.createElement('div');
-      notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
-      const langSelector = document.getElementById('language-selector');
-      const langLabel = langSelector && langSelector.selectedOptions[0] ? langSelector.selectedOptions[0].text : lang;
-      notification.textContent = 'Language changed to ' + langLabel;
-      document.body.appendChild(notification);
-      setTimeout(() => notification.remove(), 3000);
+      if (window.PhinsI18n) {
+        window.PhinsI18n.setLanguage(lang);
+      } else {
+        safeStorageSet(localStore, 'phins_language', lang);
+        window.location.reload();
+      }
     }
     
     // Load saved language

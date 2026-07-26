@@ -561,7 +561,7 @@ class TradingPlatformService:
     def get_asset(self, symbol: str) -> Dict[str, Any]:
         if not self.is_connected:
             try:
-                from services.investment_ai_tool_service import STOCK_DATABASE
+                from services.stock_data_service import STOCK_DATABASE
                 s = STOCK_DATABASE.get(symbol.upper())
                 if s:
                     return {"symbol": symbol.upper(), "name": s.get("name"), "class": "us_equity", "tradable": True, "fractionable": True, "source": "static"}
@@ -1564,8 +1564,8 @@ class TradingPlatformService:
         # Try to get news from investment AI if available
         news_data = {}
         try:
-            from services.investment_ai_tool_service import _get_live_news
-            news_raw = _get_live_news(sym)
+            from services.stock_data_service import get_live_news
+            news_raw = get_live_news(sym)
             if news_raw:
                 articles = (news_raw or {}).get("articles", [])[:3]
                 scores_list = [a.get("overall_sentiment_score", 0) for a in articles if a.get("overall_sentiment_score")]
@@ -1951,7 +1951,7 @@ class TradingPlatformService:
             return cached
         if not self.is_connected:
             try:
-                from services.investment_ai_tool_service import STOCK_DATABASE
+                from services.stock_data_service import STOCK_DATABASE
                 return [{"symbol": k, "name": v.get("name", k), "class": "us_equity", "tradable": True, "fractionable": True} for k, v in STOCK_DATABASE.items()]
             except Exception:
                 return []
@@ -2123,9 +2123,9 @@ class TradingPlatformService:
 
         # Run AI signals for each position
         try:
-            from services.investment_ai_tool_service import _get_live_technical_profile, STOCK_DATABASE
+            from services.stock_data_service import get_live_technical_profile, STOCK_DATABASE
         except ImportError:
-            _get_live_technical_profile = None
+            get_live_technical_profile = None
             STOCK_DATABASE = {}
 
         for p in positions:
@@ -2134,8 +2134,8 @@ class TradingPlatformService:
             weight = (_sf(p.get("market_value")) or 0) / max(1, total_value) * 100
 
             profile = None
-            if _get_live_technical_profile:
-                profile = _get_live_technical_profile(sym)
+            if get_live_technical_profile:
+                profile = get_live_technical_profile(sym)
 
             signals = (profile or {}).get("signals", {})
             rec = signals.get("recommendation", "HOLD")

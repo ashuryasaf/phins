@@ -10,16 +10,17 @@ import web_portal.server as server
 
 def test_full_catalog_for_admin_and_none():
     full = cap.get_capabilities()
-    assert len(full) == 7
+    assert len(full) == 6
     assert cap.get_capabilities('admin') == full
     ids = {c['id'] for c in full}
     assert {'claims_bot', 'ai_trading_engine', 'bi_analytics'} <= ids
+    assert 'investment_ai' not in ids      # feature removed
 
 
 def test_role_filtering_is_inclusive():
     customer_caps = cap.get_capabilities('customer')
     ids = {c['id'] for c in customer_caps}
-    assert 'investment_ai' in ids          # open to customers
+    assert 'ai_trading_engine' in ids      # open to customers
     assert 'video_agents' not in ids       # admin/media only
 
 

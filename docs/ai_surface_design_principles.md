@@ -2,7 +2,7 @@
 
 This note documents the deliberate design of the PHINS AI surface
 (`claims_bot_service`, `assessment_ai_service`, `ai_risk_reports_service`,
-`investment_ai_tool_service`, `ai_trading_engine`, `video_agents_service`,
+`ai_trading_engine`, `video_agents_service`,
 `bi_analytics_service`, `ai_decision_log`, `ai_model_registry`) and the
 data-integrity guarantees added by the agent-native hardening work.
 
@@ -98,14 +98,15 @@ supplier-analytics,insights,revenue-forecast}`. Previously these handlers were
 implemented but unrouted, leaving two divergent BI paths; the service now has a
 single canonical aggregation route.
 
-## 6. Investment AI primitives vs workflows
+## 6. Stock data helpers
 
-`investment_ai_tool_service.module_kind()` / `list_primitive_tools()` classify
-dispatcher modules so agents can compose atomic read primitives (`live_quote`,
-`live_history`, `news_sentiment`, `market_movers`) rather than only calling the
-broad `dispatch_investment_ai` workflow router. This is descriptive only;
-dispatch behavior is unchanged.
+The Investment AI tool (`investment_ai_tool_service`) was removed in July 2026.
+Its shared live stock data helpers (Alpha Vantage quotes/technicals/news and
+the live-resolving `STOCK_DATABASE` fallback used by the trading platform)
+now live in `services/stock_data_service.py`. Terminal API authentication
+moved to `services/terminal_access_service.py` (`TERMINAL_ACCESS_KEY`, with
+the legacy `INVESTMENT_AI_ACCESS_KEY` environment variable still honored).
 
 ---
 
-_Last updated: June 22, 2026 — agent-native data-integrity hardening._
+_Last updated: July 25, 2026 — Investment AI removal; market data extraction._

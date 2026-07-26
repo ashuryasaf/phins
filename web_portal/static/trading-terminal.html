@@ -129,7 +129,6 @@
     <div style="display:flex;align-items:center;gap:20px;">
         <span class="brand">PHINS TERMINAL</span>
         <div class="nav-links">
-            <a href="/investment-ai.html">AI Tool</a>
             <a href="/algo-trading.html">Algo</a>
             <a href="/savings-portfolio.html">Portfolio</a>
             <a href="/dashboard.html">Dashboard</a>
@@ -310,7 +309,7 @@
 </div>
 
 <script>
-let apiKey = localStorage.getItem('investmentAiKey') || '';
+let apiKey = localStorage.getItem('terminalAccessKey') || localStorage.getItem('investmentAiKey') || '';
 let chartTF = '1M';
 let chartSym = 'SPY';
 let refreshInterval = null;
@@ -469,14 +468,14 @@ document.getElementById('orderType').addEventListener('change', function() {
 });
 
 function promptKey() {
-    const k = prompt('Enter Investment AI Access Key:', apiKey);
-    if (k) { apiKey = k; localStorage.setItem('investmentAiKey', k); initTerminal(); }
+    const k = prompt('Enter Terminal Access Key:', apiKey);
+    if (k) { apiKey = k; localStorage.setItem('terminalAccessKey', k); initTerminal(); }
 }
 
 async function apiFetch(path) {
     try {
         const res = await fetch(path + (path.includes('?') ? '&' : '?') + 'api_key=' + encodeURIComponent(apiKey), {
-            headers: { 'X-Investment-AI-Key': apiKey }
+            headers: { 'X-Terminal-Key': apiKey }
         });
         if (!res.ok && res.status === 401) {
             showToast('Access key expired or invalid. Click KEY to re-enter.', 'error');
@@ -493,7 +492,7 @@ async function apiPost(path, body) {
     try {
         const res = await fetch(path, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Investment-AI-Key': apiKey },
+            headers: { 'Content-Type': 'application/json', 'X-Terminal-Key': apiKey },
             body: JSON.stringify({ ...body, api_key: apiKey }),
         });
         if (!res.ok && res.status === 401) {

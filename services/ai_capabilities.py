@@ -5,7 +5,7 @@ A single, structured description of the AI features PHINS exposes -- what each
 one does, where to reach it, who may use it, and example prompts/actions.
 
 This is the discovery surface the agent-native audit found missing: previously
-the seven AI features were only discoverable by hunting through individual
+the AI features were only discoverable by hunting through individual
 dashboards. Exposing one catalog gives both humans (UI "What can the AI do?"
 panels) and programmatic agents the same machine-readable list, which is the
 foundation for action parity.
@@ -63,22 +63,6 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         'roles': ['admin', 'underwriter', 'analyst', 'actuary'],
         'sample_prompts': [
             'Analyze this policy export and generate a risk report',
-        ],
-        'deterministic': True,
-    },
-    {
-        'id': 'investment_ai',
-        'name': 'Investment AI Tools',
-        'description': (
-            'Market trend analysis, portfolio diversification, screeners, '
-            'technical analysis, and strategy design over live market data.'
-        ),
-        'entry_url': '/investment-ai.html',
-        'api': {'method': 'POST', 'path': '/api/investment-ai/analyze'},
-        'roles': ['admin', 'customer'],
-        'sample_prompts': [
-            'Run a technical analysis on AAPL',
-            'Screen for momentum stocks',
         ],
         'deterministic': True,
     },
