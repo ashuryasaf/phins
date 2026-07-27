@@ -18,7 +18,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (131 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (134 files) and root-level `test_*.py` (11 files)
 
 Runtime defaults are important:
 
@@ -77,6 +77,7 @@ Preferred file-by-task:
 |  |- api_assessment_center.py
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
+|                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- services/                            # 84 service modules
 |- database/
 |  |- config.py
@@ -104,7 +105,7 @@ Preferred file-by-task:
 |  `- runner.py
 |- scripts/                             # operational utilities
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/db-init)
-|- tests/                               # 129 test files
+|- tests/                               # 134 test files
 |- docs/
 |  |- platform_data_architecture.md
 |  |- health_marketplace_architecture.md
@@ -286,7 +287,7 @@ Environment variables commonly used:
   `POPULATE_DEMO_DATA`
 - **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`, `TEST_PORT`
 - **Ledger:** `ENABLE_LEDGER_PERSISTENCE`, `LEDGER_PERSISTENCE_VERBOSE`,
- `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`
+  `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
   `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`
 - **Auto-pay:** `PHINS_DEFAULT_AUTO_PAY_CARD_NUMBER`,
@@ -342,7 +343,7 @@ Important test harness facts:
 - Tests reset in-memory portal state between cases (clears `POLICIES`,
   `CLAIMS`, `CUSTOMERS`, `SESSIONS`, `BILLING`, etc.)
 - Options wheel service and document processing service are also reset per test
-- 131 test files under `tests/`, 11 root-level `test_*.py` files
+- 134 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -402,4 +403,4 @@ If you update this file again:
 
 ---
 
-Last updated: July 20, 2026
+Last updated: July 27, 2026
