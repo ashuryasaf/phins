@@ -22,6 +22,8 @@
   <title>PHINS Actuarial Dashboard - Central Pricing & Risk Control</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
     :root {
       --primary: #1a365d;
       --secondary: #2b6cb0;
@@ -34,26 +36,37 @@
       --text: #2d3748;
       --text-light: #718096;
       --border: #e2e8f0;
+      /* PHINS brand theme tokens (landing/admin design language) */
+      --phins-navy: #060d1f;
+      --phins-ink: #eaf1ff;
+      --phins-gold: #e3bf6f;
+      --phins-gold-strong: #f7e2a0;
+      --phins-line: rgba(127, 178, 255, 0.16);
     }
     
     * { box-sizing: border-box; margin: 0; padding: 0; }
     
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
       color: var(--text);
       min-height: 100vh;
     }
     
-    /* Header - Fixed at top */
+    /* Header - Fixed at top (deep-navy glass, matches platform chrome) */
     .header {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      background:
+        radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-bottom: 1px solid var(--phins-line);
       color: white;
       padding: 12px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
       position: fixed;
       top: 0;
       left: 0;
@@ -63,18 +76,40 @@
     }
     
     .header h1 {
-      font-size: 1.3rem;
+      font-size: 1.15rem;
       display: flex;
       align-items: center;
       gap: 10px;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header-emblem {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 14px rgba(79, 216, 255, 0.3));
     }
     
     .header-badge {
       background: rgba(255,255,255,0.2);
       padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 0.7rem;
+      border-radius: 999px;
+      font-size: 0.66rem;
       font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: 0.1em;
+    }
+    /* Gold outline variant only inside the fixed navy header */
+    .header .header-badge {
+      background: transparent;
+      border: 1px solid rgba(227, 191, 111, 0.65);
+      color: var(--phins-gold);
+      -webkit-text-fill-color: var(--phins-gold);
     }
     
     .user-info {
@@ -130,12 +165,14 @@
       margin-top: 60px; /* Account for fixed header */
     }
     
-    /* Sidebar - Fixed on left */
+    /* Sidebar - Fixed on left (deep-navy glass with gold accents) */
     .sidebar {
       width: 220px;
-      background: var(--card-bg);
-      border-right: 1px solid var(--border);
-      padding: 16px 0;
+      background:
+        radial-gradient(360px 260px at 100% 0%, rgba(21, 68, 155, 0.35), transparent 65%),
+        rgba(9, 17, 38, 0.97);
+      border-right: 1px solid var(--phins-line);
+      padding: 14px 0;
       position: fixed;
       top: 60px; /* Below fixed header */
       left: 0;
@@ -145,40 +182,43 @@
     }
     
     .nav-section {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
     
     .nav-section-title {
-      padding: 10px 20px;
-      font-size: 0.75rem;
+      padding: 8px 18px 6px;
+      font-size: 0.64rem;
       text-transform: uppercase;
-      color: var(--text-light);
-      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--phins-gold);
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
     }
     
     .nav-item {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 16px;
+      margin: 2px 10px;
+      padding: 8px 12px;
       cursor: pointer;
-      transition: all 0.2s;
-      border-left: 2px solid transparent;
-      font-size: 0.85rem;
+      transition: all 0.18s ease;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      color: rgba(234, 241, 255, 0.82);
     }
     
     .nav-item:hover {
-      background: var(--bg);
+      background: rgba(127, 178, 255, 0.14);
+      color: #ffffff;
     }
     
     .nav-item.active {
-      background: rgba(66, 153, 225, 0.1);
-      border-left-color: var(--accent);
-      color: var(--secondary);
+      background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+      color: #071022;
       font-weight: 600;
+      box-shadow: 0 4px 14px rgba(227, 191, 111, 0.3);
     }
-    
-    .nav-icon { font-size: 1rem; }
     
     /* Content Area */
     .content {
@@ -203,54 +243,90 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 600;
+      color: #12203f;
+      padding-left: 12px;
+      border-left: 3px solid var(--phins-gold);
     }
     
     /* Cards */
     .card {
       background: var(--card-bg);
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      border: 1px solid rgba(18, 32, 63, 0.06);
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(2, 8, 23, 0.05);
       padding: 16px;
       margin-bottom: 16px;
     }
     
     .card-title {
-      font-size: 1rem;
+      font-size: 0.98rem;
       font-weight: 600;
       margin-bottom: 16px;
       display: flex;
       align-items: center;
       gap: 8px;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      color: #12203f;
     }
     
-    /* Stats Grid */
+    /* Stats Grid — deep-navy spectrum tiles (platform design language) */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
     }
     
     .stat-card {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-      color: white;
-      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(130% 110% at 100% 0%, rgba(21, 68, 155, 0.38), transparent 62%),
+        rgba(7, 15, 34, 0.96);
+      border: 1px solid var(--phins-line);
+      color: var(--phins-ink);
+      padding: 12px 14px 11px;
       border-radius: 12px;
+      box-shadow: 0 4px 18px rgba(2, 8, 23, 0.28);
+      --tile-accent: #7fb2ff;
+    }
+    .stat-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--tile-accent) 0%, transparent 88%);
+      opacity: 0.9;
     }
     
-    .stat-card.success { background: linear-gradient(135deg, #276749 0%, #38a169 100%); }
-    .stat-card.warning { background: linear-gradient(135deg, #975a16 0%, #d69e2e 100%); }
-    .stat-card.danger { background: linear-gradient(135deg, #c53030 0%, #e53e3e 100%); }
+    /* Spectrum accent cycling for plain tiles; zero-specificity :where() so the
+       semantic variants (.success/.warning/.danger, sandbox) always win. */
+    :where(.stats-grid .stat-card:nth-child(4n + 2)) { --tile-accent: #9d8cff; }
+    :where(.stats-grid .stat-card:nth-child(4n + 3)) { --tile-accent: #4fd8ff; }
+    :where(.stats-grid .stat-card:nth-child(4n + 4)) { --tile-accent: #e3bf6f; }
+    .stat-card.success { --tile-accent: #6fe0b8; }
+    .stat-card.warning { --tile-accent: #ffbe76; }
+    .stat-card.danger { --tile-accent: #ff9e8a; }
     
     .stat-label {
-      font-size: 0.85rem;
-      opacity: 0.9;
+      font-size: 0.64rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(234, 241, 255, 0.6);
       margin-bottom: 4px;
     }
     
     .stat-value {
-      font-size: 1.8rem;
-      font-weight: 700;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.42rem;
+      font-weight: 600;
+      line-height: 1.15;
+      color: #ffffff;
     }
     
     /* Tables */
@@ -980,12 +1056,11 @@
     .sandbox-tab-panel { display: none; }
     .sandbox-tab-panel.active { display: block; }
 
-    .sandbox-stat-card {
-      background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-    }
-    .sandbox-stat-card.success { background: linear-gradient(135deg, #276749 0%, #38a169 100%); }
-    .sandbox-stat-card.warning { background: linear-gradient(135deg, #975a16 0%, #d69e2e 100%); }
-    .sandbox-stat-card.danger  { background: linear-gradient(135deg, #c53030 0%, #e53e3e 100%); }
+    /* Sandbox tiles reuse the spectrum stat-card surface; only the accent differs. */
+    .sandbox-stat-card { --tile-accent: #58d6de; }
+    .sandbox-stat-card.success { --tile-accent: #6fe0b8; }
+    .sandbox-stat-card.warning { --tile-accent: #ffbe76; }
+    .sandbox-stat-card.danger  { --tile-accent: #ff9e8a; }
 
     .sandbox-event-row {
       display: grid;
@@ -1078,6 +1153,28 @@
       font-size: 0.75rem;
       font-weight: 700;
     }
+
+    /* Floating voice quick-actions pill (injected by ui-clarity.js) — restyle
+       from the default purple to the navy/gold chrome used on this page.
+       !important is required to beat the runtime-injected stylesheet. */
+    #phins-vqa-bar #phins-vqa-toggle {
+      background: rgba(9, 17, 38, 0.95) !important;
+      border: 1px solid rgba(227, 191, 111, 0.65) !important;
+      color: var(--phins-gold) !important;
+      box-shadow: 0 10px 28px rgba(2, 8, 23, 0.4) !important;
+    }
+    #phins-vqa-panel {
+      background:
+        radial-gradient(520px 180px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%),
+        radial-gradient(420px 160px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(9, 17, 38, 0.97) !important;
+      border: 1px solid var(--phins-line) !important;
+      box-shadow: 0 14px 36px rgba(2, 8, 23, 0.45) !important;
+    }
+    #phins-vqa-panel .phins-vqa-ask {
+      background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%) !important;
+      color: #071022 !important;
+    }
   </style>
 </head>
 <body>
@@ -1085,14 +1182,15 @@
     <!-- Header -->
     <header class="header">
       <h1>
-        📊 PHINS Actuarial Dashboard
+        <img src="/phins-logo.svg" alt="PHINS emblem" class="header-emblem">
+        PHINS Actuarial Dashboard
         <span class="header-badge">CENTRAL PRICING CONTROL</span>
       </h1>
       <div class="user-info">
         <span id="build-stamp" style="opacity:0.65;font-size:0.7rem;">Build: 2026-05-15 (annuity-reserves-forecast)</span>
         <span id="current-version">Tables: Loading...</span>
         <span id="user-display">User: Loading...</span>
-        <button class="btn btn-outline" onclick="logout()" style="color:white;border-color:white;">Logout</button>
+        <button class="btn btn-outline" onclick="logout()" style="color:var(--phins-gold);border-color:rgba(227,191,111,0.65);border-radius:999px;">Logout</button>
       </div>
     </header>
     
@@ -1102,7 +1200,6 @@
         <div class="nav-section">
           <div class="nav-section-title">Dashboard</div>
           <div class="nav-item active" onclick="showSection('overview')">
-            <span class="nav-icon">📈</span>
             <span>Overview</span>
           </div>
         </div>
@@ -1110,19 +1207,15 @@
         <div class="nav-section">
           <div class="nav-section-title">Rate Tables</div>
           <div class="nav-item" onclick="showSection('tables-registry')">
-            <span class="nav-icon">📚</span>
             <span>Life &amp; Disability Tables</span>
           </div>
           <div class="nav-item" onclick="showSection('mortality')">
-            <span class="nav-icon">💀</span>
             <span>Mortality Rates</span>
           </div>
           <div class="nav-item" onclick="showSection('disability')">
-            <span class="nav-icon">♿</span>
             <span>Disability Rates</span>
           </div>
           <div class="nav-item" onclick="showSection('adl')">
-            <span class="nav-icon">🎚️</span>
             <span>ADL Multipliers</span>
           </div>
         </div>
@@ -1130,11 +1223,9 @@
         <div class="nav-section">
           <div class="nav-section-title">Configuration</div>
           <div class="nav-item" onclick="showSection('underwriting')">
-            <span class="nav-icon">📋</span>
             <span>Underwriting Rules</span>
           </div>
           <div class="nav-item" onclick="showSection('pricing')">
-            <span class="nav-icon">💰</span>
             <span>Pricing Parameters</span>
           </div>
         </div>
@@ -1142,27 +1233,21 @@
         <div class="nav-section">
           <div class="nav-section-title">Simulation</div>
           <div class="nav-item" onclick="showSection('simulator')">
-            <span class="nav-icon">🎲</span>
             <span>Portfolio Simulator</span>
           </div>
           <div class="nav-item" onclick="showSection('reserves')">
-            <span class="nav-icon">🏦</span>
             <span>Reserves &amp; IFRS 17</span>
           </div>
           <div class="nav-item" onclick="showSection('annuity-reserves')">
-            <span class="nav-icon">📊</span>
             <span>Annuity Reserves</span>
           </div>
           <div class="nav-item" onclick="showSection('reinsurance')">
-            <span class="nav-icon">🛡️</span>
             <span>Reinsurance Hedge</span>
           </div>
           <div class="nav-item" onclick="showSection('automation')">
-            <span class="nav-icon">🤖</span>
             <span>Automation Metrics</span>
           </div>
           <div class="nav-item" onclick="showSection('sandbox')">
-            <span class="nav-icon">🧪</span>
             <span>Sandbox Testing</span>
           </div>
         </div>
@@ -1170,19 +1255,15 @@
         <div class="nav-section">
           <div class="nav-section-title">Research &amp; Audit</div>
           <div class="nav-item" onclick="showSection('valuation')">
-            <span class="nav-icon">💎</span>
             <span>Portfolio Valuation</span>
           </div>
           <div class="nav-item" onclick="showSection('risk-reference')">
-            <span class="nav-icon">📐</span>
             <span>Risk Reference</span>
           </div>
           <div class="nav-item" onclick="showSection('uploaded')">
-            <span class="nav-icon">📥</span>
             <span>Uploaded Tables</span>
           </div>
           <div class="nav-item" onclick="showSection('reports')">
-            <span class="nav-icon">📑</span>
             <span>Reports &amp; Exports</span>
           </div>
         </div>
@@ -1190,7 +1271,6 @@
         <div class="nav-section">
           <div class="nav-section-title">Regulatory</div>
           <div class="nav-item" onclick="showSection('annual-report')">
-            <span class="nav-icon">🏛️</span>
             <span>Annual Regulatory Report</span>
           </div>
         </div>
@@ -1198,7 +1278,6 @@
         <div class="nav-section">
           <div class="nav-section-title">Integrations</div>
           <div class="nav-item" onclick="showSection('integrations')">
-            <span class="nav-icon">🔗</span>
             <span>Wallets & Investments</span>
           </div>
         </div>
@@ -1206,11 +1285,9 @@
         <div class="nav-section">
           <div class="nav-section-title">Administration</div>
           <div class="nav-item" onclick="showSection('versions')">
-            <span class="nav-icon">📜</span>
             <span>Version History</span>
           </div>
           <div class="nav-item" onclick="showSection('audit')">
-            <span class="nav-icon">🔍</span>
             <span>Audit Log</span>
           </div>
         </div>
@@ -1218,7 +1295,6 @@
         <div class="nav-section">
           <div class="nav-section-title">Documentation</div>
           <div class="nav-item" onclick="window.location.href='/admin.html'">
-            <span class="nav-icon">🏠</span>
             <span>Back to Admin</span>
           </div>
         </div>
@@ -1236,7 +1312,7 @@
         
         <!-- Overview Section -->
         <section id="section-overview" class="section active">
-          <h2 class="section-title">📈 Actuarial Overview</h2>
+          <h2 class="section-title">Actuarial Overview</h2>
           
           <div class="stats-grid" id="overview-stats">
             <div class="stat-card">
@@ -1260,7 +1336,7 @@
           <!-- Life & Disability Tables Bar (compact, always visible on Overview) -->
           <div class="card" id="overview-tables-bar-card">
             <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-              <span>📚 Life &amp; Disability Tables Bar</span>
+              <span>Life &amp; Disability Tables Bar</span>
               <span style="font-size:0.8rem;font-weight:400;color:var(--text-light);" id="overview-tables-bar-summary">Loading…</span>
             </div>
             <p style="color:var(--text-light);margin-bottom:12px;font-size:0.9rem;">
@@ -1279,7 +1355,7 @@
           </div>
 
           <div class="card">
-            <div class="card-title">🏛️ Central Source of Truth</div>
+            <div class="card-title">Central Source of Truth</div>
             <p style="margin-bottom:16px;">This dashboard controls ALL pricing and risk calculations for the PHINS platform. Changes made here affect:</p>
             <ul style="margin-left:20px;line-height:2;">
               <li>✓ Quote Engine - Premium calculations</li>
@@ -1291,7 +1367,7 @@
           </div>
           
           <div class="card">
-            <div class="card-title">🔄 Quick Actions</div>
+            <div class="card-title">Quick Actions</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
               <button class="btn btn-primary" onclick="showSection('simulator')">🎲 Run Simulation</button>
               <button class="btn btn-success" onclick="showSection('reinsurance')">🛡️ Structure Hedge</button>
@@ -1302,7 +1378,7 @@
           </div>
 
           <div class="card">
-            <div class="card-title">🛡️ Reinsurance Balance Sheet Link</div>
+            <div class="card-title">Reinsurance Balance Sheet Link</div>
             <div class="stats-grid">
               <div class="stat-card">
                 <div class="stat-label">Bound Hedges</div>
@@ -1325,7 +1401,7 @@
 
         <!-- Life & Disability Tables Registry Section -->
         <section id="section-tables-registry" class="section">
-          <h2 class="section-title">📚 Life &amp; Disability Tables</h2>
+          <h2 class="section-title">Life &amp; Disability Tables</h2>
 
           <div class="alert alert-warning">
             This is the unified registry of every life-and-disability rate table the platform uses for premium and simulation —
@@ -1446,7 +1522,7 @@
 
         <!-- Mortality Rates Section -->
         <section id="section-mortality" class="section">
-          <h2 class="section-title">💀 Mortality Rates (per 1,000 lives)</h2>
+          <h2 class="section-title">Mortality Rates (per 1,000 lives)</h2>
           
           <div class="card">
             <div class="card-title">Rate Table</div>
@@ -1469,7 +1545,7 @@
         
         <!-- Disability Rates Section -->
         <section id="section-disability" class="section">
-          <h2 class="section-title">♿ Disability Incidence Rates (per 1,000 lives)</h2>
+          <h2 class="section-title">Disability Incidence Rates (per 1,000 lives)</h2>
           
           <div class="card">
             <div class="card-title">Rate Table</div>
@@ -1492,7 +1568,7 @@
         
         <!-- ADL Multipliers Section -->
         <section id="section-adl" class="section">
-          <h2 class="section-title">🎚️ ADL Multipliers</h2>
+          <h2 class="section-title">ADL Multipliers</h2>
           
           <div class="tabs">
             <div class="tab active" onclick="showADLTab('mortality')">Mortality Multipliers</div>
@@ -1553,7 +1629,7 @@
         
         <!-- Underwriting Rules Section -->
         <section id="section-underwriting" class="section">
-          <h2 class="section-title">📋 Underwriting Rules</h2>
+          <h2 class="section-title">Underwriting Rules</h2>
           
           <div class="alert alert-warning">
             ⚠️ Changes to underwriting rules affect NEW policies only. Existing policies retain their original terms.
@@ -1625,7 +1701,7 @@
         
         <!-- Pricing Parameters Section -->
         <section id="section-pricing" class="section">
-          <h2 class="section-title">💰 Pricing Parameters</h2>
+          <h2 class="section-title">Pricing Parameters</h2>
           
           <div class="card">
             <div class="card-title">Margin Settings</div>
@@ -1666,10 +1742,10 @@
         
         <!-- Portfolio Simulator Section -->
         <section id="section-simulator" class="section">
-          <h2 class="section-title">🎲 Portfolio Simulator</h2>
+          <h2 class="section-title">Portfolio Simulator</h2>
 
           <div class="card" id="contract-spec-card">
-            <div class="card-title">📜 Contract Being Priced</div>
+            <div class="card-title">Contract Being Priced</div>
             <div id="contract-spec-body">
               <p style="color:var(--text-light);">Loading contract specification…</p>
             </div>
@@ -1824,7 +1900,7 @@
 
         <!-- Reinsurance Section -->
         <section id="section-reinsurance" class="section">
-          <h2 class="section-title">🛡️ Reinsurance Hedge Design</h2>
+          <h2 class="section-title">Reinsurance Hedge Design</h2>
 
           <div class="alert alert-warning">
             Hedge pricing, premium uplift, and balance-sheet movements are derived from the last saved actuarial simulation so PHINS uses one source of truth end to end.
@@ -1937,7 +2013,7 @@
         
         <!-- Reserves & IFRS 17 Section -->
         <section id="section-reserves" class="section">
-          <h2 class="section-title">🏦 Reserves &amp; IFRS 17 Projection</h2>
+          <h2 class="section-title">Reserves &amp; IFRS 17 Projection</h2>
 
           <div class="alert alert-warning">
             Reserve, IBNR and IFRS 17 figures are derived from the saved actuarial simulation. The same inputs always produce the same yearly projection so internal and external auditors can reconcile every figure to source.
@@ -2025,7 +2101,7 @@
 
         <!-- Annuity Reserves Forecast Section -->
         <section id="section-annuity-reserves" class="section">
-          <h2 class="section-title">📊 Annuity Reserves Forecast</h2>
+          <h2 class="section-title">Annuity Reserves Forecast</h2>
 
           <div class="alert alert-warning">
             This tool sizes the reserve required to back the platform's
@@ -2216,7 +2292,7 @@
 
         <!-- Risk Reference Section -->
         <section id="section-risk-reference" class="section">
-          <h2 class="section-title">📐 Risk Reference (Locked Source)</h2>
+          <h2 class="section-title">Risk Reference (Locked Source)</h2>
           <div class="alert alert-warning">
             This panel reproduces the locked actuarial source block published on the PHINS public risk one-pager. Every figure is computed server-side from a registered risk-reference profile so the dashboard, audit reports, and the public document always agree.
           </div>
@@ -2272,7 +2348,7 @@
 
         <!-- Uploaded Tables Section -->
         <section id="section-uploaded" class="section">
-          <h2 class="section-title">📥 Uploaded Actuarial Tables</h2>
+          <h2 class="section-title">Uploaded Actuarial Tables</h2>
 
           <div class="alert alert-warning">
             Uploaded Excel/CSV/JSON tables (for example, the mortality table for Caucasian women or a permanent-disability cohort) are stored as new tables. Any uploaded table can be promoted into the live mortality or disability rate band so it is used by future simulations and reserve projections.
@@ -2380,7 +2456,7 @@
 
         <!-- Portfolio Valuation Section -->
         <section id="section-valuation" class="section">
-          <h2 class="section-title">💎 Portfolio Actuary Valuation</h2>
+          <h2 class="section-title">Portfolio Actuary Valuation</h2>
           <div class="alert alert-warning">
             Best Estimate vs Conservative valuation of (i) the Insurance Portfolio, (ii) the Risk Portfolio liability, and (iii) the Company (PHINS Technologies). Every knob below is adjustable; each priced policy and reserve projection feeds into the valuation deterministically. The integrity hash on the output ties the valuation back to the saved simulation snapshot for audit.
           </div>
@@ -2468,7 +2544,7 @@
 
         <!-- Reports & Exports Section -->
         <section id="section-reports" class="section">
-          <h2 class="section-title">📑 Reports &amp; Exports</h2>
+          <h2 class="section-title">Reports &amp; Exports</h2>
 
           <div class="alert alert-warning">
             Reports bundle the saved simulation, reserve projection, risk reference data, and data-integrity checks into a single Excel workbook or PDF that internal/external auditors can verify line-by-line.
@@ -2511,7 +2587,7 @@
 
         <!-- Automation Metrics Section -->
         <section id="section-automation" class="section">
-          <h2 class="section-title">🤖 Automation Quality Metrics</h2>
+          <h2 class="section-title">Automation Quality Metrics</h2>
           
           <div class="card">
             <div class="card-title">Calculate Automation Rates</div>
@@ -2531,7 +2607,7 @@
         
         <!-- Integrations Section -->
         <section id="section-integrations" class="section">
-          <h2 class="section-title">🔗 Integrations</h2>
+          <h2 class="section-title">Integrations</h2>
           
           <div class="stats-grid" id="integration-stats">
             <div class="stat-card">
@@ -2561,7 +2637,7 @@
         
         <!-- Versions Section -->
         <section id="section-versions" class="section">
-          <h2 class="section-title">📜 Version History</h2>
+          <h2 class="section-title">Version History</h2>
           
           <div class="card">
             <table class="data-table" id="versions-table">
@@ -2580,7 +2656,7 @@
         
         <!-- Actuarial Sandbox Testing Section -->
         <section id="section-sandbox" class="section">
-          <h2 class="section-title">🧪 Actuarial Sandbox Testing
+          <h2 class="section-title">Actuarial Sandbox Testing
             <span id="sandbox-pipeline-badge" class="sandbox-pushed-badge" style="display:none;">PUSHED TO PIPELINE</span>
           </h2>
 
@@ -2648,7 +2724,7 @@
 
           <!-- Insight tabs (Underwriting / Claims / Billing / Activity) -->
           <div class="card">
-            <div class="card-title">📊 Sandbox Insight Tabs</div>
+            <div class="card-title">Sandbox Insight Tabs</div>
             <div class="sandbox-tabs">
               <button class="sandbox-tab active" data-sandbox-tab="underwriting" onclick="showSandboxTab('underwriting')">📋 Underwriting</button>
               <button class="sandbox-tab" data-sandbox-tab="claims" onclick="showSandboxTab('claims')">💼 Claims</button>
@@ -2803,20 +2879,20 @@
 
               <!-- Adjustable charts (Chart.js) on top of the projection -->
               <div class="card" style="margin-bottom:14px;">
-                <div class="card-title">📈 5-Year Cash-Flow Forecast (monthly premiums, claims &amp; net)</div>
+                <div class="card-title">5-Year Cash-Flow Forecast (monthly premiums, claims &amp; net)</div>
                 <div style="position:relative;height:260px;">
                   <canvas id="sandbox-proj-chart-cashflow"></canvas>
                 </div>
               </div>
               <div class="form-row" style="gap:14px;flex-wrap:wrap;margin-bottom:14px;">
                 <div class="card" style="flex:1;min-width:320px;">
-                  <div class="card-title">💰 Accumulated Premiums vs Claims</div>
+                  <div class="card-title">Accumulated Premiums vs Claims</div>
                   <div style="position:relative;height:240px;">
                     <canvas id="sandbox-proj-chart-accum"></canvas>
                   </div>
                 </div>
                 <div class="card" style="flex:1;min-width:320px;">
-                  <div class="card-title">👥 Monthly Customer Capacity (compounding growth)</div>
+                  <div class="card-title">Monthly Customer Capacity (compounding growth)</div>
                   <div style="position:relative;height:240px;">
                     <canvas id="sandbox-proj-chart-capacity"></canvas>
                   </div>
@@ -2886,7 +2962,7 @@
 
         <!-- Annual Regulatory Report Section -->
         <section id="section-annual-report" class="section">
-          <h2 class="section-title">🏛️ Annual Regulatory Report
+          <h2 class="section-title">Annual Regulatory Report
             <span id="annual-report-source-badge" class="header-badge" style="background:rgba(43,108,176,0.12);color:var(--secondary);margin-left:8px;">
               Pipeline: not bound
             </span>
@@ -2902,7 +2978,7 @@
 
           <!-- ===================== 1. Pipeline data binding ===================== -->
           <div class="card">
-            <div class="card-title">📥 Pipeline Data Sources</div>
+            <div class="card-title">Pipeline Data Sources</div>
             <p style="color:var(--text-light);margin-bottom:10px;font-size:0.9rem;">
               The report binds to the most recent run of each <em>Simulation</em> bar. Run the relevant sections first to populate every block.
             </p>
@@ -2956,7 +3032,7 @@
 
           <!-- ===================== 2. Issuer profile ===================== -->
           <div class="card">
-            <div class="card-title">🏢 Issuer Profile (adjustable)</div>
+            <div class="card-title">Issuer Profile (adjustable)</div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Issuer Legal Name</label>
@@ -3025,7 +3101,7 @@
 
           <!-- ===================== 3. Standards selector ===================== -->
           <div class="card">
-            <div class="card-title">📚 Regulatory Standards to Include</div>
+            <div class="card-title">Regulatory Standards to Include</div>
             <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
               Tick every standards pack the issuer is required to file under. Sections of the report are generated, named and ordered to match the selected regulators.
             </p>
@@ -3056,7 +3132,7 @@
 
           <!-- ===================== 4. Capital structure — cap table ===================== -->
           <div class="card">
-            <div class="card-title">📊 Capital Structure — Cap Table (up to 5 named holders + public float)</div>
+            <div class="card-title">Capital Structure — Cap Table (up to 5 named holders + public float)</div>
             <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
               Each row defines a shareholder block. The <em>Public Float</em> row is reserved (always last). Percentages are validated to sum to <strong>100%</strong>;
               the report flags any deviation as a data-integrity error.
@@ -3089,7 +3165,7 @@
 
           <!-- ===================== 5. Debt schedule ===================== -->
           <div class="card">
-            <div class="card-title">💳 Debt Schedule (creditors, %&nbsp;of debt, %&nbsp;credit/coupon)</div>
+            <div class="card-title">Debt Schedule (creditors, %&nbsp;of debt, %&nbsp;credit/coupon)</div>
             <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
               Add any subordinated debt, credit lines or convertible notes. The report computes total debt, weighted-average coupon and a debt-to-equity ratio derived from the bound valuation snapshot.
             </p>
@@ -3124,7 +3200,7 @@
 
           <!-- ===================== 6. Adjustable appendix ===================== -->
           <div class="card">
-            <div class="card-title">📎 Adjustable Appendix</div>
+            <div class="card-title">Adjustable Appendix</div>
             <p style="color:var(--text-light);font-size:0.9rem;margin-bottom:10px;">
               Free-form text appended at the end of the report (Notes to the Financial Statements, legal disclaimers, signed-off opinions, regulator-specific addenda).
               Use blank lines to separate paragraphs.
@@ -3142,7 +3218,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
           <!-- ===================== 7. Build / export bar ===================== -->
           <div class="card">
-            <div class="card-title">⬇️ Build &amp; Distribute</div>
+            <div class="card-title">Build &amp; Distribute</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <button class="btn btn-primary" onclick="buildAnnualReportPreview()">📄 Build Report Preview</button>
               <button class="btn btn-success" onclick="downloadAnnualReportPDF()">🧾 Download PDF</button>
@@ -3154,7 +3230,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
           <!-- ===================== 8. Preview ===================== -->
           <div class="card">
-            <div class="card-title">📑 Annual Report Preview</div>
+            <div class="card-title">Annual Report Preview</div>
             <div id="annual-report-preview" class="annual-report-preview">
               <p style="color:var(--text-light);">Click <strong>Build Report Preview</strong> to render the annual filing. The preview mirrors the downloadable PDF/HTML one-for-one.</p>
             </div>
@@ -3163,7 +3239,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
         <!-- Audit Log Section -->
         <section id="section-audit" class="section">
-          <h2 class="section-title">🔍 Audit Log</h2>
+          <h2 class="section-title">Audit Log</h2>
           
           <div class="card">
             <table class="data-table" id="audit-table">
