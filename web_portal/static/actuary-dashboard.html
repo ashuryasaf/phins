@@ -1153,6 +1153,28 @@
       font-size: 0.75rem;
       font-weight: 700;
     }
+
+    /* Floating voice quick-actions pill (injected by ui-clarity.js) — restyle
+       from the default purple to the navy/gold chrome used on this page.
+       !important is required to beat the runtime-injected stylesheet. */
+    #phins-vqa-bar #phins-vqa-toggle {
+      background: rgba(9, 17, 38, 0.95) !important;
+      border: 1px solid rgba(227, 191, 111, 0.65) !important;
+      color: var(--phins-gold) !important;
+      box-shadow: 0 10px 28px rgba(2, 8, 23, 0.4) !important;
+    }
+    #phins-vqa-panel {
+      background:
+        radial-gradient(520px 180px at 88% -40%, rgba(123, 97, 255, 0.38), transparent 65%),
+        radial-gradient(420px 160px at 6% 120%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(9, 17, 38, 0.97) !important;
+      border: 1px solid var(--phins-line) !important;
+      box-shadow: 0 14px 36px rgba(2, 8, 23, 0.45) !important;
+    }
+    #phins-vqa-panel .phins-vqa-ask {
+      background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%) !important;
+      color: #071022 !important;
+    }
   </style>
 </head>
 <body>
