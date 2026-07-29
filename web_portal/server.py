@@ -27425,59 +27425,77 @@ For claims or questions, please contact:
                             cleanup_results['sandbox_customers_deleted'] += 1
                         SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
                         SANDBOX_PUSHED_CUSTOMERS.discard(cust_id)
-                if cleanup_results['sandbox_customers_deleted']:
-                    cleanup_results['details'].append(
-                        f"Purged {cleanup_results['sandbox_customers_deleted']} actuarial-sandbox customers "
-                        f"(policies={cleanup_results['sandbox_policies_deleted']}, "
-                        f"claims={cleanup_results['sandbox_claims_deleted']}, "
-                        f"bills={cleanup_results['sandbox_bills_deleted']})."
-                    )
 
-                # 5. Run balance sheet reconciliation to correct any discrepancies
-                # Calculate expected values from actual (non-demo) transaction data
-                expected_premium_income = sum(
-                    float(b.get('amount_paid', 0)) for b in BILLING.values()
-                    if float(b.get('amount_paid', 0)) > 0 
-                    and not is_suspended_account(b.get('customer_id', ''))
-                    and 'demo' not in str(b.get('description', '')).lower()
-                )
-                
-                expected_claims_paid = sum(
-                    float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
-                    for c in CLAIMS.values()
-                    if status_eq(c, 'paid')
-                    and not is_suspended_account(c.get('customer_id', ''))
-                )
-                
-                # Update balance sheet if there are discrepancies
-                current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
-                current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
-                
-                if abs(expected_premium_income - current_premium_income) > 1.0 or abs(expected_claims_paid - current_claims_paid) > 1.0:
-                    PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
-                    PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
-                    PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
-                    PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
-                    PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
-                    PHINS_BALANCE_SHEET['audit_log'].append({
-                        'action': 'demo_data_cleanup',
-                        'actor': session.get('username', 'admin') if session else 'admin',
-                        'timestamp': datetime.now().isoformat(),
-                        'details': 'Balance sheet corrected after demo data cleanup'
-                    })
-                    cleanup_results['balance_sheet_corrected'] = True
-                    cleanup_results['details'].append(
-                        f"Balance sheet corrected: Premium income ${expected_premium_income:.2f}, Claims paid ${expected_claims_paid:.2f}"
+                    if cleanup_results['sandbox_customers_deleted']:
+                        cleanup_results['details'].append(
+                            f"Purged {cleanup_results['sandbox_customers_deleted']} actuarial-sandbox customers "
+                            f"(policies={cleanup_results['sandbox_policies_deleted']}, "
+                            f"claims={cleanup_results['sandbox_claims_deleted']}, "
+                            f"bills={cleanup_results['sandbox_bills_deleted']})."
+                        )
+
+                    # 5. Run balance sheet reconciliation to correct any discrepancies
+                    # Calculate expected values from actual (non-demo) transaction data
+                    expected_premium_income = sum(
+                        float(b.get('amount_paid', 0)) for b in BILLING.values()
+                        if float(b.get('amount_paid', 0)) > 0 
+                        and not is_suspended_account(b.get('customer_id', ''))
+                        and 'demo' not in str(b.get('description', '')).lower()
                     )
-                
-                # Save changes. Serialize the snapshot under STATE_LOCK so a
-                # concurrent sandbox push cannot mutate CUSTOMERS/registry
-                # while this ledger file is being written (which would race
-                # the push's own persistence and could leave the on-disk
-                # registry inconsistent with the purged records).
-                with STATE_LOCK:
-                    save_ledger_data()
-                
+                    
+                    expected_claims_paid = sum(
+                        float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
+                        for c in CLAIMS.values()
+                        if status_eq(c, 'paid')
+                        and not is_suspended_account(c.get('customer_id', ''))
+                    )
+                    
+                    # Update balance sheet if there are discrepancies
+                    current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                    current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+                    
+                    if abs(expected_premium_income - current_premium_income) > 1.0 or abs(expected_claims_paid - current_claims_paid) > 1.0:
+                        PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+                        PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
+                        PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
+                        PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
+                        PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                        PHINS_BALANCE_SHEET['audit_log'].append({
+                            'action': 'demo_data_cleanup',
+                            'actor': session.get('username', 'admin') if session else 'admin',
+                            'timestamp': datetime.now().isoformat(),
+                            'details': 'Balance sheet corrected after demo data cleanup'
+                        })
+                        cleanup_results['balance_sheet_corrected'] = True
+                        cleanup_results['details'].append(
+                            f"Balance sheet corrected: Premium income ${expected_premium_income:.2f}, Claims paid ${expected_claims_paid:.2f}"
+                        )
+                    
+                    # Persist while STILL holding STATE_LOCK, so the purge,
+                    # balance-sheet reconciliation and the on-disk snapshot form
+                    # one atomic region. A concurrent sandbox push therefore
+                    # cannot mutate CUSTOMERS/registry between the purge and the
+                    # write, keeping the JSON response and the ledger file
+                    # consistent with what was actually purged.
+                    persisted = save_ledger_data()
+
+                if not persisted:
+                    # The in-memory purge happened but the durable snapshot
+                    # failed to write, so a restart could resurrect purged
+                    # sandbox data. Surface the durability failure instead of
+                    # claiming success (mirrors the push-to-pipeline contract).
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': (
+                            'Demo data was purged in memory but the cleanup could '
+                            'not be persisted; purged records may reappear after a '
+                            'restart. Retry, or check persistence configuration.'
+                        ),
+                        'partial_results': cleanup_results
+                    }, default=str).encode('utf-8'))
+                    return
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
