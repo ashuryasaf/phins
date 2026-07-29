@@ -4458,10 +4458,15 @@ def save_ledger_data(_periodic: bool = False):
     Explicit calls from API write handlers always flush. The background
     periodic loop passes ``_periodic=True`` and skips disk writes when no
     mutation has marked persistence state dirty.
+
+    Returns ``True`` when the snapshot was written (or persistence is
+    intentionally disabled / skipped as a no-op) and ``False`` when the
+    write failed, so callers can surface a durability failure instead of
+    silently reporting success.
     """
     global _persistence_dirty
     if not PERSISTENCE_ENABLED:
-        return
+        return True
     # Non-periodic (explicit) callers are triggered by data mutations.
     if not _periodic:
         mark_ledger_dirty()
@@ -4469,7 +4474,7 @@ def save_ledger_data(_periodic: bool = False):
     try:
         with _persistence_lock:
             if _periodic and not _persistence_dirty:
-                return
+                return True
             # Collect algo trading balances from services if available
             algo_balances = {}
             try:
@@ -4581,8 +4586,10 @@ def save_ledger_data(_periodic: bool = False):
                 _persistence_log_state['last_logged_at'] = now
                 _persistence_log_state['saves_since_last_log'] = 0
                 _persistence_log_state['first_save_logged'] = True
+        return True
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
+        return False
 
 def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
     """
@@ -27463,8 +27470,13 @@ For claims or questions, please contact:
                         f"Balance sheet corrected: Premium income ${expected_premium_income:.2f}, Claims paid ${expected_claims_paid:.2f}"
                     )
                 
-                # Save changes
-                save_ledger_data()
+                # Save changes. Serialize the snapshot under STATE_LOCK so a
+                # concurrent sandbox push cannot mutate CUSTOMERS/registry
+                # while this ledger file is being written (which would race
+                # the push's own persistence and could leave the on-disk
+                # registry inconsistent with the purged records).
+                with STATE_LOCK:
+                    save_ledger_data()
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
@@ -38202,11 +38214,27 @@ For claims or questions, please contact:
                 # Persist immediately so SANDBOX_PUSHED_CUSTOMERS (the purge
                 # registry used by Clean Demo Data) survives a server restart.
                 # Without this, pushed TESTSIM records could outlive their
-                # registry entry and never be fully purged.
-                try:
-                    save_ledger_data()
-                except Exception as persist_exc:
-                    print(f"[WARN] push-to-pipeline: failed to persist sandbox registry: {persist_exc}")
+                # registry entry and never be fully purged. Serialize the
+                # snapshot under STATE_LOCK so a concurrent Clean Demo Data
+                # pass cannot mutate CUSTOMERS/registry while it is written.
+                with STATE_LOCK:
+                    persisted = save_ledger_data()
+
+                if not persisted:
+                    # Do not report full success: the records live in memory
+                    # but were not durably saved, so a restart could leave
+                    # orphan TESTSIM data without a matching registry entry.
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': (
+                            'Sandbox customers were created in memory but the purge '
+                            "registry could not be persisted; they may not survive a "
+                            'restart. Retry, or check persistence configuration.'
+                        ),
+                        'created': created,
+                        'sandbox_pushed_total': len(SANDBOX_PUSHED_CUSTOMERS),
+                    }).encode('utf-8'))
+                    return
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
