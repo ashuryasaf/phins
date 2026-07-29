@@ -1317,19 +1317,19 @@
           <div class="stats-grid" id="overview-stats">
             <div class="stat-card">
               <div class="stat-label">Current Tables Version</div>
-              <div class="stat-value" id="stat-version">V2.0</div>
+              <div class="stat-value" id="stat-version">—</div>
             </div>
             <div class="stat-card success">
               <div class="stat-label">ADL Decline Threshold</div>
-              <div class="stat-value" id="stat-decline">9+</div>
+              <div class="stat-value" id="stat-decline">—</div>
             </div>
             <div class="stat-card warning">
               <div class="stat-label">Expense Loading</div>
-              <div class="stat-value" id="stat-expense">15%</div>
+              <div class="stat-value" id="stat-expense">—</div>
             </div>
             <div class="stat-card">
               <div class="stat-label">Profit Margin</div>
-              <div class="stat-value" id="stat-profit">10%</div>
+              <div class="stat-value" id="stat-profit">—</div>
             </div>
           </div>
 
@@ -3336,6 +3336,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         loadTablesRegistry();
         loadAnnuityReserveDefaults();
         loadContractSpec();
+        // Load real bound-hedge data so the Overview / Reinsurance stats
+        // show live balance-sheet figures instead of static zeros.
+        loadReinsuranceOverview();
+        loadReinsuranceContracts();
         
       } catch (err) {
         console.error('Auth error:', err);
@@ -8100,9 +8104,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     }
 
     // ----- Cap table editor -----
+    // Defaults are intentionally blank: shareholder data must be entered by
+    // the filer, never invented. The built report's data-integrity check
+    // ("Cap table sums to 100%") stays red until real holders are entered.
     function annualCapDefaults() {
       return [
-        { name: 'Enable Holdings', type: 'Founder', pct: 100, voting: true, notes: 'Controlling shareholder — 100% pre-IPO ownership' },
+        { name: '', type: 'Founder', pct: 0, voting: true, notes: 'Enter the controlling shareholder — do not file placeholder data' },
         { name: 'Public Float', type: 'Public Float', pct: 0, voting: true, notes: 'Reserved for free float post-IPO' },
       ];
     }
