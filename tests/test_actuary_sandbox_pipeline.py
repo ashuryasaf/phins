@@ -531,3 +531,194 @@ def test_push_to_pipeline_requires_authentication():
             raise AssertionError("expected HTTP 401/403 for unauthorized push")
         except urllib.error.HTTPError as exc:
             assert exc.code in (401, 403), exc.code
+
+
+# ---------------------------------------------------------------------------
+# Live end-to-end: push -> present on admin -> Clean Demo Data purge
+# ---------------------------------------------------------------------------
+
+def _get_json(path: str, token=None):
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(_base_url() + path, headers=headers)
+    with urlopen(req) as resp:
+        return json.loads(resp.read() or b"{}"), resp.status
+
+
+def test_cleanup_demo_data_purges_pushed_sandbox_end_to_end(admin_token):
+    """Full lifecycle: push a sandbox slice, see it presented on the admin
+    suspended/test-accounts surface, then Clean Demo Data must delete the
+    entire record graph and both registries."""
+    _purge_pushed()
+    try:
+        body, status = _post_json(
+            "/api/admin/sandbox/push-to-pipeline", _sandbox_push_payload(), admin_token)
+        assert status == 200 and body["success"] is True
+
+        # Presented on admin: flagged as sandbox, with record counts.
+        listing, status = _get_json("/api/admin/suspended-accounts", admin_token)
+        assert status == 200 and listing["success"] is True
+        by_id = {a["customer_id"]: a for a in listing["suspended_accounts"]}
+        assert "CUST-TESTSIM-900001" in by_id
+        entry = by_id["CUST-TESTSIM-900001"]
+        assert entry["sandbox"] is True
+        assert entry["policies_count"] == 1
+        assert entry["claims_count"] == 1
+        assert entry["bills_count"] == 1
+        assert listing["sandbox_accounts"] >= 2
+
+        # Clean Demo Data purges the full graph.
+        result, status = _get_json("/api/admin/cleanup-demo-data", admin_token)
+        assert status == 200 and result["success"] is True
+        counts = result["results"]
+        assert counts["sandbox_customers_deleted"] >= 2
+        assert counts["sandbox_policies_deleted"] >= 2
+        assert counts["sandbox_claims_deleted"] >= 2
+        assert counts["sandbox_bills_deleted"] >= 2
+
+        for cid in ("CUST-TESTSIM-900001", "CUST-TESTSIM-900002"):
+            assert cid not in portal.CUSTOMERS
+            assert cid not in portal.SANDBOX_PUSHED_CUSTOMERS
+            assert cid not in portal.SUSPENDED_TEST_ACCOUNTS
+        for store in (portal.POLICIES, portal.CLAIMS, portal.BILLING):
+            assert not any("TESTSIM-9000" in str(k) for k in store.keys())
+    finally:
+        _purge_pushed()
+
+
+def test_cleanup_demo_data_recovers_orphaned_testsim_records(admin_token):
+    """If the SANDBOX_PUSHED_CUSTOMERS registry is lost (e.g. a restart
+    before the ledger flushed), Clean Demo Data must still fully purge
+    TESTSIM-namespace records instead of leaving them suspended forever."""
+    _purge_pushed()
+    cid = "CUST-TESTSIM-910001"
+    portal.CUSTOMERS[cid] = {
+        "id": cid, "name": "Orphaned Sandbox", "email": f"{cid.lower()}@sandbox.phins.test",
+        "source": "actuary_sandbox",
+    }
+    portal.POLICIES["POL-TESTSIM-910001"] = {
+        "id": "POL-TESTSIM-910001", "customer_id": cid, "type": "sandbox_life",
+        "coverage_amount": 100000.0, "annual_premium": 1200.0, "status": "active",
+    }
+    portal.CLAIMS["CLM-TESTSIM-910001"] = {
+        "id": "CLM-TESTSIM-910001", "customer_id": cid,
+        "policy_id": "POL-TESTSIM-910001", "amount": 1000.0, "status": "pending",
+        "description": "sandbox/test claim from actuarial dashboard",
+    }
+    portal.BILLING["BILL-TESTSIM-910001"] = {
+        "id": "BILL-TESTSIM-910001", "customer_id": cid,
+        "policy_id": "POL-TESTSIM-910001", "amount": 100.0, "status": "outstanding",
+        "description": "sandbox/test bill from actuarial dashboard",
+    }
+    # Simulate the lost registry: the customer is NOT in the pushed set.
+    portal.SANDBOX_PUSHED_CUSTOMERS.discard(cid)
+    try:
+        result, status = _get_json("/api/admin/cleanup-demo-data", admin_token)
+        assert status == 200 and result["success"] is True
+        assert result["results"]["sandbox_customers_deleted"] >= 1
+
+        assert cid not in portal.CUSTOMERS
+        assert "POL-TESTSIM-910001" not in portal.POLICIES
+        assert "CLM-TESTSIM-910001" not in portal.CLAIMS
+        assert "BILL-TESTSIM-910001" not in portal.BILLING
+        assert cid not in portal.SUSPENDED_TEST_ACCOUNTS
+    finally:
+        portal.CUSTOMERS.pop(cid, None)
+        portal.POLICIES.pop("POL-TESTSIM-910001", None)
+        portal.CLAIMS.pop("CLM-TESTSIM-910001", None)
+        portal.BILLING.pop("BILL-TESTSIM-910001", None)
+        portal.SUSPENDED_TEST_ACCOUNTS.discard(cid)
+        _purge_pushed()
+
+
+def test_cleanup_demo_data_counts_demo_bills_and_preserves_real_text(admin_token):
+    """demo_bills_removed must actually count removed demo bills, and the
+    word-boundary matcher must NOT delete real records whose text merely
+    contains 'test' inside another word ('Latest premium installment')."""
+    _purge_pushed()
+    portal.CUSTOMERS["CUST-DEMOSEED-1"] = {"id": "CUST-DEMOSEED-1", "name": "Demo Seed"}
+    portal.CUSTOMERS["CUST-REALSEED-1"] = {"id": "CUST-REALSEED-1", "name": "Real Seed"}
+    portal.BILLING["BILL-DEMOSEED-1"] = {
+        "id": "BILL-DEMOSEED-1", "customer_id": "CUST-DEMOSEED-1",
+        "amount": 50.0, "status": "outstanding", "description": "demo bill seeded for cleanup",
+    }
+    portal.BILLING["BILL-REALSEED-1"] = {
+        "id": "BILL-REALSEED-1", "customer_id": "CUST-REALSEED-1",
+        "amount": 75.0, "status": "outstanding", "description": "Latest premium installment",
+    }
+    portal.CLAIMS["CLM-REALSEED-1"] = {
+        "id": "CLM-REALSEED-1", "customer_id": "CUST-REALSEED-1",
+        "amount": 500.0, "status": "pending", "description": "Contested claim under review",
+    }
+    try:
+        result, status = _get_json("/api/admin/cleanup-demo-data", admin_token)
+        assert status == 200 and result["success"] is True
+        assert result["results"]["demo_bills_removed"] >= 1
+
+        assert "BILL-DEMOSEED-1" not in portal.BILLING
+        # Word-boundary safety: 'Latest' / 'Contested' are NOT demo markers.
+        assert "BILL-REALSEED-1" in portal.BILLING
+        assert "CLM-REALSEED-1" in portal.CLAIMS
+    finally:
+        for store, key in (
+            (portal.CUSTOMERS, "CUST-DEMOSEED-1"),
+            (portal.CUSTOMERS, "CUST-REALSEED-1"),
+            (portal.BILLING, "BILL-DEMOSEED-1"),
+            (portal.BILLING, "BILL-REALSEED-1"),
+            (portal.CLAIMS, "CLM-REALSEED-1"),
+        ):
+            store.pop(key, None)
+
+
+def test_looks_like_demo_text_uses_word_boundaries():
+    assert portal.looks_like_demo_text("test claim") is True
+    assert portal.looks_like_demo_text("sandbox/test bill from actuarial dashboard") is True
+    assert portal.looks_like_demo_text("DEMO deposit") is True
+    assert portal.looks_like_demo_text("Sample payout") is True
+    # Whole words only — these must never be treated as demo markers.
+    assert portal.looks_like_demo_text("Latest premium installment") is False
+    assert portal.looks_like_demo_text("Contested claim under review") is False
+    assert portal.looks_like_demo_text("Attestation document") is False
+    assert portal.looks_like_demo_text("") is False
+    assert portal.looks_like_demo_text(None) is False
+
+
+# ---------------------------------------------------------------------------
+# Static integrity: admin test-data surface + actuary dashboard mock removal
+# ---------------------------------------------------------------------------
+
+def _repo_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def test_admin_dashboard_presents_test_data_panel():
+    """Admin must be able to PRESENT pipeline test data (suspended/sandbox
+    accounts) and see the sandbox purge counts after Clean Demo Data."""
+    path = os.path.join(_repo_root(), "web_portal", "static", "admin.html")
+    with open(path, encoding="utf-8") as fh:
+        content = fh.read()
+    assert "toggleTestDataPanel" in content
+    assert 'id="test-data-panel"' in content
+    assert "/api/admin/suspended-accounts" in content
+    assert "sandbox_customers_deleted" in content
+    assert "sandbox_bills_deleted" in content
+    # The confirm dialog must disclose the sandbox purge.
+    assert "FULLY DELETE actuarial sandbox (TESTSIM) customers" in content
+
+
+def test_actuary_dashboard_overview_has_no_hardcoded_stats():
+    """Overview stat tiles must start as neutral placeholders (filled from
+    /api/actuarial/tables + /api/actuarial/config), never fake numbers."""
+    path = os.path.join(_repo_root(), "web_portal", "static", "actuary-dashboard.html")
+    with open(path, encoding="utf-8") as fh:
+        content = fh.read()
+    assert 'id="stat-version">—<' in content
+    assert 'id="stat-decline">—<' in content
+    assert 'id="stat-expense">—<' in content
+    assert 'id="stat-profit">—<' in content
+    # Reinsurance overview stats are loaded from the live BI API on init
+    # (once at definition, once in the init loader).
+    assert content.count("loadReinsuranceOverview();") >= 2
+    # The annual-report cap table must not fabricate a shareholder.
+    assert "Enable Holdings" not in content
