@@ -4458,10 +4458,15 @@ def save_ledger_data(_periodic: bool = False):
     Explicit calls from API write handlers always flush. The background
     periodic loop passes ``_periodic=True`` and skips disk writes when no
     mutation has marked persistence state dirty.
+
+    Returns ``True`` when the snapshot was written (or persistence is
+    intentionally disabled / skipped as a no-op) and ``False`` when the
+    write failed, so callers can surface a durability failure instead of
+    silently reporting success.
     """
     global _persistence_dirty
     if not PERSISTENCE_ENABLED:
-        return
+        return True
     # Non-periodic (explicit) callers are triggered by data mutations.
     if not _periodic:
         mark_ledger_dirty()
@@ -4469,7 +4474,7 @@ def save_ledger_data(_periodic: bool = False):
     try:
         with _persistence_lock:
             if _periodic and not _persistence_dirty:
-                return
+                return True
             # Collect algo trading balances from services if available
             algo_balances = {}
             try:
@@ -4581,8 +4586,10 @@ def save_ledger_data(_periodic: bool = False):
                 _persistence_log_state['last_logged_at'] = now
                 _persistence_log_state['saves_since_last_log'] = 0
                 _persistence_log_state['first_save_logged'] = True
+        return True
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
+        return False
 
 def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
     """
@@ -11588,10 +11595,34 @@ SANDBOX_PUSHED_CUSTOMERS: set = set()
 
 
 def is_suspended_account(customer_id: str) -> bool:
-    """Check if a customer_id is in the suspended test accounts list"""
+    """Check if a customer_id is in the suspended test accounts list.
+
+    TESTSIM-namespace customers are always treated as suspended sandbox
+    accounts so their data stays hidden from admin dashboards, reports and
+    BI even if the sandbox registry (SANDBOX_PUSHED_CUSTOMERS) was lost and
+    Clean Demo Data has not yet run.
+    """
     if not customer_id:
         return False
-    return customer_id in SUSPENDED_TEST_ACCOUNTS or customer_id.upper() in SUSPENDED_TEST_ACCOUNTS
+    upper_id = customer_id.upper()
+    return (
+        customer_id in SUSPENDED_TEST_ACCOUNTS
+        or upper_id in SUSPENDED_TEST_ACCOUNTS
+        or customer_id in SANDBOX_PUSHED_CUSTOMERS
+        or 'TESTSIM' in upper_id
+    )
+
+
+# Word-boundary matcher for demo/test markers in free-text fields. A plain
+# substring check would false-positive on real descriptions ("latest
+# premium" contains "test", "contested claim" contains "test"), so demo
+# cleanup must only match whole words.
+_DEMO_TEXT_RE = re.compile(r'\b(test|demo|sample|sandbox|testsim)\b', re.IGNORECASE)
+
+
+def looks_like_demo_text(value: Any) -> bool:
+    """True when a free-text field carries a whole-word demo/test marker."""
+    return bool(_DEMO_TEXT_RE.search(str(value or '')))
 
 def filter_suspended_accounts(items: list, customer_id_field: str = 'customer_id') -> list:
     """Filter out suspended test accounts from a list of items"""
@@ -27151,12 +27182,26 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
                 return
             
-            # Get details of suspended accounts
+            # Get details of suspended accounts. Sandbox-pushed accounts
+            # (actuary dashboard "Push to Pipeline") are flagged so the admin
+            # UI can present them distinctly; TESTSIM-namespace customers are
+            # always treated as sandbox even if the registry was lost.
+            listed_ids = set(SUSPENDED_TEST_ACCOUNTS) | set(SANDBOX_PUSHED_CUSTOMERS)
+            listed_ids.update(
+                cid for cid in CUSTOMERS.keys() if 'TESTSIM' in str(cid).upper()
+            )
             suspended_details = []
-            for cust_id in SUSPENDED_TEST_ACCOUNTS:
+            for cust_id in sorted(listed_ids):
                 customer = CUSTOMERS.get(cust_id, {})
                 policies_count = len([p for p in POLICIES.values() if p.get('customer_id') == cust_id])
                 apps_count = len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id])
+                claims_count = len([c for c in CLAIMS.values() if c.get('customer_id') == cust_id])
+                bills_count = len([b for b in BILLING.values() if b.get('customer_id') == cust_id])
+                is_sandbox = (
+                    cust_id in SANDBOX_PUSHED_CUSTOMERS
+                    or 'TESTSIM' in str(cust_id).upper()
+                    or customer.get('source') == 'actuary_sandbox'
+                )
                 
                 suspended_details.append({
                     'customer_id': cust_id,
@@ -27164,16 +27209,26 @@ For claims or questions, please contact:
                     'email': customer.get('email', 'N/A'),
                     'policies_count': policies_count,
                     'applications_count': apps_count,
+                    'claims_count': claims_count,
+                    'bills_count': bills_count,
+                    'sandbox': is_sandbox,
+                    'source': customer.get('source') or ('actuary_sandbox' if is_sandbox else 'test'),
+                    'sandbox_simulation_id': customer.get('sandbox_simulation_id'),
                     'status': 'suspended',
-                    'note': 'Test account - hidden from platform data but can still login'
+                    'note': ('Actuarial sandbox test account — fully deleted by Clean Demo Data'
+                             if is_sandbox else
+                             'Test account - hidden from platform data but can still login')
                 })
             
+            sandbox_total = sum(1 for d in suspended_details if d['sandbox'])
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
                 'suspended_accounts': suspended_details,
-                'total_suspended': len(SUSPENDED_TEST_ACCOUNTS),
-                'message': 'These accounts can login but their data is hidden from admin dashboards and reports.'
+                'total_suspended': len(suspended_details),
+                'sandbox_accounts': sandbox_total,
+                'message': 'These accounts can login but their data is hidden from admin dashboards and reports. '
+                           'Sandbox (TESTSIM) accounts are fully purged by Clean Demo Data.'
             }).encode('utf-8'))
             return
         
@@ -27219,6 +27274,15 @@ For claims or questions, please contact:
                 # for the step-4b purge.
                 with STATE_LOCK:
                     sandbox_snapshot = set(SANDBOX_PUSHED_CUSTOMERS)
+
+                    # Orphan recovery: the CUST-TESTSIM-* namespace is
+                    # reserved for sandbox-pushed accounts, so any TESTSIM
+                    # customer found outside the registry (e.g. the registry
+                    # was lost across a restart before the ledger flushed)
+                    # is still treated as sandbox data and fully purged.
+                    for _cid in list(CUSTOMERS.keys()):
+                        if 'TESTSIM' in str(_cid).upper():
+                            sandbox_snapshot.add(_cid)
 
                     # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
                     for cust_id, wallet in list(HEALTH_WALLETS.items()):
@@ -27282,22 +27346,32 @@ For claims or questions, please contact:
                             account['deposits'] = []
                             cleanup_results['test_investments_cleared'] += 1
 
-                    # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
+                    # 3. Remove claims with a whole-word test/demo marker in the
+                    # description (but not for protected customers). Word-boundary
+                    # matching prevents deleting real claims whose text merely
+                    # contains 'test' inside another word ("latest", "contested").
                     # Skip sandbox-pushed customers — they are handled exclusively by step 4b.
                     for claim_id, claim in list(CLAIMS.items()):
                         cust_id = claim.get('customer_id', '')
-                        description = str(claim.get('description', '')).lower()
-                        
-                        is_test_claim = (
-                            'test' in description or 
-                            'demo' in description or
-                            'sample' in description
-                        )
+                        is_test_claim = looks_like_demo_text(claim.get('description', ''))
                         
                         if is_test_claim and cust_id not in PROTECTED_CUSTOMERS and cust_id not in sandbox_snapshot:
                             del CLAIMS[claim_id]
                             cleanup_results['demo_claims_removed'] += 1
                             cleanup_results['details'].append(f"Removed test claim: {claim_id}")
+                    
+                    # 3b. Remove bills with a whole-word test/demo marker in the
+                    # description for non-protected, non-sandbox customers
+                    # (sandbox bills are purged in step 4b). This wires the
+                    # previously always-zero demo_bills_removed counter.
+                    for bill_id, bill in list(BILLING.items()):
+                        cust_id = bill.get('customer_id', '')
+                        is_test_bill = looks_like_demo_text(bill.get('description', ''))
+                        
+                        if is_test_bill and cust_id not in PROTECTED_CUSTOMERS and cust_id not in sandbox_snapshot:
+                            del BILLING[bill_id]
+                            cleanup_results['demo_bills_removed'] += 1
+                            cleanup_results['details'].append(f"Removed test bill: {bill_id}")
                     
                     # 4. Add test customer IDs to suspended accounts
                     for cust_id in list(CUSTOMERS.keys()):
@@ -27316,20 +27390,27 @@ For claims or questions, please contact:
                     # prefix.
                     purge_ids = {cid for cid in sandbox_snapshot if cid not in PROTECTED_CUSTOMERS}
 
+                    # Child records are matched by owning customer AND by the
+                    # reserved TESTSIM namespace in their own id, so orphaned
+                    # sandbox children (parent already gone) are still purged.
+                    def _is_sandbox_record(record_id, record):
+                        return (record.get('customer_id') in purge_ids
+                                or 'TESTSIM' in str(record_id).upper())
+
                     for pol_id, pol in list(POLICIES.items()):
-                        if pol.get('customer_id') in purge_ids:
+                        if _is_sandbox_record(pol_id, pol):
                             del POLICIES[pol_id]
                             cleanup_results['sandbox_policies_deleted'] += 1
                     for clm_id, clm in list(CLAIMS.items()):
-                        if clm.get('customer_id') in purge_ids:
+                        if _is_sandbox_record(clm_id, clm):
                             del CLAIMS[clm_id]
                             cleanup_results['sandbox_claims_deleted'] += 1
                     for bill_id, bill in list(BILLING.items()):
-                        if bill.get('customer_id') in purge_ids:
+                        if _is_sandbox_record(bill_id, bill):
                             del BILLING[bill_id]
                             cleanup_results['sandbox_bills_deleted'] += 1
                     for uw_id, uw in list(UNDERWRITING_APPLICATIONS.items()):
-                        if uw.get('customer_id') in purge_ids:
+                        if _is_sandbox_record(uw_id, uw):
                             del UNDERWRITING_APPLICATIONS[uw_id]
 
                     for cust_id in purge_ids:
@@ -27344,54 +27425,77 @@ For claims or questions, please contact:
                             cleanup_results['sandbox_customers_deleted'] += 1
                         SUSPENDED_TEST_ACCOUNTS.discard(cust_id)
                         SANDBOX_PUSHED_CUSTOMERS.discard(cust_id)
-                if cleanup_results['sandbox_customers_deleted']:
-                    cleanup_results['details'].append(
-                        f"Purged {cleanup_results['sandbox_customers_deleted']} actuarial-sandbox customers "
-                        f"(policies={cleanup_results['sandbox_policies_deleted']}, "
-                        f"claims={cleanup_results['sandbox_claims_deleted']}, "
-                        f"bills={cleanup_results['sandbox_bills_deleted']})."
-                    )
 
-                # 5. Run balance sheet reconciliation to correct any discrepancies
-                # Calculate expected values from actual (non-demo) transaction data
-                expected_premium_income = sum(
-                    float(b.get('amount_paid', 0)) for b in BILLING.values()
-                    if float(b.get('amount_paid', 0)) > 0 
-                    and not is_suspended_account(b.get('customer_id', ''))
-                    and 'demo' not in str(b.get('description', '')).lower()
-                )
-                
-                expected_claims_paid = sum(
-                    float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
-                    for c in CLAIMS.values()
-                    if status_eq(c, 'paid')
-                    and not is_suspended_account(c.get('customer_id', ''))
-                )
-                
-                # Update balance sheet if there are discrepancies
-                current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
-                current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
-                
-                if abs(expected_premium_income - current_premium_income) > 1.0 or abs(expected_claims_paid - current_claims_paid) > 1.0:
-                    PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
-                    PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
-                    PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
-                    PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
-                    PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
-                    PHINS_BALANCE_SHEET['audit_log'].append({
-                        'action': 'demo_data_cleanup',
-                        'actor': session.get('username', 'admin') if session else 'admin',
-                        'timestamp': datetime.now().isoformat(),
-                        'details': 'Balance sheet corrected after demo data cleanup'
-                    })
-                    cleanup_results['balance_sheet_corrected'] = True
-                    cleanup_results['details'].append(
-                        f"Balance sheet corrected: Premium income ${expected_premium_income:.2f}, Claims paid ${expected_claims_paid:.2f}"
+                    if cleanup_results['sandbox_customers_deleted']:
+                        cleanup_results['details'].append(
+                            f"Purged {cleanup_results['sandbox_customers_deleted']} actuarial-sandbox customers "
+                            f"(policies={cleanup_results['sandbox_policies_deleted']}, "
+                            f"claims={cleanup_results['sandbox_claims_deleted']}, "
+                            f"bills={cleanup_results['sandbox_bills_deleted']})."
+                        )
+
+                    # 5. Run balance sheet reconciliation to correct any discrepancies
+                    # Calculate expected values from actual (non-demo) transaction data
+                    expected_premium_income = sum(
+                        float(b.get('amount_paid', 0)) for b in BILLING.values()
+                        if float(b.get('amount_paid', 0)) > 0 
+                        and not is_suspended_account(b.get('customer_id', ''))
+                        and 'demo' not in str(b.get('description', '')).lower()
                     )
-                
-                # Save changes
-                save_ledger_data()
-                
+                    
+                    expected_claims_paid = sum(
+                        float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
+                        for c in CLAIMS.values()
+                        if status_eq(c, 'paid')
+                        and not is_suspended_account(c.get('customer_id', ''))
+                    )
+                    
+                    # Update balance sheet if there are discrepancies
+                    current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                    current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+                    
+                    if abs(expected_premium_income - current_premium_income) > 1.0 or abs(expected_claims_paid - current_claims_paid) > 1.0:
+                        PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+                        PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
+                        PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
+                        PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
+                        PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                        PHINS_BALANCE_SHEET['audit_log'].append({
+                            'action': 'demo_data_cleanup',
+                            'actor': session.get('username', 'admin') if session else 'admin',
+                            'timestamp': datetime.now().isoformat(),
+                            'details': 'Balance sheet corrected after demo data cleanup'
+                        })
+                        cleanup_results['balance_sheet_corrected'] = True
+                        cleanup_results['details'].append(
+                            f"Balance sheet corrected: Premium income ${expected_premium_income:.2f}, Claims paid ${expected_claims_paid:.2f}"
+                        )
+                    
+                    # Persist while STILL holding STATE_LOCK, so the purge,
+                    # balance-sheet reconciliation and the on-disk snapshot form
+                    # one atomic region. A concurrent sandbox push therefore
+                    # cannot mutate CUSTOMERS/registry between the purge and the
+                    # write, keeping the JSON response and the ledger file
+                    # consistent with what was actually purged.
+                    persisted = save_ledger_data()
+
+                if not persisted:
+                    # The in-memory purge happened but the durable snapshot
+                    # failed to write, so a restart could resurrect purged
+                    # sandbox data. Surface the durability failure instead of
+                    # claiming success (mirrors the push-to-pipeline contract).
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': (
+                            'Demo data was purged in memory but the cleanup could '
+                            'not be persisted; purged records may reappear after a '
+                            'restart. Retry, or check persistence configuration.'
+                        ),
+                        'partial_results': cleanup_results
+                    }, default=str).encode('utf-8'))
+                    return
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -38068,6 +38172,10 @@ For claims or questions, please contact:
                             'type': str(clm.get('type') or 'sandbox'),
                             'cause': str(clm.get('cause') or ''),
                             'amount': float(clm.get('amount') or 0),
+                            # DB persistence uses 'claimed_amount' (the Claim
+                            # model has no 'amount' column) — write both so the
+                            # figure survives database mode round-trips.
+                            'claimed_amount': float(clm.get('amount') or clm.get('claimed_amount') or 0),
                             'approved_amount': float(clm.get('approved_amount') or 0),
                             'paid_amount': float(clm.get('paid_amount') or 0),
                             'status': str(clm.get('status') or 'pending'),
@@ -38120,6 +38228,31 @@ For claims or questions, please contact:
                         )
                     except Exception:
                         pass
+
+                # Persist immediately so SANDBOX_PUSHED_CUSTOMERS (the purge
+                # registry used by Clean Demo Data) survives a server restart.
+                # Without this, pushed TESTSIM records could outlive their
+                # registry entry and never be fully purged. Serialize the
+                # snapshot under STATE_LOCK so a concurrent Clean Demo Data
+                # pass cannot mutate CUSTOMERS/registry while it is written.
+                with STATE_LOCK:
+                    persisted = save_ledger_data()
+
+                if not persisted:
+                    # Do not report full success: the records live in memory
+                    # but were not durably saved, so a restart could leave
+                    # orphan TESTSIM data without a matching registry entry.
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': (
+                            'Sandbox customers were created in memory but the purge '
+                            "registry could not be persisted; they may not survive a "
+                            'restart. Retry, or check persistence configuration.'
+                        ),
+                        'created': created,
+                        'sandbox_pushed_total': len(SANDBOX_PUSHED_CUSTOMERS),
+                    }).encode('utf-8'))
+                    return
 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({

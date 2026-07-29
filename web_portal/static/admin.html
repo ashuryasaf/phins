@@ -1129,11 +1129,43 @@
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="loadAIInsights()" class="btn" style="background: rgba(156,39,176,0.4); color: white; border: 1px solid rgba(156,39,176,0.6); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">🤖 AI Insights</button>
           <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">✅ Reconcile Balance Sheet</button>
+          <button onclick="toggleTestDataPanel()" class="btn" style="background: rgba(255,193,7,0.25); color: white; border: 1px solid rgba(255,193,7,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="View suspended test accounts and actuarial sandbox (TESTSIM) data currently in the pipeline">🧪 Test Data</button>
           <button onclick="cleanupDemoData()" class="btn" style="background: rgba(239,154,154,0.3); color: white; border: 1px solid rgba(239,154,154,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Remove demo/test data while preserving real customers">🧹 Clean Demo Data</button>
           <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
         </div>
       </div>
       
+      <!-- Test / sandbox data panel (populated by toggleTestDataPanel) -->
+      <div id="test-data-panel" style="display:none; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,193,7,0.4); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+          <div style="font-weight:bold;">🧪 Test &amp; Sandbox Data in Pipeline</div>
+          <div id="test-data-summary" style="font-size:12px; color: rgba(255,255,255,0.85);">Loading…</div>
+        </div>
+        <div style="font-size:12px; color: rgba(255,255,255,0.75); margin-bottom:10px;">
+          Accounts pushed from the Actuarial Sandbox (<code style="color:#ffd54f;">CUST-TESTSIM-*</code>) are suspended
+          (hidden from BI and reports) while present, and are <strong>fully deleted</strong> — with their policies,
+          claims and bills — by <strong>🧹 Clean Demo Data</strong>.
+        </div>
+        <div style="max-height: 260px; overflow-y: auto;">
+          <table style="width:100%; border-collapse: collapse; font-size: 12px; color: white;">
+            <thead>
+              <tr style="text-align:left; border-bottom: 1px solid rgba(255,255,255,0.3);">
+                <th style="padding:6px;">Customer ID</th>
+                <th style="padding:6px;">Name</th>
+                <th style="padding:6px;">Type</th>
+                <th style="padding:6px;">Policies</th>
+                <th style="padding:6px;">Claims</th>
+                <th style="padding:6px;">Bills</th>
+                <th style="padding:6px;">Simulation</th>
+              </tr>
+            </thead>
+            <tbody id="test-data-tbody">
+              <tr><td colspan="7" style="padding:8px; text-align:center;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Reserve Balances -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
@@ -5402,6 +5434,48 @@
       }, timeout);
     }
     
+    // Show / refresh the test & sandbox data panel on the balance sheet bar
+    async function toggleTestDataPanel() {
+      const panel = document.getElementById('test-data-panel');
+      if (!panel) return;
+      if (panel.style.display !== 'none') {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
+      const tbody = document.getElementById('test-data-tbody');
+      const summary = document.getElementById('test-data-summary');
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:8px; text-align:center;">Loading…</td></tr>';
+      try {
+        const res = await fetch('/api/admin/suspended-accounts', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load test accounts');
+        const accounts = data.suspended_accounts || [];
+        summary.textContent = `${data.total_suspended || 0} suspended test account(s) · ${data.sandbox_accounts || 0} from the actuarial sandbox`;
+        if (!accounts.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="padding:8px; text-align:center;">✅ No test or sandbox data in the pipeline.</td></tr>';
+          return;
+        }
+        const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        tbody.innerHTML = accounts.map(a => `
+          <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+            <td style="padding:6px;"><code>${esc(a.customer_id)}</code></td>
+            <td style="padding:6px;">${esc(a.name)}</td>
+            <td style="padding:6px;">${a.sandbox ? '🧪 Sandbox' : 'Test'}</td>
+            <td style="padding:6px;">${a.policies_count ?? 0}</td>
+            <td style="padding:6px;">${a.claims_count ?? 0}</td>
+            <td style="padding:6px;">${a.bills_count ?? 0}</td>
+            <td style="padding:6px;">${esc(a.sandbox_simulation_id || '—')}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        summary.textContent = '';
+        tbody.innerHTML = `<tr><td colspan="7" style="padding:8px; text-align:center;">❌ ${err.message}</td></tr>`;
+      }
+    }
+
     // Clean up demo/test data while preserving real customers
     async function cleanupDemoData() {
       const confirmed = confirm(
@@ -5412,6 +5486,9 @@
         '✓ Remove demo investment deposits\n' +
         '✓ Remove test claims/bills\n' +
         '✓ Suspend test accounts\n' +
+        '✓ FULLY DELETE actuarial sandbox (TESTSIM) customers\n' +
+        '   pushed via "Push to Pipeline" — with their policies,\n' +
+        '   claims and bills\n' +
         '✓ Correct balance sheet discrepancies\n\n' +
         '⚠️ PROTECTED DATA:\n' +
         '• asaf@assurance.co.il (CUST-ASAF-001)\n' +
@@ -5441,7 +5518,12 @@
           message += `• Test investments cleared: ${results.test_investments_cleared}\n`;
           message += `• Demo claims removed: ${results.demo_claims_removed}\n`;
           message += `• Demo bills removed: ${results.demo_bills_removed}\n`;
-          message += `• Test accounts suspended: ${results.test_accounts_suspended}\n`;
+          message += `• Test accounts suspended: ${results.test_accounts_suspended}\n\n`;
+          message += '🧪 ACTUARIAL SANDBOX (TESTSIM) PURGE:\n';
+          message += `• Sandbox customers deleted: ${results.sandbox_customers_deleted ?? 0}\n`;
+          message += `• Sandbox policies deleted: ${results.sandbox_policies_deleted ?? 0}\n`;
+          message += `• Sandbox claims deleted: ${results.sandbox_claims_deleted ?? 0}\n`;
+          message += `• Sandbox bills deleted: ${results.sandbox_bills_deleted ?? 0}\n\n`;
           message += `• Balance sheet corrected: ${results.balance_sheet_corrected ? 'Yes ✓' : 'No (already correct)'}\n\n`;
           
           if (results.details && results.details.length > 0) {
@@ -5462,6 +5544,12 @@
           // Refresh balance sheet and AI insights
           await loadBalanceSheet();
           await loadAIInsights();
+          // Refresh the test-data panel if it is open so the purge is visible
+          const testPanel = document.getElementById('test-data-panel');
+          if (testPanel && testPanel.style.display !== 'none') {
+            testPanel.style.display = 'none';
+            await toggleTestDataPanel();
+          }
           
         } else if (response.status === 403) {
           alert('⚠️ Access Denied: Admin role required for demo data cleanup');
