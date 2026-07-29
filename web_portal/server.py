@@ -11588,10 +11588,22 @@ SANDBOX_PUSHED_CUSTOMERS: set = set()
 
 
 def is_suspended_account(customer_id: str) -> bool:
-    """Check if a customer_id is in the suspended test accounts list"""
+    """Check if a customer_id is in the suspended test accounts list.
+
+    TESTSIM-namespace customers are always treated as suspended sandbox
+    accounts so their data stays hidden from admin dashboards, reports and
+    BI even if the sandbox registry (SANDBOX_PUSHED_CUSTOMERS) was lost and
+    Clean Demo Data has not yet run.
+    """
     if not customer_id:
         return False
-    return customer_id in SUSPENDED_TEST_ACCOUNTS or customer_id.upper() in SUSPENDED_TEST_ACCOUNTS
+    upper_id = customer_id.upper()
+    return (
+        customer_id in SUSPENDED_TEST_ACCOUNTS
+        or upper_id in SUSPENDED_TEST_ACCOUNTS
+        or customer_id in SANDBOX_PUSHED_CUSTOMERS
+        or 'TESTSIM' in upper_id
+    )
 
 
 # Word-boundary matcher for demo/test markers in free-text fields. A plain
