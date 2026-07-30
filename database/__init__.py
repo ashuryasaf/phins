@@ -34,7 +34,10 @@ logger = logging.getLogger(__name__)
 # Global engine and session factory
 _engine = None
 _session_factory = None
-_connection_lock = threading.Lock()
+# RLock: get_session_factory() holds the lock while calling get_engine(),
+# which must re-enter the same lock. A plain Lock deadlocks the process
+# on the first DatabaseManager session creation in a clean runtime.
+_connection_lock = threading.RLock()
 _last_connection_check = 0
 _connection_check_interval = 30  # seconds between health checks
 
