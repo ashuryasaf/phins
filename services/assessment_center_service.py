@@ -1185,6 +1185,9 @@ class AssessmentCenterService:
         options = dict(options or {})
         ids = list(document_ids) if document_ids else None
         report_filters = self._extract_report_filters(options)
+        platform_context = options.get("platform_context")
+        if platform_context is not None and not isinstance(platform_context, dict):
+            platform_context = None
 
         if analysis in ("customer_360", "profile"):
             profile = self.build_customer_360(customer_id)
@@ -1196,7 +1199,9 @@ class AssessmentCenterService:
                 "download": self._profile_to_rows(profile),
             }
         if analysis in ("risk_assessment", "risk"):
-            risk = self.compute_risk_indicators(customer_id)
+            risk = self.compute_risk_indicators(
+                customer_id, platform_context=platform_context,
+            )
             return {
                 "analysis_type": "risk_assessment",
                 "customer_id": customer_id,
@@ -1213,8 +1218,12 @@ class AssessmentCenterService:
                 },
             }
         if analysis in ("bi_summary", "bi"):
-            charts = self.build_chart_data(customer_id)
-            risk = self.compute_risk_indicators(customer_id)
+            charts = self.build_chart_data(
+                customer_id, platform_context=platform_context,
+            )
+            risk = self.compute_risk_indicators(
+                customer_id, platform_context=platform_context,
+            )
             return {
                 "analysis_type": "bi_summary",
                 "customer_id": customer_id,
@@ -1240,7 +1249,9 @@ class AssessmentCenterService:
             description = self.describe_data_with_data(
                 customer_id, ids, filters=report_filters,
             )
-            risk = self.compute_risk_indicators(customer_id)
+            risk = self.compute_risk_indicators(
+                customer_id, platform_context=platform_context,
+            )
             payload = {
                 "analysis_type": "cross_document",
                 "customer_id": customer_id,
@@ -1251,6 +1262,15 @@ class AssessmentCenterService:
             }
             self._attach_ai_narrative(payload, customer_id, options)
             return payload
+        if analysis in ("unified", "unified_assessment"):
+            return {
+                "analysis_type": "unified",
+                "customer_id": customer_id,
+                "title": "Unified assessment",
+                **self.build_unified_assessment(
+                    customer_id, platform_context=platform_context,
+                ),
+            }
         raise ValueError(f"Unknown analysis_type: {analysis_type!r}")
 
     # ── Adjustable reporting + AI narrative helpers ────────────────────────
@@ -1689,12 +1709,48 @@ class AssessmentCenterService:
 
         return profile
 
-    def compute_risk_indicators(self, customer_id: str, *, profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Derive a deterministic risk score from the unified fact store."""
+    @staticmethod
+    def _row_status_lower(row: Any) -> str:
+        if not isinstance(row, dict):
+            return ""
+        return str(row.get("status") or "").strip().lower().replace(" ", "_")
+
+    @staticmethod
+    def _truthy_smoking(value: Any) -> bool:
+        """Return True only when the UW smoking field clearly indicates smoking."""
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        text = str(value).strip().lower()
+        if not text or text in ("false", "0", "no", "none", "never", "non-smoker",
+                                "nonsmoker", "non_smoker", "former", "former_smoker",
+                                "ex-smoker", "ex_smoker"):
+            return False
+        return text in ("true", "1", "yes", "y", "smoker", "current", "current_smoker",
+                        "smoking", "active")
+
+    def compute_risk_indicators(
+        self,
+        customer_id: str,
+        *,
+        profile: Optional[Dict[str, Any]] = None,
+        platform_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Derive a deterministic risk score from the unified fact store.
+
+        When ``platform_context`` is provided, evidence-based adjustments from
+        real policies/claims/underwriting/billing rows are layered on top.
+        Scores are never invented — every contributor cites concrete evidence.
+        """
         if profile is None:
             profile = self.build_customer_360(customer_id)
         score = 0.0
         contributors: List[Dict[str, Any]] = []
+        sources: List[str] = []
+
+        if profile.get("fact_count", 0) > 0:
+            sources.append("fact_store")
 
         condition_weights = {
             "cancer": 0.30, "tumor": 0.30, "tumour": 0.30,
@@ -1738,6 +1794,171 @@ class AssessmentCenterService:
             score += 0.05
             contributors.append({"factor": "external_policy_count", "value": external_total, "weight": 0.05})
 
+        platform_signals_applied = False
+        ctx = platform_context if isinstance(platform_context, dict) else None
+        if ctx:
+            policies = [p for p in (ctx.get("policies") or []) if isinstance(p, dict)]
+            claims = [c for c in (ctx.get("claims") or []) if isinstance(c, dict)]
+            underwriting = [u for u in (ctx.get("underwriting") or []) if isinstance(u, dict)]
+            billing = [b for b in (ctx.get("billing") or []) if isinstance(b, dict)]
+
+            if policies:
+                sources.append("policies")
+            if claims:
+                sources.append("claims")
+            if underwriting:
+                sources.append("underwriting")
+            if billing:
+                sources.append("billing")
+
+            pending_boost = 0.0
+            for claim in claims:
+                st = self._row_status_lower(claim)
+                if st in ("pending", "under_review"):
+                    add = 0.08
+                    if pending_boost + add > 0.24:
+                        add = max(0.0, 0.24 - pending_boost)
+                    if add <= 0:
+                        continue
+                    pending_boost += add
+                    score += add
+                    platform_signals_applied = True
+                    contributors.append({
+                        "factor": "pending_claim",
+                        "value": claim.get("id") or claim.get("claim_id") or st,
+                        "weight": round(add, 3),
+                        "source": "claims",
+                    })
+
+            denied_boost = 0.0
+            for claim in claims:
+                st = self._row_status_lower(claim)
+                if st in ("denied", "rejected"):
+                    add = 0.05
+                    if denied_boost + add > 0.15:
+                        add = max(0.0, 0.15 - denied_boost)
+                    if add <= 0:
+                        continue
+                    denied_boost += add
+                    score += add
+                    platform_signals_applied = True
+                    contributors.append({
+                        "factor": "denied_claim",
+                        "value": claim.get("id") or claim.get("claim_id") or st,
+                        "weight": round(add, 3),
+                        "source": "claims",
+                    })
+
+            active_policies = [
+                p for p in policies
+                if self._row_status_lower(p) in ("active", "approved")
+            ]
+            if claims and not active_policies:
+                score += 0.10
+                platform_signals_applied = True
+                contributors.append({
+                    "factor": "no_active_policy_with_claims",
+                    "value": {"claims": len(claims), "active_policies": 0},
+                    "weight": 0.10,
+                    "source": "policies",
+                })
+
+            rejected_uw = False
+            for app in underwriting:
+                st = self._row_status_lower(app)
+                if st in ("rejected", "declined"):
+                    rejected_uw = True
+                    break
+            if rejected_uw:
+                score += 0.12
+                platform_signals_applied = True
+                contributors.append({
+                    "factor": "uw_rejected",
+                    "value": "rejected_or_declined",
+                    "weight": 0.12,
+                    "source": "underwriting",
+                })
+
+            # High-risk UW fields — apply once per signal type using only
+            # fields that are actually present on an application.
+            uw_bmi_applied = False
+            uw_smoking_applied = False
+            uw_disability_applied = False
+            for app in underwriting:
+                if not uw_disability_applied and "disability_percentage" in app:
+                    try:
+                        disability_pct = float(app.get("disability_percentage"))
+                    except (TypeError, ValueError):
+                        disability_pct = None
+                    if disability_pct is not None and disability_pct > 50:
+                        # Align with hypertension-class medical weight (0.15).
+                        score += 0.15
+                        platform_signals_applied = True
+                        uw_disability_applied = True
+                        contributors.append({
+                            "factor": "uw_disability_percentage",
+                            "value": disability_pct,
+                            "weight": 0.15,
+                            "source": "underwriting",
+                        })
+                if not uw_smoking_applied and ("smoking" in app or "smoking_status" in app):
+                    smoking_val = app["smoking"] if "smoking" in app else app.get("smoking_status")
+                    if self._truthy_smoking(smoking_val):
+                        # Align with blood-pressure lifestyle weight (0.10).
+                        score += 0.10
+                        platform_signals_applied = True
+                        uw_smoking_applied = True
+                        contributors.append({
+                            "factor": "uw_smoking",
+                            "value": smoking_val,
+                            "weight": 0.10,
+                            "source": "underwriting",
+                        })
+                if not uw_bmi_applied and "bmi" in app:
+                    try:
+                        bmi_val = float(app.get("bmi"))
+                    except (TypeError, ValueError):
+                        bmi_val = None
+                    if bmi_val is not None and bmi_val >= 35:
+                        score += 0.18
+                        platform_signals_applied = True
+                        uw_bmi_applied = True
+                        contributors.append({
+                            "factor": "uw_bmi",
+                            "value": bmi_val,
+                            "weight": 0.18,
+                            "source": "underwriting",
+                        })
+                    elif bmi_val is not None and bmi_val >= 30:
+                        score += 0.10
+                        platform_signals_applied = True
+                        uw_bmi_applied = True
+                        contributors.append({
+                            "factor": "uw_bmi",
+                            "value": bmi_val,
+                            "weight": 0.10,
+                            "source": "underwriting",
+                        })
+
+            overdue_boost = 0.0
+            for bill in billing:
+                st = self._row_status_lower(bill)
+                if st in ("overdue", "past_due"):
+                    add = 0.04
+                    if overdue_boost + add > 0.12:
+                        add = max(0.0, 0.12 - overdue_boost)
+                    if add <= 0:
+                        continue
+                    overdue_boost += add
+                    score += add
+                    platform_signals_applied = True
+                    contributors.append({
+                        "factor": "overdue_bill",
+                        "value": bill.get("id") or bill.get("bill_id") or st,
+                        "weight": round(add, 3),
+                        "source": "billing",
+                    })
+
         score = min(1.0, round(score, 3))
         if score >= 0.80:
             level = "very_high"
@@ -1757,9 +1978,48 @@ class AssessmentCenterService:
             "contributors": contributors,
             "computed_at": datetime.utcnow().isoformat() + "Z",
             "fact_count": profile["fact_count"],
+            "scale": "0-1",
+            "platform_signals_applied": platform_signals_applied,
+            "sources": sources,
         }
 
-    def build_chart_data(self, customer_id: str) -> Dict[str, Any]:
+    def build_unified_assessment(
+        self,
+        customer_id: str,
+        *,
+        platform_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build a joined Customer 360 + risk + charts assessment payload."""
+        profile = self.build_customer_360(customer_id)
+        risk = self.compute_risk_indicators(
+            customer_id, profile=profile, platform_context=platform_context,
+        )
+        charts = self.build_chart_data(
+            customer_id, platform_context=platform_context,
+        )
+        return {
+            "customer_id": customer_id,
+            "profile": profile,
+            "risk": risk,
+            "charts": charts,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "integrity": {
+                "fact_count": profile.get("fact_count", 0),
+                "documents_with_facts": len(
+                    (profile.get("data_integrity") or {}).get("documents") or []
+                ),
+                "platform_signals_applied": bool(
+                    risk.get("platform_signals_applied")
+                ),
+            },
+        }
+
+    def build_chart_data(
+        self,
+        customer_id: str,
+        *,
+        platform_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Produce chart-ready data series for the customer dashboards.
 
         The returned payload is intentionally framework-agnostic: every chart is
@@ -1767,7 +2027,9 @@ class AssessmentCenterService:
         render with whichever charting library is in use.
         """
         profile = self.build_customer_360(customer_id)
-        risk = self.compute_risk_indicators(customer_id, profile=profile)
+        risk = self.compute_risk_indicators(
+            customer_id, profile=profile, platform_context=platform_context,
+        )
 
         condition_counts: Dict[str, int] = {}
         for cond in profile["medical"]["conditions"]:
@@ -2327,6 +2589,10 @@ def get_assessment_center(document_service=None) -> AssessmentCenterService:
         elif document_service is not None and _default_service._document_service is None:
             _default_service._document_service = document_service
         return _default_service
+
+
+# Alias used by the customer AI report and other call sites.
+get_assessment_center_service = get_assessment_center
 
 
 def reset_assessment_center() -> None:

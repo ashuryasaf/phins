@@ -520,15 +520,17 @@ class TestDashboardSurfaces:
         assert "error" in body
 
     def test_assessment_center_page_is_served(self):
-        # The dashboards rely on /assessment-center.html being reachable as a
-        # static file. A regression where the file is missing would make every
-        # nav link silently 404.
+        # Legacy URL must remain reachable (bookmark compatibility) and redirect
+        # into the unified Assessments workbench.
         resp = requests.get(f"{BASE_URL}/assessment-center.html")
         assert resp.status_code == 200
         body = resp.text
-        # The unified workbench replaces the old "Assessment Center" page; the
-        # page must still expose the new analysis endpoints regardless of the
-        # title we pick.
-        assert "Assessment Workbench" in body or "Assessment Center" in body
-        assert "/api/assessment-center/analysis" in body
-        assert "/api/assessment-center/export-file" in body
+        assert "unified-workbench.html" in body or "Assessments" in body
+
+        workbench = requests.get(f"{BASE_URL}/unified-workbench.html")
+        assert workbench.status_code == 200
+        wb = workbench.text
+        assert "Assessments" in wb or "Assessment" in wb
+        assert "/api/assessment-center/analysis" in wb
+        assert "/api/assessment-center/customer/" in wb
+        assert "/api/assessment-center/risk-indicators" in wb or "risk-indicators" in wb

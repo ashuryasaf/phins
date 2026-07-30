@@ -316,6 +316,9 @@ class TestCustomer360:
         risk = center.compute_risk_indicators("CUST-RISK")
         assert risk["risk_score"] > 0.5
         assert risk["risk_level"] in ("high", "very_high")
+        assert risk["scale"] == "0-1"
+        assert risk["platform_signals_applied"] is False
+        assert "fact_store" in risk["sources"]
         assert any(c["factor"] == "condition" for c in risk["contributors"])
         assert any(c["factor"] == "bmi" for c in risk["contributors"])
         assert any(c["factor"] == "blood_pressure" for c in risk["contributors"])

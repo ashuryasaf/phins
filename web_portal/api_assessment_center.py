@@ -19,9 +19,12 @@ GET endpoints
 - ``GET  /api/assessment-center/customer/<id>/facts``
     Flat fact list (optional ``?fact_type=`` filter).
 - ``GET  /api/assessment-center/customer/<id>/risk-indicators``
-    Deterministic risk score derived from the unified fact store.
+    Deterministic risk score derived from the unified fact store plus
+    real platform signals (policies/claims/underwriting/billing) when available.
 - ``GET  /api/assessment-center/customer/<id>/charts``
     Chart-ready data series for dashboards.
+- ``GET  /api/assessment-center/customer/<id>/unified``
+    Joined Customer 360 + risk + charts assessment payload.
 - ``GET  /api/assessment-center/customer/<id>/export``
     Re-uploadable JSON pack of the customer's facts (with SHA-256 checksum).
 
@@ -240,6 +243,39 @@ def _resolve_customer(session: Dict[str, Any], requested_customer_id: str) -> Tu
 def _service():
     from services.assessment_center_service import get_assessment_center
     return get_assessment_center()
+
+
+def _gather_platform_context(customer_id: str) -> Dict[str, Any]:
+    """Collect real in-memory platform rows owned by ``customer_id``.
+
+    Returns an empty dict when the portal module is unavailable so risk
+    scoring can still run on fact-store evidence alone. Never fabricates rows.
+    """
+    try:
+        import web_portal.server as portal
+    except Exception:
+        return {}
+
+    def _owned(rows):
+        out = []
+        for r in (rows or []):
+            if isinstance(r, dict) and str(r.get("customer_id") or "") == str(customer_id):
+                out.append(r)
+        return out
+
+    try:
+        policies = _owned(list(getattr(portal, "POLICIES", {}).values()))
+        claims = _owned(list(getattr(portal, "CLAIMS", {}).values()))
+        uw = _owned(list(getattr(portal, "UNDERWRITING_APPLICATIONS", {}).values()))
+        billing = _owned(list(getattr(portal, "BILLING", {}).values()))
+    except Exception:
+        return {}
+    return {
+        "policies": policies,
+        "claims": claims,
+        "underwriting": uw,
+        "billing": billing,
+    }
 
 
 def _document_owner(svc, document_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -809,9 +845,20 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
                     fact_type = ft
             return 200, {"customer_id": cust, "items": svc.get_facts(cust, fact_type)}
         if resource == "risk-indicators":
-            return 200, svc.compute_risk_indicators(cust)
+            platform_context = _gather_platform_context(cust)
+            return 200, svc.compute_risk_indicators(
+                cust, platform_context=platform_context or None,
+            )
         if resource == "charts":
-            return 200, svc.build_chart_data(cust)
+            platform_context = _gather_platform_context(cust)
+            return 200, svc.build_chart_data(
+                cust, platform_context=platform_context or None,
+            )
+        if resource == "unified":
+            platform_context = _gather_platform_context(cust)
+            return 200, svc.build_unified_assessment(
+                cust, platform_context=platform_context or None,
+            )
         if resource == "describe":
             doc_ids = None
             if isinstance(query_params, dict):
@@ -1050,6 +1097,10 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if doc_ids is not None and not isinstance(doc_ids, list):
                 return 400, {"error": "document_ids must be a list"}
             options = body.get("options") if isinstance(body.get("options"), dict) else {}
+            # Inject real platform rows for any analysis that returns risk.
+            if "platform_context" not in options:
+                options = dict(options)
+                options["platform_context"] = _gather_platform_context(cust)
             svc = _service()
 
             # SECURITY: defense-in-depth. ``describe_data_with_data`` only

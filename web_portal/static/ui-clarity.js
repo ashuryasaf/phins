@@ -197,6 +197,7 @@
       "/admin-supplier-dashboard",
       "/admin-media",
       "/admin-foundations",
+      "/unified-workbench",
       "/risk-dashboard",
       "/risk-reports-dashboard",
       "/video-agents",
@@ -304,8 +305,7 @@
         { id: "admin_foundations", label: "Foundations", query: "open admin foundations dashboard", requiresAdmin: true, url: "/admin-foundations.html" },
         { id: "admin_video_agents", label: "Video Agents", query: "open video agents dashboard", requiresAdmin: true, url: "/admin-media.html#video-agents" },
         { id: "admin_pitch", label: "Pitch", query: "open pitch dashboard", requiresAdmin: true, url: "/pitch-dashboard.html" },
-        { id: "admin_risk", label: "Risk", query: "open risk dashboard", requiresAdmin: true, url: "/risk-dashboard.html" },
-        { id: "admin_reports", label: "Reports", query: "open risk reports dashboard", requiresAdmin: true, url: "/risk-reports-dashboard.html" },
+        { id: "admin_assessments", label: "Assessments", query: "open assessments workbench", requiresAdmin: true, url: "/unified-workbench.html" },
         { id: "admin_logout", label: "Logout", query: "logout", requiresAdmin: true, url: "/" },
       ],
       supplier: [
@@ -326,7 +326,7 @@
       generic: [
         { id: "go_dashboard", label: "Customer", query: "show me my policies", url: "/dashboard.html" },
         { id: "go_billing", label: "Billing", query: "show me all my billings", url: "/billing.html" },
-        { id: "go_risk", label: "Risk", query: "open risk dashboard", url: "/risk-dashboard.html" },
+        { id: "go_assessments", label: "Assessments", query: "open assessments workbench", url: "/unified-workbench.html" },
         { id: "go_admin", label: "Admin", query: "refresh overview", requiresAdmin: true, url: "/admin.html" },
       ],
     };
@@ -759,8 +759,8 @@
       window.location.href = "/admin-foundations.html";
       return true;
     }
-    if (q.includes("risk reports")) {
-      window.location.href = "/risk-reports-dashboard.html";
+    if (q.includes("risk reports") || q.includes("assessment center") || q.includes("assessments workbench") || q.includes("ai report")) {
+      window.location.href = "/unified-workbench.html";
       return true;
     }
     if (q.includes("savings portfolio") || q.includes("investments dashboard")) {
@@ -784,8 +784,8 @@
       window.location.href = "/billing.html";
       return true;
     }
-    if (q.includes("risk")) {
-      window.location.href = "/risk-dashboard.html";
+    if (q.includes("risk") || q.includes("assessment")) {
+      window.location.href = "/unified-workbench.html";
       return true;
     }
     if (q.includes("claim") || q.includes("policy") || q.includes("wallet") || q.includes("customer")) {

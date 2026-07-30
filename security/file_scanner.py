@@ -74,6 +74,8 @@ ALLOWED_EXTENSIONS: Set[str] = {
     ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
     ".webp", ".csv", ".txt", ".json", ".xml", ".doc", ".docx",
     ".xls", ".xlsx", ".zip",
+    # Media module core formats (admin-media / video-agents uploads)
+    ".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mp3", ".wav", ".m4a",
 }
 
 DANGEROUS_EXTENSIONS: Set[str] = {

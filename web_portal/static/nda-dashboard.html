@@ -233,197 +233,53 @@
     </div>
   </div>
 
-  <!-- IL NDA (original) -->
-  <div class="section-label">🇮🇱 Israel — Original NDA (IL)</div>
-  <div class="nda-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 32px;">
-    <a href="/nda-israel.html" target="_blank" class="nda-card il">
-      <div class="card-flag">🇮🇱</div>
-      <div class="card-country">Israel</div>
-      <div class="card-authority">Authority of Capital Markets, Insurance &amp; Savings<br><small>רשות שוק ההון, ביטוח וחיסכון</small></div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
+  <!-- Adjustable jurisdiction NDA -->
+  <div class="section-label">🌐 Jurisdiction NDA</div>
+  <p style="color:#546e7a;margin:0 0 1rem;max-width:720px;">
+    Choose a country and relevant authority, then open or print/download the NDA.
+    One adjustable template replaces 26 near-duplicate files.
+  </p>
+  <div class="jurisdiction-picker" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:grid;gap:12px;max-width:720px;margin-bottom:32px;">
+    <label style="font-weight:600;color:#0d47a1;">Country / Jurisdiction
+      <select id="nda-jurisdiction" style="display:block;width:100%;margin-top:6px;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:1rem;"></select>
+    </label>
+    <div id="nda-authority-preview" style="color:#334155;font-size:0.95rem;"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button type="button" id="nda-open-btn" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Open NDA →</button>
+      <button type="button" id="nda-print-btn" style="background:#fff;color:#0d47a1;border:1.5px solid #0d47a1;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Print / Download PDF</button>
+    </div>
   </div>
-
-  <!-- All Countries -->
-  <div class="section-label">🌐 Global NDAs</div>
-  <div class="nda-grid">
-
-    <a href="/nda-usa.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇺🇸</div>
-      <div class="card-country">USA</div>
-      <div class="card-authority">SEC / NAIC</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-england.html" target="_blank" class="nda-card">
-      <div class="card-flag">🏴󠁧󠁢󠁥󠁮󠁧󠁿</div>
-      <div class="card-country">England</div>
-      <div class="card-authority">FCA / PRA</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-canada.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇨🇦</div>
-      <div class="card-country">Canada</div>
-      <div class="card-authority">OSFI</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-australia.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇦🇺</div>
-      <div class="card-country">Australia</div>
-      <div class="card-authority">APRA / ASIC</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-japan.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇯🇵</div>
-      <div class="card-country">Japan</div>
-      <div class="card-authority">FSA Japan (金融庁)</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-germany.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇩🇪</div>
-      <div class="card-country">Germany</div>
-      <div class="card-authority">BaFin</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-swisserland.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇨🇭</div>
-      <div class="card-country">Switzerland</div>
-      <div class="card-authority">FINMA</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-netherlands.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇳🇱</div>
-      <div class="card-country">Netherlands</div>
-      <div class="card-authority">AFM / DNB</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-france.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇫🇷</div>
-      <div class="card-country">France</div>
-      <div class="card-authority">ACPR / AMF</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-sweden.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇸🇪</div>
-      <div class="card-country">Sweden</div>
-      <div class="card-authority">Finansinspektionen</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-spain.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇪🇸</div>
-      <div class="card-country">Spain</div>
-      <div class="card-authority">DGSFP / CNMV</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-syngapore.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇸🇬</div>
-      <div class="card-country">Singapore</div>
-      <div class="card-authority">MAS</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-italy.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇮🇹</div>
-      <div class="card-country">Italy</div>
-      <div class="card-authority">IVASS / CONSOB</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-portugal.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇵🇹</div>
-      <div class="card-country">Portugal</div>
-      <div class="card-authority">ASF / CMVM</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-south_africa.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇿🇦</div>
-      <div class="card-country">South Africa</div>
-      <div class="card-authority">FSCA</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-emirates.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇦🇪</div>
-      <div class="card-country">UAE / Emirates</div>
-      <div class="card-authority">CBUAE / FSRA</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-dubai.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇦🇪</div>
-      <div class="card-country">Dubai</div>
-      <div class="card-authority">DFSA</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-hawaii.html" target="_blank" class="nda-card">
-      <div class="card-flag">🌺</div>
-      <div class="card-country">Hawaii</div>
-      <div class="card-authority">DCCA Insurance Division</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-brazil.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇧🇷</div>
-      <div class="card-country">Brazil</div>
-      <div class="card-authority">SUSEP / CVM</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-india.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇮🇳</div>
-      <div class="card-country">India</div>
-      <div class="card-authority">IRDAI / SEBI</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-poland.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇵🇱</div>
-      <div class="card-country">Poland</div>
-      <div class="card-authority">KNF</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-greece.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇬🇷</div>
-      <div class="card-country">Greece</div>
-      <div class="card-authority">HCMC / Bank of Greece</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-mexico.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇲🇽</div>
-      <div class="card-country">Mexico</div>
-      <div class="card-authority">CNSF / CNBV</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-irland.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇮🇪</div>
-      <div class="card-country">Ireland</div>
-      <div class="card-authority">Central Bank of Ireland</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-    <a href="/nda-albania.html" target="_blank" class="nda-card">
-      <div class="card-flag">🇦🇱</div>
-      <div class="card-country">Albania</div>
-      <div class="card-authority">AFSA / Bank of Albania</div>
-      <div class="card-cta">Open NDA →</div>
-    </a>
-
-  </div>
+  <script>
+  (async function () {
+    const sel = document.getElementById('nda-jurisdiction');
+    const preview = document.getElementById('nda-authority-preview');
+    const openBtn = document.getElementById('nda-open-btn');
+    const printBtn = document.getElementById('nda-print-btn');
+    if (!sel) return;
+    const res = await fetch('/jurisdictions.json', { cache: 'no-store' });
+    const data = await res.json();
+    const list = data.jurisdictions || [];
+    sel.innerHTML = list.map(j =>
+      `<option value="${j.id}">${j.flag} ${j.country} — ${j.authority}</option>`
+    ).join('');
+    // Prefer Israel as default for this dashboard's historic focus
+    if (list.some(j => j.id === 'israel')) sel.value = 'israel';
+    const sync = () => {
+      const j = list.find(x => x.id === sel.value);
+      if (!j) return;
+      preview.innerHTML = `<strong>${j.flag} ${j.country}</strong><br>Authority: ${j.authority}` +
+        (j.authority_local ? `<br><span dir="auto">${j.authority_local}</span>` : '') +
+        `<br>Governing law: ${j.governing_law}`;
+    };
+    sel.addEventListener('change', sync); sync();
+    const urlFor = () => `/nda.html?jurisdiction=${encodeURIComponent(sel.value)}`;
+    openBtn.addEventListener('click', () => window.open(urlFor(), '_blank'));
+    printBtn.addEventListener('click', () => {
+      const w = window.open(urlFor(), '_blank');
+      if (w) w.addEventListener('load', () => setTimeout(() => w.print(), 600));
+    });
+  })();
+  </script>
 </div>
 
 <footer class="site-footer">
