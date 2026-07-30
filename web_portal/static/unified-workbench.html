@@ -376,6 +376,31 @@
       <div class="fn-bar-chevron">▾</div>
     </div>
     <div class="fn-bar-body">
+      <!-- Mislaka clearinghouse → Customer 360 facts (restored into workbench) -->
+      <div class="result-card" id="mislaka-panel" style="margin-bottom:12px;">
+        <h4>🇮🇱 Pull Mislaka facts</h4>
+        <p style="font-size:0.85rem;color:#546e7a;margin:0 0 10px;">
+          Query the Mislaka clearinghouse and store each policy row as a fact on this
+          customer. Statistical review stays in this workbench (never invented scores).
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <input type="text" id="mislaka-id" placeholder="Israeli ID (9 digits)" maxlength="9"
+                 style="width:200px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">
+          <select id="mislaka-product" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">
+            <option value="all">All products</option>
+            <option value="pension">Pension</option>
+            <option value="provident">Provident fund</option>
+            <option value="life_insurance">Life insurance</option>
+            <option value="health_insurance">Health insurance</option>
+          </select>
+          <button type="button" onclick="linkMislaka()"
+                  style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;">
+            🔗 Link to Customer 360
+          </button>
+          <a class="ghost-link" href="/risk-reports-dashboard.html" title="Full Mislaka / Swiftness report library">↗ Mislaka reports library</a>
+          <span id="mislaka-status" style="font-size:0.85rem;"></span>
+        </div>
+      </div>
       <div id="assessment-body">
         <div class="empty">No facts extracted yet.</div>
       </div>
@@ -1462,8 +1487,12 @@
       <span class="stat-chip purple">${reports.length} report(s)</span>
       ${reports[0] ? `<span class="stat-chip muted">latest ${escHtml(fmtDate(reports[0].generated_at || reports[0].created_at))}</span>` : ''}
     `;
+    const libraryLink = `
+      <div style="margin-top:0.5rem;display:flex;gap:12px;flex-wrap:wrap;">
+        <a class="ghost-link" href="/risk-reports-dashboard.html">↗ Mislaka / Swiftness reports library</a>
+      </div>`;
     if (reports.length === 0) {
-      body.innerHTML = `<div class="empty">No reports yet for this customer.</div>`;
+      body.innerHTML = `<div class="empty">No generated AI reports yet for this customer.</div>${libraryLink}`;
       return;
     }
     const rows = reports.slice(0, 10).map(r => `
@@ -1480,9 +1509,36 @@
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <div style="margin-top:0.5rem;">
-        <a class="ghost-link" href="/risk-reports-dashboard.html">↗ Open full reports library</a>
-      </div>`;
+      ${libraryLink}`;
+  }
+
+  // ── Mislaka → Assessment Center facts ────────────────────────────────
+  async function linkMislaka() {
+    const idEl = document.getElementById('mislaka-id');
+    const statusEl = document.getElementById('mislaka-status');
+    const id = (idEl && idEl.value || '').trim();
+    const product = (document.getElementById('mislaka-product') || {}).value || 'all';
+    const cid = CURRENT_CUSTOMER || resolveCustomer() || id;
+    if (!/^\d{9}$/.test(id)) {
+      if (statusEl) statusEl.textContent = 'ID must be 9 digits';
+      return;
+    }
+    if (statusEl) statusEl.textContent = 'Linking Mislaka policies…';
+    try {
+      const res = await api('/api/assessment-center/mislaka/link', {
+        method: 'POST',
+        body: JSON.stringify({ id_number: id, product_type: product, customer_id: cid }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      if (statusEl) {
+        statusEl.textContent = `✓ ${json.policies_received || 0} policies stored as facts`;
+      }
+      CURRENT_CUSTOMER = cid;
+      await refreshAllBars();
+    } catch (e) {
+      if (statusEl) statusEl.textContent = '❌ ' + (e.message || e);
+    }
   }
 
   /* ─────────────────────────────────────────────────────────────────────
