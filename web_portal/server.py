@@ -13021,9 +13021,36 @@ For claims or questions, please contact:
     def do_GET(self):
         # Periodic cleanup of stale data
         cleanup_stale_data()
-        
+
+        # Resolve client identity early so /health cannot bypass IP blocks.
+        # Rate limiting is still bypassed for health outside test mode (LB probes).
+        client_ip = self.client_address[0]
+        server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
+        _ensure_test_port_state(server_port)
+
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+
         # Health check endpoint - bypasses rate limiting for Railway/load balancers
+        # (except in PHINS_TEST_MODE, where security semantics must match other routes).
         if self.path == '/api/health' or self.path == '/health':
+            if PHINS_TEST_MODE and not check_rate_limit(client_ip, server_port):
+                self.send_response(429)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Retry-After', '60')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'error': 'Too many requests. Please try again later.'
+                }).encode('utf-8'))
+                return
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -18727,30 +18754,20 @@ For claims or questions, please contact:
             if isinstance(app_documents, list) and app_documents:
                 for doc in app_documents:
                     if isinstance(doc, dict):
-                        documents.append(doc)
-            else:
-                # Default documents that would be required for any application
-                documents = [
-                    {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid', 'flags': None},
-                    {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.92, 'expiry_status': 'valid', 'flags': None}
-                ]
-                if disability_pct and disability_pct > 0:
-                    documents.append({
-                        'type': 'disability_certificate',
-                        'verified': True,
-                        'authenticity_score': 0.98,
-                        'expiry_status': 'valid',
-                        'flags': 'DISABILITY_DECLARED'
-                    })
-                if medical_conditions:
-                    documents.append({
-                        'type': 'medical_report',
-                        'verified': True,
-                        'authenticity_score': 0.96,
-                        'expiry_status': 'valid',
-                        'flags': 'MULTIPLE_CONDITIONS' if len(medical_conditions) > 1 else None
-                    })
-            
+                        # Preserve only fields that were actually recorded — never
+                        # invent authenticity/verification scores for missing evidence.
+                        entry = {
+                            'type': doc.get('type') or doc.get('document_type') or 'unknown',
+                            'verified': bool(doc.get('verified')) if 'verified' in doc else None,
+                            'authenticity_score': doc.get('authenticity_score'),
+                            'expiry_status': doc.get('expiry_status'),
+                            'flags': doc.get('flags'),
+                            'source': doc.get('source') or 'application',
+                        }
+                        documents.append(entry)
+            # When the application has no document records, leave the list empty.
+            # Callers/UI must treat missing evidence as unknown — not verified.
+
             # Determine BMI category string
             bmi_category_str = None
             if bmi is not None:
@@ -18779,15 +18796,23 @@ For claims or questions, please contact:
                 },
                 'policy_type': target_policy.get('type') or target_app.get('policy_type'),
                 'coverage_amount': target_policy.get('coverage_amount') or target_app.get('coverage_amount', 0),
-                'identity_verified': target_app.get('identity_verified', True),
+                # Only True when the application explicitly recorded verification.
+                'identity_verified': bool(target_app['identity_verified']) if 'identity_verified' in target_app else None,
                 'risk_scores': {
                     'overall': round(overall_risk, 4),
                     'category': risk_category,
-                    'identity': 0.95 if target_app.get('identity_verified', True) else 0.50,
-                    'medical': round(min(medical_risk + 0.10, 1.0), 4) if medical_conditions else 0.10,
-                    'lifestyle': round(1.0 - lifestyle_risk, 4),
-                    'financial': 0.85,  # Based on coverage/premium ratio
-                    'fraud': 0.00  # No fraud indicators
+                    # Omit fabricated confidence: unknown when not explicitly set.
+                    'identity': (
+                        0.95 if target_app.get('identity_verified') is True
+                        else (0.50 if target_app.get('identity_verified') is False else None)
+                    ),
+                    'medical': round(min(medical_risk + 0.10, 1.0), 4) if medical_conditions else (
+                        0.10 if medical_conditions == [] else None
+                    ),
+                    'lifestyle': round(1.0 - lifestyle_risk, 4) if lifestyle_risk is not None else None,
+                    # Financial/fraud scores only when evidence exists on the application.
+                    'financial': target_app.get('financial_risk_score'),
+                    'fraud': target_app.get('fraud_risk_score'),
                 },
                 'medical_assessment': {
                     'disability_percentage': disability_pct or 0,
@@ -18810,10 +18835,14 @@ For claims or questions, please contact:
                 },
                 'metadata': {
                     'assessment_date': datetime.now().isoformat(),
-                    'model_version': '1.0.0',
+                    'model_version': '2.0.0',
                     'assessor_role': session.get('role') if session else 'system',
-                    'data_integrity_verified': True,
-                    'data_source': 'pipeline'
+                    # Integrity is verified only when document evidence was supplied —
+                    # never claim integrity for inferred/empty document sets.
+                    'data_integrity_verified': bool(documents),
+                    'documents_provided': len(documents),
+                    'data_source': 'application_record',
+                    'unknown_fields_omitted': True,
                 }
             }
             
@@ -25484,12 +25513,58 @@ For claims or questions, please contact:
 
             customer_nfts = [nft for nft in NFT_LEDGER.values() if nft.get('owner_id') == customer_id]
             credit_score = safe_float(customer.get('credit_score', 0))
-            risk_score = safe_float(customer.get('risk_score', 0))
-            credit_data = {
-                'credit_score': credit_score,
-                'risk_score': risk_score,
-                'risk_level': 'Low' if risk_score < 30 else ('Medium' if risk_score < 60 else 'High'),
-            }
+            legacy_risk_score = safe_float(customer.get('risk_score', 0))
+
+            assessment = None
+            try:
+                from services.assessment_center_service import get_assessment_center_service
+                svc = get_assessment_center_service()
+                platform_context = {
+                    'policies': customer_policies,
+                    'claims': customer_claims,
+                    'underwriting': [
+                        a for a in UNDERWRITING_APPLICATIONS.values()
+                        if a.get('customer_id') == customer_id
+                    ],
+                    'billing': all_customer_bills,
+                }
+                assessment = svc.build_unified_assessment(
+                    customer_id, platform_context=platform_context,
+                )
+            except Exception as exc:
+                assessment = {'error': 'assessment_unavailable', 'detail': str(exc)}
+
+            assessment_risk = (
+                assessment.get('risk')
+                if isinstance(assessment, dict) and 'risk' in assessment
+                else None
+            )
+            if isinstance(assessment_risk, dict) and assessment_risk.get('risk_score') is not None:
+                assessment_score = safe_float(assessment_risk.get('risk_score', 0))
+                if assessment_score < 0.35:
+                    credit_risk_level = 'Low'
+                elif assessment_score < 0.60:
+                    credit_risk_level = 'Medium'
+                else:
+                    credit_risk_level = 'High'
+                credit_data = {
+                    'credit_score': credit_score,
+                    'risk_score': assessment_score,
+                    'legacy_risk_score': legacy_risk_score,
+                    'risk_level': credit_risk_level,
+                    'risk_score_scale': '0-1',
+                }
+            else:
+                credit_data = {
+                    'credit_score': credit_score,
+                    'risk_score': legacy_risk_score,
+                    'legacy_risk_score': legacy_risk_score,
+                    'risk_level': (
+                        'Low' if legacy_risk_score < 30
+                        else ('Medium' if legacy_risk_score < 60 else 'High')
+                    ),
+                    'risk_score_scale': 'legacy_0-100',
+                }
 
             total_assets = round(
                 safe_float(wallet.get('balance', 0)) +
@@ -25527,6 +25602,30 @@ For claims or questions, please contact:
             timeline.sort(key=lambda x: x.get('date', '') or '', reverse=True)
 
             ai_insights = []
+            # Prefer evidence-based Assessment Center risk contributors when available.
+            if isinstance(assessment_risk, dict):
+                risk_level_ac = str(assessment_risk.get('risk_level') or '').lower()
+                contributors = assessment_risk.get('contributors') or []
+                if risk_level_ac in ('high', 'very_high') and contributors:
+                    top = sorted(
+                        [c for c in contributors if isinstance(c, dict)],
+                        key=lambda c: safe_float(c.get('weight', 0)),
+                        reverse=True,
+                    )[:3]
+                    top_bits = [
+                        f"{c.get('factor')}={c.get('value')} (w={safe_float(c.get('weight', 0)):.2f})"
+                        for c in top
+                    ]
+                    ai_insights.append({
+                        'severity': 'critical',
+                        'category': 'assessment_risk',
+                        'message': (
+                            f"Assessment Center risk is {risk_level_ac} "
+                            f"(score {safe_float(assessment_risk.get('risk_score', 0)):.2f} on 0-1). "
+                            f"Top contributors: {'; '.join(top_bits)}."
+                        ),
+                    })
+
             if outstanding_amount > 0:
                 ai_insights.append({
                     'severity': 'warning',
@@ -25563,11 +25662,31 @@ For claims or questions, please contact:
                     'category': 'credit',
                     'message': f'Credit score ({credit_score:.0f}) is below recommended threshold. Consider improvement strategies.',
                 })
-            if total_assets > 0:
+            # Only claim diversification when ≥2 distinct non-zero asset buckets exist.
+            asset_buckets = []
+            if safe_float(wallet.get('balance', 0)) > 0:
+                asset_buckets.append('health_wallet')
+            if safe_float(inv_acc.get('index_balance', 0)) > 0:
+                asset_buckets.append('index')
+            if safe_float(inv_acc.get('bonds_balance', 0)) > 0:
+                asset_buckets.append('bonds')
+            if safe_float(inv_acc.get('crypto_balance', 0)) > 0:
+                asset_buckets.append('crypto')
+            if len(asset_buckets) >= 2:
                 ai_insights.append({
                     'severity': 'positive',
                     'category': 'investments',
-                    'message': f'Total asset value is ${total_assets:,.2f}. Portfolio is diversified across health, index, bonds, and crypto.',
+                    'message': (
+                        f'Total asset value is ${total_assets:,.2f}. '
+                        f'Portfolio has balances across {len(asset_buckets)} buckets '
+                        f'({", ".join(asset_buckets)}).'
+                    ),
+                })
+            elif total_assets > 0:
+                ai_insights.append({
+                    'severity': 'positive',
+                    'category': 'investments',
+                    'message': f'Total asset value is ${total_assets:,.2f}.',
                 })
             if len(customer_policies) == 0 and len(customer_claims) == 0 and len(customer_bills) == 0:
                 ai_insights.append({
@@ -25592,6 +25711,7 @@ For claims or questions, please contact:
                 'investments': investment_data,
                 'ledger': ledger_data,
                 'credit': credit_data,
+                'assessment': assessment,
                 'nft_count': len(customer_nfts),
                 'total_assets': total_assets,
                 'total_liabilities': total_liabilities,
