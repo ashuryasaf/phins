@@ -35,7 +35,9 @@ def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
 
 def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     content = _fetch("/ui-clarity.js")
-    assert "PHINS admin AI Assistant" in content
+    assert "Admin AI Mic" in content
+    assert "PHINS admin AI Assistant" not in content
+    assert "Admin AI Mic ready." in content
     assert "run_actuary_portfolio_simulation" in content
     assert "open actuary dashboard" in content
     assert "/underwriter-dashboard.html" in content
@@ -44,9 +46,18 @@ def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     assert "/actuary-dashboard.html" in content
     assert "/admin-media.html" in content
     assert "/admin-foundations.html" in content
-    assert '/risk-reports-dashboard.html' in content
+    assert "/risk-reports-dashboard" in content
     assert 'id: "admin_logout"' in content
     assert "Logout now?" in content
+
+
+def test_admin_dashboard_voice_button_starts_disabled_until_session_validates():
+    content = _fetch("/admin.html")
+    assert 'id="admin-ai-voice-btn"' in content
+    assert "Voice input available after login validation" in content
+    assert "disabled" in content
+    assert "voiceBtn.disabled = false;" in content
+    assert "if (voiceBtn && voiceBtn.disabled)" in content
 
 
 def test_ui_clarity_asset_contains_supplier_voice_actions_and_hierarchy():
@@ -97,14 +108,6 @@ def test_ui_clarity_suppresses_floating_bar_on_public_pages():
 def test_customer_dashboard_voice_button_starts_disabled_until_session_validates():
     content = _fetch("/dashboard.html")
     assert 'id="voice-btn"' in content
-    assert "Voice input available after login validation" in content
-    assert "voiceBtn.disabled = false;" in content
-    assert "voiceBtn.disabled = true;" in content
-
-
-def test_admin_dashboard_voice_button_starts_disabled_until_session_validates():
-    content = _fetch("/admin.html")
-    assert 'id="admin-ai-voice-btn"' in content
     assert "Voice input available after login validation" in content
     assert "voiceBtn.disabled = false;" in content
     assert "voiceBtn.disabled = true;" in content

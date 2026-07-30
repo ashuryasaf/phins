@@ -371,13 +371,15 @@
     #admin-ai-assistant-panel[data-minimized="true"] > div:first-child {
       margin-bottom: 0 !important;
     }
+    /* Minimized: keep ask bar + mic visible; hide expanded chrome only. */
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-help-panel,
-    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-voice-recording-indicator,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-tab-bar,
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-quick-actions,
-    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area,
-    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-response-area {
       display: none !important;
+    }
+    #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
+      margin-bottom: 0 !important;
     }
     .admin-ai-tab-bar {
       display: flex;
@@ -882,19 +884,17 @@
       <p class="muted-text">Comprehensive system management and oversight</p>
     </div>
 
-    <!-- ==================== PHINS ADMIN AI ASSISTANT ==================== -->
-    <div id="admin-ai-assistant-panel" data-minimized="true">
+    <!-- ==================== ADMIN AI MIC ==================== -->
+    <!-- Compact by default: ask bar + mic stay visible; expand for tabs/actions. -->
+    <div id="admin-ai-assistant-panel" data-minimized="true" aria-label="Admin AI Mic">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:12px;">
-          <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;">🤖</div>
-          <div>
-            <h2 style="margin:0;color:white;font-size:1.3rem;font-weight:700;">PHINS admin AI Assistant</h2>
-          </div>
+          <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;" aria-hidden="true">🎤</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="admin-ai-status-chip" class="admin-ai-status-chip">🟡 Ready</span>
           <button onclick="toggleAdminAIHelp()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Help">❓</button>
-          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">🎤➕</button>
+          <button id="admin-ai-panel-minimize-btn" onclick="toggleAdminAIPanel()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:0.85rem;" title="Expand">➕</button>
         </div>
       </div>
 
@@ -968,12 +968,12 @@
           <button onclick="adminAssistantQuickAction('bill_all_policies')" class="admin-ai-quick-btn" style="background:rgba(255,152,0,0.28);">⚠️ Bill All</button>
           <button onclick="adminAssistantQuickAction('cleanup_demo_data')" class="admin-ai-quick-btn" style="background:rgba(244,67,54,0.28);">🧹 Clean Demo Data</button>
         </div>
-        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">⬇️ More Actions</button>
+        <button onclick="toggleAdminAssistantMoreActions()" id="admin-ai-more-toggle" class="admin-ai-more-toggle">⬇️ Show More Actions</button>
       </div>
 
       <div id="admin-ai-response-area" style="background:white;border-radius:14px;padding:18px;color:#263238;">
         <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px;">Ready</div>
-        <div style="color:#546e7a;font-size:0.88rem;">Voice, text, or buttons. Integrity-gated.</div>
+        <div style="color:#546e7a;font-size:0.88rem;">Use voice, text, or buttons to run existing dashboard functions with built-in integrity safeguards.</div>
       </div>
     </div>
 
@@ -2855,7 +2855,7 @@
         stopAdminAssistantVoiceInput();
       }
       if (toggleButton) {
-        toggleButton.textContent = '🎤➕';
+        toggleButton.textContent = '➕';
         toggleButton.title = 'Expand';
       }
     }
