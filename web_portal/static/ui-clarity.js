@@ -243,7 +243,7 @@
     if (isAdminContext) {
       return {
         toggleLabel: "Admin AI Mic",
-        title: "PHINS admin AI Assistant",
+        title: "Admin AI Mic",
         placeholder: "Voice or type admin command...",
       };
     }
@@ -1001,7 +1001,7 @@
       if (toggle) toggle.textContent = `🎤 ${branding.toggleLabel}`;
       if (status) {
         status.textContent = detectContext() === "admin"
-          ? "PHINS admin AI Assistant ready."
+          ? "Admin AI Mic ready."
           : detectContext() === "supplier"
             ? "Supplier voice quick actions ready."
             : "Ready for quick actions.";
@@ -1027,7 +1027,7 @@
           <button type="button" class="phins-vqa-ask" id="phins-vqa-ask-btn">Ask</button>
           <button type="button" id="${VQA_VOICE_BTN_ID}" data-listening="false">🎤</button>
         </div>
-        <div id="${VQA_STATUS_ID}" data-kind="info">${detectContext() === "admin" ? "PHINS admin AI Assistant ready." : "Ready for quick actions."}</div>
+        <div id="${VQA_STATUS_ID}" data-kind="info">${detectContext() === "admin" ? "Admin AI Mic ready." : "Ready for quick actions."}</div>
         <div id="${VQA_ACTIONS_ID}" class="phins-vqa-actions"></div>
       </div>
     `;

@@ -35,7 +35,9 @@ def test_ui_clarity_asset_contains_floating_voice_quick_actions_bootstrap():
 
 def test_ui_clarity_asset_contains_admin_hierarchy_voice_actions():
     content = _fetch("/ui-clarity.js")
-    assert "PHINS admin AI Assistant" in content
+    assert "Admin AI Mic" in content
+    assert "PHINS admin AI Assistant" not in content
+    assert "Admin AI Mic ready." in content
     assert "run_actuary_portfolio_simulation" in content
     assert "open actuary dashboard" in content
     assert "/underwriter-dashboard.html" in content
