@@ -153,7 +153,8 @@ def test_admin_ai_assistant_voice_and_quick_action_controls_present():
 
     assert 'title="Help"' in content
     assert 'title="Expand"' in content
-    assert 'title="Minimize"' in content
+    assert "toggleButton.title = 'Minimize'" in content
+    assert "toggleButton.title = 'Expand'" in content
 
 
 def test_admin_ai_mic_command_keywords_cover_core_functionality():
