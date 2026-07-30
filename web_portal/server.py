@@ -125,6 +125,19 @@ def safe_int(val, default: int = 0) -> int:
         return default
 
 
+def _coerce_verified_flag(val) -> bool:
+    """
+    Interpret a stored verification flag as a boolean.
+
+    Unlike bare ``bool()``, this treats string-stored falsey values such as
+    ``"false"``, ``"0"``, or ``"no"`` as False so that applicants/documents are
+    not marked verified incorrectly.
+    """
+    if isinstance(val, str):
+        return val.strip().lower() not in ('', 'false', '0', 'no', 'none', 'off')
+    return bool(val)
+
+
 # Premium-related transaction categories used for revenue reconciliation.
 PREMIUM_LEDGER_TX_TYPES = {
     'premium_payment',
@@ -18758,7 +18771,7 @@ For claims or questions, please contact:
                         # invent authenticity/verification scores for missing evidence.
                         entry = {
                             'type': doc.get('type') or doc.get('document_type') or 'unknown',
-                            'verified': bool(doc.get('verified')) if 'verified' in doc else None,
+                            'verified': _coerce_verified_flag(doc.get('verified')) if 'verified' in doc else None,
                             'authenticity_score': doc.get('authenticity_score'),
                             'expiry_status': doc.get('expiry_status'),
                             'flags': doc.get('flags'),
@@ -18797,7 +18810,7 @@ For claims or questions, please contact:
                 'policy_type': target_policy.get('type') or target_app.get('policy_type'),
                 'coverage_amount': target_policy.get('coverage_amount') or target_app.get('coverage_amount', 0),
                 # Only True when the application explicitly recorded verification.
-                'identity_verified': bool(target_app['identity_verified']) if 'identity_verified' in target_app else None,
+                'identity_verified': _coerce_verified_flag(target_app['identity_verified']) if 'identity_verified' in target_app else None,
                 'risk_scores': {
                     'overall': round(overall_risk, 4),
                     'category': risk_category,
