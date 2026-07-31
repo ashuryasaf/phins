@@ -5950,6 +5950,23 @@ def _parse_iso_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
+def _created_date_sort_key(value: Any) -> float:
+    """Chronological, crash-safe sort key for created_date values.
+
+    Handles a mix of ISO strings and datetime objects (which can otherwise
+    sort incorrectly as raw strings, since ``' '`` sorts before ``'T'``) and
+    avoids TypeError from comparing tz-aware and tz-naive datetimes by
+    normalizing to a POSIX timestamp. Unparseable values sort oldest.
+    """
+    parsed = _parse_iso_datetime(value)
+    if parsed is None:
+        return float('-inf')
+    try:
+        return parsed.timestamp()
+    except (OverflowError, OSError, ValueError):
+        return float('-inf')
+
+
 def _normalize_billing_frequency(value: Any) -> str:
     """Normalize billing frequencies used by policies, underwriting, and reports."""
     freq = str(value or 'monthly').strip().lower()
@@ -18433,10 +18450,10 @@ For claims or questions, please contact:
             elif customer_id:
                 target_customer = CUSTOMERS.get(customer_id)
                 # Find latest application for this customer
-                # (created_date may be None or a datetime; coerce for a stable sort)
+                # (created_date may be None, an ISO string, or a datetime)
                 customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
                 if customer_apps:
-                    target_app = max(customer_apps, key=lambda x: str(x.get('created_date') or ''))
+                    target_app = max(customer_apps, key=lambda x: _created_date_sort_key(x.get('created_date')))
             elif customer_email:
                 # Find customer by email (email may be stored as None)
                 for cid, cust in CUSTOMERS.items():
@@ -18447,7 +18464,7 @@ For claims or questions, please contact:
                 if customer_id:
                     customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
                     if customer_apps:
-                        target_app = max(customer_apps, key=lambda x: str(x.get('created_date') or ''))
+                        target_app = max(customer_apps, key=lambda x: _created_date_sort_key(x.get('created_date')))
             
             if not target_app:
                 self._set_json_headers(404)
@@ -18511,9 +18528,11 @@ For claims or questions, please contact:
                         pass
             
             # Smoking status: from application or questionnaire.
-            # Values may be non-string (e.g. a boolean checkbox) — coerce first.
+            # Values may be non-string (e.g. a boolean checkbox) — coerce truthy
+            # values only so falsy inputs (e.g. False) still fall back to the
+            # questionnaire rather than becoming the truthy string "False".
             smoking = target_app.get('smoking_status')
-            if smoking is not None and not isinstance(smoking, str):
+            if smoking and not isinstance(smoking, str):
                 smoking = str(smoking)
             if not smoking and questionnaire.get('smoke') is not None:
                 smoke_val = str(questionnaire.get('smoke', '')).strip().lower()
